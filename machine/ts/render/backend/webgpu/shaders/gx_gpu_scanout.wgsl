@@ -8,6 +8,9 @@ override storagePath: u32 = 6u;
 override linearGx16: bool = false;
 override doubleAlpha: bool = false;
 override interlacedField: bool = false;
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramAddressWordMask: u32;
+override gxGpuVramPhysicalWordMask: u32;
 
 @group(0) @binding(0) var<uniform> u: ScanoutUniforms;
 @group(0) @binding(1) var u_vram: texture_2d<f32>;
@@ -20,8 +23,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f
 }
 
 fn rawWordAtAddress(address: u32) -> u32 {
-	let wrappedAddress = address & 0xfffffu;
-	let rawPixel = textureLoad(u_vram, vec2<i32>(i32(wrappedAddress & 0x3ffu), i32(wrappedAddress >> 10u)), 0);
+	let wrappedAddress = address & gxGpuVramPhysicalWordMask;
+	let rawPixel = textureLoad(u_vram, vec2<i32>(
+		i32(wrappedAddress % gxGpuVramXAddressPeriod),
+		i32(wrappedAddress / gxGpuVramXAddressPeriod)), 0);
 	let lowByte = u32(rawPixel.r * 255.0 + 0.5);
 	let highByte = u32(rawPixel.g * 255.0 + 0.5);
 	return lowByte | (highByte << 8u);
@@ -48,7 +53,7 @@ fn localMemoryAddress32(baseWord: u32, pagesPerRow: u32, x: u32, y: u32) -> u32 
 		| ((pageY & 1u) << 1u)
 		| ((pageX & 6u) << 1u)
 		| ((pageY & 6u) << 3u);
-	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & 0xfffffu;
+	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & gxGpuVramAddressWordMask;
 }
 
 fn localMemoryColumn16(pageX: u32, pageY: u32) -> u32 {
@@ -79,7 +84,7 @@ fn localMemoryAddress16(baseWord: u32, pagesPerRow: u32, x: u32, y: u32, signedB
 			| ((blockY & 2u) << 2u)
 			| ((blockX & 2u) << 3u);
 	}
-	return (baseWord + (page << 12u) + (block << 7u) + localMemoryColumn16(pageX, pageY)) & 0xfffffu;
+	return (baseWord + (page << 12u) + (block << 7u) + localMemoryColumn16(pageX, pageY)) & gxGpuVramAddressWordMask;
 }
 
 fn localMemoryAddressGpu24(baseWord: u32, pagesPerRow: u32, pixelX: u32, y: u32, word: u32) -> u32 {

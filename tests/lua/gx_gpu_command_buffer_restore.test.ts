@@ -16,8 +16,11 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
-import { gxGpuSoftwareVram, gxGpuSoftwareVramIndex } from '../../machine/ts/render/backend/software/gx_gpu_vram';
+import { GxGpuSoftwareState } from '../../machine/ts/render/backend/software/gx_gpu_state';
+import { gxGpuSoftwareVramIndex } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
+const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
+const gxGpuSoftwareVram = gxGpuSoftware.vram;
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
 const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 const commandBufferIrq = new IrqController(commandBufferMemory);
@@ -74,8 +77,8 @@ test('GX-GPU command-buffer retire compacts presented command stream', () => {
 	gxGpuSoftwareVram.fill(0);
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(commandBuffer.presentCommandCount, 0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount), 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0);
 });
 
 test('GX-GPU command-buffer retire preserves partial payload words after sealed commands', () => {

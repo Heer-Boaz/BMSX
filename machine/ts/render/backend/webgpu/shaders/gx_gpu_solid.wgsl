@@ -6,8 +6,12 @@ struct PrimitiveUniforms {
 	ditherEnabled: u32,
 	skippedLineParity: u32,
 	rasterPhase: f32,
-	_padding: u32,
+	destinationYBase: u32,
 };
+
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramYAddressPeriod: u32;
+override gxGpuVramTextureRowMask: i32;
 
 @group(0) @binding(0) var<uniform> u: PrimitiveUniforms;
 @group(0) @binding(1) var u_vram: texture_2d<f32>;
@@ -41,7 +45,9 @@ struct FixedVSOut {
 fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
 	let rasterPosition = input.position + vec2<f32>(u.rasterPhase);
-	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 512.0));
+	let clip = vec2<f32>(
+		(rasterPosition.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (rasterPosition.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
 	return out;
@@ -51,7 +57,9 @@ fn vs_main(input: VSIn) -> VSOut {
 fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 	var out: FixedVSOut;
 	let rasterPosition = input.position + vec2<f32>(u.rasterPhase);
-	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 512.0));
+	let clip = vec2<f32>(
+		(rasterPosition.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (rasterPosition.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.colorPlaneBase = input.colorPlaneBase;
 	out.colorPlaneStepX = input.colorPlaneStepX;
@@ -60,7 +68,7 @@ fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 }
 
 fn rawVramWord(coord: vec2<i32>) -> u32 {
-	let rawPixel = textureLoad(u_vram, coord & vec2<i32>(1023), 0);
+	let rawPixel = textureLoad(u_vram, coord & vec2<i32>(i32(gxGpuVramXAddressPeriod - 1u), gxGpuVramTextureRowMask), 0);
 	let bytes = vec2<u32>(rawPixel.rg * vec2<f32>(255.0) + vec2<f32>(0.5));
 	return bytes.x | (bytes.y << 8u);
 }
@@ -131,12 +139,12 @@ fn shadeSolid(color8: vec3<u32>, fragCoord: vec2<u32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	return shadeSolid(vec3<u32>(input.color.rgb * vec3<f32>(255.0)), vec2<u32>(input.position.xy));
+	return shadeSolid(vec3<u32>(input.color.rgb * vec3<f32>(255.0)), vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase));
 }
 
 @fragment
 fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
-	let pixel = vec2<u32>(input.position.xy);
+	let pixel = vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase);
 	let accumulator = input.colorPlaneBase + input.colorPlaneStepX * pixel.x + input.colorPlaneStepY * pixel.y;
 	let color8 = (accumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu);
 	return shadeSolid(color8, pixel);

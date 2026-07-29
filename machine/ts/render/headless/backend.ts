@@ -16,8 +16,8 @@ import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import type { HeadlessVideoOutput } from './video_output';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
+import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../spec/gx/vram';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -105,14 +105,29 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly vertexBuffers = new Map<number, HeadlessBufferRecord>();
 	private readonly uniformBuffers = new Map<number, HeadlessBufferRecord>();
 	private readonly vaos = new Set<number>();
-	private readonly gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+	public readonly gxGpuSoftware: GxGpuSoftwareState;
 	private readonly bound2DByUnit = new Map<number, TextureHandle>();
 	private readonly boundCubeByUnit = new Map<number, TextureHandle>();
 	private activeTextureUnit = 0;
 	private readonly frameStats: HeadlessFrameStats = createFrameStats();
 	private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };
 
-	constructor(private readonly output: HeadlessVideoOutput) {
+	constructor(private readonly output: HeadlessVideoOutput, gxGpuVramBytes: number) {
+		const size = output.surface.measureDisplay();
+		this.gxGpuSoftware = new GxGpuSoftwareState(gxGpuVramBytes, size.width * size.height);
+		this.gxGpuSoftware.interlacedWidth = size.width;
+		this.gxGpuSoftware.interlacedHeight = size.height;
+	}
+
+	resizeFramebuffer(width: number, height: number): void {
+		if (width === this.gxGpuSoftware.interlacedWidth
+			&& height === this.gxGpuSoftware.interlacedHeight) {
+			return;
+		}
+		this.gxGpuSoftware.interlacedPixels = new Uint32Array(width * height);
+		this.gxGpuSoftware.interlacedWidth = width;
+		this.gxGpuSoftware.interlacedHeight = height;
+		this.gxGpuSoftware.interlacedValid = false;
 	}
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
@@ -435,11 +450,11 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	executeGxGpuReadback(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
-		executeGxGpuSoftwareVramCommands(output, output.readbackPort.fenceCommandCount);
+		executeGxGpuSoftwareVramCommands(this.gxGpuSoftware, output, output.readbackPort.fenceCommandCount);
 	}
 
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
-		captureGxGpuVramSnapshot(gxGpu, this.gxGpuVramSnapshotScratch);
+		captureGxGpuVramSnapshot(this.gxGpuSoftware, gxGpu);
 	}
 
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {

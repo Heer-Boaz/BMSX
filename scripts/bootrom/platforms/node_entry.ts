@@ -8,6 +8,7 @@ import {
 	HeadlessPlatformServices,
 } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import {
 	parseNodeLaunchOptions,
 	printNodeLaunchOptionsHelp,
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
 		startingGamepadIndex: -1,
 		enableOnscreenGamepad: false,
 		platform,
+		machineModel: PSX_MACHINE_SPEC,
 	});
 	startMachineHostFrames(host);
 	console.log(`[bootrom:${BMSX_BOOTROM_TARGET}] Game loop running.`);

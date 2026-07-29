@@ -10,6 +10,7 @@ import { captureRenderedVramSnapshot, registerGxGpuPass, serviceGxGpuReadback } 
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { registerHostOverlayPassesWebGPU } from '../../host_overlay/webgpu/pipeline';
+import { GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT } from '../../../spec/gx/vram';
 
 const WEBGPU_ZERO_CLEAR: GPUColor = [0, 0, 0, 0];
 
@@ -58,9 +59,15 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	private _bytesUploaded = 0;
-	constructor(public device: GPUDevice, context: GPUCanvasContext, public readonly canvasFormat: GPUTextureFormat) {
+	public readonly gxGpuVramTextureRows: number;
+	public readonly gxGpuVramTextureRowMask: number;
+	public readonly gxGpuVramPhysicalWordMask: number;
+	constructor(public device: GPUDevice, context: GPUCanvasContext, public readonly canvasFormat: GPUTextureFormat, gxGpuVramBytes: number) {
 		this.limits = this.device.limits;
 		this._context = context;
+		this.gxGpuVramTextureRows = gxGpuVramBytes / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT;
+		this.gxGpuVramTextureRowMask = this.gxGpuVramTextureRows - 1;
+		this.gxGpuVramPhysicalWordMask = (gxGpuVramBytes >>> 1) - 1;
 	}
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {

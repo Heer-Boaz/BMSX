@@ -26,7 +26,7 @@ export const GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10;
 export const GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18;
 export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
 import {
-	GX_GPU_VRAM_WIDTH,
+	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 	gxGpuVramYAddress,
 } from './vram';
 
@@ -79,7 +79,7 @@ export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightW
 	const left = topLeftWord & 0x3ff;
 	const right = bottomRightWord & 0x3ff;
 	if (left > right) return 0;
-	return right < GX_GPU_VRAM_WIDTH - 1 ? right + 1 : GX_GPU_VRAM_WIDTH;
+	return right < GX_GPU_VRAM_X_ADDRESS_PERIOD - 1 ? right + 1 : GX_GPU_VRAM_X_ADDRESS_PERIOD;
 }
 
 export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number, vramYAddressExtensionWord: number): number {

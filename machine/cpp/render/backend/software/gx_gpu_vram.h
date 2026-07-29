@@ -1,23 +1,27 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "render/backend/software/gx_gpu_state.h"
 #include "spec/gx/vram.h"
 
-#include <array>
 #include <cstddef>
+#include <span>
 
 namespace bmsx {
 
-constexpr size_t kGxGpuSoftwareVramWords = static_cast<size_t>(GX_GPU_VRAM_WIDTH) * static_cast<size_t>(GX_GPU_VRAM_HEIGHT);
+void loadGxGpuSoftwareVramBytes(
+	GxGpuSoftwareState& software,
+	std::span<const u8> source);
 
-extern std::array<u16, kGxGpuSoftwareVramWords> g_gxGpuSoftwareVram;
-
-void loadGxGpuSoftwareVramBytes(const u8* source);
-
-inline size_t gxGpuSoftwareVramIndex(i32 x, i32 y) {
-	const u32 wrappedX = static_cast<u32>(x) & (GX_GPU_VRAM_WIDTH - 1u);
-	const u32 wrappedY = static_cast<u32>(y) & (GX_GPU_VRAM_HEIGHT - 1u);
-	return static_cast<size_t>(wrappedY) * static_cast<size_t>(GX_GPU_VRAM_WIDTH) + static_cast<size_t>(wrappedX);
+inline size_t gxGpuSoftwareVramIndex(
+	const GxGpuSoftwareState& software,
+	i32 x,
+	i32 y) {
+	const u32 wrappedX = static_cast<u32>(x) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
+	const size_t logicalIndex =
+		static_cast<size_t>(static_cast<u32>(y)) * static_cast<size_t>(GX_GPU_VRAM_X_ADDRESS_PERIOD)
+		+ static_cast<size_t>(wrappedX);
+	return logicalIndex & software.vramWordMask;
 }
 
 inline u16 gxGpuSoftwareRgb888WordToRgb555(u32 word) {
@@ -43,13 +47,18 @@ inline u32 gxGpuSoftwareTextureModulationChannel5(u32 texture5, u32 vertex8, i32
 	return channel5 < 31u ? channel5 : 31u;
 }
 
-inline void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, bool checkMaskBit, bool setMaskBit) {
-	const u16 dstWord = g_gxGpuSoftwareVram[index];
+inline void gxGpuSoftwareWriteMaskedVramWord(
+	GxGpuSoftwareState& software,
+	size_t index,
+	u32 word,
+	bool checkMaskBit,
+	bool setMaskBit) {
+	const u16 dstWord = software.vram[index];
 	if (checkMaskBit && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
 	const u32 maskBit = setMaskBit ? 0x8000u : word & 0x8000u;
-	g_gxGpuSoftwareVram[index] = static_cast<u16>((word & 0x7fffu) | maskBit);
+	software.vram[index] = static_cast<u16>((word & 0x7fffu) | maskBit);
 }
 
 inline u32 gxGpuSoftwareBlendRgb555(u32 sourceWord, u32 destinationWord, u32 blendMode) {
@@ -88,9 +97,20 @@ inline u32 gxGpuSoftwareBlendRgb555(u32 sourceWord, u32 destinationWord, u32 ble
 	return color & 0x7fffu;
 }
 
-inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32 b5, bool blendEnabled, u32 blendMode, bool checkMaskBit, bool setMaskBit, u32 outputMaskBit) {
-	const size_t index = gxGpuSoftwareVramIndex(x, y);
-	const u32 dstWord = g_gxGpuSoftwareVram[index];
+inline void gxGpuSoftwareWriteRenderVramPixel5(
+	GxGpuSoftwareState& software,
+	i32 x,
+	i32 y,
+	u32 r5,
+	u32 g5,
+	u32 b5,
+	bool blendEnabled,
+	u32 blendMode,
+	bool checkMaskBit,
+	bool setMaskBit,
+	u32 outputMaskBit) {
+	const size_t index = gxGpuSoftwareVramIndex(software, x, y);
+	const u32 dstWord = software.vram[index];
 	if (checkMaskBit && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
@@ -99,7 +119,7 @@ inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32
 		color = gxGpuSoftwareBlendRgb555(color, dstWord, blendMode);
 	}
 	const u32 maskBit = setMaskBit ? 0x8000u : outputMaskBit & 0x8000u;
-	g_gxGpuSoftwareVram[index] = static_cast<u16>(color | maskBit);
+	software.vram[index] = static_cast<u16>(color | maskBit);
 }
 
 inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
@@ -139,7 +159,18 @@ inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
 	}
 }
 
-inline void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 b8, bool ditherEnabled, bool blendEnabled, u32 blendMode, bool checkMaskBit, bool setMaskBit) {
+inline void gxGpuSoftwareWriteRenderVramPixel(
+	GxGpuSoftwareState& software,
+	i32 x,
+	i32 y,
+	u32 r8,
+	u32 g8,
+	u32 b8,
+	bool ditherEnabled,
+	bool blendEnabled,
+	u32 blendMode,
+	bool checkMaskBit,
+	bool setMaskBit) {
 	u32 r = r8;
 	u32 g = g8;
 	u32 b = b8;
@@ -152,7 +183,18 @@ inline void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 
 		g = ditheredG < 0 ? 0u : (ditheredG > 255 ? 255u : static_cast<u32>(ditheredG));
 		b = ditheredB < 0 ? 0u : (ditheredB > 255 ? 255u : static_cast<u32>(ditheredB));
 	}
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >> 3u, g >> 3u, b >> 3u, blendEnabled, blendMode, checkMaskBit, setMaskBit, 0u);
+	gxGpuSoftwareWriteRenderVramPixel5(
+		software,
+		x,
+		y,
+		r >> 3u,
+		g >> 3u,
+		b >> 3u,
+		blendEnabled,
+		blendMode,
+		checkMaskBit,
+		setMaskBit,
+		0u);
 }
 
 } // namespace bmsx

@@ -27,6 +27,7 @@ test('machine registry exposes the psx fixed hardware model', () => {
 		dmaCartRomBurstSetupCycles: 4,
 		imgDecCyclesPerOutputWord: 2,
 		ramBytes: 0x00400000,
+		gxGpuVramBytes: 0x00200000,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
 	assert.equal(PSX_MACHINE_SPEC.dmaRamCyclesPerWord, PSX_DMA_RAM_CYCLES_PER_WORD);

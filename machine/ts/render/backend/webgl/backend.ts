@@ -14,6 +14,7 @@ import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_unif
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, executeGxGpuVramCommands, registerGxGpuPass } from './gx_gpu';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
+import { GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT } from '../../../spec/gx/vram';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 const FBO_CACHE_DEPTH_ID_STRIDE = 0x1000000;
@@ -68,8 +69,14 @@ export class WebGLBackend implements GPUBackend {
 	private nextPipelineId = 1;
 	private _context: WebGL2RenderingContext;
 	public get context(): WebGL2RenderingContext { return this._context; }
-	constructor(public gl: WebGL2RenderingContext) {
+	public readonly gxGpuVramTextureRows: number;
+	public readonly gxGpuVramTextureRowMask: number;
+	public readonly gxGpuVramPhysicalWordMask: number;
+	constructor(public gl: WebGL2RenderingContext, gxGpuVramBytes: number) {
 		this._context = gl;
+		this.gxGpuVramTextureRows = gxGpuVramBytes / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT;
+		this.gxGpuVramTextureRowMask = this.gxGpuVramTextureRows - 1;
+		this.gxGpuVramPhysicalWordMask = (gxGpuVramBytes >>> 1) - 1;
 		gl.disable(gl.DITHER);
 		this.readbackFbo = gl.createFramebuffer()!;
 		for (let unit = 0; unit < 32; unit += 1) {

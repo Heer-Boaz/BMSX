@@ -17,6 +17,7 @@ uniform uint u_checkMaskBit;
 uniform uint u_setMaskBit;
 uniform uint u_ditherEnable;
 uniform uint u_skippedLineParity;
+uniform uint u_destinationYBase;
 flat in uvec2 v_uvPlaneBase;
 flat in uvec2 v_uvPlaneStepX;
 flat in uvec2 v_uvPlaneStepY;
@@ -37,14 +38,14 @@ struct TextureColor {
 };
 
 uint rawVramWord(uvec2 logicalCoord) {
-	uvec2 wrapped = logicalCoord & uvec2(1023u);
+	uvec2 wrapped = logicalCoord & uvec2(uint(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1), uint(GX_GPU_VRAM_TEXTURE_ROW_MASK));
 	vec4 rawPixel = texelFetch(u_vram, ivec2(wrapped), 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);
 }
 
 uint rawStorageVramWord(ivec2 storageCoord) {
-	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(1023), 0);
+	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1, GX_GPU_VRAM_TEXTURE_ROW_MASK), 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);
 }
@@ -119,7 +120,7 @@ vec4 encodeRgb555(uvec3 color5, uint outputMaskBit) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
-	ivec2 logicalCoord = storageCoord;
+	ivec2 logicalCoord = storageCoord + ivec2(0, int(u_destinationYBase));
 	if (uint(logicalCoord.y & 1) == u_skippedLineParity) {
 		discard;
 	}

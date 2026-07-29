@@ -12,7 +12,7 @@ constexpr u32 GX_GPU_PSGPU24 = 18u;
 constexpr u32 GX_GPU_PSMGX16 = 31u;
 
 namespace detail {
-constexpr u32 GX_GPU_VRAM_WORD_MASK = static_cast<u32>(GX_GPU_VRAM_WORD_COUNT - 1u);
+constexpr u32 GX_GPU_VRAM_ADDRESS_WORD_MASK = static_cast<u32>(GX_GPU_VRAM_ADDRESS_WORD_COUNT - 1u);
 } // namespace detail
 
 inline u32 gxGpuLocalMemoryAddress32(u32 baseWord, u32 pagesPerRow, u32 x, u32 y) {
@@ -30,7 +30,7 @@ inline u32 gxGpuLocalMemoryAddress32(u32 baseWord, u32 pagesPerRow, u32 x, u32 y
 		| ((pageY & 1u) << 1u)
 		| ((pageX & 6u) << 1u)
 		| ((pageY & 6u) << 3u);
-	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & detail::GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & detail::GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 namespace detail {
@@ -57,7 +57,7 @@ inline u32 gxGpuLocalMemoryAddress16(u32 baseWord, u32 pagesPerRow, u32 x, u32 y
 		| ((blockY & 2u) << 1u)
 		| ((blockY & 4u) << 2u);
 	return (baseWord + (page << 12u) + (block << 7u) + detail::localMemoryColumn16(pageX, pageY))
-		& detail::GX_GPU_VRAM_WORD_MASK;
+		& detail::GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 inline u32 gxGpuLocalMemoryAddress16S(u32 baseWord, u32 pagesPerRow, u32 x, u32 y) {
@@ -72,11 +72,11 @@ inline u32 gxGpuLocalMemoryAddress16S(u32 baseWord, u32 pagesPerRow, u32 x, u32 
 		| ((blockY & 2u) << 2u)
 		| ((blockX & 2u) << 3u);
 	return (baseWord + (page << 12u) + (block << 7u) + detail::localMemoryColumn16(pageX, pageY))
-		& detail::GX_GPU_VRAM_WORD_MASK;
+		& detail::GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 inline u32 gxGpuLocalMemoryAddressGx16(u32 baseWord, u32 framebufferWidth, u32 x, u32 y) {
-	return (baseWord + y * framebufferWidth + x) & detail::GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + y * framebufferWidth + x) & detail::GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 inline u32 gxGpuLocalMemoryAddressGpu24(u32 baseWord, u32 pagesPerRow, u32 pixelX, u32 y, u32 word) {

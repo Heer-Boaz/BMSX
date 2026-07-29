@@ -34,6 +34,7 @@ class AudioController;
 class Input;
 class BFont;
 class VideoPresenter;
+struct MachineModelSpec;
 
 /* ============================================================================
  * Framebuffer for video output
@@ -75,7 +76,7 @@ public:
 	void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) override;
 
 	// Create a backend for this platform
-	std::unique_ptr<GPUBackend> createBackend() override;
+	std::unique_ptr<GPUBackend> createBackend(u32 gxGpuVramByteCount) override;
 
 private:
 	Framebuffer& m_framebuffer;
@@ -111,6 +112,7 @@ struct InputState {
 class LibretroPlatform : public Platform {
 public:
 	LibretroPlatform(
+		const MachineModelSpec& machineModel,
 		BackendType backend_type,
 		retro_system_av_info& av_info,
 		bmsx_supervisor_request_line_t supervisorRequestLine,
@@ -217,6 +219,7 @@ private:
 	std::string m_system_dir;
 
 	// Output buffers
+	const MachineModelSpec& m_machine_model;
 	Framebuffer m_framebuffer;
 	LibretroAudioOutput m_audio_output;
 

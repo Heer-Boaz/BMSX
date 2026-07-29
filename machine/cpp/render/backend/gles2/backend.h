@@ -49,7 +49,7 @@ public:
 	using ProcAddress = void (*)();
 	using ProcAddressGetter = ProcAddress (*)(const char*);
 
-	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads);
+	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads, u32 gxGpuVramByteCount);
 	~OpenGLES2Backend() override;
 
 	BackendType type() const override { return BackendType::OpenGLES2; }
@@ -131,6 +131,7 @@ public:
 	GLuint backbuffer() const { return m_backbuffer_fbo; }
 	u32 contextGeneration() const { return m_context_generation; }
 	bool profilesGxUploads() const { return m_profile_gx_uploads; }
+	u32 gxGpuVramTextureRows() const { return m_gx_gpu_vram_texture_rows; }
 	bool readGxCpuToVramProfileFrame(u64 afterRenderFrameSerial, GxCpuToVramProfileFrame& frame) const;
 	void recordGxCpuToVramUpload(u64 logicalBytes, u64 hostCalls, u64 hostBytes, u64 cpuNanoseconds);
 
@@ -149,6 +150,7 @@ private:
 	i32 m_target_height = 0;
 	FrameStats m_stats{};
 	bool m_profile_gx_uploads = false;
+	u32 m_gx_gpu_vram_texture_rows = 0u;
 	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};

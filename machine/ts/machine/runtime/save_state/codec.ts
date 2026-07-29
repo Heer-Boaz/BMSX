@@ -73,8 +73,7 @@ import {
 	type GxGpuCommandBufferState,
 } from '../../devices/gx/gpu_command_buffer';
 import {
-	GX_GPU_VRAM_BYTE_COUNT,
-	GX_GPU_VRAM_WIDTH,
+	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 } from '../../../spec/gx/vram';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
@@ -87,15 +86,7 @@ import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
-import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
-import type { Runtime } from '../runtime';
-
-export const RUNTIME_SAVE_STATE_NON_RAM_WIRE_CAPACITY = 0x00c00000;
-
-export function runtimeSaveStateWireCapacity(ramByteCount: number, cartridgeRamByteCount: number): number {
-	return RUNTIME_SAVE_STATE_NON_RAM_WIRE_CAPACITY + ramByteCount + cartridgeRamByteCount;
-}
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
 
@@ -586,7 +577,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	const executedCommandCount = requireBoundedU32(requireObjectKey(object, 'executedCommandCount', label, `${label}.executedCommandCount`), `${label}.executedCommandCount`, 0, commandCount);
 	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, executedCommandCount);
 	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
-	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, GX_GPU_VRAM_WIDTH);
+	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, GX_GPU_VRAM_X_ADDRESS_PERIOD);
 	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, GX_GPU_TRANSFER_MAX_HEIGHT);
 	const readbackPixelCount = readbackWidth * readbackHeight;
 	const readbackPhase = requireBoundedU32(requireObjectKey(object, 'readbackPhase', label, `${label}.readbackPhase`), `${label}.readbackPhase`, 0, GX_GPU_READBACK_READY);
@@ -613,7 +604,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
 		readbackPhase,
 		readbackFenceCommandCount: requireBoundedU32(requireObjectKey(object, 'readbackFenceCommandCount', label, `${label}.readbackFenceCommandCount`), `${label}.readbackFenceCommandCount`, 0, commandCount),
-		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, GX_GPU_VRAM_WIDTH - 1),
+		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, GX_GPU_VRAM_X_ADDRESS_PERIOD - 1),
 		readbackY: requireBoundedU32(requireObjectKey(object, 'readbackY', label, `${label}.readbackY`), `${label}.readbackY`, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1),
 		readbackVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'readbackVramYAddressExtensionWord', label, `${label}.readbackVramYAddressExtensionWord`), `${label}.readbackVramYAddressExtensionWord`, 0, 1),
 		readbackWidth,
@@ -876,11 +867,11 @@ function encodeGxGpuSaveState(state: GxGpuSaveState): GxGpuSaveState {
 	};
 }
 
-function decodeGxGpuSaveState(value: unknown, label: string): GxGpuSaveState {
+function decodeGxGpuSaveState(value: unknown, label: string, vramByteCount: number): GxGpuSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeGxGpuState(value, label),
-		vramBytes: requireBinaryFixedLength(requireObjectKey(object, 'vramBytes', label, `${label}.vramBytes`), `${label}.vramBytes`, GX_GPU_VRAM_BYTE_COUNT),
+		vramBytes: requireBinaryFixedLength(requireObjectKey(object, 'vramBytes', label, `${label}.vramBytes`), `${label}.vramBytes`, vramByteCount),
 	};
 }
 
@@ -1299,14 +1290,14 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	};
 }
 
-function decodeMachineSaveState(value: unknown, label: string, ramByteCount: number): MachineSaveState {
+function decodeMachineSaveState(value: unknown, label: string, ramByteCount: number, vramByteCount: number): MachineSaveState {
 	const object = requireObject(value, label);
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory', ramByteCount),
 		cartridge: decodeCartridgeControllerState(requireObjectKey(object, 'cartridge', label, 'machineState.machine.cartridge'), 'machineState.machine.cartridge'),
 		dma: decodeDmaControllerState(requireObjectKey(object, 'dma', label, 'machineState.machine.dma'), 'machineState.machine.dma'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
-		gxGpu: decodeGxGpuSaveState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
+		gxGpu: decodeGxGpuSaveState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu', vramByteCount),
 		gxGte: decodeGxGteState(requireObjectKey(object, 'gxGte', label, 'machineState.machine.gxGte'), 'machineState.machine.gxGte'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
@@ -1326,10 +1317,10 @@ function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeS
 	};
 }
 
-function decodeRuntimeSaveMachineState(value: unknown, label: string, ramByteCount: number): RuntimeSaveMachineState {
+function decodeRuntimeSaveMachineState(value: unknown, label: string, ramByteCount: number, vramByteCount: number): RuntimeSaveMachineState {
 	const object = requireObject(value, label);
 	return {
-		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine', ramByteCount),
+		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine', ramByteCount, vramByteCount),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
 		frameLoop: decodeFrameLoopState(requireObjectKey(object, 'frameLoop', label, 'machineState.frameLoop'), 'machineState.frameLoop'),
 		schedulerNowCycles: requireI64(requireObjectKey(object, 'schedulerNowCycles', label, 'machineState.schedulerNowCycles'), 'machineState.schedulerNowCycles'),
@@ -1662,65 +1653,27 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	};
 }
 
-function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState {
-	return {
+export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
+	return encodeBinaryWithPropTable({
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
 		pendingEntryCall: state.pendingEntryCall,
-	};
-}
-
-function decodeRuntimeSaveStateValue(value: unknown, label: string, ramByteCount: number): RuntimeSaveState {
-	const object = requireObject(value, label);
-	return {
-		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState', ramByteCount),
-		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
-		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,
-	};
-}
-
-export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
-	const bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	const machineState = state.machineState.machine;
-	let cartridgeRamByteCount = 0;
-	for (let slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; slotIndex += 1) {
-		cartridgeRamByteCount += machineState.cartridge.slots[slotIndex].ram.byteLength;
-	}
-	if (bytes.byteLength > runtimeSaveStateWireCapacity(
-		machineState.memory.ram.byteLength,
-		cartridgeRamByteCount,
-	)) {
-		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
-	}
-	return bytes;
+	}, RUNTIME_SAVE_STATE_PROP_NAMES);
 }
 
 export function decodeRuntimeSaveState(
 	bytes: Uint8Array,
 	ramByteCount: number,
-	cartridgeRamByteCount: number,
+	vramByteCount: number,
 ): RuntimeSaveState {
-	if (bytes.byteLength > runtimeSaveStateWireCapacity(ramByteCount, cartridgeRamByteCount)) {
-		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
-	}
-	return decodeRuntimeSaveStateValue(
+	const label = 'runtimeSaveState';
+	const object = requireObject(
 		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
-		'runtimeSaveState',
-		ramByteCount,
+		label,
 	);
-}
-
-export function captureRuntimeSaveStateBytes(runtime: Runtime): Uint8Array {
-	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-}
-
-export function applyRuntimeSaveStateBytes(runtime: Runtime, bytes: Uint8Array): void {
-	applyRuntimeSaveState(
-		runtime,
-		decodeRuntimeSaveState(
-			bytes,
-			runtime.machine.memory.ramByteCount(),
-			runtime.machine.cartridgeController.ramByteCount(),
-		),
-	);
+	return {
+		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState', ramByteCount, vramByteCount),
+		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
+		pendingEntryCall: requireBooleanValue(requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall'), 'runtimeSaveState.pendingEntryCall'),
+	};
 }

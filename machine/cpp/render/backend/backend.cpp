@@ -132,7 +132,12 @@ static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* 
  * SoftwareBackend implementation
  * ============================================================================ */
 
-SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch)
+SoftwareBackend::SoftwareBackend(
+	u32* framebuffer,
+	i32 width,
+	i32 height,
+	i32 pitch,
+	size_t gxGpuVramByteCount)
 	: m_default_framebuffer(framebuffer)
 	, m_default_width(width)
 	, m_default_height(height)
@@ -140,7 +145,12 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 	, m_framebuffer(framebuffer)
 	, m_width(width)
 	, m_height(height)
-	, m_pitch(pitch) {
+	, m_pitch(pitch)
+	, m_gx_gpu_software(
+		gxGpuVramByteCount,
+		static_cast<size_t>(width) * static_cast<size_t>(height)) {
+	m_gx_gpu_software.interlacedWidth = width;
+	m_gx_gpu_software.interlacedHeight = height;
 }
 
 SoftwareBackend::~SoftwareBackend() = default;
@@ -165,6 +175,11 @@ void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) 
 	m_default_width = width;
 	m_default_height = height;
 	m_default_pitch = pitch;
+	m_gx_gpu_software.interlacedPixels.resize(
+		static_cast<size_t>(width) * static_cast<size_t>(height));
+	m_gx_gpu_software.interlacedWidth = width;
+	m_gx_gpu_software.interlacedHeight = height;
+	m_gx_gpu_software.interlacedValid = false;
 	applyFramebufferTarget(fb, width, height, pitch);
 }
 

@@ -6,6 +6,7 @@ uniform sampler2D u_source;
 uniform sampler2D u_vram;
 uniform uint u_checkMaskBit;
 uniform uint u_setMaskBit;
+uniform uint u_destinationYBase;
 #ifdef GX_GPU_CPU_UPLOAD_SOURCE
 uniform uvec4 u_upload;
 #endif
@@ -14,12 +15,15 @@ out vec4 outputColor;
 
 uint rawSourceLogicalWord(ivec2 logicalCoord) {
 #ifdef GX_GPU_CPU_UPLOAD_SOURCE
-	uint logicalX = uint(logicalCoord.x - int(u_upload.x)) & 1023u;
+	uint logicalX = uint(logicalCoord.x - int(u_upload.x)) & uint(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
 	uint logicalY = uint(logicalCoord.y - int(u_upload.y)) & (u_upload.w - 1u);
 	uint pixelIndex = logicalY * u_upload.z + logicalX;
-	ivec2 wrapped = ivec2(int(pixelIndex & 1023u), int(pixelIndex >> 10u));
+	ivec2 wrapped = ivec2(
+		int(pixelIndex % uint(GX_GPU_VRAM_X_ADDRESS_PERIOD)),
+		int(pixelIndex / uint(GX_GPU_VRAM_X_ADDRESS_PERIOD))
+	);
 #else
-	ivec2 wrapped = logicalCoord & ivec2(1023);
+	ivec2 wrapped = logicalCoord & ivec2(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1, GX_GPU_VRAM_TEXTURE_ROW_MASK);
 #endif
 	vec4 rawPixel = texelFetch(u_source, wrapped, 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
@@ -27,7 +31,7 @@ uint rawSourceLogicalWord(ivec2 logicalCoord) {
 }
 
 uint rawVramStorageWord(ivec2 storageCoord) {
-	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(1023), 0);
+	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1, GX_GPU_VRAM_TEXTURE_ROW_MASK), 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);
 }
@@ -43,7 +47,7 @@ vec4 encodeRgb555(uvec3 color5, uint outputMaskBit) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
-	ivec2 destinationLogical = storageCoord;
+	ivec2 destinationLogical = storageCoord + ivec2(0, int(u_destinationYBase));
 	uint sourceWord = rawSourceLogicalWord(destinationLogical + v_sourceOffset);
 	if (u_checkMaskBit != 0u && (rawVramStorageWord(storageCoord) & 0x8000u) != 0u) {
 		discard;

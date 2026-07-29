@@ -27,6 +27,7 @@ import {
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,
 } from '../../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { startCpuProfileHostFrames } from './cpu_profile_frame';
 import {
 	HeadlessCaptureCoordinator,
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
 		startingGamepadIndex: -1,
 		enableOnscreenGamepad: false,
 		platform,
+		machineModel: PSX_MACHINE_SPEC,
 	};
 	const inputLogger = (message: string): void => {
 		console.log(`[bootrom:headless:input] ${message}`);

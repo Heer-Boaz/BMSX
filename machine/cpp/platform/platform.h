@@ -92,7 +92,7 @@ public:
 	virtual auto onResize(std::function<void(const ViewportDimensions&)> handler) -> SubscriptionHandle = 0;
 	virtual void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) = 0;
 
-	virtual auto createBackend() -> std::unique_ptr<GPUBackend> = 0;
+	virtual auto createBackend(u32 gxGpuVramByteCount) -> std::unique_ptr<GPUBackend> = 0;
 };
 
 /* ============================================================================

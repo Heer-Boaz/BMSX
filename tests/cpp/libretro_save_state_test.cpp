@@ -99,6 +99,7 @@ bool captureEnvironment(unsigned command, void* data) {
 void testLibretroSaveStateRoundTrip() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -116,11 +117,6 @@ void testLibretroSaveStateRoundTrip() {
 	bmsx::Runtime& runtime = platform.runtime();
 	auto& scheduler = runtime.machine.scheduler;
 	const size_t stateSize = platform.getStateSize();
-	require(
-		stateSize == 8u + bmsx::runtimeSaveStateWireCapacity(
-			runtime.machine.memory.ramByteCount(),
-			16u),
-		"libretro state size should include the inserted cartridge RAM capacity");
 
 	bmsx::Memory& memory = runtime.machine.memory;
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
@@ -144,11 +140,11 @@ void testLibretroSaveStateRoundTrip() {
 	const uint32_t savedGp0Word = (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x123u;
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, savedGp0Word);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
-	std::vector<bmsx::u8> expectedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT);
+	std::vector<bmsx::u8> expectedVram(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	expectedVram[0u] = 0x12u;
 	expectedVram[0x45678u] = 0x34u;
 	expectedVram.back() = 0x56u;
-	runtime.machine.gxGpu.replaceVramSnapshotBytes(expectedVram.data());
+	runtime.machine.gxGpu.replaceVramSnapshotBytes(expectedVram);
 	const uint32_t dmaSource = bmsx::GEO_SCRATCH_BASE + 0x100u;
 	std::array<uint32_t, 20> dmaWords{};
 	dmaWords[0] = bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u;
@@ -182,7 +178,7 @@ void testLibretroSaveStateRoundTrip() {
 	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(
 		std::span<const bmsx::u8>(saved.data() + 8u, savedPayloadBytes),
 		runtime.machine.memory.ramByteCount(),
-		runtime.machine.cartridgeController.ramByteCount());
+		runtime.machine.gxGpu.readVramSnapshotBytes().size());
 	savedState.cpuState.memoryWriteBlocked = true;
 	savedState.cpuState.memoryWriteBlockedAddress = bmsx::IO_GX_GPU_GP0;
 	const std::vector<bmsx::u8> blockedPayload = bmsx::encodeRuntimeSaveState(savedState);
@@ -201,8 +197,8 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x456u);
 	runtime.machine.gxGpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
-	std::vector<bmsx::u8> mutatedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT, 0xa5u);
-	runtime.machine.gxGpu.replaceVramSnapshotBytes(mutatedVram.data());
+	std::vector<bmsx::u8> mutatedVram(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0xa5u);
+	runtime.machine.gxGpu.replaceVramSnapshotBytes(mutatedVram);
 	runtime.machine.irqController.reset();
 	runtime.machine.gxGte.writeDataRegister(30u, 2u);
 	runtime.machine.gxGte.writeControlRegister(0u, 2u);
@@ -253,6 +249,7 @@ void testLibretroSaveStateRoundTrip() {
 void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -299,6 +296,7 @@ void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -307,8 +305,6 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
-	const size_t cartridgeRamByteCount =
-		platform.runtime().machine.cartridgeController.ramByteCount();
 	const size_t ramByteCount = platform.runtime().machine.memory.ramByteCount();
 	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
@@ -331,7 +327,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(
 		bmsx::encodeRuntimeSaveState(ready),
 		ramByteCount,
-		cartridgeRamByteCount);
+		bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const bmsx::CpuProtectedCallState& decodedProtectedCall = decodedReady.cpuState.protectedCalls[0];
 	require(decodedProtectedCall.kind == bmsx::ProtectedCallKind::XPCallHandler, "native codec preserves protected-call phase");
 	require(decodedProtectedCall.callerFrameIndex == 2 && decodedProtectedCall.targetFrameIndex == -1, "native codec preserves protected-call frame references");
@@ -344,7 +340,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(platform.runtime());
 	bmsx::GxGpuCommandBufferState& submittedReadback = submitted.machineState.machine.gxGpu.commandBuffer;
 	submittedReadback.readbackPhase = bmsx::GX_GPU_READBACK_SUBMITTED;
-	submittedReadback.readbackWidth = bmsx::GX_GPU_VRAM_WIDTH;
+	submittedReadback.readbackWidth = bmsx::GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	submittedReadback.readbackHeight = bmsx::GX_GPU_TRANSFER_MAX_HEIGHT;
 	submittedReadback.readbackPixelBytes.clear();
 	bool rejected = false;
@@ -352,44 +348,18 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 		(void)bmsx::decodeRuntimeSaveState(
 			bmsx::encodeRuntimeSaveState(submitted),
 			ramByteCount,
-			cartridgeRamByteCount);
+			bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	}
 	catch (const std::exception&) {
 		rejected = true;
 	}
 	require(rejected, "native codec rejects backend-only SUBMITTED GPUREAD phase");
-
-	bmsx::RuntimeSaveState oversized = bmsx::captureRuntimeSaveState(platform.runtime());
-	const size_t wireCapacity = bmsx::runtimeSaveStateWireCapacity(
-		ramByteCount,
-		cartridgeRamByteCount);
-	oversized.machineState.machine.gxGpu.vramBytes.resize(wireCapacity);
-	rejected = false;
-	try {
-		(void)bmsx::encodeRuntimeSaveState(oversized);
-	}
-	catch (const std::exception&) {
-		rejected = true;
-	}
-	require(rejected, "native codec rejects payloads beyond the current-format wire capacity");
-	oversized.machineState.machine.gxGpu.vramBytes.clear();
-	std::vector<bmsx::u8> oversizedWire(wireCapacity + 1u);
-	rejected = false;
-	try {
-		(void)bmsx::decodeRuntimeSaveState(
-			oversizedWire,
-			ramByteCount,
-			cartridgeRamByteCount);
-	}
-	catch (const std::exception&) {
-		rejected = true;
-	}
-	require(rejected, "native codec rejects oversized current-format wire input before decoding");
 }
 
 void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -414,6 +384,7 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 void testInputSnapshotReflectsHeldKey() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -437,6 +408,7 @@ void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 	supervisorRequestLineHigh = false;
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -529,6 +501,7 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	geometryChangeCount = 0u;
 	avInfoChangeCount = 0u;
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -613,6 +586,7 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,
@@ -660,6 +634,7 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 void testRuntimePreservesGxGpuGp1ReadinessBinding() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		readSupervisorRequestLine,

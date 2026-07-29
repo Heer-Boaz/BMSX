@@ -1,5 +1,4 @@
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../../common/hash';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../../spec/gx/vram';
 
 const GX_GPU_VRAM_POWER_ON_BLOCK_BYTES = 32;
 const GX_GPU_VRAM_POWER_ON_BLOCK_WORDS = GX_GPU_VRAM_POWER_ON_BLOCK_BYTES >>> 2;
@@ -16,7 +15,7 @@ export function initializeGxGpuVramPowerOn(vramBytes: Uint8Array): void {
 	let rowHash = 0;
 	let macroHash = 0;
 	let preferredWord = 0;
-	const blockCount = GX_GPU_VRAM_BYTE_COUNT >>> 5;
+	const blockCount = vramBytes.byteLength >>> 5;
 	for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
 		if ((blockIndex & 0x7ff) === 0) {
 			const macroIndex = blockIndex >>> 11;

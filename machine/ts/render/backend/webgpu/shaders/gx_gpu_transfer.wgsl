@@ -3,6 +3,10 @@ struct TransferUniforms {
 	upload: vec4<u32>,
 };
 
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramYAddressPeriod: u32;
+override gxGpuVramTextureRowMask: i32;
+
 @group(0) @binding(0) var<uniform> u: TransferUniforms;
 @group(0) @binding(1) var u_source: texture_2d<f32>;
 @group(0) @binding(2) var u_vram: texture_2d<f32>;
@@ -21,23 +25,31 @@ struct VSOut {
 @vertex
 fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
-	let clip = vec2<f32>((input.position.x / 512.0) - 1.0, 1.0 - (input.position.y / 512.0));
+	let clip = vec2<f32>(
+		(input.position.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (input.position.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.sourceOffset = vec2<i32>(input.sourceOffset);
 	return out;
 }
 
 fn rawWord(texture: texture_2d<f32>, coord: vec2<i32>) -> u32 {
-	let rawPixel = textureLoad(texture, coord & vec2<i32>(1023), 0);
+	let rawPixel = textureLoad(texture, coord, 0);
 	let bytes = vec2<u32>(rawPixel.rg * vec2<f32>(255.0) + vec2<f32>(0.5));
 	return bytes.x | (bytes.y << 8u);
 }
 
+fn rawVramWord(coord: vec2<i32>) -> u32 {
+	return rawWord(u_vram, coord & vec2<i32>(i32(gxGpuVramXAddressPeriod - 1u), gxGpuVramTextureRowMask));
+}
+
 fn rawUploadWord(destination: vec2<i32>) -> u32 {
-	let logicalX = u32(destination.x - i32(u.upload.x)) & 1023u;
+	let logicalX = u32(destination.x - i32(u.upload.x)) & (gxGpuVramXAddressPeriod - 1u);
 	let logicalY = u32(destination.y - i32(u.upload.y)) & (u.upload.w - 1u);
 	let pixelIndex = logicalY * u.upload.z + logicalX;
-	return rawWord(u_source, vec2<i32>(i32(pixelIndex & 1023u), i32(pixelIndex >> 10u)));
+	return rawWord(u_source, vec2<i32>(
+		i32(pixelIndex % gxGpuVramXAddressPeriod),
+		i32(pixelIndex / gxGpuVramXAddressPeriod)));
 }
 
 fn decodeRgb555To5(word: u32) -> vec3<u32> {
@@ -51,18 +63,19 @@ fn encodeRgb555(color5: vec3<u32>, outputMaskBit: u32) -> vec4<f32> {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	let destination = vec2<i32>(input.position.xy);
-	let sourceWord = rawWord(u_source, destination + input.sourceOffset);
-	if (u.params.x != 0u && (rawWord(u_vram, destination) & 0x8000u) != 0u) { discard; }
+	let destination = vec2<i32>(input.position.xy) + vec2<i32>(0, i32(u.params.z));
+	let sourceWord = rawWord(u_source, (destination + input.sourceOffset)
+		& vec2<i32>(i32(gxGpuVramXAddressPeriod - 1u), gxGpuVramTextureRowMask));
+	if (u.params.x != 0u && (rawVramWord(destination) & 0x8000u) != 0u) { discard; }
 	let outputMaskBit = select(sourceWord >> 15u, 1u, u.params.y != 0u);
 	return encodeRgb555(decodeRgb555To5(sourceWord), outputMaskBit);
 }
 
 @fragment
 fn fs_cpu_upload(input: VSOut) -> @location(0) vec4<f32> {
-	let destination = vec2<i32>(input.position.xy);
+	let destination = vec2<i32>(input.position.xy) + vec2<i32>(0, i32(u.params.z));
 	let sourceWord = rawUploadWord(destination);
-	if (u.params.x != 0u && (rawWord(u_vram, destination) & 0x8000u) != 0u) { discard; }
+	if (u.params.x != 0u && (rawVramWord(destination) & 0x8000u) != 0u) { discard; }
 	let outputMaskBit = select(sourceWord >> 15u, 1u, u.params.y != 0u);
 	return encodeRgb555(decodeRgb555To5(sourceWord), outputMaskBit);
 }

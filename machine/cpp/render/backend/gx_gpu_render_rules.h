@@ -125,33 +125,44 @@ inline u32 gxGpuFillHeight(u32 sizeWord) {
 }
 
 inline u32 gxGpuVramWrappedWidth(u32 x, u32 width) {
-	const u32 edgeWidth = GX_GPU_VRAM_WIDTH - x;
+	const u32 edgeWidth = GX_GPU_VRAM_X_ADDRESS_PERIOD - x;
 	return width <= edgeWidth ? width : edgeWidth;
 }
 
-inline u32 gxGpuVramWrappedHeight(u32 y, u32 height, u32 vramYAddressExtensionWord) {
-	const u32 logicalY = gxGpuVramYAddress(y, vramYAddressExtensionWord);
-	const u32 edgeHeight = gxGpuVramYAddressMask(vramYAddressExtensionWord) + 1u - logicalY;
+inline u32 gxGpuVramWrappedHeight(u32 y, u32 height, u32 vramYAddressExtensionWord, u32 textureRowMask) {
+	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const u32 logicalY = y & yAddressMask;
+	const u32 edgeHeight = yAddressMask + 1u - logicalY;
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
-inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 height, i32 left, i32 top, i32 right, i32 bottom, u32 vramYAddressExtensionWord) {
+inline bool gxGpuVramLogicalAreaOverlapsBounds(
+	u32 x,
+	u32 y,
+	u32 width,
+	u32 height,
+	i32 left,
+	i32 top,
+	i32 right,
+	i32 bottom,
+	u32 vramYAddressExtensionWord,
+	u32 textureRowMask) {
 	if (right <= left || bottom <= top) return false;
-	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord);
+	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
 	u32 boundsY = static_cast<u32>(top) & yAddressMask;
 	u32 remainingBoundsHeight = static_cast<u32>(bottom - top);
 	while (remainingBoundsHeight != 0u) {
-		const u32 boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord);
+		const u32 boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord, textureRowMask);
 		u32 rowY = y & yAddressMask;
 		u32 remainingHeight = height;
 		while (remainingHeight != 0u) {
-			const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord);
-			u32 columnX = x & (GX_GPU_VRAM_WIDTH - 1u);
+			const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord, textureRowMask);
+			u32 columnX = x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 			u32 remainingWidth = width;
 			while (remainingWidth != 0u) {
 				const u32 runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
 				if (static_cast<i32>(columnX) < right && left < static_cast<i32>(columnX + runWidth) && rowY < boundsY + boundsRunHeight && boundsY < rowY + runHeight) return true;
-				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1u);
+				columnX = (columnX + runWidth) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 				remainingWidth -= runWidth;
 			}
 			rowY = (rowY + runHeight) & yAddressMask;
@@ -163,19 +174,46 @@ inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 heig
 	return false;
 }
 
-inline bool gxGpuSpansOverlap(u32 startA, u32 endA, u32 startB, u32 endB) {
-	return startA < endB && startB < endA;
+inline bool gxGpuVramCopyNeedsChunking(
+	u32 sourceX,
+	u32 sourceY,
+	u32 targetX,
+	u32 targetY,
+	u32 width,
+	u32 height,
+	u32 vramYAddressExtensionWord,
+	u32 textureRowMask
+) {
+	constexpr u32 xAddressMask = GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u;
+	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const u32 physicalSourceX = sourceX & xAddressMask;
+	const u32 physicalTargetX = targetX & xAddressMask;
+	const u32 physicalSourceY = sourceY & yAddressMask;
+	const u32 physicalTargetY = targetY & yAddressMask;
+	const u32 sourceToTargetX = (physicalTargetX - physicalSourceX) & xAddressMask;
+	const u32 targetToSourceX = (physicalSourceX - physicalTargetX) & xAddressMask;
+	const u32 sourceToTargetY = (physicalTargetY - physicalSourceY) & yAddressMask;
+	const u32 targetToSourceY = (physicalSourceY - physicalTargetY) & yAddressMask;
+	return physicalSourceY != physicalTargetY
+		&& (sourceToTargetX < width || targetToSourceX < width)
+		&& (sourceToTargetY < height || targetToSourceY < height);
 }
 
-inline bool gxGpuVramCopyNeedsChunking(u32 sourceX, u32 sourceY, u32 targetX, u32 targetY, u32 width, u32 height) {
-	return sourceX != targetX
-		&& sourceY != targetY
-		&& gxGpuSpansOverlap(sourceX, sourceX + width, targetX, targetX + width)
-		&& gxGpuSpansOverlap(sourceY, sourceY + height, targetY, targetY + height);
-}
-
-inline u32 gxGpuVramCopyChunkHeight(u32 sourceY, u32 targetY, u32 height) {
-	const u32 rowDistance = sourceY > targetY ? sourceY - targetY : targetY - sourceY;
+inline u32 gxGpuVramCopyChunkHeight(
+	u32 sourceY,
+	u32 targetY,
+	u32 height,
+	u32 vramYAddressExtensionWord,
+	u32 textureRowMask
+) {
+	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const u32 physicalSourceY = sourceY & yAddressMask;
+	const u32 physicalTargetY = targetY & yAddressMask;
+	const u32 forwardRowDistance = (physicalTargetY - physicalSourceY) & yAddressMask;
+	const u32 backwardRowDistance = (physicalSourceY - physicalTargetY) & yAddressMask;
+	const u32 rowDistance = forwardRowDistance < backwardRowDistance
+		? forwardRowDistance
+		: backwardRowDistance;
 	return rowDistance < height ? rowDistance : height;
 }
 

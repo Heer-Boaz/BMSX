@@ -1,6 +1,6 @@
 import {
-	GX_GPU_VRAM_HEIGHT,
-	GX_GPU_VRAM_WIDTH,
+	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
+	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 } from '../../machine/ts/spec/gx/vram';
 import {
 	GX_SYSTEM_VRAM_HEIGHT,
@@ -48,9 +48,9 @@ function rectsOverlap(left: GxVramRect, right: GxVramRect): boolean {
 function assertVramRect(name: string, rect: GxVramRect): void {
 	if (rect.width <= 0 || rect.height <= 0
 		|| rect.x < 0 || rect.y < 0
-		|| rect.x + rect.width > GX_GPU_VRAM_WIDTH
-		|| rect.y + rect.height > GX_GPU_VRAM_HEIGHT) {
-		throw new Error(`[RomPacker] GX VRAM rectangle '${name}' is outside ${GX_GPU_VRAM_WIDTH}x${GX_GPU_VRAM_HEIGHT} VRAM.`);
+		|| rect.x + rect.width > GX_GPU_VRAM_X_ADDRESS_PERIOD
+		|| rect.y + rect.height > GX_GPU_VRAM_Y_ADDRESS_PERIOD) {
+		throw new Error(`[RomPacker] GX VRAM rectangle '${name}' is outside ${GX_GPU_VRAM_X_ADDRESS_PERIOD}x${GX_GPU_VRAM_Y_ADDRESS_PERIOD} VRAM.`);
 	}
 }
 

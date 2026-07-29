@@ -30,8 +30,8 @@ export class CLIVideoOutput implements VideoOutput {
 		this.surface = this.delegate.surface;
 	}
 
-	async createBackend() {
-		return this.delegate.createBackend();
+	async createBackend(gxGpuVramBytes: number) {
+		return this.delegate.createBackend(gxGpuVramBytes);
 	}
 
 	presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {

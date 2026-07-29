@@ -104,7 +104,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	const cpu = new CPU(memory, irq, executionAddressSpace);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
-	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma);
+	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	dma.reset();
 	gpu.reset();
 	irq.reset();

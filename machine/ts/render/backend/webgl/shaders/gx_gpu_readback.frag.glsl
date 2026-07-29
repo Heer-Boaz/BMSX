@@ -8,10 +8,12 @@ uniform uint u_vramYAddressExtensionWord;
 out vec4 outputColor;
 
 vec2 readRawPixel(uvec2 transferCoord) {
-	uint x = (u_readback.x + transferCoord.x) & 1023u;
-	uint yAddressMask = u_vramYAddressExtensionWord != 0u ? 1023u : 511u;
+	uint x = (u_readback.x + transferCoord.x) & uint(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
+	uint yAddressMask = u_vramYAddressExtensionWord != 0u
+		? uint(GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1)
+		: uint(GX_GPU_VRAM_Y_ADDRESS_EXTENSION_BIT - 1);
 	uint logicalY = (u_readback.y + transferCoord.y) & yAddressMask;
-	return texelFetch(u_vram, ivec2(int(x), int(logicalY)), 0).rg;
+	return texelFetch(u_vram, ivec2(int(x), int(logicalY & uint(GX_GPU_VRAM_TEXTURE_ROW_MASK))), 0).rg;
 }
 
 void main() {

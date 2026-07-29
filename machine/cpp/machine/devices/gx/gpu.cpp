@@ -26,21 +26,27 @@ constexpr u32 GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD = GX_GPU_STATUS_VERTICAL_RESO
 
 } // namespace
 
-GxGpu::GxGpu(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController)
+GxGpu::GxGpu(
+	Memory& memory,
+	CPU& cpu,
+	IrqController& irq,
+	DeviceScheduler& scheduler,
+	DmaController& dmaController,
+	u32 vramByteCount)
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_irq(irq)
 	, m_scheduler(scheduler)
 	, m_dmaController(dmaController)
 	, m_commandBuffer(dmaController)
-	, m_vramSnapshotBytes(std::make_unique<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>>())
+	, m_vramSnapshotBytes(vramByteCount)
 	, m_deviceOutput(
 		m_commandBuffer,
 		m_commandBuffer.readback,
 		m_pcrtc.presentWords(),
 		m_pcrtc.timing,
 		m_pcrtc.scanout,
-		*m_vramSnapshotBytes) {
+		m_vramSnapshotBytes) {
 	m_userIngressContext.commandBufferWords.reset(new std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY>);
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
@@ -62,7 +68,7 @@ void GxGpu::reset() {
 	m_vramYAddressExtensionWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
-	initializeGxGpuVramPowerOn(m_vramSnapshotBytes->data());
+	initializeGxGpuVramPowerOn(m_vramSnapshotBytes);
 	publishVramSnapshotRevision();
 	publishVramReplacementRevision();
 	clearGp0CommandState();
@@ -487,24 +493,24 @@ void GxGpu::leaveSupervisorContext() {
 GxGpuSaveState GxGpu::captureSaveState() {
 	GxGpuSaveState state;
 	static_cast<GxGpuState&>(state) = captureState();
-	state.vramBytes.assign(m_vramSnapshotBytes->begin(), m_vramSnapshotBytes->end());
+	state.vramBytes = m_vramSnapshotBytes;
 	return state;
 }
 
 void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
 	restoreState(state);
-	replaceVramSnapshotBytes(state.vramBytes.data());
+	replaceVramSnapshotBytes(state.vramBytes);
 }
 
-void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
-	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes->begin());
+void GxGpu::replaceVramSnapshotBytes(std::span<const u8> bytes) {
+	std::copy_n(bytes.begin(), m_vramSnapshotBytes.size(), m_vramSnapshotBytes.begin());
 	publishVramSnapshotRevision();
 	publishVramReplacementRevision();
 	m_vramPresentationPending = true;
 }
 
-u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount) {
-	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes->begin());
+u64 GxGpu::commitRenderedVramSnapshotBytes(std::span<const u8> bytes, size_t renderedCommandCount) {
+	std::copy_n(bytes.begin(), m_vramSnapshotBytes.size(), m_vramSnapshotBytes.begin());
 	publishVramSnapshotRevision();
 	if (renderedCommandCount != 0u) {
 		retireCommandPrefix(renderedCommandCount);

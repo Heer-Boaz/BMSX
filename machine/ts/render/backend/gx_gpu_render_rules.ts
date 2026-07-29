@@ -6,7 +6,7 @@ import {
 	gxGpuTextureAttribute,
 } from '../../spec/gx/gp0';
 import {
-	GX_GPU_VRAM_WIDTH,
+	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 	gxGpuVramYAddress,
 	gxGpuVramYAddressMask,
 } from '../../spec/gx/vram';
@@ -133,33 +133,34 @@ export function gxGpuFillHeight(sizeWord: number): number {
 }
 
 export function gxGpuVramWrappedWidth(x: number, width: number): number {
-	const edgeWidth = GX_GPU_VRAM_WIDTH - x;
+	const edgeWidth = GX_GPU_VRAM_X_ADDRESS_PERIOD - x;
 	return width <= edgeWidth ? width : edgeWidth;
 }
 
-export function gxGpuVramWrappedHeight(y: number, height: number, vramYAddressExtensionWord: number): number {
-	const logicalY = gxGpuVramYAddress(y, vramYAddressExtensionWord);
-	const edgeHeight = gxGpuVramYAddressMask(vramYAddressExtensionWord) + 1 - logicalY;
+export function gxGpuVramWrappedHeight(y: number, height: number, vramYAddressExtensionWord: number, textureRowMask: number): number {
+	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const logicalY = y & yAddressMask;
+	const edgeHeight = yAddressMask + 1 - logicalY;
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
-export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number, vramYAddressExtensionWord: number): boolean {
+export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number, vramYAddressExtensionWord: number, textureRowMask: number): boolean {
 	if (right <= left || bottom <= top) return false;
-	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord);
+	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
 	let boundsY = top & yAddressMask;
 	let remainingBoundsHeight = bottom - top;
 	while (remainingBoundsHeight !== 0) {
-		const boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord);
+		const boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord, textureRowMask);
 		let rowY = y & yAddressMask;
 		let remainingHeight = height;
 		while (remainingHeight !== 0) {
-			const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord);
-			let columnX = x & (GX_GPU_VRAM_WIDTH - 1);
+			const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord, textureRowMask);
+			let columnX = x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
 			let remainingWidth = width;
 			while (remainingWidth !== 0) {
 				const runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
 				if (columnX < right && left < columnX + runWidth && rowY < boundsY + boundsRunHeight && boundsY < rowY + runHeight) return true;
-				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
+				columnX = (columnX + runWidth) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
 				remainingWidth -= runWidth;
 			}
 			rowY = (rowY + runHeight) & yAddressMask;
@@ -171,19 +172,44 @@ export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: 
 	return false;
 }
 
-export function gxGpuSpansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
-	return startA < endB && startB < endA;
+export function gxGpuVramCopyNeedsChunking(
+	sourceX: number,
+	sourceY: number,
+	targetX: number,
+	targetY: number,
+	width: number,
+	height: number,
+	vramYAddressExtensionWord: number,
+	textureRowMask: number,
+): boolean {
+	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const xAddressMask = GX_GPU_VRAM_X_ADDRESS_PERIOD - 1;
+	const physicalSourceX = sourceX & xAddressMask;
+	const physicalTargetX = targetX & xAddressMask;
+	const physicalSourceY = sourceY & yAddressMask;
+	const physicalTargetY = targetY & yAddressMask;
+	const sourceToTargetX = (physicalTargetX - physicalSourceX) & xAddressMask;
+	const targetToSourceX = (physicalSourceX - physicalTargetX) & xAddressMask;
+	const sourceToTargetY = (physicalTargetY - physicalSourceY) & yAddressMask;
+	const targetToSourceY = (physicalSourceY - physicalTargetY) & yAddressMask;
+	return physicalSourceY !== physicalTargetY
+		&& (sourceToTargetX < width || targetToSourceX < width)
+		&& (sourceToTargetY < height || targetToSourceY < height);
 }
 
-export function gxGpuVramCopyNeedsChunking(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number): boolean {
-	return sourceX !== targetX
-		&& sourceY !== targetY
-		&& gxGpuSpansOverlap(sourceX, sourceX + width, targetX, targetX + width)
-		&& gxGpuSpansOverlap(sourceY, sourceY + height, targetY, targetY + height);
-}
-
-export function gxGpuVramCopyChunkHeight(sourceY: number, targetY: number, height: number): number {
-	const rowDistance = sourceY > targetY ? sourceY - targetY : targetY - sourceY;
+export function gxGpuVramCopyChunkHeight(
+	sourceY: number,
+	targetY: number,
+	height: number,
+	vramYAddressExtensionWord: number,
+	textureRowMask: number,
+): number {
+	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & textureRowMask;
+	const physicalSourceY = sourceY & yAddressMask;
+	const physicalTargetY = targetY & yAddressMask;
+	const sourceToTargetY = (physicalTargetY - physicalSourceY) & yAddressMask;
+	const targetToSourceY = (physicalSourceY - physicalTargetY) & yAddressMask;
+	const rowDistance = sourceToTargetY < targetToSourceY ? sourceToTargetY : targetToSourceY;
 	return rowDistance < height ? rowDistance : height;
 }
 

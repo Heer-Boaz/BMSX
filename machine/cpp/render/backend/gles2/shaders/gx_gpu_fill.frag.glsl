@@ -16,6 +16,9 @@ uniform int u_checkMaskBit;
 uniform int u_setMaskBit;
 uniform int u_ditherEnable;
 uniform int u_skippedLineParity;
+#ifdef GX_GPU_VRAM_ALIAS
+uniform int u_logicalYBase;
+#endif
 #if GX_GPU_FIXED_COLOR_PLANE
 varying vec3 v_colorPlaneBase;
 varying vec3 v_colorPlaneStepX;
@@ -36,7 +39,8 @@ int rawStorageVramWord(ivec2 storageCoord) {
 #ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
 	vec4 rawPixel = gl_LastFragColorARM;
 #else
-	vec2 texcoord = (vec2(storageCoord) + vec2(0.5)) / 1024.0;
+	vec2 texcoord = (vec2(storageCoord) + vec2(0.5))
+		/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
 #endif
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
@@ -119,6 +123,9 @@ vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
 	ivec2 logicalCoord = storageCoord;
+#ifdef GX_GPU_VRAM_ALIAS
+	logicalCoord.y += u_logicalYBase;
+#endif
 	if (logicalCoord.y - (logicalCoord.y / 2) * 2 == u_skippedLineParity) {
 		discard;
 	}

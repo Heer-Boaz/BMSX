@@ -1,9 +1,10 @@
 import { renderGate, runGate } from '../../machine/ts/common/taskgate';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveStateBytes } from '../../machine/ts/machine/runtime/save_state/codec';
+import { captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import type { CartridgeSlotMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../../machine/ts/machine/devices/gx/gpu_display';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import type { MachineModelSpec } from '../../machine/ts/spec/bmsx/model';
 import { parseRomImage } from '../../machine/ts/rompack/image';
 import { Input } from '../../machine/ts/input/manager';
 import type { GamepadInput } from '../../machine/ts/input/gamepad';
@@ -27,6 +28,7 @@ export interface MachineHostInitializationOptions {
 	startingGamepadIndex: number;
 	enableOnscreenGamepad: boolean;
 	platform: Platform;
+	machineModel: MachineModelSpec;
 }
 
 export class MachineHost {
@@ -116,7 +118,7 @@ export class MachineHost {
 		const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
 		try {
 			await this.presenter.backend.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
-			return captureRuntimeSaveStateBytes(this.runtime);
+			return encodeRuntimeSaveState(captureRuntimeSaveState(this.runtime));
 		} finally {
 			renderGate.end(renderToken);
 			runGate.end(runToken);
@@ -161,7 +163,7 @@ export async function initializeMachineHost(
 	const runtime = new Runtime({
 		systemRomBytes: systemImage.bytes,
 		cartridgeSlots: cartridgeMedia,
-		machineModel: PSX_MACHINE_SPEC,
+		machineModel: options.machineModel,
 	}, input);
 	const output = options.platform.videoOutput;
 	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
@@ -170,7 +172,7 @@ export async function initializeMachineHost(
 		gpuOutput.verticalDisplayRangeWord,
 		gpuOutput.displayModeWord,
 	);
-	const backend = await output.createBackend();
+	const backend = await output.createBackend(options.machineModel.gxGpuVramBytes);
 	const presenter = new VideoPresenter(
 		output,
 		backend,

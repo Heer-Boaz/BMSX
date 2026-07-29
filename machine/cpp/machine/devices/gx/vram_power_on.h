@@ -2,8 +2,10 @@
 
 #include "common/primitives.h"
 
+#include <span>
+
 namespace bmsx {
 
-void initializeGxGpuVramPowerOn(u8* vramBytes);
+void initializeGxGpuVramPowerOn(std::span<u8> vramBytes);
 
 } // namespace bmsx

@@ -50,7 +50,6 @@ import {
 	GxGpuCommandBuffer,
 	type GxGpuCommandBufferState,
 } from './gpu_command_buffer';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../../spec/gx/vram';
 import {
 	GX_GPU_COMMAND_TICKS_PER_CPU_CYCLE,
 	gxGpuCommandTicks,
@@ -424,7 +423,7 @@ export class GxGpu {
 		commandBufferWordCount: 0,
 		commandBufferWords: new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY),
 	};
-	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+	private readonly vramSnapshotBytes: Uint8Array;
 	private vramSnapshotSerial = 0n;
 	private vramReplacementSerial = 0n;
 	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
@@ -435,9 +434,11 @@ export class GxGpu {
 		private readonly irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 		private readonly dmaController: DmaController,
+		gxGpuVramBytes: number,
 	) {
 		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
 		this.pcrtc = new GxGpuPcrtc();
+		this.vramSnapshotBytes = new Uint8Array(gxGpuVramBytes);
 		this.deviceOutput = {
 			commandBuffer: this.commandBuffer,
 			readbackPort: this.commandBuffer.readback,

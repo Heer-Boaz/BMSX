@@ -57,8 +57,8 @@ export class HeadlessVideoOutput implements VideoOutput {
 		this.surface = new HeadlessVideoSurface(initialSize);
 	}
 
-	async createBackend(): Promise<HeadlessGPUBackend> {
-		return new HeadlessGPUBackend(this);
+	async createBackend(gxGpuVramBytes: number): Promise<HeadlessGPUBackend> {
+		return new HeadlessGPUBackend(this, gxGpuVramBytes);
 	}
 
 	public presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {

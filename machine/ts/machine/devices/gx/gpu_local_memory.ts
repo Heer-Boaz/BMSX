@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_WORD_COUNT } from '../../../spec/gx/vram';
+import { GX_GPU_VRAM_ADDRESS_WORD_COUNT } from '../../../spec/gx/vram';
 
 export const GX_GPU_PSMCT32 = 0;
 export const GX_GPU_PSMCT24 = 1;
@@ -7,7 +7,7 @@ export const GX_GPU_PSMCT16S = 10;
 export const GX_GPU_PSGPU24 = 18;
 export const GX_GPU_PSMGX16 = 31;
 
-const GX_GPU_VRAM_WORD_MASK = GX_GPU_VRAM_WORD_COUNT - 1;
+const GX_GPU_VRAM_ADDRESS_WORD_MASK = GX_GPU_VRAM_ADDRESS_WORD_COUNT - 1;
 
 export function gxGpuLocalMemoryAddress32(
 	baseWord: number,
@@ -29,7 +29,7 @@ export function gxGpuLocalMemoryAddress32(
 		| ((pageY & 1) << 1)
 		| ((pageX & 6) << 1)
 		| ((pageY & 6) << 3);
-	return (baseWord + (page << 12) + (block << 7) + (column << 1)) & GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + (page << 12) + (block << 7) + (column << 1)) & GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 function gxGpuLocalMemoryColumn16(pageX: number, pageY: number): number {
@@ -58,7 +58,7 @@ export function gxGpuLocalMemoryAddress16(
 		| ((blockX & 2) << 2)
 		| ((blockY & 2) << 1)
 		| ((blockY & 4) << 2);
-	return (baseWord + (page << 12) + (block << 7) + gxGpuLocalMemoryColumn16(pageX, pageY)) & GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + (page << 12) + (block << 7) + gxGpuLocalMemoryColumn16(pageX, pageY)) & GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 export function gxGpuLocalMemoryAddress16S(
@@ -77,7 +77,7 @@ export function gxGpuLocalMemoryAddress16S(
 		| (blockY & 4)
 		| ((blockY & 2) << 2)
 		| ((blockX & 2) << 3);
-	return (baseWord + (page << 12) + (block << 7) + gxGpuLocalMemoryColumn16(pageX, pageY)) & GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + (page << 12) + (block << 7) + gxGpuLocalMemoryColumn16(pageX, pageY)) & GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 export function gxGpuLocalMemoryAddressGx16(
@@ -86,7 +86,7 @@ export function gxGpuLocalMemoryAddressGx16(
 	x: number,
 	y: number,
 ): number {
-	return (baseWord + y * framebufferWidth + x) & GX_GPU_VRAM_WORD_MASK;
+	return (baseWord + y * framebufferWidth + x) & GX_GPU_VRAM_ADDRESS_WORD_MASK;
 }
 
 export function gxGpuLocalMemoryAddressGpu24(

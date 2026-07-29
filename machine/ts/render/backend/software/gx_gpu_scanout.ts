@@ -8,12 +8,7 @@ import {
 	writeGenericCircuitRows,
 	writeGx16CircuitRows,
 } from './gx_gpu_scanout_specialized.generated';
-
-let interlacedPixels = new Uint32Array(0);
-let interlacedWidth = 0;
-let interlacedHeight = 0;
-let interlacedValid = false;
-let interlacedVramReplacementSerial = 0n;
+import type { GxGpuSoftwareState } from './gx_gpu_state';
 
 function fillBackgroundRows(
 	state: GxGpuPipelineState,
@@ -30,6 +25,7 @@ function fillBackgroundRows(
 }
 
 function writeOutputRows(
+	software: GxGpuSoftwareState,
 	state: GxGpuPipelineState,
 	target: Uint32Array,
 	scanout: GxGpuPcrtcScanout,
@@ -37,52 +33,46 @@ function writeOutputRows(
 	rowStep: number,
 ): void {
 	if (scanout.compositionPath === GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1) {
-		writeGx16CircuitRows(state, target, scanout, scanout.circuits[0], scanout.circuit1OutputPath);
+		writeGx16CircuitRows(software, state, target, scanout, scanout.circuits[0], scanout.circuit1OutputPath);
 		return;
 	}
 	if (scanout.backgroundRequired) fillBackgroundRows(state, target, scanout, firstRow, rowStep);
 	const writeCircuitRows = scanout.compositionPath === GX_GPU_PCRTC_COMPOSE_GX16
 		? writeGx16CircuitRows
 		: writeGenericCircuitRows;
-	writeCircuitRows(state, target, scanout, scanout.circuits[1], scanout.circuit2OutputPath);
-	writeCircuitRows(state, target, scanout, scanout.circuits[0], scanout.circuit1OutputPath);
+	writeCircuitRows(software, state, target, scanout, scanout.circuits[1], scanout.circuit2OutputPath);
+	writeCircuitRows(software, state, target, scanout, scanout.circuits[0], scanout.circuit1OutputPath);
 }
 
 function scanoutInterlacedVram(
+	software: GxGpuSoftwareState,
 	state: GxGpuPipelineState,
 	target: Uint32Array,
 	scanout: GxGpuPcrtcScanout,
 	vramReplacementSerial: bigint,
 ): void {
-	const pixelCount = state.width * state.height;
-	const geometryChanged = !interlacedValid
-		|| interlacedWidth !== state.width
-		|| interlacedHeight !== state.height
-		|| interlacedVramReplacementSerial !== vramReplacementSerial;
-	if (interlacedPixels.length !== pixelCount) {
-		interlacedPixels = new Uint32Array(pixelCount);
-	}
+	const geometryChanged = !software.interlacedValid
+		|| software.interlacedVramReplacementSerial !== vramReplacementSerial;
 	if (geometryChanged) {
-		interlacedPixels.fill(scanout.backgroundColor);
-		interlacedWidth = state.width;
-		interlacedHeight = state.height;
-		interlacedValid = true;
-		interlacedVramReplacementSerial = vramReplacementSerial;
+		software.interlacedPixels.fill(scanout.backgroundColor);
+		software.interlacedValid = true;
+		software.interlacedVramReplacementSerial = vramReplacementSerial;
 	}
-	writeOutputRows(state, interlacedPixels, scanout, scanout.field, 2);
-	target.set(interlacedPixels);
+	writeOutputRows(software, state, software.interlacedPixels, scanout, scanout.field, 2);
+	target.set(software.interlacedPixels);
 }
 
 export function scanoutGxGpuSoftwareVram(
+	software: GxGpuSoftwareState,
 	state: GxGpuPipelineState,
 	scanout: GxGpuPcrtcScanout,
 	vramReplacementSerial: bigint,
 	target: Uint32Array,
 ): void {
 	if (scanout.interlaced) {
-		scanoutInterlacedVram(state, target, scanout, vramReplacementSerial);
+		scanoutInterlacedVram(software, state, target, scanout, vramReplacementSerial);
 		return;
 	}
-	interlacedValid = false;
-	writeOutputRows(state, target, scanout, 0, 1);
+	software.interlacedValid = false;
+	writeOutputRows(software, state, target, scanout, 0, 1);
 }

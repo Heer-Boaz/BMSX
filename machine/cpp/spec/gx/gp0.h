@@ -81,7 +81,7 @@ inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) 
 	const u32 left = topLeftWord & 0x3ffu;
 	const u32 right = bottomRightWord & 0x3ffu;
 	if (left > right) return 0u;
-	return right < GX_GPU_VRAM_WIDTH - 1u ? right + 1u : GX_GPU_VRAM_WIDTH;
+	return right < GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u ? right + 1u : GX_GPU_VRAM_X_ADDRESS_PERIOD;
 }
 
 inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord, u32 vramYAddressExtensionWord) {

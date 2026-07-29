@@ -19,7 +19,7 @@ Machine::Machine(
 	, dmaController(memory, cpu, irqController, scheduler)
 	, audioController(memory, audioOutput, dmaController, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
-	, gxGpu(memory, cpu, irqController, scheduler, dmaController)
+	, gxGpu(memory, cpu, irqController, scheduler, dmaController, model.gxGpuVramBytes)
 	, imgDecController(memory, cpu, irqController, scheduler, dmaController, model.imgDecCyclesPerOutputWord)
 	, gxGte(memory, cpu, scheduler)
 	, systemController(

@@ -40,12 +40,15 @@ constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
 constexpr u32 kSaveStateMagic = 0x31534d42u;
 constexpr size_t kSaveStateHeaderBytes = 8u;
+constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
+
+size_t saveStatePayloadCapacityBytes(const Runtime& runtime) {
+	return kSaveStateBasePayloadCapacityBytes
+		+ runtime.machine.cartridgeController.ramByteCount();
+}
 
 size_t saveStateEnvelopeBytes(const Runtime& runtime) {
-	return kSaveStateHeaderBytes
-		+ runtimeSaveStateWireCapacity(
-			runtime.machine.memory.ramByteCount(),
-			runtime.machine.cartridgeController.ramByteCount());
+	return kSaveStateHeaderBytes + saveStatePayloadCapacityBytes(runtime);
 }
 
 constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
@@ -195,11 +198,13 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
  * ============================================================================ */
 
 LibretroPlatform::LibretroPlatform(
+	const MachineModelSpec& machineModel,
 	BackendType backend_type,
 	retro_system_av_info& av_info,
 	bmsx_supervisor_request_line_t supervisorRequestLine,
 	bool profileGxUploads)
-	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED))
+	: m_machine_model(machineModel)
+	, m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type)
 	, m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
 	m_framebuffer.resize(
@@ -235,7 +240,7 @@ LibretroPlatform::LibretroPlatform(
 		m_video_output->getSize(viewportSize, viewportSize);
 	m_video_presenter = std::make_unique<VideoPresenter>(
 		*m_video_output,
-		m_video_output->createBackend(),
+		m_video_output->createBackend(m_machine_model.gxGpuVramBytes),
 		viewportWidth,
 		viewportHeight);
 	m_video_presenter->viewportScale = viewportDimensions.viewportScale;
@@ -648,7 +653,7 @@ void LibretroPlatform::startRuntime() {
 		RuntimeOptions{
 			m_system_rom_image.bytes,
 			cartridgeMedia,
-			PSX_MACHINE_SPEC,
+			m_machine_model,
 		},
 		*m_input);
 	m_runtime->resetForSystemBoot();
@@ -771,7 +776,10 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 	}
 	try {
 		m_video_presenter->backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
-		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
+		const std::vector<u8> state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		if (state.size() > saveStatePayloadCapacityBytes(runtime)) {
+			return false;
+		}
 		u8* const envelope = static_cast<u8*>(data);
 		writeLE32(envelope, kSaveStateMagic);
 		writeLE32(envelope + 4u, static_cast<u32>(state.size()));
@@ -799,16 +807,18 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 			return false;
 		}
 		const size_t payloadBytes = readLE32(envelope + 4u);
-		if (payloadBytes > runtimeSaveStateWireCapacity(
-			runtime.machine.memory.ramByteCount(),
-			runtime.machine.cartridgeController.ramByteCount())) {
+		if (payloadBytes > saveStatePayloadCapacityBytes(runtime)) {
 			return false;
 		}
-		applyRuntimeSaveStateBytes(
+		applyRuntimeSaveState(
 			runtime,
-			std::span<const u8>(
-				envelope + kSaveStateHeaderBytes,
-				payloadBytes
+			decodeRuntimeSaveState(
+				std::span<const u8>(
+					envelope + kSaveStateHeaderBytes,
+					payloadBytes
+				),
+				runtime.machine.memory.ramByteCount(),
+				runtime.machine.gxGpu.readVramSnapshotBytes().size()
 			)
 		);
 		m_audio_output.resetPlayback();
@@ -1199,14 +1209,15 @@ LibretroVideoOutput::LibretroVideoOutput(
 	, m_profile_gx_uploads(profileGxUploads) {
 }
 
-std::unique_ptr<GPUBackend> LibretroVideoOutput::createBackend() {
+std::unique_ptr<GPUBackend> LibretroVideoOutput::createBackend(u32 gxGpuVramByteCount) {
 	switch (m_backend_type) {
 		case BackendType::OpenGLES2:
 #if BMSX_ENABLE_GLES2
 			return std::make_unique<OpenGLES2Backend>(
 				static_cast<i32>(m_framebuffer.width),
 				static_cast<i32>(m_framebuffer.height),
-				m_profile_gx_uploads
+				m_profile_gx_uploads,
+				gxGpuVramByteCount
 			);
 #else
 			throw BMSX_RUNTIME_ERROR("[LibretroVideoOutput] OpenGLES2 backend disabled at compile time.");
@@ -1216,7 +1227,8 @@ std::unique_ptr<GPUBackend> LibretroVideoOutput::createBackend() {
 				m_framebuffer.data,
 				static_cast<i32>(m_framebuffer.width),
 				static_cast<i32>(m_framebuffer.height),
-				static_cast<i32>(m_framebuffer.pitch)
+				static_cast<i32>(m_framebuffer.pitch),
+				gxGpuVramByteCount
 			);
 		default:
 			throw BMSX_RUNTIME_ERROR("[LibretroVideoOutput] Unsupported backend type.");

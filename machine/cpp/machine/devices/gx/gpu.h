@@ -11,6 +11,7 @@
 
 #include <array>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace bmsx {
@@ -218,15 +219,21 @@ struct GxGpuSaveState : GxGpuState {
 
 class GxGpu {
 public:
-	GxGpu(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController);
+	GxGpu(
+		Memory& memory,
+		CPU& cpu,
+		IrqController& irq,
+		DeviceScheduler& scheduler,
+		DmaController& dmaController,
+		u32 vramByteCount);
 	void reset();
 	GxGpuState captureState();
 	void restoreState(const GxGpuState& state);
 	GxGpuSaveState captureSaveState();
 	void restoreSaveState(const GxGpuSaveState& state);
-	void replaceVramSnapshotBytes(const u8* bytes);
-	u64 commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount);
-	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return *m_vramSnapshotBytes; }
+	void replaceVramSnapshotBytes(std::span<const u8> bytes);
+	u64 commitRenderedVramSnapshotBytes(std::span<const u8> bytes, size_t renderedCommandCount);
+	std::span<const u8> readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
 	u64 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
 	u64 readVramReplacementSerial() const { return m_vramReplacementSerial; }
 	u32 readGp0(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
@@ -327,7 +334,7 @@ private:
 	u8 m_skippedLineParity = GX_GPU_SKIPPED_LINE_NONE;
 	bool m_pcrtcTimingPublicationPending = false;
 	bool m_pcrtcPresentationPending = false;
-	std::unique_ptr<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>> m_vramSnapshotBytes;
+	std::vector<u8> m_vramSnapshotBytes;
 	u64 m_vramSnapshotSerial = 0u;
 	u64 m_vramReplacementSerial = 0u;
 	mutable GxGpuDeviceOutput m_deviceOutput;

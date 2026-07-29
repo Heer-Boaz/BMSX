@@ -1494,7 +1494,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		}
 	}
 
-	public async createBackend() {
-		return createBrowserBackend(this.surface.handle);
+	public async createBackend(gxGpuVramBytes: number) {
+		return createBrowserBackend(this.surface.handle, gxGpuVramBytes);
 	}
 }

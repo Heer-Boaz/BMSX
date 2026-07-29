@@ -127,7 +127,7 @@ private:
 	}
 
 	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount, u8 vramYAddressExtensionWord) {
-		m_x = positionWord & (GX_GPU_VRAM_WIDTH - 1u);
+		m_x = positionWord & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 		m_vramYAddressExtensionWord = vramYAddressExtensionWord;
 		m_y = gxGpuVramYAddress(positionWord >> 16u, vramYAddressExtensionWord);
 		m_width = gxGpuTransferWidth(sizeWord);

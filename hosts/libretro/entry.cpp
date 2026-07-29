@@ -1116,6 +1116,7 @@ void retro_init(void) {
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 	g_platform = new bmsx::LibretroPlatform(
+		bmsx::PSX_MACHINE_SPEC,
 		g_active_backend,
 		g_cached_av_info,
 		g_supervisor_request_line_cb,

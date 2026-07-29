@@ -3,10 +3,14 @@ struct TexturedUniforms {
 	params0: vec4<u32>,
 	params1: vec4<u32>,
 	rasterPhase: f32,
-	_padding0: u32,
+	destinationYBase: u32,
 	_padding1: u32,
 	_padding2: u32,
 };
+
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramYAddressPeriod: u32;
+override gxGpuVramTextureRowMask: u32;
 
 @group(0) @binding(0) var<uniform> u: TexturedUniforms;
 @group(0) @binding(1) var u_vram: texture_2d<f32>;
@@ -62,7 +66,9 @@ struct TextureColor {
 fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
 	let rasterPosition = input.position + vec2<f32>(u.rasterPhase);
-	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 512.0));
+	let clip = vec2<f32>(
+		(rasterPosition.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (rasterPosition.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
 	out.uvPlaneBase = input.uvPlaneBase;
@@ -76,7 +82,9 @@ fn vs_main(input: VSIn) -> VSOut {
 fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 	var out: FixedVSOut;
 	let rasterPosition = input.position + vec2<f32>(u.rasterPhase);
-	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 512.0));
+	let clip = vec2<f32>(
+		(rasterPosition.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (rasterPosition.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.uvPlaneBase = input.uvPlaneBase;
 	out.uvPlaneStepX = input.uvPlaneStepX;
@@ -89,7 +97,7 @@ fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 }
 
 fn rawVramWord(coord: vec2<u32>) -> u32 {
-	let rawPixel = textureLoad(u_vram, vec2<i32>(coord & vec2<u32>(1023u)), 0);
+	let rawPixel = textureLoad(u_vram, vec2<i32>(coord & vec2<u32>(gxGpuVramXAddressPeriod - 1u, gxGpuVramTextureRowMask)), 0);
 	let bytes = vec2<u32>(rawPixel.rg * vec2<f32>(255.0) + vec2<f32>(0.5));
 	return bytes.x | (bytes.y << 8u);
 }
@@ -182,14 +190,14 @@ fn shadeTextured(vertex8: vec3<u32>, fragCoord: vec2<u32>, texcoord: vec2<u32>, 
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	let fragCoord = vec2<u32>(input.position.xy);
+	let fragCoord = vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase);
 	let texcoord = polygonTexcoord(fragCoord, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
 	return shadeTextured(vec3<u32>(input.color * vec3<f32>(255.0)), fragCoord, texcoord, input.textureSource);
 }
 
 @fragment
 fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
-	let fragCoord = vec2<u32>(input.position.xy);
+	let fragCoord = vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase);
 	let colorAccumulator = input.colorPlaneBase + input.colorPlaneStepX * fragCoord.x + input.colorPlaneStepY * fragCoord.y;
 	let uvAccumulator = input.uvPlaneBase + input.uvPlaneStepX * fragCoord.x + input.uvPlaneStepY * fragCoord.y;
 	let color8 = (colorAccumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu);

@@ -105,14 +105,14 @@ bool softwareFrontendEnvironment(unsigned command, void* data) {
 	return false;
 }
 
-std::vector<bmsx::u8> makeExpandedPcrtcState(size_t cartridgeRamByteCount) {
+std::vector<bmsx::u8> makeExpandedPcrtcState() {
 	std::vector<bmsx::u8> envelope(retro_serialize_size());
 	require(retro_serialize(envelope.data(), envelope.size()), "the core should serialize a state for libretro AV notification validation");
 	const bmsx::u32 payloadBytes = bmsx::readLE32(envelope.data() + 4u);
 	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(
 		std::span<const bmsx::u8>(envelope.data() + 8u, payloadBytes),
 		bmsx::PSX_MACHINE_SPEC.ramBytes,
-		cartridgeRamByteCount);
+		bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
 	pcrtc.registerWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
 	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
@@ -144,8 +144,6 @@ bool frontendEnvironment(unsigned command, void* data) {
 int main() {
 	constexpr bmsx::u32 primaryCartRamBytes = 16u;
 	constexpr bmsx::u32 auxiliaryCartRamBytes = 24u;
-	constexpr size_t cartridgeRamByteCount =
-		static_cast<size_t>(primaryCartRamBytes) + auxiliaryCartRamBytes;
 	const std::filesystem::path testDirectory =
 		std::filesystem::temp_directory_path() / "bmsx_libretro_environment_test";
 	std::filesystem::create_directories(testDirectory);
@@ -226,7 +224,7 @@ int main() {
 				cartridgeStateBytes
 			),
 			bmsx::PSX_MACHINE_SPEC.ramBytes,
-			cartridgeRamByteCount);
+			bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
 	require(cartridgeControllerState.selectionWord == 0u, "the cartridge controller should reset to socket 0 without host-side executable inspection");
 	require(cartridgeControllerState.slots[0].ram.size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge header");
@@ -238,7 +236,7 @@ int main() {
 	require(requestLineReads == 1u, "an accepted frontend callback should drive the platform supervisor-request line");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
 
-	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState(cartridgeRamByteCount);
+	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState();
 	require(retro_unserialize(expandedState.data(), expandedState.size()), "the core should restore the expanded PCRTC state");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "retro_unserialize must not call libretro video environment commands");
 	insideRetroRun = true;

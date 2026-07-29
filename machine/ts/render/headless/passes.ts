@@ -7,6 +7,7 @@ import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../post/device_quantize/state';
+import type { HeadlessGPUBackend } from './backend';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -32,8 +33,8 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 		name: 'HeadlessFrameResolve',
 		stateOnly: true,
 		graph: { skip: true },
-		exec: () => {
-			resizeHeadlessFrame(registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
+		exec: (backend) => {
+			resizeHeadlessFrame(backend as HeadlessGPUBackend, registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
 		},
 	});
 }
@@ -48,7 +49,7 @@ const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
 	height: 0,
 };
 
-function resizeHeadlessFrame(width: number, height: number): void {
+function resizeHeadlessFrame(backend: HeadlessGPUBackend, width: number, height: number): void {
 	const byteLength = width * height * 4;
 	if (headlessCompositePixels.byteLength !== byteLength) {
 		const buffer = new ArrayBuffer(byteLength);
@@ -57,6 +58,7 @@ function resizeHeadlessFrame(width: number, height: number): void {
 	}
 	headlessFrameWidth = width;
 	headlessFrameHeight = height;
+	backend.resizeFramebuffer(width, height);
 }
 
 function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
@@ -76,8 +78,8 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.height = ctx.presenter.offscreenCanvasSize.y;
 			},
 		},
-		exec: (_backend, _fbo, state, _pipelineHandle, output) => {
-			renderGxGpuSoftwareFrame(state, output, headlessCompositeWords);
+		exec: (backend, _fbo, state, _pipelineHandle, output) => {
+			renderGxGpuSoftwareFrame((backend as HeadlessGPUBackend).gxGpuSoftware, state, output, headlessCompositeWords);
 		},
 	});
 }

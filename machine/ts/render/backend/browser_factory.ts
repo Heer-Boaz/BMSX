@@ -2,22 +2,22 @@ import { WebGPUBackend } from './webgpu/backend';
 import { WebGLBackend } from './webgl/backend';
 import type { GPUBackend } from './backend';
 
-function createWebGLBackend(canvas: HTMLCanvasElement): GPUBackend {
+function createWebGLBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: number): GPUBackend {
 	const gl = canvas.getContext('webgl2', { alpha: true, depth: true, antialias: false, premultipliedAlpha: true });
 	if (!gl) {
 		throw new Error('[BrowserBackendFactory] Unable to create WebGL2 context.');
 	}
-	return new WebGLBackend(gl);
+	return new WebGLBackend(gl, gxGpuVramBytes);
 }
 
-async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBackend> {
+async function createWebGPUBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: number): Promise<GPUBackend> {
 	const gpu = navigator.gpu;
 	if (!gpu) {
-		return createWebGLBackend(canvas);
+		return createWebGLBackend(canvas, gxGpuVramBytes);
 	}
 	const adapter = await gpu.requestAdapter();
 	if (!adapter) {
-		return createWebGLBackend(canvas);
+		return createWebGLBackend(canvas, gxGpuVramBytes);
 	}
 	const device = await adapter.requestDevice();
 	const context = canvas.getContext('webgpu');
@@ -30,9 +30,9 @@ async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBacken
 		format,
 		alphaMode: 'opaque',
 	});
-	return new WebGPUBackend(device, context, format);
+	return new WebGPUBackend(device, context, format, gxGpuVramBytes);
 }
 
-export async function createBrowserBackend(canvas: HTMLCanvasElement): Promise<GPUBackend> {
-	return createWebGPUBackend(canvas);
+export async function createBrowserBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: number): Promise<GPUBackend> {
+	return createWebGPUBackend(canvas, gxGpuVramBytes);
 }

@@ -6,8 +6,12 @@ struct PrimitiveUniforms {
 	ditherEnabled: u32,
 	skippedLineParity: u32,
 	rasterPhase: f32,
-	_padding: u32,
+	destinationYBase: u32,
 };
+
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramYAddressPeriod: u32;
+override gxGpuVramTextureRowMask: i32;
 
 @group(0) @binding(0) var<uniform> u: PrimitiveUniforms;
 @group(0) @binding(1) var u_vram: texture_2d<f32>;
@@ -32,7 +36,9 @@ struct VSOut {
 @vertex
 fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
-	let clip = vec2<f32>((input.position.x / 512.0) - 1.0, 1.0 - (input.position.y / 512.0));
+	let clip = vec2<f32>(
+		(input.position.x / (f32(gxGpuVramXAddressPeriod) * 0.5)) - 1.0,
+		1.0 - (input.position.y / (f32(gxGpuVramYAddressPeriod) * 0.5)));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.lineStart = vec2<i32>(input.lineStart);
 	out.lineEnd = vec2<i32>(input.lineEnd);
@@ -49,7 +55,7 @@ fn vs_main(input: VSIn) -> VSOut {
 }
 
 fn rawVramWord(coord: vec2<i32>) -> u32 {
-	let rawPixel = textureLoad(u_vram, coord & vec2<i32>(1023), 0);
+	let rawPixel = textureLoad(u_vram, coord & vec2<i32>(i32(gxGpuVramXAddressPeriod - 1u), gxGpuVramTextureRowMask), 0);
 	let bytes = vec2<u32>(rawPixel.rg * vec2<f32>(255.0) + vec2<f32>(0.5));
 	return bytes.x | (bytes.y << 8u);
 }
@@ -103,11 +109,11 @@ fn encodeRgb555(color5: vec3<u32>, outputMaskBit: u32) -> vec4<f32> {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	let fragCoord = vec2<u32>(input.position.xy);
+	let fragCoord = vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase);
 	if ((fragCoord.y & 1u) == u.skippedLineParity) {
 		discard;
 	}
-	let pixelCoord = vec2<i32>(input.position.xy - vec2<f32>(0.5));
+	let pixelCoord = vec2<i32>(input.position.xy - vec2<f32>(0.5)) + vec2<i32>(0, i32(u.destinationYBase));
 	let delta = input.lineEnd - input.lineStart;
 	let absDelta = abs(delta);
 	let steps = max(absDelta.x, absDelta.y);

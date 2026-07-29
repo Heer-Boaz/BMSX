@@ -6,6 +6,11 @@ struct ReadbackUniforms {
 	_padding2: u32,
 };
 
+override gxGpuVramXAddressPeriod: u32;
+override gxGpuVramYAddressPeriod: u32;
+override gxGpuVramYAddressExtensionBit: u32;
+override gxGpuVramTextureRowMask: u32;
+
 @group(0) @binding(0) var<uniform> u: ReadbackUniforms;
 @group(0) @binding(1) var u_vram: texture_2d<f32>;
 
@@ -22,10 +27,13 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
 }
 
 fn readRawPixel(transferCoord: vec2<u32>) -> vec2<f32> {
-	let x = (u.params.x + transferCoord.x) & 1023u;
-	let yAddressMask = select(511u, 1023u, u.vram_y_address_extension_word != 0u);
+	let x = (u.params.x + transferCoord.x) & (gxGpuVramXAddressPeriod - 1u);
+	let yAddressMask = select(
+		gxGpuVramYAddressExtensionBit - 1u,
+		gxGpuVramYAddressPeriod - 1u,
+		u.vram_y_address_extension_word != 0u);
 	let logicalY = (u.params.y + transferCoord.y) & yAddressMask;
-	return textureLoad(u_vram, vec2<i32>(i32(x), i32(logicalY)), 0).rg;
+	return textureLoad(u_vram, vec2<i32>(i32(x), i32(logicalY & gxGpuVramTextureRowMask)), 0).rg;
 }
 
 @fragment

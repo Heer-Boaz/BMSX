@@ -350,7 +350,7 @@ export interface OnscreenGamepadHandles {
 /** Platform-owned render target and backend. */
 export interface VideoOutput {
 	readonly surface: VideoSurface;
-	createBackend(): Promise<GPUBackend>;
+	createBackend(gxGpuVramBytes: number): Promise<GPUBackend>;
 	getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions;
 	onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle;
 }

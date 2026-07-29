@@ -59,7 +59,7 @@ struct ImgDecHarness {
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, geometry(memory, irq, scheduler)
-		, gpu(memory, cpu, irq, scheduler, dma)
+		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes)
 		, imgDec(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
 		, system(memory, cpu, scheduler, irq, dma, geometry, gpu, imgDec, bmsx::PSX_MACHINE_SPEC.cpuFreqHz) {
 		memory.cartridgeController().connect(memory, irq, dma);

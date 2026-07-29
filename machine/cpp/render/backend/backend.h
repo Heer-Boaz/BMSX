@@ -49,8 +49,10 @@
 #ifndef BMSX_BACKEND_H
 #define BMSX_BACKEND_H
 
+#include "render/backend/software/gx_gpu_state.h"
 #include "texture_params.h"
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <functional>
 #include <optional>
@@ -64,6 +66,8 @@ using TextureHandle = void*;
 
 class RenderPassLibrary;
 class GxGpu;
+struct GxGpuDeviceOutput;
+struct GxGpuPipelineState;
 
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
@@ -216,8 +220,8 @@ public:
  * ============================================================================ */
 
 class SoftwareBackend : public GPUBackend {
-	public:
-	SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch);
+public:
+	SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch, size_t gxGpuVramByteCount);
 	~SoftwareBackend() override;
 
 	BackendType type() const override { return BackendType::Software; }
@@ -230,13 +234,13 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) override;
 	void destroyTexture(TextureHandle handle) override;
 	TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) override;
-		TextureHandle createDepthTexture(i32 width, i32 height) override;
-		void destroyDepthTexture(TextureHandle handle) override;
-		void* createRenderTarget(TextureHandle color, TextureHandle depth) override;
-		void destroyRenderTarget(void* target) override;
-		void activateRenderTarget(void* target, i32 width, i32 height) override;
-		void activateDefaultRenderTarget() override;
-		void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	TextureHandle createDepthTexture(i32 width, i32 height) override;
+	void destroyDepthTexture(TextureHandle handle) override;
+	void* createRenderTarget(TextureHandle color, TextureHandle depth) override;
+	void destroyRenderTarget(void* target) override;
+	void activateRenderTarget(void* target, i32 width, i32 height) override;
+	void activateDefaultRenderTarget() override;
+	void registerBuiltinPasses(RenderPassLibrary& registry) override;
 
 	// Render pass management
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -272,20 +276,26 @@ class SoftwareBackend : public GPUBackend {
 	i32 height() const { return m_height; }
 	i32 pitch() const { return m_pitch; }
 
-		// Update framebuffer pointer (e.g., on resize)
-		void setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch);
+	// Update framebuffer pointer (e.g., on resize)
+	void setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch);
 
-	private:
-		u32* m_default_framebuffer;
-		i32 m_default_width;
-		i32 m_default_height;
-		i32 m_default_pitch;
-		u32* m_framebuffer;
-		i32 m_width;
-		i32 m_height;
+private:
+	friend void renderGxGpuSoftwareFrame(
+		SoftwareBackend& backend,
+		const GxGpuPipelineState& state,
+		const GxGpuDeviceOutput& output);
+
+	u32* m_default_framebuffer;
+	i32 m_default_width;
+	i32 m_default_height;
+	i32 m_default_pitch;
+	u32* m_framebuffer;
+	i32 m_width;
+	i32 m_height;
 	i32 m_pitch;  // Bytes per row
 
 	FrameStats m_stats;
+	GxGpuSoftwareState m_gx_gpu_software;
 
 	// Texture storage
 	std::vector<std::unique_ptr<SoftwareTexture>> m_textures;

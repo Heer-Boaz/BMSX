@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { WebGLBackend } from '../../machine/ts/render/backend/webgl/backend';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
 test('WebGL backend publishes retained GL state only when it changes', () => {
 	const blendColors: number[][] = [];
@@ -17,7 +18,7 @@ test('WebGL backend publishes retained GL state only when it changes', () => {
 			blendColors.push([red, green, blue, alpha]);
 		},
 	} as unknown as WebGL2RenderingContext;
-	const backend = new WebGLBackend(context);
+	const backend = new WebGLBackend(context, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const firstProgram = {} as WebGLProgram;
 	const secondProgram = {} as WebGLProgram;
 
@@ -76,7 +77,7 @@ test('WebGL resource uploads keep retained texture-unit state coherent', () => {
 		texSubImage2D: () => { },
 		texParameteri: () => { },
 	} as unknown as WebGL2RenderingContext;
-	const backend = new WebGLBackend(context);
+	const backend = new WebGLBackend(context, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const sampledTexture = {} as WebGLTexture;
 	const textureParams = {
 		size: { x: 1, y: 1 },

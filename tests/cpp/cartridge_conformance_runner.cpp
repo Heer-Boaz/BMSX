@@ -2,6 +2,7 @@
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime.h"
+#include "spec/bmsx/model.h"
 #include "platform.h"
 
 #include <cstdarg>
@@ -71,6 +72,7 @@ int main(int argc, char** argv) {
 
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::Software,
 		avInfo,
 		supervisorRequestLineLow,

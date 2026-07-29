@@ -5,6 +5,7 @@
 #include "machine/devices/gx/gpu_pcrtc.h"
 
 #include <array>
+#include <span>
 
 namespace bmsx {
 
@@ -15,7 +16,7 @@ struct GxGpuDeviceOutput {
 		const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& pcrtcWordsOwner,
 		const GxGpuPcrtcTiming& pcrtcTimingOwner,
 		const GxGpuPcrtcScanout& pcrtcScanoutOwner,
-		const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotOwner)
+		std::span<const u8> vramSnapshotOwner)
 		: commandBuffer(commandBufferOwner)
 		, readbackPort(readbackPortOwner)
 		, pcrtcWords(pcrtcWordsOwner)
@@ -35,7 +36,7 @@ struct GxGpuDeviceOutput {
 	const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& pcrtcWords;
 	const GxGpuPcrtcTiming& pcrtcTiming;
 	const GxGpuPcrtcScanout& pcrtcScanout;
-	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotBytes;
+	std::span<const u8> vramSnapshotBytes;
 	u64 vramSnapshotSerial = 0u;
 	u64 vramReplacementSerial = 0u;
 };

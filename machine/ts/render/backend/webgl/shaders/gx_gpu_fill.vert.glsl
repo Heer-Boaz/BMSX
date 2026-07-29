@@ -22,7 +22,10 @@ out vec4 v_color;
 
 void main() {
 	vec2 rasterPosition = a_position + vec2(u_rasterPhase);
-	vec2 clip = vec2((rasterPosition.x / 512.0) - 1.0, (rasterPosition.y / 512.0) - 1.0);
+	vec2 clip = vec2(
+		(rasterPosition.x / (float(GX_GPU_VRAM_X_ADDRESS_PERIOD) * 0.5)) - 1.0,
+		(rasterPosition.y / (float(GX_GPU_VRAM_Y_ADDRESS_PERIOD) * 0.5)) - 1.0
+	);
 	gl_Position = vec4(clip, 0.0, 1.0);
 #if GX_GPU_FIXED_COLOR_PLANE
 	v_colorPlaneBase = a_colorPlaneBase;

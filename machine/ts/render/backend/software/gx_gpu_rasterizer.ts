@@ -38,12 +38,12 @@ import {
 } from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
-	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
 	gxGpuSoftwareTextureModulationChannel5,
 	gxGpuSoftwareWriteRenderVramPixel5,
 	gxGpuSoftwareWriteRenderVramPixel,
 } from './gx_gpu_vram';
+import type { GxGpuSoftwareState } from './gx_gpu_state';
 
 function integerDivide(numerator: number, denominator: number): number {
 	return (numerator - (numerator % denominator)) / denominator;
@@ -193,6 +193,7 @@ function lineFixedRgbToByte(value: number): number {
 }
 
 function sampleGxGpuSoftwareTextureWord(
+	software: GxGpuSoftwareState,
 	u: number,
 	v: number,
 	pageX: number,
@@ -208,19 +209,20 @@ function sampleGxGpuSoftwareTextureWord(
 	const windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 4), pageY + windowedV)];
+		const textureWord = software.vram[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 4), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 3) << 2)) & 0x0f;
-		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)];
+		return software.vram[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
 	}
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 2), pageY + windowedV)];
+		const textureWord = software.vram[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 2), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 1) << 3)) & 0xff;
-		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)];
+		return software.vram[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
 	}
-	return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + windowedU, pageY + windowedV)];
+	return software.vram[gxGpuSoftwareVramIndex(software, pageX + windowedU, pageY + windowedV)];
 }
 
 function writeGxGpuSoftwareTexturedPixel(
+	software: GxGpuSoftwareState,
 	x: number,
 	y: number,
 	colorR: number,
@@ -248,10 +250,10 @@ function writeGxGpuSoftwareTexturedPixel(
 	}
 	const sampleMaskBit = sampleWord & 0x8000;
 	const blendEnabled = semiTransparencyEnabled && sampleMaskBit !== 0;
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
+	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
 }
 
-export function drawGxGpuSoftwareRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, width: number, height: number, colorWord: number): void {
+export function drawGxGpuSoftwareRectangle(software: GxGpuSoftwareState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, width: number, height: number, colorWord: number): void {
 	const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
@@ -281,12 +283,12 @@ export function drawGxGpuSoftwareRectangle(commandBuffer: GxGpuCommandBufferView
 			continue;
 		}
 		for (let x = left; x < right; x += 1) {
-			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
+			gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
 		}
 	}
 }
 
-export function drawGxGpuSoftwareTriangle(
+export function drawGxGpuSoftwareTriangle(software: GxGpuSoftwareState,
 	commandBuffer: GxGpuCommandBufferView,
 	commandIndex: number,
 	x0: number,
@@ -419,7 +421,7 @@ export function drawGxGpuSoftwareTriangle(
 					const r8 = sameColor ? r0 : (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const g8 = sameColor ? g0 : (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const b8 = sameColor ? b0 : (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-					gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, checkMaskBit, setMaskBit);
+					gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, checkMaskBit, setMaskBit);
 					if (!sameColor) {
 						rFixed += rStepX;
 						gFixed += gStepX;
@@ -439,7 +441,7 @@ export function drawGxGpuSoftwareTriangle(
 	}
 }
 
-export function drawGxGpuSoftwareTexturedTriangle(
+export function drawGxGpuSoftwareTexturedTriangle(software: GxGpuSoftwareState,
 	commandBuffer: GxGpuCommandBufferView,
 	commandIndex: number,
 	x0: number,
@@ -608,7 +610,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 					const b8 = interpolatesColor ? (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : b0;
 					const u = (uFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const v = (vFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-					const sampleWord = sampleGxGpuSoftwareTextureWord(
+					const sampleWord = sampleGxGpuSoftwareTextureWord(software,
 						u,
 						v,
 						pageX,
@@ -621,7 +623,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 						clutBaseX,
 						clutBaseY,
 					);
-					writeGxGpuSoftwareTexturedPixel(
+					writeGxGpuSoftwareTexturedPixel(software,
 						x,
 						y,
 						r8,
@@ -658,7 +660,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	}
 }
 
-export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, width: number, height: number, colorWord: number, textureWord: number): void {
+export function drawGxGpuSoftwareTexturedRectangle(software: GxGpuSoftwareState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, width: number, height: number, colorWord: number, textureWord: number): void {
 	const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
@@ -708,7 +710,7 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 		}
 		let u = firstU;
 		for (let x = left; x < right; x += 1, u += uStep) {
-			const sampleWord = sampleGxGpuSoftwareTextureWord(
+			const sampleWord = sampleGxGpuSoftwareTextureWord(software,
 				u,
 				v,
 				pageX,
@@ -721,7 +723,7 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 				clutBaseX,
 				clutBaseY,
 			);
-			writeGxGpuSoftwareTexturedPixel(
+			writeGxGpuSoftwareTexturedPixel(software,
 				x,
 				y,
 				r8,
@@ -739,7 +741,7 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	}
 }
 
-export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, color0: number, x1: number, y1: number, color1: number): void {
+export function drawGxGpuSoftwareLineSegment(software: GxGpuSoftwareState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, color0: number, x1: number, y1: number, color1: number): void {
 	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
 		return;
 	}
@@ -797,7 +799,7 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 		const x = gxGpuSigned11(lineFixedXYToCoord(currentX));
 		const y = gxGpuSigned11(lineFixedXYToCoord(currentY));
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && (y & 1) !== skippedLineParity) {
-			gxGpuSoftwareWriteRenderVramPixel(
+			gxGpuSoftwareWriteRenderVramPixel(software,
 				x,
 				y,
 				lineFixedRgbToByte(currentR),

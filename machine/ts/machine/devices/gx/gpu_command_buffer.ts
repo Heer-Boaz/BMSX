@@ -5,7 +5,7 @@ import {
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 } from '../../../spec/gx/gp0';
-import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress } from '../../../spec/gx/vram';
+import { GX_GPU_VRAM_X_ADDRESS_PERIOD, gxGpuVramYAddress } from '../../../spec/gx/vram';
 
 export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
@@ -115,7 +115,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
 	public activate(positionWord: number, sizeWord: number, fenceCommandCount: number, vramYAddressExtensionWord: number): void {
-		this.x = positionWord & (GX_GPU_VRAM_WIDTH - 1);
+		this.x = positionWord & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
 		this.vramYAddressExtensionWord = vramYAddressExtensionWord;
 		this.y = gxGpuVramYAddress(positionWord >>> 16, vramYAddressExtensionWord);
 		this.width = gxGpuTransferWidth(sizeWord);

@@ -38,7 +38,8 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { applyRuntimeSaveStateBytes, captureRuntimeSaveStateBytes } from '../../machine/ts/machine/runtime/save_state/codec';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from './cpu_test_harness';
 import {
@@ -385,14 +386,21 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.ok(sourceRangeAfterBusSelection);
 	assert.equal(sourceRangeAfterBusSelection.path, 'slot1.lua');
 
-	const saveBytes = captureRuntimeSaveStateBytes(runtime);
+		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 111);
 
-	applyRuntimeSaveStateBytes(runtime, saveBytes);
+		applyRuntimeSaveState(
+			runtime,
+			decodeRuntimeSaveState(
+				saveBytes,
+				runtime.machine.memory.ramByteCount(),
+				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+			),
+		);
 	const restoredClosure = cpu.getGlobalByKey(savedClosureName) as Closure;
 	const restoredTable = cpu.getGlobalByKey(closureTableName) as Table;
 	assert.equal(restoredClosure, slot1Closure);
@@ -431,8 +439,15 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	cpu.setGlobalByKey(secondName, secondClosure);
 	cpu.setGlobalByKey(tableName, closureTable);
 
-	const saveBytes = captureRuntimeSaveStateBytes(runtime);
-	applyRuntimeSaveStateBytes(runtime, saveBytes);
+		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		applyRuntimeSaveState(
+			runtime,
+			decodeRuntimeSaveState(
+				saveBytes,
+				runtime.machine.memory.ramByteCount(),
+				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+			),
+		);
 
 	const restoredFirst = cpu.getGlobalByKey(firstName) as Closure;
 	const restoredSecond = cpu.getGlobalByKey(secondName) as Closure;
@@ -482,7 +497,14 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	cpu.setGlobalByKey(canonicalName, canonicalClosure);
 	cpu.setGlobalByKey(tableName, closureTable);
 
-	applyRuntimeSaveStateBytes(runtime, captureRuntimeSaveStateBytes(runtime));
+		applyRuntimeSaveState(
+			runtime,
+			decodeRuntimeSaveState(
+				encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+				runtime.machine.memory.ramByteCount(),
+				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+			),
+		);
 	let restoredDynamic = cpu.getGlobalByKey(dynamicName) as Closure;
 	let restoredCanonical = cpu.getGlobalByKey(canonicalName) as Closure;
 	let restoredTable = cpu.getGlobalByKey(tableName) as Table;
@@ -494,7 +516,14 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	applyRuntimeSaveStateBytes(runtime, captureRuntimeSaveStateBytes(runtime));
+		applyRuntimeSaveState(
+			runtime,
+			decodeRuntimeSaveState(
+				encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+				runtime.machine.memory.ramByteCount(),
+				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+			),
+		);
 	restoredDynamic = cpu.getGlobalByKey(dynamicName) as Closure;
 	restoredCanonical = cpu.getGlobalByKey(canonicalName) as Closure;
 	restoredTable = cpu.getGlobalByKey(tableName) as Table;

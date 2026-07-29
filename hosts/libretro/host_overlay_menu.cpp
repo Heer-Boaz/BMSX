@@ -7,7 +7,6 @@
 #include "render/video_presenter.h"
 #include "render/host_overlay/overlay_queue.h"
 #include "spec/bmsx/memory_map.h"
-#include "spec/gx/vram.h"
 #include <array>
 #include <cstdio>
 
@@ -420,16 +419,18 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 		queued = true;
 	}
 	if (presenter.showResourceUsageGizmo) {
+		const double gxGpuVramBytes = static_cast<double>(
+			runtime.machine.gxGpu.readVramSnapshotBytes().size());
 		const std::array<double, UsageBarCount> used{
 			static_cast<double>(runtime.cpuUsageCyclesUsed()),
 			static_cast<double>(
 				BASE_RAM_USED_SIZE + runtime.machine.cpu.luaHeap().usedBytes()),
-			static_cast<double>(GX_GPU_VRAM_BYTE_COUNT),
+			gxGpuVramBytes,
 		};
 		const std::array<double, UsageBarCount> total{
 			static_cast<double>(runtime.cpuUsageCyclesGranted()),
 			static_cast<double>(runtime.machine.memory.ramByteCount()),
-			static_cast<double>(GX_GPU_VRAM_BYTE_COUNT),
+			gxGpuVramBytes,
 		};
 		queueCommand(rectKind, Host2DRef{.rect = &m_usagePanelRect});
 		for (i32 index = 0; index < UsageBarCount; index += 1) {

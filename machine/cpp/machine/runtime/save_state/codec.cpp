@@ -7,7 +7,6 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/devices/input/contracts.h"
-#include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
 #include <algorithm>
 #include <cmath>
@@ -649,10 +648,10 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 		throw BMSX_RUNTIME_ERROR("machine.gxGpu.commandBuffer.readbackPhase cannot contain the backend-submitted phase.");
 	}
 	state.readbackFenceCommandCount = requireBoundedU32(requireField(object, "readbackFenceCommandCount", label), "machine.gxGpu.commandBuffer.readbackFenceCommandCount", 0u, static_cast<u32>(state.commandCount));
-	state.readbackX = requireBoundedU32(requireField(object, "readbackX", label), "machine.gxGpu.commandBuffer.readbackX", 0u, GX_GPU_VRAM_WIDTH - 1u);
+	state.readbackX = requireBoundedU32(requireField(object, "readbackX", label), "machine.gxGpu.commandBuffer.readbackX", 0u, GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 	state.readbackY = requireBoundedU32(requireField(object, "readbackY", label), "machine.gxGpu.commandBuffer.readbackY", 0u, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1u);
 	state.readbackVramYAddressExtensionWord = static_cast<u8>(requireBoundedU32(requireField(object, "readbackVramYAddressExtensionWord", label), "machine.gxGpu.commandBuffer.readbackVramYAddressExtensionWord", 0u, 1u));
-	state.readbackWidth = requireBoundedU32(requireField(object, "readbackWidth", label), "machine.gxGpu.commandBuffer.readbackWidth", 0u, GX_GPU_VRAM_WIDTH);
+	state.readbackWidth = requireBoundedU32(requireField(object, "readbackWidth", label), "machine.gxGpu.commandBuffer.readbackWidth", 0u, GX_GPU_VRAM_X_ADDRESS_PERIOD);
 	state.readbackHeight = requireBoundedU32(requireField(object, "readbackHeight", label), "machine.gxGpu.commandBuffer.readbackHeight", 0u, GX_GPU_TRANSFER_MAX_HEIGHT);
 	const size_t readbackPixelCount = static_cast<size_t>(state.readbackWidth) * static_cast<size_t>(state.readbackHeight);
 	state.readbackPixelCursor = requireBoundedU32(requireField(object, "readbackPixelCursor", label), "machine.gxGpu.commandBuffer.readbackPixelCursor", 0u, static_cast<u32>(readbackPixelCount));
@@ -910,12 +909,12 @@ BinValue encodeGxGpuSaveState(const GxGpuSaveState& state) {
 	return BinValue(std::move(object));
 }
 
-GxGpuSaveState decodeGxGpuSaveState(const BinValue& value, const char* label) {
+GxGpuSaveState decodeGxGpuSaveState(const BinValue& value, const char* label, size_t vramByteCount) {
 	const BinObject& object = requireObject(value, label);
 	const GxGpuState base = decodeGxGpuState(value, label);
 	GxGpuSaveState state;
 	static_cast<GxGpuState&>(state) = base;
-	state.vramBytes = requireBinaryWithLength(requireField(object, "vramBytes", label), "machine.gxGpu.vramBytes", GX_GPU_VRAM_BYTE_COUNT);
+	state.vramBytes = requireBinaryWithLength(requireField(object, "vramBytes", label), "machine.gxGpu.vramBytes", vramByteCount);
 	return state;
 }
 
@@ -1335,14 +1334,22 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	return BinValue(std::move(object));
 }
 
-MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label, size_t ramByteCount) {
+MachineSaveState decodeMachineSaveState(
+	const BinValue& value,
+	const char* label,
+	size_t ramByteCount,
+	size_t gxGpuVramByteCount
+) {
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory", ramByteCount);
 	state.cartridge = decodeCartridgeControllerState(requireField(object, "cartridge", label), "machineState.machine.cartridge");
 	state.dma = decodeDmaControllerState(requireField(object, "dma", label), "machineState.machine.dma");
 	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
-	state.gxGpu = decodeGxGpuSaveState(requireField(object, "gxGpu", label), "machineState.machine.gxGpu");
+	state.gxGpu = decodeGxGpuSaveState(
+		requireField(object, "gxGpu", label),
+		"machineState.machine.gxGpu",
+		gxGpuVramByteCount);
 	state.gxGte = decodeGxGteState(requireField(object, "gxGte", label), "machineState.machine.gxGte");
 	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
@@ -1365,11 +1372,16 @@ BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 RuntimeSaveMachineState decodeRuntimeSaveMachineState(
 	const BinValue& value,
 	const char* label,
-	size_t ramByteCount
+	size_t ramByteCount,
+	size_t gxGpuVramByteCount
 ) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveMachineState state;
-	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine", ramByteCount);
+	state.machine = decodeMachineSaveState(
+		requireField(object, "machine", label),
+		"machineState.machine",
+		ramByteCount,
+		gxGpuVramByteCount);
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
 	state.frameLoop = decodeFrameLoopState(requireField(object, "frameLoop", label), "machineState.frameLoop");
 	state.schedulerNowCycles = requireI64(requireField(object, "schedulerNowCycles", label), "machineState.schedulerNowCycles");
@@ -1737,75 +1749,40 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	return state;
 }
 
-BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
+} // namespace
+
+std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
 	BinObject object;
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["pendingEntryCall"] = state.pendingEntryCall;
-	return BinValue(std::move(object));
-}
-
-RuntimeSaveState decodeRuntimeSaveStateValue(
-	const BinValue& value,
-	const char* label,
-	size_t ramByteCount
-) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeSaveState state;
-	state.machineState = decodeRuntimeSaveMachineState(
-		requireField(object, "machineState", label),
-		"runtimeSaveState.machineState",
-		ramByteCount);
-	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
-	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");
-	return state;
-}
-
-} // namespace
-
-std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
-	std::vector<u8> bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	const MachineSaveState& machineState = state.machineState.machine;
-	size_t cartridgeRamByteCount = 0u;
-	for (const CartridgeSlotState& slot : machineState.cartridge.slots) {
-		cartridgeRamByteCount += slot.ram.size();
-	}
-	if (bytes.size() > runtimeSaveStateWireCapacity(
-		machineState.memory.ram.size(),
-		cartridgeRamByteCount
-	)) {
-		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
-	}
-	return bytes;
+	return encodeBinaryWithPropTable(BinValue(std::move(object)), RUNTIME_SAVE_STATE_PROP_NAMES);
 }
 
 RuntimeSaveState decodeRuntimeSaveState(
 	std::span<const u8> data,
 	size_t ramByteCount,
-	size_t cartridgeRamByteCount
+	size_t gxGpuVramByteCount
 ) {
-	if (data.size() > runtimeSaveStateWireCapacity(ramByteCount, cartridgeRamByteCount)) {
-		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
-	}
-	return decodeRuntimeSaveStateValue(
-		decodeBinaryWithPropTable(data.data(), data.size(), RUNTIME_SAVE_STATE_PROP_NAMES),
-		"runtimeSaveState",
-		ramByteCount);
-}
-
-// disable-next-line single_line_method_pattern -- byte save-state API composes capture and binary encoding at the public boundary.
-std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
-	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-}
-
-// disable-next-line single_line_method_pattern -- byte save-state API composes binary decoding and runtime restore at the public boundary.
-void applyRuntimeSaveStateBytes(Runtime& runtime, std::span<const u8> data) {
-	applyRuntimeSaveState(
-		runtime,
-		decodeRuntimeSaveState(
-			data,
-			runtime.machine.memory.ramByteCount(),
-			runtime.machine.cartridgeController.ramByteCount()));
+	const char* label = "runtimeSaveState";
+	const BinValue value = decodeBinaryWithPropTable(
+		data.data(),
+		data.size(),
+		RUNTIME_SAVE_STATE_PROP_NAMES);
+	const BinObject& object = requireObject(value, label);
+	RuntimeSaveState state;
+	state.machineState = decodeRuntimeSaveMachineState(
+		requireField(object, "machineState", label),
+		"runtimeSaveState.machineState",
+		ramByteCount,
+		gxGpuVramByteCount);
+	state.cpuState = decodeCpuRuntimeState(
+		requireField(object, "cpuState", label),
+		"runtimeSaveState.cpuState");
+	state.pendingEntryCall = requireBool(
+		requireField(object, "pendingEntryCall", label),
+		"runtimeSaveState.pendingEntryCall");
+	return state;
 }
 
 } // namespace bmsx

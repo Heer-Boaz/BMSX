@@ -47,7 +47,10 @@ import {
 	GX_GPU_READBACK_SUBMITTED,
 	GxGpuCommandBuffer,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/spec/gx/vram';
+import {
+	GX_GPU_VRAM_X_ADDRESS_PERIOD,
+	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
+} from '../../machine/ts/spec/gx/vram';
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_BGCOLOR_LOW,
@@ -253,6 +256,7 @@ import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/spec/bmsx/model';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
+import { GxGpuSoftwareState } from '../../machine/ts/render/backend/software/gx_gpu_state';
 import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import { HeadlessVideoOutput } from '../../machine/ts/render/headless/video_output';
@@ -260,11 +264,12 @@ import {
 	gxGpuSoftwareBlendRgb555,
 	gxGpuSoftwareTextureModulationChannel5,
 	gxGpuSoftwareTextureModulationPreDither,
-	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
 } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
 const headlessVideoOutput = new HeadlessVideoOutput({ x: 256, y: 212 });
+const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
+const gxGpuSoftwareVram = gxGpuSoftware.vram;
 
 test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', () => {
 	const { gpu } = createGpu();
@@ -286,7 +291,7 @@ test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', ()
 	completeGpuCommands(gpu);
 	const output = gpu.readDeviceOutput();
 	assert.equal(output.commandBuffer.presentCommandCount, 0);
-	new HeadlessGPUBackend(headlessVideoOutput).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
 
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, GX_GPU_STATUS_READY_TO_SEND_VRAM);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST, GX_GPU_STATUS_DMA_DATA_REQUEST);
@@ -304,11 +309,11 @@ test('GX-GPU GPUREAD preserves row-major order across X and Y wrap', () => {
 	const { gpu } = createGpu();
 	const positionWord = (1023 << 16) | 1023;
 	const sizeWord = (2 << 16) | 2;
-	const vramBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
-	let byteIndex = (1023 * GX_GPU_VRAM_WIDTH + 1023) << 1;
+	const vramBytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	let byteIndex = (1023 * GX_GPU_VRAM_X_ADDRESS_PERIOD + 1023) << 1;
 	vramBytes[byteIndex] = 0x11;
 	vramBytes[byteIndex + 1] = 0x11;
-	byteIndex = (1023 * GX_GPU_VRAM_WIDTH) << 1;
+	byteIndex = (1023 * GX_GPU_VRAM_X_ADDRESS_PERIOD) << 1;
 	vramBytes[byteIndex] = 0x22;
 	vramBytes[byteIndex + 1] = 0x22;
 	byteIndex = 1023 << 1;
@@ -322,14 +327,14 @@ test('GX-GPU GPUREAD preserves row-major order across X and Y wrap', () => {
 	gpu.writeGp0(positionWord);
 	gpu.writeGp0(sizeWord);
 	completeGpuCommands(gpu);
-	new HeadlessGPUBackend(headlessVideoOutput).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
 	assert.equal(gpu.readGp0(), 0x22221111);
 	assert.equal(gpu.readGp0(), 0x44443333);
 });
 
 test('GX-GPU open Y gate exposes installed upper VRAM storage', () => {
 	const { gpu } = createGpu();
-	const vramBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+	const vramBytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
 	vramBytes[0] = 0x34;
 	vramBytes[1] = 0x12;
 	gpu.replaceVramSnapshotBytes(vramBytes);
@@ -346,10 +351,11 @@ test('GX-GPU open Y gate exposes installed upper VRAM storage', () => {
 	gpu.writeGp0(513 << 16);
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
-	new HeadlessGPUBackend(headlessVideoOutput).executeGxGpuReadback(gpu);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x1234);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 512)], 0xabcd);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 513)], 0xabcd);
+	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.executeGxGpuReadback(gpu);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 0)], 0x1234);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 512)], 0xabcd);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 513)], 0xabcd);
 	assert.equal(gpu.readGp0(), 0xabcd);
 });
 
@@ -374,14 +380,14 @@ test('GX-GPU queues a later C0 transfer behind the active GPUREAD fence', () => 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	let output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
 	gpu.retirePresentedCommands();
 	assert.equal(gpu.readGp0(), 0x00001111);
 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
 	assert.equal(gpu.readGp0(), 0x00002222);
 });
 
@@ -403,7 +409,7 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
 	let output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
 	assert.equal(output.readbackPort.phase, GX_GPU_READBACK_PENDING);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, 0);
 	gpu.retirePresentedCommands();
@@ -412,7 +418,7 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
 	assert.equal(gpu.readGp0(), 0x00001234);
 });
 
@@ -460,13 +466,14 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	const presentOutput = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(presentOutput, presentOutput.commandBuffer.presentCommandCount);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, presentOutput, presentOutput.commandBuffer.presentCommandCount);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 16, 0)], powerOnWord16);
 });
 
 test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () => {
 	const { gpu } = createGpu();
+	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const powerOnWord16 = gpu.readVramSnapshotBytes()[32]! | (gpu.readVramSnapshotBytes()[33]! << 8);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
@@ -483,7 +490,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	let output = gpu.readDeviceOutput();
 	const commandBuffer = output.commandBuffer;
 	const readback = output.readbackPort;
-	new HeadlessGPUBackend(headlessVideoOutput).executeGxGpuReadback(gpu);
+	backend.executeGxGpuReadback(gpu);
 	const readbackToken = readback.token;
 	assert.equal(readback.phase, GX_GPU_READBACK_READY);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, GX_GPU_STATUS_READY_TO_SEND_VRAM);
@@ -529,15 +536,15 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x7c00);
+	executeGxGpuSoftwareVramCommands(backend.gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 0)], 0x001f);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 16, 0)], powerOnWord16);
+	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 32, 0)], 0x7c00);
 });
 
 test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained request', () => {
 	const { gpu } = createGpu();
-	const vramBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+	const vramBytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
 	vramBytes[0] = 0x34;
 	vramBytes[1] = 0x12;
 	gpu.replaceVramSnapshotBytes(vramBytes);
@@ -562,7 +569,7 @@ test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained req
 	readback.completeReadback(staleToken);
 	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
 	assert.equal(commandBuffer.presentCommandCount, 0);
-	new HeadlessGPUBackend(headlessVideoOutput).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
 	assert.equal(gpu.readGp0(), 0x00001234);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
@@ -597,7 +604,7 @@ function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dm
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
-	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma);
+	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	dma.reset();
 	gpu.reset();
 	irq.reset();
@@ -667,19 +674,19 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramWrappedWidth(1000, 12), 12);
 	assert.equal(gxGpuVramWrappedWidth(1008, 1024), 16);
 	assert.equal(gxGpuVramWrappedWidth(0, 1008), 1008);
-	assert.equal(gxGpuVramWrappedHeight(500, 12, 0), 12);
-	assert.equal(gxGpuVramWrappedHeight(511, 511, 0), 1);
-	assert.equal(gxGpuVramWrappedHeight(0, 511, 0), 511);
-	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 0, 0, 8, 8, 0), true);
-	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 512, 256, 520, 264, 0), false);
-	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(60, 8, 1, 1, 60, 520, 61, 521, 0), true);
-	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 24, 32, 16), true);
-	assert.equal(gxGpuVramCopyChunkHeight(20, 24, 16), 4);
-	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 10, 24, 32, 16), false);
-	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 20, 32, 16), false);
-	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16), false);
-	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16), false);
-	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16), 16);
+	assert.equal(gxGpuVramWrappedHeight(500, 12, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), 12);
+	assert.equal(gxGpuVramWrappedHeight(511, 511, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), 1);
+	assert.equal(gxGpuVramWrappedHeight(0, 511, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), 511);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 0, 0, 8, 8, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), true);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 512, 256, 520, 264, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), false);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(60, 8, 1, 1, 60, 520, 61, 521, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), true);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 24, 32, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), true);
+	assert.equal(gxGpuVramCopyChunkHeight(20, 24, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), 4);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 10, 24, 32, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), true);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 20, 32, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), false);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), false);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), false);
+	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16, 1, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1), 16);
 	const uvPlane = new Uint32Array(2 * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
 	uvPlane.set([1, 2, 17, 2, 1, 18]);
 	gxGpuTriangleAttributePlane(uvPlane, 0, 2, 256, 0, 0, 16, 0, 0, 16);
@@ -861,12 +868,12 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	assert.equal(firstBytes[4096], 130);
 	assert.equal(firstBytes[65535], 92);
 	assert.equal(firstBytes[65536], 58);
-	assert.equal(firstBytes[GX_GPU_VRAM_BYTE_COUNT - 1], 187);
+	assert.equal(firstBytes[PSX_MACHINE_SPEC.gxGpuVramBytes - 1], 187);
 	assert.equal(gxGpuVramDigest(firstBytes), 0xb3ba77ea);
 
 	let output = first.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], powerOnWord0);
 	first.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 	first.writeGp0(0);
 	first.writeGp0((1 << 16) | 1);
@@ -874,15 +881,15 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	completeGpuCommands(first);
 	first.presentReadyFrameOnVblankEdge();
 	output = first.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x1234);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x1234);
 
 	const second = createGpu().gpu;
 	assert.ok(second.readVramSnapshotSerial() > firstSerial);
 	assert.ok(second.readVramReplacementSerial() > firstReplacementSerial);
 	output = second.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
+	executeGxGpuSoftwareVramCommands(gxGpuSoftware, output, output.commandBuffer.presentCommandCount);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], powerOnWord0);
 
 	const gp1Serial = second.readVramSnapshotSerial();
 	const gp1ReplacementSerial = second.readVramReplacementSerial();
@@ -896,7 +903,7 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	assert.equal(gxGpuVramDigest(second.readVramSnapshotBytes()), 0xb3ba77ea);
 
 	const restoredBytes = second.readVramSnapshotBytes().slice();
-	const upperByteIndex = GX_GPU_VRAM_BYTE_COUNT >> 1;
+	const upperByteIndex = PSX_MACHINE_SPEC.gxGpuVramBytes >> 1;
 	restoredBytes[0] = 0x5a;
 	restoredBytes[upperByteIndex] = 0xa5;
 	second.replaceVramSnapshotBytes(restoredBytes);
@@ -950,11 +957,11 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) >>> 0, GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH);
 	gpu.presentReadyFrameOnVblankEdge();
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 2);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 0)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 0)], 0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount), 2);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 33, 0)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 34, 0)], 0);
 
 	gpu.reset();
 	assert.equal(commandBuffer.commandCount, 0);
@@ -1136,15 +1143,15 @@ test('GX-GPU partial presentation snapshot does not expose queued commands', () 
 	assert.equal(commands.presentCommandCount, 0);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commands, 0, commands.presentCommandCount), 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.presentCommandCount, 0);
 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commands, 0, commands.presentCommandCount), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x001f);
 
 	gpu.retirePresentedCommands();
 	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [0, 0]);
@@ -1165,16 +1172,16 @@ test('GX-GPU retire preserves commands appended after the sealed VBLANK snapshot
 	gpu.writeGp0((1 << 16) | 1);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commands, 0, commands.presentCommandCount), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 0)], 0);
 
 	gpu.retirePresentedCommands();
 	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [1, 0]);
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x03e0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commands, 0, commands.presentCommandCount), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 0)], 0x03e0);
 });
 
 test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () => {
@@ -2009,7 +2016,7 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 const GX_GPU_SOFTWARE_TEST_WIDTH = 256;
 const GX_GPU_SOFTWARE_TEST_HEIGHT = 256;
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
-const GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+const GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
 const GX_GPU_SOFTWARE_TEST_PCRTC_WORDS = new Uint32Array([
 	0x0000ff21, 0,
 	(16 << 9) | (GX_GPU_PSMGX16 << 15), 0,
@@ -2125,12 +2132,12 @@ test('GX-GPU software backend consumes only presentable commands', () => {
 	commandBuffer.completeCommandExecution(commandBuffer.commandCount);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount), 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 4, 5)], 0);
 
 	commandBuffer.sealCommandsForPresentation();
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 1);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0x001f);
+	assert.equal(executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 4, 5)], 0x001f);
 });
 
 test('GX-GPU software backend captures live VRAM into save-state snapshot', () => {
@@ -2140,13 +2147,13 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
 	const output = gpu.readDeviceOutput();
-	const backend = new HeadlessGPUBackend(headlessVideoOutput);
+	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	backend.captureGxGpuVramSnapshot(gpu);
 	assert.equal(output.commandBuffer.commandCount, 0);
 	assert.equal(output.commandBuffer.presentCommandCount, 0);
 	const saveState = gpu.captureSaveState();
-	const byteIndex = gxGpuSoftwareVramIndex(4, 5) << 1;
-	assert.equal(saveState.vramBytes.length, GX_GPU_VRAM_BYTE_COUNT);
+	const byteIndex = gxGpuSoftwareVramIndex(gxGpuSoftware, 4, 5) << 1;
+	assert.equal(saveState.vramBytes.length, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.equal(saveState.vramBytes[byteIndex], 0x1f);
 	assert.equal(saveState.vramBytes[byteIndex + 1], 0x00);
 	gpu.writeGp1(GX_GPU_GP1_RESET << 24);
@@ -2169,11 +2176,11 @@ test('GX-GPU software backend preserves vertical Gouraud packet order through fi
 	]), GX_GPU_COMMAND_DRAW_LINE, opcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x0001);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 13)], 0x0002);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 16)], 0x0004);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 10)], 0x0001);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 13)], 0x0002);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 16)], 0x0004);
 });
 
 test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joints', () => {
@@ -2221,39 +2228,39 @@ test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joint
 	]), GX_GPU_COMMAND_DRAW_POLYLINE, polylineOpcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (const [x, y] of [[10, 10], [11, 11], [12, 11], [13, 12], [14, 12]]) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x001f);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, y)], 0x001f);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 12)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 12)], 0);
 	for (const [x, y] of [[20, 10], [20, 11], [21, 12], [21, 13], [22, 14]]) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x03e0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, y)], 0x03e0);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(21, 11)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(22, 13)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 21, 11)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 22, 13)], 0);
 	for (const [x, y] of [[11, 29], [12, 29], [8, 30], [9, 30], [10, 30], [6, 31], [7, 31], [4, 32], [5, 32]]) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x03ff);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, y)], 0x03ff);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 31)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 30)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 40)], 0x000f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 40)], 0x000f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 40)], 0x0017);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 41)], 0x000f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 42)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 4, 31)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 30)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 511)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 40)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 41, 40)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 42, 40)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 42, 41)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 42, 42)], 0x000f);
 	for (let step = 0; step < 5; step += 1) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023 - step, 70 + step)], 0x7c00);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023 - step, 70 + step)], 0x7c00);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 70)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(512, 70)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 70)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 512, 70)], 0);
 	for (let step = 0; step < 5; step += 1) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50 + step, 511 - step)], 0x03e0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 50 + step, 511 - step)], 0x03e0);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 0)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 256)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 50, 0)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 50, 256)], 0);
 });
 
 test('GX-GPU software backend blends untextured semi-transparent rectangles with all PSX draw modes', () => {
@@ -2274,12 +2281,12 @@ test('GX-GPU software backend blends untextured semi-transparent rectangles with
 	}
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x7def);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)], 0x7fff);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x0000);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 20)], 0x7ce7);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 20)], 0x7def);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 20, 20)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 20)], 0x0000);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 20)], 0x7ce7);
 });
 
 test('GX-GPU software backend owns PSX triangle edges and quad seams exactly once', () => {
@@ -2320,32 +2327,32 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 	]), GX_GPU_COMMAND_DRAW_POLYGON, semiTransparentQuadOpcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4 + column, 4 + row)], 0x001f);
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12 + column, 4 + row)], 0x03e0);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 4 + column, 4 + row)], 0x001f);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12 + column, 4 + row)], 0x03e0);
 		}
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8 - row, 4 + row)], 0);
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16 - row, 4 + row)], 0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 8 - row, 4 + row)], 0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 16 - row, 4 + row)], 0);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 4)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 5)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 5)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 5)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 6)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 4)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 5)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 33, 5)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 34, 5)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 6)], 0);
 	for (let y = 20; y < 24; y += 1) {
 		for (let x = 20; x < 24; x += 1) {
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x000f);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, y)], 0x000f);
 		}
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 24)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 31)], 0x000f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 31)], 0x0017);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 31)], 0x0017);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 32)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 24, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 20, 24)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 31)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 31, 31)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 32, 31)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 31, 32)], 0x0017);
 });
 
 test('GX-GPU software Gouraud triangles use PSX fixed-12 color planes before storage and texture modulation', () => {
@@ -2380,10 +2387,10 @@ test('GX-GPU software Gouraud triangles use PSX fixed-12 color planes before sto
 	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedGouraudOpcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 13)], 0x000b);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 33)], 0x000b);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 13, 13)], 0x000b);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 33, 33)], 0x000b);
 });
 
 test('GX-GPU software polygons wrap the raster bucket after drawing offset and primitive-size rejection', () => {
@@ -2423,24 +2430,24 @@ test('GX-GPU software polygons wrap the raster bucket after drawing offset and p
 	]), GX_GPU_COMMAND_DRAW_POLYGON, gouraudPolygonOpcode, 0, 0, 0x0007f40b, 0x0007f80c, 0x00200000);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020 + column, 10 + row)], 0x001f);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1020 + column, 10 + row)], 0x001f);
 		}
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 10)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020, 20)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1021, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1022, 20)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 20)], 0x7fff);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 20)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 509)], 0x2110);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 509)], 0x2208);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 510)], 0x4108);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 509)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 510)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1020, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1021, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1022, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 20)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 509)], 0x2110);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 509)], 0x2208);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 510)], 0x4108);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 509)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 510)], 0);
 });
 
 test('GX-GPU software textured polygons use PSX fixed-point UV gradients and half-texel seed', () => {
@@ -2494,20 +2501,20 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 11)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 10)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(23, 20)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 30)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 30)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1019, 500)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020, 500)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(100, 503)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(100, 504)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 10)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 10)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 11)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 23, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 24, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 33, 30)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 34, 30)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1019, 500)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1020, 500)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 100, 503)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 100, 504)], 0x03e0);
 });
 
 test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT wrap edges', () => {
@@ -2558,43 +2565,43 @@ test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, GX_GPU_TEXTURE_MODE_PALETTE4 | 0x0f, 0, 0, 1023 | (1023 << 10), 0, 0, GX_GPU_SKIPPED_LINE_NONE, 1);
 
 	gxGpuSoftwareVram.fill(0);
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(15, 15)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8, 15)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(15, 8)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8, 8)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 30)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 30)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(69, 511)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(69, 256)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(128, 50)] = 0x100f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 60)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 60)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 70)] = 0x1000;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(960, 70)] = 0x0002;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(17, 80)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(18, 80)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)] = 0x0002;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 512)] = 0x0001;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(320, 100)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(321, 100)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(322, 100)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(960, 0)] = 0x0002;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(322, 512)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 60)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(61, 60)] = 0x03e0;
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 15, 15)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 8, 15)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 15, 8)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 8, 8)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 30)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 30)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 69, 511)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 69, 256)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 128, 50)] = 0x100f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 60)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 60)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 70)] = 0x1000;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 960, 70)] = 0x0002;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 17, 80)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 18, 80)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)] = 0x0002;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 512)] = 0x0001;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 320, 100)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 321, 100)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 322, 100)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 960, 0)] = 0x0002;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 322, 512)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 60, 60)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 61, 60)] = 0x03e0;
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.deepEqual([
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 11)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 11)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 10)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 10)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 11)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 11)],
 	], [0x001f, 0x03e0, 0x7c00, 0x7fff]);
 	assert.deepEqual([
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(21, 20)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 30)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 31)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 40)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 40)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 50)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(51, 50)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 60)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(61, 60)],
-		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 600)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(61, 600)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 20, 20)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 21, 20)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 30)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 31)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 40)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 41, 40)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 50, 50)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 51, 50)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 60, 60)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 61, 60)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 60, 600)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 61, 600)],
 	], [0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0, 0x03e0, 0x03e0, 0x001f, 0x7c00]);
 });
 
@@ -2697,40 +2704,40 @@ test('GX-GPU software backend applies drawing offsets, raw drawing areas, and co
 	]), GX_GPU_COMMAND_DRAW_POLYGON, blendedAliasedQuadOpcode, 0, 0, 0, 1023 | (1023 << 10));
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12 + column, 12 + row)], 0x001f);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12 + column, 12 + row)], 0x001f);
 		}
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 12)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 11)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 12)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 16)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 12)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 11)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 16, 12)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 16)], 0);
 	for (let y = 20; y <= 25; y += 1) {
 		for (let x = 20; x <= 25; x += 1) {
-			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x03e0);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, y)], 0x03e0);
 		}
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(19, 20)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(26, 25)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 19)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(25, 26)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(35, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 25)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(35, 25)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 19, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 26, 25)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 20, 19)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 25, 26)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 35, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 25)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 35, 25)], 0x7fff);
 	for (let coord = 0; coord < 6; coord += 1) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40 + coord, 20 + coord)], 0x001f);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40 + coord, 20 + coord)], 0x001f);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(39, 19)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(46, 26)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x7fff);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 8)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(61, 8)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(105, 255)], 0x020f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(125, 255)], 0x0107);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 39, 19)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 46, 26)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 60, 8)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 61, 8)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 105, 255)], 0x020f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 125, 255)], 0x0107);
 });
 
 test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', () => {
@@ -2749,13 +2756,13 @@ test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', ()
 	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE, 0, 0, 0, 0, 0, 3);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let x = 80; x < 96; x += 1) {
-		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, 30)], 0x03e0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, x, 30)], 0x03e0);
 	}
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(79, 30)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(96, 30)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 79, 30)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 96, 30)], 0);
 });
 
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
@@ -2801,7 +2808,7 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 		vramSnapshotSerial: 0n,
 		vramReplacementSerial: 0n,
 	};
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 1, 0, 0, 255, 0);
@@ -2838,11 +2845,11 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	gxGpuSoftwareVram.fill(0);
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 400)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(131, 401)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 591)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 611)] = 0x7fff;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 900, 400)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 131, 401)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 900, 591)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 900, 611)] = 0x7fff;
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 255, 0, 0, 255, 0);
@@ -2852,7 +2859,7 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023 | (211 << 12);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assertRgbaPixel(pixels, 0, 211, 255, 255, 255);
 
 	state.height = 192;
@@ -2862,10 +2869,10 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023 | (191 << 12);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 768)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(131, 769)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 959)] = 0x7c00;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 900, 768)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 131, 769)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 900, 959)] = 0x7c00;
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 255, 0, 0, 255, 0);
 	assertRgbaPixel(pixels, 0, 191, 0, 0, 255);
@@ -2911,7 +2918,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 	gxGpuSoftwareVram[4096] = 0;
 	gxGpuSoftwareVram[4097] = 0x8000;
 	gxGpuSoftwareVram[4098] = 0xffff;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
@@ -2922,7 +2929,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1 | GX_GPU_PCRTC_PMODE_EN2 | GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		0, 0, 0, 0,
@@ -2936,7 +2943,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 		| (64 << 8);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		191, 0, 0, 0,
 		0, 191, 0, 0,
@@ -2946,7 +2953,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1 | GX_GPU_PCRTC_PMODE_EN2 | GX_GPU_PCRTC_PMODE_MMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		0, 255, 0, 128,
@@ -2956,7 +2963,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] |= GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		0, 255, 0, 0,
@@ -2966,7 +2973,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] |= 255 << 8;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		0, 0, 0, 0,
 		0, 0, 0, 0,
@@ -3022,7 +3029,7 @@ test('GX-GPU PCRTC projects display signals and samples the source at circuit ma
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 2, 1)] = 0x001f;
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 4, 1)] = 0x7c00;
-	scanoutGxGpuSoftwareVram({
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, {
 		width: 2,
 		height: 2,
 	}, pcrtcScanout, 0n, pixelWords);
@@ -3071,7 +3078,7 @@ test('GX-GPU PCRTC keeps mixed-magnification circuits on one signal grid', () =>
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(8192, 1, 2, 0)] = 0x03e0;
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(8192, 1, 0, 1)] = 0x7c00;
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(8192, 1, 2, 1)] = 0x7fff;
-	scanoutGxGpuSoftwareVram({
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, {
 		width: 3,
 		height: 3,
 	}, pcrtcScanout, 0n, pixelWords);
@@ -3127,19 +3134,19 @@ test('GX-GPU PCRTC keeps circuit-one source phase independent from circuit-two c
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 0, 0)] = 0x001f;
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 1, 0)] = 0x03e0;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pcrtcScanout.circuits[0].sourcePhaseX, 3);
 	assert.deepEqual(Array.from(pixelWords), [0x000000ff, 0x0000ff00, 0, 0]);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = circuitOnePmode | GX_GPU_PCRTC_PMODE_EN2;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pcrtcScanout.circuits[0].sourcePhaseX, 3);
 	assert.deepEqual(Array.from(pixelWords), [0, 0x000000ff, 0x0000ff00, 0]);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY2_LOW] = 676 | (3 << 23);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pcrtcScanout.circuits[0].sourcePhaseX, 3);
 	assert.deepEqual(Array.from(pixelWords), [0, 0, 0x000000ff, 0x0000ff00]);
 });
@@ -3211,7 +3218,7 @@ test('GX-GPU PCRTC reads supported DISPFB storage and rejects PSGPU24 on circuit
 	gxGpuSoftwareVram[address + 1] = 0x4433;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x44332211);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 0x1ff | (32 << 9) | (GX_GPU_PSMCT32 << 15);
@@ -3221,28 +3228,28 @@ test('GX-GPU PCRTC reads supported DISPFB storage and rejects PSGPU24 on circuit
 	gxGpuSoftwareVram[address + 1] = 0x8877;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x88776655);
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_HIGH] = 3 | (2 << 11);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (GX_GPU_PSMCT24 << 15);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x80332211);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (GX_GPU_PSMCT16 << 15);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16(4096, 1, 3, 2)] = 0x801f;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x800000ff);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (GX_GPU_PSMCT16S << 15);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 3, 2)] = 0x03e0;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x0000ff00);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1
@@ -3257,33 +3264,33 @@ test('GX-GPU PCRTC reads supported DISPFB storage and rejects PSGPU24 on circuit
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddressGpu24(4096, 1, 3, 2, 1)] = 0x3322;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x80332211);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN2 | GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (GX_GPU_PSGPU24 << 15);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (GX_GPU_PSMGX16 << 15);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddressGx16(4096, 64, 3, 2)] = 0x7c00;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x00ff0000);
 
 	pcrtcWords[GX_GPU_PCRTC_DISPFB2_LOW] = 1 | (1 << 9) | (3 << 15);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN2 | GX_GPU_PCRTC_PMODE_SLBG | (0x55 << 8);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x00332211);
 });
 
@@ -3325,19 +3332,19 @@ test('GX-GPU PCRTC executes MMOD and AMOD against full circuit alpha', () => {
 
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x4050463c);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] |= GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x2850463c);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1 | GX_GPU_PCRTC_PMODE_EN2 | GX_GPU_PCRTC_PMODE_MMOD | (64 << 8);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x40372d23);
 
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] |= GX_GPU_PCRTC_PMODE_AMOD;
@@ -3356,7 +3363,7 @@ test('GX-GPU PCRTC executes MMOD and AMOD against full circuit alpha', () => {
 		circuit2OutputPath: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA,
 		compositionPath: GX_GPU_PCRTC_COMPOSE_GENERIC,
 	});
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.equal(pixelWords[0], 0x28372d23);
 });
 
@@ -3409,7 +3416,7 @@ test('GX-GPU PCRTC follows the PMODE underlay and output-alpha truth table', () 
 		pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = pmode;
 		pcrtcTiming.update(pcrtcWords);
 		pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-		scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+		scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 		assert.equal(pixelWords[0], expected);
 	}
 });
@@ -3435,12 +3442,17 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		vramSnapshotSerial: 1n,
 		vramReplacementSerial: 1n,
 	};
+	const gxGpuSoftware = new GxGpuSoftwareState(
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+		state.width * state.height,
+	);
+	const gxGpuSoftwareVram = gxGpuSoftware.vram;
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 1023 | (510 << 11);
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 << 12;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	gxGpuSoftwareVram.fill(0);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	pcrtcWords[GX_GPU_PCRTC_SMODE2_LOW] = GX_GPU_PCRTC_SMODE2_INT | GX_GPU_PCRTC_SMODE2_FFMD;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	assert.deepEqual({
@@ -3462,11 +3474,11 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		fieldDisplayLineStart: 0,
 		fieldDisplayLineCount: 2,
 	});
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 512)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 513)] = 0x7fff;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 510)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 511)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 512)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 513)] = 0x7fff;
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
@@ -3475,10 +3487,10 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		0, 0, 0, 0,
 	]);
 
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 512)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 513)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 510)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 511)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 512)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 513)] = 0x03e0;
 	state.statusWord = 0;
 	pcrtcScanout.setField(1);
 	assert.deepEqual({
@@ -3494,7 +3506,7 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		fieldDisplayLineStart: 0,
 		fieldDisplayLineCount: 2,
 	});
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
@@ -3505,7 +3517,7 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 
 	state.statusWord = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
 	pcrtcScanout.setField(0);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 255, 255, 0,
 		255, 255, 255, 0,
@@ -3513,14 +3525,14 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		255, 0, 0, 0,
 	]);
 
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 512)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 513)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 510)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 511)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 512)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 513)] = 0x7c00;
 	state.statusWord = 0;
 	pcrtcScanout.setField(1);
 	state.vramSnapshotSerial = 2n;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 255, 255, 0,
 		0, 0, 255, 0,
@@ -3529,7 +3541,7 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 	]);
 
 	state.vramReplacementSerial = 2n;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		0, 0, 0, 0,
 		0, 0, 255, 0,
@@ -3559,19 +3571,24 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 		vramSnapshotSerial: 1n,
 		vramReplacementSerial: 1n,
 	};
+	const gxGpuSoftware = new GxGpuSoftwareState(
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+		state.width * state.height,
+	);
+	const gxGpuSoftwareVram = gxGpuSoftware.vram;
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 1023 | (510 << 11);
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 << 12;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	gxGpuSoftwareVram.fill(0);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	pcrtcWords[GX_GPU_PCRTC_SMODE2_LOW] = GX_GPU_PCRTC_SMODE2_INT;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 512)] = 0x7c00;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 513)] = 0x7fff;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 510)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 511)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 512)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 1023, 513)] = 0x7fff;
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		0, 0, 0, 0,
@@ -3580,7 +3597,7 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 	]);
 
 	pcrtcScanout.setField(1);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		0, 255, 0, 0,
@@ -3590,7 +3607,7 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_LOW] |= 1 << 12;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		255, 0, 0, 0,
@@ -3599,7 +3616,7 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 	]);
 
 	pcrtcScanout.setField(0);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		0, 255, 0, 0,
 		255, 0, 0, 0,
@@ -3611,9 +3628,9 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 	pcrtcWords[GX_GPU_PCRTC_SMODE2_LOW] |= GX_GPU_PCRTC_SMODE2_FFMD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	pcrtcScanout.setField(1);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixels), [
 		255, 0, 0, 0,
 		255, 0, 0, 0,
@@ -3642,25 +3659,30 @@ test('GX-GPU software scanout retains the final even line at odd interlaced heig
 		vramSnapshotSerial: 1n,
 		vramReplacementSerial: 1n,
 	};
+	const gxGpuSoftware = new GxGpuSoftwareState(
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+		state.width * state.height,
+	);
+	const gxGpuSoftwareVram = gxGpuSoftware.vram;
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 0;
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 | (4 << 12);
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	gxGpuSoftwareVram.fill(0);
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	pcrtcWords[GX_GPU_PCRTC_SMODE2_LOW] = GX_GPU_PCRTC_SMODE2_INT | GX_GPU_PCRTC_SMODE2_FFMD;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)] = 0x001f;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 1)] = 0x03e0;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 2)] = 0x7c00;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 1)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 2)] = 0x7c00;
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixelWords), [0x000000ff, 0, 0x0000ff00, 0, 0x00ff0000]);
 
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)] = 0x7fff;
-	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 1)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 0)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 1)] = 0x001f;
 	pcrtcScanout.setField(1);
 	state.vramSnapshotSerial = 2n;
-	scanoutGxGpuSoftwareVram(state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
+	scanoutGxGpuSoftwareVram(gxGpuSoftware, state, pcrtcScanout, state.vramReplacementSerial, pixelWords);
 	assert.deepEqual(Array.from(pixelWords), [0x000000ff, 0x00ffffff, 0x0000ff00, 0x000000ff, 0x00ff0000]);
 });
 
@@ -3694,11 +3716,11 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 	};
 	const pixelWords = new Uint32Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT);
 	const pixels = new Uint8Array(pixelWords.buffer);
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 
 	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
@@ -3706,12 +3728,12 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 		16 | (1 << 16),
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE);
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 16, 1, 0, 255, 0);
 
 	commandBuffer.reset();
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 16, 1, 0, 255, 0);
 });
@@ -3758,7 +3780,7 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 		vramSnapshotSerial: 0n,
 		vramReplacementSerial: 0n,
 	};
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 
 	assertRgbaPixel(pixels, 5, 5, 255, 0, 0);
 	assertRgbaPixel(pixels, 13, 13, 0, 0, 0);
@@ -3873,7 +3895,7 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		vramSnapshotSerial: 0n,
 		vramReplacementSerial: 0n,
 	};
-	renderGxGpuSoftwareFrame(state, output, pixelWords);
+	renderGxGpuSoftwareFrame(gxGpuSoftware, state, output, pixelWords);
 
 	assertRgbaPixel(pixels, 40, 10, 255, 0, 0);
 	assertRgbaPixel(pixels, 41, 10, 0, 255, 0);
@@ -3885,8 +3907,8 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 	assertRgbaPixel(pixels, 61, 20, 0, 255, 0);
 	assertRgbaPixel(pixels, 60, 21, 0, 0, 255);
 	assertRgbaPixel(pixels, 61, 21, 255, 255, 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(62, 20)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 22)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 62, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 60, 22)], 0);
 });
 
 test('GX-GPU software commands preserve texture mask, blend, and mask-test store semantics', () => {
@@ -3958,14 +3980,14 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x81ef);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 20)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 20)], 0x801f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 30)], 0x3c0f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 30)], 0xfc00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 20)], 0x81ef);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 11, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 12, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 13, 20)], 0x801f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 10, 30)], 0x3c0f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 20, 30)], 0xfc00);
 });
 
 test('GX-GPU software commands sample palette8, rectangle flip, and dithered modulation', () => {
@@ -4032,13 +4054,13 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedPolygonOpcode, ditheredDirect16PageWord);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareCommands(gxGpuSoftware, commandBuffer, 0, commandBuffer.presentCommandCount);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x7c00);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 20)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 20)], 0x03e0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(22, 41)], 0x0010);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 30, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 31, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 40, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 41, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 22, 41)], 0x0010);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {

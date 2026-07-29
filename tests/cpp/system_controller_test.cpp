@@ -541,7 +541,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 		"data-bus cartridge selection does not replace the post-unwind execution domain"
 	);
 
-	const std::vector<bmsx::u8> saveBytes = bmsx::captureRuntimeSaveStateBytes(runtime);
+	const std::vector<bmsx::u8> saveBytes =
+		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler can switch execution back to slot 0");
@@ -550,7 +551,12 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 		"slot 0 supplies the code behind the raw closure address"
 	);
 
-	bmsx::applyRuntimeSaveStateBytes(runtime, saveBytes);
+	bmsx::applyRuntimeSaveState(
+		runtime,
+		bmsx::decodeRuntimeSaveState(
+			saveBytes,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	const bmsx::Value restoredClosureValue = cpu.getGlobalByKey(savedClosureName);
 	bmsx::Table* restoredTable = bmsx::asTable(cpu.getGlobalByKey(closureTableName));
 	require(bmsx::asClosure(restoredClosureValue) == slot0Closure, "wire restore preserves canonical static closure identity");
@@ -593,8 +599,14 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	cpu.setGlobalByKey(secondName, secondClosureValue);
 	cpu.setGlobalByKey(tableName, bmsx::valueTable(closureTable));
 
-	const std::vector<bmsx::u8> saveBytes = bmsx::captureRuntimeSaveStateBytes(runtime);
-	bmsx::applyRuntimeSaveStateBytes(runtime, saveBytes);
+	const std::vector<bmsx::u8> saveBytes =
+		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+	bmsx::applyRuntimeSaveState(
+		runtime,
+		bmsx::decodeRuntimeSaveState(
+			saveBytes,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 
 	const bmsx::Value restoredFirstValue = cpu.getGlobalByKey(firstName);
 	const bmsx::Value restoredSecondValue = cpu.getGlobalByKey(secondName);
@@ -640,7 +652,12 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	cpu.setGlobalByKey(canonicalName, canonicalClosureValue);
 	cpu.setGlobalByKey(tableName, bmsx::valueTable(closureTable));
 
-	bmsx::applyRuntimeSaveStateBytes(runtime, bmsx::captureRuntimeSaveStateBytes(runtime));
+	bmsx::applyRuntimeSaveState(
+		runtime,
+		bmsx::decodeRuntimeSaveState(
+			bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime)),
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	bmsx::Value restoredDynamicValue = cpu.getGlobalByKey(dynamicName);
 	bmsx::Value restoredCanonicalValue = cpu.getGlobalByKey(canonicalName);
 	bmsx::Table* restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName));
@@ -652,7 +669,12 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler switches the execution latch to the non-static cartridge");
-	bmsx::applyRuntimeSaveStateBytes(runtime, bmsx::captureRuntimeSaveStateBytes(runtime));
+	bmsx::applyRuntimeSaveState(
+		runtime,
+		bmsx::decodeRuntimeSaveState(
+			bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime)),
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	restoredDynamicValue = cpu.getGlobalByKey(dynamicName);
 	restoredCanonicalValue = cpu.getGlobalByKey(canonicalName);
 	restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName));

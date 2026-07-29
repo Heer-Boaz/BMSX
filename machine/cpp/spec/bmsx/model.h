@@ -38,6 +38,7 @@ struct MachineModelSpec {
 	i64 dmaCartRomBurstSetupCycles;
 	i64 imgDecCyclesPerOutputWord;
 	u32 ramBytes;
+	u32 gxGpuVramBytes;
 	i64 geoWorkUnitsPerSec;
 };
 
@@ -56,6 +57,7 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
 	0x00400000u,
+	0x00200000u,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

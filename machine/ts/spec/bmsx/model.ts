@@ -33,6 +33,7 @@ export type MachineModelSpec = {
 	dmaCartRomBurstSetupCycles: number;
 	imgDecCyclesPerOutputWord: number;
 	ramBytes: number;
+	gxGpuVramBytes: number;
 	geoWorkUnitsPerSec: number;
 };
 
@@ -51,6 +52,7 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaCartRomBurstSetupCycles: PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	imgDecCyclesPerOutputWord: PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
 	ramBytes: 0x00400000,
+	gxGpuVramBytes: 0x00200000,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

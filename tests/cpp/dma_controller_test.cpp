@@ -49,7 +49,7 @@ struct DmaGpuHarness {
 		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
-		, gpu(memory, cpu, irq, scheduler, dma) {
+		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
 		memory.cartridgeController().reset();

@@ -1,18 +1,15 @@
-import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../../spec/gx/vram';
+import { GX_GPU_VRAM_X_ADDRESS_PERIOD } from '../../../spec/gx/vram';
+import type { GxGpuSoftwareState } from './gx_gpu_state';
 
-export const GX_GPU_SOFTWARE_VRAM_WORDS = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
-export const gxGpuSoftwareVram = new Uint16Array(GX_GPU_SOFTWARE_VRAM_WORDS);
-
-
-export function loadGxGpuSoftwareVramBytes(source: Uint8Array): void {
-	for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
+export function loadGxGpuSoftwareVramBytes(software: GxGpuSoftwareState, source: Uint8Array): void {
+	for (let wordIndex = 0; wordIndex < software.vram.length; wordIndex += 1) {
 		const byteIndex = wordIndex << 1;
-		gxGpuSoftwareVram[wordIndex] = source[byteIndex] | (source[byteIndex + 1] << 8);
+		software.vram[wordIndex] = source[byteIndex] | (source[byteIndex + 1] << 8);
 	}
 }
 
-export function gxGpuSoftwareVramIndex(x: number, y: number): number {
-	return ((y & (GX_GPU_VRAM_HEIGHT - 1)) * GX_GPU_VRAM_WIDTH) + (x & (GX_GPU_VRAM_WIDTH - 1));
+export function gxGpuSoftwareVramIndex(software: GxGpuSoftwareState, x: number, y: number): number {
+	return (y * GX_GPU_VRAM_X_ADDRESS_PERIOD + (x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1))) & software.vramWordMask;
 }
 
 export function gxGpuSoftwareRgb888WordToRgb555(word: number): number {
@@ -38,13 +35,13 @@ export function gxGpuSoftwareTextureModulationChannel5(texture5: number, vertex8
 	return channel5 < 31 ? channel5 : 31;
 }
 
-export function gxGpuSoftwareWriteMaskedVramWord(index: number, word: number, checkMaskBit: boolean, setMaskBit: boolean): void {
-	const dstWord = gxGpuSoftwareVram[index];
+export function gxGpuSoftwareWriteMaskedVramWord(software: GxGpuSoftwareState, index: number, word: number, checkMaskBit: boolean, setMaskBit: boolean): void {
+	const dstWord = software.vram[index];
 	if (checkMaskBit && (dstWord & 0x8000) !== 0) {
 		return;
 	}
 	const maskBit = setMaskBit ? 0x8000 : word & 0x8000;
-	gxGpuSoftwareVram[index] = (word & 0x7fff) | maskBit;
+	software.vram[index] = (word & 0x7fff) | maskBit;
 }
 
 export function gxGpuSoftwareBlendRgb555(sourceWord: number, destinationWord: number, blendMode: number): number {
@@ -115,9 +112,9 @@ function ditheredByte(byte: number, offset: number): number {
 	return value;
 }
 
-export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: number, g5: number, b5: number, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean, outputMaskBit: number): void {
-	const index = gxGpuSoftwareVramIndex(x, y);
-	const dstWord = gxGpuSoftwareVram[index];
+export function gxGpuSoftwareWriteRenderVramPixel5(software: GxGpuSoftwareState, x: number, y: number, r5: number, g5: number, b5: number, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean, outputMaskBit: number): void {
+	const index = gxGpuSoftwareVramIndex(software, x, y);
+	const dstWord = software.vram[index];
 	if (checkMaskBit && (dstWord & 0x8000) !== 0) {
 		return;
 	}
@@ -126,10 +123,10 @@ export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: num
 		color = gxGpuSoftwareBlendRgb555(color, dstWord, blendMode);
 	}
 	const maskBit = setMaskBit ? 0x8000 : outputMaskBit & 0x8000;
-	gxGpuSoftwareVram[index] = color | maskBit;
+	software.vram[index] = color | maskBit;
 }
 
-export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: number, g8: number, b8: number, ditherEnabled: boolean, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean): void {
+export function gxGpuSoftwareWriteRenderVramPixel(software: GxGpuSoftwareState, x: number, y: number, r8: number, g8: number, b8: number, ditherEnabled: boolean, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean): void {
 	let r = r8;
 	let g = g8;
 	let b = b8;
@@ -139,5 +136,5 @@ export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: numb
 		g = ditheredByte(g, offset);
 		b = ditheredByte(b, offset);
 	}
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >>> 3, g >>> 3, b >>> 3, blendEnabled, blendMode, checkMaskBit, setMaskBit, 0);
+	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r >>> 3, g >>> 3, b >>> 3, blendEnabled, blendMode, checkMaskBit, setMaskBit, 0);
 }

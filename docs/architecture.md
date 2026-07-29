@@ -1245,9 +1245,10 @@ Saved:
   inserted ROM media and reconnects those addresses; it does not serialize
   decoded instructions, function indexes, source paths, or tooling symbols.
 - GX GPU raw register words, GP0 packet assembly, retained command-buffer state,
-  raw 2 MiB VRAM, transfer/readback latches, PCRTC active and presentation words,
-  CSR/IMR, beam offset/remainder/half-line/stage/VBlank state, and the pending
-  presentation latch that determines future output.
+  the selected model's installed raw VRAM, transfer/readback latches, PCRTC
+  active and presentation words, CSR/IMR, beam
+  offset/remainder/half-line/stage/VBlank state, and the pending presentation
+  latch that determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
   voice cursor/remainder, signed-Q12 gain/fade datapath, filter history, and
@@ -1270,11 +1271,14 @@ dedicated `machine/devices/irq/save_state` and
 `machine/devices/input/save_state` files on both runtimes; C++ keeps those
 capture/restore bodies in the matching save-state translation units.
 
-TS and C++ codecs share a 16 MiB base wire capacity plus the exact installed
-cartridge-RAM byte count, and reject an oversized current-format payload on
-encode or decode. Libretro exposes one fixed header plus that calculated
-capacity, captures and encodes once, writes directly into the frontend buffer
-and clears its unused suffix; it does not retain another envelope.
+TS and C++ codecs encode the exact current-format payload; the machine codec
+does not invent or enforce a padded capacity. Libretro separately owns the
+frontend transport envelope required by its stable-size callback: an 8-byte
+header, a 16 MiB base payload area and the installed cartridge-RAM byte count.
+The header records the actual payload length. The core captures and encodes
+once, writes directly into that frontend buffer and clears its unused suffix;
+it does not retain another envelope. This transport capacity is not machine
+RAM, GX VRAM or part of the save-state wire format.
 An asynchronous accelerated readback submission is backend infrastructure, not
 a wire phase: capture publishes only the corresponding machine request or its
 completed retained pixel bytes, and a completion from an older generation
@@ -1711,21 +1715,25 @@ state without giving firmware a duplicate APU or routing user events into the
 monitor.
 
 The BIOS terminal uses the ordinary GX raster/store path. GX VRAM is one
-uniform 1024x1024 raw 16-bit word array: 1,048,576 words, exactly 2 MiB. All ten
-Y address bits name installed memory when the Y9 gate is open; the lower and
-upper halves are not different allocator classes or legacy/native banks. There
-is no terminal VRAM bank, character-plane SRAM, terminal write port, host
-framebuffer or terminal-owned backend texture. Firmware uploads the packed
-system texture through the standard GP0 CPU-to-VRAM packet, then draws the
-terminal surface with ordinary fill, VRAM-copy and textured-rectangle GP0
-commands. Software, WebGL2, WebGPU and GLES2 therefore execute the same command
-stream used by carts.
+uniform linear array of installed raw 16-bit words. The current `psx` model
+installs 1,048,576 words, exactly 2 MiB, behind the fixed 1024-column by
+1024-row GX address decoder. All ten Y address bits therefore name distinct
+installed memory when the Y9 gate is open on that model; the lower and upper
+halves are not different allocator classes or legacy/native banks. There is no
+terminal VRAM bank, character-plane SRAM, terminal write port, host framebuffer
+or terminal-owned backend texture. Firmware uploads the packed system texture
+through the standard GP0 CPU-to-VRAM packet, then draws the terminal surface
+with ordinary fill, VRAM-copy and textured-rectangle GP0 commands. Software,
+WebGL2, WebGPU and GLES2 therefore execute the same command stream used by
+carts.
 
 The larger physical store does not widen the GP0 transfer fields. CPU upload,
 VRAM copy and GPUREAD retain their 1024x512-pixel maximum; their retained result
-buffer and software copy scratch are transfer-sized rather than full-VRAM
-mirrors. Full-VRAM snapshots and backend storage alone follow the 1024x1024
-capacity.
+buffer remains transfer-sized rather than a full-VRAM mirror. VRAM copy reads
+and writes the live store in raster order, reversing each row when horizontal
+overlap requires it; it does not allocate or retain a second transfer image.
+Full-VRAM snapshots and backend storage instead use the exact installed capacity
+selected by the machine model.
 
 The standard machine layout reserves the bottom-right 256x256 page at
 x=768..1023, y=768..1023. Its top 256x64 words hold the packed system texture;
@@ -2421,9 +2429,10 @@ Already accepted backend commands and received image payload remain in the
 retained execution log. The surviving accepted execution frontier completes at
 the GP1 transition and its old device deadline is removed, while an incomplete
 packet/polyline and an active readback suffix are discarded. GP1(00h) preserves
-both the GPUREAD data latch and the 2 MiB VRAM contents; machine reset clears the
-latch to zero. Every render backend consumes the same raw snapshot revision; the
-command buffer has no second VRAM-clear signal or backend-specific reset route.
+both the GPUREAD data latch and the installed VRAM contents; machine reset clears
+the latch to zero. Every render backend consumes the same raw snapshot revision;
+the command buffer has no second VRAM-clear signal or backend-specific reset
+route.
 
 GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
 VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their
@@ -2509,31 +2518,40 @@ GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains all
 ten Y bits. GP1(09h).0 gates address bit Y9 at the existing GP0 raster/transfer
 VRAM decoder for drawing-area bounds, texture pages, CLUTs, transfers, copies,
 fills and readback. With the gate closed, logical Y addresses alias into rows
-0--511. With the gate open, all ten bits reach the installed 1024-row array.
-GP0(E1h).11 is the raw texture-page Y9 bit in either state and GPUSTAT bit 15
-mirrors that latch; it never disables texturing. PCRTC reads use their own exact
-`DISPFB` address/format contract rather than inheriting this GP1 latch.
+0--511. With the gate open, all ten bits enter the fixed 1024-row GX address
+space. GP0(E1h).11 is the raw texture-page Y9 bit in either state and GPUSTAT
+bit 15 mirrors that latch; it never disables texturing. PCRTC reads use their
+own exact `DISPFB` address/format contract rather than inheriting this GP1
+latch, but reach the same installed physical word array.
 
-Installed VRAM is exactly 1024x1024 words. It is one uniform physical array;
-there is no unpopulated upper bank, pulled-down read behavior, legacy half or
+The selected model installs a power-of-two number of complete 1024-word rows.
+The physical decoder masks the linear GX word address to that installed word
+count after the GP1 logical-Y gate. A model with fewer than 1024 installed rows
+therefore exposes deterministic physical aliases; it does not return zero,
+open-bus data or a host fallback. The current `psx` model installs all 1024 rows
+and consequently introduces no additional alias when the Y9 gate is open.
+There is no unpopulated upper bank, pulled-down read behavior, legacy half or
 second VRAM owner. Commands retain the GP1(09h) latch that applied when they
 entered the execution stream, and GP0(C0h) retains it for the complete readback
-transfer. Standard BSX firmware and cart producers open the gate and allocate
-across all 1024 rows except the shared bottom-right system reservation. Closing
-the gate remains deterministic address-decoder behavior, not an allocator mode.
+transfer. Standard BSX firmware and cart producers target the current model,
+open the gate and allocate across its 1024 rows except the shared bottom-right
+system reservation. Closing the gate remains deterministic address-decoder
+behavior, not an allocator mode.
 
-Software and accelerated backends own one 1024x1024 raw-VRAM resource. They
-apply the captured Y9 gate before addressing that resource and split only for a
-real 1024-row wrap or command dependency; they do not split at row 512, create
-a zero-read mask or allocate a second image. Generated triangles remain in
-outer submission order. Software, WebGPU, WebGL2 and GLES2 all store logical
-row Y at resource row Y. Vertex conversion, fragment stores, texture sampling,
-transfers, readback and scanout therefore consume that row directly rather than
-reversing it per invocation or during CPU snapshot traversal. Dependent
-submissions synchronize the VRAM sample
-shadow between draws so blend, mask and texture feedback observe prior writes.
-Line and polyline segments keep their own order as well. Fill and image-transfer
-commands retain their separate VRAM datapaths.
+Software and accelerated backends own one raw-VRAM resource with exactly the
+selected model's installed word count. They apply the captured Y9 gate and then
+the installed-word decode; they do not create a 2-MiB shadow, zero-read mask or
+second image. Accelerated textures use 1024 columns and derive their storage-row
+count once from the installed capacity. When logical rows alias that storage,
+destination geometry is submitted in physical row bands while shaders retain
+the original logical row for raster phase, gradients and source addressing.
+Dirty coverage, sample synchronization, texture/CLUT overlap, transfers,
+readback and scanout use the same physical alias. Generated primitives and
+transfer segments remain in outer command order, including across aliased
+bands. Dependent submissions synchronize the VRAM sample shadow between draws
+so blend, mask and texture feedback observe prior writes. Line and polyline
+segments keep their own order as well. Fill and image-transfer commands retain
+their separate VRAM datapaths.
 
 Accelerated primitive batches retain the rasterizer class `Polygon`,
 `Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the
@@ -2543,7 +2561,10 @@ sample phase. VRAM transfer vertices carry destination position plus a constant
 source-minus-destination offset. The fragment datapath derives the integer
 destination pixel from the backend fragment position and adds that offset
 before VRAM wrapping, so copy semantics do not depend on interpolated texture
-coordinates or a half-texel compensation.
+coordinates. Integer-fetch backends address texels directly. GLES2 converts
+those integer addresses to normalized `texture2D` coordinates at the sampler
+boundary, where adding one half texel is the required texel-center conversion
+rather than VRAM geometry or a copy correction.
 
 TS and C++ software renderers are the executable oracle for this contract, not
 a fallback inside accelerated backends. WebGL2, WebGPU and GLES2 consume the

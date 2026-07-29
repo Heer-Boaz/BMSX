@@ -13,6 +13,7 @@ uniform uint u_checkMaskBit;
 uniform uint u_setMaskBit;
 uniform uint u_ditherEnable;
 uniform uint u_skippedLineParity;
+uniform uint u_destinationYBase;
 #if GX_GPU_FIXED_COLOR_PLANE
 flat in uvec3 v_colorPlaneBase;
 flat in uvec3 v_colorPlaneStepX;
@@ -23,7 +24,7 @@ in vec4 v_color;
 out vec4 outputColor;
 
 uint rawStorageVramWord(ivec2 storageCoord) {
-	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(1023), 0);
+	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(GX_GPU_VRAM_X_ADDRESS_PERIOD - 1, GX_GPU_VRAM_TEXTURE_ROW_MASK), 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);
 }
@@ -76,7 +77,7 @@ vec4 encodeRgb555(uvec3 color5, uint outputMaskBit) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
-	ivec2 logicalCoord = storageCoord;
+	ivec2 logicalCoord = storageCoord + ivec2(0, int(u_destinationYBase));
 	if (uint(logicalCoord.y & 1) == u_skippedLineParity) {
 		discard;
 	}

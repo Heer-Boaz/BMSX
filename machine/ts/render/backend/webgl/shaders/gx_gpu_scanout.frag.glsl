@@ -11,8 +11,10 @@ layout(std140) uniform GxGpuScanoutCircuit {
 uniform uvec4 u_interlace;
 
 uint rawWordAtAddress(uint address) {
-	uint wrappedAddress = address & 0xfffffu;
-	ivec2 logicalCoord = ivec2(int(wrappedAddress & 0x3ffu), int(wrappedAddress >> 10u));
+	uint wrappedAddress = address & GX_GPU_VRAM_PHYSICAL_WORD_MASK;
+	ivec2 logicalCoord = ivec2(
+		int(wrappedAddress % uint(GX_GPU_VRAM_X_ADDRESS_PERIOD)),
+		int(wrappedAddress / uint(GX_GPU_VRAM_X_ADDRESS_PERIOD)));
 	vec4 rawPixel = texelFetch(u_vram, logicalCoord, 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);
@@ -39,7 +41,7 @@ uint localMemoryAddress32(uint baseWord, uint pagesPerRow, uint x, uint y) {
 		| ((pageY & 1u) << 1u)
 		| ((pageX & 6u) << 1u)
 		| ((pageY & 6u) << 3u);
-	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & 0xfffffu;
+	return (baseWord + (page << 12u) + (block << 7u) + (column << 1u)) & uint(GX_GPU_VRAM_ADDRESS_WORD_MASK);
 }
 
 uint localMemoryColumn16(uint pageX, uint pageY) {
@@ -61,7 +63,7 @@ uint localMemoryAddress16(uint baseWord, uint pagesPerRow, uint x, uint y, bool 
 	uint block = signedBlocks
 		? (blockY & 1u) | ((blockX & 1u) << 1u) | (blockY & 4u) | ((blockY & 2u) << 2u) | ((blockX & 2u) << 3u)
 		: ((blockX & 1u) << 1u) | (blockY & 1u) | ((blockX & 2u) << 2u) | ((blockY & 2u) << 1u) | ((blockY & 4u) << 2u);
-	return (baseWord + (page << 12u) + (block << 7u) + localMemoryColumn16(pageX, pageY)) & 0xfffffu;
+	return (baseWord + (page << 12u) + (block << 7u) + localMemoryColumn16(pageX, pageY)) & uint(GX_GPU_VRAM_ADDRESS_WORD_MASK);
 }
 
 uint localMemoryAddressGpu24(uint baseWord, uint pagesPerRow, uint pixelX, uint y, uint word) {

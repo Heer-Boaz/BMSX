@@ -22,9 +22,11 @@ async function main(): Promise<void> {
 		{ HostOverlayMenu },
 		{ runGate },
 		{ HeadlessPlatformServices },
-		{ applyRuntimeSaveStateBytes },
+		{ decodeRuntimeSaveState },
+		{ applyRuntimeSaveState },
 		{ CART_MMIO_BASE },
 		{ CARTRIDGE_MAILBOX_CONTROL_OFFSET, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER },
+		{ PSX_MACHINE_SPEC },
 	] = await Promise.all([
 		import('../../../hosts/common/machine_runtime'),
 		import('../../../hosts/common/host_frame'),
@@ -33,8 +35,10 @@ async function main(): Promise<void> {
 		import('../../../machine/ts/common/taskgate'),
 		import('../../../hosts/node/headless/platform_headless'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
+		import('../../../machine/ts/machine/runtime/save_state'),
 		import('../../../machine/ts/spec/bmsx/memory_map'),
 		import('../../../machine/ts/spec/bmsx/cartridge'),
+		import('../../../machine/ts/spec/bmsx/model'),
 	]);
 
 	const transcript: string[] = [];
@@ -58,6 +62,7 @@ async function main(): Promise<void> {
 		startingGamepadIndex: -1,
 		enableOnscreenGamepad: false,
 		platform,
+		machineModel: PSX_MACHINE_SPEC,
 	});
 	const runtime = host.runtime;
 	const presentation = new RenderPresentationState();
@@ -95,7 +100,14 @@ async function main(): Promise<void> {
 	const mailboxControl = CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET;
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 1);
-	applyRuntimeSaveStateBytes(runtime, saved);
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(
+			saved,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+		),
+	);
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 2);
 	host.stop();

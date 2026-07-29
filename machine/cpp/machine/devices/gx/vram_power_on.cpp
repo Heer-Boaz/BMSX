@@ -1,7 +1,6 @@
 #include "machine/devices/gx/vram_power_on.h"
 
 #include "common/hash.h"
-#include "machine/devices/gx/gpu_command_buffer.h"
 
 namespace bmsx {
 namespace {
@@ -18,12 +17,12 @@ constexpr i32 GX_GPU_VRAM_POWER_ON_FORCE_THRESHOLD_2 = 914;
 
 } // namespace
 
-void initializeGxGpuVramPowerOn(u8* vramBytes) {
+void initializeGxGpuVramPowerOn(std::span<u8> vramBytes) {
 	u32 pageHash = 0u;
 	u32 rowHash = 0u;
 	u32 macroHash = 0u;
 	u32 preferredWord = 0u;
-	constexpr u32 blockCount = static_cast<u32>(GX_GPU_VRAM_BYTE_COUNT / GX_GPU_VRAM_POWER_ON_BLOCK_BYTES);
+	const u32 blockCount = static_cast<u32>(vramBytes.size() / GX_GPU_VRAM_POWER_ON_BLOCK_BYTES);
 	for (u32 blockIndex = 0u; blockIndex < blockCount; blockIndex += 1u) {
 		if ((blockIndex & 0x7ffu) == 0u) {
 			const u32 macroIndex = blockIndex >> 11u;

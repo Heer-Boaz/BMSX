@@ -7,8 +7,10 @@ namespace bmsx {
 class SoftwareBackend;
 struct GxGpuPcrtcScanout;
 struct GxGpuPipelineState;
+struct GxGpuSoftwareState;
 
 void scanoutGxGpuSoftwareVram(
+	GxGpuSoftwareState& software,
 	SoftwareBackend& backend,
 	const GxGpuPipelineState& state,
 	const GxGpuPcrtcScanout& scanout,

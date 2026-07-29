@@ -4,12 +4,6 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Bewezen architectuurblockers
-
-| ID | Opdracht | Klaar wanneer |
-| --- | --- | --- |
-| `MODEL-VRAM-01` | Maak geïnstalleerde VRAM-capaciteit werkelijk model- en device-owned, zonder de vaste GX-adresgeometrie met de fysieke backing te verwarren. Specificeer eerst per model de ontbrekende adresdecode/alias/open-bus-semantiek en selecteer het model vóór backendconstructie. | GX, save-state en alle software/WebGL2/WebGPU/GLES2-datapaden gebruiken dezelfde geïnstalleerde backing en fysieke decode. Backends alloceren exact eenmaal voor het geselecteerde model; er is geen 2-MiB-schaduwbuffer, hostfallback of alleen-cosmetische capaciteitswaarde. |
-
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |

@@ -11,20 +11,25 @@ int wrapPowerOfTwo(int value, int period) {
 }
 
 int rawWordAtAddress(int address) {
-	int wrappedAddress = wrapPowerOfTwo(address, 1048576);
-	int logicalX = wrappedAddress - (wrappedAddress / 1024) * 1024;
-	int logicalY = wrappedAddress / 1024;
-	vec2 texcoord = vec2((float(logicalX) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
+	int wrappedAddress = wrapPowerOfTwo(address, GX_GPU_VRAM_INSTALLED_WORDS);
+	int logicalX = wrappedAddress
+		- (wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD) * GX_GPU_VRAM_X_ADDRESS_PERIOD;
+	int logicalY = wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD;
+	vec2 texcoord = vec2(
+		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
+		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
 
 int rawGx16WordAtAddress(int address) {
-	int wrappedAddress = address - (address / 1048576) * 1048576;
-	int logicalY = wrappedAddress / 1024;
-	int logicalX = wrappedAddress - logicalY * 1024;
-	vec2 texcoord = vec2((float(logicalX) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
+	int wrappedAddress = address - (address / GX_GPU_VRAM_INSTALLED_WORDS) * GX_GPU_VRAM_INSTALLED_WORDS;
+	int logicalY = wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD;
+	int logicalX = wrappedAddress - logicalY * GX_GPU_VRAM_X_ADDRESS_PERIOD;
+	vec2 texcoord = vec2(
+		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
+		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
@@ -61,7 +66,9 @@ int localMemoryAddress32(int baseWord, int pagesPerRow, int x, int y) {
 		+ wrapPowerOfTwo(pageX / 4, 2) * 8
 		+ wrapPowerOfTwo(pageY / 2, 2) * 16
 		+ wrapPowerOfTwo(pageY / 4, 2) * 32;
-	return wrapPowerOfTwo(baseWord + wrapPowerOfTwo(page, 256) * 4096 + block * 128 + column * 2, 1048576);
+	return wrapPowerOfTwo(
+		baseWord + wrapPowerOfTwo(page, 256) * 4096 + block * 128 + column * 2,
+		GX_GPU_VRAM_ADDRESS_WORD_COUNT);
 }
 
 int localMemoryColumn16(int pageX, int pageY) {
@@ -91,7 +98,9 @@ int localMemoryAddress16(int baseWord, int pagesPerRow, int x, int y, bool signe
 			+ wrapPowerOfTwo(blockY / 2, 2) * 4
 			+ wrapPowerOfTwo(blockX / 2, 2) * 8
 			+ wrapPowerOfTwo(blockY / 4, 2) * 16;
-	return wrapPowerOfTwo(baseWord + wrapPowerOfTwo(page, 256) * 4096 + block * 128 + localMemoryColumn16(pageX, pageY), 1048576);
+	return wrapPowerOfTwo(
+		baseWord + wrapPowerOfTwo(page, 256) * 4096 + block * 128 + localMemoryColumn16(pageX, pageY),
+		GX_GPU_VRAM_ADDRESS_WORD_COUNT);
 }
 
 int localMemoryAddressGpu24(int baseWord, int pagesPerRow, int pixelX, int y, int word) {

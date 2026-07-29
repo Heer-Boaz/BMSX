@@ -62,7 +62,14 @@ export class Machine {
 		this.cartridgeController.connect(this.memory, this.irqController, this.dmaController);
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
-		this.gxGpu = new GxGpu(this.memory, this.cpu, this.irqController, this.scheduler, this.dmaController);
+		this.gxGpu = new GxGpu(
+			this.memory,
+			this.cpu,
+			this.irqController,
+			this.scheduler,
+			this.dmaController,
+			model.gxGpuVramBytes,
+		);
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.cpu,

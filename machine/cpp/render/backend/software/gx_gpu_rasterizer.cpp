@@ -11,8 +11,6 @@ namespace {
 
 constexpr size_t kGxGpuTriangleUvComponents = 2u;
 constexpr size_t kGxGpuTriangleColorComponents = 3u;
-std::array<u32, kGxGpuTriangleUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_triangleUvPlaneScratch{};
-std::array<u32, kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_triangleColorPlaneScratch{};
 
 inline i32 absI32(i32 value) {
 	return value < 0 ? -value : value;
@@ -143,6 +141,7 @@ inline u32 textureWindowCoord(i32 coord, u32 andMask, u32 orMask) {
 
 template<u32 TextureMode>
 inline u32 sampleGxGpuSoftwareTextureWord(
+	const GxGpuSoftwareState& software,
 	i32 u,
 	i32 v,
 	u32 pageX,
@@ -156,20 +155,21 @@ inline u32 sampleGxGpuSoftwareTextureWord(
 	const u32 windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const u32 windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
 		const u32 paletteIndex = (textureWord >> ((windowedU & 3u) << 2u)) & 0x0fu;
-		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
 	}
 	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
 		const u32 paletteIndex = (textureWord >> ((windowedU & 1u) << 3u)) & 0xffu;
-		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
 	}
-	return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
+	return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
 }
 
 template<bool RawTextureEnabled, bool SemiTransparencyEnabled>
 inline void writeGxGpuSoftwareTexturedPixel(
+	GxGpuSoftwareState& software,
 	i32 x,
 	i32 y,
 	u32 colorR,
@@ -194,7 +194,7 @@ inline void writeGxGpuSoftwareTexturedPixel(
 	}
 	const u32 sampleMaskBit = sampleWord & 0x8000u;
 	const bool blendEnabled = SemiTransparencyEnabled && sampleMaskBit != 0u;
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
+	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
 }
 
 template<u32 TextureMode, typename Draw>
@@ -239,7 +239,15 @@ inline void dispatchGxGpuSoftwareTextureState(
 
 } // namespace
 
-void drawGxGpuSoftwareRectangle(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex, i32 x0, i32 y0, u32 width, u32 height, u32 colorWord) {
+void drawGxGpuSoftwareRectangle(
+	GxGpuSoftwareState& software,
+	const GxGpuCommandBuffer& commandBuffer,
+	size_t commandIndex,
+	i32 x0,
+	i32 y0,
+	u32 width,
+	u32 height,
+	u32 colorWord) {
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
@@ -269,7 +277,7 @@ void drawGxGpuSoftwareRectangle(const GxGpuCommandBuffer& commandBuffer, size_t 
 			continue;
 		}
 		for (i32 x = left; x < right; x += 1) {
-			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
+			gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
 		}
 	}
 }
@@ -278,6 +286,7 @@ namespace {
 
 template<bool InterpolatesColor, bool DitherEnabled, bool SemiTransparencyEnabled>
 void drawGxGpuSoftwareTriangleImpl(
+	GxGpuSoftwareState& software,
 	const GxGpuCommandBuffer& commandBuffer,
 	size_t commandIndex,
 	u32 drawModeWord,
@@ -356,26 +365,31 @@ void drawGxGpuSoftwareTriangleImpl(
 	u32 rowG = 0u;
 	u32 rowB = 0u;
 	if constexpr (InterpolatesColor) {
-		g_triangleColorPlaneScratch[0] = r0;
-		g_triangleColorPlaneScratch[1] = g0;
-		g_triangleColorPlaneScratch[2] = b0;
-		g_triangleColorPlaneScratch[3] = colorR8(color1);
-		g_triangleColorPlaneScratch[4] = colorG8(color1);
-		g_triangleColorPlaneScratch[5] = colorB8(color1);
-		g_triangleColorPlaneScratch[6] = colorR8(color2);
-		g_triangleColorPlaneScratch[7] = colorG8(color2);
-		g_triangleColorPlaneScratch[8] = colorB8(color2);
+		std::array<
+			u32,
+			kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
+		> colorPlaneScratch{
+			r0,
+			g0,
+			b0,
+			colorR8(color1),
+			colorG8(color1),
+			colorB8(color1),
+			colorR8(color2),
+			colorG8(color2),
+			colorB8(color2),
+		};
 		const i64 determinant = -area * edgeSign;
-		gxGpuTriangleAttributePlane(g_triangleColorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
-		rStepX = g_triangleColorPlaneScratch[3];
-		gStepX = g_triangleColorPlaneScratch[4];
-		bStepX = g_triangleColorPlaneScratch[5];
-		rStepY = g_triangleColorPlaneScratch[6];
-		gStepY = g_triangleColorPlaneScratch[7];
-		bStepY = g_triangleColorPlaneScratch[8];
-		rowR = g_triangleColorPlaneScratch[0] + static_cast<u32>(left) * rStepX + static_cast<u32>(top) * rStepY;
-		rowG = g_triangleColorPlaneScratch[1] + static_cast<u32>(left) * gStepX + static_cast<u32>(top) * gStepY;
-		rowB = g_triangleColorPlaneScratch[2] + static_cast<u32>(left) * bStepX + static_cast<u32>(top) * bStepY;
+		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = colorPlaneScratch[3];
+		gStepX = colorPlaneScratch[4];
+		bStepX = colorPlaneScratch[5];
+		rStepY = colorPlaneScratch[6];
+		gStepY = colorPlaneScratch[7];
+		bStepY = colorPlaneScratch[8];
+		rowR = colorPlaneScratch[0] + static_cast<u32>(left) * rStepX + static_cast<u32>(top) * rStepY;
+		rowG = colorPlaneScratch[1] + static_cast<u32>(left) * gStepX + static_cast<u32>(top) * gStepY;
+		rowB = colorPlaneScratch[2] + static_cast<u32>(left) * bStepX + static_cast<u32>(top) * bStepY;
 	}
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
@@ -398,7 +412,7 @@ void drawGxGpuSoftwareTriangleImpl(
 					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
 					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;
 					const u32 b8 = InterpolatesColor ? (bFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : b0;
-					gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, DitherEnabled, SemiTransparencyEnabled, blendMode, checkMaskBit, setMaskBit);
+					gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, DitherEnabled, SemiTransparencyEnabled, blendMode, checkMaskBit, setMaskBit);
 					if constexpr (InterpolatesColor) {
 						rFixed += rStepX;
 						gFixed += gStepX;
@@ -421,6 +435,7 @@ void drawGxGpuSoftwareTriangleImpl(
 } // namespace
 
 void drawGxGpuSoftwareTriangle(
+	GxGpuSoftwareState& software,
 	const GxGpuCommandBuffer& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
@@ -437,6 +452,7 @@ void drawGxGpuSoftwareTriangle(
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	auto draw = [&]<bool InterpolatesColor, bool DitherEnabled, bool SemiTransparencyEnabled>() {
 		drawGxGpuSoftwareTriangleImpl<InterpolatesColor, DitherEnabled, SemiTransparencyEnabled>(
+			software,
 			commandBuffer,
 			commandIndex,
 			drawModeWord,
@@ -480,6 +496,7 @@ namespace {
 
 template<u32 TextureMode, bool RawTextureEnabled, bool SemiTransparencyEnabled, bool InterpolatesColor, bool DitherEnabled>
 void drawGxGpuSoftwareTexturedTriangleImpl(
+	GxGpuSoftwareState& software,
 	const GxGpuCommandBuffer& commandBuffer,
 	size_t commandIndex,
 	u32 drawModeWord,
@@ -575,39 +592,49 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 	u32 rowB = 0u;
 	const i64 determinant = -area * edgeSign;
 	if constexpr (InterpolatesColor) {
-		g_triangleColorPlaneScratch[0] = r0;
-		g_triangleColorPlaneScratch[1] = g0;
-		g_triangleColorPlaneScratch[2] = b0;
-		g_triangleColorPlaneScratch[3] = colorR8(color1);
-		g_triangleColorPlaneScratch[4] = colorG8(color1);
-		g_triangleColorPlaneScratch[5] = colorB8(color1);
-		g_triangleColorPlaneScratch[6] = colorR8(color2);
-		g_triangleColorPlaneScratch[7] = colorG8(color2);
-		g_triangleColorPlaneScratch[8] = colorB8(color2);
-		gxGpuTriangleAttributePlane(g_triangleColorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
-		rStepX = g_triangleColorPlaneScratch[3];
-		gStepX = g_triangleColorPlaneScratch[4];
-		bStepX = g_triangleColorPlaneScratch[5];
-		rStepY = g_triangleColorPlaneScratch[6];
-		gStepY = g_triangleColorPlaneScratch[7];
-		bStepY = g_triangleColorPlaneScratch[8];
-		rowR = g_triangleColorPlaneScratch[0] + static_cast<u32>(left) * rStepX + static_cast<u32>(top) * rStepY;
-		rowG = g_triangleColorPlaneScratch[1] + static_cast<u32>(left) * gStepX + static_cast<u32>(top) * gStepY;
-		rowB = g_triangleColorPlaneScratch[2] + static_cast<u32>(left) * bStepX + static_cast<u32>(top) * bStepY;
+		std::array<
+			u32,
+			kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
+		> colorPlaneScratch{
+			r0,
+			g0,
+			b0,
+			colorR8(color1),
+			colorG8(color1),
+			colorB8(color1),
+			colorR8(color2),
+			colorG8(color2),
+			colorB8(color2),
+		};
+		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = colorPlaneScratch[3];
+		gStepX = colorPlaneScratch[4];
+		bStepX = colorPlaneScratch[5];
+		rStepY = colorPlaneScratch[6];
+		gStepY = colorPlaneScratch[7];
+		bStepY = colorPlaneScratch[8];
+		rowR = colorPlaneScratch[0] + static_cast<u32>(left) * rStepX + static_cast<u32>(top) * rStepY;
+		rowG = colorPlaneScratch[1] + static_cast<u32>(left) * gStepX + static_cast<u32>(top) * gStepY;
+		rowB = colorPlaneScratch[2] + static_cast<u32>(left) * bStepX + static_cast<u32>(top) * bStepY;
 	}
-	g_triangleUvPlaneScratch[0] = u0;
-	g_triangleUvPlaneScratch[1] = v0;
-	g_triangleUvPlaneScratch[2] = u1;
-	g_triangleUvPlaneScratch[3] = v1;
-	g_triangleUvPlaneScratch[4] = u2;
-	g_triangleUvPlaneScratch[5] = v2;
-	gxGpuTriangleAttributePlane(g_triangleUvPlaneScratch.data(), 0u, kGxGpuTriangleUvComponents, determinant, x0, y0, x1, y1, x2, y2);
-	const u32 uStepX = g_triangleUvPlaneScratch[2];
-	const u32 vStepX = g_triangleUvPlaneScratch[3];
-	const u32 uStepY = g_triangleUvPlaneScratch[4];
-	const u32 vStepY = g_triangleUvPlaneScratch[5];
-	u32 rowU = g_triangleUvPlaneScratch[0] + static_cast<u32>(left) * uStepX + static_cast<u32>(top) * uStepY;
-	u32 rowV = g_triangleUvPlaneScratch[1] + static_cast<u32>(left) * vStepX + static_cast<u32>(top) * vStepY;
+	std::array<
+		u32,
+		kGxGpuTriangleUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
+	> uvPlaneScratch{
+		static_cast<u32>(u0),
+		static_cast<u32>(v0),
+		static_cast<u32>(u1),
+		static_cast<u32>(v1),
+		static_cast<u32>(u2),
+		static_cast<u32>(v2),
+	};
+	gxGpuTriangleAttributePlane(uvPlaneScratch.data(), 0u, kGxGpuTriangleUvComponents, determinant, x0, y0, x1, y1, x2, y2);
+	const u32 uStepX = uvPlaneScratch[2];
+	const u32 vStepX = uvPlaneScratch[3];
+	const u32 uStepY = uvPlaneScratch[4];
+	const u32 vStepY = uvPlaneScratch[5];
+	u32 rowU = uvPlaneScratch[0] + static_cast<u32>(left) * uStepX + static_cast<u32>(top) * uStepY;
+	u32 rowV = uvPlaneScratch[1] + static_cast<u32>(left) * vStepX + static_cast<u32>(top) * vStepY;
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -634,6 +661,7 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 					const i32 u = static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 					const i32 v = static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 					const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
+						software,
 						u,
 						v,
 						pageX,
@@ -645,6 +673,7 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 						clutBaseX,
 						clutBaseY);
 					writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
+						software,
 						x,
 						y,
 						r8,
@@ -679,7 +708,17 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 }
 
 template<u32 TextureMode, bool RawTextureEnabled, bool SemiTransparencyEnabled>
-void drawGxGpuSoftwareTexturedRectangleImpl(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex, u32 drawModeWord, i32 x0, i32 y0, u32 width, u32 height, u32 colorWord, u32 textureWord) {
+void drawGxGpuSoftwareTexturedRectangleImpl(
+	GxGpuSoftwareState& software,
+	const GxGpuCommandBuffer& commandBuffer,
+	size_t commandIndex,
+	u32 drawModeWord,
+	i32 x0,
+	i32 y0,
+	u32 width,
+	u32 height,
+	u32 colorWord,
+	u32 textureWord) {
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
@@ -725,6 +764,7 @@ void drawGxGpuSoftwareTexturedRectangleImpl(const GxGpuCommandBuffer& commandBuf
 		i32 u = firstU;
 		for (i32 x = left; x < right; x += 1, u += uStep) {
 			const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
+				software,
 				u,
 				v,
 				pageX,
@@ -736,6 +776,7 @@ void drawGxGpuSoftwareTexturedRectangleImpl(const GxGpuCommandBuffer& commandBuf
 				clutBaseX,
 				clutBaseY);
 			writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
+				software,
 				x,
 				y,
 				r8,
@@ -753,6 +794,7 @@ void drawGxGpuSoftwareTexturedRectangleImpl(const GxGpuCommandBuffer& commandBuf
 } // namespace
 
 void drawGxGpuSoftwareTexturedTriangle(
+	GxGpuSoftwareState& software,
 	const GxGpuCommandBuffer& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
@@ -781,6 +823,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 				SemiTransparencyEnabled,
 				InterpolatesColor,
 				DitherEnabled>(
+				software,
 				commandBuffer,
 				commandIndex,
 				drawModeWord,
@@ -822,6 +865,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 }
 
 void drawGxGpuSoftwareTexturedRectangle(
+	GxGpuSoftwareState& software,
 	const GxGpuCommandBuffer& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
@@ -837,6 +881,7 @@ void drawGxGpuSoftwareTexturedRectangle(
 			TextureMode,
 			RawTextureEnabled,
 			SemiTransparencyEnabled>(
+			software,
 			commandBuffer,
 			commandIndex,
 			drawModeWord,
@@ -854,7 +899,16 @@ void drawGxGpuSoftwareTexturedRectangle(
 		draw);
 }
 
-void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex, i32 x0, i32 y0, u32 color0, i32 x1, i32 y1, u32 color1) {
+void drawGxGpuSoftwareLineSegment(
+	GxGpuSoftwareState& software,
+	const GxGpuCommandBuffer& commandBuffer,
+	size_t commandIndex,
+	i32 x0,
+	i32 y0,
+	u32 color0,
+	i32 x1,
+	i32 y1,
+	u32 color1) {
 	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
 		return;
 	}
@@ -913,6 +967,7 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 		const i32 y = gxGpuSigned11(static_cast<u32>(lineFixedXYToCoord(currentY)));
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && (y & 1) != skippedLineParity) {
 			gxGpuSoftwareWriteRenderVramPixel(
+				software,
 				x,
 				y,
 				lineFixedRgbToByte(currentR),

@@ -1,3 +1,4 @@
+#include "spec/bmsx/model.h"
 #include "platform.h"
 #include "render/backend/gles2/backend.h"
 
@@ -26,6 +27,7 @@ bool RETRO_CALLCONV supervisorRequestLineLow() {
 int main() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
+		bmsx::PSX_MACHINE_SPEC,
 		bmsx::BackendType::OpenGLES2,
 		avInfo,
 		supervisorRequestLineLow,

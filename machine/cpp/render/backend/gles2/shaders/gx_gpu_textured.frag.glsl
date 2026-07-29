@@ -23,6 +23,9 @@ uniform int u_checkMaskBit;
 uniform int u_setMaskBit;
 uniform int u_ditherEnable;
 uniform int u_skippedLineParity;
+#ifdef GX_GPU_VRAM_ALIAS
+uniform int u_logicalYBase;
+#endif
 varying vec2 v_uvPlaneBase;
 varying vec2 v_uvPlaneStepX;
 varying vec2 v_uvPlaneStepY;
@@ -69,8 +72,13 @@ int applyTextureWindowAxis(int coord, int andMask, int orMask) {
 }
 
 int rawVramWord(ivec2 logicalCoord) {
-	ivec2 wrapped = ivec2(wrapPeriod(logicalCoord.x, 1024), wrapPeriod(logicalCoord.y, 1024));
-	vec4 rawPixel = texture2D(u_vram, (vec2(wrapped) + vec2(0.5)) / 1024.0);
+	ivec2 wrapped = ivec2(
+		wrapPeriod(logicalCoord.x, GX_GPU_VRAM_X_ADDRESS_PERIOD),
+		wrapPeriod(logicalCoord.y, GX_GPU_VRAM_TEXTURE_ROWS));
+	vec4 rawPixel = texture2D(
+		u_vram,
+		(vec2(wrapped) + vec2(0.5))
+			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
@@ -79,7 +87,10 @@ int rawStorageVramWord(ivec2 storageCoord) {
 #ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
 	vec4 rawPixel = gl_LastFragColorARM;
 #else
-	vec4 rawPixel = texture2D(u_destination, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
+	vec4 rawPixel = texture2D(
+		u_destination,
+		(vec2(storageCoord) + vec2(0.5))
+			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
 #endif
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
@@ -197,6 +208,9 @@ vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
 	ivec2 logicalCoord = storageCoord;
+#ifdef GX_GPU_VRAM_ALIAS
+	logicalCoord.y += u_logicalYBase;
+#endif
 	if (logicalCoord.y - (logicalCoord.y / 2) * 2 == u_skippedLineParity) {
 		discard;
 	}

@@ -11,6 +11,7 @@
 #include "render/backend/gles2/gx_gpu.h"
 #include "render/backend/gles2/texture_units.h"
 #include "render/shared/solid_pixels.h"
+#include "spec/gx/vram.h"
 
 #include <array>
 #include <bit>
@@ -211,12 +212,17 @@ OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* c
 	return resolveProcAddress(extName);
 }
 
-OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads)
+OpenGLES2Backend::OpenGLES2Backend(
+	i32 width,
+	i32 height,
+	bool profileGxUploads,
+	u32 gxGpuVramByteCount)
 	: m_default_width(width)
 	, m_default_height(height)
 	, m_target_width(width)
 	, m_target_height(height)
 	, m_profile_gx_uploads(profileGxUploads)
+	, m_gx_gpu_vram_texture_rows(gxGpuVramByteCount / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT)
 	, m_post_pipelines(std::make_unique<OpenGLES2PostPipelines>()) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
