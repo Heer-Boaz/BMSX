@@ -2,7 +2,7 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/rompack/system';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
@@ -11,15 +11,15 @@ import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAsset
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
-import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
+import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-	resolveCartridgeHeaderWords,
-} from '../../machine/ts/rompack/format';
+} from '../../machine/ts/rompack/tooling/generated_modules';
+import { resolveCartridgeHeaderWords } from '../../machine/ts/rompack/tooling/manifest';
 import { LuaError } from '../../machine/ts/lua/errors';
-import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
 import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import {
 	BLUA32_IMAGE_ID,
@@ -573,7 +573,7 @@ async function main() {
 			}
 			const biosBluaSourceContextAssets = await buildBluaSourceContextAssets([biosLuaPath, systemLuaPath], '');
 			const systemRom = new Uint8Array(readFileSync(systemRomPath));
-			const systemIndex = await loadRomAssetList(systemRom);
+			const systemIndex = await loadRomAssetList(systemRom, 'system');
 			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 			const systemImage = decodeBlua32Image(
 				systemRom.subarray(systemBlua32Entry.start, systemBlua32Entry.end),

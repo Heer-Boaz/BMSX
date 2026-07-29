@@ -7,7 +7,7 @@ import type { ProgramObjectImage } from '../../machine/ts/lua/compiler/program_o
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
-import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { resolveLuaSourceRecord, type LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
@@ -25,7 +25,7 @@ import {
 	type LinkedBlua32Image,
 } from '../../machine/ts/rompack/tooling/blua32_linker';
 import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
-import type { RomSourceLayer } from '../../machine/ts/rompack/source';
+import type { RomSourceLayer } from '../../machine/ts/rompack/tooling/source';
 import type { ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeLuaTooling } from './lua_tooling';

@@ -1,16 +1,17 @@
-import { type CartridgeLayerId, type RomAsset } from './format';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
+import type { RomAsset } from './assets';
+import type { RomImageDomain } from '../image';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../spec/bmsx/memory_map';
 
 export type RomAssetSymbol = {
 	name: string;
 	assetId: string;
 	assetType: string;
-	payloadId: CartridgeLayerId;
+	payloadId: RomImageDomain;
 	address: number;
 	byteLength: number;
 };
 
-const romBaseByPayloadId: Record<CartridgeLayerId, number> = {
+const romBaseByPayloadId: Record<RomImageDomain, number> = {
 	system: SYSTEM_ROM_BASE,
 	cart: CART_ROM_BASE,
 };
@@ -44,7 +45,7 @@ function assetIsPublicRomPayload(asset: RomAsset): asset is RomAsset & { start: 
 
 export function collectRomAssetSymbols(
 	assetList: ReadonlyArray<RomAsset>,
-	defaultPayloadId: CartridgeLayerId,
+	defaultPayloadId: RomImageDomain,
 ): RomAssetSymbol[] {
 	const symbols: RomAssetSymbol[] = [];
 	for (let index = 0; index < assetList.length; index += 1) {

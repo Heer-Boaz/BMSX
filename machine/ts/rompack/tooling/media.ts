@@ -2,12 +2,12 @@ import {
 	buildCartridgeToolingLayer,
 	buildSystemToolingLayer,
 	type RomToolingLayer,
-} from '../loader';
+} from './loader';
 import { parseRomImage } from '../image';
 import {
 	SYSTEM_BOOT_ENTRY_PATH,
 	SYSTEM_MACHINE_MANIFEST,
-} from '../system';
+} from './system';
 
 export type RomToolingMedia = {
 	system: RomToolingLayer;

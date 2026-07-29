@@ -4,15 +4,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
-import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
+import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
+import { layoutRomAssetPayloads } from '../../machine/ts/rompack/tooling/asset_layout';
 import {
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_MAGIC,
 	CART_ROM_WORD_ALIGNMENT,
 } from '../../machine/ts/spec/bmsx/rom_package';
-import { type RomAsset } from '../../machine/ts/rompack/format';
-import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import { type RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
 import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
@@ -116,7 +116,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			outputDirectory,
 		});
 		const rom = await readFile(join(outputDirectory, 'aligned.rom'));
-		const index = await loadRomAssetList(rom);
+		const index = await loadRomAssetList(rom, 'cart');
 		const model = index.entries.find(entry => entry.resid === 'model')!;
 		const sprite = index.entries.find(entry => entry.resid === 'sprite')!;
 		const label = index.entries.find(entry => entry.resid === 'label')!;

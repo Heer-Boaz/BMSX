@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { editorViewState } from '../ui/view/state';
 
 export function writeCenteredDialogBounds(out: RectBounds, dialogWidth: number, dialogHeight: number, margin: number): void {

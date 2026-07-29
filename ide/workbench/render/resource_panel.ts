@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import { clamp } from '../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';

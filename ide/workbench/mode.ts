@@ -11,7 +11,7 @@ import type {
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { Viewport } from '../../machine/ts/rompack/format';
+import type { Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
 import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY } from '../common/constants';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';

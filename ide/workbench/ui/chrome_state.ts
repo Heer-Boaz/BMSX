@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
 import type { TopBarButtonId } from '../../common/commands';
 import type { TabDragState } from '../../common/models';

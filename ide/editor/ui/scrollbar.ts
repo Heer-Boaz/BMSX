@@ -1,7 +1,7 @@
 import { clamp } from '../../../machine/ts/common/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/models';
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { api } from '../../runtime/overlay_api';
 
 export class Scrollbar {

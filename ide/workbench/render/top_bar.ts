@@ -1,5 +1,5 @@
 import * as constants from '../../common/constants';
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { editorChromeState } from '../ui/chrome_state';
 import { api } from '../../runtime/overlay_api';

@@ -1,8 +1,8 @@
 import {
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_WORD_ALIGNMENT,
-} from '../spec/bmsx/rom_package';
-import { type RomAsset } from './format';
+} from '../../spec/bmsx/rom_package';
+import { type RomAsset } from './assets';
 
 export type RomAssetPayloadRange = {
 	start: number;

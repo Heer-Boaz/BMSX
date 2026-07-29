@@ -33,7 +33,7 @@ import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/
 import { createBrowserBackend } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
 import { type GamepadControlHandle, type VideoSurface, type VideoOutput, type OnscreenGamepadHandles, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
-import { type vec2 } from 'bmsx/rompack/format';
+import { type vec2 } from 'bmsx/common/vector';
 
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
 

@@ -25,8 +25,8 @@ import {
 import {
 	parseCartHeader,
 	type CartRomHeader,
-	type RomAsset,
 } from '../../machine/ts/rompack/format';
+import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';

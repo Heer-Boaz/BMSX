@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import * as constants from '../../../../common/constants';

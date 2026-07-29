@@ -8,10 +8,10 @@ import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	parseCartHeader,
-	type RomAsset,
-	type RomManifest,
 } from '../../machine/ts/rompack/format';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
+import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
+import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
 import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';

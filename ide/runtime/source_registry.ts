@@ -1,19 +1,21 @@
-import type { RawRomSource } from '../rompack/source';
+import type { RawRomSource } from '../../machine/ts/rompack/tooling/source';
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	ROM_GENERATED_MODULE_PATHS,
-	type CartridgeIndex,
-	type CartridgeLayerId,
-	type RomAsset,
-	type RomLuaAsset,
-} from '../rompack/format';
-import { utf8FatalDecoder } from '../common/serializer/binencoder';
-import { buildRomAssetSymbolModuleSource } from '../rompack/asset_symbols';
-import { toLuaModulePath } from './module_path';
+} from '../../machine/ts/rompack/tooling/generated_modules';
+import type {
+	CartridgeIndex,
+	RomAsset,
+	RomLuaAsset,
+} from '../../machine/ts/rompack/tooling/assets';
+import type { RomImageDomain } from '../../machine/ts/rompack/image';
+import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
+import { buildRomAssetSymbolModuleSource } from '../../machine/ts/rompack/tooling/asset_symbols';
+import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
-type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
+type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: RomImageDomain };
 
 export type LuaSourceRegistry = {
 	records: LuaSourceRecord[];
@@ -55,7 +57,7 @@ export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string
 	return null;
 }
 
-export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly CartridgeLayerId[]): LuaSourceRegistry {
+export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly RomImageDomain[]): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [],
 		path2lua: {},

@@ -1,5 +1,5 @@
 import { BFont } from './shared/bitmap_font';
-import type { vec2 } from '../rompack/format';
+import type { vec2 } from '../common/vector';
 import type { BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';

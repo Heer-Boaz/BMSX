@@ -613,11 +613,15 @@ Owners:
   `machine/cpp/rompack/format.h/.cpp`.
 - Physical ROM image/header admission: `machine/ts/rompack/image.ts` and
   `machine/cpp/rompack/image.h/.cpp`.
-- ROM TOC decoding and semantic records: `machine/ts/rompack/toc.ts` and
+- Physical ROM TOC decoding and wire records: `machine/ts/rompack/toc.ts` and
   `machine/cpp/rompack/toc.h/.cpp`.
-- Studio-only layered ROM lookup: `machine/ts/rompack/source.ts`. Native fault
-  tooling decodes the required TOC and BLua32 records directly and does not
-  construct a parallel authoring package.
+- Studio-only ROM asset metadata, package loading, and layered lookup:
+  `machine/ts/rompack/tooling/assets.ts`,
+  `machine/ts/rompack/tooling/loader.ts`,
+  `machine/ts/rompack/tooling/metadata.ts`, and
+  `machine/ts/rompack/tooling/source.ts`. Native fault tooling decodes the
+  required TOC and BLua32 records directly and does not construct a parallel
+  authoring package.
 - BLua32 executable-image wire records:
   `machine/ts/spec/blua32/image_format.ts` and
   `machine/cpp/spec/blua32/image_format.h`.
@@ -629,14 +633,15 @@ Owners:
   `machine/cpp/rompack/tooling/blua32_image.h/.cpp`.
 - Tooling-only system/cartridge package composition:
   `machine/ts/rompack/tooling/media.ts`.
-- Build-time Lua source compilation and Lua source registries:
-  `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
-  `machine/ts/lua/source_registry.ts`.
+- Build-time Lua source compilation:
+  `machine/ts/lua/compiler.ts` and `machine/ts/lua/compiler/*`.
+- Studio-only layered Lua source registry:
+  `ide/runtime/source_registry.ts`.
 - BLua32 object linking and ROM-tail writing:
   `machine/ts/rompack/tooling/blua32_linker.ts` and
   `machine/ts/rompack/tooling/blua32_tail.ts`.
 - Pack-time payload spans, final TOC records, and immutable executable-prefix
-  layout: `machine/ts/rompack/asset_layout.ts` and
+  layout: `machine/ts/rompack/tooling/asset_layout.ts` and
   `machine/ts/rompack/tooling/rom_prefix_layout.ts`.
 - ROM-header serialization shared by the packer and tail rebuilder:
   `machine/ts/rompack/tooling/header_encode.ts`.

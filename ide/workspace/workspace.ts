@@ -1,7 +1,7 @@
-import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../runtime/source_registry';
 import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
-import { ROM_GENERATED_MODULE_PATHS } from '../../machine/ts/rompack/format';
+import { ROM_GENERATED_MODULE_PATHS } from '../../machine/ts/rompack/tooling/generated_modules';
 import {
 	CARTRIDGE_RESOURCE_DOMAINS,
 	type LuaResourceCreationRequest,

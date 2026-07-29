@@ -1,4 +1,3 @@
-import type { asset_type, RomAsset } from './format';
 import {
 	ROM_TOC_ASSET_TYPE_AEM,
 	ROM_TOC_ASSET_TYPE_AUDIO,
@@ -49,24 +48,35 @@ import {
 } from '../spec/bmsx/rom_toc';
 const utf8Decoder = new TextDecoder();
 
-export type RomTocPayload = {
-	entries: RomAsset[];
-	projectRootPath: string | null;
+export type asset_type = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_id = string;
+export type RomAssetOp = 'delete';
+
+export type RomTocEntry = {
+	resid: asset_id;
+	type: asset_type;
+	id_token_lo: number;
+	id_token_hi: number;
+	op?: RomAssetOp;
+	start?: number;
+	end?: number;
+	compiled_start?: number;
+	compiled_end?: number;
+	metabuffer_start?: number;
+	metabuffer_end?: number;
+	model_texture_start?: number;
+	model_texture_end?: number;
+	collision_bin_start?: number;
+	collision_bin_end?: number;
+	source_path?: string;
+	normalized_source_path?: string;
+	update_timestamp?: number;
 };
 
-export enum AssetTypeKind {
-	Image,
-	Texture,
-	Audio,
-	Model,
-	Aem,
-	Bin,
-	Lua,
-	Data,
-	Code,
-	Skip,
-	Unknown,
-}
+export type RomTocPayload = {
+	entries: RomTocEntry[];
+	projectRootPath: string | null;
+};
 
 const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	image: ROM_TOC_ASSET_TYPE_IMAGE,
@@ -104,40 +114,6 @@ export function assetTypeFromId(id: number): asset_type {
 		default:
 			throw new Error(`Unknown asset type id "${id}".`);
 	}
-}
-
-export function resolveAssetTypeKind(assetType: asset_type): AssetTypeKind {
-	switch (assetType[0]) {
-		case 'i':
-			if (assetType === 'image') return AssetTypeKind.Image;
-			break;
-		case 't':
-			if (assetType === 'texture') return AssetTypeKind.Texture;
-			break;
-		case 'a':
-			if (assetType === 'audio') return AssetTypeKind.Audio;
-			if (assetType === 'aem') return AssetTypeKind.Aem;
-			break;
-		case 'm':
-			if (assetType === 'model') return AssetTypeKind.Model;
-			break;
-		case 'b':
-			if (assetType === 'bin') return AssetTypeKind.Bin;
-			break;
-		case 'l':
-			if (assetType === 'lua') return AssetTypeKind.Lua;
-			break;
-		case 'd':
-			if (assetType === 'data') return AssetTypeKind.Data;
-			break;
-		case 'r':
-			if (assetType === 'romlabel') return AssetTypeKind.Skip;
-			break;
-		case 'c':
-			if (assetType === 'code') return AssetTypeKind.Code;
-			break;
-	}
-	return AssetTypeKind.Unknown;
 }
 
 function decodeString(table: Uint8Array, offset: number, length: number, decoder: TextDecoder): string | null {
@@ -182,7 +158,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	const stringTable = buffer.subarray(stringTableOffset, stringTableOffset + stringTableLength);
 	const projectRootPath = decodeString(stringTable, projectRootOffset, projectRootLength, utf8Decoder);
 
-	const entries: RomAsset[] = [];
+	const entries: RomTocEntry[] = [];
 	for (let i = 0; i < entryCount; i += 1) {
 		const base = entryOffset + i * entrySize;
 		const tokenLo = view.getUint32(base + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, true);
@@ -220,7 +196,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (!resid) {
 			throw new Error('ROM TOC entry is missing resid.');
 		}
-		const entry: RomAsset = {
+		const entry: RomTocEntry = {
 			resid,
 			type: assetTypeFromId(typeId),
 			id_token_lo: tokenLo,

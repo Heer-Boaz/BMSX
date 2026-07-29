@@ -3,7 +3,7 @@ import { splitText } from '../../../../../../machine/ts/common/text_lines';
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../machine/ts/lua/syntax/ast/index';
 import type { FileSemanticData, LuaSemanticModel, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../machine/ts/lua/semantic/model';
-import type { LuaSourceRegistry } from '../../../../../../machine/ts/lua/source_registry';
+import type { LuaSourceRegistry } from '../../../../../runtime/source_registry';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type ResourceDomain,

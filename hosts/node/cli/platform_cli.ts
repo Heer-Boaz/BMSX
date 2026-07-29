@@ -19,7 +19,7 @@ import {
 import { HeadlessPlatformServices, HeadlessPlatformOptions } from '../headless/platform_headless';
 import { HeadlessVideoOutput, type HeadlessPresentedFrameBuffer } from 'bmsx/render/headless/video_output';
 import { new_vec2 } from 'bmsx/common/vector';
-import { type vec2 } from 'bmsx/rompack/format';
+import { type vec2 } from 'bmsx/common/vector';
 
 export class CLIVideoOutput implements VideoOutput {
 	public readonly surface: HeadlessVideoOutput['surface'];

@@ -1,5 +1,5 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { ResourceBrowserItem, RuntimeResource } from '../../../../common/models';
 import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
 import {

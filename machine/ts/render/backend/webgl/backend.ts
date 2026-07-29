@@ -1,8 +1,8 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
-import { color_arr, type TextureSource } from '../../../rompack/format';
+import type { vec4arr } from '../../../common/vector';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
+import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView, type TextureSource } from '../backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_CUBEMAP, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
@@ -293,7 +293,7 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.deleteTexture(handle);
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: GLenum; initialClearColor?: color_arr }): WebGLTexture {
+	createColorTexture(desc: { width: number; height: number; format?: GLenum; initialClearColor?: vec4arr }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
 		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
@@ -345,7 +345,7 @@ export class WebGLBackend implements GPUBackend {
 	destroyRenderTarget(handle: WebGLFramebuffer): void {
 		this.gl.deleteFramebuffer(handle);
 	}
-	clear(color: color_arr | undefined, depth: number | undefined): void {
+	clear(color: vec4arr | undefined, depth: number | undefined): void {
 		const gl = this.gl;
 		let mask = 0;
 		if (color !== undefined) { gl.clearColor(...color); mask |= gl.COLOR_BUFFER_BIT; }
@@ -386,7 +386,7 @@ export class WebGLBackend implements GPUBackend {
 				fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer;
 			}
 			this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo);
-			let clearColor: color_arr | undefined;
+			let clearColor: vec4arr | undefined;
 			if (hasColor) {
 				clearColor = firstColor.clear;
 			}

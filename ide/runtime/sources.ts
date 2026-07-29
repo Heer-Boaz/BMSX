@@ -1,13 +1,14 @@
-import { parseCartHeader, type RomToolingPackage } from '../../machine/ts/rompack/format';
-import type { RomToolingLayer } from '../../machine/ts/rompack/loader';
-import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../machine/ts/rompack/source';
+import { parseCartHeader } from '../../machine/ts/rompack/format';
+import type { RomToolingPackage } from '../../machine/ts/rompack/tooling/assets';
+import type { RomToolingLayer } from '../../machine/ts/rompack/tooling/loader';
+import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../machine/ts/rompack/tooling/source';
 import {
 	buildLuaSources,
 	resolveLuaSourceRecord,
 	type LuaSourceMatch,
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
-} from '../../machine/ts/lua/source_registry';
+} from './source_registry';
 import {
 	CARTRIDGE_RESOURCE_DOMAINS,
 	SYSTEM_RESOURCE_DOMAIN,

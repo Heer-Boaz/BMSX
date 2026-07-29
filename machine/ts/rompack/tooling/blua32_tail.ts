@@ -7,10 +7,10 @@ import type { LinkedBlua32Image } from './blua32_linker';
 import { CART_ROM_HEADER_SIZE } from '../../spec/bmsx/rom_package';
 import {
 	parseCartHeader,
-	type RomAsset,
 } from '../format';
-import { alignRomAssetOffset } from '../asset_layout';
-import type { RomSourceLayer } from '../source';
+import type { RomAsset } from './assets';
+import { alignRomAssetOffset } from './asset_layout';
+import type { RomSourceLayer } from './source';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';

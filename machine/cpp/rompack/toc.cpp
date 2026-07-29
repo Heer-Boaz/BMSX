@@ -110,43 +110,6 @@ u32 assetTypeToId(std::string_view type) {
 	throw BMSX_RUNTIME_ERROR("Unknown asset type: " + std::string(type));
 }
 
-AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
-	if (assetType.empty()) {
-		return AssetTypeKind::Unknown;
-	}
-	switch (assetType[0]) {
-		case 'i':
-			if (assetType == "image") return AssetTypeKind::Image;
-			break;
-		case 't':
-			if (assetType == "texture") return AssetTypeKind::Texture;
-			break;
-		case 'a':
-			if (assetType == "audio") return AssetTypeKind::Audio;
-			if (assetType == "aem") return AssetTypeKind::Aem;
-			break;
-		case 'm':
-			if (assetType == "model") return AssetTypeKind::Model;
-			break;
-		case 'b':
-			if (assetType == "bin") return AssetTypeKind::Bin;
-			break;
-		case 'l':
-			if (assetType == "lua") return AssetTypeKind::Lua;
-			break;
-		case 'd':
-			if (assetType == "data") return AssetTypeKind::Data;
-			break;
-		case 'r':
-			if (assetType == "romlabel") return AssetTypeKind::Skip;
-			break;
-		case 'c':
-			if (assetType == "code") return AssetTypeKind::Code;
-			break;
-	}
-	return AssetTypeKind::Unknown;
-}
-
 RomTocPayload decodeRomToc(const u8* data, size_t size) {
 	if (size < ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM TOC is too small.");

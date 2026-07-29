@@ -8,8 +8,8 @@ import {
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
-import type { RomToolingLayer } from '../loader';
-import type { RawRomSource } from '../source';
+import type { RomToolingLayer } from './loader';
+import type { RawRomSource } from './source';
 
 export type Blua32ToolingImage = {
 	readonly layout: Blua32ImageLayout;

@@ -1,5 +1,5 @@
 import type { EditorDiagnostic, EditorDiagnosticSeverity } from '../../../../common/models';
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { EditorFont } from '../../../../editor/ui/view/font';
 import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
 import { writeWrappedMeasuredText } from '../../../../common/text';

@@ -25,8 +25,10 @@ struct Vec4 {
 
 using vec2 = Vec2;
 using vec3 = Vec3;
+using vec4 = Vec4;
 using vec2arr = std::array<f32, 2>;
 using vec3arr = std::array<f32, 3>;
+using vec4arr = std::array<f32, 4>;
 
 Vec2 translate_vec2(const Vec2& a, const Vec2& b);
 void translate_inplace_vec2(Vec2& a, const Vec2& b);

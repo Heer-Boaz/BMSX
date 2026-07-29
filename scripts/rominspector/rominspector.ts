@@ -4,9 +4,11 @@
 
 import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
-import { parseCartHeader, type RomAsset, type CartRomHeader, type RomManifest } from '../../machine/ts/rompack/format';
-import { collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
-import { loadRomAssetList, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
+import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
+import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
+import { collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
+import { loadRomAssetList, parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
 import {
 	buildManifestAsset,
 	disassembleBlua32Image,
@@ -30,7 +32,7 @@ async function loadAssets(
 	let manifest: RomManifest | null = null;
 	let projectRootPath: string | null = null;
 	if (header.manifestLength === 0) {
-		const entriesAndRoot = await loadRomAssetList(rombin);
+		const entriesAndRoot = await loadRomAssetList(rombin, 'cart');
 		assets = entriesAndRoot.entries;
 		projectRootPath = entriesAndRoot.projectRootPath;
 		console.log('ROM header has no manifest; loading TOC assets only.');

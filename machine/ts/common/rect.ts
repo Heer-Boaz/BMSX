@@ -1,4 +1,14 @@
-import type { RectBounds, vec2, vec3 } from '../rompack/format';
+import type { vec2, vec3 } from './vector';
+
+export type RectBounds = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+	z?: number;
+};
+
+export type Polygon = number[];
 
 /**
  * Moves an area by adding the specified vector to its start and end points.

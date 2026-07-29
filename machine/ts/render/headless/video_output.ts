@@ -1,4 +1,4 @@
-import type { vec2 } from '../../rompack/format';
+import type { vec2 } from '../../common/vector';
 import type {
 	VideoOutput,
 	VideoSurface,

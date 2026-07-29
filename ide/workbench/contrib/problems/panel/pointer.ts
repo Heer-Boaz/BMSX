@@ -1,5 +1,5 @@
 import type { PointerSnapshot } from '../../../../common/models';
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';

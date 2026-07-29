@@ -5,8 +5,19 @@ import {
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_WORD_ALIGNMENT,
 } from '../../machine/ts/spec/bmsx/rom_package';
-import type { AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, TextureMeta, vec2arr } from '../../machine/ts/rompack/format';
-import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/asset_layout';
+import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
+import type { vec2arr } from '../../machine/ts/common/vector';
+import type {
+	AudioMeta,
+	BoundingBoxPrecalc,
+	HitPolygonsPrecalc,
+	ImgMeta,
+	RomAsset,
+	TextureMeta,
+} from '../../machine/ts/rompack/tooling/assets';
+import type { GLTFMesh } from '../../machine/ts/rompack/tooling/gltf';
+import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
+import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/tooling/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import {
 	encodeDirect16GxTexture,

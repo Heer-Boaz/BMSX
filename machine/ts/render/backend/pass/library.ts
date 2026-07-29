@@ -1,10 +1,10 @@
 import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_output';
 import type { VideoPresenter } from '../../video_presenter';
 import { RenderGraphRuntime, type PassContext } from '../../graph/graph';
-import type { color_arr } from '../../../rompack/format';
+import type { vec4arr } from '../../../common/vector';
 import { GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
 
-const FRAME_CLEAR_COLOR: color_arr = [0, 0, 0, 1];
+const FRAME_CLEAR_COLOR: vec4arr = [0, 0, 0, 1];
 
 interface RegisteredPassRec {
 	id: string;

@@ -1,4 +1,4 @@
-import type { RomAsset } from '../format';
+import type { RomAsset } from './assets';
 import { hashAssetId } from '../tokens';
 import { assetTypeToId } from '../toc';
 import {

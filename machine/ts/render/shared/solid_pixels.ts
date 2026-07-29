@@ -1,4 +1,4 @@
-import type { color_arr } from '../../rompack/format';
+import type { vec4arr } from '../../common/vector';
 
 export function writeSolidRgba8Pixels(pixels: Uint8Array, byteCount: number, argb: number): void {
 	const r = (argb >>> 16) & 0xff;
@@ -13,7 +13,7 @@ export function writeSolidRgba8Pixels(pixels: Uint8Array, byteCount: number, arg
 	}
 }
 
-export function writeColorRgba8Pixels(pixels: Uint8Array, byteCount: number, color: color_arr): void {
+export function writeColorRgba8Pixels(pixels: Uint8Array, byteCount: number, color: vec4arr): void {
 	const r = color[0] * 255;
 	const g = color[1] * 255;
 	const b = color[2] * 255;

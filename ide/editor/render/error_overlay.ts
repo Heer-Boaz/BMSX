@@ -4,7 +4,7 @@ import { drawEditorText } from './text_renderer';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../language/lua/interpreter/value';
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';

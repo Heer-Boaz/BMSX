@@ -9,7 +9,7 @@ import { point_in_rect } from '../../../machine/ts/common/rect';
 import { intellisenseUiState } from '../contrib/intellisense/ui_state';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from './view/state';
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 
 const hoverTooltipBubbleBounds: RectBounds = {
 	left: 0,

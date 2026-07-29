@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
-	type RomAsset,
-} from '../../machine/ts/rompack/format';
+} from '../../machine/ts/rompack/tooling/generated_modules';
+import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
 import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 

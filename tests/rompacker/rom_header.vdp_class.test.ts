@@ -8,7 +8,7 @@ import {
 } from '../../machine/ts/spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
+import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import {
@@ -18,8 +18,8 @@ import {
 import {
 	resolveCartridgeHeaderWords,
 	type CartManifest,
-	type CartRomHeader,
-} from '../../machine/ts/rompack/format';
+} from '../../machine/ts/rompack/tooling/manifest';
+import type { CartRomHeader } from '../../machine/ts/rompack/format';
 
 const EMPTY_CART_HEADER: CartRomHeader = {
 	headerSize: CART_ROM_HEADER_SIZE,

@@ -5,7 +5,7 @@ import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from '../completion';
 import { drawCursor } from '../caret';
-import type { RectBounds } from '../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorViewState } from '../../ui/view/state';
 import type { EditorCompletionController } from '../../contrib/suggest/completion_controller';

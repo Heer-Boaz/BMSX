@@ -1,9 +1,10 @@
 import {
 	parseCartHeader,
 	type CartRomHeader,
-	type CartridgeLayerId,
 } from './format';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../spec/bmsx/memory_map';
+
+export type RomImageDomain = 'system' | 'cart';
 
 export type RomImage = {
 	bytes: Uint8Array;
@@ -12,7 +13,7 @@ export type RomImage = {
 
 export function parseRomImage(
 	bytes: Uint8Array,
-	domain: CartridgeLayerId,
+	domain: RomImageDomain,
 ): RomImage {
 	const capacity = domain === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
 	if (bytes.byteLength > capacity) {

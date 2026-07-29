@@ -1,5 +1,5 @@
 import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
 import { markAllDiagnosticsDirty } from '../../../../editor/contrib/diagnostics/analysis';

@@ -1,4 +1,4 @@
-import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import type { LuaSourceRegistry } from '../runtime/source_registry';
 
 export const workspaceCanonicalSourceCache = new Map<string, string>();
 

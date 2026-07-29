@@ -1,4 +1,4 @@
-import { formatNumberAsHex } from '../common/byte_hex_string';
+import { formatNumberAsHex } from '../../common/byte_hex_string';
 
 export const ROM_METADATA_MAGIC = 0x44544d42; // 'BMTD' little-endian
 export const ROM_METADATA_VERSION = 1;

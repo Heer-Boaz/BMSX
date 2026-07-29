@@ -69,7 +69,7 @@ import { editorDocumentState } from '../../ide/editor/editing/document_state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
 	applyAllWorkspaceSourceOverrides,
 	saveLuaResourceSource,

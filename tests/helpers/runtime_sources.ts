@@ -10,7 +10,7 @@ import {
 	rebuildRuntimeSourceResources,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
@@ -18,13 +18,15 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	parseCartHeader,
-	type CartridgeIndex,
 	type CartRomHeader,
-	type CartridgeLayerId,
-	type MachineManifest,
-	type RomToolingPackage,
 } from '../../machine/ts/rompack/format';
-import type { RomToolingLayer } from '../../machine/ts/rompack/loader';
+import type {
+	CartridgeIndex,
+	RomToolingPackage,
+} from '../../machine/ts/rompack/tooling/assets';
+import type { RomImageDomain } from '../../machine/ts/rompack/image';
+import type { MachineManifest } from '../../machine/ts/rompack/tooling/manifest';
+import type { RomToolingLayer } from '../../machine/ts/rompack/tooling/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import { cartridgeSlots } from './cartridge';
 
@@ -112,7 +114,7 @@ function emptyRomHeader(): CartRomHeader {
 }
 
 function romToolingLayer(
-	id: CartridgeLayerId,
+	id: RomImageDomain,
 	projectRootPath: string,
 	payload: Uint8Array,
 ): RomToolingLayer {

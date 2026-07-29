@@ -4,7 +4,7 @@ import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
 import { editorContextMenuState, resetEditorContextMenuState } from './state';
-import type { RectBounds } from '../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 
 export type CodeAreaViewportBounds = {
 	codeLeft: number;

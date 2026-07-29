@@ -1,26 +1,21 @@
 import type {
-	RectBounds,
 	AudioMeta,
-	GLTFMaterial,
-	GLTFModel,
 	ImgMeta,
-	Polygon,
 	RomAsset,
-	CartManifest,
-	MachineManifest,
 	RomToolingPackage,
 	CartridgeIndex,
-	CartridgeLayerId,
-	color_arr,
-	CartRomHeader,
 	TextureMeta,
-} from './format';
-import { parseCartHeader } from './format';
-import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
+} from './assets';
+import type { GLTFMaterial, GLTFModel } from './gltf';
+import type { CartManifest, MachineManifest } from './manifest';
+import type { Polygon, RectBounds } from '../../common/rect';
+import type { vec4arr } from '../../common/vector';
+import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../common/serializer/binencoder';
+import { parseCartHeader, type CartRomHeader } from '../format';
 import { parseRomMetadataSection } from './metadata';
 import { RomSourceStack, type RawRomSource } from './source';
-import { decodeRomToc } from './toc';
-import type { RomImage } from './image';
+import { decodeRomToc } from '../toc';
+import type { RomImage, RomImageDomain } from '../image';
 
 const utf8Decoder = new TextDecoder();
 
@@ -67,10 +62,14 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	};
 }
 
-async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomAssetList> {
+async function loadRomAssetListFromHeader(
+	rom: Uint8Array,
+	header: CartRomHeader,
+	domain: RomImageDomain,
+): Promise<RomAssetList> {
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
-	const entryList = decoded.entries;
+	const entryList: RomAsset[] = decoded.entries;
 	const projectRootPath = decodedProjectRootPath(decoded.projectRootPath);
 	const sharedMetadata = header.metadataLength > 0
 		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
@@ -122,6 +121,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 	}
 
 	for (const asset of entryList) {
+		asset.payload_id = domain;
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
 			const metaStart = asset.metabuffer_start;
 			const metaEnd = asset.metabuffer_end;
@@ -169,9 +169,12 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 	};
 }
 
-export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
+export async function loadRomAssetList(
+	rom: Uint8Array,
+	domain: RomImageDomain,
+): Promise<RomAssetList> {
 	const header = parseCartHeader(rom);
-	return loadRomAssetListFromHeader(rom, header);
+	return loadRomAssetListFromHeader(rom, header, domain);
 }
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
@@ -180,7 +183,7 @@ export async function parseCartridgeIndex(payload: Uint8Array): Promise<Cartridg
 }
 
 async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRomHeader): Promise<CartridgeIndex> {
-	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
+	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header, 'cart');
 	const { cart_manifest, machine, entry_path } = decodeCartridgeMetadata(payload, header);
 	return {
 		entries,
@@ -311,7 +314,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, 
 				const arr = ArrayBuffer.isView(f) ? Array.from(f) : Array.isArray(f) ? f : undefined;
 				if (arr) {
 					if (arr.length === 3) arr.push(1);
-					m.emissiveFactor = arr as color_arr;
+					m.emissiveFactor = arr as vec4arr;
 				}
 			}
 		}
@@ -366,7 +369,7 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingP
 }
 
 export type RomToolingLayer = {
-	id: CartridgeLayerId;
+	id: RomImageDomain;
 	header: CartRomHeader;
 	index: CartridgeIndex;
 	payload: Uint8Array;
@@ -404,7 +407,7 @@ export async function buildSystemToolingLayer(params: {
 	entry_path: string;
 }): Promise<RomToolingLayer> {
 	const { image } = params;
-	const { entries } = await loadRomAssetListFromHeader(image.bytes, image.header);
+	const { entries } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
 	const index: CartridgeIndex = {
 		entries,
 		projectRootPath: '',

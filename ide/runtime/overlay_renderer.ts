@@ -3,7 +3,7 @@ import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type co
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { Viewport } from '../../machine/ts/rompack/format';
+import type { Viewport } from '../common/viewport';
 
 export type RenderCommand = Host2DSubmission;
 type RectSubmission = Extract<Host2DSubmission, { type: 'rect' }>;

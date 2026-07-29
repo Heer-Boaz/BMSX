@@ -1,6 +1,6 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
-import type { GxTexturePageTile } from '../../machine/ts/rompack/format';
+import type { GxTexturePageTile } from '../../machine/ts/rompack/tooling/assets';
 import type { ImageResource } from './rompacker.rompack';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,

@@ -1,4 +1,4 @@
-import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
+import type { vec2, vec4arr } from '../../common/vector';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
@@ -6,6 +6,13 @@ import type { VideoPresenter } from '../video_presenter';
 import type { DeviceQuantizeLuts } from '../post/device_quantize/lut';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
+
+export type TextureSource = {
+	close?(): void;
+	width: number;
+	height: number;
+	data?: Uint8Array;
+};
 
 /*
  * TS/C++ parity boundary:
@@ -128,7 +135,7 @@ export interface RenderPassGraphDef<S = unknown> {
 // Attachments for a render pass instance (runtime execution)
 export interface ColorAttachmentSpec {
 	tex: TextureHandle;
-	clear?: color_arr;
+	clear?: vec4arr;
 	discardAfter?: boolean;
 }
 
@@ -209,11 +216,11 @@ export interface GPUBackend {
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
-	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle;
+	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: vec4arr }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
 	destroyRenderTarget(handle: RenderTargetHandle): void;
-	clear(color: color_arr | undefined, depth: number | undefined): void;
+	clear(color: vec4arr | undefined, depth: number | undefined): void;
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;

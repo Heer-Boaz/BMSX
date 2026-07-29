@@ -1,4 +1,4 @@
-import type { color_arr, TextureSource } from '../../rompack/format';
+import type { vec4arr } from '../../common/vector';
 import {
 	type GPUBackend,
 	type BackendCaps,
@@ -7,6 +7,7 @@ import {
 	type PassEncoder,
 	type RenderPassInstanceHandle,
 	type RenderPassId,
+	type TextureSource,
 } from '../backend/backend';
 import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_pixels';
@@ -263,7 +264,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.textures.delete(id);
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: unknown; initialClearColor?: color_arr }): TextureHandle {
+	createColorTexture(desc: { width: number; height: number; format?: unknown; initialClearColor?: vec4arr }): TextureHandle {
 		const handle = makeTextureHandle('color');
 		const id = this.getTextureId(handle);
 		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
@@ -297,7 +298,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	destroyRenderTarget(_handle: { size: { x: number; y: number }; colors: TextureHandle[]; depth?: TextureHandle }): void {
 	}
 
-	clear(_color: color_arr | undefined, _depth: number | undefined): void { }
+	clear(_color: vec4arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
 		const colorSpec = desc.colors !== undefined && desc.colors[0] !== undefined ? desc.colors[0] : desc.color;

@@ -4,8 +4,9 @@ import {
 	layoutRomAssetPayloads,
 	romAssetIsPacked,
 	type RomAssetPayloadRange,
-} from '../asset_layout';
-import type { AudioMeta, ImgMeta, RomAsset, RomManifest, TextureMeta } from '../format';
+} from './asset_layout';
+import type { AudioMeta, ImgMeta, RomAsset, TextureMeta } from './assets';
+import type { RomManifest } from './manifest';
 import { buildRomMetadataSection } from './metadata_encode';
 
 const EMPTY_BYTES = new Uint8Array(0);

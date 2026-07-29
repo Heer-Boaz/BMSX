@@ -22,9 +22,9 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import type { RomAsset } from '../../machine/ts/rompack/format';
-import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import { layoutRomAssetPayloads } from '../../machine/ts/rompack/tooling/asset_layout';
+import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
 import {
 	decodeGxTextureImage,
 	encodeDirect16GxTexture,
@@ -392,7 +392,7 @@ return imgdec
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
 		});
 		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));
-		const systemIndex = await loadRomAssetList(systemRom);
+		const systemIndex = await loadRomAssetList(systemRom, 'system');
 		const systemImageEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_IMAGE_ID)!;
 		const systemSymbolsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 		const systemSymbols = decodeBlua32SymbolsImage(
@@ -428,7 +428,7 @@ return imgdec
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
 		});
 		const rom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract.rom'));
-		const loaded = await loadRomAssetList(rom);
+		const loaded = await loadRomAssetList(rom, 'cart');
 		const loadedTexture = loaded.entries.find(asset => asset.type === 'texture')!;
 		const loadedFirst = loaded.entries.find(asset => asset.resid === first.name)!;
 		const loadedSecond = loaded.entries.find(asset => asset.resid === second.name)!;

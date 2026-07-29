@@ -1,5 +1,5 @@
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { MENU_COMMANDS, MENU_IDS } from '../../../ui/top_bar/menu';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';

@@ -4,7 +4,7 @@
  * Machine-visible render state enters through device output snapshots; this
  * graph only orders frontend texture passes and owns no emulated state.
  */
-import type { color_arr } from '../../rompack/format';
+import type { vec4arr } from '../../common/vector';
 import type {
 	ColorAttachmentSpec,
 	DepthAttachmentSpec,
@@ -26,7 +26,7 @@ export interface TexDesc {
 	depth?: boolean; // depth/stencil target if true
 	name?: string;
 	transient?: boolean; // hint: contents not needed after pass (storeOp dont_care)
-	initialClearColor?: color_arr;
+	initialClearColor?: vec4arr;
 }
 
 export interface FrameData {
@@ -40,7 +40,7 @@ export interface FrameData {
 export interface IOBuilder {
 	createTex(desc: TexDesc): RGTexHandle; // allocate logical resource
 	readTex(handle: RGTexHandle): void;    // declare read dependency
-	writeTex(handle: RGTexHandle, opts?: { clearColor?: color_arr; clearDepth?: number }): void; // declare write + optional clear
+	writeTex(handle: RGTexHandle, opts?: { clearColor?: vec4arr; clearDepth?: number }): void; // declare write + optional clear
 	exportToBackbuffer(handle: RGTexHandle): void; // mark final output
 }
 
@@ -80,7 +80,7 @@ interface InternalTexResource {
 	firstUse?: number;
 	lastUse?: number;
 	physicalId?: number;
-	clearOnWrite?: { color?: color_arr; depth?: number };
+	clearOnWrite?: { color?: vec4arr; depth?: number };
 }
 
 // Using unified GPUBackend abstraction (WebGLBackend) from backend/backend.ts
@@ -96,7 +96,7 @@ export class RenderGraphRuntime {
 	private passOrder: number[] = []; // topologically sorted indices
 	private reachable: boolean[] = [];
 	// Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
-	private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
+	private _passWrites: { tex: RGTexHandle; clear?: { color?: vec4arr; depth?: number } }[][] = [];
 	private _setupData: unknown[] = []; // per-pass setup() return values
 	private readonly passContext: PassContext;
 	private readonly passDesc: RenderPassDesc = {};
@@ -162,7 +162,7 @@ export class RenderGraphRuntime {
 		}
 
 		const setupData: unknown[] = [];
-		const passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
+		const passWrites: { tex: RGTexHandle; clear?: { color?: vec4arr; depth?: number } }[][] = [];
 		const passReads: { tex: RGTexHandle }[][] = [];
 
 		for (let pIndex = 0; pIndex < this.passes.length; pIndex++) {

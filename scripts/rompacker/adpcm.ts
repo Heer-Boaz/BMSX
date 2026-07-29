@@ -1,4 +1,4 @@
-import type { AudioMeta } from '../../machine/ts/rompack/format';
+import type { AudioMeta } from '../../machine/ts/rompack/tooling/assets';
 import { decodeWavToPcm } from '../../machine/ts/common/wav';
 import { OggVorbisDecoder } from '@wasm-audio-decoders/ogg-vorbis';
 

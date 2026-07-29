@@ -1,7 +1,7 @@
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import type { EditorTabDescriptor } from '../../common/models';
-import type { RectBounds } from '../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../machine/ts/common/scratchbuffer';

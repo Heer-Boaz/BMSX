@@ -3,7 +3,7 @@ import { lower_bound } from '../../../../machine/ts/common/lower_bound';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { HostClock } from '../../../../machine/ts/platform/platform';
-import type { Viewport } from '../../../../machine/ts/rompack/format';
+import type { Viewport } from '../../../common/viewport';
 import * as constants from '../../../common/constants';
 import type { CodeTabMode } from '../../../common/models';
 import { CodeLayout } from '../code/layout';

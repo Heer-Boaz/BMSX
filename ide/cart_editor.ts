@@ -12,7 +12,7 @@ import type {
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua32_media';
-import type { Viewport } from '../machine/ts/rompack/format';
+import type { Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';

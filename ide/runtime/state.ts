@@ -1,4 +1,4 @@
-import type { Viewport } from '../../machine/ts/rompack/format';
+import type { Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';

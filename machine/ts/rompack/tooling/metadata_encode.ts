@@ -3,7 +3,7 @@ import {
 	ROM_METADATA_HEADER_SIZE,
 	ROM_METADATA_MAGIC,
 	ROM_METADATA_VERSION,
-} from '../metadata';
+} from './metadata';
 
 const utf8Encoder = new TextEncoder();
 

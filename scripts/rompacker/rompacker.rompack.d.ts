@@ -4,7 +4,8 @@
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { NativeGxTexture } from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import type { asset_type, GxTexturePageTile } from '../../machine/ts/rompack/format';
+import type { GxTexturePageTile } from '../../machine/ts/rompack/tooling/assets';
+import type { asset_type } from '../../machine/ts/rompack/toc';
 
 export type RomPackerMode = 'rompack' | 'bios';
 

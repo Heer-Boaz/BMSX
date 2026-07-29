@@ -1,4 +1,4 @@
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import type { LuaSourceRecord, LuaSourceRegistry } from '../runtime/source_registry';
 import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
 import {
 	deleteWorkspaceLuaSourceOverride,

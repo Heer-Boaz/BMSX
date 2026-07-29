@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
-import { color_arr, type TextureSource } from '../../../rompack/format';
-import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
+import type { vec4arr } from '../../../common/vector';
+import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle, type TextureSource } from '../backend';
 import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
@@ -273,7 +273,7 @@ export class WebGPUBackend implements GPUBackend {
 		texture.destroy();
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle {
+	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: vec4arr }): TextureHandle {
 		let format: GPUTextureFormat;
 		switch (desc.format) {
 			case undefined:
@@ -351,7 +351,7 @@ export class WebGPUBackend implements GPUBackend {
 		return view;
 	}
 
-	clear(color: color_arr | undefined, _depth: number | undefined): void {
+	clear(color: vec4arr | undefined, _depth: number | undefined): void {
 		const commandEncoder = this.device.createCommandEncoder();
 		let colorAttachments: GPURenderPassColorAttachment[] = [];
 

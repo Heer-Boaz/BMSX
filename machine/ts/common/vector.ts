@@ -1,12 +1,12 @@
-import type { vec2arr as FormatVec2Arr, vec3arr as FormatVec3Arr } from '../rompack/format';
-
 export type vec2 = { x: number; y: number };
 export type vec3 = { x: number; y: number; z: number };
-export type vec2arr = FormatVec2Arr;
-export type vec3arr = FormatVec3Arr;
+export type vec4 = { x: number; y: number; z: number; w: number };
+export type vec2arr = [number, number];
+export type vec3arr = [number, number, number];
+export type vec4arr = [number, number, number, number];
 export type Vec2 = vec2;
 export type Vec3 = vec3;
-export type Vec4 = { x: number; y: number; z: number; w: number };
+export type Vec4 = vec4;
 
 /**
  * Translates a 2D vector by adding another vector to it.

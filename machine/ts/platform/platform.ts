@@ -1,4 +1,4 @@
-import { type vec2 } from 'bmsx/rompack/format';
+import { type vec2 } from 'bmsx/common/vector';
 import type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 import type { GPUBackend } from '../render/backend/backend';
 

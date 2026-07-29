@@ -23,7 +23,7 @@ import {
 	type Blua32ToolingImage,
 } from '../../../machine/ts/rompack/tooling/blua32_media';
 import { loadRomToolingMedia } from '../../../machine/ts/rompack/tooling/media';
-import { RomSourceStack } from '../../../machine/ts/rompack/source';
+import { RomSourceStack } from '../../../machine/ts/rompack/tooling/source';
 import {
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,

@@ -1,6 +1,7 @@
-import { buildRomAssetSymbolModuleSource } from '../../../../machine/ts/rompack/asset_symbols';
-import { ROM_ASSET_SYMBOL_MODULE_PATH, type RomAsset } from '../../../../machine/ts/rompack/format';
-import { loadRomAssetList, parseCartridgeIndex } from '../../../../machine/ts/rompack/loader';
+import { buildRomAssetSymbolModuleSource } from '../../../../machine/ts/rompack/tooling/asset_symbols';
+import type { RomAsset } from '../../../../machine/ts/rompack/tooling/assets';
+import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../machine/ts/rompack/tooling/generated_modules';
+import { loadRomAssetList, parseCartridgeIndex } from '../../../../machine/ts/rompack/tooling/loader';
 import { encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { parseLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
@@ -41,7 +42,7 @@ export async function buildHostTestCartridge(
 	cartridge: Uint8Array,
 	testSource: string,
 ): Promise<Uint8Array> {
-	const systemIndex = await loadRomAssetList(systemRom);
+	const systemIndex = await loadRomAssetList(systemRom, 'system');
 	const cartIndex = await parseCartridgeIndex(cartridge);
 	const systemImageEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 	const systemSymbolsEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;

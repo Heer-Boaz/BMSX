@@ -12,7 +12,7 @@ import {
 	registerLuaSourceRecord,
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
-} from '../../machine/ts/lua/source_registry';
+} from '../../ide/runtime/source_registry';
 import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';

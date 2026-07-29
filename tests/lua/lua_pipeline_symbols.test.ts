@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { StringValue } from '../../machine/ts/machine/cpu/value';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { listSymbols } from '../../ide/runtime/lua_pipeline';
 import {
 	createTestRuntime,

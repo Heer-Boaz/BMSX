@@ -7,7 +7,7 @@ import type {
 import type { ResourceDomain, RuntimeResource } from './resource';
 import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import type { EditorCommandId } from './commands';
-import { RectBounds } from '../../machine/ts/rompack/format';
+import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TextBuffer } from '../editor/text/text_buffer';
 import type { EditorUndoRecord } from '../editor/text/undo';
 export type { RuntimeResource } from './resource';

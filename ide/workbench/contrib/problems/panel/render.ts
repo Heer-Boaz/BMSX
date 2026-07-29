@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../../../machine/ts/rompack/format';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { EditorFont } from '../../../../editor/ui/view/font';
 import { truncateTextToWidth } from '../../../../editor/common/text/layout';
 import * as constants from '../../../../common/constants';

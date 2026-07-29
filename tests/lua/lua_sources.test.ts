@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { RomSourceStack, type RawRomSource } from '../../machine/ts/rompack/source';
+import { RomSourceStack, type RawRomSource } from '../../machine/ts/rompack/tooling/source';
 import {
 	CART_ROM_HEADER_MAGIC_OFFSET,
 	CART_ROM_HEADER_SIZE,
@@ -14,11 +14,13 @@ import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-	type CartridgeIndex,
-	type CartridgeLayerId,
-	type RomAsset,
-} from '../../machine/ts/rompack/format';
-import { buildLuaSources } from '../../machine/ts/lua/source_registry';
+} from '../../machine/ts/rompack/tooling/generated_modules';
+import type {
+	CartridgeIndex,
+	RomAsset,
+} from '../../machine/ts/rompack/tooling/assets';
+import type { RomImageDomain } from '../../machine/ts/rompack/image';
+import { buildLuaSources } from '../../ide/runtime/source_registry';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -26,8 +28,8 @@ import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/rompack/system';
+import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/rompack/tooling/system';
 import {
 	ROM_TOC_HEADER_SIZE,
 	ROM_TOC_INVALID_U32,
@@ -101,7 +103,7 @@ function makeIndex(entryPath: string, entries: RomAsset[]): CartridgeIndex {
 	};
 }
 
-function luaEntry(resid: string, sourcePath: string, payloadId: CartridgeLayerId, updateTimestamp: number): RomAsset {
+function luaEntry(resid: string, sourcePath: string, payloadId: RomImageDomain, updateTimestamp: number): RomAsset {
 	return {
 		resid,
 		type: 'lua',

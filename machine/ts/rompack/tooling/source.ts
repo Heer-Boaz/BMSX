@@ -1,7 +1,9 @@
-import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset } from './format';
+import type { CartridgeIndex, RomAsset } from './assets';
+import type { RomImageDomain } from '../image';
+import type { asset_id, asset_type } from '../toc';
 
 export type RomSourceLayer = {
-	id: CartridgeLayerId;
+	id: RomImageDomain;
 	index: CartridgeIndex;
 	payload: Uint8Array;
 };
@@ -19,7 +21,7 @@ export class RomSourceStack implements RawRomSource {
 	private readonly layers: RomSourceLayer[];
 	private readonly idMaps: Map<string, number>[];
 	private readonly pathMaps: Map<string, number>[];
-	private readonly payloads: Partial<Record<CartridgeLayerId, Uint8Array>>;
+	private readonly payloads: Partial<Record<RomImageDomain, Uint8Array>>;
 
 	public constructor(layers: RomSourceLayer[]) {
 		this.layers = layers;
@@ -39,7 +41,7 @@ export class RomSourceStack implements RawRomSource {
 			this.idMaps[layerIndex] = idMap;
 			this.pathMaps[layerIndex] = pathMap;
 		}
-		const payloads: Partial<Record<CartridgeLayerId, Uint8Array>> = {};
+		const payloads: Partial<Record<RomImageDomain, Uint8Array>> = {};
 		for (const layer of layers) {
 			payloads[layer.id] = layer.payload;
 		}
@@ -73,7 +75,7 @@ export class RomSourceStack implements RawRomSource {
 					blocked.add(id);
 					continue;
 				}
-				out.push(this.attachPayloadId(entry, layer.id));
+				out.push(entry);
 				blocked.add(id);
 			}
 		}
@@ -105,15 +107,8 @@ export class RomSourceStack implements RawRomSource {
 			if (asset.op === 'delete') {
 				return null;
 			}
-			return this.attachPayloadId(asset, this.layers[layerIndex].id);
-		}
-		return null;
-	}
-
-	private attachPayloadId(asset: RomAsset, payloadId: CartridgeLayerId): RomAsset {
-		if (asset.payload_id === payloadId) {
 			return asset;
 		}
-		return { ...asset, payload_id: payloadId };
+		return null;
 	}
 }

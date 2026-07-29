@@ -31,11 +31,6 @@
 			"reason": "lua_source_compiler_support_outside_machine_core"
 		},
 		{
-			"pattern": "machine/ts/lua/source_registry.ts",
-			"category": "compiler_tooling",
-			"reason": "lua_source_registry_outside_machine_core"
-		},
-		{
 			"pattern": "machine/ts/lua/builtin_descriptors.ts",
 			"category": "language",
 			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"
@@ -226,21 +221,6 @@
 			"reason": "rompacker_authoring_schema_not_runtime_core"
 		},
 		{
-			"pattern": "machine/ts/rompack/loader.ts",
-			"category": "rompacker_tooling",
-			"reason": "studio_rom_asset_decode_and_authoring_package_not_runtime_core"
-		},
-		{
-			"pattern": "machine/ts/rompack/source.ts",
-			"category": "rompacker_tooling",
-			"reason": "studio_layered_rom_source_not_runtime_core"
-		},
-		{
-			"pattern": "machine/ts/rompack/metadata.ts",
-			"category": "rompacker_tooling",
-			"reason": "studio_rom_asset_metadata_decode_not_runtime_core"
-		},
-		{
 			"pattern": "machine/ts/.bmsx/**",
 			"category": "host",
 			"reason": "workspace_data_not_source"
@@ -249,21 +229,6 @@
 			"pattern": "machine/ts/glsl.d.ts",
 			"category": "barrel",
 			"reason": "ambient_declaration_not_core"
-		},
-		{
-			"pattern": "machine/ts/rompack/asset_symbols.ts",
-			"category": "rompacker_tooling",
-			"reason": "generated_cart_asset_symbol_source_for_rompacker_and_ide_source_compile_native_consumes_compiled_rom"
-		},
-		{
-			"pattern": "machine/ts/rompack/asset_layout.ts",
-			"category": "rompacker_tooling",
-			"reason": "rompacker_payload_layout_for_generated_cart_asset_symbols_native_consumes_compiled_rom"
-		},
-		{
-			"pattern": "machine/ts/rompack/system.ts",
-			"category": "rompacker_tooling",
-			"reason": "system_rom_build_identity_and_ts_host_asset_layer_metadata_native_executes_compiled_system_rom_directly"
 		}
 	],
 	"core_roots": [
@@ -1159,7 +1124,7 @@
 				"machine/ts/lua/compiler/program_object.ts",
 				"machine/ts/lua/compiler/passes",
 				"machine/ts/lua/compiler/optimizer",
-				"machine/ts/lua/source_registry.ts",
+				"ide/runtime/source_registry.ts",
 				"ide/runtime/lua_tooling.ts",
 				"ide/runtime/sources.ts",
 				"machine/ts/rompack/tooling/blua32_linker.ts",
@@ -1556,12 +1521,12 @@
 				{
 					"side": "ts",
 					"symbol": "tokenKeyFromAsset",
-					"reason": "TS tokenKeyFromAsset reads optional TOC token fields from RomAsset; C++ verifies TOC tokens on decode and stores native keys separately."
+					"reason": "TS tokenKeyFromAsset also accepts pack-time records before the TOC producer writes tokens; C++ only consumes decoded TOC tokens."
 				},
 				{
 					"side": "cpp",
 					"symbol": "AssetId",
-					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
 				},
 				{
 					"side": "cpp",
@@ -1571,22 +1536,22 @@
 				{
 					"side": "cpp",
 					"symbol": "AudioId",
-					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
 				},
 				{
 					"side": "cpp",
 					"symbol": "BitmapId",
-					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
 				},
 				{
 					"side": "cpp",
 					"symbol": "DataId",
-					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
 				},
 				{
 					"side": "cpp",
 					"symbol": "ModelId",
-					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
 				},
 				{
 					"side": "cpp",

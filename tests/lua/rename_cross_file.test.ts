@@ -13,7 +13,7 @@ import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type RuntimeResource,
 } from '../../ide/common/resource';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
 
