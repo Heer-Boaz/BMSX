@@ -1,7 +1,7 @@
 import type { Polygon, RectBounds } from '../../common/rect';
 import type { vec2arr } from '../../common/vector';
 import type {
-	asset_id,
+	AssetId,
 	RomTocEntry,
 } from '../toc';
 import type { RomImageDomain } from '../image';
@@ -45,7 +45,7 @@ export interface ImgMeta {
 	height: number;
 	texture_u: number;
 	texture_v: number;
-	gx_texture_resid?: asset_id;
+	gx_texture_resid?: AssetId;
 	gx_source_x?: number;
 	gx_source_y?: number;
 	gx_page_tiles?: GxTexturePageTile[];
@@ -88,12 +88,12 @@ export type CartridgeIndex = {
 };
 
 export type RomToolingPackage = {
-	img: Record<asset_id, RomAsset>;
-	audio: Record<asset_id, RomAsset>;
-	model: Record<asset_id, GLTFModel>;
-	data: Record<asset_id, unknown>;
-	bin: Record<asset_id, RomAsset>;
-	audioevents: Record<asset_id, Record<string, unknown>>;
+	img: Record<AssetId, RomAsset>;
+	audio: Record<AssetId, RomAsset>;
+	model: Record<AssetId, GLTFModel>;
+	data: Record<AssetId, unknown>;
+	bin: Record<AssetId, RomAsset>;
+	audioevents: Record<AssetId, Record<string, unknown>>;
 	project_root_path: string;
 	cart_manifest: CartManifest | null;
 };

@@ -46,15 +46,16 @@ import {
 	ROM_TOC_MAGIC,
 	ROM_TOC_OP_DELETE,
 } from '../spec/bmsx/rom_toc';
+import { hashAssetId } from './tokens';
 const utf8Decoder = new TextDecoder();
 
-export type asset_type = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
-export type asset_id = string;
+export type AssetType = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type AssetId = string;
 export type RomAssetOp = 'delete';
 
 export type RomTocEntry = {
-	resid: asset_id;
-	type: asset_type;
+	resid: AssetId;
+	type: AssetType;
 	id_token_lo: number;
 	id_token_hi: number;
 	op?: RomAssetOp;
@@ -78,7 +79,7 @@ export type RomTocPayload = {
 	projectRootPath: string | null;
 };
 
-const ASSET_TYPE_IDS: Record<asset_type, number> = {
+const ASSET_TYPE_IDS: Record<AssetType, number> = {
 	image: ROM_TOC_ASSET_TYPE_IMAGE,
 	texture: ROM_TOC_ASSET_TYPE_TEXTURE,
 	audio: ROM_TOC_ASSET_TYPE_AUDIO,
@@ -91,7 +92,7 @@ const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	code: ROM_TOC_ASSET_TYPE_CODE,
 };
 
-export function assetTypeToId(type: asset_type): number {
+export function assetTypeToId(type: AssetType): number {
 	const id = ASSET_TYPE_IDS[type];
 	if (!id) {
 		throw new Error(`Unknown asset type "${type}".`);
@@ -99,7 +100,7 @@ export function assetTypeToId(type: asset_type): number {
 	return id;
 }
 
-export function assetTypeFromId(id: number): asset_type {
+export function assetTypeFromId(id: number): AssetType {
 	switch (id) {
 		case ROM_TOC_ASSET_TYPE_IMAGE: return 'image';
 		case ROM_TOC_ASSET_TYPE_TEXTURE: return 'texture';
@@ -119,6 +120,9 @@ export function assetTypeFromId(id: number): asset_type {
 function decodeString(table: Uint8Array, offset: number, length: number, decoder: TextDecoder): string | null {
 	if (offset === ROM_TOC_INVALID_U32 || length === 0) {
 		return null;
+	}
+	if (offset > table.byteLength || length > table.byteLength - offset) {
+		throw new Error('ROM TOC string table entry is out of bounds.');
 	}
 	return decoder.decode(table.subarray(offset, offset + length));
 }
@@ -153,6 +157,12 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	const expectedStringOffset = entryOffset + entriesByteLength;
 	if (stringTableOffset !== expectedStringOffset) {
 		throw new Error(`Unexpected ROM TOC string table offset ${stringTableOffset} (expected ${expectedStringOffset}).`);
+	}
+	if (entryOffset + entriesByteLength > buffer.byteLength) {
+		throw new Error('ROM TOC entries are out of bounds.');
+	}
+	if (stringTableOffset + stringTableLength > buffer.byteLength) {
+		throw new Error('ROM TOC string table is out of bounds.');
 	}
 
 	const stringTable = buffer.subarray(stringTableOffset, stringTableOffset + stringTableLength);
@@ -195,6 +205,10 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const resid = decodeString(stringTable, residOffset, residLength, utf8Decoder);
 		if (!resid) {
 			throw new Error('ROM TOC entry is missing resid.');
+		}
+		const token = hashAssetId(resid);
+		if (token.lo !== tokenLo || token.hi !== tokenHi) {
+			throw new Error(`ROM TOC entry token mismatch for asset '${resid}'.`);
 		}
 		const entry: RomTocEntry = {
 			resid,

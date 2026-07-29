@@ -386,6 +386,7 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_rom_tooling STATIC
 		rompack/tokens.cpp
 		rompack/toc.cpp
+		rompack/tooling/toc_encode.cpp
 	)
 
 	set_target_properties(bmsx_rom_tooling PROPERTIES

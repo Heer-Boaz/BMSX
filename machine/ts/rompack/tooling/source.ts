@@ -1,6 +1,6 @@
 import type { CartridgeIndex, RomAsset } from './assets';
 import type { RomImageDomain } from '../image';
-import type { asset_id, asset_type } from '../toc';
+import type { AssetId, AssetType } from '../toc';
 
 export type RomSourceLayer = {
 	id: RomImageDomain;
@@ -9,12 +9,12 @@ export type RomSourceLayer = {
 };
 
 export interface RawRomSource {
-	getEntry(id: asset_id): RomAsset | null;
+	getEntry(id: AssetId): RomAsset | null;
 	getEntryByPath(path: string): RomAsset | null;
 	getBytes(entry: RomAsset): Uint8Array;
 	getBytesView(entry: RomAsset): Uint8Array;
 	getCompiledBytesView(entry: RomAsset): Uint8Array;
-	list(type?: asset_type): RomAsset[];
+	list(type?: AssetType): RomAsset[];
 }
 
 export class RomSourceStack implements RawRomSource {
@@ -49,7 +49,7 @@ export class RomSourceStack implements RawRomSource {
 	}
 
 	// disable-next-line single_line_method_pattern -- RawRomSource keeps separate id/path public pins; shared layered lookup ownership stays in findEntry.
-	public getEntry(id: asset_id): RomAsset | null {
+	public getEntry(id: AssetId): RomAsset | null {
 		return this.findEntry(id, this.idMaps);
 	}
 
@@ -58,7 +58,7 @@ export class RomSourceStack implements RawRomSource {
 		return this.findEntry(path, this.pathMaps);
 	}
 
-	public list(type?: asset_type): RomAsset[] {
+	public list(type?: AssetType): RomAsset[] {
 		const out: RomAsset[] = [];
 		const blocked = new Set<string>();
 		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex += 1) {

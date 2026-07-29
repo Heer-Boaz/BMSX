@@ -17,15 +17,16 @@ auto loadBlua32ToolingImage(
 		return std::nullopt;
 	}
 	std::optional<Blua32SymbolsImage> symbols;
-	const RomTocPayload toc = decodeRomToc(
-		rom.bytes.data() + rom.header.tocOffset,
+	const RomTocPayload toc = decodeRomToc(rom.bytes.subspan(
+		rom.header.tocOffset,
 		rom.header.tocLength
-	);
-	for (const RomSourceEntry& entry : toc.entries) {
+	));
+	for (const RomTocEntry& entry : toc.entries) {
 		if (entry.resid == BLUA32_SYMBOLS_IMAGE_ID) {
-			const size_t start = static_cast<size_t>(*entry.rom.start);
-			const size_t byteCount =
-				static_cast<size_t>(*entry.rom.end - *entry.rom.start);
+			const size_t start = static_cast<size_t>(*entry.start);
+			const size_t byteCount = static_cast<size_t>(
+				*entry.end - *entry.start
+			);
 			symbols.emplace(
 				decodeBlua32SymbolsImage(rom.bytes.subspan(start, byteCount))
 			);

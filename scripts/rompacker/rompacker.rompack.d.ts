@@ -5,7 +5,7 @@ import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { NativeGxTexture } from '../../machine/ts/rompack/tooling/gx_texture_codec';
 import type { GxTexturePageTile } from '../../machine/ts/rompack/tooling/assets';
-import type { asset_type } from '../../machine/ts/rompack/toc';
+import type { AssetType } from '../../machine/ts/rompack/toc';
 
 export type RomPackerMode = 'rompack' | 'bios';
 
@@ -27,7 +27,7 @@ export interface RomPackerOptions {
 	libraryLuaRoots: string[];
 }
 
-export type resourcetype = Exclude<asset_type, 'texture'> | 'atlas';
+export type resourcetype = Exclude<AssetType, 'texture'> | 'atlas';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 

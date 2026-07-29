@@ -1,47 +1,61 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "rompack/tokens.h"
 #include "spec/bmsx/rom_toc.h"
-#include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace bmsx {
 
-struct RomAssetInfo {
-	std::string type;
-	std::optional<std::string> op;
-	std::optional<i32> start;
-	std::optional<i32> end;
-	std::optional<i32> compiledStart;
-	std::optional<i32> compiledEnd;
-	std::optional<i32> metabufferStart;
-	std::optional<i32> metabufferEnd;
-	std::optional<i32> modelTextureStart;
-	std::optional<i32> modelTextureEnd;
-	std::optional<i32> collisionBinStart;
-	std::optional<i32> collisionBinEnd;
-	std::optional<std::string> sourcePath;
-	std::optional<std::string> normalizedSourcePath;
-	std::optional<i64> updateTimestamp;
+using AssetId = std::string;
+
+enum class AssetType : u32 {
+	Image = ROM_TOC_ASSET_TYPE_IMAGE,
+	Texture = ROM_TOC_ASSET_TYPE_TEXTURE,
+	Audio = ROM_TOC_ASSET_TYPE_AUDIO,
+	Data = ROM_TOC_ASSET_TYPE_DATA,
+	Bin = ROM_TOC_ASSET_TYPE_BIN,
+	Romlabel = ROM_TOC_ASSET_TYPE_ROMLABEL,
+	Model = ROM_TOC_ASSET_TYPE_MODEL,
+	Aem = ROM_TOC_ASSET_TYPE_AEM,
+	Lua = ROM_TOC_ASSET_TYPE_LUA,
+	Code = ROM_TOC_ASSET_TYPE_CODE,
 };
 
-struct RomSourceEntry {
+enum class RomAssetOp : u32 {
+	Delete = ROM_TOC_OP_DELETE,
+};
+
+struct RomTocEntry {
 	AssetId resid;
-	RomAssetInfo rom;
+	AssetType type;
+	u32 id_token_lo = 0;
+	u32 id_token_hi = 0;
+	std::optional<RomAssetOp> op;
+	std::optional<u32> start;
+	std::optional<u32> end;
+	std::optional<u32> compiled_start;
+	std::optional<u32> compiled_end;
+	std::optional<u32> metabuffer_start;
+	std::optional<u32> metabuffer_end;
+	std::optional<u32> model_texture_start;
+	std::optional<u32> model_texture_end;
+	std::optional<u32> collision_bin_start;
+	std::optional<u32> collision_bin_end;
+	std::optional<std::string> source_path;
+	std::optional<std::string> normalized_source_path;
+	std::optional<f64> update_timestamp;
 };
 
 struct RomTocPayload {
-	std::vector<RomSourceEntry> entries;
+	std::vector<RomTocEntry> entries;
 	std::optional<std::string> projectRootPath;
 };
 
-auto assetTypeFromId(u32 id) -> std::string;
-auto assetTypeToId(std::string_view type) -> u32;
-auto decodeRomToc(const u8* data, size_t size) -> RomTocPayload;
-auto encodeRomToc(const RomTocPayload& payload) -> std::vector<u8>;
+auto assetTypeFromId(u32 id) -> AssetType;
+auto assetTypeToId(AssetType type) -> u32;
+auto decodeRomToc(std::span<const u8> bytes) -> RomTocPayload;
 
 } // namespace bmsx

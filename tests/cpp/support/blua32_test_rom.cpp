@@ -7,7 +7,9 @@
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/memory_map.h"
 #include "rompack/toc.h"
+#include "rompack/tokens.h"
 #include "rompack/tooling/blua32_symbols.h"
+#include "rompack/tooling/toc_encode.h"
 
 #include <algorithm>
 #include <bit>
@@ -297,11 +299,16 @@ auto encodeRom(
 		: std::vector<u8>();
 	RomTocPayload tocPayload;
 	if (!image.empty()) {
-		RomAssetInfo rom;
-		rom.type = "code";
-		rom.start = static_cast<i32>(BLUA32_TEST_IMAGE_OFFSET);
-		rom.end = static_cast<i32>(BLUA32_TEST_IMAGE_OFFSET + image.size());
-		tocPayload.entries.push_back(RomSourceEntry{BLUA32_IMAGE_ID, std::move(rom)});
+		const AssetToken token = hashAssetId(BLUA32_IMAGE_ID);
+		RomTocEntry entry;
+		entry.resid = BLUA32_IMAGE_ID;
+		entry.type = AssetType::Code;
+		entry.id_token_lo = token.lo;
+		entry.id_token_hi = token.hi;
+		entry.start = BLUA32_TEST_IMAGE_OFFSET;
+		entry.end = BLUA32_TEST_IMAGE_OFFSET
+			+ static_cast<u32>(image.size());
+		tocPayload.entries.push_back(std::move(entry));
 	}
 	const u32 symbolsOffset = alignOffset(
 		BLUA32_TEST_IMAGE_OFFSET + static_cast<u32>(image.size()),
@@ -309,11 +316,15 @@ auto encodeRom(
 		CART_ROM_WORD_ALIGNMENT
 	);
 	if (!toolingSymbols.empty()) {
-		RomAssetInfo rom;
-		rom.type = "code";
-		rom.start = static_cast<i32>(symbolsOffset);
-		rom.end = static_cast<i32>(symbolsOffset + toolingSymbols.size());
-		tocPayload.entries.push_back(RomSourceEntry{BLUA32_SYMBOLS_IMAGE_ID, std::move(rom)});
+		const AssetToken token = hashAssetId(BLUA32_SYMBOLS_IMAGE_ID);
+		RomTocEntry entry;
+		entry.resid = BLUA32_SYMBOLS_IMAGE_ID;
+		entry.type = AssetType::Code;
+		entry.id_token_lo = token.lo;
+		entry.id_token_hi = token.hi;
+		entry.start = symbolsOffset;
+		entry.end = symbolsOffset + static_cast<u32>(toolingSymbols.size());
+		tocPayload.entries.push_back(std::move(entry));
 	}
 	const std::vector<u8> toc = encodeRomToc(tocPayload);
 	const u32 imageEnd = image.empty()
