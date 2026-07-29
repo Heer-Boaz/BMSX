@@ -17,7 +17,6 @@ import type {
 } from '../../machine/ts/lua/compiler/program';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
-	Blua32ConstantTag,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	INSTRUCTION_BYTES,
@@ -165,19 +164,6 @@ function decodeBx(code: Uint8Array, wordIndex: number): number {
 		| (word & 0x3f);
 }
 
-function constantValues(constants: ReturnType<typeof linkSystemBlua32Image>['layout']['constants']): Array<null | boolean | number | string> {
-	return constants.map(constant => {
-		switch (constant.tag) {
-			case Blua32ConstantTag.Nil: return null;
-			case Blua32ConstantTag.False: return false;
-			case Blua32ConstantTag.True: return true;
-			case Blua32ConstantTag.Number:
-			case Blua32ConstantTag.String:
-				return constant.value;
-		}
-	});
-}
-
 test('BLua32 linker emits one self-describing physical image', () => {
 	const { object, metadata } = makeObject([
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
@@ -196,7 +182,7 @@ test('BLua32 linker emits one self-describing physical image', () => {
 	assert.deepEqual(Array.from(image.rodataBytes), [1, 2, 3, 4]);
 	assert.deepEqual(Array.from(image.dataLoadBytes), [5, 6, 7, 8]);
 	assert.deepEqual(Array.from(image.textBytes), Array.from(object.sections.text.code));
-	assert.deepEqual(constantValues(image.constants), ['literal', 3]);
+	assert.deepEqual(image.constants, ['literal', 3]);
 	assert.deepEqual(linked.symbols.moduleFunctions, [{
 		path: 'rooms/castle',
 		address: image.functions[0].address,
@@ -453,12 +439,12 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		LINK_TARGET_RAM_BYTES,
 	);
 
-	assert.deepEqual(constantValues(linkedSystem.layout.constants), [
+	assert.deepEqual(linkedSystem.layout.constants, [
 		linkedSystem.layout.header.rodataAddress,
 		linkedSystem.layout.header.dataLoadAddress,
 		DYNAMIC_RAM_BASE + 4,
 	]);
-	assert.deepEqual(constantValues(linkedCart.layout.constants), [
+	assert.deepEqual(linkedCart.layout.constants, [
 		linkedCart.layout.header.rodataAddress,
 		linkedCart.layout.header.dataLoadAddress,
 		DYNAMIC_RAM_BASE + 16,
@@ -876,8 +862,8 @@ test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
 	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	assert.equal(initialImage.layout.header.rodataAddress, changedImage.layout.header.rodataAddress);
-	assert.deepEqual(constantValues(initialImage.layout.constants), [initialImage.layout.header.rodataAddress]);
-	assert.deepEqual(constantValues(changedImage.layout.constants), [changedImage.layout.header.rodataAddress]);
+	assert.deepEqual(initialImage.layout.constants, [initialImage.layout.header.rodataAddress]);
+	assert.deepEqual(changedImage.layout.constants, [changedImage.layout.header.rodataAddress]);
 });
 
 test('BLua32 linker preserves string literals that resemble obsolete relocation markers', () => {
@@ -891,7 +877,7 @@ test('BLua32 linker preserves string literals that resemble obsolete relocation 
 		SYSTEM_ROM_BASE + 0x100,
 		LINK_TARGET_RAM_BYTES,
 	);
-	assert.deepEqual(constantValues(linked.layout.constants), [literal]);
+	assert.deepEqual(linked.layout.constants, [literal]);
 });
 
 test('BLua32 linker rejects static storage beyond the declared target RAM region', () => {
