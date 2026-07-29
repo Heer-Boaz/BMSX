@@ -17,7 +17,7 @@ import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey } from './module_names';
-import type { ModuleExportShapeNode } from './module_shape';
+import type { ModuleExportShape } from './module_shape';
 
 type ExportPathIndex = {
 	has(pathKey: string): boolean;
@@ -153,25 +153,25 @@ const collectModuleExportConstValues = (
 
 export const assertConstModuleExportsAreStatic = (
 	modulePath: string,
-	exportRoot: ModuleExportShapeNode,
+	exportRoot: ModuleExportShape,
 	exportConstValueByPathKey: ReadonlyMap<string, ConstExportValue>,
 	staticFunctionExportByPathKey: ExportPathIndex,
 ): void => {
-	const visit = (node: ModuleExportShapeNode, path: string[], visiting: WeakSet<ModuleExportShapeNode>): void => {
-		if (visiting.has(node)) {
+	const visit = (shape: ModuleExportShape, path: string[], visiting: WeakSet<ModuleExportShape>): void => {
+		if (visiting.has(shape)) {
 			return;
 		}
-		visiting.add(node);
-		for (const [key, child] of node.children) {
+		visiting.add(shape);
+		for (const [key, child] of shape) {
 			path.push(key);
 			const pathKey = buildModuleExportPathKey(path);
-			if (child.children.size === 0 && !exportConstValueByPathKey.has(pathKey) && !staticFunctionExportByPathKey.has(pathKey)) {
+			if (child.size === 0 && !exportConstValueByPathKey.has(pathKey) && !staticFunctionExportByPathKey.has(pathKey)) {
 				throw new Error(`Const module '${modulePath}' export '${pathKey}' is not a compile-time constant or static symbol.`);
 			}
 			visit(child, path, visiting);
 			path.pop();
 		}
-		visiting.delete(node);
+		visiting.delete(shape);
 	};
 	visit(exportRoot, [], new WeakSet());
 };

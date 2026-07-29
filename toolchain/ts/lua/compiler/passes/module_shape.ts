@@ -8,115 +8,102 @@ import {
 	type LuaIdentifierExpression,
 	type LuaIndexExpression,
 	type LuaLocalAssignmentStatement,
-	type LuaLocalFunctionStatement,
 	type LuaMemberExpression,
 	type LuaTableConstructorExpression,
 } from '../../syntax/ast';
 import { extractAssignmentPath, extractTableKeyFromExpression, visitNamedTableFields } from './expression_paths';
 
-export class ModuleExportShapeNode {
-	public children = new Map<string, ModuleExportShapeNode>();
-}
+export type ModuleExportShape = Map<string, ModuleExportShape>;
 
 const resolveStaticModuleShapePath = (
 	expression: LuaExpression,
-	localShapes: ReadonlyMap<string, ModuleExportShapeNode>,
-): ModuleExportShapeNode | null => {
+	localShapes: ReadonlyMap<string, ModuleExportShape>,
+): ModuleExportShape | undefined => {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const identifier = expression as LuaIdentifierExpression;
-		const shape = localShapes.get(identifier.name);
-		if (shape === undefined) {
-			return null;
-		}
-		return shape;
+		return localShapes.get(identifier.name);
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
 		const member = expression as LuaMemberExpression;
 		const baseShape = resolveStaticModuleShapePath(member.base, localShapes);
 		if (!baseShape) {
-			return null;
+			return undefined;
 		}
-		const shape = baseShape.children.get(member.identifier);
-		return shape !== undefined ? shape : null;
+		return baseShape.get(member.identifier);
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const indexExpr = expression as LuaIndexExpression;
 		const baseShape = resolveStaticModuleShapePath(indexExpr.base, localShapes);
 		if (!baseShape) {
-			return null;
+			return undefined;
 		}
 		const key = extractTableKeyFromExpression(indexExpr.index);
 		if (!key) {
-			return null;
+			return undefined;
 		}
-		const shape = baseShape.children.get(key);
-		return shape !== undefined ? shape : null;
+		return baseShape.get(key);
 	}
-	return null;
+	return undefined;
 };
 
 export const buildModuleShapeFromExpression = (
 	expression: LuaExpression,
-	localShapes: ReadonlyMap<string, ModuleExportShapeNode>,
-): ModuleExportShapeNode | null => {
+	localShapes: ReadonlyMap<string, ModuleExportShape>,
+): ModuleExportShape | undefined => {
 	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
 		const table = expression as LuaTableConstructorExpression;
-		const node = new ModuleExportShapeNode();
+		const shape = new Map<string, ModuleExportShape>();
 		visitNamedTableFields(table, (key, value) => {
-			node.children.set(
+			shape.set(
 				key,
 				buildModuleShapeOrEmpty(value, localShapes),
 			);
 		});
-		return node;
+		return shape;
 	}
 	return resolveStaticModuleShapePath(expression, localShapes);
 };
 
-function buildModuleShapeOrEmpty(expression: LuaExpression, localShapes: ReadonlyMap<string, ModuleExportShapeNode>): ModuleExportShapeNode {
-	return buildModuleShapeFromExpression(expression, localShapes) ?? new ModuleExportShapeNode();
+function buildModuleShapeOrEmpty(expression: LuaExpression, localShapes: ReadonlyMap<string, ModuleExportShape>): ModuleExportShape {
+	return buildModuleShapeFromExpression(expression, localShapes) ?? new Map<string, ModuleExportShape>();
 }
 
 const assignModuleShapePath = (
-	root: ModuleExportShapeNode,
+	root: ModuleExportShape,
 	path: ReadonlyArray<string>,
 	startIndex: number,
-	value: ModuleExportShapeNode,
+	value: ModuleExportShape,
 	methodName: string | null = null,
 ): void => {
-	if (startIndex >= path.length && (!methodName || methodName.length === 0)) {
-		root.children = value.children;
-		return;
-	}
 	let cursor = root;
 	const endIndex = methodName && methodName.length > 0 ? path.length : path.length - 1;
 	for (let index = startIndex; index < endIndex; index += 1) {
 		const key = path[index];
-		let child = cursor.children.get(key);
+		let child = cursor.get(key);
 		if (!child) {
-			child = new ModuleExportShapeNode();
-			cursor.children.set(key, child);
+			child = new Map<string, ModuleExportShape>();
+			cursor.set(key, child);
 		}
 		cursor = child;
 	}
-	cursor.children.set(methodName && methodName.length > 0 ? methodName : path[path.length - 1], value);
+	cursor.set(methodName && methodName.length > 0 ? methodName : path[path.length - 1], value);
 };
 
 export const buildTopLevelLocalModuleShapes = (
 	chunk: LuaChunk,
-): Map<string, ModuleExportShapeNode> => {
-	const localShapes = new Map<string, ModuleExportShapeNode>();
+): Map<string, ModuleExportShape> => {
+	const localShapes = new Map<string, ModuleExportShape>();
 	for (let index = 0; index < chunk.body.length; index += 1) {
 		const statement = chunk.body[index];
 		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
 			const localAssignment = statement as LuaLocalAssignmentStatement;
 			const values = localAssignment.values;
+			const shapes = new Array<ModuleExportShape | undefined>(values.length);
+			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+				shapes[valueIndex] = buildModuleShapeFromExpression(values[valueIndex], localShapes);
+			}
 			for (let nameIndex = 0; nameIndex < localAssignment.names.length; nameIndex += 1) {
-				const value = values[nameIndex];
-				if (!value) {
-					continue;
-				}
-				const shape = buildModuleShapeFromExpression(value, localShapes);
+				const shape = shapes[nameIndex];
 				if (!shape) {
 					continue;
 				}
@@ -129,6 +116,10 @@ export const buildTopLevelLocalModuleShapes = (
 			if (assignment.operator !== LuaAssignmentOperator.Assign) {
 				continue;
 			}
+			const shapes = new Array<ModuleExportShape | undefined>(assignment.right.length);
+			for (let rightIndex = 0; rightIndex < assignment.right.length; rightIndex += 1) {
+				shapes[rightIndex] = buildModuleShapeOrEmpty(assignment.right[rightIndex], localShapes);
+			}
 			for (let targetIndex = 0; targetIndex < assignment.left.length; targetIndex += 1) {
 				const left = assignment.left[targetIndex];
 				const path = extractAssignmentPath(left);
@@ -140,12 +131,15 @@ export const buildTopLevelLocalModuleShapes = (
 				if (!rootShape) {
 					continue;
 				}
-				const right = assignment.right[targetIndex];
-				if (!right) {
+				const shape = shapes[targetIndex];
+				if (!shape) {
 					continue;
 				}
-				const shape = buildModuleShapeOrEmpty(right, localShapes);
-				assignModuleShapePath(rootShape, path, 1, shape);
+				if (path.length === 1) {
+					localShapes.set(rootName, shape);
+				} else {
+					assignModuleShapePath(rootShape, path, 1, shape);
+				}
 			}
 			continue;
 		}
@@ -162,15 +156,13 @@ export const buildTopLevelLocalModuleShapes = (
 			if (declaration.name.identifiers.length === 1 && (!declaration.name.methodName || declaration.name.methodName.length === 0)) {
 				continue;
 			}
-			assignModuleShapePath(rootShape, declaration.name.identifiers, 1, new ModuleExportShapeNode(), declaration.name.methodName);
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
-			const declaration = statement as LuaLocalFunctionStatement;
-			const existing = localShapes.get(declaration.name.name);
-			if (existing) {
-				localShapes.set(declaration.name.name, existing);
-			}
+			assignModuleShapePath(
+				rootShape,
+				declaration.name.identifiers,
+				1,
+				new Map<string, ModuleExportShape>(),
+				declaration.name.methodName,
+			);
 		}
 	}
 	return localShapes;

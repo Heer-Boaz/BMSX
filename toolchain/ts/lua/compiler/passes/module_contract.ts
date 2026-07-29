@@ -23,7 +23,7 @@ import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_na
 import {
 	buildModuleShapeFromExpression,
 	buildTopLevelLocalModuleShapes,
-	ModuleExportShapeNode,
+	type ModuleExportShape,
 } from './module_shape';
 
 export type { ConstExportValue } from './const_module_exports';
@@ -55,25 +55,25 @@ export type ModuleCompileContext = {
 
 const buildModuleExportSlots = (
 	modulePath: string,
-	exportRoot: ModuleExportShapeNode,
+	exportRoot: ModuleExportShape,
 	includeRootExport: boolean,
 ): Map<string, string> => {
 	const exportSlotsByPathKey = new Map<string, string>();
 	if (includeRootExport) {
 		exportSlotsByPathKey.set('', buildModuleExportSlotName(modulePath, []));
 	}
-	const assignSlots = (node: ModuleExportShapeNode, path: string[], visiting: WeakSet<ModuleExportShapeNode>): void => {
-		if (visiting.has(node)) {
+	const assignSlots = (shape: ModuleExportShape, path: string[], visiting: WeakSet<ModuleExportShape>): void => {
+		if (visiting.has(shape)) {
 			return;
 		}
-		visiting.add(node);
-		for (const [key, child] of node.children) {
+		visiting.add(shape);
+		for (const [key, child] of shape) {
 			path.push(key);
 			exportSlotsByPathKey.set(buildModuleExportPathKey(path), buildModuleExportSlotName(modulePath, path));
 			assignSlots(child, path, visiting);
 			path.pop();
 		}
-		visiting.delete(node);
+		visiting.delete(shape);
 	};
 	assignSlots(exportRoot, [], new WeakSet());
 	return exportSlotsByPathKey;
@@ -171,10 +171,10 @@ const buildModuleCompileInfo = (
 		: new Map<string, StaticFunctionExportSymbol>();
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
 	const compileTimeModule = constModule || rootStaticFunctionExport;
-	let exportRoot: ModuleExportShapeNode | null = null;
+	let exportRoot: ModuleExportShape | undefined;
 	if (compileTimeModule) {
-		exportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk)) ?? new ModuleExportShapeNode();
-		if (!rootStaticFunctionExport && exportRoot.children.size === 0) {
+		exportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk)) ?? new Map<string, ModuleExportShape>();
+		if (!rootStaticFunctionExport && exportRoot.size === 0) {
 			return null;
 		}
 	}
