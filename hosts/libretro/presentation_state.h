@@ -26,6 +26,7 @@ public:
 	bool render(
 		VideoPresenter& presenter,
 		Runtime& runtime,
+		f64 currentTime,
 		f64 deltaTime,
 		bool pausedPresent
 	);

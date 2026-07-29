@@ -171,6 +171,7 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 bool RenderPresentationState::render(
 	VideoPresenter& presenter,
 	Runtime& runtime,
+	f64 currentTime,
 	f64 deltaTime,
 	bool pausedPresent
 ) {
@@ -197,7 +198,7 @@ bool RenderPresentationState::render(
 		presenter.setRenderTargetSize(width, height);
 	}
 	presenter.configurePresentation(presentMode, commitFrame);
-	presenter.present(output, runtime.frameLoop.currentTimeSeconds, deltaTime);
+	presenter.present(output, currentTime, deltaTime);
 	if (commitFrame) {
 		runtime.machine.gxGpu.retirePresentedCommands();
 	}

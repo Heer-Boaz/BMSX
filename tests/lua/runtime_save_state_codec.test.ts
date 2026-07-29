@@ -479,7 +479,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					activeCpuUsedCycles: 45_678,
 				},
 				frameActive: true,
-				frameDeltaMs: 20.096,
 			},
 			schedulerNowCycles: 1234,
 			},

@@ -9,19 +9,16 @@ namespace bmsx {
 void FrameLoopState::reset() {
 	frameState = FrameState{};
 	frameActive = false;
-	frameDeltaMs = 0.0;
-	currentTimeSeconds = 0.0;
 }
 
 FrameLoopStateSnapshot FrameLoopState::captureState() const {
-	return FrameLoopStateSnapshot{frameState, frameActive, frameDeltaMs};
+	return FrameLoopStateSnapshot{frameState, frameActive};
 }
 
 void FrameLoopState::restoreState(const FrameLoopStateSnapshot& state) {
 	reset();
 	frameState = state.frameState;
 	frameActive = state.frameActive;
-	frameDeltaMs = state.frameDeltaMs;
 }
 
 void FrameLoopState::resetFrameState(Runtime& runtime) {
@@ -40,7 +37,6 @@ void FrameLoopState::beginFrameState(Runtime& runtime, i64 budget, i64 carry) {
 	frameState.cycleBudgetRemaining = budget;
 	frameState.cycleBudgetGranted = budget;
 	frameState.cycleCarryGranted = carry;
-	frameDeltaMs = runtime.timing.frameDurationMs;
 }
 
 void FrameLoopState::abandonFrameState(Runtime& runtime) {

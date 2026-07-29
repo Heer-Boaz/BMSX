@@ -777,7 +777,7 @@ void testHostDeltaGrantsOneFractionallyRetainedMachineBudget() {
 	require(runtime.frameScheduler.captureState().cycleGrantRemainder == 0x1.9999999cp-2, "host delta retains its fractional machine cycle");
 }
 
-void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
+void testRuntimeRestorePreservesInFlightFrameBudget() {
 	SystemRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::FrameLoopState& frameLoop = runtime.frameLoop;
@@ -785,14 +785,10 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	frameLoop.frameState.updateExecuted = true;
 	frameLoop.frameState.cycleBudgetRemaining = 12'345;
 	frameLoop.frameState.activeCpuUsedCycles = 45'678;
-	frameLoop.frameDeltaMs = 20.096;
-	frameLoop.currentTimeSeconds = 0.9875;
 	const bmsx::RuntimeMachineState snapshot = bmsx::captureRuntimeMachineState(runtime);
 
 	frameLoop.frameActive = false;
 	frameLoop.frameState = bmsx::FrameState{false, 99, 98, 97, 96};
-	frameLoop.frameDeltaMs = 1.0;
-	frameLoop.currentTimeSeconds = 2.0;
 	bmsx::applyRuntimeMachineState(runtime, snapshot);
 
 	const bmsx::FrameLoopStateSnapshot restored = frameLoop.captureState();
@@ -802,8 +798,6 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	require(restored.frameState.cycleBudgetGranted == snapshot.frameLoop.frameState.cycleBudgetGranted, "runtime restore preserves granted in-flight cycles");
 	require(restored.frameState.cycleCarryGranted == snapshot.frameLoop.frameState.cycleCarryGranted, "runtime restore preserves carried in-flight cycles");
 	require(restored.frameState.activeCpuUsedCycles == snapshot.frameLoop.frameState.activeCpuUsedCycles, "runtime restore preserves used in-flight cycles");
-	require(restored.frameDeltaMs == snapshot.frameLoop.frameDeltaMs, "runtime restore preserves in-flight frame duration");
-	require(frameLoop.currentTimeSeconds == 0.0, "runtime restore resets the host clock outside machine state");
 	require(!runtime.vblank.tickCompleted(), "runtime restore prepares the next physical VBlank edge");
 }
 
@@ -821,7 +815,7 @@ int main() {
 	testCompletionCallReturnLatchSurvivesSaveStateAndGc();
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();
-	testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock();
+	testRuntimeRestorePreservesInFlightFrameBudget();
 	testHostDeltaGrantsOneFractionallyRetainedMachineBudget();
 	return 0;
 }

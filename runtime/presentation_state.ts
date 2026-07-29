@@ -35,6 +35,7 @@ export class RenderPresentationState {
 	private presentFrame(
 		presenter: VideoPresenter,
 		runtime: Runtime,
+		currentTimeMs: number,
 		hostDeltaMs: number,
 		mode: RenderPresentationMode,
 		commitFrame: boolean,
@@ -48,7 +49,7 @@ export class RenderPresentationState {
 			presenter.setRenderTargetSize(width, height);
 		}
 		presenter.configurePresentation(mode, commitFrame);
-		presenter.present(output, runtime.frameLoop.currentTimeMs / 1000, hostDeltaMs / 1000);
+		presenter.present(output, currentTimeMs / 1000, hostDeltaMs / 1000);
 		if (commitFrame) {
 			runtime.machine.gxGpu.retirePresentedCommands();
 		}
@@ -109,19 +110,30 @@ export class RenderPresentationState {
 		}
 	}
 
-	public presentPausedFrame(presenter: VideoPresenter, runtime: Runtime, hostDeltaMs: number): void {
+	public presentPausedFrame(
+		presenter: VideoPresenter,
+		runtime: Runtime,
+		currentTimeMs: number,
+		hostDeltaMs: number,
+	): void {
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
-		this.presentFrame(presenter, runtime, hostDeltaMs, 'completed', false);
+		this.presentFrame(presenter, runtime, currentTimeMs, hostDeltaMs, 'completed', false);
 	}
 
-	public presentPending(presenter: VideoPresenter, runtime: Runtime, hostDeltaMs: number): boolean {
+	public presentPending(
+		presenter: VideoPresenter,
+		runtime: Runtime,
+		currentTimeMs: number,
+		hostDeltaMs: number,
+	): boolean {
 		if (!this.consumePresentation(this.presentationScratch)) {
 			return false;
 		}
 		this.presentFrame(
 			presenter,
 			runtime,
+			currentTimeMs,
 			hostDeltaMs,
 			this.presentationScratch.mode,
 			this.presentationScratch.commitFrame,

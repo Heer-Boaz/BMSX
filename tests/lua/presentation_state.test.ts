@@ -31,14 +31,14 @@ test('PCRTC revision drives render-target changes', () => {
 	const presentation = new RenderPresentationState();
 
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(presenter, runtime, 20), true);
+	assert.equal(presentation.presentPending(presenter, runtime, 100, 20), true);
 	assert.deepEqual(renderTargetChanges, [[256, 192]]);
 
 	scanout.revision += 1;
 	scanout.outputWidth = 320;
 	scanout.outputHeight = 240;
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(presenter, runtime, 20), true);
+	assert.equal(presentation.presentPending(presenter, runtime, 120, 20), true);
 	assert.deepEqual(renderTargetChanges, [[256, 192], [320, 240]]);
 
 	scanout.revision += 1;
@@ -46,6 +46,6 @@ test('PCRTC revision drives render-target changes', () => {
 	scanout.outputWidth = 0;
 	scanout.outputHeight = 0;
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(presenter, runtime, 20), true);
+	assert.equal(presentation.presentPending(presenter, runtime, 140, 20), true);
 	assert.deepEqual(renderTargetChanges, [[256, 192], [320, 240]]);
 });

@@ -10,7 +10,6 @@ class Runtime;
 struct FrameLoopStateSnapshot {
 	FrameState frameState;
 	bool frameActive = false;
-	f64 frameDeltaMs = 0.0;
 };
 
 class FrameLoopState {
@@ -26,8 +25,6 @@ public:
 
 	FrameState frameState;
 	bool frameActive = false;
-	f64 frameDeltaMs = 0.0;
-	f64 currentTimeSeconds = 0.0;
 
 private:
 	bool prepareScheduledFrame(Runtime& runtime);

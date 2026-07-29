@@ -26,7 +26,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'executionCartridgeSlot',
 	'entries',
 	'frameActive',
-	'frameDeltaMs',
 	'frameIndex',
 	'frameLoop',
 	'frameScheduler',

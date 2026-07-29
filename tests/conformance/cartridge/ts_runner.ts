@@ -63,8 +63,7 @@ async function main(): Promise<void> {
 	const presentation = new RenderPresentationState();
 	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
 	host.start();
-	runtime.frameLoop.currentTimeMs = 0;
-	let currentTimeMs = 0;
+	let currentTimeMs = host.currentTimeMs;
 	const transcriptCount = (entry: string): number => {
 		let count = 0;
 		for (let index = 0; index < transcript.length; index += 1) {

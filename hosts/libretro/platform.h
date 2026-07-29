@@ -258,7 +258,6 @@ private:
 	bool m_running = false;
 	bool m_platform_paused = false;
 	f64 m_total_time = 0.0;
-	f64 m_delta_time = 0.0;
 	f64 m_host_fps = 0.0;
 	i64 m_audio_ufps_scaled;
 	DeviceQuantizeMode m_device_quantize_mode = DeviceQuantizeMode::None;

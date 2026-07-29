@@ -31,7 +31,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"executionCartridgeSlot",
 	"entries",
 	"frameActive",
-	"frameDeltaMs",
 	"frameIndex",
 	"frameLoop",
 	"frameScheduler",

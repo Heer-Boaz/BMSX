@@ -43,16 +43,15 @@ export function beginMachineHostFrame(
 	host: MachineHost,
 	currentTime: number,
 ): number {
-	const runtime = host.runtime;
 	const hidInitialization = host.input.pollInput();
 	if (hidInitialization) {
 		void host.initializeGamepadHid(hidInitialization);
 	}
 	const hostDeltaMs = Math.min(
-		currentTime - runtime.frameLoop.currentTimeMs,
+		currentTime - host.currentTimeMs,
 		MAX_HOST_FRAME_DELTA_MS,
 	);
-	runtime.frameLoop.currentTimeMs = currentTime;
+	host.currentTimeMs = currentTime;
 	host.hostFps = 1000 / hostDeltaMs;
 	return hostDeltaMs;
 }
@@ -132,10 +131,10 @@ export function presentMachineHostPresentation(
 	host.platform.audio.pumpRuntimeAudio();
 	switch (action) {
 		case MachineHostFrameAction.PresentPending:
-			screen.presentPending(host.presenter, host.runtime, hostDeltaMs);
+			screen.presentPending(host.presenter, host.runtime, host.currentTimeMs, hostDeltaMs);
 			return;
 		case MachineHostFrameAction.PresentPaused:
-			screen.presentPausedFrame(host.presenter, host.runtime, hostDeltaMs);
+			screen.presentPausedFrame(host.presenter, host.runtime, host.currentTimeMs, hostDeltaMs);
 			return;
 	}
 }

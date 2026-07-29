@@ -253,7 +253,7 @@ test('runtime restore preserves physical beam phase and a pending presentation t
 	assert.equal(runtime.machine.scheduler.nextDeadline(), pendingDeadline);
 });
 
-test('runtime restore preserves an in-flight frame budget and resets only its host clock', () => {
+test('runtime restore preserves an in-flight frame budget', () => {
 	const runtime = createTimingRuntime();
 	cancelAudioServices(runtime);
 	runtime.frameLoop.beginFrameState(23_456, 34_567);
@@ -261,8 +261,6 @@ test('runtime restore preserves an in-flight frame budget and resets only its ho
 	active.updateExecuted = true;
 	active.cycleBudgetRemaining = 12_345;
 	active.activeCpuUsedCycles = 45_678;
-	runtime.frameLoop.frameDeltaMs = 20.096;
-	runtime.frameLoop.currentTimeMs = 987.5;
 	const snapshot = captureRuntimeMachineState(runtime);
 
 	runtime.frameLoop.frameActive = false;
@@ -271,12 +269,9 @@ test('runtime restore preserves an in-flight frame budget and resets only its ho
 	active.cycleBudgetGranted = 98;
 	active.cycleCarryGranted = 97;
 	active.activeCpuUsedCycles = 96;
-	runtime.frameLoop.frameDeltaMs = 1;
-	runtime.frameLoop.currentTimeMs = 2;
 	applyRuntimeMachineState(runtime, snapshot);
 
 	assert.deepEqual(runtime.frameLoop.captureState(), snapshot.frameLoop);
-	assert.equal(runtime.frameLoop.currentTimeMs, 0);
 	assert.equal(runtime.vblank.tickCompleted, false);
 });
 

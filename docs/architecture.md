@@ -409,7 +409,9 @@ The player lifecycle and frame loop are owned by `runtime/`. The browser and
 Node player entrypoints import that lifecycle directly. Studio owns its separate
 composition in `ide/workbench/`; only Studio and IDE-test entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
-provider, or runtime feature switch.
+provider, or runtime feature switch. Browser `MachineHost` and libretro
+`LibretroPlatform` own their monotonic presentation clocks; machine
+`FrameLoopState` retains only in-flight emulation execution state.
 
 The product host admits the outer physical ROM/header and translates cartridge
 package metadata into installed socket media. `Runtime` consumes the system-ROM

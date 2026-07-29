@@ -20,9 +20,7 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 		hostDeltaMs = kMaxFrameDeltaMs;
 	}
 	const f64 hostDeltaSeconds = hostDeltaMs / 1000.0;
-	m_delta_time = hostDeltaSeconds;
 	m_total_time += hostDeltaSeconds;
-	runtime.frameLoop.currentTimeSeconds = m_total_time;
 	m_host_fps = 1.0 / hostDeltaSeconds;
 
 	m_input->pollInput();
@@ -44,7 +42,6 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 
 	m_screen.clearPresentation();
 	if (!m_platform_paused && !hostMenuActive) {
-		m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		while (runtime.machine.gxGpu.backendReadbackPending()) {
@@ -55,8 +52,6 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 	} else {
 		runtime.frameScheduler.clearQueuedTime();
 	}
-	m_delta_time = hostDeltaSeconds;
-
 	m_microtask_queue->flush();
 
 	if (hostMenuActive) {
@@ -72,7 +67,8 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 	return m_screen.render(
 		*m_video_presenter,
 		runtime,
-		m_delta_time,
+		m_total_time,
+		hostDeltaSeconds,
 		m_platform_paused
 	);
 }

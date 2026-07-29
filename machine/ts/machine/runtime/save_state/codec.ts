@@ -281,7 +281,6 @@ function encodeFrameLoopState(state: FrameLoopStateSnapshot): FrameLoopStateSnap
 			activeCpuUsedCycles: state.frameState.activeCpuUsedCycles,
 		},
 		frameActive: state.frameActive,
-		frameDeltaMs: state.frameDeltaMs,
 	};
 }
 
@@ -297,7 +296,6 @@ function decodeFrameLoopState(value: unknown, label: string): FrameLoopStateSnap
 			activeCpuUsedCycles: requireI64(requireObjectKey(frameState, 'activeCpuUsedCycles', label, `${label}.frameState.activeCpuUsedCycles`), `${label}.frameState.activeCpuUsedCycles`),
 		},
 		frameActive: requireBooleanValue(requireObjectKey(object, 'frameActive', label, `${label}.frameActive`), `${label}.frameActive`),
-		frameDeltaMs: requireObjectKey(object, 'frameDeltaMs', label, `${label}.frameDeltaMs`) as number,
 	};
 }
 

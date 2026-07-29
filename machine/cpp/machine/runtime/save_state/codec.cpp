@@ -317,7 +317,6 @@ BinValue encodeFrameLoopState(const FrameLoopStateSnapshot& state) {
 	BinObject object;
 	object["frameState"] = encodeFrameState(state.frameState);
 	object["frameActive"] = state.frameActive;
-	object["frameDeltaMs"] = state.frameDeltaMs;
 	return BinValue(std::move(object));
 }
 
@@ -326,7 +325,6 @@ FrameLoopStateSnapshot decodeFrameLoopState(const BinValue& value, const char* l
 	FrameLoopStateSnapshot state;
 	state.frameState = decodeFrameState(requireField(object, "frameState", label), "machineState.frameLoop.frameState");
 	state.frameActive = requireBool(requireField(object, "frameActive", label), "machineState.frameLoop.frameActive");
-	state.frameDeltaMs = requireNumber(requireField(object, "frameDeltaMs", label), "machineState.frameLoop.frameDeltaMs");
 	return state;
 }
 

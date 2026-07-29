@@ -8,12 +8,9 @@ import { RunResult } from '../../cpu/cpu';
 export type FrameLoopStateSnapshot = {
 	frameState: FrameState;
 	frameActive: boolean;
-	frameDeltaMs: number;
 };
 
 export class FrameLoopState {
-	public currentTimeMs = 0;
-	public frameDeltaMs = 0;
 	public readonly frameState: FrameState = {
 		updateExecuted: false,
 		cycleBudgetRemaining: 0,
@@ -32,8 +29,6 @@ export class FrameLoopState {
 	}
 
 	public reset(): void {
-		this.currentTimeMs = 0;
-		this.frameDeltaMs = 0;
 		this.frameActive = false;
 		const state = this.frameState;
 		state.updateExecuted = false;
@@ -47,7 +42,6 @@ export class FrameLoopState {
 		return {
 			frameState: { ...this.frameState },
 			frameActive: this.frameActive,
-			frameDeltaMs: this.frameDeltaMs,
 		};
 	}
 
@@ -60,7 +54,6 @@ export class FrameLoopState {
 		state.cycleCarryGranted = snapshot.frameState.cycleCarryGranted;
 		state.activeCpuUsedCycles = snapshot.frameState.activeCpuUsedCycles;
 		this.frameActive = snapshot.frameActive;
-		this.frameDeltaMs = snapshot.frameDeltaMs;
 	}
 
 	public resetFrameState(): void {
@@ -74,7 +67,6 @@ export class FrameLoopState {
 
 	public beginFrameState(budget: number, carry: number): FrameState {
 		const runtime = this.runtime;
-		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const state = this.frameState;
 		state.updateExecuted = false;
 		state.cycleBudgetRemaining = budget;

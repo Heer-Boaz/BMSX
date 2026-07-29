@@ -31,6 +31,7 @@ export interface MachineHostInitializationOptions {
 
 export class MachineHost {
 	public running = false;
+	public currentTimeMs = 0;
 	public hostFps = 0;
 	private pausedState = false;
 	public readonly audioOutput: HostAudioOutput;
@@ -63,7 +64,7 @@ export class MachineHost {
 	}
 
 	public start(): void {
-		this.runtime.frameLoop.currentTimeMs = this.platform.clock.now();
+		this.currentTimeMs = this.platform.clock.now();
 		this.runtime.frameScheduler.clearQueuedTime();
 		this.running = true;
 	}
