@@ -170,7 +170,7 @@ ownergrens nog niet zuiver.
 TypeScript:
 
 - `machine/ts/rompack/tooling/blua32_image.ts`
-- `machine/ts/machine/cpu/blua32_symbols.ts`
+- `machine/ts/rompack/tooling/blua32_symbols.ts`
 - `machine/ts/lua/compiler/program.ts`
 - `machine/ts/lua/module_path.ts`
 - `machine/ts/machine/runtime/lua_scratch.ts`
@@ -178,12 +178,11 @@ TypeScript:
 - `machine/ts/rompack/tooling/blua32_revision.ts`
 - `machine/ts/rompack/tooling/blua32_tail.ts`
 - `machine/ts/rompack/tooling/rom_prefix_layout.ts`
-- `machine/ts/ide/workbench/blua32_boot.ts`
+- `ide/workbench/blua32_boot.ts`
 
 C++:
 
 - `machine/cpp/rompack/tooling/blua32_image.h/.cpp`
-- `machine/cpp/machine/cpu/blua32_symbols.h/.cpp`
 - `machine/cpp/machine/runtime/lua_scratch.h/.cpp`
 
 Tests/tooling:
