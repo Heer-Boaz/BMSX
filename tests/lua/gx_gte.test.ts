@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -111,7 +112,7 @@ function createGte(): {
 	gte: GxGte;
 	scheduler: DeviceScheduler;
 } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irq, executionAddressSpace);

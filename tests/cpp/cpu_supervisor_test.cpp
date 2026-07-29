@@ -8,6 +8,7 @@
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -140,7 +141,7 @@ struct CpuTestMachine {
 		, memory(bmsx::MemoryInit{
 			systemRom.bytes,
 			bmsx::test::cartridgeSlots(cartRom.bytes),
-		})
+		}, bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)

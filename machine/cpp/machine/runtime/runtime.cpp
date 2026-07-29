@@ -1,6 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/memory/map.h"
-#include "spec/bmsx/memory_map.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"
@@ -55,21 +53,13 @@ Runtime::Runtime(
 	const RuntimeOptions& options,
 	RuntimeInputSource& input
 	)
-	: timing(
-		options.pcrtcRunning,
-		options.ufpsScaled,
-		options.cpuHz,
-		options.cycleBudgetPerFrame,
-		options.totalHalfLines,
-		options.activeDisplayHalfLines,
-		options.geoWorkUnitsPerSec
-	)
+	: timing(options.machineModel)
 	, m_input(input)
 	, m_memory(MemoryInit{
 		options.systemRomBytes,
 		options.cartridgeSlots
-	})
-	, machine(m_memory, input)
+	}, options.machineModel.ramBytes)
+	, machine(m_memory, input, options.machineModel)
 {
 	machine.memory.clearIoSlots();
 	machine.resetDevices();
@@ -219,26 +209,6 @@ void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming
 	timing.ufps = static_cast<f64>(pcrtcTiming.refreshUfpsScaled) / static_cast<f64>(HZ_SCALE);
 	timing.frameDurationMs = pcrtcTiming.frameDurationMs;
 	m_input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
-}
-
-uint32_t Runtime::baseRamUsedBytes() const {
-	return BASE_RAM_USED_SIZE;
-}
-
-uint32_t Runtime::ramUsedBytes() const {
-	return baseRamUsedBytes() + static_cast<uint32_t>(machine.cpu.luaHeap().usedBytes());
-}
-
-uint32_t Runtime::ramTotalBytes() const {
-	return RAM_SIZE;
-}
-
-uint32_t Runtime::vramUsedBytes() const {
-	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
-}
-
-uint32_t Runtime::vramTotalBytes() const {
-	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
 void Runtime::boot() {

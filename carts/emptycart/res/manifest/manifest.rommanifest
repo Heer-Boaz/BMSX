@@ -1,8 +1,5 @@
 title: Empty Cart
 short_name: 'emptycart'
 rom_name: 'emptycart'
-machine:
-    namespace: 'emptycart'
-    vdp_class: psx
 lua:
     entry_path: entry.lua

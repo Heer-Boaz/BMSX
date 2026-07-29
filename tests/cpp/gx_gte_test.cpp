@@ -5,6 +5,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -57,7 +58,9 @@ struct GteHarness {
 			bmsx::RomImageDomain::System,
 			image
 		))
-		, memory(bmsx::MemoryInit{systemRom.bytes, bmsx::test::cartridgeSlots()})
+		, memory(
+			bmsx::MemoryInit{systemRom.bytes, bmsx::test::cartridgeSlots()},
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)

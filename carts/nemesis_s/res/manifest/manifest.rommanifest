@@ -1,9 +1,6 @@
 title: Nemesis S - Nemesis 2 Baseline
 short_name: 'nemesis_s'
 rom_name: 'nemesis_s'
-machine:
-    namespace: 'nemesis_s'
-    vdp_class: psx
 lua:
     entry_path: cart.lua
 gx_texture_layout:

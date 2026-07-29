@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -380,6 +381,7 @@ return imgdec
 			optLevel: 3,
 			imageOffset: systemPrefix.blua32Offset,
 			domain: 'system',
+			ramByteCount: 0x00400000,
 		});
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
@@ -414,6 +416,7 @@ return imgdec
 			optLevel: 3,
 			imageOffset: cartPrefix.blua32Offset,
 			domain: 'cart',
+			ramByteCount: 0x00400000,
 			systemImage,
 			systemSymbols,
 		});
@@ -452,7 +455,7 @@ return imgdec
 		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
 
-		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) });
+		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
 		const executionAddressSpace = new ExecutionAddressSpace(memory);
 		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 		const cartSymbolsEntry = loaded.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;

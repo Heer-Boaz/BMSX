@@ -195,6 +195,7 @@ function compileRegistryProgramObject(
 export function buildBlua32Media(
 	sources: RuntimeSourceState,
 	interpreter: LuaInterpreter,
+	ramByteCount: number,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): RebuiltBlua32Media {
@@ -220,6 +221,7 @@ export function buildBlua32Media(
 			compiledSystem.object,
 			compiledSystem.metadata,
 			SYSTEM_ROM_BASE + sources.systemRom.header.blua32ImageOffset,
+			ramByteCount,
 			{ image: installedSystem.layout, symbols: installedSystem.symbols! },
 		);
 		systemImage = linked.layout;
@@ -261,6 +263,7 @@ export function buildBlua32Media(
 			compiled.object,
 			compiled.metadata,
 			imageAddress,
+			ramByteCount,
 			{ image: installed.layout, symbols: installed.symbols! },
 		);
 		rebuiltCartridgeSlots[slot] = {
@@ -339,6 +342,7 @@ export function bootActiveBlua32Media(
 		installBlua32Media(sources, runtime, buildBlua32Media(
 			sources,
 			interpreter,
+			runtime.machine.memory.ramByteCount(),
 			sources.systemBlua32MediaDirty,
 			sources.cartridgeBlua32MediaDirty,
 		));

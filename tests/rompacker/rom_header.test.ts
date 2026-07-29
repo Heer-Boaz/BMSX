@@ -1,20 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
 } from '../../machine/ts/spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
-import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
-import {
-	CART_ROM_HEADER_SIZE,
-	CART_VDP_CLASS_PSX,
-} from '../../machine/ts/spec/bmsx/rom_package';
+import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	resolveCartridgeHeaderWords,
 	type CartManifest,
@@ -38,17 +32,9 @@ const EMPTY_CART_HEADER: CartRomHeader = {
 	blua32StaticLayoutTokenHi: 0,
 	metadataOffset: 0,
 	metadataLength: 0,
-	vdpClass: 'psx',
 	cartridgeBoardWord: 0,
 	cartridgeRamByteCount: 0,
 };
-
-test('ROM header carries the psx VDP-class marker', () => {
-	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
-	writeCartRomHeader(rom, EMPTY_CART_HEADER);
-
-	assert.equal(parseCartHeader(rom).vdpClass, 'psx');
-});
 
 test('ROM header parser rejects every truncated current header', () => {
 	for (const byteLength of [32, 76, CART_ROM_HEADER_SIZE - 1]) {
@@ -57,14 +43,6 @@ test('ROM header parser rejects every truncated current header', () => {
 			/too small for cart header/,
 		);
 	}
-});
-
-test('ROM header rejects unsupported VDP-class markers', () => {
-	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
-	writeCartRomHeader(rom, EMPTY_CART_HEADER);
-	new DataView(rom.buffer).setUint32(72, CART_VDP_CLASS_PSX + 1, true);
-
-	assert.throws(() => parseCartHeader(rom), /Unsupported ROM VDP class marker/);
 });
 
 test('ROM header carries raw BLua32 image and vector words', () => {
@@ -124,7 +102,6 @@ test('ROM header rejects cartridge RAM beyond the physical socket aperture', () 
 
 test('manifest cartridge semantics resolve once into raw header words', () => {
 	const manifest: CartManifest = {
-		machine: { namespace: 'test', vdp_class: 'psx' },
 		lua: { entry_path: 'cart.lua' },
 		cartridge: {
 			board: 'ram_mailbox',
@@ -138,33 +115,4 @@ test('manifest cartridge semantics resolve once into raw header words', () => {
 	});
 	manifest.cartridge = { board: 'mailbox', ram_bytes: 1 };
 	assert.throws(() => resolveCartridgeHeaderWords(manifest), /RAM bytes require a RAM board/);
-});
-
-
-function makeIndexedRom(machine: { namespace: string; vdp_class: 'psx' }): Uint8Array {
-	const manifest = encodeBinary({
-		rom_name: 'test',
-		machine,
-		lua: { entry_path: 'cart.lua' },
-	});
-	const toc = encodeRomToc({ entries: [] });
-	const dataOffset = CART_ROM_HEADER_SIZE + manifest.byteLength + toc.byteLength;
-	const rom = new Uint8Array(dataOffset);
-	rom.set(manifest, CART_ROM_HEADER_SIZE);
-	rom.set(toc, CART_ROM_HEADER_SIZE + manifest.byteLength);
-	writeCartRomHeader(rom, {
-		...EMPTY_CART_HEADER,
-		manifestOffset: CART_ROM_HEADER_SIZE,
-		manifestLength: manifest.byteLength,
-		tocOffset: CART_ROM_HEADER_SIZE + manifest.byteLength,
-		tocLength: toc.byteLength,
-		dataOffset,
-	});
-	return rom;
-}
-
-test('ROM manifest carries only the VDP class marker', async () => {
-	const cart = await parseCartridgeIndex(makeIndexedRom({ namespace: 'psx_cart', vdp_class: 'psx' }));
-	assert.equal(cart.machine.namespace, 'psx_cart');
-	assert.equal(cart.machine.vdp_class, 'psx');
 });

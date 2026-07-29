@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -8,7 +9,6 @@ import {
 	CART_ROM_HEADER_MAGIC_OFFSET,
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_MAGIC,
-	CART_VDP_CLASS_PSX,
 } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
@@ -98,7 +98,6 @@ function makeIndex(entryPath: string, entries: RomAsset[]): CartridgeIndex {
 		entries,
 		projectRootPath: 'carts/test',
 		cart_manifest: null,
-		machine: { namespace: 'test' } as CartridgeIndex['machine'],
 		entry_path: entryPath,
 	};
 }
@@ -187,7 +186,6 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	};
 	const manifest = encodeBinary({
 		rom_name: 'source_boot_test',
-		machine: { namespace: 'source_boot_test', vdp_class: 'psx' },
 		lua: { entry_path: 'cart.lua' },
 	});
 	const manifestStart = layoutStart + layoutBytes.byteLength;
@@ -207,7 +205,6 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	header.setUint32(20, toc.byteLength, true);
 	header.setUint32(24, CART_ROM_HEADER_SIZE, true);
 	header.setUint32(28, cartBytes.byteLength + layoutBytes.byteLength, true);
-	header.setUint32(72, CART_VDP_CLASS_PSX, true);
 	const index = await parseCartridgeIndex(payload);
 	const source = new RomSourceStack([{ id: 'cart', index, payload }]);
 	const registry = buildLuaSources(source, source, index, ['cart']);
@@ -228,7 +225,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 		},
 	);
 	const image = linkTestSystemBlua32(compiled);
-	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) });
+	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) }, PSX_MACHINE_SPEC.ramBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();

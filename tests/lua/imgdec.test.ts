@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -94,8 +95,8 @@ type ImgDecFixture = {
 };
 
 function createFixture(cartRom: Uint8Array): ImgDecFixture {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots(cartRom) });
-	const machine = new Machine(memory, INPUT_SOURCE);
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
+	const machine = new Machine(memory, INPUT_SOURCE, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	const gpu = machine.gxGpu;
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);

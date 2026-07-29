@@ -34,6 +34,8 @@ local input_arm<const> = 0x00000001
 local boot_background<const> = 0xff000040
 local cart_state_missing<const> = 1
 local cart_state_waiting<const> = 2
+local boot_delay_frames<const> = 50
+local ascii_zero<const> = 0x30
 
 bss boot_screen_started: word
 bss boot_cart_state: word
@@ -92,12 +94,24 @@ local update_boot_output<const> = function(cart_present)
 	if cart_state ~= *boot_cart_state then
 		if cart_state == cart_state_waiting then
 			terminal.write_at(11, 14, 'FOUND  ', terminal.palette_text)
+			terminal.write_at(15, 4, 'BOOTING IN 0.0S      ', terminal.palette_text)
+			*boot_frame = 0
 		else
 			terminal.write_at(11, 14, 'MISSING', terminal.palette_error)
+			terminal.write_at(15, 4, 'WAITING FOR CARTRIDGE', terminal.palette_text)
 		end
 		*boot_cart_state = cart_state
 	end
 	*boot_frame = *boot_frame + 1
+	if cart_state == cart_state_waiting then
+		local remaining_frames = boot_delay_frames - *boot_frame
+		if remaining_frames < 0 then
+			remaining_frames = 0
+		end
+		local remaining_tenths<const> = (remaining_frames + 4) // 5
+		terminal.put(15, 15, ascii_zero + remaining_tenths // 10, terminal.palette_text)
+		terminal.put(15, 17, ascii_zero + remaining_tenths % 10, terminal.palette_text)
+	end
 	local cursor_visible<const> = (*boot_frame & 0x10) == 0 and 1 or 0
 	if cursor_visible ~= *boot_cursor_visible then
 		terminal.put(17, 4, cursor_visible ~= 0 and 0x7c or 0x20, terminal.palette_accent)
@@ -108,12 +122,13 @@ end
 
 local update_boot_screen<const> = function()
 	local cart_present<const>, startup<const> = scan_cartridges()
-	if startup ~= nil then
+	local cart_countdown_active<const> = *boot_cart_state == cart_state_waiting
+	update_boot_output(cart_present)
+	if startup and cart_countdown_active and *boot_frame >= boot_delay_frames then
 		*irq_mask = 0
 		print('Cart boot requested.')
 		cop0.exec = startup
 	end
-	update_boot_output(cart_present)
 end
 
 function init()

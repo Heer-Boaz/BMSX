@@ -7,7 +7,7 @@ import type {
 	TextureMeta,
 } from './assets';
 import type { GLTFMaterial, GLTFModel } from './gltf';
-import type { CartManifest, MachineManifest } from './manifest';
+import { parseCartManifest, type CartManifest } from './manifest';
 import type { Polygon, RectBounds } from '../../common/rect';
 import type { vec4arr } from '../../common/vector';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../common/serializer/binencoder';
@@ -29,16 +29,8 @@ function decodedProjectRootPath(path: string | null): string {
 }
 
 
-function resolveMachineManifest(machine: MachineManifest, vdpClass: MachineManifest['vdp_class']): MachineManifest {
-	return {
-		...machine,
-		vdp_class: vdpClass,
-	};
-}
-
 type CartridgeMetadata = {
 	cart_manifest: CartManifest;
-	machine: MachineManifest;
 	entry_path: string;
 };
 
@@ -47,17 +39,9 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 		throw new Error('ROM header is missing manifest payload.');
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
-	const cart_manifest = decodeBinary(manifestSlice) as CartManifest;
-	const machine = cart_manifest.machine;
-	if (machine === undefined) {
-		throw new Error('ROM manifest payload is missing machine object.');
-	}
-	if (machine.vdp_class !== header.vdpClass) {
-		throw new Error('ROM header VDP class does not match manifest machine.vdp_class.');
-	}
+	const cart_manifest = parseCartManifest(decodeBinary(manifestSlice), 'ROM manifest payload');
 	return {
 		cart_manifest,
-		machine: resolveMachineManifest(machine, header.vdpClass),
 		entry_path: cart_manifest.lua.entry_path,
 	};
 }
@@ -184,12 +168,11 @@ export async function parseCartridgeIndex(payload: Uint8Array): Promise<Cartridg
 
 async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRomHeader): Promise<CartridgeIndex> {
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header, 'cart');
-	const { cart_manifest, machine, entry_path } = decodeCartridgeMetadata(payload, header);
+	const { cart_manifest, entry_path } = decodeCartridgeMetadata(payload, header);
 	return {
 		entries,
 		projectRootPath,
 		cart_manifest,
-		machine,
 		entry_path,
 	};
 }
@@ -386,7 +369,6 @@ async function loadRomToolingPackageFromSource(source: RawRomSource, index: Cart
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		cart_manifest: index.cart_manifest,
-		machine: index.machine,
 		entry_path: index.entry_path,
 	};
 	const entries = source.list();
@@ -403,7 +385,6 @@ export async function buildCartridgeToolingLayer(image: RomImage): Promise<RomTo
 
 export async function buildSystemToolingLayer(params: {
 	image: RomImage;
-	machine: MachineManifest;
 	entry_path: string;
 }): Promise<RomToolingLayer> {
 	const { image } = params;
@@ -412,7 +393,6 @@ export async function buildSystemToolingLayer(params: {
 		entries,
 		projectRootPath: '',
 		cart_manifest: null,
-		machine: params.machine,
 		entry_path: params.entry_path,
 	};
 	const source = new RomSourceStack([{ id: 'system', index, payload: image.bytes }]);

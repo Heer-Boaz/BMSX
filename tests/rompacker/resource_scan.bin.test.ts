@@ -106,6 +106,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			optLevel: 3,
 			imageOffset: layout.blua32Offset,
 			domain: 'system',
+			ramByteCount: 0x00400000,
 		});
 		await finalizeRompack('aligned', {
 			debug: false,

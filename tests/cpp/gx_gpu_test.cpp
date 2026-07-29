@@ -36,7 +36,9 @@ struct GpuHarness {
 	bmsx::GxGpu gpu;
 
 	GpuHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
+		: memory(
+			bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)
@@ -61,7 +63,9 @@ struct CommandBufferDmaHarness {
 	bmsx::DmaController dma;
 
 	CommandBufferDmaHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
+		: memory(
+			bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)

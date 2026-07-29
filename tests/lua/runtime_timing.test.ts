@@ -44,8 +44,7 @@ import {
 	GxGpuPcrtc,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
@@ -78,16 +77,13 @@ class TimingInputSource implements RuntimeInputSource {
 }
 
 function createTimingRuntime(cpuHz = 5_000_000): Runtime {
-	const timing = resolveRuntimeTiming(cpuHz);
 	return new Runtime({
-		memory: new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
-		pcrtcRunning: timing.pcrtcRunning,
-		ufpsScaled: timing.ufpsScaled,
-		cpuHz: timing.cpuHz,
-		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-		totalHalfLines: timing.totalHalfLines,
-		activeDisplayHalfLines: timing.activeDisplayHalfLines,
-		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		systemRomBytes: new Uint8Array(0),
+		cartridgeSlots: cartridgeSlots(),
+		machineModel: {
+			...PSX_MACHINE_SPEC,
+			cpuFreqHz: cpuHz,
+		},
 	}, new TimingInputSource());
 }
 
@@ -115,15 +111,13 @@ function configureOneHalfLineField(pcrtc: GxGpuPcrtc, syncvHigh: number): void {
 }
 
 test('runtime boot timing is decoded from the exact PCRTC reset mode', () => {
-	const timing = resolveRuntimeTiming(5_000_000);
 	const runtime = createTimingRuntime();
 	cancelAudioServices(runtime);
 
-	assert.equal(timing.pcrtcRunning, true);
-	assert.equal(timing.ufpsScaled, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
-	assert.equal(timing.totalHalfLines, GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES);
-	assert.equal(timing.activeDisplayHalfLines, GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES);
-	assert.equal(timing.cycleBudgetPerFrame, 100_480);
+	assert.equal(runtime.timing.pcrtcRunning, true);
+	assert.equal(runtime.timing.ufpsScaled, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
+	assert.equal(runtime.timing.totalHalfLines, GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES);
+	assert.equal(runtime.timing.activeDisplayHalfLines, GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES);
 	assert.equal(runtime.timing.cycleBudgetPerFrame, 100_480);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), 320);
 });

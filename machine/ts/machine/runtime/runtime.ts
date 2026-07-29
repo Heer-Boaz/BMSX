@@ -13,12 +13,9 @@ import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../spec/gx/vram';
 import { Machine } from '../machine';
+import { Memory } from '../memory/memory';
 import type { RuntimeInputSource } from './input';
-import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
-import { RAM_SIZE } from '../memory/map';
-
 
 function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
 	const machine = runtime.machine;
@@ -226,44 +223,20 @@ export class Runtime {
 		this.frameLoop = new FrameLoopState(this);
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
-		this.timing = new TimingState(
-			options.pcrtcRunning,
-			options.ufpsScaled,
-			options.cpuHz,
-			options.cycleBudgetPerFrame,
-			options.totalHalfLines,
-			options.activeDisplayHalfLines,
-			options.geoWorkUnitsPerSec,
-		);
+		this.timing = new TimingState(options.machineModel);
 		this.machine = new Machine(
-			options.memory,
+			new Memory({
+				systemRom: options.systemRomBytes,
+				cartridgeSlots: options.cartridgeSlots,
+			}, options.machineModel.ramBytes),
 			input,
+			options.machineModel,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.resetDevices();
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
 		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
-	}
-
-	public baseRamUsedBytes(): number {
-		return BASE_RAM_USED_SIZE;
-	}
-
-	public ramUsedBytes(): number {
-		return this.baseRamUsedBytes() + this.machine.cpu.luaHeap.usedBytes();
-	}
-
-	public ramTotalBytes(): number {
-		return RAM_SIZE;
-	}
-
-	public vramUsedBytes(): number {
-		return GX_GPU_VRAM_BYTE_COUNT;
-	}
-
-	public vramTotalBytes(): number {
-		return GX_GPU_VRAM_BYTE_COUNT;
 	}
 
 	public applyPublishedGxGpuPcrtcTiming(pcrtcTiming: GxGpuPcrtcTiming): void {

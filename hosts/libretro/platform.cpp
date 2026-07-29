@@ -3,7 +3,6 @@
  */
 
 #include "platform.h"
-#include "core/machine_manager.h"
 #include "common/endian.h"
 #include "common/primitives.h"
 #include "input/gamepad_buttons.h"
@@ -44,7 +43,9 @@ constexpr size_t kSaveStateHeaderBytes = 8u;
 
 size_t saveStateEnvelopeBytes(const Runtime& runtime) {
 	return kSaveStateHeaderBytes
-		+ runtimeSaveStateWireCapacity(runtime.machine.cartridgeController.ramByteCount());
+		+ runtimeSaveStateWireCapacity(
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.cartridgeController.ramByteCount());
 }
 
 constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
@@ -249,8 +250,6 @@ LibretroPlatform::LibretroPlatform(
 	// Initialize controller devices
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 
-	// Create and initialize the machine manager
-	m_machine_manager = std::make_unique<MachineManager>(*m_input);
 	if (m_backend_type == BackendType::Software) {
 		installBuiltinRenderPipeline(m_video_presenter.get(), &m_video_presenter->backend());
 		m_video_presenter->initializeDefaultTextures();
@@ -262,8 +261,7 @@ LibretroPlatform::LibretroPlatform(
 LibretroPlatform::~LibretroPlatform() {
 	unloadRom();
 
-	// Shutdown the machine manager before destroying platform components
-	m_machine_manager.reset();
+	m_runtime.reset();
 	m_input_focus_subscription.unsubscribe();
 	m_input.reset();
 	m_video_resize_subscription.unsubscribe();
@@ -322,7 +320,7 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* presenter = m_video_presenter.get();
 	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
-	backend->captureGxGpuVramSnapshot(m_machine_manager->runtime().machine.gxGpu);
+	backend->captureGxGpuVramSnapshot(m_runtime->machine.gxGpu);
 	presenter->releaseRenderPipeline();
 	presenter->clearTextures();
 	backend->onContextDestroy();
@@ -414,6 +412,10 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
 }
 
 bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT>&& data) {
+	if (m_system_rom_image.bytes.empty()) {
+		log(RETRO_LOG_ERROR, "[BMSX] Cartridge load requires a system ROM\n");
+		return false;
+	}
 	unloadRom();
 	size_t totalSize = 0;
 	for (const std::vector<uint8_t>& slot : data) {
@@ -432,13 +434,7 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 		}
 	}
 
-	if (!m_machine_manager->loadCartridgeSlots(slots)) {
-		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
-		return false;
-	}
-	Runtime& runtime = m_machine_manager->runtime();
-	activateLoadedRuntime(runtime);
-	setDeviceQuantizeMode(m_device_quantize_mode);
+	startCartridgeSlots(slots);
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif
@@ -448,13 +444,13 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 			log(RETRO_LOG_INFO, "%s\n", line.c_str());
 		}
 	}
-
-	m_rom_loaded = true;
 	log(RETRO_LOG_INFO, "Cartridge slots loaded (%zu bytes)\n", totalSize);
 	return true;
 }
 
-void LibretroPlatform::loadSystemRom(const char* romPath) {
+bool LibretroPlatform::loadSystemRom(const char* romPath) {
+	unloadRom();
+	releaseSystemRomMedia();
 	std::string pathStr(romPath);
 	size_t lastSlash = pathStr.find_last_of("/\\");
 	std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
@@ -467,10 +463,11 @@ void LibretroPlatform::loadSystemRom(const char* romPath) {
 
 	for (const auto& path : systemRomPaths) {
 		if (!path.empty() && loadSystemRomFromFile(path)) {
-			return;
+			return true;
 		}
 	}
 	log(RETRO_LOG_ERROR, "[BMSX] No system ROM found\n");
+	return false;
 }
 
 bool LibretroPlatform::loadRomFromPath(const char* path) {
@@ -478,13 +475,9 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 }
 
 bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths) {
-	for (const std::string& path : paths) {
-		if (!path.empty()) {
-			loadSystemRom(path.c_str());
-			break;
-		}
+	if (!loadSystemRom(paths[0].c_str())) {
+		return false;
 	}
-	unloadRom();
 	{
 		const std::string line = memSnapshotLine("libretro:before_loadRom");
 		if (!line.empty()) {
@@ -504,13 +497,7 @@ bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string,
 		}
 		slots[slotIndex] = std::span<const u8>(file.data(), file.size());
 	}
-	if (!m_machine_manager->loadCartridgeSlots(slots)) {
-		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
-		return false;
-	}
-	Runtime& runtime = m_machine_manager->runtime();
-	activateLoadedRuntime(runtime);
-	setDeviceQuantizeMode(m_device_quantize_mode);
+	startCartridgeSlots(slots);
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif
@@ -520,14 +507,13 @@ bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string,
 			log(RETRO_LOG_INFO, "%s\n", line.c_str());
 		}
 	}
-
-	m_rom_loaded = true;
 	log(RETRO_LOG_INFO, "Cartridge slot files loaded\n");
 	return true;
 }
 
 bool LibretroPlatform::loadEmptyCart() {
 	unloadRom();
+	releaseSystemRomMedia();
 
 	// Try to load system ROM from dist directory (default location)
 	// TODO: Make this configurable via core options
@@ -552,15 +538,16 @@ bool LibretroPlatform::loadEmptyCart() {
 		return false;
 	}
 
-	// Boot system ROM (runs bootrom.lua)
-	if (!m_machine_manager->bootWithoutCart()) {
-		return false;
-	}
-	Runtime& runtime = m_machine_manager->runtime();
-	activateLoadedRuntime(runtime);
+	m_cartridge_rom_images = {};
+	startRuntime();
 	log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
-	m_rom_loaded = true;
 	return true;
+}
+
+void LibretroPlatform::releaseSystemRomMedia() {
+	m_system_rom_image = {};
+	m_system_rom_file.close();
+	m_system_rom_owned.clear();
 }
 
 bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
@@ -569,10 +556,12 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to load system ROM: %s\n", path.c_str());
 		return false;
 	}
-	m_machine_manager->loadSystemRom(
-		std::span<const u8>(mapped.data(), mapped.size()));
-	m_system_rom_owned.clear();
+	const RomImage image = parseRomImage(
+		mapped.data(),
+		mapped.size(),
+		RomImageDomain::System);
 	m_system_rom_file = std::move(mapped);
+	m_system_rom_image = image;
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif
@@ -582,24 +571,27 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 }
 
 bool LibretroPlatform::loadSystemRomOwned(std::vector<uint8_t>&& data) {
-	std::vector<uint8_t> owned = std::move(data);
-	m_machine_manager->loadSystemRom(owned);
-	m_system_rom_file.close();
-	m_system_rom_owned = std::move(owned);
+	unloadRom();
+	releaseSystemRomMedia();
+	m_system_rom_owned = std::move(data);
+	m_system_rom_image = parseRomImage(
+		m_system_rom_owned.data(),
+		m_system_rom_owned.size(),
+		RomImageDomain::System);
 	return true;
 }
 
 void LibretroPlatform::unloadRom() {
-	const bool wasLoaded = m_rom_loaded;
-	if (m_rom_loaded) {
+	const bool wasLoaded = m_runtime != nullptr;
+	if (wasLoaded) {
 		static_cast<LibretroInputHub*>(m_input_hub.get())->resetState();
 		m_input->resetInputState();
 		m_host_overlay_menu.resetInputState();
 		m_screen.clearPresentation();
 		m_running = false;
-		m_rom_loaded = false;
 	}
-	m_machine_manager->unloadRom();
+	m_runtime.reset();
+	m_cartridge_rom_images = {};
 	for (MmapFile& file : m_cartridge_rom_files) {
 		file.close();
 	}
@@ -612,18 +604,56 @@ void LibretroPlatform::unloadRom() {
 void LibretroPlatform::reset() {
 	m_running = false;
 
-	if (m_machine_manager->romLoaded()) {
-		if (!m_machine_manager->rebootLoadedRom()) {
-			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
-			return;
-		}
-		activateLoadedRuntime(m_machine_manager->runtime());
+	if (m_runtime) {
+		m_runtime->rebootSystem();
+		activateLoadedRuntime(*m_runtime);
 	} else if (!loadEmptyCart()) {
 		log(RETRO_LOG_ERROR, "[BMSX] Reset failed: empty cart boot failed\n");
 		return;
 	}
 
 	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
+}
+
+void LibretroPlatform::startCartridgeSlots(
+	const std::array<std::span<const u8>, CARTRIDGE_SLOT_COUNT>& slots
+) {
+	m_cartridge_rom_images = {};
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		const std::span<const u8> slot = slots[slotIndex];
+		if (!slot.empty()) {
+			m_cartridge_rom_images[slotIndex] = parseRomImage(
+				slot.data(),
+				slot.size(),
+				RomImageDomain::Cartridge);
+		}
+	}
+	startRuntime();
+}
+
+void LibretroPlatform::startRuntime() {
+	CartridgeSlotMediaPair cartridgeMedia{};
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		const RomImage& image = m_cartridge_rom_images[slotIndex];
+		if (!image.bytes.empty()) {
+			cartridgeMedia[slotIndex] = CartridgeSlotMedia{
+				image.bytes,
+				image.header.cartridgeBoardWord,
+				image.header.cartridgeRamByteCount,
+				true,
+			};
+		}
+	}
+	m_runtime = std::make_unique<Runtime>(
+		RuntimeOptions{
+			m_system_rom_image.bytes,
+			cartridgeMedia,
+			PSX_MACHINE_SPEC,
+		},
+		*m_input);
+	m_runtime->resetForSystemBoot();
+	m_runtime->boot();
+	activateLoadedRuntime(*m_runtime);
 }
 
 void LibretroPlatform::activateLoadedRuntime(Runtime& runtime) {
@@ -648,7 +678,7 @@ void LibretroPlatform::syncRuntimeAudioTiming(Runtime& runtime) {
 }
 
 bool LibretroPlatform::runFrame() {
-	if (!m_rom_loaded) return false;
+	if (!m_runtime) return false;
 
 	const f64 dt = m_frame_time_sec;
 
@@ -660,7 +690,7 @@ bool LibretroPlatform::runFrame() {
 	// input for this host frame.
 	pollInput();
 
-	Runtime& runtime = m_machine_manager->runtime();
+	Runtime& runtime = *m_runtime;
 	bool presented = false;
 	try {
 		presented = runHostFrame(runtime, dt);
@@ -683,7 +713,7 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 	if (paused) {
 		m_screen.clearPresentation();
 	} else if (m_running) {
-		m_machine_manager->runtime().frameScheduler.clearQueuedTime();
+		m_runtime->frameScheduler.clearQueuedTime();
 	}
 }
 
@@ -723,19 +753,18 @@ void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 }
 
 size_t LibretroPlatform::getStateSize() const {
-	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
+	if (!m_runtime) {
 		return 0;
 	}
-	Runtime& runtime = m_machine_manager->runtime();
-	return saveStateEnvelopeBytes(runtime);
+	return saveStateEnvelopeBytes(*m_runtime);
 }
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
 bool LibretroPlatform::saveState(void* data, size_t size) {
-	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
+	if (!m_runtime) {
 		return false;
 	}
-	Runtime& runtime = m_machine_manager->runtime();
+	Runtime& runtime = *m_runtime;
 	const size_t envelopeBytes = saveStateEnvelopeBytes(runtime);
 	if (size < envelopeBytes) {
 		return false;
@@ -757,10 +786,10 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 }
 
 bool LibretroPlatform::loadState(const void* data, size_t size) {
-	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
+	if (!m_runtime) {
 		return false;
 	}
-	Runtime& runtime = m_machine_manager->runtime();
+	Runtime& runtime = *m_runtime;
 	try {
 		if (size < saveStateEnvelopeBytes(runtime)) {
 			return false;
@@ -770,7 +799,9 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 			return false;
 		}
 		const size_t payloadBytes = readLE32(envelope + 4u);
-		if (payloadBytes > runtimeSaveStateWireCapacity(runtime.machine.cartridgeController.ramByteCount())) {
+		if (payloadBytes > runtimeSaveStateWireCapacity(
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.cartridgeController.ramByteCount())) {
 			return false;
 		}
 		applyRuntimeSaveStateBytes(runtime, envelope + kSaveStateHeaderBytes, payloadBytes);

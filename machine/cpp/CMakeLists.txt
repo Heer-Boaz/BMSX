@@ -219,7 +219,6 @@ endforeach()
 # =============================================================================
 
 add_library(bmsx_core STATIC
-	core/machine_manager.cpp
 	common/scratchbuffer.cpp
 
 	machine/devices/audio/active_slots.cpp
@@ -280,7 +279,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/cpu_executor.cpp
-	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
 	machine/runtime/lua_scratch.cpp
 	machine/scheduler/frame.cpp
@@ -289,7 +287,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/memory/memory.cpp
-	machine/memory/map.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gpu_pcrtc.cpp
 	machine/devices/gx/gpu_command_timing.cpp
@@ -311,10 +308,7 @@ target_include_directories(bmsx_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(bmsx_core PUBLIC
-	bmsx_binary_codec
-	bmsx_rom_image
-)
+target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 
 # =============================================================================
 # Native host support (static)

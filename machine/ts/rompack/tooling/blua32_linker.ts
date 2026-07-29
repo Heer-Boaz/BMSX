@@ -81,7 +81,7 @@ import type {
 	ProgramMetadata,
 	ProgramRuntimeSymbols,
 } from '../../lua/compiler/program';
-import { BMSX_RAM_END, DYNAMIC_RAM_BASE } from '../../spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
 import { fmix32 } from '../../common/hash';
 import { hashAssetId } from '../tokens';
@@ -132,8 +132,9 @@ function alignImageOffset(offset: number, imageAddress: number, alignment: numbe
 	return ((address + alignment - 1) & ~(alignment - 1)) - imageAddress;
 }
 
-function assertStaticRamFits(baseAddress: number, byteCount: number): void {
-	if (baseAddress > BMSX_RAM_END || byteCount > BMSX_RAM_END - baseAddress) {
+function assertStaticRamFits(baseAddress: number, byteCount: number, ramByteCount: number): void {
+	const ramEndAddress = RAM_BASE + ramByteCount;
+	if (baseAddress > ramEndAddress || byteCount > ramEndAddress - baseAddress) {
 		throw new Error('BLua32 static storage exceeds RAM.');
 	}
 }
@@ -775,11 +776,16 @@ export function linkSystemBlua32Image(
 	object: ProgramObjectImage,
 	metadata: ProgramMetadata,
 	loadAddress: number,
+	ramByteCount: number,
 	previous?: Blua32LinkBaseline,
 ): LinkedBlua32Image {
 	const dataAddress = DYNAMIC_RAM_BASE;
 	const bssAddress = dataAddress + object.sections.data.bytes.byteLength;
-	assertStaticRamFits(dataAddress, object.sections.data.bytes.byteLength + object.sections.bss.byteCount);
+	assertStaticRamFits(
+		dataAddress,
+		object.sections.data.bytes.byteLength + object.sections.bss.byteCount,
+		ramByteCount,
+	);
 	return buildImage({
 		object,
 		metadata,
@@ -799,6 +805,7 @@ export function linkCartBlua32Image(
 	object: ProgramObjectImage,
 	metadata: ProgramMetadata,
 	loadAddress: number,
+	ramByteCount: number,
 	previous?: Blua32LinkBaseline,
 ): LinkedBlua32Image {
 	const globals = mergeNamedSlots(systemImage.globalNames, object.link.symbols.globalNames);
@@ -808,6 +815,7 @@ export function linkCartBlua32Image(
 	assertStaticRamFits(
 		DYNAMIC_RAM_BASE,
 		bssAddress + object.sections.bss.byteCount - DYNAMIC_RAM_BASE,
+		ramByteCount,
 	);
 	return buildImage({
 		object,

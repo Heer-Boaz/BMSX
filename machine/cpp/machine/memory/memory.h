@@ -7,7 +7,6 @@
 
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
-#include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/io.h"
 #include "common/primitives.h"
 
@@ -35,10 +34,11 @@ public:
 	using IoWriteHandler = void (*)(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 
-	explicit Memory(const MemoryInit& init);
+	Memory(const MemoryInit& init, u32 ramByteCount);
 
 	CartridgeController& cartridgeController() { return m_cartridgeController; }
 	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
+	size_t ramByteCount() const { return m_ram.size(); }
 	void installSystemRom(std::span<const u8> rom);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>

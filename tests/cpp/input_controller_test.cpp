@@ -2,6 +2,7 @@
 #include "machine/machine.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
@@ -51,8 +52,10 @@ struct InputControllerHarness {
 	bmsx::Machine machine;
 
 	InputControllerHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
-		, machine(memory, input) {
+		: memory(
+			bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
+		, machine(memory, input, bmsx::PSX_MACHINE_SPEC) {
 		machine.resetDevices();
 	}
 };

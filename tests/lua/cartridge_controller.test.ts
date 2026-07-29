@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -72,7 +73,7 @@ function createHarness(cartridgeSlots: CartridgeSlotMediaPair): CartridgeHarness
 	const memory = new Memory({
 		systemRom: new Uint8Array(0),
 		cartridgeSlots,
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	const scheduler = new DeviceScheduler(cpu);

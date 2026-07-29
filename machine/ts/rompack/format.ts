@@ -21,14 +21,10 @@ import {
 	CART_ROM_HEADER_SIZE_OFFSET,
 	CART_ROM_HEADER_TOC_LENGTH_OFFSET,
 	CART_ROM_HEADER_TOC_OFFSET,
-	CART_ROM_HEADER_VDP_CLASS_OFFSET,
 	CART_ROM_MAGIC,
-	CART_VDP_CLASS_PSX,
 } from '../spec/bmsx/rom_package';
 import { CART_RAM_SIZE } from '../spec/bmsx/memory_map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
-
-export type MachineVdpClass = 'psx';
 
 export type CartRomHeader = {
 	headerSize: number;
@@ -47,7 +43,6 @@ export type CartRomHeader = {
 	blua32StaticLayoutTokenHi: number;
 	metadataOffset: number;
 	metadataLength: number;
-	vdpClass: MachineVdpClass;
 	cartridgeBoardWord: number;
 	cartridgeRamByteCount: number;
 };
@@ -81,10 +76,6 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const dataLength = view.getUint32(CART_ROM_HEADER_DATA_LENGTH_OFFSET, true);
 	const metadataOffset = view.getUint32(CART_ROM_HEADER_METADATA_OFFSET, true);
 	const metadataLength = view.getUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, true);
-	const vdpClassWord = view.getUint32(CART_ROM_HEADER_VDP_CLASS_OFFSET, true);
-	if (vdpClassWord !== CART_VDP_CLASS_PSX) {
-		throw new Error(`Unsupported ROM VDP class marker: ${vdpClassWord}.`);
-	}
 	const cartridgeBoardWord = view.getUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, true);
 	const cartridgeRamByteCount = view.getUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, true);
 	if (cartridgeRamByteCount > CART_RAM_SIZE) {
@@ -115,7 +106,6 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		blua32StaticLayoutTokenHi: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, true),
 		metadataOffset,
 		metadataLength,
-		vdpClass: 'psx',
 		cartridgeBoardWord,
 		cartridgeRamByteCount,
 	};

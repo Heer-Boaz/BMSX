@@ -18,8 +18,10 @@
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"
 #include "presentation_state.h"
+#include "rompack/image.h"
 #include <array>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -27,7 +29,6 @@ namespace bmsx {
 
 class LibretroInputHub;
 class LibretroHostClock;
-class MachineManager;
 class Runtime;
 class AudioController;
 class Input;
@@ -154,7 +155,7 @@ public:
 	bool loadCartridgeSlotsFromPaths(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths);
 	bool loadEmptyCart();
 	void unloadRom();
-	void loadSystemRom(const char* romPath);
+	bool loadSystemRom(const char* romPath);
 
 	// Emulation control
 	void reset();
@@ -164,8 +165,7 @@ public:
 	const Framebuffer& getFramebuffer() const { return m_framebuffer; }
 	const LibretroAudioOutput& audioOutput() const { return m_audio_output; }
 
-	// Machine manager access
-	MachineManager* machineManager() { return m_machine_manager.get(); }
+	Runtime& runtime() { return *m_runtime; }
 	VideoPresenter& videoPresenter() { return *m_video_presenter; }
 
 	// Save states
@@ -200,7 +200,11 @@ private:
 	void syncAudioTiming(Runtime& runtime);
 	void syncRuntimeAudioTiming(Runtime& runtime);
 	void log(retro_log_level level, const char* fmt, ...);
+	void releaseSystemRomMedia();
 	bool loadSystemRomFromFile(const std::string& path);
+	void startCartridgeSlots(
+		const std::array<std::span<const u8>, CARTRIDGE_SLOT_COUNT>& slots);
+	void startRuntime();
 	void flushSystemOutput(Runtime& runtime);
 	void reportRuntimeError(Runtime& runtime, std::string_view message);
 
@@ -224,10 +228,11 @@ private:
 
 	MmapFile m_system_rom_file;
 	std::vector<uint8_t> m_system_rom_owned;
+	RomImage m_system_rom_image;
 	std::array<MmapFile, CARTRIDGE_SLOT_COUNT> m_cartridge_rom_files;
 	std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT> m_cartridge_rom_owned;
-
-	std::unique_ptr<MachineManager> m_machine_manager;
+	std::array<RomImage, CARTRIDGE_SLOT_COUNT> m_cartridge_rom_images;
+	std::unique_ptr<Runtime> m_runtime;
 
 	// Platform components
 	std::unique_ptr<LibretroHostClock> m_clock;
@@ -250,7 +255,6 @@ private:
 	// System RAM (if exposed)
 	std::vector<uint8_t> m_system_ram;
 
-	bool m_rom_loaded = false;
 	bool m_running = false;
 	bool m_platform_paused = false;
 	f64 m_total_time = 0.0;

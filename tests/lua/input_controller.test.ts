@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -69,7 +70,7 @@ function createHarness(): {
 	setKey: (usage: number, down: boolean) => void;
 	setSupervisorRequestLine: (high: boolean) => void;
 } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const vibrations: FakeVibration[] = [];
 	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	keyWords[HID_KEY_X >>> 5] = 1 << (HID_KEY_X & 31);
@@ -88,7 +89,7 @@ function createHarness(): {
 		},
 		setRuntimeInputFrameDurationMs() { },
 	};
-	const machine = new Machine(memory, input);
+	const machine = new Machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	const controller = machine.inputController;
 	return {

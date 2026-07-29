@@ -57,11 +57,6 @@ public:
 	void rebootSystem();
 
 	void applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming);
-	auto baseRamUsedBytes() const -> uint32_t;
-	auto ramUsedBytes() const -> uint32_t;
-	auto ramTotalBytes() const -> uint32_t;
-	auto vramUsedBytes() const -> uint32_t;
-	auto vramTotalBytes() const -> uint32_t;
 
 	/**
 	 * Call a CPU closure from native code. The returned span is invalidated by

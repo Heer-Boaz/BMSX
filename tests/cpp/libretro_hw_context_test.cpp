@@ -1,4 +1,3 @@
-#include "core/machine_manager.h"
 #include "platform.h"
 #include "render/backend/gles2/backend.h"
 

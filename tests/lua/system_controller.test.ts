@@ -36,7 +36,6 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveStateBytes, captureRuntimeSaveStateBytes } from '../../machine/ts/machine/runtime/save_state/codec';
@@ -69,16 +68,13 @@ const CART_CLOSURE_GLOBAL_NAME = 'selected_cart_closure';
 const CART_CLOSURE_RESULT_GLOBAL_NAME = 'selected_cart_closure_result';
 
 function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, cart1Rom = new Uint8Array(0)): Runtime {
-	const timing = resolveRuntimeTiming(5_000_000);
 	return new Runtime({
-		memory: new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom, cart1Rom) }),
-		pcrtcRunning: timing.pcrtcRunning,
-		ufpsScaled: timing.ufpsScaled,
-		cpuHz: timing.cpuHz,
-		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-		totalHalfLines: timing.totalHalfLines,
-		activeDisplayHalfLines: timing.activeDisplayHalfLines,
-		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		systemRomBytes: systemRom,
+		cartridgeSlots: cartridgeSlots(cartRom, cart1Rom),
+		machineModel: {
+			...PSX_MACHINE_SPEC,
+			cpuFreqHz: 5_000_000,
+		},
 	}, new SystemResetInputSource());
 }
 
@@ -135,8 +131,8 @@ function makeClosureCartSource(value: number, path: string, staticClosure: boole
 }
 
 test('system control reset command is write-only, self-clearing, and save-state visible', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const machine = new Machine(memory, new SystemResetInputSource());
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	const controller = machine.systemController;
 
@@ -152,16 +148,15 @@ test('system control reset command is write-only, self-clearing, and save-state 
 });
 
 test('system timing registers consume scheduler and PCRTC device state without Runtime mappings', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const machine = new Machine(memory, new SystemResetInputSource());
-	const timing = resolveRuntimeTiming(5_000_000);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	machine.scheduler.setNowCycles(PSX_MACHINE_SPEC.cpuFreqHz);
 	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 1000);
 	machine.scheduler.setNowCycles(0);
 	machine.refreshDeviceTimings({
-		cpuHz: timing.cpuHz,
-		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		cpuHz: 5_000_000,
+		geoWorkUnitsPerSec: PSX_MACHINE_SPEC.geoWorkUnitsPerSec,
 	}, machine.scheduler.currentNowCycles());
 
 	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 0);
@@ -189,8 +184,8 @@ test('system timing registers consume scheduler and PCRTC device state without R
 });
 
 test('system print registers retain firmware output and publish complete host lines', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const machine = new Machine(memory, new SystemResetInputSource());
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	const controller = machine.systemController;
 

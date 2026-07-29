@@ -24,6 +24,7 @@ type Blua32ImageBuildOptions = {
 	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
 	entryPath: string;
 	loadAddress: number;
+	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
 } & (
 	| { domain: 'system' }
@@ -100,6 +101,12 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 			object,
 			compiled.metadata,
 			options.loadAddress,
+			options.ramByteCount,
 		)
-		: linkSystemBlua32Image(object, compiled.metadata, options.loadAddress);
+		: linkSystemBlua32Image(
+			object,
+			compiled.metadata,
+			options.loadAddress,
+			options.ramByteCount,
+		);
 }

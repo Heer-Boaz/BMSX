@@ -1,3 +1,3 @@
-export { MachineManager } from './core/machine_manager';
-export type { MachineInitializationOptions } from './core/machine_manager';
-export type { Runtime } from './machine/runtime/runtime';
+export { Runtime } from './machine/runtime/runtime';
+export type { RuntimeOptions } from './machine/runtime/options';
+export type { RuntimeInputSource } from './machine/runtime/input';

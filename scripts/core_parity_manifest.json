@@ -233,11 +233,8 @@
 	],
 	"core_roots": [
 		"machine/ts/common/taskgate.ts",
-		"machine/ts/core/machine_manager.ts",
-		"machine/ts/core/rom_boot_manager.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
-		"machine/ts/machine/runtime/boot_timing.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
 		"machine/ts/machine/runtime/save_machine_state.ts",
@@ -253,6 +250,7 @@
 		"machine/ts/render/shared/glyph_runs.ts",
 		"machine/ts/render/shared/layers.ts",
 		"machine/ts/rompack/format.ts",
+		"machine/ts/rompack/image.ts",
 		"machine/ts/render/host_overlay/atlas.generated.ts",
 		"machine/ts/render/host_overlay/atlas.ts",
 		"machine/ts/render/shared/submissions.ts",
@@ -417,17 +415,6 @@
 				"machine/cpp/spec/bmsx/rom_header.h"
 			],
 			"reason": "bmsx_rom_boot_header_wire_contract"
-		},
-		{
-			"ts": "machine/ts/machine/memory/map.ts",
-			"cpp": [
-				"machine/cpp/machine/memory/map.h",
-				"machine/cpp/machine/memory/map.cpp"
-			],
-			"exact_function_bodies": [
-				"configureMemoryMap"
-			],
-			"reason": "selected_machine_ram_configuration_contract"
 		},
 		{
 			"ts": "machine/ts/machine/model_registry.ts",
@@ -738,14 +725,6 @@
 			"reason": "devices_audio_playback_contract"
 		},
 		{
-			"ts": "machine/ts/machine/runtime/boot_timing.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/boot_timing.h",
-				"machine/cpp/machine/runtime/boot_timing.cpp"
-			],
-			"reason": "runtime_boot_timing_resolution_contract"
-		},
-		{
 			"ts": "machine/ts/rompack/tooling/source_text.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/source_text.h",
@@ -866,16 +845,6 @@
 				"FrameState"
 			],
 			"reason": "runtime_frame_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/runtime/boot_timing.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/boot_timing.h"
-			],
-			"symbols": [
-				"ResolvedRuntimeTiming"
-			],
-			"reason": "runtime_boot_timing_shape_contract"
 		},
 		{
 			"ts": "machine/ts/machine/model_registry.ts",
@@ -2291,11 +2260,6 @@
 				"resetHardwareState",
 				"resetForSystemBoot",
 				"callClosure",
-				"baseRamUsedBytes",
-				"ramUsedBytes",
-				"ramTotalBytes",
-				"vramUsedBytes",
-				"vramTotalBytes",
 				"applyPublishedGxGpuPcrtcTiming"
 			],
 			"reason": "runtime_lifecycle_and_external_closure_method_contract",

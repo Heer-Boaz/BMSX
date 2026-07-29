@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -49,7 +50,7 @@ function disassembleEntryFunction(compiled: CompiledProgram): string {
 	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }
 
-function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() })): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
+function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
@@ -59,7 +60,7 @@ function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ system
 	return { memory, values: Array.from(cpu.completionValues), image: finalized.image };
 }
 
-function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() })): { memory: Memory; values: Value[] } {
+function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[] } {
 	return runColdCompiled(compileSource(source), memory);
 }
 
@@ -79,7 +80,7 @@ return *counter, &counter
 	}]);
 	assert.equal(image.link.constValueRelocs.every(reloc => reloc.kind === 'bss_addr'), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
 	const result = runCold(source, memory);
 	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
@@ -127,7 +128,7 @@ return *counter, state.counter
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
 	const result = runColdCompiled(compiled, memory);
 	assert.deepEqual(result.values, [77, DYNAMIC_RAM_BASE]);
@@ -479,7 +480,7 @@ return *counter, &counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_lma_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
 	const result = runColdCompiled(compiled, memory);
 	assert.deepEqual(result.values, [17, DYNAMIC_RAM_BASE]);
@@ -497,7 +498,7 @@ bss[0] = bss[0] + 1
 data[0] = data[0] + 1
 rodata[0] = rodata[0] + 1
 return struct[0], bss[0], data[0], rodata[0]
-`, new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }));
+`, new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes));
 	assert.deepEqual(result.values, [2, 3, 2, 5]);
 });
 

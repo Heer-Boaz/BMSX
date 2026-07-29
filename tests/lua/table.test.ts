@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -24,7 +25,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
 
 test('runtime values expose one numeric representation tag', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringValue = StringValue.get(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
@@ -54,7 +55,7 @@ test('runtime values expose one numeric representation tag', () => {
 });
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 0);
 	const highKey = 0xffffffff;
@@ -70,7 +71,7 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 });
 
 test('Table hashes runtime object keys from value-owned identity', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 4);
 	const tableKey = cpu.createTable(0, 0);
@@ -81,7 +82,7 @@ test('Table hashes runtime object keys from value-owned identity', () => {
 });
 
 test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const buffer = new ArrayBuffer(8);
 	const words = new Uint32Array(buffer);
@@ -113,7 +114,7 @@ return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
 });
 
 test('string.byte nil position uses default', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringByteId = BuiltinFunctionId.StringByte;
 

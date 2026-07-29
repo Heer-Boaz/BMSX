@@ -64,11 +64,11 @@ import {
 	CART_ROM_BASE,
 	CART_ROM_END,
 	IO_BASE,
+	RAM_BASE,
 	IO_WORD_SIZE,
 	DYNAMIC_RAM_BASE,
 	SYSTEM_ROM_BASE,
 } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_END } from '../../machine/ts/machine/memory/map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -98,7 +98,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({
 		systemRom: new Uint8Array([0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05]),
 		cartridgeSlots: cartridgeSlots(new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55])),
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irq, executionAddressSpace);
@@ -611,13 +611,13 @@ test('DMA bus faults remain Memory-owned and do not abort channel progress', () 
 	const destination = DYNAMIC_RAM_BASE + 0x600;
 	memory.writeMappedU32LE(destination, 0xdeadbeef);
 
-	programTransfer(memory, RAM_END - 2, destination, 1, RAM_COPY_CONTROL);
+	programTransfer(memory, (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 2, destination, 1, RAM_COPY_CONTROL);
 	runNextDmaService(fixture);
 
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), RAM_END - 2);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 2);
 	assert.equal(memory.readMappedU32LE(destination), 0);
-	assert.equal(memory.readIoU32(IO_DMA0_READ_ADDR), RAM_END + 2);
+	assert.equal(memory.readIoU32(IO_DMA0_READ_ADDR), (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) + 2);
 	assert.equal(memory.readIoU32(IO_DMA0_WRITE_ADDR), destination + 4);
 	assert.equal(memory.readIoU32(IO_DMA0_TRANSFER_COUNT), 0);
 	assert.equal(memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_DONE);

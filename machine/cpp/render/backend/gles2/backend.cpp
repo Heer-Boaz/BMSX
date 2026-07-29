@@ -10,7 +10,6 @@
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
 #include "render/backend/gles2/texture_units.h"
-#include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
 #include <array>

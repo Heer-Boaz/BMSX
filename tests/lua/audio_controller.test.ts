@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -172,7 +173,7 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 
 function createAudioControllerHarness(
 	audioOutput: object,
-	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
+	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),
 ): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler } {
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
@@ -204,7 +205,7 @@ function createAudioHarness(): { memory: Memory; audio: AudioController; dma: Dm
 }
 
 function createRealAudioHarness(
-	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
+	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),
 ): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
 	const audioOutput = new ApuOutputMixer();
 	return { ...createAudioControllerHarness(audioOutput, memory), audioOutput, hostOutput: new AudioOutputResampler() };
@@ -217,7 +218,7 @@ const SILENT_INPUT_SOURCE: InputControllerInputSource = {
 };
 
 function createAudioMachine(): Machine {
-	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }), SILENT_INPUT_SOURCE);
+	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes), SILENT_INPUT_SOURCE, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	machine.audioController.setTiming(APU_SAMPLE_RATE_HZ, 0);
 	return machine;
@@ -351,7 +352,7 @@ test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained
 test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory', () => {
 	const systemRom = new Uint8Array([0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6]);
 	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
-	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) });
+	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
 	const sampleMemory = new ApuSampleMemory(memory);
 	const view: ApuSourceByteView = {
 		bytes: new Uint8Array(0),
@@ -405,7 +406,7 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	const cartMemory = new Memory({
 		systemRom: new Uint8Array(0),
 		cartridgeSlots: cartridgeSlots(new Uint8Array([0x44, 0x33, 0x22, 0x11])),
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const cartHarness = createAudioControllerHarness(new ApuOutputMixer(), cartMemory);
 	writePcmSourceRegisters(cartMemory, CART_ROM_BASE, 4);
 	cartMemory.writeMappedWord(IO_APU_SLOT, 1);
@@ -443,7 +444,7 @@ test('APU voices latch their cartridge socket across CPU selection changes and r
 				present: true,
 			},
 		],
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const harness = createRealAudioHarness(memory);
 	memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	writePcmSourceRegisters(memory, CART_ROM_BASE, 4);

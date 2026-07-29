@@ -4,7 +4,11 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
+Machine::Machine(
+	Memory& memoryRef,
+	InputControllerInputSource& input,
+	const MachineModelSpec& model
+)
 	: memory(memoryRef)
 	, cartridgeController(memoryRef.cartridgeController())
 	, irqController(memory)
@@ -16,7 +20,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, audioController(memory, audioOutput, dmaController, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, cpu, irqController, scheduler, dmaController)
-	, imgDecController(memory, cpu, irqController, scheduler, dmaController, PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
+	, imgDecController(memory, cpu, irqController, scheduler, dmaController, model.imgDecCyclesPerOutputWord)
 	, gxGte(memory, cpu, scheduler)
 	, systemController(
 		memory,
@@ -27,17 +31,17 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 		geometryController,
 		gxGpu,
 		imgDecController,
-		PSX_MACHINE_SPEC.cpuFreqHz
+		model.cpuFreqHz
 	)
 	, inputController(memory, input, systemController)
 {
 	cartridgeController.connect(memory, irqController, dmaController);
 	dmaController.setTiming(
-		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
-		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
-		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
-		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
+		model.dmaRamCyclesPerWord,
+		model.dmaRamBurstSetupCycles,
+		model.dmaSystemRomCyclesPerWord,
+		model.dmaCartRomCyclesPerWord,
+		model.dmaCartRomBurstSetupCycles,
 		scheduler.currentNowCycles()
 	);
 }

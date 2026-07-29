@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -65,7 +66,7 @@ function runColdCompiled(compiled: CompiledProgram) {
 
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
 	const finalized = linkTestBlua32Pair(systemCompiled, cartCompiled);
-	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
+	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();

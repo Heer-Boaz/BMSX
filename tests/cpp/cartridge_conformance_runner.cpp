@@ -1,4 +1,3 @@
-#include "core/machine_manager.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
@@ -91,14 +90,14 @@ int main(int argc, char** argv) {
 	}
 	const bmsx::u32 mailboxControl =
 		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET;
-	platform.machineManager()->runtime().machine.memory.writeMappedU32LE(
+	platform.runtime().machine.memory.writeMappedU32LE(
 		mailboxControl,
 		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil(platform, "STEP1", 1u);
 	if (!platform.loadState(saved.data(), saved.size())) {
 		throw std::runtime_error("Save-state restore failed.");
 	}
-	platform.machineManager()->runtime().machine.memory.writeMappedU32LE(
+	platform.runtime().machine.memory.writeMappedU32LE(
 		mailboxControl,
 		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil(platform, "STEP1", 2u);

@@ -411,7 +411,7 @@ export class CPU {
 		private readonly executionAddressSpace: ExecutionAddressSpace,
 	) {
 		this.memory = memory;
-		this.luaHeap = new LuaHeap(this);
+		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
 		this.stringPool = new StringPool(this.luaHeap);
 		this.globals = this.createTable(0, 0);
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));

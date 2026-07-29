@@ -6,6 +6,7 @@ import {
 	HeadlessVideoOutput,
 	type HeadlessPresentedFrame,
 } from '../../../machine/ts/render/headless/video_output';
+import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { HeadlessCaptureCoordinator } from './headless_capture';
 
 type TimelineFrameSchedule = {
@@ -30,18 +31,27 @@ interface PendingTimelineInput {
 	event: InputEvt;
 }
 
+interface PendingTimelineCapture {
+	frame: number;
+	description: string;
+	source: string;
+}
+
 export class InputTimeline {
 	public readonly completion: Promise<void>;
 
 	private readonly pendingInputs: PendingTimelineInput[] = [];
+	private readonly pendingCaptures: PendingTimelineCapture[] = [];
 	private readonly frameSubscription: SubscriptionHandle;
 	private readonly finish: () => void;
 	private completionFrame = 0;
+	private cartridgeFrameOrigin = -1;
 
 	private constructor(
 		host: HeadlessVideoOutput,
 		private readonly input: InputHub,
-		capture: HeadlessCaptureCoordinator,
+		private readonly runtime: Runtime,
+		private readonly capture: HeadlessCaptureCoordinator,
 		frameIntervalMs: number,
 		entries: readonly InputTimelineEntry[],
 		source: string,
@@ -73,12 +83,7 @@ export class InputTimeline {
 				}
 				if (entry.capture) {
 					logger(`[${source}] capture ${description} at frame ${frame}`);
-					capture.scheduleFrame({
-						frame: frame + 1,
-						outputFrame: frame,
-						description,
-						source,
-					});
+					this.pendingCaptures.push({ frame, description, source });
 				}
 				if (event) {
 					logger(`[${source}] schedule ${description} at frame ${frame}`);
@@ -95,6 +100,7 @@ export class InputTimeline {
 		frameIntervalMs: number,
 		host: HeadlessVideoOutput,
 		input: InputHub,
+		runtime: Runtime,
 		capture: HeadlessCaptureCoordinator,
 		logger: (message: string) => void,
 	): Promise<InputTimeline> {
@@ -105,6 +111,7 @@ export class InputTimeline {
 		return new InputTimeline(
 			host,
 			input,
+			runtime,
 			capture,
 			frameIntervalMs,
 			entries,
@@ -116,10 +123,27 @@ export class InputTimeline {
 	private readonly handlePresentedFrame = (
 		presentedFrame: HeadlessPresentedFrame,
 	): void => {
+		if (this.cartridgeFrameOrigin < 0) {
+			if (!this.runtime.machine.cpu.isCartridgeExecutionActive()) {
+				return;
+			}
+			this.cartridgeFrameOrigin = presentedFrame.frameIndex;
+			for (let index = 0; index < this.pendingCaptures.length; index += 1) {
+				const pending = this.pendingCaptures[index];
+				this.capture.scheduleFrame({
+					frame: this.cartridgeFrameOrigin + pending.frame + 1,
+					outputFrame: pending.frame,
+					description: pending.description,
+					source: pending.source,
+				});
+			}
+			this.pendingCaptures.length = 0;
+		}
+		const cartridgeFrame = presentedFrame.frameIndex - this.cartridgeFrameOrigin;
 		let writeIndex = 0;
 		for (let readIndex = 0; readIndex < this.pendingInputs.length; readIndex += 1) {
 			const pending = this.pendingInputs[readIndex];
-			if (presentedFrame.frameIndex >= pending.frame) {
+			if (cartridgeFrame >= pending.frame) {
 				this.input.post(pending.event);
 				continue;
 			}
@@ -127,7 +151,7 @@ export class InputTimeline {
 			writeIndex += 1;
 		}
 		this.pendingInputs.length = writeIndex;
-		if (presentedFrame.frameIndex >= this.completionFrame) {
+		if (cartridgeFrame >= this.completionFrame) {
 			this.frameSubscription.unsubscribe();
 			this.finish();
 		}

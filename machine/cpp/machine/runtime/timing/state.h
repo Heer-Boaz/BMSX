@@ -4,16 +4,10 @@
 
 namespace bmsx {
 
+struct MachineModelSpec;
+
 struct TimingState {
-	TimingState(
-		bool pcrtcRunning,
-		i64 ufpsScaled,
-		i64 cpuHz,
-		i64 cycleBudgetPerFrame,
-		i64 totalHalfLines,
-		i64 activeDisplayHalfLines,
-		int geoWorkUnitsPerSec
-	);
+	explicit TimingState(const MachineModelSpec& model);
 
 	i64 ufpsScaled;
 	f64 ufps;
@@ -25,7 +19,7 @@ struct TimingState {
 	i64 cpuHz;
 	f64 cpuCyclesPerMillisecond;
 	i64 cycleBudgetPerFrame;
-	int geoWorkUnitsPerSec;
+	i64 geoWorkUnitsPerSec;
 };
 
 } // namespace bmsx

@@ -11,8 +11,7 @@ import {
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
@@ -25,15 +24,9 @@ import type {
 	RomToolingPackage,
 } from '../../machine/ts/rompack/tooling/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
-import type { MachineManifest } from '../../machine/ts/rompack/tooling/manifest';
 import type { RomToolingLayer } from '../../machine/ts/rompack/tooling/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import { cartridgeSlots } from './cartridge';
-
-const TEST_MACHINE: MachineManifest = {
-	namespace: 'test',
-	vdp_class: 'psx',
-};
 
 class TestRuntimeInputSource implements RuntimeInputSource {
 	public setRuntimeInputFrameDurationMs(): void {
@@ -51,16 +44,13 @@ class TestRuntimeInputSource implements RuntimeInputSource {
 }
 
 export function createTestRuntime(systemRom: Uint8Array): Runtime {
-	const timing = resolveRuntimeTiming(5_000_000);
 	return new Runtime({
-		memory: new Memory({ systemRom, cartridgeSlots: cartridgeSlots() }),
-		pcrtcRunning: timing.pcrtcRunning,
-		ufpsScaled: timing.ufpsScaled,
-		cpuHz: timing.cpuHz,
-		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-		totalHalfLines: timing.totalHalfLines,
-		activeDisplayHalfLines: timing.activeDisplayHalfLines,
-		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		systemRomBytes: systemRom,
+		cartridgeSlots: cartridgeSlots(),
+		machineModel: {
+			...PSX_MACHINE_SPEC,
+			cpuFreqHz: 5_000_000,
+		},
 	}, new TestRuntimeInputSource());
 }
 
@@ -74,7 +64,6 @@ function toolingPackage(projectRootPath: string): RomToolingPackage {
 		audioevents: {},
 		project_root_path: projectRootPath,
 		cart_manifest: null,
-		machine: TEST_MACHINE,
 		entry_path: '',
 	};
 }
@@ -84,7 +73,6 @@ function cartridgeIndex(projectRootPath: string): CartridgeIndex {
 		entries: [],
 		projectRootPath,
 		cart_manifest: null,
-		machine: TEST_MACHINE,
 		entry_path: '',
 	};
 }
@@ -107,7 +95,6 @@ function emptyRomHeader(): CartRomHeader {
 		blua32StaticLayoutTokenHi: 0,
 		metadataOffset: CART_ROM_HEADER_SIZE,
 		metadataLength: 0,
-		vdpClass: 'psx',
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	};

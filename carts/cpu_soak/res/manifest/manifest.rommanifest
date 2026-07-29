@@ -1,8 +1,5 @@
 title: CPU Soak
 short_name: 'cpu_soak'
 rom_name: 'cpu_soak'
-machine:
-    namespace: 'cpu_soak'
-    vdp_class: psx
 lua:
     entry_path: entry.lua

@@ -1,8 +1,5 @@
 title: VBLANK Test
 short_name: 'vblanktest'
 rom_name: 'vblanktest'
-machine:
-    namespace: 'vblanktest'
-    vdp_class: psx
 lua:
     entry_path: entry.lua

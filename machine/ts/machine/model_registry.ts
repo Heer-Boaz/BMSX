@@ -1,5 +1,4 @@
 import { HZ_SCALE } from './runtime/timing/constants';
-import { BMSX_RAM_BYTES } from '../spec/bmsx/memory_map';
 
 // Console-model registry: the machine owns fixed PSX-class raster hardware,
 // PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
@@ -52,7 +51,7 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaCartRomCyclesPerWord: PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	dmaCartRomBurstSetupCycles: PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	imgDecCyclesPerOutputWord: PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	ramBytes: BMSX_RAM_BYTES,
+	ramBytes: 0x00400000,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

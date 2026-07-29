@@ -13,7 +13,6 @@
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
-#include "machine/runtime/boot_timing.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/save_state.h"
@@ -54,7 +53,8 @@ struct AudioHarness {
 						.present = true,
 					},
 				}}
-				: bmsx::test::cartridgeSlots(cartRom)})
+				: bmsx::test::cartridgeSlots(cartRom)},
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)
@@ -95,8 +95,10 @@ struct AudioMachineHarness {
 	bmsx::Machine machine;
 
 	explicit AudioMachineHarness(bmsx::i64 cpuHz = bmsx::APU_SAMPLE_RATE_HZ)
-		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()})
-		, machine(memory, input) {
+		: memory(
+			bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()},
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
+		, machine(memory, input, bmsx::PSX_MACHINE_SPEC) {
 		machine.resetDevices();
 		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
@@ -574,19 +576,14 @@ void testSampleTransferWrongDirectionBlock() {
 
 void testRuntimeClockResetAndRestorePreserveApuTimebase() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(5'000'000);
+	bmsx::MachineModelSpec machineModel = bmsx::PSX_MACHINE_SPEC;
+	machineModel.cpuFreqHz = 5'000'000;
 	SilentInputSource input;
 	bmsx::Runtime runtime(
 		bmsx::RuntimeOptions{
 			{emptyRom.data(), 0u},
 			bmsx::test::cartridgeSlots(),
-			timing.pcrtcRunning,
-			timing.ufpsScaled,
-			timing.cpuHz,
-			timing.cycleBudgetPerFrame,
-			timing.totalHalfLines,
-			timing.activeDisplayHalfLines,
-			timing.geoWorkUnitsPerSec,
+			machineModel,
 		},
 		input
 	);

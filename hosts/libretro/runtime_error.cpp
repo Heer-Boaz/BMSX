@@ -1,6 +1,5 @@
 #include "platform.h"
 
-#include "core/machine_manager.h"
 #include "machine/devices/system/controller.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/tooling/blua32_media.h"
@@ -47,11 +46,11 @@ void LibretroPlatform::reportRuntimeError(
 	CPU& cpu = runtime.machine.cpu;
 	Blua32ToolingMedia toolingMedia;
 	toolingMedia.system = loadBlua32ToolingImage(
-		m_machine_manager->systemRomImage(),
+		m_system_rom_image,
 		SYSTEM_ROM_BASE
 	);
 	for (u32 slot = 0u; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
-		const RomImage& image = m_machine_manager->cartridgeRomImage(slot);
+		const RomImage& image = m_cartridge_rom_images[slot];
 		if (!image.bytes.empty()) {
 			toolingMedia.cartridgeSlots[slot] =
 				loadBlua32ToolingImage(image, CART_ROM_BASE);

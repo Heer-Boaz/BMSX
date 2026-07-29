@@ -127,8 +127,8 @@ from both runtimes. The current raw streaming IMGDEC expands BMSX `IMD1`
 cart words into ordinary GP0 packets through two normal DMA channels on one
 shared bus; it has no GX-private ingress and shares no runtime contract with the
 deleted decoder.
-The ROM `vdp_class: psx` field remains a package-format compatibility marker;
-it is not a live VDP device contract.
+The obsolete ROM `vdp_class` package marker is removed; video configuration is
+exclusively the live GX/PCRTC register contract.
 
 ## Current high-level state
 

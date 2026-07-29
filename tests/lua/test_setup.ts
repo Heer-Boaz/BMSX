@@ -1,7 +1,6 @@
 import Module from 'node:module';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { HeadlessPlatformServices } from '../../hosts/node/headless/platform_headless';
 
 class TestRegistry {
 	static instance = new TestRegistry();
@@ -35,7 +34,6 @@ const resolveFilename = (Module as any)._resolveFilename;
 const registryModulePath = path.resolve(__dirname, '../../machine/ts/core/registry.ts');
 const fsmlibraryModulePath = path.resolve(__dirname, '../../machine/ts/fsm/fsmlibrary.ts');
 const stateModulePath = path.resolve(__dirname, '../../machine/ts/fsm/state.ts');
-const gameModulePath = path.resolve(__dirname, '../../machine/ts/core/machine_manager.ts');
 const worldModulePath = path.resolve(__dirname, '../../machine/ts/core/world.ts');
 const spaceModulePath = path.resolve(__dirname, '../../machine/ts/core/space.ts');
 
@@ -50,23 +48,6 @@ const worldStub = {
 	activeLights: [],
 };
 
-const eventEmitterStub = {
-	emit: () => {},
-	on: () => {},
-	off: () => {},
-	removeSubscriber: () => {},
-};
-
-const gameStub = {
-	registry: TestRegistry.instance,
-	world: worldStub,
-	platform: new HeadlessPlatformServices({ unpaced: true }),
-	event_emitter: eventEmitterStub,
-	emitPresentation: () => {},
-	emitGameplay: () => {},
-};
-
-const gameExports = { Game: class {}, MachineManager: class {}, machineManager: gameStub, default: gameStub };
 const worldExports = {
 	World: class {},
 	WorldConfiguration: class {},
@@ -166,9 +147,6 @@ const stateExports = {
 	}
 	if (matchesModulePath(resolved, stateModulePath)) {
 		return stateExports;
-	}
-	if (matchesModulePath(resolved, gameModulePath)) {
-		return gameExports;
 	}
 	if (matchesModulePath(resolved, worldModulePath)) {
 		return worldExports;

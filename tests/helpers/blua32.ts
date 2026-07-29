@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import assert from 'node:assert/strict';
 
 import { encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
@@ -38,6 +39,7 @@ import {
 import { cartridgeSlots } from './cartridge';
 
 const TEST_EXECUTABLE_OFFSET = 0x100;
+const LINK_TARGET_RAM_BYTES = PSX_MACHINE_SPEC.ramBytes;
 
 export function blua32TestFunctionAddress(romBaseAddress: number, functionIndex: number): number {
 	return romBaseAddress
@@ -124,7 +126,6 @@ function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 		blua32StaticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
 		metadataOffset: 0,
 		metadataLength: 0,
-		vdpClass: 'psx',
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	});
@@ -242,6 +243,7 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Ima
 		raw.object,
 		raw.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	return testImage(linked, rawTestVectors(source, linked));
 }
@@ -255,6 +257,7 @@ export function linkRawTestBlua32Pair(
 		systemRaw.object,
 		systemRaw.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	const cartRaw = createRawTestBlua32Object(cartSource);
 	const cart = linkCartBlua32Image(
@@ -263,6 +266,7 @@ export function linkRawTestBlua32Pair(
 		cartRaw.object,
 		cartRaw.metadata,
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	return {
 		systemImage: system.layout,
@@ -285,6 +289,7 @@ export function linkTestSystemBlua32(
 		encodeCompiledProgramObject(compiled),
 		compiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	return {
 		image: linked.layout,
@@ -339,6 +344,7 @@ export function linkTestBlua32Pair(
 		encodeCompiledProgramObject(systemCompiled),
 		systemCompiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	const cart = linkCartBlua32Image(
 		system.layout,
@@ -346,6 +352,7 @@ export function linkTestBlua32Pair(
 		encodeCompiledProgramObject(cartCompiled),
 		cartCompiled.metadata,
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
 	);
 	return {
 		systemImage: system.layout,
@@ -364,7 +371,7 @@ export function linkTestBlua32Pair(
 export function createTestSystemCpu(
 	finalized: TestBlua32Image,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
-	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
@@ -378,7 +385,7 @@ export function createTestBlua32PairCpu(
 	const memory = new Memory({
 		systemRom: finalized.systemRomBytes,
 		cartridgeSlots: cartridgeSlots(finalized.cartRomBytes),
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);

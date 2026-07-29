@@ -11,7 +11,6 @@ import {
 	SYSTEM_ROM_BASE,
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
-import { RAM_END } from './map';
 import { CartridgeController } from '../devices/cartridge/controller';
 import type { CartridgeSlotMediaPair } from '../devices/cartridge/contracts';
 import {
@@ -142,10 +141,10 @@ export class Memory {
 	private busFaultAccess = 0;
 	private busFaultSequence = 0;
 
-	public constructor(init: MemoryInit) {
+	public constructor(init: MemoryInit, ramByteCount: number) {
 		this.systemRom = init.systemRom;
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
-		this.ram = new Uint8Array(RAM_END - RAM_BASE);
+		this.ram = new Uint8Array(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -162,6 +161,10 @@ export class Memory {
 		this.ioWriteContexts[this.busFaultAckSlot] = this;
 		this.ioWriteHandlers[this.busFaultAckSlot] = Memory.onBusFaultAckWriteThunk;
 		this.clearBusFault();
+	}
+
+	public ramByteCount(): number {
+		return this.ram.byteLength;
 	}
 
 	public installSystemRom(rom: Uint8Array): void {

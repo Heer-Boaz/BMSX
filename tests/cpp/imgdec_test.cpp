@@ -50,7 +50,9 @@ struct ImgDecHarness {
 	bmsx::SystemController system;
 
 	ImgDecHarness()
-		: memory(bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) })
+		: memory(
+			bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) },
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)

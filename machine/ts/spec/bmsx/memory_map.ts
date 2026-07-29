@@ -5,8 +5,6 @@ export const SYSTEM_ROM_SIZE = 0x01000000; // 16 MB
 
 export const RAM_BASE = 0x08000000;
 export const MAX_RAM_SIZE = 0x08000000; // 128 MB address window
-export const BMSX_RAM_BYTES = 0x00400000;
-export const BMSX_RAM_END = RAM_BASE + BMSX_RAM_BYTES;
 
 export const CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;
 export const CART_ROM_SIZE = 0x20000000; // 512 MB address window

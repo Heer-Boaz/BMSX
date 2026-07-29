@@ -22,7 +22,6 @@ export type LuaSourceRegistry = {
 	path2lua: Record<string, LuaSourceRecord>;
 	module2lua: Record<string, LuaSourceRecord>;
 	entry_path: string;
-	namespace: string;
 	projectRootPath: string;
 	can_boot_from_source: boolean;
 	revision: number;
@@ -63,7 +62,6 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		path2lua: {},
 		module2lua: {},
 		entry_path: index.entry_path,
-		namespace: index.machine.namespace,
 		projectRootPath: index.projectRootPath,
 		can_boot_from_source: false,
 		revision: 0,

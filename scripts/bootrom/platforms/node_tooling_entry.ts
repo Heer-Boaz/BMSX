@@ -221,18 +221,21 @@ async function main(): Promise<void> {
 				);
 				let completed = false;
 				try {
+					const host = profile
+						? profile.host
+						: await prepareMachineHost(bootOptions);
 					const timeline = await InputTimeline.load(
 						options.mode.path,
 						options.frameIntervalMs,
 						platform.videoOutput,
 						platform.input,
+						host.runtime,
 						capture,
 						inputLogger,
 					);
 					if (profile) {
-						startCpuProfileHostFrames(profile.host, profile.session);
+						startCpuProfileHostFrames(host, profile.session);
 					} else {
-						const host = await prepareMachineHost(bootOptions);
 						startMachineHostFrames(host);
 					}
 					await Promise.race([

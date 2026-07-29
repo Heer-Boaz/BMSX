@@ -1,8 +1,5 @@
 title: Render HW Test
 short_name: 'renderhwtest'
 rom_name: 'renderhwtest'
-machine:
-    namespace: 'renderhwtest'
-    vdp_class: psx
 lua:
     entry_path: entry.lua

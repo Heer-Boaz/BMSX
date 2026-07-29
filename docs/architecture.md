@@ -280,23 +280,23 @@ frontend executable. It never owns cart-observable machine semantics.
 
 ## Console model and timing
 
-The active machine model is `psx`. The model owns fixed hardware facts:
-33.8688 MHz CPU clock, 4 MB RAM, region-aware DMA bus timing, a 16,384,000
-work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. The DMA
-timing is expressed in CPU cycles: one per RAM word plus one cycle of RAM-burst
-setup, one per firmware-ROM word, and eight per cartridge word plus four cycles
-of cartridge-burst setup.
+The active machine model is `psx`. A selected model owns the installed hardware
+facts for one machine instance. The current model selects a 33.8688 MHz CPU,
+4 MiB RAM, region-aware DMA bus timing, a 16,384,000 work-unit/s geometry unit,
+and a PSX-style GPU with 2 MiB of raw VRAM. `Runtime` passes the selected
+`MachineModelSpec` once into `Memory` and the devices; consumers read installed
+capacity from those owners instead of consulting the current model's constants.
+The DMA timing is expressed in CPU cycles: one per RAM word plus one cycle of
+RAM-burst setup, one per firmware-ROM word, and eight per cartridge word plus
+four cycles of cartridge-burst setup.
 Machine reset initializes
 VRAM with the fixed GX power-on bit pattern. GPU reset starts from a 320×240 PAL display
 configuration; that is a reset register state, not a fixed host scanout size.
 
-The cart ROM still carries a `psx` VDP-class marker in its package header. This
-is a ROM format marker, not a live VDP device or graphics ABI. A second GPU/APU or
-device-class contract starts only when a real producer consumes it; it is not an
-open slice by itself. Guest Lua does not receive a `machine_manifest`,
-`cart_manifest`, or raw hardware globals to discover these facts. The header and
-machine registry are host/tooling input; cart-visible behavior is still
-programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
+The ROM package does not select a VDP, GPU, APU, or machine model. The product
+host selects the installed machine model; guest software configures that
+hardware only through its CPU-visible registers and memory ABI. Authoring
+manifests are not guest hardware descriptors and are never exposed to Lua.
 
 Display configuration is raw hardware register state. PCRTC is the implemented
 scanout authority. Its live timing bank owns the physical beam; its
@@ -359,9 +359,9 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 Current artifact roles:
 
 - `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
-  artifact. It exposes `MachineManager.initialize(...)`, which consumes raw ROM
-  bytes and returns the machine `Runtime` directly; it does not own browser,
-  Node, SDL, ALSA, EGL, IDE, ROM authoring records, or libretro host services.
+  artifact. It exposes the machine `Runtime` and its physical-media/input
+  contracts directly; it does not own browser, Node, SDL, ALSA, EGL, IDE, ROM
+  admission, ROM authoring records, or libretro host services.
 - `dist/engine.js` / `.debug.js`: browser player/bootstrap artifact. It wires
   browser video, audio, input, view-host construction, runtime preparation, and
   the frame loop through static composition. Its bundle contains no IDE,
@@ -370,16 +370,17 @@ Current artifact roles:
 - `dist/studio.js` / `.debug.js` with `dist/studio.html`: browser Studio
   artifact. This is the explicit composition root that adds workbench,
   workspace, compiler, and source tooling to the browser host.
-- `bmsx_binary_codec` and `bmsx_rom_image`: lower native wire-format targets
-  shared by machine and tooling products. They own the binary codec and physical
-  ROM header/image admission respectively; neither depends on the machine core.
+- `bmsx_binary_codec` and `bmsx_rom_image`: lower native wire-format targets.
+  The machine core uses the binary codec for save-state serialization; product
+  hosts and tooling use physical-ROM admission. Neither lower target depends on
+  the machine core.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
   retains stable physical-ROM byte views and executable-image decode state, but
   owns no path, file mapping or copied host-media buffer and does not
   compile ROM TOC/manifest/asset package loading, Lua module-path tooling, the
   Lua source lexer/parser, BLua32 source-range extraction, symbol sidecars,
   disassembly, or formatted fault presentation. Its CMake target depends only on
-  the lower wire-format targets, never on either tooling target. Build trees
+  the binary codec, never on ROM admission or either tooling target. Build trees
   never share this target-specific archive.
 - `bmsx_host_support`: native host/platform support above `libbmsx.a`. It owns
   host input mapping, output resampling, presentation, overlays, software/GLES2
@@ -410,12 +411,14 @@ composition in `ide/workbench/`; only Studio and IDE-test entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
 provider, or runtime feature switch.
 
-`MachineManager` parses only the outer physical ROM image/header needed to bind
-system and cartridge bytes to `Memory`. It never decodes TOC assets, manifests,
-source registries, symbols, or authoring packages. Studio and source-aware
-profiling explicitly call `rompack/tooling/media.ts` above that machine
-initialization boundary. Ordinary browser and Node players therefore neither
-allocate authoring layers nor link their decoder graph.
+The product host admits the outer physical ROM/header and translates cartridge
+package metadata into installed socket media. `Runtime` consumes the system-ROM
+bytes and cartridge-media records directly and constructs the one machine-owned
+`Memory`; there is no manager or second ROM lifecycle. Admission never decodes
+TOC assets, manifests, source registries, symbols, or authoring packages.
+Studio and source-aware profiling explicitly call `rompack/tooling/media.ts`
+above that machine initialization boundary. Ordinary browser and Node players
+therefore neither allocate authoring layers nor link their decoder graph.
 
 Deployable artifact construction is owned by `scripts/products/`. Browser
 player, browser Studio, Node player, Node tooling, machine-library, and
@@ -566,12 +569,17 @@ directly.
 
 The fixed BMSX physical address contract lives in
 `machine/{ts,cpp}/spec/bmsx/memory_map.*`. It owns the raw 32-bit ROM, RAM
-aperture, fixed BMSX RAM capacity, cartridge-bus and MMIO addresses plus
-the fixed reserved-RAM layout. Runtime memory configuration in
-`machine/{ts,cpp}/machine/memory/map.*` binds the selected machine instance; it
-does not own or re-export the physical map. Datapaths, linkers, and ROM tooling
-therefore consume fixed addresses directly from the specification owner without
-a CPU, Memory, or tooling facade.
+aperture, cartridge-bus and MMIO addresses plus the fixed reserved-RAM layout.
+The selected `MachineModelSpec.ramBytes` is the installed capacity;
+`machine/{ts,cpp}/machine/memory/memory.*` allocates that capacity once and uses
+its backing length as the physical decode endpoint. Datapaths consume fixed
+addresses directly from the specification owner without a CPU or Memory facade.
+The BLua32 linker receives an explicit RAM-region capacity from its build
+target. Offline ROM builds currently target `PSX_MACHINE_SPEC.ramBytes`; live
+IDE builds use the RAM capacity of the running machine. ROM manifests do not
+select or resize emulator hardware. Loading a ROM never enlarges the installed
+machine; access beyond the selected model's RAM reaches the ordinary
+unmapped-bus datapath.
 
 Other numeric specification leaves are split by physical contract:
 
@@ -702,14 +710,13 @@ format, and consumers do not weaken CPU alignment or infer alternate layouts.
 
 ROM tooling package records describe ROM payloads; they do not own duplicate
 audio, atlas, or binary payload bytes. Studio may decode those records for
-authoring views. Neither TS nor C++ `MachineManager` constructs a parallel
-system or cartridge tooling package: the active machine keeps one CPU-visible
-ROM backing per loaded medium. Native path-based libretro loads use read-only
-mapped files for that backing; memory-buffer frontends provide data that the
-core owns once for lifetime safety. Node headless consumes the `fs.readFile`
-buffer directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the
-machine; the Lua engine must not cache asset payload copies behind the cart's
-back.
+authoring views. The active machine keeps one CPU-visible ROM backing per loaded
+medium; there is no parallel manager-owned copy. Native path-based libretro
+loads use read-only mapped files for that backing; memory-buffer frontends own
+their input bytes for the runtime lifetime. Node headless consumes the
+`fs.readFile` buffer directly. Guest code moves bytes from ROM to RAM/VRAM/APU
+through the machine; the Lua engine must not cache asset payload copies behind
+the cart's back.
 Every ROM file starts with the current BMSX header at byte zero and remains its
 exact raw file length in memory. There is no prepended ROM-label PNG, whole-ROM
 compression, normalize/decompress stage, or allocation sized to the address
@@ -2304,9 +2311,7 @@ between GX command buffers and those backends. The mirrored VDP/RPU device trees
 and the former host-PNG/RGBA IMGDEC path, mapped apertures, VBlank hooks and
 descriptor state are removed. The current streaming IMGDEC is a separate raw
 register/FIFO datapath whose output DMA reaches the mapped GP0 port, not a
-presentation route. The ROM
-package marker is the only remaining `vdp_class` name and must not be used as a
-compatibility route.
+presentation route. ROM metadata has no `vdp_class` compatibility route.
 
 The GP0 command processor has two distinct fixed physical stages: one
 sixteen-word DMA ingress buffer for the currently admitted block and one
@@ -3088,8 +3093,8 @@ with `bmsx_rom_tooling`; diagnostics-enabled libretro builds additionally link
 fault presentation decodes the tooling image directly from the inserted
 physical ROMs, joins optional symbols with allocation-free scalar CPU state
 reads, emits the diagnostic, and releases that tooling state.
-`MachineManager`, `Runtime`, CPU state, and `libbmsx.a` retain no source paths,
-symbol caches, disassembler objects, or formatted diagnostic records.
+`Runtime`, CPU state, and `libbmsx.a` retain no source paths, symbol caches,
+disassembler objects, or formatted diagnostic records.
 
 Lua source lexing, parsing, semantic analysis, and compilation are TypeScript
 authoring-tool responsibilities under `machine/ts/lua`. Native machine code

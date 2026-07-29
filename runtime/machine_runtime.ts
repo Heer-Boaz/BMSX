@@ -1,11 +1,10 @@
-import {
-	MachineManager,
-	type MachineInitializationOptions,
-} from '../machine/ts/core/machine_manager';
 import { renderGate, runGate } from '../machine/ts/common/taskgate';
-import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveStateBytes } from '../machine/ts/machine/runtime/save_state/codec';
+import type { CartridgeSlotMediaPair } from '../machine/ts/machine/devices/cartridge/contracts';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/ts/machine/devices/gx/gpu_display';
+import { PSX_MACHINE_SPEC } from '../machine/ts/machine/model_registry';
+import { parseRomImage } from '../machine/ts/rompack/image';
 import { Input } from '../machine/ts/input/manager';
 import type { GamepadInput } from '../machine/ts/input/gamepad';
 import { LogLevel, type Platform } from '../machine/ts/platform/platform';
@@ -20,7 +19,11 @@ import { RenderPresentationState } from './presentation_state';
 
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 
-export interface MachineHostInitializationOptions extends MachineInitializationOptions {
+const EMPTY_CARTRIDGE_ROM = new Uint8Array(0);
+
+export interface MachineHostInitializationOptions {
+	systemRom: Uint8Array;
+	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 	startingGamepadIndex: number;
 	enableOnscreenGamepad: boolean;
 	platform: Platform;
@@ -34,22 +37,17 @@ export class MachineHost {
 	private readonly systemOutputBytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 
 	public constructor(
-		private readonly machineManager: MachineManager,
+		public readonly runtime: Runtime,
 		public readonly platform: Platform,
 		public readonly presenter: VideoPresenter,
 		public readonly input: Input,
 	) {
-		const runtime = this.runtime;
 		this.audioOutput = new HostAudioOutput(
 			platform.audio,
 			runtime.machine.audioController,
 			runtime.machine.audioOutput.outputRing,
 			runtime.timing.ufpsScaled,
 		);
-	}
-
-	public get runtime(): Runtime {
-		return this.machineManager.runtime;
 	}
 
 	public get paused(): boolean {
@@ -133,10 +131,36 @@ export async function initializeMachineHost(
 	if (options.enableOnscreenGamepad) {
 		input.enableOnscreenGamepad();
 	}
-	const machineManager = new MachineManager();
-	const runtime = machineManager.initialize({
-		systemRom: options.systemRom,
-		cartridgeSlots: options.cartridgeSlots,
+	const systemImage = parseRomImage(options.systemRom, 'system');
+	const cartridgeMedia: CartridgeSlotMediaPair = [
+		{
+			rom: EMPTY_CARTRIDGE_ROM,
+			boardWord: 0,
+			ramByteCount: 0,
+			present: false,
+		},
+		{
+			rom: EMPTY_CARTRIDGE_ROM,
+			boardWord: 0,
+			ramByteCount: 0,
+			present: false,
+		},
+	];
+	for (let slotIndex = 0; slotIndex < options.cartridgeSlots.length; slotIndex += 1) {
+		const bytes = options.cartridgeSlots[slotIndex];
+		if (!bytes) continue;
+		const image = parseRomImage(bytes, 'cart');
+		cartridgeMedia[slotIndex] = {
+			rom: image.bytes,
+			boardWord: image.header.cartridgeBoardWord,
+			ramByteCount: image.header.cartridgeRamByteCount,
+			present: true,
+		};
+	}
+	const runtime = new Runtime({
+		systemRomBytes: systemImage.bytes,
+		cartridgeSlots: cartridgeMedia,
+		machineModel: PSX_MACHINE_SPEC,
 	}, input);
 	const output = options.platform.videoOutput;
 	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
@@ -163,7 +187,7 @@ export async function initializeMachineHost(
 	presenter.canvasScale = dimensions.canvasScale;
 	presenter.initializeDefaultTextures();
 	const host = new MachineHost(
-		machineManager,
+		runtime,
 		options.platform,
 		presenter,
 		input,

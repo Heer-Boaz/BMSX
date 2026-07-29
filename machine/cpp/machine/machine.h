@@ -19,15 +19,20 @@
 namespace bmsx {
 
 class InputControllerInputSource;
+struct MachineModelSpec;
 
 struct MachineTiming {
 	i64 cpuHz;
-	int geoWorkUnitsPerSec;
+	i64 geoWorkUnitsPerSec;
 };
 
 class Machine {
 public:
-	Machine(Memory& memoryRef, InputControllerInputSource& input);
+	Machine(
+		Memory& memoryRef,
+		InputControllerInputSource& input,
+		const MachineModelSpec& model
+	);
 
 	Memory& memory;
 	CartridgeController& cartridgeController;

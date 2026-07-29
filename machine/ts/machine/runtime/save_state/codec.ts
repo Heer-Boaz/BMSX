@@ -83,8 +83,6 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { MemorySaveState } from '../../memory/memory';
-import { RAM_BASE } from '../../../spec/bmsx/memory_map';
-import { RAM_END } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
@@ -93,10 +91,10 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 import type { Runtime } from '../runtime';
 
-export const RUNTIME_SAVE_STATE_BASE_WIRE_CAPACITY = 0x01000000;
+export const RUNTIME_SAVE_STATE_NON_RAM_WIRE_CAPACITY = 0x00c00000;
 
-export function runtimeSaveStateWireCapacity(cartridgeRamByteCount: number): number {
-	return RUNTIME_SAVE_STATE_BASE_WIRE_CAPACITY + cartridgeRamByteCount;
+export function runtimeSaveStateWireCapacity(ramByteCount: number, cartridgeRamByteCount: number): number {
+	return RUNTIME_SAVE_STATE_NON_RAM_WIRE_CAPACITY + ramByteCount + cartridgeRamByteCount;
 }
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
@@ -356,11 +354,11 @@ function encodeMemorySaveState(state: MemorySaveState): MemorySaveState {
 	};
 }
 
-function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
+function decodeMemorySaveState(value: unknown, label: string, ramByteCount: number): MemorySaveState {
 	const object = requireObject(value, label);
 	const ram = requireBinaryValue(requireObjectKey(object, 'ram', label, 'machine.memory.ram'), 'machine.memory.ram');
-	if (ram.byteLength !== RAM_END - RAM_BASE) {
-		throw new Error(`machine.memory.ram must contain ${RAM_END - RAM_BASE} bytes.`);
+	if (ram.byteLength !== ramByteCount) {
+		throw new Error(`machine.memory.ram must contain ${ramByteCount} bytes.`);
 	}
 	return {
 		ram,
@@ -1303,10 +1301,10 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	};
 }
 
-function decodeMachineSaveState(value: unknown, label: string): MachineSaveState {
+function decodeMachineSaveState(value: unknown, label: string, ramByteCount: number): MachineSaveState {
 	const object = requireObject(value, label);
 	return {
-		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
+		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory', ramByteCount),
 		cartridge: decodeCartridgeControllerState(requireObjectKey(object, 'cartridge', label, 'machineState.machine.cartridge'), 'machineState.machine.cartridge'),
 		dma: decodeDmaControllerState(requireObjectKey(object, 'dma', label, 'machineState.machine.dma'), 'machineState.machine.dma'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
@@ -1330,10 +1328,10 @@ function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeS
 	};
 }
 
-function decodeRuntimeSaveMachineState(value: unknown, label: string): RuntimeSaveMachineState {
+function decodeRuntimeSaveMachineState(value: unknown, label: string, ramByteCount: number): RuntimeSaveMachineState {
 	const object = requireObject(value, label);
 	return {
-		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine'),
+		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine', ramByteCount),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
 		frameLoop: decodeFrameLoopState(requireObjectKey(object, 'frameLoop', label, 'machineState.frameLoop'), 'machineState.frameLoop'),
 		schedulerNowCycles: requireI64(requireObjectKey(object, 'schedulerNowCycles', label, 'machineState.schedulerNowCycles'), 'machineState.schedulerNowCycles'),
@@ -1674,10 +1672,10 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 	};
 }
 
-function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSaveState {
+function decodeRuntimeSaveStateValue(value: unknown, label: string, ramByteCount: number): RuntimeSaveState {
 	const object = requireObject(value, label);
 	return {
-		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState'),
+		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState', ramByteCount),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
 		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,
 	};
@@ -1685,23 +1683,32 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
 	const bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	const machineState = state.machineState.machine;
 	let cartridgeRamByteCount = 0;
 	for (let slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; slotIndex += 1) {
-		cartridgeRamByteCount += state.machineState.machine.cartridge.slots[slotIndex].ram.byteLength;
+		cartridgeRamByteCount += machineState.cartridge.slots[slotIndex].ram.byteLength;
 	}
-	if (bytes.byteLength > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
+	if (bytes.byteLength > runtimeSaveStateWireCapacity(
+		machineState.memory.ram.byteLength,
+		cartridgeRamByteCount,
+	)) {
 		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
 	}
 	return bytes;
 }
 
-export function decodeRuntimeSaveState(bytes: Uint8Array, cartridgeRamByteCount: number): RuntimeSaveState {
-	if (bytes.byteLength > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
+export function decodeRuntimeSaveState(
+	bytes: Uint8Array,
+	ramByteCount: number,
+	cartridgeRamByteCount: number,
+): RuntimeSaveState {
+	if (bytes.byteLength > runtimeSaveStateWireCapacity(ramByteCount, cartridgeRamByteCount)) {
 		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
 	}
 	return decodeRuntimeSaveStateValue(
 		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
 		'runtimeSaveState',
+		ramByteCount,
 	);
 }
 
@@ -1712,6 +1719,10 @@ export function captureRuntimeSaveStateBytes(runtime: Runtime): Uint8Array {
 export function applyRuntimeSaveStateBytes(runtime: Runtime, bytes: Uint8Array): void {
 	applyRuntimeSaveState(
 		runtime,
-		decodeRuntimeSaveState(bytes, runtime.machine.cartridgeController.ramByteCount()),
+		decodeRuntimeSaveState(
+			bytes,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.cartridgeController.ramByteCount(),
+		),
 	);
 }

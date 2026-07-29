@@ -6,6 +6,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 
 #include <array>
@@ -28,7 +29,7 @@ struct CartridgeHarness {
 	bmsx::DmaController dma;
 
 	explicit CartridgeHarness(const bmsx::CartridgeSlotMediaPair& slots)
-		: memory(bmsx::MemoryInit{ {}, slots })
+		: memory(bmsx::MemoryInit{ {}, slots }, bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)

@@ -3,6 +3,7 @@
 #include "input/manager.h"
 #include "spec/bmsx/cartridge.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
+#include "machine/model_registry.h"
 #include "machine/runtime/save_state/codec.h"
 #include "support/boot_rom_fixture.h"
 
@@ -111,6 +112,7 @@ std::vector<bmsx::u8> makeExpandedPcrtcState(size_t cartridgeRamByteCount) {
 	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(
 		envelope.data() + 8u,
 		payloadBytes,
+		bmsx::PSX_MACHINE_SPEC.ramBytes,
 		cartridgeRamByteCount);
 	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
 	pcrtc.registerWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
@@ -222,6 +224,7 @@ int main() {
 		bmsx::decodeRuntimeSaveState(
 			cartridgeState.data() + 8u,
 			cartridgeStateBytes,
+			bmsx::PSX_MACHINE_SPEC.ramBytes,
 			cartridgeRamByteCount);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
 	require(cartridgeControllerState.selectionWord == 0u, "the cartridge controller should reset to socket 0 without host-side executable inspection");

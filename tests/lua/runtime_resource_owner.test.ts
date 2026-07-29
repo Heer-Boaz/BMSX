@@ -46,7 +46,6 @@ function sourceRegistry(projectRootPath: string, records: LuaSourceRecord[]): Lu
 		path2lua: {},
 		module2lua: {},
 		entry_path: '',
-		namespace: 'test',
 		projectRootPath,
 		can_boot_from_source: records.length > 0,
 		revision: 0,

@@ -8,14 +8,13 @@ import {
 	CART_ROM_HEADER_MAGIC_OFFSET,
 	CART_ROM_HEADER_METADATA_LENGTH_OFFSET,
 	CART_ROM_HEADER_METADATA_OFFSET,
-	CART_ROM_HEADER_RESERVED_OFFSET,
+	CART_ROM_HEADER_RESERVED_0_OFFSET,
+	CART_ROM_HEADER_RESERVED_1_OFFSET,
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_HEADER_SIZE_OFFSET,
 	CART_ROM_HEADER_TOC_LENGTH_OFFSET,
 	CART_ROM_HEADER_TOC_OFFSET,
-	CART_ROM_HEADER_VDP_CLASS_OFFSET,
 	CART_ROM_MAGIC,
-	CART_VDP_CLASS_PSX,
 } from '../../spec/bmsx/rom_package';
 import { type CartRomHeader } from '../format';
 import {
@@ -45,10 +44,10 @@ export function writeCartRomHeader(target: Uint8Array, header: CartRomHeader): v
 	view.setUint32(BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, header.blua32ExceptionFunctionAddress, true);
 	view.setUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET, header.blua32StaticLayoutTokenLo, true);
 	view.setUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, header.blua32StaticLayoutTokenHi, true);
-	view.setUint32(CART_ROM_HEADER_RESERVED_OFFSET, 0, true);
+	view.setUint32(CART_ROM_HEADER_RESERVED_0_OFFSET, 0, true);
 	view.setUint32(CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset, true);
 	view.setUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength, true);
-	view.setUint32(CART_ROM_HEADER_VDP_CLASS_OFFSET, CART_VDP_CLASS_PSX, true);
+	view.setUint32(CART_ROM_HEADER_RESERVED_1_OFFSET, 0, true);
 	view.setUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord, true);
 	view.setUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount, true);
 }

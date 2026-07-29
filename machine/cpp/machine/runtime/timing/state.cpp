@@ -1,28 +1,25 @@
 #include "machine/runtime/timing/state.h"
 
+#include "machine/devices/gx/gpu_pcrtc.h"
+#include "machine/model_registry.h"
 #include "machine/runtime/timing/constants.h"
+#include "machine/runtime/timing/index.h"
 
 namespace bmsx {
 
-TimingState::TimingState(
-	bool pcrtcRunning,
-	i64 ufpsScaled,
-	i64 cpuHz,
-	i64 cycleBudgetPerFrame,
-	i64 totalHalfLines,
-	i64 activeDisplayHalfLines,
-	int geoWorkUnitsPerSec
-)
-	: ufpsScaled(ufpsScaled)
-	, ufps(static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE))
+TimingState::TimingState(const MachineModelSpec& model)
+	: ufpsScaled(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED)
+	, ufps(static_cast<f64>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED) / static_cast<f64>(HZ_SCALE))
 	, frameDurationMs(1000.0 / ufps)
-	, pcrtcRunning(pcrtcRunning)
-	, totalHalfLines(totalHalfLines)
-	, activeDisplayHalfLines(activeDisplayHalfLines)
-	, cpuHz(cpuHz)
-	, cpuCyclesPerMillisecond(static_cast<f64>(cpuHz) / 1000.0)
-	, cycleBudgetPerFrame(cycleBudgetPerFrame)
-	, geoWorkUnitsPerSec(geoWorkUnitsPerSec) {
+	, pcrtcRunning(true)
+	, totalHalfLines(GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES)
+	, activeDisplayHalfLines(GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES)
+	, cpuHz(model.cpuFreqHz)
+	, cpuCyclesPerMillisecond(static_cast<f64>(model.cpuFreqHz) / 1000.0)
+	, cycleBudgetPerFrame(calcCyclesPerFrameScaled(
+		model.cpuFreqHz,
+		GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED))
+	, geoWorkUnitsPerSec(model.geoWorkUnitsPerSec) {
 }
 
 } // namespace bmsx

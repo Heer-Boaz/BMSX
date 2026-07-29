@@ -13,7 +13,7 @@ import { ImgDecController } from './devices/imgdec/controller';
 import { IrqController } from './devices/irq/controller';
 import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
-import { PSX_MACHINE_SPEC } from './model_registry';
+import type { MachineModelSpec } from './model_registry';
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,
@@ -50,6 +50,7 @@ export class Machine {
 	public constructor(
 		public readonly memory: Memory,
 		input: InputControllerInputSource,
+		model: MachineModelSpec,
 	) {
 		this.cartridgeController = this.memory.cartridgeController;
 		this.irqController = new IrqController(this.memory);
@@ -68,7 +69,7 @@ export class Machine {
 			this.irqController,
 			this.scheduler,
 			this.dmaController,
-			PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
+			model.imgDecCyclesPerOutputWord,
 		);
 		this.gxGte = new GxGte(this.memory, this.cpu, this.scheduler);
 		this.systemController = new SystemController(
@@ -80,15 +81,15 @@ export class Machine {
 			this.geometryController,
 			this.gxGpu,
 			this.imgDecController,
-			PSX_MACHINE_SPEC.cpuFreqHz,
+			model.cpuFreqHz,
 		);
 		this.inputController = new InputController(this.memory, input, this.systemController);
 		this.dmaController.setTiming(
-			PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
-			PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-			PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
-			PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
-			PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
+			model.dmaRamCyclesPerWord,
+			model.dmaRamBurstSetupCycles,
+			model.dmaSystemRomCyclesPerWord,
+			model.dmaCartRomCyclesPerWord,
+			model.dmaCartRomBurstSetupCycles,
 			this.scheduler.currentNowCycles(),
 		);
 	}

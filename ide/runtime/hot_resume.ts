@@ -40,7 +40,13 @@ export function hotResume(
 			|| rebuildCartridgeSlots[0]
 			|| rebuildCartridgeSlots[1];
 		if (rebuildMedia) {
-			const rebuilt = buildBlua32Media(sources, interpreter, rebuildSystem, rebuildCartridgeSlots);
+			const rebuilt = buildBlua32Media(
+				sources,
+				interpreter,
+				runtime.machine.memory.ramByteCount(),
+				rebuildSystem,
+				rebuildCartridgeSlots,
+			);
 			const revisions: [
 				HotResumeRevision | null,
 				HotResumeRevision | null,

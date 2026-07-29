@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -38,7 +39,6 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, CART_ROM_SIZE, GEO_SCRATCH_BASE, RAM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_END } from '../../machine/ts/machine/memory/map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -66,7 +66,7 @@ function clearBusFault(memory: Memory): void {
 }
 
 test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE), 0x11);
 	memory.writeU32(RAM_BASE, 0x12345678);
 	assert.equal(memory.readU32(RAM_BASE), 0x12345678);
@@ -95,7 +95,7 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 test('core golden: physical ROM windows zero-fill consistently across memory paths', () => {
 	const systemRom = new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
 	const cartRom = new Uint8Array([0x71, 0x72, 0x73, 0x74, 0x75, 0x76]);
-	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) });
+	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
 	const tailBytes = new Uint8Array(4);
 
 	assert.equal(memory.readU32(SYSTEM_ROM_BASE), 0x44332211);
@@ -111,20 +111,20 @@ test('core golden: physical ROM windows zero-fill consistently across memory pat
 });
 
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	assert.equal(memory.readU8(0xffff_ffff), 0);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_ffff, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
 	const bytes = new Uint8Array(4);
-	memory.readBytesInto(RAM_END - 1, bytes, bytes.byteLength);
+	memory.readBytesInto((RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 1, bytes, bytes.byteLength);
 	assert.deepEqual([...bytes], [0, 0, 0, 0]);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
-	memory.writeBytes(RAM_END - 1, new Uint8Array([1, 2, 3, 4]));
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+	memory.writeBytes((RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 1, new Uint8Array([1, 2, 3, 4]));
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
-	memory.writeU32(RAM_END - 3, 0x12345678);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	memory.writeU32((RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 3, 0x12345678);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, (RAM_BASE + PSX_MACHINE_SPEC.ramBytes) - 3, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 });
 
 test('core golden: budget and fixed16 datapaths match native integer semantics', () => {
@@ -136,7 +136,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 });
 
 test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)));
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	const completedFrames: unknown[] = [];

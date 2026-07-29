@@ -24,13 +24,9 @@ auto alignOffset(u32 offset, u32 address, u32 alignment) -> u32 {
 }
 
 auto encodeManifest() -> std::vector<u8> {
-	BinObject machine;
-	machine["namespace"] = BinValue("test");
-	machine["vdp_class"] = BinValue("psx");
 	BinObject lua;
 	lua["entry_path"] = BinValue("boot");
 	BinObject manifest;
-	manifest["machine"] = BinValue(std::move(machine));
 	manifest["lua"] = BinValue(std::move(lua));
 	return encodeBinary(BinValue(std::move(manifest)));
 }
@@ -355,7 +351,6 @@ auto encodeRom(
 	header.blua32ExceptionFunctionAddress = boot.exceptionFunctionAddress;
 	header.blua32StaticLayoutTokenLo = boot.staticLayoutTokenLo;
 	header.blua32StaticLayoutTokenHi = boot.staticLayoutTokenHi;
-	header.vdpClass = MachineVdpClass::Psx;
 	header.cartridgeBoardWord = cartridgeBoardWord;
 	header.cartridgeRamByteCount = cartridgeRamByteCount;
 	writeCartRomHeader(rom.data(), header);

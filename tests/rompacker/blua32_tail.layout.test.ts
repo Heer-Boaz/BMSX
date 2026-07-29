@@ -26,8 +26,8 @@ import { buildBlua32Image } from '../../scripts/rompacker/blua32_image_builder';
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const RELEASE_ROOT = join(process.cwd(), 'tmp', 'blua32-tail-release-test');
 const ENTRY_PATH = 'entry.lua';
+const LINK_RAM_BYTES = 0x00400000;
 const MANIFEST: RomManifest = {
-	machine: { namespace: 'blua32-tail-layout-test', vdp_class: 'psx' },
 	lua: { entry_path: ENTRY_PATH },
 };
 
@@ -54,6 +54,7 @@ test('release system ROM keeps BLua32 symbols in the linker sidecar only', async
 			optLevel: 0,
 			imageOffset: layout.blua32Offset,
 			domain: 'system',
+			ramByteCount: LINK_RAM_BYTES,
 		});
 		await finalizeRompack('release-tail', {
 			debug: false,
@@ -110,6 +111,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			optLevel: 0,
 			imageOffset: layout.blua32Offset,
 			domain: 'system',
+			ramByteCount: LINK_RAM_BYTES,
 		});
 		await finalizeRompack('tail', {
 			debug: true,
@@ -143,6 +145,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			loadAddress: SYSTEM_ROM_BASE + imageStart,
 			optLevel: 0,
 			domain: 'system',
+			ramByteCount: LINK_RAM_BYTES,
 		});
 		const rebuilt = buildBlua32Tail(
 			{ id: 'system', index, payload: initialPayload },

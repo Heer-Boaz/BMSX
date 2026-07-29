@@ -66,7 +66,6 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 		path2lua: {},
 		module2lua: {},
 		entry_path: 'main.lua',
-		namespace: 'test',
 		projectRootPath: '',
 		can_boot_from_source: true,
 		revision: 0,

@@ -7,8 +7,6 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/devices/input/contracts.h"
-#include "machine/memory/map.h"
-#include "spec/bmsx/memory_map.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
 #include <algorithm>
@@ -389,12 +387,12 @@ BinValue encodeMemorySaveState(const MemorySaveState& state) {
 	return BinValue(std::move(object));
 }
 
-MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) {
+MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label, size_t ramByteCount) {
 	const BinObject& object = requireObject(value, label);
 	MemorySaveState state;
 	state.ram = requireBinary(requireField(object, "ram", label), "machine.memory.ram");
-	if (state.ram.size() != RAM_END - RAM_BASE) {
-		throw BMSX_RUNTIME_ERROR("machine.memory.ram must contain " + std::to_string(RAM_END - RAM_BASE) + " bytes.");
+	if (state.ram.size() != ramByteCount) {
+		throw BMSX_RUNTIME_ERROR("machine.memory.ram must contain " + std::to_string(ramByteCount) + " bytes.");
 	}
 	state.busFaultCode = requireU32(requireField(object, "busFaultCode", label), "machine.memory.busFaultCode");
 	state.busFaultAddr = requireU32(requireField(object, "busFaultAddr", label), "machine.memory.busFaultAddr");
@@ -1339,10 +1337,10 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	return BinValue(std::move(object));
 }
 
-MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label) {
+MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label, size_t ramByteCount) {
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
-	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
+	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory", ramByteCount);
 	state.cartridge = decodeCartridgeControllerState(requireField(object, "cartridge", label), "machineState.machine.cartridge");
 	state.dma = decodeDmaControllerState(requireField(object, "dma", label), "machineState.machine.dma");
 	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
@@ -1366,10 +1364,14 @@ BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 	return BinValue(std::move(object));
 }
 
-RuntimeSaveMachineState decodeRuntimeSaveMachineState(const BinValue& value, const char* label) {
+RuntimeSaveMachineState decodeRuntimeSaveMachineState(
+	const BinValue& value,
+	const char* label,
+	size_t ramByteCount
+) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveMachineState state;
-	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine");
+	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine", ramByteCount);
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
 	state.frameLoop = decodeFrameLoopState(requireField(object, "frameLoop", label), "machineState.frameLoop");
 	state.schedulerNowCycles = requireI64(requireField(object, "schedulerNowCycles", label), "machineState.schedulerNowCycles");
@@ -1745,10 +1747,17 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	return BinValue(std::move(object));
 }
 
-RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* label) {
+RuntimeSaveState decodeRuntimeSaveStateValue(
+	const BinValue& value,
+	const char* label,
+	size_t ramByteCount
+) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveState state;
-	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
+	state.machineState = decodeRuntimeSaveMachineState(
+		requireField(object, "machineState", label),
+		"runtimeSaveState.machineState",
+		ramByteCount);
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
 	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");
 	return state;
@@ -1758,27 +1767,41 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
 	std::vector<u8> bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	const MachineSaveState& machineState = state.machineState.machine;
 	size_t cartridgeRamByteCount = 0u;
-	for (const CartridgeSlotState& slot : state.machineState.machine.cartridge.slots) {
+	for (const CartridgeSlotState& slot : machineState.cartridge.slots) {
 		cartridgeRamByteCount += slot.ram.size();
 	}
-	if (bytes.size() > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
+	if (bytes.size() > runtimeSaveStateWireCapacity(
+		machineState.memory.ram.size(),
+		cartridgeRamByteCount
+	)) {
 		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
 	}
 	return bytes;
 }
 
-RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size, size_t cartridgeRamByteCount) {
-	if (size > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
+RuntimeSaveState decodeRuntimeSaveState(
+	const u8* data,
+	size_t size,
+	size_t ramByteCount,
+	size_t cartridgeRamByteCount
+) {
+	if (size > runtimeSaveStateWireCapacity(ramByteCount, cartridgeRamByteCount)) {
 		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
 	}
 	return decodeRuntimeSaveStateValue(
 		decodeBinaryWithPropTable(data, size, RUNTIME_SAVE_STATE_PROP_NAMES),
-		"runtimeSaveState");
+		"runtimeSaveState",
+		ramByteCount);
 }
 
-RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data, size_t cartridgeRamByteCount) {
-	return decodeRuntimeSaveState(data.data(), data.size(), cartridgeRamByteCount);
+RuntimeSaveState decodeRuntimeSaveState(
+	const std::vector<u8>& data,
+	size_t ramByteCount,
+	size_t cartridgeRamByteCount
+) {
+	return decodeRuntimeSaveState(data.data(), data.size(), ramByteCount, cartridgeRamByteCount);
 }
 
 // disable-next-line single_line_method_pattern -- byte save-state API composes capture and binary encoding at the public boundary.
@@ -1790,7 +1813,11 @@ std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
 void applyRuntimeSaveStateBytes(Runtime& runtime, const u8* data, size_t size) {
 	applyRuntimeSaveState(
 		runtime,
-		decodeRuntimeSaveState(data, size, runtime.machine.cartridgeController.ramByteCount()));
+		decodeRuntimeSaveState(
+			data,
+			size,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.cartridgeController.ramByteCount()));
 }
 
 // disable-next-line single_line_method_pattern -- vector save-state input is the public owner overload for byte payload callers.

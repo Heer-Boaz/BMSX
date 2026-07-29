@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -241,7 +242,7 @@ const INLINE_MICROTASKS: MicrotaskQueue = {
 };
 
 function makeMachine(
-	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
+	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),
 ): Machine {
 	const input = {
 		getPlayerInput: () => ({
@@ -252,7 +253,7 @@ function makeMachine(
 		}),
 		beginFrame: () => {},
 	};
-	const machine = new Machine(memory, input as never);
+	const machine = new Machine(memory, input as never, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	return machine;
 }
@@ -681,7 +682,7 @@ halt_until_irq
 		programDomain: 'cart',
 	});
 	const linked = linkTestBlua32Pair(system, cart);
-	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) });
+	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
@@ -853,7 +854,7 @@ halt_until_irq
 	const memory = new Memory({
 		systemRom: linked.systemRomBytes,
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
@@ -1073,7 +1074,7 @@ cross_image_stack.caller()
 	const memory = new Memory({
 		systemRom: linked.systemRomBytes,
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
-	});
+	}, PSX_MACHINE_SPEC.ramBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
@@ -1480,7 +1481,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 });
 
 test('IRQ state restore preserves asserted line and cart-visible flags', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);

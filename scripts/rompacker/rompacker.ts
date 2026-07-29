@@ -3,6 +3,7 @@
 import pc from 'picocolors';
 
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
@@ -389,6 +390,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		includeSymbols: debug,
 		optLevel,
 		imageOffset: BIOSLayout.blua32Offset,
+		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		domain: 'system',
 	});
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
@@ -576,6 +578,7 @@ async function main() {
 				includeSymbols: romPackDebug,
 				optLevel,
 				imageOffset: romLayout.blua32Offset,
+				ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 				domain: 'cart',
 				systemImage,
 				systemSymbols,

@@ -1,8 +1,5 @@
 title: Fade Probe
 short_name: 'fade_probe'
 rom_name: 'fade_probe'
-machine:
-    namespace: 'fade_probe'
-    vdp_class: psx
 lua:
     entry_path: entry.lua

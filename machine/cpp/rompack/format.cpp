@@ -52,14 +52,10 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
 		header.blua32StaticLayoutTokenHi
 	);
-	writeLE32(data + CART_ROM_HEADER_RESERVED_OFFSET, 0u);
+	writeLE32(data + CART_ROM_HEADER_RESERVED_0_OFFSET, 0u);
 	writeLE32(data + CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset);
 	writeLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength);
-	switch (header.vdpClass) {
-	case MachineVdpClass::Psx:
-		writeLE32(data + CART_ROM_HEADER_VDP_CLASS_OFFSET, CART_VDP_CLASS_PSX);
-		break;
-	}
+	writeLE32(data + CART_ROM_HEADER_RESERVED_1_OFFSET, 0u);
 	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord);
 	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount);
 }
@@ -106,11 +102,6 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	);
 	header.metadataOffset = readLE32(data + CART_ROM_HEADER_METADATA_OFFSET);
 	header.metadataLength = readLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET);
-	const u32 vdpClassWord = readLE32(data + CART_ROM_HEADER_VDP_CLASS_OFFSET);
-	if (vdpClassWord != CART_VDP_CLASS_PSX) {
-		throw BMSX_RUNTIME_ERROR("Unsupported ROM VDP class marker.");
-	}
-	header.vdpClass = MachineVdpClass::Psx;
 	header.cartridgeBoardWord = readLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET);
 	header.cartridgeRamByteCount = readLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET);
 	if (header.cartridgeRamByteCount > CART_RAM_SIZE) {

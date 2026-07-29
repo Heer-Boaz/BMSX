@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -26,7 +27,7 @@ function assertBusFault(memory: Memory, access: number): void {
 }
 
 test('floating mapped transactions retain their bus width and stop after a faulting first F64 cycle', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 
 	memory.readMappedF32LE(UNMAPPED_ADDRESS);
 	assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F32);
@@ -49,7 +50,7 @@ test('floating mapped transactions retain their bus width and stop after a fault
 });
 
 test('mapped word-burst preflight stops when a burst crosses the physical IO registerfile boundary', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const firstRamWordAfterIo = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
 	const lastIoWord = firstRamWordAfterIo - IO_WORD_SIZE;
 

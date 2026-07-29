@@ -1,4 +1,3 @@
-#include "core/machine_manager.h"
 #include "common/endian.h"
 #include "input/gamepad_buttons.h"
 #include "input/hid_keys.h"
@@ -11,7 +10,6 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/model_registry.h"
 #include "spec/bmsx/memory_map.h"
-#include "machine/runtime/boot_timing.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
@@ -114,14 +112,14 @@ void testLibretroSaveStateRoundTrip() {
 		bmsx::CARTRIDGE_BOARD_RAM,
 		16u);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
-	require(platform.machineManager()->romLoaded(), "MachineManager should mark the cart ROM loaded");
-	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
 
-	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::Runtime& runtime = platform.runtime();
 	auto& scheduler = runtime.machine.scheduler;
 	const size_t stateSize = platform.getStateSize();
 	require(
-		stateSize == 8u + bmsx::runtimeSaveStateWireCapacity(16u),
+		stateSize == 8u + bmsx::runtimeSaveStateWireCapacity(
+			runtime.machine.memory.ramByteCount(),
+			16u),
 		"libretro state size should include the inserted cartridge RAM capacity");
 
 	bmsx::Memory& memory = runtime.machine.memory;
@@ -184,6 +182,7 @@ void testLibretroSaveStateRoundTrip() {
 	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(
 		saved.data() + 8u,
 		savedPayloadBytes,
+		runtime.machine.memory.ramByteCount(),
 		runtime.machine.cartridgeController.ramByteCount());
 	savedState.cpuState.memoryWriteBlocked = true;
 	savedState.cpuState.memoryWriteBlockedAddress = bmsx::IO_GX_GPU_GP0;
@@ -310,8 +309,9 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
 	const size_t cartridgeRamByteCount =
-		platform.machineManager()->runtime().machine.cartridgeController.ramByteCount();
-	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
+		platform.runtime().machine.cartridgeController.ramByteCount();
+	const size_t ramByteCount = platform.runtime().machine.memory.ramByteCount();
+	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
 	bmsx::CpuProtectedCallState protectedCall;
 	protectedCall.kind = bmsx::ProtectedCallKind::XPCallHandler;
@@ -331,6 +331,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	readyReadback.readbackPixelBytes = { 0x11u, 0x11u, 0x22u, 0x22u, 0x33u, 0x33u };
 	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(
 		bmsx::encodeRuntimeSaveState(ready),
+		ramByteCount,
 		cartridgeRamByteCount);
 	const bmsx::CpuProtectedCallState& decodedProtectedCall = decodedReady.cpuState.protectedCalls[0];
 	require(decodedProtectedCall.kind == bmsx::ProtectedCallKind::XPCallHandler, "native codec preserves protected-call phase");
@@ -341,7 +342,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(decodedReadyReadback.readbackPixelCursor == 1u, "native codec preserves READY GPUREAD cursor");
 	require(decodedReadyReadback.readbackPixelBytes == readyReadback.readbackPixelBytes, "native codec preserves READY GPUREAD bytes");
 
-	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
+	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(platform.runtime());
 	bmsx::GxGpuCommandBufferState& submittedReadback = submitted.machineState.machine.gxGpu.commandBuffer;
 	submittedReadback.readbackPhase = bmsx::GX_GPU_READBACK_SUBMITTED;
 	submittedReadback.readbackWidth = bmsx::GX_GPU_VRAM_WIDTH;
@@ -351,6 +352,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	try {
 		(void)bmsx::decodeRuntimeSaveState(
 			bmsx::encodeRuntimeSaveState(submitted),
+			ramByteCount,
 			cartridgeRamByteCount);
 	}
 	catch (const std::exception&) {
@@ -358,8 +360,10 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	}
 	require(rejected, "native codec rejects backend-only SUBMITTED GPUREAD phase");
 
-	bmsx::RuntimeSaveState oversized = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
-	const size_t wireCapacity = bmsx::runtimeSaveStateWireCapacity(cartridgeRamByteCount);
+	bmsx::RuntimeSaveState oversized = bmsx::captureRuntimeSaveState(platform.runtime());
+	const size_t wireCapacity = bmsx::runtimeSaveStateWireCapacity(
+		ramByteCount,
+		cartridgeRamByteCount);
 	oversized.machineState.machine.gxGpu.vramBytes.resize(wireCapacity);
 	rejected = false;
 	try {
@@ -373,7 +377,10 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	std::vector<bmsx::u8> oversizedWire(wireCapacity + 1u);
 	rejected = false;
 	try {
-		(void)bmsx::decodeRuntimeSaveState(oversizedWire, cartridgeRamByteCount);
+		(void)bmsx::decodeRuntimeSaveState(
+			oversizedWire,
+			ramByteCount,
+			cartridgeRamByteCount);
 	}
 	catch (const std::exception&) {
 		rejected = true;
@@ -393,11 +400,11 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
 	const size_t stateSize = platform.getStateSize();
-	bmsx::GxGpu& gpu = platform.machineManager()->runtime().machine.gxGpu;
+	bmsx::GxGpu& gpu = platform.runtime().machine.gxGpu;
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0(0u);
-	gpu.onService(platform.machineManager()->runtime().machine.scheduler.currentNowCycles() + 1);
+	gpu.onService(platform.runtime().machine.scheduler.currentNowCycles() + 1);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.getStateSize() == stateSize, "libretro state envelope remains fixed with maximum READY GPUREAD payload");
 	std::vector<bmsx::u8> state(stateSize + 16u);
@@ -536,7 +543,7 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
 	platform.setPlatformPaused(true);
 
-	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::Runtime& runtime = platform.runtime();
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
 	bmsx::Memory& memory = runtime.machine.memory;
 	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
@@ -616,7 +623,7 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
 
-	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::Runtime& runtime = platform.runtime();
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
 	bmsx::DeviceScheduler& scheduler = runtime.machine.scheduler;
 	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
@@ -663,7 +670,7 @@ void testRuntimePreservesGxGpuGp1ReadinessBinding() {
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GP1 readiness validation");
 
-	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::Runtime& runtime = platform.runtime();
 	require(runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "GP1 should accept writes before supervisor quiesce");
 	runtime.machine.gxGpu.beginSupervisorControlQuiesce();
 	require(!runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "the GX-GPU GP1 owner should close writes during supervisor quiesce");

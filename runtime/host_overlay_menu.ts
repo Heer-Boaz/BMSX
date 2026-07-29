@@ -7,6 +7,8 @@ import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
+import { BASE_RAM_USED_SIZE } from '../machine/ts/spec/bmsx/memory_map';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../machine/ts/spec/gx/vram';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -456,8 +458,13 @@ export class HostOverlayMenu {
 			const runtime = this.runtime;
 			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
-			this.queueUsageBar(1, runtime.ramUsedBytes(), runtime.ramTotalBytes(), font);
-			this.queueUsageBar(2, runtime.vramUsedBytes(), runtime.vramTotalBytes(), font);
+			this.queueUsageBar(
+				1,
+				BASE_RAM_USED_SIZE + runtime.machine.cpu.luaHeap.usedBytes(),
+				runtime.machine.memory.ramByteCount(),
+				font,
+			);
+			this.queueUsageBar(2, GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_BYTE_COUNT, font);
 			queued = true;
 		}
 		if (queued) {

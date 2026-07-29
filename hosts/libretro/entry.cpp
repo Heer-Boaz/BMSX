@@ -18,7 +18,6 @@
 
 #include "bmsx_libretro.h"
 #include "platform.h"
-#include "core/machine_manager.h"
 #include "machine/model_registry.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/runtime/runtime.h"
@@ -1218,7 +1217,7 @@ static bool begin_content_load() {
 }
 
 static void complete_content_load() {
-	sync_current_av_info(g_platform->machineManager()->runtime().timing.ufpsScaled);
+	sync_current_av_info(g_platform->runtime().timing.ufpsScaled);
 	retro_keyboard_callback keyboardCallback = { keyboard_event };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
 }
@@ -1237,8 +1236,8 @@ bool retro_load_game(const struct retro_game_info* game) {
 					game->path ? game->path : "(memory)");
 
 		if (game->data && game->size > 0) {
-			if (game->path) {
-				g_platform->loadSystemRom(game->path);
+			if (!g_platform->loadSystemRom(game->path ? game->path : "")) {
+				return false;
 			}
 			loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
 											game->size);
@@ -1411,7 +1410,7 @@ void retro_run(void) {
 	}
 	const bool hardware_frame = isHardwareBackendActive();
 	const bool video_frame_presented = g_platform->runFrame();
-	const int64_t runtime_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
+	const int64_t runtime_ufps_scaled = g_platform->runtime().timing.ufpsScaled;
 	const bool timing_changed = runtime_ufps_scaled != g_current_ufps_scaled;
 	if (timing_changed) {
 		sync_current_av_info(runtime_ufps_scaled);

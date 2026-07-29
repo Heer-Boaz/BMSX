@@ -1,12 +1,8 @@
-import type { Memory } from '../memory/memory';
+import type { CartridgeSlotMediaPair } from '../devices/cartridge/contracts';
+import type { MachineModelSpec } from '../model_registry';
 
 export type RuntimeOptions = {
-	memory: Memory;
-	pcrtcRunning: boolean;
-	ufpsScaled: number;
-	cpuHz: number;
-	cycleBudgetPerFrame: number;
-	totalHalfLines: number;
-	activeDisplayHalfLines: number;
-	geoWorkUnitsPerSec: number;
+	systemRomBytes: Uint8Array;
+	cartridgeSlots: CartridgeSlotMediaPair;
+	machineModel: MachineModelSpec;
 };

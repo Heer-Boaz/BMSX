@@ -381,7 +381,6 @@ function sourceRegistry(
 		path2lua: {},
 		module2lua: {},
 		entry_path: sourcePath,
-		namespace: 'test',
 		projectRootPath,
 		can_boot_from_source: true,
 		revision: 0,

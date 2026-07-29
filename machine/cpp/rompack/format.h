@@ -16,8 +16,6 @@ enum class RomImageDomain {
 	Cartridge,
 };
 
-enum class MachineVdpClass { Psx };
-
 struct CartRomHeader {
 	u32 headerSize = 0;
 	u32 manifestOffset = 0;
@@ -35,7 +33,6 @@ struct CartRomHeader {
 	u32 blua32StaticLayoutTokenHi = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
-	MachineVdpClass vdpClass = MachineVdpClass::Psx;
 	u32 cartridgeBoardWord = 0;
 	u32 cartridgeRamByteCount = 0;
 };

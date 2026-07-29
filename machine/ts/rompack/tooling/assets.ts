@@ -6,7 +6,7 @@ import type {
 } from '../toc';
 import type { RomImageDomain } from '../image';
 import type { GLTFModel } from './gltf';
-import type { CartManifest, MachineManifest } from './manifest';
+import type { CartManifest } from './manifest';
 
 export type AudioType = 'sfx' | 'music' | 'ui';
 
@@ -85,7 +85,6 @@ export type CartridgeIndex = {
 	entries: RomAsset[];
 	projectRootPath: string;
 	cart_manifest: CartManifest | null;
-	machine: MachineManifest;
 	entry_path: string;
 };
 
@@ -98,6 +97,5 @@ export type RomToolingPackage = {
 	audioevents: Record<asset_id, Record<string, unknown>>;
 	project_root_path: string;
 	cart_manifest: CartManifest | null;
-	machine: MachineManifest;
 	entry_path: string;
 };

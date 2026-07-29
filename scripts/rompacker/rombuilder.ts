@@ -16,7 +16,7 @@ import type {
 	TextureMeta,
 } from '../../machine/ts/rompack/tooling/assets';
 import type { GLTFMesh } from '../../machine/ts/rompack/tooling/gltf';
-import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
+import { parseCartManifest, type RomManifest } from '../../machine/ts/rompack/tooling/manifest';
 import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/tooling/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import {
@@ -261,14 +261,13 @@ export async function getRomManifest(dirPath: string): Promise<RomBuildManifest 
 	}
 	else if (files.length === 1) {
 		const res = (await readFile(files[0])).toString();
-		// Read and return the rommanifest file
-		let manifest: RomBuildManifest;
+		let manifest: unknown;
 		try {
-			manifest = JSON.parse(res) as RomBuildManifest;
+			manifest = JSON.parse(res);
 		} catch {
-			manifest = yaml.load(res) as RomBuildManifest;
+			manifest = yaml.load(res);
 		}
-		return manifest;
+		return parseCartManifest(manifest, `ROM manifest "${files[0]}"`);
 	}
 	else return null;
 }
@@ -1225,6 +1224,7 @@ type BuildRomBlua32TailOptions = {
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
 	imageOffset: number;
+	ramByteCount: number;
 } & (
 	| { domain: 'system' }
 	| {
@@ -1262,6 +1262,7 @@ export function buildRomBlua32Tail(
 		generatedLuaModules: options.generatedLuaModules,
 		entryPath,
 		loadAddress: imageAddress,
+		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
 		domain: 'cart',
 		systemImage: options.systemImage,
@@ -1272,6 +1273,7 @@ export function buildRomBlua32Tail(
 		generatedLuaModules: options.generatedLuaModules,
 		entryPath,
 		loadAddress: imageAddress,
+		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
 		domain: 'system',
 	});
@@ -1544,7 +1546,6 @@ export async function finalizeRompack(
 				blua32StaticLayoutTokenHi: options.blua32.boot.staticLayoutTokenHi,
 				metadataOffset: options.layout.metadataOffset,
 				metadataLength: options.layout.metadataLength,
-				vdpClass: 'psx',
 				cartridgeBoardWord: options.cartridgeBoardWord,
 				cartridgeRamByteCount: options.cartridgeRamByteCount,
 			});

@@ -1,7 +1,7 @@
 #include "machine/memory/memory.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 
 #include <cstring>
 
@@ -87,10 +87,10 @@ inline void readRomWindowBytes(const u8* data, size_t size, size_t offset, u8* o
 
 } // namespace
 
-Memory::Memory(const MemoryInit& init)
+Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
-	, m_ram(RAM_END - RAM_BASE)
+	, m_ram(ramByteCount)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {

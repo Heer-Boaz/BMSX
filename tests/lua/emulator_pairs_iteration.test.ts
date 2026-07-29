@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -18,7 +19,7 @@ function keyLabel(value: Value): string {
 }
 
 test('pairs cursor iteration survives deleting the current key', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const target = cpu.createTable(1, 4);
 	target.set(1, 11);

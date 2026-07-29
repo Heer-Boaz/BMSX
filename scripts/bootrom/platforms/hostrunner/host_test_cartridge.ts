@@ -14,6 +14,7 @@ import {
 	decodeBlua32SymbolsImage,
 } from '../../../../machine/ts/rompack/tooling/blua32_symbols';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../../../machine/ts/machine/model_registry';
 import { buildBlua32Tail } from '../../../../machine/ts/rompack/tooling/blua32_tail';
 import { buildBlua32Image } from '../../../rompacker/blua32_image_builder';
 
@@ -78,6 +79,7 @@ export async function buildHostTestCartridge(
 		],
 		entryPath: cartIndex.entry_path,
 		loadAddress: CART_ROM_BASE + cartImageEntry.start!,
+		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
 		domain: 'cart',
 		systemImage,

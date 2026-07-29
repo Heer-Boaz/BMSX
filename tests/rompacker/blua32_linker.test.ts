@@ -27,9 +27,9 @@ import {
 import {
 	CART_ROM_BASE,
 	DYNAMIC_RAM_BASE,
+	RAM_BASE,
 	SYSTEM_ROM_BASE,
 } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_END } from '../../machine/ts/machine/memory/map';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
@@ -49,6 +49,7 @@ type EncodedWord = {
 };
 
 const NO_SOURCES = new Map<string, string>();
+const LINK_TARGET_RAM_BYTES = 0x00400000;
 
 function buildCode(words: ReadonlyArray<EncodedWord>): Uint8Array {
 	const code = new Uint8Array(words.length * INSTRUCTION_BYTES);
@@ -185,7 +186,7 @@ test('BLua32 linker emits one self-describing physical image', () => {
 	object.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
 	object.sections.data.bytes = new Uint8Array([5, 6, 7, 8]);
 	const loadAddress = SYSTEM_ROM_BASE + 0x100;
-	const linked = linkSystemBlua32Image(object, metadata, loadAddress);
+	const linked = linkSystemBlua32Image(object, metadata, loadAddress, LINK_TARGET_RAM_BYTES);
 	const image = linked.layout;
 
 	assert.equal(image.address, loadAddress);
@@ -217,8 +218,8 @@ test('BLua32 static layout token changes when an equal-sized storage symbol move
 		{ name: 'left', offset: 4, byteCount: 4, alignment: 4 },
 	];
 
-	const initialImage = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
-	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const initialImage = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
+	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	assert.notDeepEqual(changedImage.symbols.staticLayoutToken, initialImage.symbols.staticLayoutToken);
 });
 
@@ -226,7 +227,7 @@ test('compiler vectors become distinct physical BLua32 function addresses', () =
 	const source = 'while true do halt_until_irq end';
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source), [], { entrySource: source });
 	const object = encodeCompiledProgramObject(compiled);
-	const linked = linkSystemBlua32Image(object, compiled.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(object, compiled.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const addresses = linked.symbols.functionAddresses;
 	const irq = linked.layout.functions[object.vectors.irqProtoIndex];
 	const irqOps: OpCode[] = [];
@@ -259,11 +260,13 @@ test('compiler object and physical BLua32 image ignore source registry enumerati
 		encodeCompiledProgramObject(forward),
 		forward.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 	const reverseImage = linkSystemBlua32Image(
 		encodeCompiledProgramObject(reverse),
 		reverse.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	assert.deepEqual(reverseImage.bytes, forwardImage.bytes);
@@ -333,6 +336,7 @@ test('BLua32 linker rewrites local and firmware closure operands to physical add
 		system.object,
 		system.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 	assert.equal(
 		decodeBx(linkedSystem.layout.textBytes, 1),
@@ -350,6 +354,7 @@ test('BLua32 linker rewrites local and firmware closure operands to physical add
 		cart.object,
 		cart.metadata,
 		CART_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 	assert.equal(
 		(readInstructionWord(linkedCart.layout.textBytes, 1) >>> 18) & 0x3f,
@@ -369,6 +374,7 @@ test('cartridge global operands use the merged physical slot tables', () => {
 		system.object,
 		system.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	const cart = makeObject([
@@ -389,6 +395,7 @@ test('cartridge global operands use the merged physical slot tables', () => {
 		cart.object,
 		cart.metadata,
 		CART_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	assert.deepEqual(linkedCart.layout.globalNames, ['shared', 'cart_only']);
@@ -418,6 +425,7 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		system.object,
 		system.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	const cart = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0, 0, 0]);
@@ -442,6 +450,7 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		cart.object,
 		cart.metadata,
 		CART_ROM_BASE + 0x200,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	assert.deepEqual(constantValues(linkedSystem.layout.constants), [
@@ -467,8 +476,8 @@ test('BLua32 hot revision maps unchanged physical function code one word at a ti
 		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 	]);
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
-	const fresh = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
+	const fresh = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
@@ -507,6 +516,7 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 		previousObject.object,
 		previousObject.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 
 	const freshObject = makeObject([
@@ -525,6 +535,7 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 		freshObject.object,
 		freshObject.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 		{ image: previous.layout, symbols: previous.symbols },
 	);
 	const revision = buildBlua32ExecutionRevision(
@@ -558,7 +569,7 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
 		{ wordOffset: 1, range: oldResumeRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
 	]];
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const freshRange: SourceRange = { path: 'entry', start: { line: 3, column: 1 }, end: { line: 3, column: 6 } };
 	const changed = makeObject([
@@ -575,7 +586,7 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
 		{ wordOffset: 2, range: freshRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
 	]];
-	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
@@ -601,7 +612,7 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 	initial.metadata.resumePointsByProto = [[
 		{ wordOffset: 0, range: oldRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
 	]];
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const freshRange: SourceRange = { path: 'entry', start: { line: 1, column: 1 }, end: { line: 4, column: 4 } };
 	const changed = makeObject([
@@ -613,7 +624,7 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 	changed.metadata.resumePointsByProto = [[
 		{ wordOffset: 0, range: freshRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
 	]];
-	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
@@ -629,12 +640,12 @@ test('BLua32 hot revision rejects captured-upvalue layout changes', () => {
 	const initial = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
 	initial.metadata.upvalueNamesByProto[0] = ['state'];
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const changed = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 1 }];
 	changed.metadata.upvalueNamesByProto[0] = ['replacement'];
-	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	assert.throws(
 		() => buildBlua32ExecutionRevision(
@@ -650,10 +661,10 @@ test('BLua32 hot revision rejects captured-upvalue layout changes', () => {
 
 test('BLua32 hot revision rejects a changed static storage layout', () => {
 	const initial = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const changed = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.bss.byteCount = 4;
-	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	assert.throws(
 		() => buildBlua32ExecutionRevision(
@@ -674,9 +685,9 @@ test('BLua32 hot revision leaves removed physical functions unmapped', () => {
 	]);
 	initial.object.sections.text.protos = [makeProto(0, 1), makeProto(1, 1)];
 	setFunctionIds(initial.object, initial.metadata, ['entry', 'removed']);
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const changed = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
-	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
@@ -697,7 +708,7 @@ test('BLua32 Hot Resume rejects a static-closure identity change at a stable fun
 	initial.object.sections.text.protos = [makeProto(0, 1), makeProto(1, 1)];
 	initial.object.sections.text.protos[1].staticClosure = false;
 	setFunctionIds(initial.object, initial.metadata, ['entry', 'target']);
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const changed = makeObject([
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
@@ -709,6 +720,7 @@ test('BLua32 Hot Resume rejects a static-closure identity change at a stable fun
 		changed.object,
 		changed.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 		{ image: previous.layout, symbols: previous.symbols },
 	);
 
@@ -742,7 +754,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	initial.object.sections.text.protos[1].upvalueDescs = [{ inStack: true, index: 0 }];
 	setFunctionIds(initial.object, initial.metadata, ['entry', 'middle', 'tail']);
 	initial.metadata.upvalueNamesByProto[1] = ['captured'];
-	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const changed = makeObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
@@ -761,6 +773,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		changed.object,
 		changed.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 		{ image: previous.layout, symbols: previous.symbols },
 	);
 
@@ -826,6 +839,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		reinserted.object,
 		reinserted.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 		{ image: linked.layout, symbols: linked.symbols },
 	);
 
@@ -850,7 +864,7 @@ test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
 		symbol: 'live_value',
 		addend: 0,
 	}];
-	const initialImage = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100);
+	const initialImage = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	const changed = makeObject([
 		{ op: OpCode.LOADNIL, a: 0, b: 0, c: 0 },
@@ -859,7 +873,7 @@ test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
 	changed.object.sections.rodata.bytes = initial.object.sections.rodata.bytes;
 	changed.object.sections.rodata.symbols = initial.object.sections.rodata.symbols;
 	changed.object.link.constValueRelocs = initial.object.link.constValueRelocs;
-	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100);
+	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES);
 
 	assert.equal(initialImage.layout.header.rodataAddress, changedImage.layout.header.rodataAddress);
 	assert.deepEqual(constantValues(initialImage.layout.constants), [initialImage.layout.header.rodataAddress]);
@@ -875,18 +889,20 @@ test('BLua32 linker preserves string literals that resemble obsolete relocation 
 		linkedSource.object,
 		linkedSource.metadata,
 		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
 	);
 	assert.deepEqual(constantValues(linked.layout.constants), [literal]);
 });
 
-test('BLua32 linker rejects static storage beyond the physical RAM window', () => {
+test('BLua32 linker rejects static storage beyond the declared target RAM region', () => {
 	const source = makeObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
-	source.object.sections.bss.byteCount = RAM_END - DYNAMIC_RAM_BASE + 4;
+	source.object.sections.bss.byteCount = RAM_BASE + LINK_TARGET_RAM_BYTES - DYNAMIC_RAM_BASE + 4;
 	assert.throws(
 		() => linkSystemBlua32Image(
 			source.object,
 			source.metadata,
 			SYSTEM_ROM_BASE + 0x100,
+			LINK_TARGET_RAM_BYTES,
 		),
 		/BLua32 static storage exceeds RAM/,
 	);

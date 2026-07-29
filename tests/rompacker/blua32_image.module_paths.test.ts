@@ -46,6 +46,7 @@ test('BLua32 image rejects a cart Lua module that collides with the persisted GX
 			optLevel: 3,
 			imageOffset: layout.blua32Offset,
 			domain: 'system',
+			ramByteCount: 0x00400000,
 		}),
 		/ROM Lua module 'bmsx\/gx_texture_layout' is defined more than once/,
 	);

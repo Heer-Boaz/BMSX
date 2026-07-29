@@ -1,3 +1,4 @@
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -100,21 +101,14 @@ import {
 	IO_CMD_GEO_XFORM2_BATCH,
 } from '../../machine/ts/machine/devices/geometry/contracts';
 import { Machine } from '../../machine/ts/machine/machine';
-import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { GeometryController } from '../../machine/ts/machine/devices/geometry/controller';
 import type { GeometryControllerState } from '../../machine/ts/machine/devices/geometry/save_state';
 
-
-const INLINE_MICROTASKS: MicrotaskQueue = {
-	queueMicrotask: task => task(),
-	flush: () => {},
-};
-
 function makeMachine(): Machine {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const input = {
 		getPlayerInput: () => ({
 			checkActionTriggered: () => false,
@@ -126,9 +120,8 @@ function makeMachine(): Machine {
 	};
 	const machine = new Machine(
 		memory,
-		{ x: 256, y: 212 },
 		input as never,
-		INLINE_MICROTASKS,
+		PSX_MACHINE_SPEC,
 	);
 	machine.resetDevices();
 	return machine;

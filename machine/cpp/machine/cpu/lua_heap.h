@@ -10,8 +10,7 @@ class CPU;
 
 class LuaHeap {
 public:
-	explicit LuaHeap(CPU& cpu)
-		: m_cpu(cpu) {}
+	LuaHeap(CPU& cpu, size_t ramByteCount);
 
 	void reserve(
 		size_t byteCount,
@@ -29,6 +28,7 @@ private:
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
 
 	CPU& m_cpu;
+	const size_t m_capacityBytes;
 	size_t m_trackedBytes = 0;
 	size_t m_nextCollectionBytes = MIN_COLLECTION_BYTES;
 };

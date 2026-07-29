@@ -6,7 +6,6 @@
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "spec/gx/gp0.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/memory/map.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
@@ -42,7 +41,9 @@ struct DmaGpuHarness {
 	bmsx::GxGpu gpu;
 
 	DmaGpuHarness()
-		: memory(bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, bmsx::test::cartridgeSlots(cartRom) })
+		: memory(
+			bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, bmsx::test::cartridgeSlots(cartRom) },
+			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)
@@ -546,13 +547,13 @@ void testBusFaultProgress() {
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x600u;
 	memory.writeMappedU32LE(destination, 0xdeadbeefu);
-	programTransfer(memory, bmsx::RAM_END - 2u, destination, 1u, RAM_COPY_CONTROL);
+	programTransfer(memory, (bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes) - 2u, destination, 1u, RAM_COPY_CONTROL);
 	runNextDmaService(harness);
 
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "Memory owns DMA bus faults");
-	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == bmsx::RAM_END - 2u, "Memory latches the fault address");
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == (bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes) - 2u, "Memory latches the fault address");
 	require(memory.readMappedU32LE(destination) == 0u, "faulting read supplies the bus value");
-	require(memory.readIoU32(bmsx::IO_DMA0_READ_ADDR) == bmsx::RAM_END + 2u, "faulting DMA advances read address");
+	require(memory.readIoU32(bmsx::IO_DMA0_READ_ADDR) == (bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes) + 2u, "faulting DMA advances read address");
 	require(memory.readIoU32(bmsx::IO_DMA0_WRITE_ADDR) == destination + 4u, "faulting DMA advances write address");
 	require(memory.readIoU32(bmsx::IO_DMA0_TRANSFER_COUNT) == 0u, "faulting DMA decrements count");
 	require(memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "faulting DMA completes normally");

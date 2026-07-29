@@ -1,6 +1,5 @@
 #include "platform.h"
 
-#include "core/machine_manager.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 #include "render/video_presenter.h"
@@ -31,7 +30,7 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 		m_host_overlay_menu.tickInput(*m_input, *m_video_presenter, m_clock->now());
 	switch (hostMenuInput) {
 		case HostMenuInput::RebootCart:
-			m_machine_manager->rebootLoadedRom();
+			runtime.rebootSystem();
 			activateLoadedRuntime(runtime);
 			return false;
 		case HostMenuInput::ExitGame:

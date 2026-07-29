@@ -250,7 +250,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';
@@ -592,7 +592,7 @@ function gxGpuVramDigest(bytes: Uint8Array): number {
 }
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dma: DmaController; gpu: GxGpu } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	const scheduler = new DeviceScheduler(cpu);

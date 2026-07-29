@@ -2,7 +2,6 @@
 
 #include "common/primitives.h"
 #include "machine/runtime/timing/constants.h"
-#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
@@ -39,7 +38,7 @@ struct MachineModelSpec {
 	i64 dmaCartRomCyclesPerWord;
 	i64 dmaCartRomBurstSetupCycles;
 	i64 imgDecCyclesPerOutputWord;
-	i64 ramBytes;
+	u32 ramBytes;
 	i64 geoWorkUnitsPerSec;
 };
 
@@ -57,7 +56,7 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	BMSX_RAM_BYTES,
+	0x00400000u,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

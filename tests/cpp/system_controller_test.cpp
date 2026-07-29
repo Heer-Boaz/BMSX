@@ -10,7 +10,6 @@
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "machine/model_registry.h"
-#include "machine/runtime/boot_timing.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
@@ -253,7 +252,6 @@ struct SystemRuntimeFixture {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::test::Blua32TestRom cartRom;
 	bmsx::test::Blua32TestRom cart1Rom;
-	bmsx::ResolvedRuntimeTiming timing;
 	SystemResetInputSource input;
 	bmsx::Runtime runtime;
 
@@ -283,18 +281,11 @@ struct SystemRuntimeFixture {
 				*cart1Image
 			)
 			: bmsx::test::Blua32TestRom{})
-		, timing(bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz))
 		, runtime(
 			bmsx::RuntimeOptions{
 				systemRom.bytes,
 				bmsx::test::cartridgeSlots(cartRom.bytes, cart1Rom.bytes),
-				timing.pcrtcRunning,
-				timing.ufpsScaled,
-				timing.cpuHz,
-				timing.cycleBudgetPerFrame,
-				timing.totalHalfLines,
-				timing.activeDisplayHalfLines,
-				timing.geoWorkUnitsPerSec,
+				bmsx::PSX_MACHINE_SPEC,
 			},
 			input
 		) {
@@ -326,9 +317,11 @@ struct ExternalClosureFixture {
 
 void testResetCommandLatch() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
+	bmsx::Memory memory(
+		bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+		bmsx::PSX_MACHINE_SPEC.ramBytes);
 	SystemResetInputSource input;
-	bmsx::Machine machine(memory, input);
+	bmsx::Machine machine(memory, input, bmsx::PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	bmsx::SystemController& controller = machine.systemController;
 
@@ -345,10 +338,11 @@ void testResetCommandLatch() {
 
 void testSystemTimingRegisters() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
+	bmsx::Memory memory(
+		bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+		bmsx::PSX_MACHINE_SPEC.ramBytes);
 	SystemResetInputSource input;
-	bmsx::Machine machine(memory, input);
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(5'000'000);
+	bmsx::Machine machine(memory, input, bmsx::PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	machine.scheduler.setNowCycles(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
 	require(
@@ -357,7 +351,7 @@ void testSystemTimingRegisters() {
 	);
 	machine.scheduler.setNowCycles(0);
 	machine.refreshDeviceTimings(
-		bmsx::MachineTiming{timing.cpuHz, timing.geoWorkUnitsPerSec},
+		bmsx::MachineTiming{5'000'000, bmsx::PSX_MACHINE_SPEC.geoWorkUnitsPerSec},
 		machine.scheduler.currentNowCycles()
 	);
 
@@ -389,9 +383,11 @@ void testSystemTimingRegisters() {
 
 void testSystemPrintRegisters() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
+	bmsx::Memory memory(
+		bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+		bmsx::PSX_MACHINE_SPEC.ramBytes);
 	SystemResetInputSource input;
-	bmsx::Machine machine(memory, input);
+	bmsx::Machine machine(memory, input, bmsx::PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	bmsx::SystemController& controller = machine.systemController;
 
