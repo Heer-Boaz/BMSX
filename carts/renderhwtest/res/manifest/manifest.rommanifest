@@ -1,5 +1,1 @@
 title: Render HW Test
-short_name: 'renderhwtest'
-rom_name: 'renderhwtest'
-lua:
-    entry_path: entry.lua

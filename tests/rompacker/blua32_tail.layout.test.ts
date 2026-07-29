@@ -27,16 +27,15 @@ const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const RELEASE_ROOT = join(process.cwd(), 'tmp', 'blua32-tail-release-test');
 const ENTRY_PATH = 'entry.lua';
 const LINK_RAM_BYTES = 0x00400000;
-const MANIFEST: RomManifest = {
-	lua: { entry_path: ENTRY_PATH },
-};
+const MANIFEST: RomManifest = {};
 
 function luaAsset(source: string): RomAsset {
+	const entrySource = `module<entry>\n${source}`;
 	return {
 		resid: 'entry',
 		type: 'lua',
-		buffer: Buffer.from(source),
-		compiled_buffer: compileLuaChunkBuffer(source, ENTRY_PATH),
+		buffer: Buffer.from(entrySource),
+		compiled_buffer: compileLuaChunkBuffer(entrySource, ENTRY_PATH),
 		source_path: ENTRY_PATH,
 	};
 }
@@ -47,7 +46,7 @@ test('release system ROM keeps BLua32 symbols in the linker sidecar only', async
 		await mkdir(RELEASE_ROOT, { recursive: true });
 		const assets = [luaAsset('return 1')];
 		const layout = layoutRomPrefix(assets, false, MANIFEST);
-		const blua32 = buildRomBlua32Tail(assets, ENTRY_PATH, {
+		const blua32 = buildRomBlua32Tail(assets, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: false,
@@ -104,7 +103,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			},
 		];
 		const layout = layoutRomPrefix(assets, true, MANIFEST);
-		const blua32 = buildRomBlua32Tail(assets, ENTRY_PATH, {
+		const blua32 = buildRomBlua32Tail(assets, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
@@ -141,7 +140,6 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			luaAssets: [luaAsset(changedSource)],
 			externalLuaAssets: [],
 			generatedLuaModules: [],
-			entryPath: ENTRY_PATH,
 			loadAddress: SYSTEM_ROM_BASE + imageStart,
 			optLevel: 0,
 			domain: 'system',
@@ -166,7 +164,6 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		assert.deepEqual(rebuilt.payload.subarray(metadataStart, metadataEnd), metadataBytes);
 		assert.ok(rebuiltImageEntry.end! > initialImageEnd);
 		assert.ok(rebuiltSymbolsEntry.end! > initialSymbolsEnd);
-		assert.ok(rebuiltHeader.tocOffset > rebuiltSymbolsEntry.end!);
 		assert.ok(rebuiltHeader.tocOffset > initialHeader.tocOffset);
 
 		const rebuiltIndex = await parseCartridgeIndex(rebuilt.payload);

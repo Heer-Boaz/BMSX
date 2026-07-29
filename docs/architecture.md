@@ -733,6 +733,17 @@ identity. It emits a tooling-owned BLua32 object with relocations. The ROM
 packer resolves those relocations at the actual physical `SYSTEM_ROM` or
 `CART_ROM` addresses and emits the final bytes; neither runtime owns a linker.
 
+One source chunk in each system or cartridge program declares
+`module<entry>`. The compiler requires exactly one such root and synthesizes the
+section initializer and reset trampoline around that chunk. The linker resolves
+the resulting reset proto to the physical startup address stored in the ROM
+header. `entry_path`, `rom_name`, and browser `short_name` are therefore not
+executable ROM-manifest fields: the first is derived by tooling from
+`module<entry>`, the second is a build-output identity, and the third belongs
+to browser-product packaging. The serialized cart manifest keeps
+author/cart facts such as its title and physical cartridge-board construction;
+it does not select executable source.
+
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout
 without using build-input assets as mutable offset storage. A cart texture group

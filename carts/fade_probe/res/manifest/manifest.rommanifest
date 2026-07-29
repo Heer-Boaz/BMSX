@@ -1,5 +1,1 @@
 title: Fade Probe
-short_name: 'fade_probe'
-rom_name: 'fade_probe'
-lua:
-    entry_path: entry.lua

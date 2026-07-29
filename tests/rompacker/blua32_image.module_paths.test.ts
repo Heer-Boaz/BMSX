@@ -10,7 +10,7 @@ import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_lay
 import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 
 test('BLua32 image rejects a cart Lua module that collides with the persisted GX layout', () => {
-	const entrySource = 'return true';
+	const entrySource = 'module<entry>\nreturn true';
 	const cartLayoutSource = 'return { scene = 1 }';
 	const generatedLayoutSource = 'return { scene = 2 }';
 	const assets: RomAsset[] = [
@@ -39,7 +39,7 @@ test('BLua32 image rejects a cart Lua module that collides with the persisted GX
 	const layout = layoutRomPrefix(assets, true, null);
 
 	assert.throws(
-		() => buildRomBlua32Tail(assets, 'cart.lua', {
+		() => buildRomBlua32Tail(assets, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,

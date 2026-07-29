@@ -316,7 +316,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 	try {
 		const cartPrefix = layoutRomPrefix(assets, true, null);
-		const entrySource = `
+		const entrySource = `module<entry>
 require('bios/base')
 require('bios/table')
 require('bios/string_base')
@@ -374,7 +374,7 @@ return imgdec
 			});
 		}
 		const systemPrefix = layoutRomPrefix([], false, null);
-		const systemBlua32 = buildRomBlua32Tail(executableSources, 'entry.lua', {
+		const systemBlua32 = buildRomBlua32Tail(executableSources, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
@@ -402,14 +402,14 @@ return imgdec
 			systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
 			SYSTEM_ROM_BASE + systemImageEntry.start!,
 		);
-		const cartEntrySource = 'return 0';
+		const cartEntrySource = 'module<entry>\nreturn 0';
 		const cartBlua32 = buildRomBlua32Tail([{
 			type: 'lua',
 			resid: 'cart',
 			buffer: Buffer.from(cartEntrySource),
 			compiled_buffer: compileLuaChunkBuffer(cartEntrySource, 'cart.lua'),
 			source_path: 'cart.lua',
-		}], 'cart.lua', {
+		}], {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,

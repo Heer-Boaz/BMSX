@@ -2,9 +2,11 @@ import { buildRomAssetSymbolModuleSource } from '../../../../machine/ts/rompack/
 import type { RomAsset } from '../../../../machine/ts/rompack/tooling/assets';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../machine/ts/rompack/tooling/generated_modules';
 import { loadRomAssetList, parseCartridgeIndex } from '../../../../machine/ts/rompack/tooling/loader';
-import { encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
+import { decodeBinary, encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { parseLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
+import { resolveLuaEntryModuleIndex } from '../../../../machine/ts/lua/entry_module';
+import type { LuaChunk } from '../../../../machine/ts/lua/syntax/ast';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
@@ -56,17 +58,20 @@ export async function buildHostTestCartridge(
 		systemRom.subarray(systemSymbolsEntry.start, systemSymbolsEntry.end),
 	);
 	const cartridgeLuaAssets = collectLuaAssets(cartridge, cartIndex.entries);
+	const entryCandidates = new Array<{ asset: RomAsset; chunk: LuaChunk }>(cartridgeLuaAssets.length);
 	for (let index = 0; index < cartridgeLuaAssets.length; index += 1) {
-		const asset = cartridgeLuaAssets[index];
-		if (asset.source_path !== cartIndex.entry_path) {
-			continue;
-		}
-		const source = `require('${HOST_TEST_MODULE_PATH}')\n${asset.buffer!.toString('utf8')}`;
-		const parsed = parseLuaChunk(source, asset.source_path, splitText(source)).chunk!;
-		asset.buffer = Buffer.from(source);
-		asset.compiled_buffer = Buffer.from(encodeBinary(parsed));
-		break;
+		entryCandidates[index] = {
+			asset: cartridgeLuaAssets[index],
+			chunk: decodeBinary(cartridgeLuaAssets[index].compiled_buffer!) as LuaChunk,
+		};
 	}
+	const entryAsset = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)].asset;
+	const entrySource = entryAsset.buffer!.toString('utf8');
+	const firstLineEnd = entrySource.indexOf('\n') + 1;
+	const source = `${entrySource.slice(0, firstLineEnd)}require('${HOST_TEST_MODULE_PATH}')\n${entrySource.slice(firstLineEnd)}`;
+	const parsed = parseLuaChunk(source, entryAsset.source_path, splitText(source)).chunk!;
+	entryAsset.buffer = Buffer.from(source);
+	entryAsset.compiled_buffer = Buffer.from(encodeBinary(parsed));
 	const linked = buildBlua32Image({
 		luaAssets: cartridgeLuaAssets,
 		externalLuaAssets: collectLuaAssets(systemRom, systemIndex.entries),
@@ -77,7 +82,6 @@ export async function buildHostTestCartridge(
 				source: `${HOST_TEST_LOADER_GLOBAL} = function()\n${testSource}\nend`,
 			},
 		],
-		entryPath: cartIndex.entry_path,
 		loadAddress: CART_ROM_BASE + cartImageEntry.start!,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,

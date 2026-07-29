@@ -91,9 +91,9 @@ async function main(): Promise<void> {
 	if (!manifest) {
 		throw new Error(`ROM manifest not found at "${options.resourcePath}".`);
 	}
-	const romName = manifest.rom_name || options.romName;
+	const romName = options.romName;
 	const title = manifest.title || options.title || 'BMSX';
-	const shortName = manifest.short_name || 'BMSX';
+	const shortName = options.romName;
 	await access(
 		join(
 			process.cwd(),

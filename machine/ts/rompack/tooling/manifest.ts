@@ -3,15 +3,10 @@ import {
 	CARTRIDGE_BOARD_RAM,
 } from '../../spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../spec/bmsx/memory_map';
-import { requireObject, requireObjectKey } from '../../common/serializer/binencoder';
+import { requireObject } from '../../common/serializer/binencoder';
 
 export type CartManifest = {
 	title?: string;
-	short_name?: string;
-	rom_name?: string;
-	lua: {
-		entry_path: string;
-	};
 	cartridge?: {
 		board: 'rom' | 'ram' | 'mailbox' | 'ram_mailbox';
 		ram_bytes?: number;
@@ -21,13 +16,7 @@ export type CartManifest = {
 export type RomManifest = CartManifest;
 
 export function parseCartManifest(value: unknown, label: string): CartManifest {
-	const manifest = requireObject(value, label);
-	const lua = requireObject(requireObjectKey(manifest, 'lua', label), `${label}.lua`);
-	const entryPath = requireObjectKey(lua, 'entry_path', `${label}.lua`);
-	if (typeof entryPath !== 'string' || entryPath.length === 0) {
-		throw new Error(`${label}.lua.entry_path must be a non-empty string.`);
-	}
-	return manifest as CartManifest;
+	return requireObject(value, label) as CartManifest;
 }
 
 export function resolveCartridgeHeaderWords(manifest: CartManifest | null): {

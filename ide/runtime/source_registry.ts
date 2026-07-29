@@ -3,6 +3,8 @@ import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	ROM_GENERATED_MODULE_PATHS,
+	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
 } from '../../machine/ts/rompack/tooling/generated_modules';
 import type {
 	CartridgeIndex,
@@ -11,8 +13,15 @@ import type {
 } from '../../machine/ts/rompack/tooling/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
-import { buildRomAssetSymbolModuleSource } from '../../machine/ts/rompack/tooling/asset_symbols';
+import { splitText } from '../../machine/ts/common/text_lines';
+import {
+	buildRomAssetSymbolModuleSourceFromSymbols,
+	collectRomAssetSymbols,
+} from '../../machine/ts/rompack/tooling/asset_symbols';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
+import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
+import { parseLuaChunk } from '../../machine/ts/lua/analysis/parse';
+import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: RomImageDomain };
@@ -21,7 +30,7 @@ export type LuaSourceRegistry = {
 	records: LuaSourceRecord[];
 	path2lua: Record<string, LuaSourceRecord>;
 	module2lua: Record<string, LuaSourceRecord>;
-	entry_path: string;
+	entrySourcePath: string;
 	projectRootPath: string;
 	can_boot_from_source: boolean;
 	revision: number;
@@ -56,21 +65,26 @@ export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string
 	return null;
 }
 
-export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly RomImageDomain[]): LuaSourceRegistry {
+export function buildLuaSources(
+	cartSource: RawRomSource,
+	romSource: RawRomSource,
+	index: CartridgeIndex,
+	payloadId: RomImageDomain,
+): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [],
 		path2lua: {},
 		module2lua: {},
-		entry_path: index.entry_path,
+		entrySourcePath: '',
 		projectRootPath: index.projectRootPath,
 		can_boot_from_source: false,
 		revision: 0,
 	};
 
 	let sourceCount = 0;
-	const emitAssetSymbolModule = allowedPayloadIds.includes('cart');
+	const entryCandidates: Array<{ record: LuaSourceRecord; chunk: LuaChunk }> = [];
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
-		if (!allowedPayloadIds.includes(entry.payload_id)) {
+		if (entry.payload_id !== payloadId) {
 			continue;
 		}
 		sourceCount += 1;
@@ -84,27 +98,39 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
 		luaRecord.generated = ROM_GENERATED_MODULE_PATHS.includes(luaRecord.module_path);
 		registerLuaSourceRecord(registry, luaRecord);
+		entryCandidates.push({
+			record: luaRecord,
+			chunk: parseLuaChunk(src, entry.source_path, splitText(src)).chunk!,
+		});
 	}
 	registry.can_boot_from_source = sourceCount > 0;
-
-	if (emitAssetSymbolModule) {
+	if (sourceCount > 0) {
+		registry.entrySourcePath = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)].record.source_path;
 		const assetEntries: RomAsset[] = [];
 		const entries = romSource.list();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (allowedPayloadIds.includes(entry.payload_id)) {
+			if (entry.payload_id === payloadId) {
 				assetEntries.push(entry);
 			}
 		}
-		const source = buildRomAssetSymbolModuleSource(assetEntries);
+		const generatedModulePath = payloadId === 'system'
+			? SYSTEM_ASSET_SYMBOL_MODULE_PATH
+			: ROM_ASSET_SYMBOL_MODULE_PATH;
+		const generatedSourcePath = payloadId === 'system'
+			? SYSTEM_ASSET_SYMBOL_SOURCE_PATH
+			: ROM_ASSET_SYMBOL_SOURCE_PATH;
+		const source = buildRomAssetSymbolModuleSourceFromSymbols(
+			collectRomAssetSymbols(assetEntries, payloadId),
+		);
 		const assetSymbols: LuaSourceRecord = {
-			resid: ROM_ASSET_SYMBOL_MODULE_PATH,
+			resid: generatedModulePath,
 			type: 'lua',
 			src: source,
 			base_src: source,
 			base_update_timestamp: 0,
-			source_path: ROM_ASSET_SYMBOL_SOURCE_PATH,
-			module_path: ROM_ASSET_SYMBOL_MODULE_PATH,
+			source_path: generatedSourcePath,
+			module_path: generatedModulePath,
 			update_timestamp: 0,
 			generated: true,
 		};

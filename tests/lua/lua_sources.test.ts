@@ -29,7 +29,6 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/rompack/tooling/system';
 import {
 	ROM_TOC_HEADER_SIZE,
 	ROM_TOC_INVALID_U32,
@@ -93,12 +92,11 @@ class TestRomSource implements RawRomSource {
 	}
 }
 
-function makeIndex(entryPath: string, entries: RomAsset[]): CartridgeIndex {
+function makeIndex(entries: RomAsset[]): CartridgeIndex {
 	return {
 		entries,
 		projectRootPath: 'carts/test',
 		cart_manifest: null,
-		entry_path: entryPath,
 	};
 }
 
@@ -118,21 +116,21 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	const generatedEntry = luaEntry(GX_TEXTURE_LAYOUT_MODULE_PATH, GX_TEXTURE_LAYOUT_SOURCE_PATH, 'cart', 0);
 	const systemEntry = luaEntry('sys', 'bios/system.lua', 'system', 0);
 	const cartSource = new TestRomSource([cartEntry, generatedEntry], {
-		main: 'return 1',
+		main: 'module<entry>\nreturn 1',
 		[GX_TEXTURE_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
 	});
 	const activeSource = new TestRomSource([activeEntry, generatedEntry, systemEntry], {
-		main: 'return 2',
+		main: 'module<entry>\nreturn 2',
 		[GX_TEXTURE_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
 		sys: 'return 3',
 	});
 
-	const registry = buildLuaSources(cartSource, activeSource, makeIndex('cart.lua', [cartEntry]), ['cart']);
+	const registry = buildLuaSources(cartSource, activeSource, makeIndex([cartEntry]), 'cart');
 	const record = registry.path2lua['cart.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);
-	assert.equal(record.src, 'return 2');
-	assert.equal(record.base_src, 'return 1');
+	assert.equal(record.src, 'module<entry>\nreturn 2');
+	assert.equal(record.base_src, 'module<entry>\nreturn 1');
 	assert.equal(record.module_path, 'cart');
 	assert.equal(record.update_timestamp, 22);
 	assert.equal(record.generated, false);
@@ -145,7 +143,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 test('release BLua32 images do not synthesize editable Lua source records', () => {
 	const imageEntry: RomAsset = { resid: BLUA32_IMAGE_ID, type: 'code', payload_id: 'system' };
 	const source = new TestRomSource([imageEntry], {});
-	const registry = buildLuaSources(source, source, makeIndex('bios/bootrom.lua', [imageEntry]), ['system']);
+	const registry = buildLuaSources(source, source, makeIndex([imageEntry]), 'system');
 
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
@@ -166,6 +164,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 		},
 	};
 	const cartSource = [
+		'module<entry>',
 		`local texture_layout<const> = require('${GX_TEXTURE_LAYOUT_MODULE_PATH}')`,
 		'return texture_layout.scene',
 	].join('\n');
@@ -184,10 +183,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 		start: layoutStart,
 		end: layoutStart + layoutBytes.byteLength,
 	};
-	const manifest = encodeBinary({
-		rom_name: 'source_boot_test',
-		lua: { entry_path: 'cart.lua' },
-	});
+	const manifest = encodeBinary({ title: 'Source Boot Test' });
 	const manifestStart = layoutStart + layoutBytes.byteLength;
 	const toc = encodeRomToc({ entries: [cartEntry, layoutEntry], projectRootPath: 'carts/source_boot_test' });
 	const tocStart = manifestStart + manifest.byteLength;
@@ -207,7 +203,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	header.setUint32(28, cartBytes.byteLength + layoutBytes.byteLength, true);
 	const index = await parseCartridgeIndex(payload);
 	const source = new RomSourceStack([{ id: 'cart', index, payload }]);
-	const registry = buildLuaSources(source, source, index, ['cart']);
+	const registry = buildLuaSources(source, source, index, 'cart');
 	const entryRecord = registry.module2lua.cart;
 	const modules = registry.records
 		.filter(record => record !== entryRecord)
@@ -265,8 +261,6 @@ test('ROM TOC decode rejects incomplete payload ranges', () => {
 test('toLuaModulePath normalizes source paths through the loader contract', () => {
 	assert.equal(toLuaModulePath('cart.lua'), 'cart');
 	assert.equal(toLuaModulePath('system/font.lua'), 'system/font');
-	assert.equal(SYSTEM_BOOT_ENTRY_PATH, 'bios/bootrom.lua');
-	assert.equal(toLuaModulePath(SYSTEM_BOOT_ENTRY_PATH), 'bios/bootrom');
 	assert.equal(toLuaModulePath('carts/pietious/cart.lua'), 'cart');
 	assert.equal(toLuaModulePath('carts/pietious/room/index.lua'), 'room/index');
 	assert.equal(toLuaModulePath('carts\\pietious\\room\\index.lua'), 'room/index');

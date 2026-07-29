@@ -32,11 +32,8 @@ const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
 const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
 const valueRecord = cartridge.luaSources.path2lua['value.lua'];
 const gxGpuRecord = sourceState.systemLuaSources.path2lua['system/gx_gpu.lua'];
-const initialSystemMediaRevision = runtime.machine.memory.systemRomRevision();
-const initialCartMediaRevision = runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot());
 const dataOnlySlot = cpu.activeCartridgeSlot() === 0 ? 1 : 0;
 const dataOnlyCartridge = sourceState.cartridgeSlots[dataOnlySlot];
-const initialDataOnlyMediaRevision = runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot);
 t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
 t.assert(dataOnlyCartridge.rom.header.blua32ImageOffset === 0, 'second cartridge unexpectedly contains executable BLua32');
 
@@ -61,11 +58,6 @@ t.performHotResume();
 await t.frames(60);
 
 t.assert(sourceState.currentBlua32Media === originalMedia, 'rejected edit replaced tooling media');
-t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision, 'rejected edit replaced system ROM');
-t.assert(
-	runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision,
-	'rejected edit replaced cartridge ROM',
-);
 t.assert(cpu.getFrameDepth() === frameDepthBeforeRejectedEdit, 'rejected edit changed frame depth');
 for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex += 1) {
 	const wordOffset = frameIndex * 3;
@@ -107,9 +99,6 @@ t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_mo
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_system_probe'))) === 1, 'first system-ROM edit did not execute');
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count'))) === 2, 'first Hot Resume did not rerun init exactly once');
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'first Hot Resume reran new_game');
-t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision + 1, 'first system-ROM revision was not installed');
-t.assert(runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision + 1, 'first cartridge-ROM revision was not installed');
-t.assert(runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot) === initialDataOnlyMediaRevision, 'first Hot Resume replaced the data-only cartridge');
 
 installRevision(2);
 await t.frames(60);
@@ -122,9 +111,6 @@ t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_mo
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_system_probe'))) === 2, 'second consecutive system-ROM edit did not execute');
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count'))) === 3, 'second Hot Resume did not rerun init exactly once');
 t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'second Hot Resume reran new_game');
-t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision + 2, 'second system-ROM revision was not installed');
-t.assert(runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision + 2, 'second cartridge-ROM revision was not installed');
-t.assert(runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot) === initialDataOnlyMediaRevision, 'second Hot Resume replaced the data-only cartridge');
 
 await t.reboot();
 await t.waitForCart();

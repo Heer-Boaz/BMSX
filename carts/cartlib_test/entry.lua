@@ -1,3 +1,4 @@
+module<entry>
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus

@@ -1,5 +1,1 @@
 title: Monitor Fault Probe
-short_name: 'monitor_fault_probe'
-rom_name: 'monitor_fault_probe'
-lua:
-    entry_path: entry.lua

@@ -1,8 +1,4 @@
 title: Nemesis S - Nemesis 2 Baseline
-short_name: 'nemesis_s'
-rom_name: 'nemesis_s'
-lua:
-    entry_path: cart.lua
 gx_texture_layout:
     reserved:
         framebuffer: { x: 0, y: 0, width: 256, height: 192 }

@@ -80,7 +80,7 @@ export function createRuntimeSourceState(
 	cartridgeLayers: readonly [RomToolingLayer | null, RomToolingLayer | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
-	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
+	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system');
 	const luaSourceRegistries: LuaSourceRegistry[] = [];
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	const systemProjectRootPath = systemLuaSources.projectRootPath || SYSTEM_PROJECT_ROOT_PATH;
@@ -97,7 +97,7 @@ export function createRuntimeSourceState(
 		];
 		const activeRomSource = new RomSourceStack(activeSourceLayers);
 		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
-		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, ['cart']);
+		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, 'cart');
 		cartridgeSlots[slot] = {
 			domain: slot,
 			rom: cartLayer,

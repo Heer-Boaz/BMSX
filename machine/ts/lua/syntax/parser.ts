@@ -116,21 +116,22 @@ export class LuaParser {
 	}
 
 	public parseChunk(): LuaChunk {
-		const constModule = this.parseModuleAttribute();
+		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.Eof]));
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
 		const range = this.rangeFromBlockAndToken(block, eofToken);
 		return {
 			kind: LuaSyntaxKind.Chunk,
 			range,
-			constModule,
+			constModule: moduleAttribute === 'const',
+			entryModule: moduleAttribute === 'entry',
 			body: block.body,
 			definitions: this.buildDefinitionIndex(block),
 		};
 	}
 
 	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
-		const constModule = this.parseModuleAttribute();
+		const moduleAttribute = this.parseModuleAttribute();
 		const { block, syntaxError } = this.parseBlockWithRecovery(new Set<LuaTokenType>([LuaTokenType.Eof]));
 		let end: LuaSourcePosition;
 		if (syntaxError) {
@@ -143,29 +144,33 @@ export class LuaParser {
 		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
 			range,
-			constModule,
+			constModule: moduleAttribute === 'const',
+			entryModule: moduleAttribute === 'entry',
 			body: block.body,
 			definitions: this.buildDefinitionIndex(block),
 		};
 		return { path, syntaxError };
 	}
 
-	private parseModuleAttribute(): boolean {
+	private parseModuleAttribute(): 'const' | 'entry' | null {
 		if (this.current().type !== LuaTokenType.Identifier || this.current().lexeme !== 'module') {
-			return false;
+			return null;
 		}
 		if (this.peekType(1) !== LuaTokenType.Less
 			|| this.peekType(2) !== LuaTokenType.Identifier
-			|| this.tokens[this.index + 2].lexeme !== 'const'
 			|| this.peekType(3) !== LuaTokenType.Greater) {
-			return false;
+			return null;
+		}
+		const attribute = this.tokens[this.index + 2].lexeme;
+		if (attribute !== 'const' && attribute !== 'entry') {
+			return null;
 		}
 		this.advance();
 		this.advance();
 		this.advance();
 		this.advance();
 		this.match(LuaTokenType.Semicolon);
-		return true;
+		return attribute;
 	}
 
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {

@@ -24,10 +24,7 @@ auto alignOffset(u32 offset, u32 address, u32 alignment) -> u32 {
 }
 
 auto encodeManifest() -> std::vector<u8> {
-	BinObject lua;
-	lua["entry_path"] = BinValue("boot");
 	BinObject manifest;
-	manifest["lua"] = BinValue(std::move(lua));
 	return encodeBinary(BinValue(std::move(manifest)));
 }
 

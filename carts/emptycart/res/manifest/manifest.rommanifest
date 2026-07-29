@@ -1,5 +1,1 @@
 title: Empty Cart
-short_name: 'emptycart'
-rom_name: 'emptycart'
-lua:
-    entry_path: entry.lua

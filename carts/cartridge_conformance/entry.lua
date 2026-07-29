@@ -1,3 +1,4 @@
+module<entry>
 local apu<const> = require('cartlib/apu')
 require('cartlib/prelude')
 

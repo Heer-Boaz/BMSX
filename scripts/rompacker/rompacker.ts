@@ -2,7 +2,7 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
+import { SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
@@ -381,7 +381,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	const BIOSAssetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(
 		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
 	);
-	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
+	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, {
 		externalLuaAssets: [],
 		generatedLuaModules: [{
 			path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
@@ -456,7 +456,6 @@ async function main() {
 		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		const { gx_texture_layout, ...runtimeRomManifest } = romManifest;
-		rom_name = romManifest.rom_name ?? rom_name;
 		title = romManifest.title ?? title;
 		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
@@ -574,7 +573,7 @@ async function main() {
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);
 			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
-			const blua32 = buildRomBlua32Tail(romAssets, romManifest.lua.entry_path, {
+			const blua32 = buildRomBlua32Tail(romAssets, {
 				includeSymbols: romPackDebug,
 				optLevel,
 				imageOffset: romLayout.blua32Offset,

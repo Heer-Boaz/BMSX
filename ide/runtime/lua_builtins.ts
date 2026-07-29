@@ -1,18 +1,7 @@
-import { LuaEnvironment } from '../language/lua/interpreter/environment';
-import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
-import { createLuaTable, LuaValue } from '../language/lua/interpreter/value';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/ts/lua/builtin_descriptors';
 import type { LuaBuiltinDescriptor } from '../../machine/ts/lua/semantic_contracts';
 
-export const luaInterpreterApiFunctionNames = new Set<string>();
 export const luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
-
-export function registerLuaInterpreterBuiltins(interpreter: LuaInterpreter): void {
-	luaInterpreterApiFunctionNames.clear();
-	const env = interpreter.globalEnvironment;
-
-	registerLuaGlobal(env, 'os', createLuaTable());
-}
 
 export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
 	const name = metadata.name.trim();
@@ -73,13 +62,4 @@ export function seedDefaultLuaBuiltins(): void {
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		registerLuaBuiltin(DEFAULT_LUA_BUILTIN_FUNCTIONS[index]);
 	}
-}
-
-export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
-	env.set(name, value);
-	luaInterpreterApiFunctionNames.add(name);
-}
-
-export function getReservedLuaIdentifiers(): ReadonlySet<string> {
-	return new Set<string>(luaInterpreterApiFunctionNames);
 }

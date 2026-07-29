@@ -85,7 +85,6 @@ export type CartridgeIndex = {
 	entries: RomAsset[];
 	projectRootPath: string;
 	cart_manifest: CartManifest | null;
-	entry_path: string;
 };
 
 export type RomToolingPackage = {
@@ -97,5 +96,4 @@ export type RomToolingPackage = {
 	audioevents: Record<asset_id, Record<string, unknown>>;
 	project_root_path: string;
 	cart_manifest: CartManifest | null;
-	entry_path: string;
 };

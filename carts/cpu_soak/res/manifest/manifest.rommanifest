@@ -1,5 +1,1 @@
 title: CPU Soak
-short_name: 'cpu_soak'
-rom_name: 'cpu_soak'
-lua:
-    entry_path: entry.lua

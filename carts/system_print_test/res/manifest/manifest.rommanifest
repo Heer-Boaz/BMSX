@@ -1,5 +1,1 @@
 title: System Print Test
-short_name: 'system_print_test'
-rom_name: 'system_print_test'
-lua:
-    entry_path: entry.lua

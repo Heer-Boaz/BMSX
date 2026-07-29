@@ -1251,7 +1251,6 @@ export type RomBlua32Tail = RomBlua32TailCommon & (
 
 export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
-	entryPath: string,
 	options: BuildRomBlua32TailOptions,
 ): RomBlua32Tail {
 	const luaAssets = assetList.filter(asset => asset.type === 'lua');
@@ -1260,7 +1259,6 @@ export function buildRomBlua32Tail(
 		luaAssets,
 		externalLuaAssets: options.externalLuaAssets,
 		generatedLuaModules: options.generatedLuaModules,
-		entryPath,
 		loadAddress: imageAddress,
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
@@ -1271,7 +1269,6 @@ export function buildRomBlua32Tail(
 		luaAssets,
 		externalLuaAssets: options.externalLuaAssets,
 		generatedLuaModules: options.generatedLuaModules,
-		entryPath,
 		loadAddress: imageAddress,
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,

@@ -1,3 +1,4 @@
+module<entry>
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')

@@ -380,7 +380,7 @@ function sourceRegistry(
 		records: [],
 		path2lua: {},
 		module2lua: {},
-		entry_path: sourcePath,
+		entrySourcePath: sourcePath,
 		projectRootPath,
 		can_boot_from_source: true,
 		revision: 0,

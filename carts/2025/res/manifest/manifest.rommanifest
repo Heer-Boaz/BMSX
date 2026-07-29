@@ -1,8 +1,4 @@
 title: Pietsona 2025
-short_name: '2025'
-rom_name: '2025'
-lua:
-    entry_path: cart.lua
 gx_texture_layout:
     reserved:
         framebuffer: { x: 0, y: 0, width: 320, height: 240 }

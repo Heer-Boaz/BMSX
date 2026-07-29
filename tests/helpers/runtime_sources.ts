@@ -64,7 +64,6 @@ function toolingPackage(projectRootPath: string): RomToolingPackage {
 		audioevents: {},
 		project_root_path: projectRootPath,
 		cart_manifest: null,
-		entry_path: '',
 	};
 }
 
@@ -73,7 +72,6 @@ function cartridgeIndex(projectRootPath: string): CartridgeIndex {
 		entries: [],
 		projectRootPath,
 		cart_manifest: null,
-		entry_path: '',
 	};
 }
 

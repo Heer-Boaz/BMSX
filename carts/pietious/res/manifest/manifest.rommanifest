@@ -1,8 +1,4 @@
 title: Maze of Pietious
-short_name: 'pietious'
-rom_name: 'pietious'
-lua:
-    entry_path: cart.lua
 gx_texture_layout:
     reserved:
         framebuffer_front: { x: 0, y: 0, width: 256, height: 192 }

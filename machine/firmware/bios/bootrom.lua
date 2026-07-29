@@ -1,3 +1,4 @@
+module<entry>
 -- bootrom.lua
 -- BMSX system boot firmware
 

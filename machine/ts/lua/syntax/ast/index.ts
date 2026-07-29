@@ -117,6 +117,7 @@ export type LuaExpression =
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
 	readonly constModule: boolean;
+	readonly entryModule: boolean;
 	readonly body: ReadonlyArray<LuaStatement>;
 	readonly definitions: ReadonlyArray<LuaDefinitionInfo>;
 };

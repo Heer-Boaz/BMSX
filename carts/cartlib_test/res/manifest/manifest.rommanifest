@@ -1,5 +1,1 @@
 title: Cartlib Test
-short_name: 'cartlib_test'
-rom_name: 'cartlib_test'
-lua:
-    entry_path: entry.lua

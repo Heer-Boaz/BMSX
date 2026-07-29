@@ -93,7 +93,7 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 export function createEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
 	const resource = sources.activeResources.find(r =>
 		r.domain === sources.activeCartridgeSlot
-		&& r.path === sources.activeLuaSources.entry_path
+		&& r.path === sources.activeLuaSources.entrySourcePath
 		&& r.source.type === 'lua'
 	)!;
 	return createLuaCodeTabContext(sources, resource);

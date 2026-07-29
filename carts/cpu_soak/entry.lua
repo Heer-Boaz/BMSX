@@ -1,3 +1,4 @@
+module<entry>
 local gx_gpu<const> = require('system/gx_gpu')
 gx_gpu.reset_320x240()
 require('cartlib/prelude')

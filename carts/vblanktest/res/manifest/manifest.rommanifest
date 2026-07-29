@@ -1,5 +1,1 @@
 title: VBLANK Test
-short_name: 'vblanktest'
-rom_name: 'vblanktest'
-lua:
-    entry_path: entry.lua

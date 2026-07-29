@@ -102,7 +102,6 @@ test('ROM header rejects cartridge RAM beyond the physical socket aperture', () 
 
 test('manifest cartridge semantics resolve once into raw header words', () => {
 	const manifest: CartManifest = {
-		lua: { entry_path: 'cart.lua' },
 		cartridge: {
 			board: 'ram_mailbox',
 			ram_bytes: 0x20000,

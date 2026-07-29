@@ -92,14 +92,14 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		];
 		const layout = layoutRomPrefix(assets, true, null);
 		const ranges = layout.assetRanges;
-		const entrySource = 'return 0';
+		const entrySource = 'module<entry>\nreturn 0';
 		const blua32 = buildRomBlua32Tail([{
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(entrySource),
 			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
 			source_path: 'entry.lua',
-		}], 'entry.lua', {
+		}], {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: false,

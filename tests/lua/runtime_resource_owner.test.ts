@@ -45,7 +45,7 @@ function sourceRegistry(projectRootPath: string, records: LuaSourceRecord[]): Lu
 		records: [],
 		path2lua: {},
 		module2lua: {},
-		entry_path: '',
+		entrySourcePath: '',
 		projectRootPath,
 		can_boot_from_source: records.length > 0,
 		revision: 0,
@@ -116,7 +116,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	const cartridgeRegistry = sourceRegistry('carts/test', [
 		luaSource('src/main.lua', 'cart-main', 'return 2'),
 	]);
-	cartridgeRegistry.entry_path = 'src/main.lua';
+	cartridgeRegistry.entrySourcePath = 'src/main.lua';
 	const sources = createTestRuntimeSourceState(
 		systemRegistry,
 		[cartridgeRegistry, null],

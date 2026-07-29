@@ -120,7 +120,7 @@ function resolveRuntimeErrorLocation(
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(error);
 	}
-	return { path: sources.activeLuaSources.entry_path, line: 0, column: 0 };
+	return { path: sources.activeLuaSources.entrySourcePath, line: 0, column: 0 };
 }
 
 function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {

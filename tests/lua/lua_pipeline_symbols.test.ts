@@ -15,7 +15,7 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 		records: [],
 		path2lua: {},
 		module2lua: {},
-		entry_path: '',
+		entrySourcePath: '',
 		projectRootPath: '',
 		can_boot_from_source: false,
 		revision: 0,

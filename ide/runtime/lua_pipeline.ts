@@ -1,13 +1,13 @@
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast/index';
 import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
-import { getReservedLuaIdentifiers, registerLuaInterpreterBuiltins } from './lua_builtins';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramCompileDomain } from '../../machine/ts/lua/compiler';
 import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
 import type { ProgramObjectImage } from '../../machine/ts/lua/compiler/program_object';
+import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
-import { resolveLuaSourceRecord, type LuaSourceRegistry } from './source_registry';
+import type { LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
@@ -38,6 +38,13 @@ export type RebuiltBlua32Image = {
 	sources: ReadonlyMap<string, string>;
 };
 
+type ProgramSourceModule = {
+	path: string;
+	sourcePath: string;
+	chunk: LuaChunk;
+	source: string;
+};
+
 export type RebuiltBlua32Media = {
 	system: RebuiltBlua32Image | null;
 	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
@@ -46,10 +53,7 @@ export type RebuiltBlua32Media = {
 function createFreshLuaInterpreter(
 	bridge: RuntimeLuaTooling,
 ): LuaInterpreter {
-	const interpreter = new LuaInterpreter(bridge.luaJsBridge);
-	registerLuaInterpreterBuiltins(interpreter);
-	interpreter.setReservedIdentifiers(getReservedLuaIdentifiers());
-	return interpreter;
+	return new LuaInterpreter(bridge.luaJsBridge);
 }
 
 function describeSymbolValue(value: Value): { kind: RuntimeSymbolKind; valueType: string } {
@@ -128,12 +132,14 @@ export function listSymbols(sources: RuntimeSourceState, runtime: Runtime): Runt
 	return Array.from(symbolsByName.values());
 }
 
-function buildModuleChunks(
-	entryModulePath: string,
+function buildProgramSources(
 	registries: LuaSourceRegistry[],
 	interpreter: LuaInterpreter,
-): Array<{ path: string; chunk: LuaChunk; source: string }> {
-	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
+): {
+	entry: ProgramSourceModule;
+	modules: ProgramSourceModule[];
+} {
+	const modules: ProgramSourceModule[] = [];
 	const seen = new Set<string>();
 	for (const registry of registries) {
 		for (const asset of registry.records) {
@@ -142,15 +148,23 @@ function buildModuleChunks(
 				continue;
 			}
 			seen.add(key);
-			if (key === entryModulePath) {
-				continue;
-			}
 			const source = readWorkspaceLuaSourceText(registry, asset);
 			const chunk = interpreter.compileChunk(source, key);
-			modules.push({ path: key, chunk, source });
+			modules.push({
+				path: key,
+				sourcePath: asset.source_path,
+				chunk,
+				source,
+			});
 		}
 	}
-	return modules;
+	const entryIndex = resolveLuaEntryModuleIndex(modules);
+	const entry = modules[entryIndex];
+	for (let index = entryIndex; index + 1 < modules.length; index += 1) {
+		modules[index] = modules[index + 1];
+	}
+	modules.length -= 1;
+	return { entry, modules };
 }
 
 function compileRegistryProgramObject(
@@ -165,20 +179,17 @@ function compileRegistryProgramObject(
 	modules: Array<{ path: string; chunk: LuaChunk; source: string }>;
 	sources: ReadonlyMap<string, string>;
 } {
-	const entryRecord = resolveLuaSourceRecord(registry, registry.entry_path);
-	if (entryRecord === null) {
-		throw new Error(`cannot compile boot program: entry Lua source '${registry.entry_path}' is missing.`);
-	}
-	const entryPath = entryRecord.module_path;
-	const entrySource = readWorkspaceLuaSourceText(registry, entryRecord);
-	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-	const modules = buildModuleChunks(entryPath, [registry], interpreter);
+	const programSources = buildProgramSources([registry], interpreter);
+	const entryPath = programSources.entry.path;
+	const entrySource = programSources.entry.source;
+	const modules = programSources.modules;
+	registry.entrySourcePath = programSources.entry.sourcePath;
 	const compiledSources = new Map<string, string>();
 	compiledSources.set(entryPath, entrySource);
 	for (let index = 0; index < modules.length; index += 1) {
 		compiledSources.set(modules[index].path, modules[index].source);
 	}
-	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
+	const compiled = compileLuaChunkToProgram(programSources.entry.chunk, modules, {
 		optLevel: sources.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
@@ -234,8 +245,7 @@ export function buildBlua32Media(
 		};
 		systemModules = compiledSystem.modules;
 	} else if (rebuildAnyCartridge) {
-		const systemEntry = resolveLuaSourceRecord(systemRegistry, systemRegistry.entry_path)!;
-		systemModules = buildModuleChunks(systemEntry.module_path, [systemRegistry], interpreter);
+		systemModules = buildProgramSources([systemRegistry], interpreter).modules;
 	}
 
 	const rebuiltCartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null] = [null, null];

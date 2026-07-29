@@ -1,8 +1,4 @@
 title: Cartridge Hardware Conformance
-short_name: 'cartridge_conformance'
-rom_name: 'cartridge_conformance'
-lua:
-    entry_path: entry.lua
 cartridge:
     board: ram_mailbox
     ram_bytes: 256

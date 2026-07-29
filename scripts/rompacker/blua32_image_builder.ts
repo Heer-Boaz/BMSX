@@ -2,6 +2,7 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../../machine/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../machine/ts/lua/compiler';
+import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
@@ -22,7 +23,6 @@ type Blua32ImageBuildOptions = {
 	luaAssets: ReadonlyArray<RomAsset>;
 	externalLuaAssets: ReadonlyArray<RomAsset>;
 	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
-	entryPath: string;
 	loadAddress: number;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
@@ -36,10 +36,8 @@ type Blua32ImageBuildOptions = {
 );
 
 export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32Image {
-	const entryModulePath = toLuaModulePath(options.entryPath);
 	const modulePaths = new Set<string>();
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
-	let entry: { chunk: LuaChunk; source: string } | null = null;
 	for (let index = 0; index < options.luaAssets.length; index += 1) {
 		const asset = options.luaAssets[index];
 		const modulePath = toLuaModulePath(asset.source_path);
@@ -49,19 +47,18 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 		const chunk = decodeBinary(asset.compiled_buffer!) as LuaChunk;
 		modulePaths.add(modulePath);
 		const source = asset.buffer!.toString('utf8');
-		if (modulePath === entryModulePath) {
-			entry = { chunk, source };
-			continue;
-		}
 		modules.push({
 			path: modulePath,
 			chunk,
 			source,
 		});
 	}
-	if (entry === null) {
-		throw new Error(`Lua entry '${options.entryPath}' not found in asset list.`);
+	const entryIndex = resolveLuaEntryModuleIndex(modules);
+	const entry = modules[entryIndex];
+	for (let index = entryIndex; index + 1 < modules.length; index += 1) {
+		modules[index] = modules[index + 1];
 	}
+	modules.length -= 1;
 	for (let index = 0; index < options.generatedLuaModules.length; index += 1) {
 		const generated = options.generatedLuaModules[index];
 		if (modulePaths.has(generated.path)) {

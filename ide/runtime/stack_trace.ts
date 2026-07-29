@@ -61,7 +61,7 @@ export function buildLuaStackFrames(
 		const range = symbols === null
 			? null
 			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.tracePc);
-		const source = range ? range.path : sources.activeLuaSources.entry_path;
+		const source = range ? range.path : sources.activeLuaSources.entrySourcePath;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(

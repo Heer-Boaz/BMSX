@@ -29,21 +29,12 @@ function decodedProjectRootPath(path: string | null): string {
 }
 
 
-type CartridgeMetadata = {
-	cart_manifest: CartManifest;
-	entry_path: string;
-};
-
-function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): CartridgeMetadata {
+function decodeCartridgeManifest(rom: Uint8Array, header: CartRomHeader): CartManifest {
 	if (header.manifestLength === 0) {
 		throw new Error('ROM header is missing manifest payload.');
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
-	const cart_manifest = parseCartManifest(decodeBinary(manifestSlice), 'ROM manifest payload');
-	return {
-		cart_manifest,
-		entry_path: cart_manifest.lua.entry_path,
-	};
+	return parseCartManifest(decodeBinary(manifestSlice), 'ROM manifest payload');
 }
 
 async function loadRomAssetListFromHeader(
@@ -168,12 +159,10 @@ export async function parseCartridgeIndex(payload: Uint8Array): Promise<Cartridg
 
 async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRomHeader): Promise<CartridgeIndex> {
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header, 'cart');
-	const { cart_manifest, entry_path } = decodeCartridgeMetadata(payload, header);
 	return {
 		entries,
 		projectRootPath,
-		cart_manifest,
-		entry_path,
+		cart_manifest: decodeCartridgeManifest(payload, header),
 	};
 }
 
@@ -369,7 +358,6 @@ async function loadRomToolingPackageFromSource(source: RawRomSource, index: Cart
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		cart_manifest: index.cart_manifest,
-		entry_path: index.entry_path,
 	};
 	const entries = source.list();
 	await Promise.all(entries.map(entry => load(source, entry, romPackage)));
@@ -383,17 +371,12 @@ export async function buildCartridgeToolingLayer(image: RomImage): Promise<RomTo
 	return { id: 'cart', header: image.header, index, payload: image.bytes, package: toolingPackage };
 }
 
-export async function buildSystemToolingLayer(params: {
-	image: RomImage;
-	entry_path: string;
-}): Promise<RomToolingLayer> {
-	const { image } = params;
+export async function buildSystemToolingLayer(image: RomImage): Promise<RomToolingLayer> {
 	const { entries } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
 	const index: CartridgeIndex = {
 		entries,
 		projectRootPath: '',
 		cart_manifest: null,
-		entry_path: params.entry_path,
 	};
 	const source = new RomSourceStack([{ id: 'system', index, payload: image.bytes }]);
 	const toolingPackage = await loadRomToolingPackageFromSource(source, index);

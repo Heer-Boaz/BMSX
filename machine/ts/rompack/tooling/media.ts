@@ -4,7 +4,6 @@ import {
 	type RomToolingLayer,
 } from './loader';
 import { parseRomImage } from '../image';
-import { SYSTEM_BOOT_ENTRY_PATH } from './system';
 
 export type RomToolingMedia = {
 	system: RomToolingLayer;
@@ -24,10 +23,7 @@ export async function loadRomToolingMedia(
 		cartridgeSlots[1] ? parseRomImage(cartridgeSlots[1], 'cart') : null,
 	] as const;
 	const [system, slot0, slot1] = await Promise.all([
-		buildSystemToolingLayer({
-			image: systemImage,
-			entry_path: SYSTEM_BOOT_ENTRY_PATH,
-		}),
+		buildSystemToolingLayer(systemImage),
 		cartridgeImages[0]
 			? buildCartridgeToolingLayer(cartridgeImages[0])
 			: null,
