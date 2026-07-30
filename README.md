@@ -155,10 +155,10 @@ Run an already-built cart in headless mode:
 npm run headless:game -- pietious
 ```
 
-Run the bare-metal cart through both headless runtimes:
+Run render parity through the TypeScript and C++ headless runtimes:
 
 ```bash
-npm run headless:bare-metal
+npm run test:render-parity
 ```
 
 Run an explicit host test:
@@ -170,7 +170,7 @@ npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_asse
 Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
-- `headless:bare-metal` force-builds and runs `bare_metal_cart` through TS headless and the C++ libretro host
+- `test:render-parity` force-builds and compares the render test carts through TS headless and the C++ libretro host
 - headless runs `dist/host_headless.debug.js` with `dist/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
 - `headless:tooling` runs the separate `dist/host_headless_tooling.debug.js` validation product
 - host tests are always explicit; `headless:game` does not auto-load assert modules

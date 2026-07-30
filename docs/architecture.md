@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-29.
+Last checked: 2026-07-30.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -419,6 +419,9 @@ package metadata into installed socket media. `Runtime` consumes the system-ROM
 bytes and cartridge-media records directly and constructs the one machine-owned
 `Memory`; there is no manager or second ROM lifecycle. Admission never decodes
 TOC assets, manifests, source registries, symbols, or authoring packages.
+Native libretro content owns its mapped ROM backing, parsed physical-image
+views, and active `Runtime` as one RAII lifetime; unloading destroys the runtime
+before unmapping its ROM spans.
 Studio and source-aware profiling explicitly call `rompack/tooling/media.ts`
 above that machine initialization boundary. Ordinary browser and Node players
 therefore neither allocate authoring layers nor link their decoder graph.
