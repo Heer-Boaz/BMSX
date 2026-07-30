@@ -11,8 +11,8 @@ import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
-	createBuiltinFunction,
 	StringValue,
+	ValueTag,
 } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
@@ -78,7 +78,7 @@ import {
 	type TestBlua32ImagePair,
 	type TestBlua32Source,
 } from '../helpers/blua32';
-import { parseLuaChunk } from './cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
 const CART_LAUNCHER_SYSTEM_CODE = new Uint8Array(4 * INSTRUCTION_BYTES);
 writeInstruction(CART_LAUNCHER_SYSTEM_CODE, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -222,7 +222,9 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 		vblank: {
 			tickCompleted: false,
 		},
+		completionValues: [],
 		callClosure: Runtime.prototype.callClosure,
+		readCompletionValues: Runtime.prototype.readCompletionValues,
 	} as unknown as Runtime;
 }
 
@@ -442,9 +444,9 @@ handler_failure, handler_failure_error = xpcall(fail, handle_failure)
 nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 `;
 	const { cpu } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source);
-	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('error')), createBuiltinFunction(BuiltinFunctionId.Error));
-	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('pcall')), createBuiltinFunction(BuiltinFunctionId.PCall));
-	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('xpcall')), createBuiltinFunction(BuiltinFunctionId.XPCall));
+	cpu.setGlobalByKey(cpu.stringPool.intern('error'), ValueTag.BuiltinFunction, BuiltinFunctionId.Error, null);
+	cpu.setGlobalByKey(cpu.stringPool.intern('pcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.PCall, null);
+	cpu.setGlobalByKey(cpu.stringPool.intern('xpcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.XPCall, null);
 
 	let restoredProtectedCall = false;
 	while (cpu.getFrameDepth() > 0) {
@@ -459,30 +461,30 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	}
 
 	assert.equal(restoredProtectedCall, true);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success'))), true);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success_a'))), 3);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success_b'))), 4);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('failure'))), false);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success')), true);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success_a')), 3);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success_b')), 4);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('failure')), false);
 	assert.equal(
-		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handled'))),
-		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('marker'))),
+		cpu.getGlobalByKey(cpu.stringPool.intern('handled')),
+		cpu.getGlobalByKey(cpu.stringPool.intern('marker')),
 	);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('invalid_handler_success'))), false);
-	assert.ok(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('invalid_handler_error'))) instanceof StringValue);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_failure'))), false);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('invalid_handler_success')), false);
+	assert.ok(cpu.getGlobalByKey(cpu.stringPool.intern('invalid_handler_error')) instanceof StringValue);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('multiple_failure')), false);
 	assert.equal(
-		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_handled'))),
-		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('marker'))),
+		cpu.getGlobalByKey(cpu.stringPool.intern('multiple_handled')),
+		cpu.getGlobalByKey(cpu.stringPool.intern('marker')),
 	);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_extra'))), null);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handler_failure'))), false);
-	const handlerFailureError = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handler_failure_error')));
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('multiple_extra')), null);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('handler_failure')), false);
+	const handlerFailureError = cpu.getGlobalByKey(cpu.stringPool.intern('handler_failure_error'));
 	assert.ok(handlerFailureError instanceof StringValue);
 	assert.equal(cpu.stringPool.toString(handlerFailureError.id), 'error in error handling');
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_outer'))), true);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_inner'))), true);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_a'))), 3);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_b'))), 4);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_outer')), true);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_inner')), true);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_a')), 3);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_b')), 4);
 	assert.deepEqual(cpu.captureRuntimeState().protectedCalls, []);
 });
 
@@ -516,12 +518,12 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
 });
 
-test('completion-call return routing survives save-state and exposes the CPU latch without copying', () => {
+test('completion-call return routing survives save-state through the raw CPU latch', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const closure = cpu.completionValues[0] as Closure;
-	const closureKey = StringValue.get(cpu.stringPool.intern('completion_call'));
-	cpu.setGlobalByKey(closureKey, closure);
+	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+	const closureKey = cpu.stringPool.intern('completion_call');
+	cpu.setGlobalByKey(closureKey, ValueTag.Closure, NaN, closure);
 
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -531,13 +533,14 @@ test('completion-call return routing survives save-state and exposes the CPU lat
 
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const restoredTable = cpu.completionValues[0] as Table;
+	const restoredTable = materializeCpuCompletionValues(cpu)[0] as Table;
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.completionValues[0], restoredTable);
+	assert.equal(materializeCpuCompletionValues(cpu)[0], restoredTable);
 
 	const restoredClosure = cpu.getGlobalByKey(closureKey) as Closure;
-	const results = makeRuntime(cpu, irqController).callClosure(restoredClosure);
-	assert.equal(results, cpu.completionValues);
+	const runtime = makeRuntime(cpu, irqController);
+	const results = runtime.callClosure(restoredClosure);
+	assert.equal(results, runtime.readCompletionValues());
 	const borrowedTable = results[0];
 	cpu.collectTrackedHeapBytes();
 	assert.equal(results[0], borrowedTable);
@@ -613,7 +616,7 @@ end
 `;
 	const { cpu, irqController } = runCompiledVblankIrq(source);
 
-	const irqSeen = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen')));
+	const irqSeen = cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen'));
 	assert.equal(irqSeen, IRQ_VBLANK);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
@@ -640,8 +643,8 @@ observed_sequence = sequence
 		irqController.raise(IRQ_VBLANK);
 		assert.equal(cpu.enterPendingInterrupt(), true, `O${optLevel} IRQ entry`);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, `O${optLevel} resumed run`);
-		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('observed_before'))), 0, `O${optLevel} snapshot`);
-		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('observed_sequence'))), 1, `O${optLevel} live sequence`);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_before')), 0, `O${optLevel} snapshot`);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_sequence')), 1, `O${optLevel} live sequence`);
 	}
 });
 
@@ -718,7 +721,7 @@ while true do
 end
 `;
 	const { cpu, irqController } = runCompiledVblankIrq(source);
-	assert.equal((cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))) as number) > 1, true);
+	assert.equal((cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen')) as number) > 1, true);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
 });
 
@@ -741,8 +744,8 @@ after_enable = irq_seen
 	irqController.raise(IRQ_VBLANK);
 	cpuExecution.runWithBudget(state);
 
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), IRQ_VBLANK);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('after_enable'))), IRQ_VBLANK);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen')), IRQ_VBLANK);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('after_enable')), IRQ_VBLANK);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
 
@@ -1270,7 +1273,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	loadFault.epcWord += INSTRUCTION_BYTES;
 	cpu.restoreRuntimeState(loadFault);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.completionValues, [1]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 
 	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
 	memory.readMappedU8(unmappedAddress);
@@ -1320,7 +1323,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 	memory.writeMappedF64LE(f64Address, Math.PI);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.completionValues, [0x5a, Math.PI]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x5a, Math.PI]);
 });
 
 test('CPU address errors vector before any mapped-memory bus cycle or destination commit', () => {
@@ -1383,7 +1386,7 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 
 test('CPU runtime snapshot preserves nested table object identities', () => {
 	const { cpu } = makeHaltCpu();
-	const rootName = StringValue.get(cpu.stringPool.intern('root'));
+	const rootName = cpu.stringPool.intern('root');
 	const childKey = StringValue.get(cpu.stringPool.intern('child'));
 	const parentKey = StringValue.get(cpu.stringPool.intern('parent'));
 	const objectKeyName = StringValue.get(cpu.stringPool.intern('object_key'));
@@ -1394,7 +1397,7 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	root.setStringKey(childKey, child);
 	root.setStringKey(objectKeyName, objectKey);
 	root.set(objectKey, child);
-	cpu.setGlobalByKey(rootName, root);
+	cpu.setGlobalByKey(rootName, ValueTag.Table, NaN, root);
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 

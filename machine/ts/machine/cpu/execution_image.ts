@@ -1,12 +1,15 @@
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { OpCode } from '../../spec/blua32/opcode';
+import type { Closure } from './closure';
 import type { Table } from './table';
-import type { Value } from './value';
+import { ValueTag } from './value';
 
 export type TableLoadInlineCache = {
 	table: Table | null;
 	version: number;
-	value: Value;
+	valueTag: ValueTag;
+	valueScalar: number;
+	valueReference: Table | Closure | null;
 };
 
 export const DECODED_PAGE_SHIFT = 8;
@@ -35,8 +38,8 @@ export type Blua32ExecutionImage = {
 	functionCount: number;
 	textAddress: number;
 	textByteCount: number;
-	constPool: Value[];
-	constNumbers: Float64Array;
+	constTags: Uint8Array;
+	constScalars: Float64Array;
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
 	decodedPages: DecodedInstructionPage[];

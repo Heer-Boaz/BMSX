@@ -12,7 +12,7 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
-import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	installRuntimeRomLayers,
@@ -56,8 +56,8 @@ function createFreshLuaInterpreter(
 	return new LuaInterpreter(bridge.luaJsBridge);
 }
 
-function describeSymbolValue(value: Value): { kind: RuntimeSymbolKind; valueType: string } {
-	switch (valueTag(value)) {
+function describeSymbolTag(tag: ValueTag): { kind: RuntimeSymbolKind; valueType: string } {
+	switch (tag) {
 		case ValueTag.Nil:
 			return { kind: 'constant', valueType: 'nil' };
 		case ValueTag.False:
@@ -113,15 +113,20 @@ export function listSymbols(sources: RuntimeSourceState, runtime: Runtime): Runt
 	runtime.machine.cpu.syncGlobalSlotsToTable();
 	const hiddenPrefixes = collectHiddenSymbolPrefixes(sources);
 	const symbolsByName = new Map<string, RuntimeSymbolEntry>();
-	runtime.machine.cpu.globals.forEachEntry((key, value) => {
-		if (!valueIsString(key)) {
+	runtime.machine.cpu.globals.forEachStoredEntry((
+		keyTag,
+		keyScalar,
+		_keyReference,
+		valueTag,
+	) => {
+		if (keyTag !== ValueTag.String) {
 			return;
 		}
-		const name = runtime.machine.cpu.stringPool.toString(asStringId(key));
+		const name = runtime.machine.cpu.stringPool.toString(keyScalar);
 		if (shouldHideGeneratedModuleSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
 			return;
 		}
-		const classification = describeSymbolValue(value);
+		const classification = describeSymbolTag(valueTag);
 		symbolsByName.set(name, {
 			name,
 			kind: classification.kind,

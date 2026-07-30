@@ -176,7 +176,11 @@ auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const 
 		throw;
 	}
 	cpu.instructionBudgetRemaining = previousBudget;
-	return std::span<const Value>(cpu.completionValues);
+	return readCompletionValues();
+}
+
+auto Runtime::readCompletionValues() const -> std::span<const Value> {
+	return machine.cpu.readCompletionValues();
 }
 
 bool Runtime::completionCallPending() const {

@@ -28,6 +28,7 @@ import {
 	createTestRuntimeRomPayload,
 	createTestSystemImageRuntimeSourceState,
 } from '../helpers/runtime_sources';
+import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../toolchain/ts/lua/semantic/diagnostics');
@@ -300,7 +301,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const closure = cpu.completionValues[0];
+	const closure = materializeCpuCompletionValues(cpu)[0];
 	assert.ok(valueIsClosure(closure));
 	runtime.callClosure(closure);
 	assert.equal(cpu.getFrameDepth(), 1);

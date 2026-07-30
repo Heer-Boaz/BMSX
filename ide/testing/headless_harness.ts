@@ -148,7 +148,7 @@ export function createHeadlessIdeHarness(
 			const tracked = cpu.luaHeap.usedBytes();
 			const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
 			let globals = 0;
-			cpu.globals.forEachEntry(() => { globals += 1; });
+			cpu.globals.forEachStoredEntry(() => { globals += 1; });
 			return {
 				tracked,
 				stringBytes,

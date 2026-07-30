@@ -14,7 +14,7 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource } from './cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues } from './cpu_test_harness';
 
 const emptyCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(emptyCode, 0, OpCode.RET, 0, 0, 0);
@@ -63,7 +63,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 	const before = cpu.collectTrackedHeapBytes();
 
 	assert.equal(createBuiltinFunction(BuiltinFunctionId.Next), next);
-	assert.equal(cpu.collectTrackedHeapBytes(next), before);
+	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
@@ -144,12 +144,12 @@ test('restored static closures reuse the static proto cache', () => {
 		'return f',
 	].join('\n'));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const closure = cpu.completionValues[0];
+	const closure = materializeCpuCompletionValues(cpu)[0];
 	const before = cpu.collectTrackedHeapBytes();
 
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 
-	assert.equal(cpu.completionValues[0], closure);
+	assert.equal(materializeCpuCompletionValues(cpu)[0], closure);
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 

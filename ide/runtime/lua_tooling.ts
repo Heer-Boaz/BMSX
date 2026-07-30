@@ -3,7 +3,7 @@ import { convertToError, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNati
 import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asStringId, StringValue, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, materializeValue, StringValue, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../language/lua/interpreter/interop';
 import type { RuntimeSourceState } from './sources';
@@ -542,12 +542,12 @@ function runtimeTableToHost(bridge: RuntimeLuaTooling, table: Table, context: Lu
 	let hasOtherEntries = false;
 	let maxNumericIndex = 0;
 	// start repeated-sequence-acceptable -- Runtime table marshaling keeps this scan direct and allocation-free.
-	table.forEachEntry((key) => {
+	table.forEachStoredEntry((keyTag, keyScalar) => {
 		entryCount += 1;
-		if (valueIsNumber(key) && Number.isInteger(key) && key >= 1) {
+		if (keyTag === ValueTag.Number && Number.isInteger(keyScalar) && keyScalar >= 1) {
 			numericCount += 1;
-			if (key > maxNumericIndex) {
-				maxNumericIndex = key;
+			if (keyScalar > maxNumericIndex) {
+				maxNumericIndex = keyScalar;
 			}
 			return;
 		}
@@ -570,7 +570,16 @@ function runtimeTableToHost(bridge: RuntimeLuaTooling, table: Table, context: Lu
 	}
 	const objectResult: Record<string, unknown> = {};
 	visited.set(table, objectResult);
-	table.forEachEntry((key, entryValue) => {
+	table.forEachStoredEntry((
+		keyTag,
+		keyScalar,
+		keyReference,
+		valueTag,
+		valueScalar,
+		valueReference,
+	) => {
+		const key = materializeValue(keyTag, keyScalar, keyReference);
+		const entryValue = materializeValue(valueTag, valueScalar, valueReference);
 		const segment = describeMarshalSegment(bridge, key);
 		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
 		objectResult[stringifyKey(bridge, key)] = runtimeValueToHost(bridge, entryValue, nextContext, visited);

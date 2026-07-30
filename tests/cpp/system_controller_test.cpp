@@ -308,8 +308,8 @@ struct ExternalClosureFixture {
 		, cpu(runtime.machine.cpu) {
 		require(cpu.runUntilDepth(0, 6) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
-			const bmsx::Value name =
-				bmsx::valueString(cpu.stringPool().intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]));
+			const bmsx::StringId name =
+				cpu.stringPool().intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]);
 			closures[index] = bmsx::asClosure(cpu.getGlobalByKey(name));
 		}
 	}
@@ -509,18 +509,18 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
-	const bmsx::Value publishedClosureName =
-		bmsx::valueString(cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL));
-	const bmsx::Value publishedValueName =
-		bmsx::valueString(cpu.stringPool().intern(TEST_CARTRIDGE_VALUE_GLOBAL));
+	const bmsx::StringId publishedClosureName =
+		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
+	const bmsx::StringId publishedValueName =
+		cpu.stringPool().intern(TEST_CARTRIDGE_VALUE_GLOBAL);
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system reset firmware enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
 	const bmsx::Value slot0ClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::Closure* slot0Closure = bmsx::asClosure(slot0ClosureValue);
 	require(bmsx::asNumber(cpu.getGlobalByKey(publishedValueName)) == 111.0, "slot 0 startup executes its published closure");
-	const bmsx::Value savedClosureName = bmsx::valueString(cpu.stringPool().intern("saved_closure"));
-	const bmsx::Value closureTableName = bmsx::valueString(cpu.stringPool().intern("closure_table"));
+	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
+	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
 	bmsx::Table* closureTable = cpu.createTable();
 	closureTable->set(slot0ClosureValue, bmsx::valueNumber(77.0));
 	cpu.setGlobalByKey(savedClosureName, slot0ClosureValue);
@@ -575,8 +575,8 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
-	const bmsx::Value publishedClosureName =
-		bmsx::valueString(cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL));
+	const bmsx::StringId publishedClosureName =
+		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the first non-static closure");
 	const bmsx::Value firstClosureValue = cpu.getGlobalByKey(publishedClosureName);
@@ -589,9 +589,9 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	require(firstClosure != secondClosure, "non-static closure creation retains object identity");
 	require(firstClosure->functionAddress == secondClosure->functionAddress, "non-static closures share one physical function record");
 
-	const bmsx::Value firstName = bmsx::valueString(cpu.stringPool().intern("first_closure"));
-	const bmsx::Value secondName = bmsx::valueString(cpu.stringPool().intern("second_closure"));
-	const bmsx::Value tableName = bmsx::valueString(cpu.stringPool().intern("closure_table"));
+	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
+	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
+	const bmsx::StringId tableName = cpu.stringPool().intern("closure_table");
 	bmsx::Table* closureTable = cpu.createTable();
 	closureTable->set(firstClosureValue, bmsx::valueNumber(11.0));
 	closureTable->set(secondClosureValue, bmsx::valueNumber(22.0));
@@ -627,8 +627,8 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
-	const bmsx::Value publishedClosureName =
-		bmsx::valueString(cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL));
+	const bmsx::StringId publishedClosureName =
+		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 0 publishes the dynamic closure");
 	const bmsx::Value dynamicClosureValue = cpu.getGlobalByKey(publishedClosureName);
@@ -642,9 +642,9 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	require(dynamicClosure != canonicalClosure, "mixed cartridge closure modes retain distinct object identities");
 	require(dynamicClosure->functionAddress == canonicalClosure->functionAddress, "mixed cartridge closure modes share one raw address");
 
-	const bmsx::Value dynamicName = bmsx::valueString(cpu.stringPool().intern("dynamic_closure"));
-	const bmsx::Value canonicalName = bmsx::valueString(cpu.stringPool().intern("canonical_closure"));
-	const bmsx::Value tableName = bmsx::valueString(cpu.stringPool().intern("mixed_closure_table"));
+	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
+	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");
+	const bmsx::StringId tableName = cpu.stringPool().intern("mixed_closure_table");
 	bmsx::Table* closureTable = cpu.createTable();
 	closureTable->set(dynamicClosureValue, bmsx::valueNumber(11.0));
 	closureTable->set(canonicalClosureValue, bmsx::valueNumber(22.0));
@@ -698,8 +698,8 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	);
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
-	bmsx::Closure* closure = bmsx::asClosure(cpu.completionValues[0]);
-	const bmsx::Value closureKey = bmsx::valueString(cpu.stringPool().intern("completion_call"));
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
 	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
 	cpu.beginCompletionCall(*closure);
@@ -712,13 +712,13 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 
 	cpu.restoreRuntimeState(state);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored completion call returns through its retained route");
-	bmsx::Table* restoredTable = bmsx::asTable(cpu.completionValues[0]);
+	bmsx::Table* restoredTable = bmsx::asTable(cpu.readCompletionValues()[0]);
 	cpu.collectHeap();
-	require(bmsx::asTable(cpu.completionValues[0]) == restoredTable, "completion latch roots its restored heap result");
+	require(bmsx::asTable(cpu.readCompletionValues()[0]) == restoredTable, "completion latch roots its restored heap result");
 
 	bmsx::Closure* restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey));
 	const std::span<const bmsx::Value> results = fixture.runtime.callClosure(*restoredClosure);
-	require(results.data() == cpu.completionValues.data(), "Runtime borrows the CPU completion latch without copying");
+	require(results.data() == cpu.readCompletionValues().data(), "Runtime borrows the CPU completion latch without copying");
 	bmsx::Table* borrowedTable = bmsx::asTable(results[0]);
 	cpu.collectHeap();
 	require(bmsx::asTable(results[0]) == borrowedTable, "borrowed completion results remain rooted by the CPU latch");

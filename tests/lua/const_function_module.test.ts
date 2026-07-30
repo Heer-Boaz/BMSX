@@ -26,6 +26,7 @@ import {
 	linkTestSystemBlua32,
 	runCompiledTestSystem,
 } from '../helpers/blua32';
+import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const BOOL01_PATH = 'cartlib/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'cartlib/util/div_toward_zero';
@@ -61,7 +62,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 
 function runColdCompiled(compiled: CompiledProgram) {
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	return Array.from(cpu.completionValues);
+	return materializeCpuCompletionValues(cpu);
 }
 
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
@@ -71,7 +72,7 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	return Array.from(cpu.completionValues);
+	return materializeCpuCompletionValues(cpu);
 }
 
 function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {

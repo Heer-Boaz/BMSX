@@ -1943,7 +1943,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(bridge: RuntimeLuaTooling, runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const cpu = runtime.machine.cpu;
-	const rootRaw = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern(parts[0])));
+	const rootRaw = cpu.getGlobalByKey(cpu.stringPool.intern(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}

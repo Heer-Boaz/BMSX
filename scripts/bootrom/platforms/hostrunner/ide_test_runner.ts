@@ -3,7 +3,7 @@ import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
-import { StringValue } from '../../../../machine/ts/machine/cpu/value';
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from 'bmsx/platform';
 
 export interface IdeTestRunnerOptions {
@@ -79,13 +79,13 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 
 	log('starting');
 	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-	const factory = new Function('t', 'assert', 'StringValue', `"use strict"; return (async () => {\n${source}\n})();`) as (
+	const factory = new Function('t', 'assert', 'tableValueTag', `"use strict"; return (async () => {\n${source}\n})();`) as (
 		ctx: typeof t,
 		assertFn: typeof assert,
-		stringValue: typeof StringValue,
+		tableValueTag: ValueTag,
 	) => Promise<void>;
 	try {
-		await factory(t, assert, StringValue);
+		await factory(t, assert, ValueTag.Table);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
 		throw error;

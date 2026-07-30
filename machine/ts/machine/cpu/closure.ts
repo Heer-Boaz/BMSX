@@ -1,12 +1,18 @@
-import { VALUE_TAG, ValueTag, type Value } from './value';
+import {
+	VALUE_TAG,
+	ValueTag,
+	type ValueReference,
+} from './value';
 import type { CallFrame } from './call_state';
 
 export type Upvalue = {
 	hashId: number;
 	open: boolean;
 	index: number;
-	frame: CallFrame;
-	value: Value;
+	frame: CallFrame | null;
+	valueTag: ValueTag;
+	valueScalar: number;
+	valueReference: ValueReference;
 	nextOpen: Upvalue | null;
 };
 

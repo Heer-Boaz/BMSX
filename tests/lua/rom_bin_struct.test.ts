@@ -9,6 +9,7 @@ import type { Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const BIN_ADDR = RAM_BASE + 0x21000;
 
@@ -24,7 +25,7 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
-	return Array.from(cpu.completionValues);
+	return materializeCpuCompletionValues(cpu);
 }
 
 test('a packed struct-array in ROM-mapped memory is read field-wise via a typed pointer (the .bin consumer pattern)', () => {

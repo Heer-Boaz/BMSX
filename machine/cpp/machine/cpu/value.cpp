@@ -7,17 +7,16 @@
 namespace bmsx {
 
 std::string valueToString(Value value, const StringPool& stringPool) {
-	if (isNil(value)) return "nil";
-	if (valueIsTagged(value)) {
-		switch (valueTag(value)) {
+	const uint8_t encodedTag = valueEncodedTag(value);
+	if (encodedTag != 0) {
+		switch (static_cast<ValueTag>(encodedTag - 1u)) {
+			case ValueTag::Nil: return "nil";
 			case ValueTag::False: return "false";
 			case ValueTag::True: return "true";
 			case ValueTag::String: return stringPool.toString(asStringId(value));
 			case ValueTag::Table: return "table";
-			case ValueTag::Closure: return "function";
+			case ValueTag::Closure:
 			case ValueTag::BuiltinFunction: return "function";
-			case ValueTag::Upvalue: return "upvalue";
-			case ValueTag::Nil: return "nil";
 			default: return "unknown";
 		}
 	}

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <new>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -62,7 +63,8 @@ enum class CpuValueStateTag : uint8_t {
 	Number,
 	String,
 	Builtin,
-	Ref,
+	Table,
+	Closure,
 };
 
 struct CpuValueState {
@@ -249,14 +251,13 @@ public:
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
-	void setGlobalByKey(const Value& key, const Value& value);
-	void setSystemGlobalByKey(const Value& key, const Value& value);
-	Value getGlobalByKey(const Value& key) const;
+	void setGlobalByKey(StringId key, const Value& value);
+	void setSystemGlobalByKey(StringId key, const Value& value);
+	Value getGlobalByKey(StringId key) const;
 	void clearGlobalSlots();
 	void syncGlobalSlotsToTable();
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
-	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 
 	void beginCompletionCall(Closure& closure, BuiltinArgsView args = {});
@@ -303,6 +304,7 @@ public:
 	u32 readFramePc(int frameIndex) const;
 	u32 readFrameCallSitePc(int childFrameIndex) const;
 	bool completionCallPending() const;
+	auto readCompletionValues() const -> std::span<const Value>;
 	bool isExceptionFrame(int frameIndex) const;
 	bool isNonMaskableExceptionFrame(int frameIndex) const;
 	int getFrameRegisterCount(int frameIndex) const;
@@ -322,7 +324,6 @@ public:
 	void writeFrameCallSitePc(int childFrameIndex, u32 pc);
 
 	int instructionBudgetRemaining = 0;
-	std::vector<Value> completionValues;
 	u32 lastPc = 0;
 	Table* globals = nullptr;
 
@@ -333,6 +334,7 @@ private:
 	template <bool RootBoundary>
 	RunResult runLoop(int targetDepth, int instructionBudget);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
+	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	void runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out);
@@ -417,7 +419,6 @@ private:
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
-	void releaseBuiltinResultScratch(BuiltinResults& out);
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
 
@@ -471,13 +472,14 @@ private:
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;
-	std::array<Value, LUA_FAULT_REASON_OUT_OF_MEMORY + 1u> m_luaFaultErrorValues;
+	std::array<Value, LUA_FAULT_REASON_INVALID_ARGUMENT + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;
 	size_t m_builtinResultScratchIndex = 0;
+	std::vector<Value> m_completionValues;
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 

@@ -4,9 +4,6 @@
 #include <cstdint>
 #include <memory>
 #include <new>
-#include <optional>
-#include <tuple>
-#include <utility>
 #include <vector>
 
 #include "machine/cpu/value.h"
@@ -88,8 +85,7 @@ public:
 			bumpVersion();
 		}
 	}
-	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
-	std::optional<std::tuple<size_t, size_t, Value, Value>> nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey = valueNil()) const;
+	bool nextEntry(const Value& after, Value& key, Value& value) const;
 	TableRuntimeState captureRuntimeState() const;
 	uint32_t restoreRuntimeState(const TableRuntimeState& state);
 	size_t trackedHeapBytes() const;

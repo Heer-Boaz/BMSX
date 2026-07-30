@@ -1,6 +1,6 @@
 import type { Closure, Upvalue } from './closure';
 import type { Blua32ExecutionImage } from './execution_image';
-import type { RegisterFile } from './register_file';
+import type { ValueSlots } from './value_slots';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -18,7 +18,7 @@ export type CallFrame = {
 	varargCount: number;
 	stackBase: number;
 	stackCapacity: number;
-	registers: RegisterFile;
+	registers: ValueSlots;
 	closure: Closure;
 	returnBase: number;
 	returnCount: number;

@@ -37,7 +37,7 @@ import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { parseLuaChunk } from './cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
 const textEncoder = new TextEncoder();
 
@@ -228,7 +228,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.completionValues), [64 | (256 << 16)]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [64 | (256 << 16)]);
 });
 
 test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => {

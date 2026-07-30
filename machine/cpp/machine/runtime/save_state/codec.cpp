@@ -1412,8 +1412,12 @@ BinValue encodeCpuValueState(const CpuValueState& state) {
 			object["tag"] = "builtin";
 			object["id"] = static_cast<i64>(state.builtinId);
 			break;
-		case CpuValueStateTag::Ref:
-			object["tag"] = "ref";
+		case CpuValueStateTag::Table:
+			object["tag"] = "table";
+			object["id"] = static_cast<i64>(state.refId);
+			break;
+		case CpuValueStateTag::Closure:
+			object["tag"] = "closure";
 			object["id"] = static_cast<i64>(state.refId);
 			break;
 	}
@@ -1451,8 +1455,13 @@ CpuValueState decodeCpuValueState(const BinValue& value, const char* label) {
 		state.builtinId = static_cast<BuiltinFunctionId>(requireU32(requireField(object, "id", label), "cpuValueState.id"));
 		return state;
 	}
-	if (tag == "ref") {
-		state.tag = CpuValueStateTag::Ref;
+	if (tag == "table") {
+		state.tag = CpuValueStateTag::Table;
+		state.refId = requireI32(requireField(object, "id", label), "cpuValueState.id");
+		return state;
+	}
+	if (tag == "closure") {
+		state.tag = CpuValueStateTag::Closure;
 		state.refId = requireI32(requireField(object, "id", label), "cpuValueState.id");
 		return state;
 	}

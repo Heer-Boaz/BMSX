@@ -7,7 +7,7 @@ void Runtime::installLuaBootPrimitives() {
 	CPU& cpu = machine.cpu;
 	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
 		cpu.setSystemGlobalByKey(
-			valueString(cpu.stringPool().intern(primitive.name)),
+			cpu.stringPool().intern(primitive.name),
 			cpu.createBuiltinFunction(primitive.id)
 		);
 	}

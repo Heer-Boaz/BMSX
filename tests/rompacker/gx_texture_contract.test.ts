@@ -7,10 +7,11 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
+import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
@@ -464,12 +465,14 @@ return imgdec
 		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 			const primitive = LUA_BOOT_PRIMITIVES[index];
 			cpu.setSystemGlobalByKey(
-				StringValue.get(cpu.stringPool.intern(primitive.name)),
-				createBuiltinFunction(primitive.id),
+				cpu.stringPool.intern(primitive.name),
+				ValueTag.BuiltinFunction,
+				primitive.id,
+				null,
 			);
 		}
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(Array.from(cpu.completionValues, value => (value as number) >>> 0), [
+		assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
 			1,
 			CART_ROM_BASE + loadedTexture.start!,
 			(loadedTexture.end! - loadedTexture.start!) >> 2,

@@ -49,8 +49,6 @@ bool GcHeap::markValue(Value v) {
 			return markClosure(asClosure(v));
 		case ValueTag::BuiltinFunction:
 			return false;
-		case ValueTag::Upvalue:
-			return markObject(asUpvalue(v));
 		case ValueTag::String:
 			m_stringPool.markReachable(asStringId(v));
 			return false;
@@ -134,8 +132,6 @@ bool GcHeap::valueIsAlive(Value value) const {
 			const Closure* closure = asClosure(value);
 			return closure->trackedHeapBytes == 0 || closure->marked;
 		}
-		case ValueTag::Upvalue:
-			return asUpvalue(value)->marked;
 		default:
 			return true;
 	}
@@ -292,7 +288,8 @@ BuiltinResultsScratchScope::BuiltinResultsScratchScope(BuiltinResultsScratchScop
 
 BuiltinResultsScratchScope::~BuiltinResultsScratchScope() {
 	if (m_cpu) {
-		m_cpu->releaseBuiltinResultScratch(*m_out);
+		m_out->clear();
+		m_cpu->m_builtinResultScratchIndex -= 1;
 	}
 }
 
@@ -339,7 +336,11 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument.", false));
 	m_executionImages.reserve(3);
+	m_builtinResultScratch.reserve(1);
+	m_builtinResultScratch.get(0).ensureCapacity(8);
+	m_builtinResultScratch.clear();
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
 		const BuiltinFunctionCost cost = BUILTIN_FUNCTION_COSTS[index];
@@ -383,7 +384,7 @@ void CPU::reset() {
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
-	completionValues.clear();
+	m_completionValues.clear();
 	clearCallStack();
 	m_stringIndexTable = nullptr;
 	m_haltedUntilIrq = false;
@@ -519,7 +520,7 @@ std::vector<u32> CPU::registerGlobalNames(
 			const size_t slotIndex = registeredNames.size();
 			slot = slotByKey.emplace(key, slotIndex).first;
 			registeredNames.push_back(key);
-			values.push_back(system ? valueNil() : globals->get(valueString(key)));
+			values.push_back(system ? valueNil() : globals->getStringKey(key));
 		}
 		slots[index] = static_cast<u32>(slot->second);
 	}
@@ -683,7 +684,7 @@ Closure* CPU::staticClosureAtAddress(u32 address) {
 }
 
 void CPU::clearExecutionEnvironment() {
-	completionValues.clear();
+	m_completionValues.clear();
 	clearCallStack();
 	clearGlobalSlots();
 	globals->clear();
@@ -698,36 +699,33 @@ void CPU::clearGlobalSlots() {
 	m_globalSlotByKey.clear();
 }
 
-void CPU::setGlobalByKey(const Value& key, const Value& value) {
-	globals->set(key, value);
-	const StringId keyId = asStringId(key);
-	const auto globalIt = m_globalSlotByKey.find(keyId);
+void CPU::setGlobalByKey(StringId key, const Value& value) {
+	globals->setStringKey(key, value);
+	const auto globalIt = m_globalSlotByKey.find(key);
 	if (globalIt != m_globalSlotByKey.end()) {
 		m_globalValues[globalIt->second] = value;
 	}
 }
 
-void CPU::setSystemGlobalByKey(const Value& key, const Value& value) {
-	const StringId keyId = asStringId(key);
-	const auto slot = m_systemGlobalSlotByKey.find(keyId);
+void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
+	const auto slot = m_systemGlobalSlotByKey.find(key);
 	if (slot == m_systemGlobalSlotByKey.end()) {
-		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(keyId) + "' has no register slot.");
+		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(key) + "' has no register slot.");
 	}
 	m_systemGlobalValues[slot->second] = value;
 }
 
-Value CPU::getGlobalByKey(const Value& key) const {
-	const StringId keyId = asStringId(key);
-	const auto globalIt = m_globalSlotByKey.find(keyId);
+Value CPU::getGlobalByKey(StringId key) const {
+	const auto globalIt = m_globalSlotByKey.find(key);
 	if (globalIt != m_globalSlotByKey.end()) {
 		return m_globalValues[globalIt->second];
 	}
-	return globals->get(key);
+	return globals->getStringKey(key);
 }
 
 void CPU::syncGlobalSlotsToTable() {
 	for (size_t index = 0; index < m_globalNames.size(); ++index) {
-		globals->set(valueString(m_globalNames[index]), m_globalValues[index]);
+		globals->setStringKey(m_globalNames[index], m_globalValues[index]);
 	}
 }
 
@@ -929,7 +927,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
-	completionValues.clear();
+	m_completionValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
 }
@@ -983,17 +981,14 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			state.builtinId = asBuiltinFunction(value)->id;
 			return state;
 		}
-		state.tag = CpuValueStateTag::Ref;
 		if (valueIsTable(value)) {
+			state.tag = CpuValueStateTag::Table;
 			state.refId = ensureObjectId(asTable(value));
 			return state;
 		}
 		if (valueIsClosure(value)) {
+			state.tag = CpuValueStateTag::Closure;
 			state.refId = ensureObjectId(asClosure(value));
-			return state;
-		}
-		if (valueTag(value) == ValueTag::Upvalue) {
-			state.refId = ensureObjectId(asUpvalue(value));
 			return state;
 		}
 		throw BMSX_RUNTIME_ERROR("Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
@@ -1122,8 +1117,8 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		}
 		state.protectedCalls.push_back(continuationState);
 	}
-	state.completionValues.reserve(completionValues.size());
-	for (const Value& value : completionValues) {
+	state.completionValues.reserve(m_completionValues.size());
+	for (const Value& value : m_completionValues) {
 		state.completionValues.push_back(captureValueState(value));
 	}
 	for (const auto& frame : m_frames) {
@@ -1218,19 +1213,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				return valueString(valueState.stringId);
 			case CpuValueStateTag::Builtin:
 				return createBuiltinFunction(valueState.builtinId);
-			case CpuValueStateTag::Ref: {
-				const size_t refId = static_cast<size_t>(valueState.refId);
-				const RestoredObject& restored = restoredObjects[refId];
-				switch (state.objects[refId].kind) {
-					case CpuObjectState::Kind::Table:
-						return valueTable(restored.table);
-					case CpuObjectState::Kind::Closure:
-						return valueClosure(restored.closure);
-					case CpuObjectState::Kind::Upvalue:
-						return valueUpvalue(restored.upvalue);
-				}
-				__builtin_unreachable();
-			}
+			case CpuValueStateTag::Table:
+				return valueTable(restoredObjects[static_cast<size_t>(valueState.refId)].table);
+			case CpuValueStateTag::Closure:
+				return valueClosure(restoredObjects[static_cast<size_t>(valueState.refId)].closure);
 		}
 		__builtin_unreachable();
 	};
@@ -1280,7 +1266,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		}
 	}
 
-	completionValues.clear();
+	m_completionValues.clear();
 	clearCallStack();
 	globals->clear();
 	globals->prepareRestoreStorage(0, Table::hashCapacity(static_cast<int>(state.globals.size())));
@@ -1363,16 +1349,16 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 
 	for (const CpuRootValueState& entry : state.systemGlobals) {
-		setSystemGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
+		setSystemGlobalByKey(m_stringPool.intern(entry.name), restoreValue(entry.value));
 	}
 	for (const CpuRootValueState& entry : state.globals) {
-		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
+		setGlobalByKey(m_stringPool.intern(entry.name), restoreValue(entry.value));
 	}
 	const Value stringIndexTable = restoreValue(state.stringIndexTable);
 	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
-	completionValues.reserve(state.completionValues.size());
+	m_completionValues.reserve(state.completionValues.size());
 	for (const CpuValueState& valueState : state.completionValues) {
-		completionValues.push_back(restoreValue(valueState));
+		m_completionValues.push_back(restoreValue(valueState));
 	}
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
@@ -1416,7 +1402,6 @@ void CPU::hardHalt() {
 
 
 void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
-	out.clear();
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
@@ -1446,6 +1431,9 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			runBuiltinStringChar(args, out);
 			break;
 		case BuiltinFunctionId::SetStringIndex:
+			if (!valueIsTable(args[0])) {
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
 			m_stringIndexTable = asTable(args[0]);
 			break;
 		case BuiltinFunctionId::Error:
@@ -1669,22 +1657,31 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 }
 
 void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
-	out.clear();
 	if (!valueIsTable(target)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
 	}
-	auto entry = asTable(target)->nextEntry(key);
-	if (!entry.has_value()) {
+	Value nextKey;
+	Value nextValue;
+	if (!asTable(target)->nextEntry(key, nextKey, nextValue)) {
 		out.push_back(valueNil());
 		return;
 	}
-	out.push_back(entry->first);
-	out.push_back(entry->second);
+	out.push_back(nextKey);
+	out.push_back(nextValue);
 }
 
 void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	Table* metatable = asTable(args[1]);
 	const Value target = args[0];
+	if (!valueIsTable(target)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	const Value metatableValue = args[1];
+	Table* metatable = nullptr;
+	if (valueIsTable(metatableValue)) {
+		metatable = asTable(metatableValue);
+	} else if (!isNil(metatableValue)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
 	Table* table = asTable(target);
 	table->metatable = metatable;
 	table->bumpVersion();
@@ -1692,29 +1689,47 @@ void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
 }
 
 void CPU::runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	Table* metatable = asTable(args[0])->metatable;
+	const Value target = args[0];
+	if (!valueIsTable(target)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	Table* metatable = asTable(target)->metatable;
 	out.push_back(metatable ? valueTable(metatable) : valueNil());
 }
 
 void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
-	Table* table = asTable(args[0]);
+	const Value target = args[0];
+	if (!valueIsTable(target)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	Table* table = asTable(target);
 	out.push_back(table->get(args[1]));
 }
 
 void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
-	Table* table = asTable(args[0]);
+	const Value target = args[0];
+	if (!valueIsTable(target)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	Table* table = asTable(target);
 	table->set(args[1], args[2]);
 	out.push_back(valueTable(table));
 }
 
 void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
 	const Value selector = args[0];
-	if (valueIsString(selector) && m_stringPool.toString(asStringId(selector)) == "#") {
-		out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
-		return;
+	if (valueIsString(selector)) {
+		if (m_stringPool.toString(asStringId(selector)) == "#") {
+			out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
+			return;
+		}
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	if (!valueIsNumber(selector)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	const int count = static_cast<int>(args.size()) - 1;
-	int start = static_cast<int>(asNumber(selector));
+	int start = toI32(selector);
 	if (start < 0) {
 		start = count + start + 1;
 	}
@@ -1726,12 +1741,19 @@ void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
 }
 
 void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
-	const std::string& source = m_stringPool.toString(asStringId(args[0]));
+	const Value sourceValue = args[0];
+	if (!valueIsString(sourceValue)) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	const std::string& source = m_stringPool.toString(asStringId(sourceValue));
 	int position = 1;
 	if (args.size() > 1) {
 		const Value positionValue = args[1];
 		if (!isNil(positionValue)) {
-			position = static_cast<int>(std::trunc(asNumber(positionValue)));
+			if (!valueIsNumber(positionValue)) {
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
+			position = toI32(positionValue);
 		}
 	}
 	if (position < 1) {
@@ -1755,7 +1777,14 @@ void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
-		appendUtf8Codepoint(result, static_cast<uint32_t>(std::trunc(asNumber(arg))));
+		if (!valueIsNumber(arg)) {
+			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const uint32_t codepoint = toU32(arg);
+		if (codepoint > 0x10ffffu || (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
+			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		appendUtf8Codepoint(result, codepoint);
 	}
 	out.push_back(valueString(m_stringPool.intern(result)));
 }
@@ -2125,6 +2154,10 @@ bool CPU::completionCallPending() const {
 		}
 	}
 	return false;
+}
+
+auto CPU::readCompletionValues() const -> std::span<const Value> {
+	return m_completionValues;
 }
 
 bool CPU::isExceptionFrame(int frameIndex) const {
@@ -2784,13 +2817,7 @@ void CPU::refreshFrameRegisterPointers() {
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
 	BuiltinResults& out = m_builtinResultScratch.get(m_builtinResultScratchIndex);
 	m_builtinResultScratchIndex += 1;
-	out.clear();
 	return BuiltinResultsScratchScope(*this, out);
-}
-
-void CPU::releaseBuiltinResultScratch(BuiltinResults& out) {
-	out.clear();
-	m_builtinResultScratchIndex -= 1;
 }
 
 CPU::LocalRootsScope CPU::acquireLocalRoots() {
@@ -2813,7 +2840,7 @@ void CPU::markRoots(GcHeap& heap) {
 	// Keep the interned "__index" key tracked even while no live metatable uses it.
 	heap.markValue(m_indexKey);
 	heap.markObject(m_stringIndexTable);
-	for (const auto& value : completionValues) {
+	for (const auto& value : m_completionValues) {
 		heap.markValue(value);
 	}
 	for (size_t scratchIndex = 0; scratchIndex < m_builtinResultScratchIndex; ++scratchIndex) {

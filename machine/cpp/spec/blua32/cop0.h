@@ -37,5 +37,6 @@ constexpr uint32_t LUA_FAULT_REASON_ITERATE_NON_TABLE = 6u;
 constexpr uint32_t LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION = 7u;
 constexpr uint32_t LUA_FAULT_REASON_EXPLICIT_ERROR = 8u;
 constexpr uint32_t LUA_FAULT_REASON_OUT_OF_MEMORY = 9u;
+constexpr uint32_t LUA_FAULT_REASON_INVALID_ARGUMENT = 10u;
 
 } // namespace bmsx

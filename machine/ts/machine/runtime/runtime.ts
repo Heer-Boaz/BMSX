@@ -75,6 +75,7 @@ export class Runtime {
 	public readonly cpuExecution: CpuExecutionState;
 	public readonly luaScratch = new LuaScratchState();
 	public readonly machine: Machine;
+	private readonly completionValues: Value[] = [];
 
 	public resetHardwareState(): void {
 		this.machine.scheduler.reset();
@@ -89,12 +90,14 @@ export class Runtime {
 		this.cpuExecution.reset();
 		this.frameLoop.resetFrameState();
 		this.pendingCall = null;
+		this.completionValues.length = 0;
 		this.machine.cpu.clearExecutionEnvironment();
 		this.machine.memory.clearIoSlots();
 		this.resetHardwareState();
 	}
 
 	public boot(): void {
+		this.completionValues.length = 0;
 		this.machine.cpu.reset();
 		installLuaBootPrimitives(this);
 		this.finishSystemBoot();
@@ -123,6 +126,7 @@ export class Runtime {
 		const depth = cpu.getFrameDepth();
 		const previousBudget = cpu.instructionBudgetRemaining;
 		try {
+			this.completionValues.length = 0;
 			cpu.beginCompletionCall(fn, args);
 			runDueRuntimeTimers(this);
 			while (cpu.getFrameDepth() > depth) {
@@ -204,10 +208,16 @@ export class Runtime {
 					runDueRuntimeTimers(this);
 				}
 			}
-			return cpu.completionValues;
+			return this.readCompletionValues();
 		} finally {
 			cpu.instructionBudgetRemaining = previousBudget;
 		}
+	}
+
+	/** The borrowed result view is invalidated by subsequent result reads. */
+	public readCompletionValues(): ReadonlyArray<Value> {
+		this.machine.cpu.readCompletionValues(this.completionValues);
+		return this.completionValues;
 	}
 
 	public completionCallPending(): boolean {

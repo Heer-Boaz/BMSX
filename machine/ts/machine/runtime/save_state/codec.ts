@@ -1339,8 +1339,10 @@ function encodeCpuValueState(state: CpuValueState): CpuValueState {
 			return { tag: 'string', id: state.id };
 		case 'builtin':
 			return { tag: 'builtin', id: state.id };
-		case 'ref':
-			return { tag: 'ref', id: state.id };
+		case 'table':
+			return { tag: 'table', id: state.id };
+		case 'closure':
+			return { tag: 'closure', id: state.id };
 	}
 }
 
@@ -1358,8 +1360,10 @@ function decodeCpuValueState(value: unknown, label: string): CpuValueState {
 			return { tag: 'string', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
 		case 'builtin':
 			return { tag: 'builtin', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as BuiltinFunctionId };
-		case 'ref':
-			return { tag: 'ref', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
+		case 'table':
+			return { tag: 'table', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
+		case 'closure':
+			return { tag: 'closure', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
 	}
 	throw new Error('cpuValueState.tag is invalid.');
 }

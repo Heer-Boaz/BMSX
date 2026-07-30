@@ -112,13 +112,3 @@ return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
 	assert.equal(negativeNormalized, 0xffffffff);
 	assert.equal(fnvXorNormalized, 0x84222344);
 });
-
-test('string.byte nil position uses default', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const stringByteId = BuiltinFunctionId.StringByte;
-
-	const out: Value[] = [];
-	cpu.callBuiltinFunction(createBuiltinFunction(stringByteId), [StringValue.get(cpu.stringPool.intern('A')), null], out);
-	assert.deepEqual(out, [65]);
-});

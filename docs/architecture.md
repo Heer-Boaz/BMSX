@@ -1055,15 +1055,15 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   run and may inspect the unchanged machine for diagnostics; it does not clear
   CPU/input/frame state, inject a guest fault, or serialize a host-failure latch
   into the runtime save state. Studio retains its error snapshot in IDE state.
-- Typed memory opcodes consume the register/RK lane directly as machine data;
-  producers own the numeric address/value representation before the CPU reaches
-  RAM, ROM, VRAM, or MMIO byte/halfword/float datapaths.
-- Numeric arithmetic, bitwise, shift, unary-minus, and bitwise-not opcodes
-  consume the register/RK lane directly. The producer owns the numeric lane
-  representation before CPU dispatch reaches those datapaths.
-- Ordering compare opcodes consume interned-string lanes when both sides are
-  strings; otherwise they consume the numeric register/RK lanes directly. The
-  CPU dispatch path does not revalidate producer-owned operand kinds.
+- Typed memory, numeric, and ordering datapaths decode each producer-owned
+  register/RK tag and payload once. A `Number` tag exposes its scalar lane;
+  tagged non-number values behave as a NaN operand. Number producers
+  canonicalize NaNs before storing guest values. The packed C++ representation
+  may consume a tagged qNaN word directly where its payload is unobservable;
+  typed floating stores canonicalize that word at the guest-memory boundary.
+  Ordering compares interned strings only when both tags are `String`. This is
+  guest representation decode, not host-value classification or repeated
+  validation.
 - `HALT` is an interrupt-event wait, not an unconditional sleep for a future
   edge. The CPU has one event latch. An asynchronous interrupt accepted while
   code is active sets it; `HALT` consumes a set latch without parking. If no
@@ -1103,10 +1103,12 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   slice's retained instruction budget. A host failure ends the scheduler slice
   but does not unwind physical call or exception frames as rollback.
 - A completion call sets a physical return-route bit on its call frame. `RET`
-  writes the CPU-owned retained completion latch, and `Runtime` exposes only a
-  borrowed read-only view of that latch plus whether its physical return route
-  is still present. The route bit and latch are save-state data; the CPU never
-  retains or GC-marks a host result buffer.
+  writes the CPU-owned retained completion latch, and `Runtime` exposes that
+  latch plus whether its physical return route is still present. C++ borrows
+  the packed latch span directly; TypeScript marshals it into one retained cold
+  boundary array which is cleared at call entry, reset, and restore. The route
+  bit and latch are save-state data; neither CPU uses a host result buffer as
+  guest state or a heap root.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,
@@ -1130,9 +1132,13 @@ The static cart ABI uses words, registers, addresses, sections, memory, and
 symbols as the primary representation. Static storage crosses module boundaries
 as section symbols and typed addresses; static function exports cross those
 boundaries as physical function addresses; typed memory and numeric opcodes consume the
-register/RK lanes directly as machine data. `CPU.Value` remains the dynamic Lua
-object-world representation, but hot/static machine-code ABI does not use it as
-module-export transport.
+register/RK lanes directly as machine data. Dynamic Lua values likewise retain
+their producer-owned guest tag and payload. C++ carries that state in one packed
+value word; TypeScript carries parallel tag, scalar, and table/closure-reference
+lanes through registers, constants, globals, upvalues, completion values, table
+storage, and builtin transport. A host `Value` object/union exists only while
+marshalling at an explicit cold runtime or tooling boundary, in either
+direction; it is never guest identity or hot-path transport.
 
 Lua tables are VM-owned data structures, not host collection wrappers. Their
 representation follows the usual array-part/hash-part split: integer sequence
@@ -1149,13 +1155,15 @@ The collector consumes a table metatable's `__mode` directly. Weak values do
 not become roots, weak keys use ephemeron convergence, and strings retain
 Lua's non-removable weak-table behavior. Canonical static closures are
 CPU-owned non-heap values; only dynamic closures participate in heap
-liveness. Collector worklists are retained CPU/heap scratch, and decoded
-table-load caches are invalidated rather than becoming hidden roots.
+liveness. Collector worklists are retained CPU/heap scratch, active builtin
+result scratch is rooted, inactive TypeScript scratch releases its reference
+lanes, and decoded table-load caches are invalidated rather than becoming
+hidden roots.
 
 Clearing a weak hash entry preserves the hash chain and the identity needed by
 `next`. Non-object keys remain in the key column beside an empty value.
-Table, closure, and upvalue keys become a dead-key identity word in the
-otherwise hidden value column. Ordinary lookup and traversal skip both forms;
+Table and closure keys become a dead-key identity word in the otherwise hidden
+value column. Ordinary lookup and traversal skip both forms;
 `next` alone matches the dead identity, mutation compacts dead nodes before
 reclassifying array/hash ownership, and save-state preserves the raw columns
 and advances the object-id producer past both live and dead identities.
@@ -1182,10 +1190,11 @@ compacts unrelated open upvalues.
 Snapshot object ids are reserved before an object's child values are captured,
 so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
 duplicated tree materialisation.
-Object-key hashing follows the value representation. Runtime objects receive a
-producer-owned identity word when the table, closure, or upvalue is created;
-save-state restores that identity for CPU-owned objects. Table lookup and
-snapshot traversal do not keep separate side tables.
+Object-key hashing follows the value representation. Guest tables and closures
+receive a producer-owned identity word when created, and save-state restores
+that identity. Upvalues remain GC-owned closure cells rather than guest values
+or table keys. Table lookup and snapshot traversal do not keep separate side
+tables.
 Table save-state stores the table hash columns and free cursor because Lua
 iteration observes the current bucket walk. Restore rehydrates the owner-owned
 columns directly so `next` resumes the same table order after state replay.
@@ -1204,9 +1213,11 @@ machine.
 Builtin argument transport is a borrowed VM register/result view. C++
 `BuiltinArgsView` exposes direct indexed access over the caller-owned value
 span; it does not carry a checked `at()`/exception path in builtin dispatch.
-TypeScript uses a pooled borrowed view with `get(index)`, not a `Proxy`-backed
-array facade. Both views expose Lua's nil-filled argument lane for reads beyond
-the supplied argument count without materializing an argument array per call.
+TypeScript uses a retained `ValueSlots` view plus caller-owned base and supplied
+length, not a `Proxy`-backed array facade or host-value decoder. Each builtin
+chooses supplied or Lua nil-filled arguments once, then consumes tag, scalar,
+and reference lanes directly. Neither runtime materializes an argument array or
+per-value DTO per call.
 
 System firmware and cartridge BLua32 bytes live in their ordinary physical ROM
 assets. Guest loads observe the raw `__blua32__` image through `SYSTEM_ROM` or

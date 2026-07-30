@@ -120,7 +120,7 @@ int Table::findNodeIndexForNext(const Value& key) const {
 		return -1;
 	}
 	uint32_t deadKeyHashId = 0;
-	if (valueIsTable(key) || valueIsClosure(key) || valueIsUpvalue(key)) {
+	if (valueIsTable(key) || valueIsClosure(key)) {
 		deadKeyHashId = valueObjectHashId(key);
 	}
 	const size_t mask = m_hashSize - 1;
@@ -408,8 +408,7 @@ void Table::removeFromHash(const Value& key) {
 
 void Table::markHashNodeDead(size_t index) {
 	if (valueIsTable(m_hashKeys[index])
-		|| valueIsClosure(m_hashKeys[index])
-		|| valueIsUpvalue(m_hashKeys[index])) {
+		|| valueIsClosure(m_hashKeys[index])) {
 		const uint32_t hashId = valueObjectHashId(m_hashKeys[index]);
 		m_hashKeys[index] = valueNil();
 		m_hashValues[index] = valueNumber(static_cast<double>(hashId));
@@ -593,12 +592,14 @@ void Table::clear() {
 	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
 
-std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
+bool Table::nextEntry(const Value& after, Value& key, Value& value) const {
 	int hashIndex = -1;
 	if (isNil(after)) {
 		for (size_t i = 0; i < m_array.size(); ++i) {
 			if (!isNil(m_array[i])) {
-				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[i]);
+				key = valueNumber(static_cast<double>(i + 1));
+				value = m_array[i];
+				return true;
 			}
 		}
 		hashIndex = findNextLiveHashIndex(0);
@@ -609,53 +610,27 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 			const int startIndex = index + 1;
 			for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
 				if (!isNil(m_array[static_cast<size_t>(i)])) {
-					return std::make_pair(
-						valueNumber(static_cast<double>(i + 1)),
-						m_array[static_cast<size_t>(i)]
-					);
+					key = valueNumber(static_cast<double>(i + 1));
+					value = m_array[static_cast<size_t>(i)];
+					return true;
 				}
 			}
 			hashIndex = findNextLiveHashIndex(0);
 		} else {
 			const int nodeIndex = findNodeIndexForNext(after);
 			if (nodeIndex < 0) {
-				return std::nullopt;
+				return false;
 			}
 			hashIndex = findNextLiveHashIndex(static_cast<size_t>(nodeIndex + 1));
 		}
 	}
 	if (hashIndex >= 0) {
 		const size_t slot = static_cast<size_t>(hashIndex);
-		return std::make_pair(m_hashKeys[slot], m_hashValues[slot]);
+		key = m_hashKeys[slot];
+		value = m_hashValues[slot];
+		return true;
 	}
-	return std::nullopt;
-}
-
-std::optional<std::tuple<size_t, size_t, Value, Value>> Table::nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey) const {
-	for (size_t index = arrayCursor; index < m_array.size(); ++index) {
-		const Value value = m_array[index];
-		if (!isNil(value)) {
-			return std::make_tuple(index + 1, 0, valueNumber(static_cast<double>(index + 1)), value);
-		}
-	}
-	const size_t hashStart = hashCursor > 0 ? hashCursor - 1 : 0;
-	int hashIndex = findNextLiveHashIndex(hashStart);
-	if (hashCursor > 0
-		&& hashIndex == static_cast<int>(hashCursor - 1)
-		&& !isNil(previousHashKey)
-		&& keyEquals(m_hashKeys[static_cast<size_t>(hashIndex)], previousHashKey)) {
-		hashIndex = findNextLiveHashIndex(static_cast<size_t>(hashIndex + 1));
-	}
-	if (hashIndex >= 0) {
-		const size_t slot = static_cast<size_t>(hashIndex);
-		return std::make_tuple(
-			m_array.size(),
-			slot + 1,
-			m_hashKeys[slot],
-			m_hashValues[slot]
-		);
-	}
-	return std::nullopt;
+	return false;
 }
 
 TableRuntimeState Table::captureRuntimeState() const {

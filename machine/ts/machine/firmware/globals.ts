@@ -1,4 +1,4 @@
-import { createBuiltinFunction, StringValue } from '../cpu/value';
+import { ValueTag } from '../cpu/value';
 import type { Runtime } from '../runtime/runtime';
 import { LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 
@@ -7,8 +7,10 @@ export function installLuaBootPrimitives(runtime: Runtime): void {
 	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 		const primitive = LUA_BOOT_PRIMITIVES[index];
 		cpu.setSystemGlobalByKey(
-			StringValue.get(cpu.stringPool.intern(primitive.name)),
-			createBuiltinFunction(primitive.id),
+			cpu.stringPool.intern(primitive.name),
+			ValueTag.BuiltinFunction,
+			primitive.id,
+			null,
 		);
 	}
 }

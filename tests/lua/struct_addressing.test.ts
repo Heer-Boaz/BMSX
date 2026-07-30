@@ -16,7 +16,7 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { runCompiledLua } from './cpu_test_harness';
+import { materializeCpuCompletionValues, runCompiledLua } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
@@ -60,7 +60,7 @@ test('CPU executes displaced memory load/store opcodes', () => {
 	const { cpu, memory } = createTestSystemCpu(finalized);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.completionValues), [0x22222222]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x22222222]);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE), 0x11111111);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 48), 0x22222222);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 64), 0x33333333);

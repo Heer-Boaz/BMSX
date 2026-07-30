@@ -28,6 +28,7 @@ import {
 	LUA_FAULT_REASON_EXPLICIT_ERROR,
 	LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
+	LUA_FAULT_REASON_INVALID_ARGUMENT,
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
 	LUA_FAULT_REASON_METATABLE_LOOP,
 	LUA_FAULT_REASON_OUT_OF_MEMORY,
@@ -79,30 +80,26 @@ import {
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
-import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
-	StringValue,
+	VALUE_TAG,
 	ValueTag,
-	asStringId,
-	createBuiltinFunction,
-	valueIsString,
-	valueIsTable,
-	valueTag,
-	valueToString,
-	valueTypeNameForLua,
-	type BuiltinFunction,
-	type BuiltinArgs,
+	materializeValue,
+	storedValueToString,
+	valueFromNumber,
+	valueTypeNameForLuaTag,
+	BUILTIN_FUNCTIONS,
 	type Value,
+	type ValueReference,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
-import { ArrayBuiltinArgsView, RegisterFile, RegisterBuiltinArgsView } from './register_file';
+import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_PAGE_MASK,
 	DECODED_PAGE_SHIFT,
@@ -132,7 +129,8 @@ export type CpuValueState =
 	| { tag: 'number'; value: number }
 	| { tag: 'string'; id: number }
 	| { tag: 'builtin'; id: BuiltinFunctionId }
-	| { tag: 'ref'; id: number };
+	| { tag: 'table'; id: number }
+	| { tag: 'closure'; id: number };
 
 export type CpuObjectState =
 	| {
@@ -247,15 +245,14 @@ const TABLE_WEAK_VALUE_CODE_UNIT = 0x76;
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
 	public instructionBudgetRemaining: number = 0;
-	public completionValues: Value[] = [];
 	public lastPc: number = 0;
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
 	public readonly luaHeap: LuaHeap;
 	public readonly stringPool: StringPool;
-	private indexKey!: StringValue;
-	private modeKey!: StringValue;
+	private indexKey!: StringId;
+	private modeKey!: StringId;
 	private haltedUntilIrq = false;
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
@@ -278,94 +275,136 @@ export class CPU {
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
-	private readonly registerBuiltinArgsScratch = new ScratchBuffer<RegisterBuiltinArgsView>(() => new RegisterBuiltinArgsView());
+	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
+		() => new BuiltinArgsView(),
+		1,
+	);
 	private registerBuiltinArgsScratchIndex = 0;
-	private readonly arrayBuiltinArgsScratch = new ScratchBuffer<ArrayBuiltinArgsView>(() => new ArrayBuiltinArgsView());
-	private arrayBuiltinArgsScratchIndex = 0;
-	private readonly builtinReturnScratch = new ScratchArrayStack<Value>();
-	private readonly heapValueStack: Value[] = [];
+	private readonly builtinResultsScratch = new ScratchBuffer<BuiltinResults>(
+		() => new BuiltinResults(),
+		1,
+	);
+	private builtinResultsScratchIndex = 0;
+	private readonly heapObjectStack: Array<Table | Closure> = [];
 	private readonly heapUpvalueStack: Upvalue[] = [];
 	private readonly heapWeakTables: Table[] = [];
 	private readonly heapWeakTableModes: number[] = [];
 	private readonly heapEphemeronTables: Table[] = [];
 	private readonly heapSeen = new WeakMap<object, number>();
 	private readonly heapSeenImages = new WeakMap<object, number>();
+	private readonly tableScratch = new ValueSlots(2);
 	private heapEpoch = 0;
 	private heapTableWeakMode = 0;
 	private heapEphemeronChanged = false;
-	private readonly pushHeapValue = (value: Value): void => {
-		switch (valueTag(value)) {
-			case ValueTag.Nil:
-			case ValueTag.False:
-			case ValueTag.True:
-			case ValueTag.Number:
-				return;
-			case ValueTag.String:
-				this.stringPool.markReachable(asStringId(value as StringValue));
-				return;
+	private readonly heapStoredValueIsAlive = (
+		tag: ValueTag,
+		_scalar: number,
+		reference: ValueReference,
+	): boolean => {
+		switch (tag) {
 			case ValueTag.Table:
-				this.heapValueStack.push(value);
-				return;
-			case ValueTag.Closure:
-				if ((value as Closure).heapBytes !== 0) {
-					this.heapValueStack.push(value);
-				}
-				return;
-			case ValueTag.BuiltinFunction:
-				return;
-		}
-	};
-	private readonly heapValueIsAlive = (value: Value): boolean => {
-		switch (valueTag(value)) {
-			case ValueTag.Table:
-				return this.heapSeen.get(value as Table) === this.heapEpoch;
+				return this.heapSeen.get(reference as Table) === this.heapEpoch;
 			case ValueTag.Closure: {
-				const closure = value as Closure;
+				const closure = reference as Closure;
 				return closure.heapBytes === 0 || this.heapSeen.get(closure) === this.heapEpoch;
 			}
 			default:
 				return true;
 		}
 	};
-	private readonly visitHeapTableEntry = (key: Value, value: Value): void => {
+	private readonly visitHeapTableEntry = (
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): void => {
 		if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
-			this.pushHeapValue(key);
+			this.pushHeapStoredValue(keyTag, keyScalar, keyReference);
 		}
 		if (this.heapTableWeakMode === 0) {
-			this.pushHeapValue(value);
+			this.pushHeapStoredValue(valueTag, valueScalar, valueReference);
 		}
 	};
-	private readonly visitHeapEphemeronEntry = (key: Value, value: Value): void => {
-		if (!this.heapValueIsAlive(key)) {
+	private readonly visitHeapEphemeronEntry = (
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): void => {
+		if (!this.heapStoredValueIsAlive(keyTag, keyScalar, keyReference)) {
 			return;
 		}
-		switch (valueTag(value)) {
+		switch (valueTag) {
 			case ValueTag.Table:
-				if (this.heapSeen.get(value as Table) !== this.heapEpoch) {
-					this.heapValueStack.push(value);
+				if (this.heapSeen.get(valueReference as Table) !== this.heapEpoch) {
+					this.heapObjectStack.push(valueReference as Table);
 					this.heapEphemeronChanged = true;
 				}
 				return;
 			case ValueTag.Closure: {
-				const closure = value as Closure;
+				const closure = valueReference as Closure;
 				if (closure.heapBytes !== 0 && this.heapSeen.get(closure) !== this.heapEpoch) {
-					this.heapValueStack.push(value);
+					this.heapObjectStack.push(closure);
 					this.heapEphemeronChanged = true;
 				}
 				return;
 			}
 			default:
-				this.pushHeapValue(value);
+				this.pushHeapStoredValue(valueTag, valueScalar, valueReference);
 		}
 	};
-	private readonly markWeakEntryStrings = (key: Value, value: Value): void => {
-		if (valueIsString(key)) {
-			this.stringPool.markReachable(asStringId(key));
+	private readonly markWeakEntryStrings = (
+		keyTag: ValueTag,
+		keyScalar: number,
+		_keyReference: ValueReference,
+		valueTag: ValueTag,
+		valueScalar: number,
+		_valueReference: ValueReference,
+	): void => {
+		if (keyTag === ValueTag.String) {
+			this.stringPool.markReachable(keyScalar as StringId);
 		}
-		if (valueIsString(value)) {
-			this.stringPool.markReachable(asStringId(value));
+		if (valueTag === ValueTag.String) {
+			this.stringPool.markReachable(valueScalar as StringId);
 		}
 	};
+
+	private pushHeapRegister(registers: ValueSlots, index: number): void {
+		this.pushHeapStoredValue(
+			registers.getTag(index),
+			registers.getScalar(index),
+			registers.getReference(index),
+		);
+	}
+
+	private pushHeapStoredValue(tag: ValueTag, scalar: number, reference: ValueReference): void {
+		switch (tag) {
+			case ValueTag.Nil:
+			case ValueTag.False:
+			case ValueTag.True:
+			case ValueTag.Number:
+			case ValueTag.BuiltinFunction:
+				return;
+			case ValueTag.String:
+				this.stringPool.markReachable(scalar as StringId);
+				return;
+			case ValueTag.Table:
+				this.heapObjectStack.push(reference as Table);
+				return;
+			case ValueTag.Closure: {
+				const closure = reference as Closure;
+				if (closure.heapBytes !== 0) {
+					this.heapObjectStack.push(closure);
+				}
+				return;
+			}
+		}
+	}
+
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
@@ -393,17 +432,19 @@ export class CPU {
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
 	private stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringId[] = [];
-	private systemGlobalValues: Value[] = [];
+	private systemGlobalSlots = new ValueSlots(0);
 	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
 	private globalNames: StringId[] = [];
-	private globalValues: Value[] = [];
+	private globalSlots = new ValueSlots(0);
 	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
-	private stackRegisters = new RegisterFile(8);
+	private stackRegisters = new ValueSlots(8);
 	private stackTop = 0;
+	private completionValueSlots = new ValueSlots(8);
+	private completionValueCount = 0;
 	private nextObjectHashId = 1;
-	private readonly luaFaultErrorValues: StringValue[] = [];
-	private readonly errorInErrorHandlingValue: StringValue;
+	private readonly luaFaultErrorStringIds: StringId[] = [];
+	private readonly errorInErrorHandlingStringId: StringId;
 
 	constructor(
 		memory: Memory,
@@ -414,18 +455,19 @@ export class CPU {
 		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
 		this.stringPool = new StringPool(this.luaHeap);
 		this.globals = this.createTable(0, 0);
-		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
-		this.modeKey = StringValue.get(this.stringPool.intern('__mode'));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = StringValue.get(this.stringPool.intern('Attempted to get length of an unsupported value.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = StringValue.get(this.stringPool.intern('Attempted to call a non-function value.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to index field on a non-table value.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to assign to a non-table value.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = StringValue.get(this.stringPool.intern('Table index is nil.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = StringValue.get(this.stringPool.intern('Metatable __index loop detected.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to iterate a non-table value.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = StringValue.get(this.stringPool.intern('xpcall error handler must be a function.', false));
-		this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = StringValue.get(this.stringPool.intern('Out of memory.', false));
-		this.errorInErrorHandlingValue = StringValue.get(this.stringPool.intern('error in error handling', false));
+		this.indexKey = this.stringPool.intern('__index');
+		this.modeKey = this.stringPool.intern('__mode');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable __index loop detected.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.', false);
+		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 	}
 
 	public allocateObjectHashId(): number {
@@ -440,7 +482,7 @@ export class CPU {
 		}
 	}
 
-	public createTable(arraySize: number, hashSize: number): Table {
+	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
 		const hashCapacity = Table.hashCapacity(hashSize);
 		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
 		const table = new Table(this.luaHeap, arraySize, hashCapacity);
@@ -457,7 +499,7 @@ export class CPU {
 		if (nextCapacity < 8) {
 			nextCapacity = 8;
 		}
-		const next = new RegisterFile(nextCapacity);
+		const next = new ValueSlots(nextCapacity);
 		next.copyRangeFrom(stack, 0, 0, this.stackTop);
 		this.stackRegisters = next;
 		this.refreshFrameRegisterViews();
@@ -472,27 +514,49 @@ export class CPU {
 		}
 	}
 
-	private acquireRegisterBuiltinArgs(): RegisterBuiltinArgsView {
+	private clearCompletionValues(): void {
+		this.completionValueSlots.clear(this.completionValueCount);
+		this.completionValueCount = 0;
+	}
+
+	private latchCompletionValues(
+		source: ValueSlots,
+		sourceBase: number,
+		sourceCount: number,
+	): void {
+		if (sourceCount > this.completionValueSlots.capacity()) {
+			let capacity = this.completionValueSlots.capacity() * 2;
+			while (capacity < sourceCount) {
+				capacity *= 2;
+			}
+			this.completionValueSlots = new ValueSlots(capacity);
+		} else {
+			this.completionValueSlots.clear(this.completionValueCount);
+		}
+		this.completionValueSlots.copyRangeFrom(source, 0, sourceBase, sourceCount);
+		this.completionValueCount = sourceCount;
+	}
+
+	private acquireRegisterBuiltinArgs(): BuiltinArgsView {
 		const args = this.registerBuiltinArgsScratch.get(this.registerBuiltinArgsScratchIndex);
 		this.registerBuiltinArgsScratchIndex += 1;
 		return args;
 	}
 
-	private releaseRegisterBuiltinArgs(args: RegisterBuiltinArgsView): void {
+	private releaseRegisterBuiltinArgs(args: BuiltinArgsView): void {
 		args.clear();
 		this.registerBuiltinArgsScratchIndex -= 1;
 	}
 
-	private acquireArrayBuiltinArgs(values: ReadonlyArray<Value>): ArrayBuiltinArgsView {
-		const args = this.arrayBuiltinArgsScratch.get(this.arrayBuiltinArgsScratchIndex);
-		this.arrayBuiltinArgsScratchIndex += 1;
-		args.bind(values);
-		return args;
+	private acquireBuiltinResults(): BuiltinResults {
+		const results = this.builtinResultsScratch.get(this.builtinResultsScratchIndex);
+		this.builtinResultsScratchIndex += 1;
+		return results;
 	}
 
-	private releaseArrayBuiltinArgs(args: ArrayBuiltinArgsView): void {
-		args.clear();
-		this.arrayBuiltinArgsScratchIndex -= 1;
+	private releaseBuiltinResults(results: BuiltinResults): void {
+		results.clear();
+		this.builtinResultsScratchIndex -= 1;
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
@@ -521,150 +585,223 @@ export class CPU {
 		previous.nextOpen = upvalue;
 	}
 
-	private resolveTableIndexChain(table: Table, key: Value, kind: TableIndexKeyKind): Value {
+	private resolveTableIndexChain(
+		table: Table,
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		kind: TableIndexKeyKind,
+		target: ValueSlots,
+		targetIndex: number,
+	): void {
 		let current = table;
 		for (let depth = 0; depth < 32; depth += 1) {
-			const value = kind === TableIndexKeyKind.Integer
-				? current.getInteger(key as number)
-				: kind === TableIndexKeyKind.Field
-					? current.getStringKey(key as StringValue)
-					: current.get(key);
-			if (value !== null) {
-				return value;
+			switch (kind) {
+				case TableIndexKeyKind.Integer:
+					current.loadInteger(keyScalar, target, targetIndex);
+					break;
+				case TableIndexKeyKind.Field:
+					current.loadStringKey(keyScalar as StringId, target, targetIndex);
+					break;
+				case TableIndexKeyKind.Value:
+					current.load(keyTag, keyScalar, keyReference, target, targetIndex);
+					break;
+			}
+			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+				return;
 			}
 			const metatable = current.metatable;
-			if (metatable === null) {
-				return null;
+			if (!metatable) {
+				return;
 			}
-			const indexer = metatable.getStringKey(this.indexKey);
-			if (!(valueIsTable(indexer))) {
-				return null;
+			metatable.loadStringKey(this.indexKey, target, targetIndex);
+			if (target.getTag(targetIndex) !== ValueTag.Table) {
+				target.setNil(targetIndex);
+				return;
 			}
-			current = indexer;
+			current = target.getTable(targetIndex);
 		}
 		throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 	}
 
-	private loadTableIndex(base: Value, key: Value): Value {
-		switch (valueTag(base)) {
-			case ValueTag.Table: {
-				const table = base as Table;
-				if (table.metatable === null) {
-					return table.get(key);
-				}
-				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
-			}
-			case ValueTag.String: {
-				const table = this.stringIndexTable!;
-				if (table.metatable === null) {
-					return table.get(key);
-				}
-				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
-			}
+	private loadTableIndex(
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		target: ValueSlots,
+		targetIndex: number,
+	): void {
+		let table: Table;
+		switch (baseTag) {
+			case ValueTag.Table:
+				table = baseTable!;
+				break;
+			case ValueTag.String:
+				table = this.stringIndexTable!;
+				break;
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
+		if (!table.metatable) {
+			table.load(keyTag, keyScalar, keyReference, target, targetIndex);
+			return;
+		}
+		this.resolveTableIndexChain(
+			table,
+			keyTag,
+			keyScalar,
+			keyReference,
+			TableIndexKeyKind.Value,
+			target,
+			targetIndex,
+		);
 	}
 
-	private loadTableIntegerIndexCached(cache: TableLoadInlineCache, base: Value, index: number): Value {
+	private loadTableIntegerIndexCached(
+		cache: TableLoadInlineCache,
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		index: number,
+		target: ValueSlots,
+		targetIndex: number,
+	): void {
 		const indexKind = TableIndexKeyKind.Integer;
-		switch (valueTag(base)) {
-			case ValueTag.Table: {
-				const table = base as Table;
-				if (table.metatable === null) {
-					const version = table.getVersion();
-					if (cache.table === table && cache.version === version) {
-						return cache.value;
-					}
-					const value = table.getInteger(index);
-					cache.table = table;
-					cache.version = version;
-					cache.value = value;
-					return value;
-				}
-				return this.resolveTableIndexChain(table, index, indexKind);
-			}
-			case ValueTag.String: {
-				const table = this.stringIndexTable!;
-				if (table.metatable === null) {
-					const version = table.getVersion();
-					if (cache.table === table && cache.version === version) {
-						return cache.value;
-					}
-					const value = table.getInteger(index);
-					cache.table = table;
-					cache.version = version;
-					cache.value = value;
-					return value;
-				}
-				return this.resolveTableIndexChain(table, index, indexKind);
-			}
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-		}
-	}
-
-	private loadTableFieldIndexCached(cache: TableLoadInlineCache, base: Value, key: StringValue): Value {
-		switch (valueTag(base)) {
-			case ValueTag.Table: {
-				const table = base as Table;
-				if (table.metatable === null) {
-					const version = table.getVersion();
-					if (cache.table === table && cache.version === version) {
-						return cache.value;
-					}
-					const value = table.getStringKey(key);
-					cache.table = table;
-					cache.version = version;
-					cache.value = value;
-					return value;
-				}
-				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
-			}
-			case ValueTag.String: {
-				const table = this.stringIndexTable!;
-				if (table.metatable === null) {
-					const version = table.getVersion();
-					if (cache.table === table && cache.version === version) {
-						return cache.value;
-					}
-					const value = table.getStringKey(key);
-					cache.table = table;
-					cache.version = version;
-					cache.value = value;
-					return value;
-				}
-				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
-			}
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-		}
-	}
-
-	private storeTableIndex(base: Value, key: Value, value: Value): void {
-		switch (valueTag(base)) {
+		let table: Table;
+		switch (baseTag) {
 			case ValueTag.Table:
-				(base as Table).set(key, value);
+				table = baseTable!;
+				break;
+			case ValueTag.String:
+				table = this.stringIndexTable!;
+				break;
+			default:
+				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+		}
+		if (table.metatable) {
+			this.resolveTableIndexChain(
+				table,
+				ValueTag.Number,
+				index,
+				null,
+				indexKind,
+				target,
+				targetIndex,
+			);
+			return;
+		}
+		const version = table.getVersion();
+		if (cache.table === table && cache.version === version) {
+			target.setEncoded(targetIndex, cache.valueTag, cache.valueScalar, cache.valueReference);
+			return;
+		}
+		table.loadInteger(index, target, targetIndex);
+		cache.table = table;
+		cache.version = version;
+		cache.valueTag = target.getTag(targetIndex);
+		cache.valueScalar = target.getScalar(targetIndex);
+		cache.valueReference = target.getReference(targetIndex);
+	}
+
+	private loadTableFieldIndexCached(
+		cache: TableLoadInlineCache,
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		key: StringId,
+		target: ValueSlots,
+		targetIndex: number,
+	): void {
+		let table: Table;
+		switch (baseTag) {
+			case ValueTag.Table:
+				table = baseTable!;
+				break;
+			case ValueTag.String:
+				table = this.stringIndexTable!;
+				break;
+			default:
+				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+		}
+		if (table.metatable) {
+			this.resolveTableIndexChain(
+				table,
+				ValueTag.String,
+				key,
+				null,
+				TableIndexKeyKind.Field,
+				target,
+				targetIndex,
+			);
+			return;
+		}
+		const version = table.getVersion();
+		if (cache.table === table && cache.version === version) {
+			target.setEncoded(targetIndex, cache.valueTag, cache.valueScalar, cache.valueReference);
+			return;
+		}
+		table.loadStringKey(key, target, targetIndex);
+		cache.table = table;
+		cache.version = version;
+		cache.valueTag = target.getTag(targetIndex);
+		cache.valueScalar = target.getScalar(targetIndex);
+		cache.valueReference = target.getReference(targetIndex);
+	}
+
+	private storeTableIndex(
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): void {
+		switch (baseTag) {
+			case ValueTag.Table:
+				baseTable!.store(
+					keyTag,
+					keyScalar,
+					keyReference,
+					valueTag,
+					valueScalar,
+					valueReference,
+				);
 				return;
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
 	}
 
-	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
-		switch (valueTag(base)) {
+	private storeTableIntegerIndex(
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		index: number,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): void {
+		switch (baseTag) {
 			case ValueTag.Table:
-				(base as Table).setInteger(index, value);
+				baseTable!.storeInteger(index, valueTag, valueScalar, valueReference);
 				return;
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
 	}
 
-	private storeTableFieldIndex(base: Value, key: StringValue, value: Value): void {
-		switch (valueTag(base)) {
+	private storeTableFieldIndex(
+		baseTag: ValueTag,
+		baseTable: Table | null,
+		key: StringId,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): void {
+		switch (baseTag) {
 			case ValueTag.Table:
-				(base as Table).setStringKey(key, value);
+				baseTable!.storeStringKey(key, valueTag, valueScalar, valueReference);
 				return;
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -685,7 +822,7 @@ export class CPU {
 			varargCount: 0,
 			stackBase: 0,
 			stackCapacity: 0,
-			registers: new RegisterFile(0),
+			registers: new ValueSlots(0),
 			closure: null!,
 			returnBase: 0,
 			returnCount: 0,
@@ -729,7 +866,7 @@ export class CPU {
 	public reset(): void {
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
-		this.completionValues.length = 0;
+		this.clearCompletionValues();
 		this.clearCallStack();
 		this.stringIndexTable = null;
 		this.haltedUntilIrq = false;
@@ -765,7 +902,7 @@ export class CPU {
 	}
 
 	public clearExecutionEnvironment(): void {
-		this.completionValues.length = 0;
+		this.clearCompletionValues();
 		this.clearCallStack();
 		this.clearGlobalSlots();
 		this.globals.clear();
@@ -797,16 +934,16 @@ export class CPU {
 	private decodeConstantPool(
 		executionDomainId: ExecutionDomainId,
 		tableAddress: number,
-		constPool: Value[],
-		constNumbers: Float64Array,
+		constTags: Uint8Array,
+		constScalars: Float64Array,
 	): void {
-		if (constPool.length === 0) {
+		if (constTags.length === 0) {
 			return;
 		}
 		this.executionAddressSpace.bindReadOnlyView(
 			executionDomainId,
 			tableAddress,
-			constPool.length * BLUA32_CONSTANT_RECORD_SIZE,
+			constTags.length * BLUA32_CONSTANT_RECORD_SIZE,
 			this.executionTableView,
 		);
 		const bytes = this.executionTableView.bytes;
@@ -816,33 +953,34 @@ export class CPU {
 			bytes.byteOffset + byteOffset,
 			this.executionTableView.byteLength,
 		);
-		constNumbers.fill(NaN);
-		for (let index = 0; index < constPool.length; index += 1) {
+		constScalars.fill(NaN);
+		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
 			switch (readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_TAG_OFFSET)) {
 				case Blua32ConstantTag.Nil:
-					constPool[index] = null;
+					constTags[index] = ValueTag.Nil;
 					break;
 				case Blua32ConstantTag.False:
-					constPool[index] = false;
+					constTags[index] = ValueTag.False;
 					break;
 				case Blua32ConstantTag.True:
-					constPool[index] = true;
+					constTags[index] = ValueTag.True;
 					break;
 				case Blua32ConstantTag.Number:
-					constNumbers[index] = numberView.getFloat64(
+					constTags[index] = ValueTag.Number;
+					constScalars[index] = valueFromNumber(numberView.getFloat64(
 						recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET,
 						true,
-					);
-					constPool[index] = constNumbers[index];
+					));
 					break;
 				case Blua32ConstantTag.String:
-					constPool[index] = StringValue.get(this.internExecutionString(
+					constTags[index] = ValueTag.String;
+					constScalars[index] = this.internExecutionString(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET),
-					));
+					);
 					break;
 				default:
 					throw new Error('BLua32 constant tag is invalid.');
@@ -858,11 +996,12 @@ export class CPU {
 	): Uint32Array {
 		const slotByKey = system ? this.systemGlobalSlotByKey : this.globalSlotByKey;
 		const registeredNames = system ? this.systemGlobalNames : this.globalNames;
-		const values = system ? this.systemGlobalValues : this.globalValues;
 		const slots = new Uint32Array(nameCount);
 		if (nameCount === 0) {
 			return slots;
 		}
+		this.reserveGlobalSlots(system, registeredNames.length + nameCount);
+		const values = system ? this.systemGlobalSlots : this.globalSlots;
 		this.executionAddressSpace.bindReadOnlyView(
 			executionDomainId,
 			tableAddress,
@@ -883,11 +1022,29 @@ export class CPU {
 				slot = registeredNames.length;
 				slotByKey.set(key, slot);
 				registeredNames.push(key);
-				values.push(system ? null : this.globals.get(StringValue.get(key)));
+				if (system) {
+					values.setNil(slot);
+				} else {
+					this.globals.loadStringKey(key, values, slot);
+				}
 			}
 			slots[index] = slot;
 		}
 		return slots;
+	}
+
+	private reserveGlobalSlots(system: boolean, capacity: number): void {
+		const current = system ? this.systemGlobalSlots : this.globalSlots;
+		if (capacity <= current.capacity()) {
+			return;
+		}
+		const next = new ValueSlots(capacity);
+		next.copyRangeFrom(current, 0, 0, system ? this.systemGlobalNames.length : this.globalNames.length);
+		if (system) {
+			this.systemGlobalSlots = next;
+		} else {
+			this.globalSlots = next;
+		}
 	}
 
 	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
@@ -939,13 +1096,13 @@ export class CPU {
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 		);
-		const constPool = new Array<Value>(constantCount);
-		const constNumbers = new Float64Array(constantCount);
+		const constTags = new Uint8Array(constantCount);
+		const constScalars = new Float64Array(constantCount);
 		this.decodeConstantPool(
 			executionBoot.executionDomainId,
 			constantTableAddress,
-			constPool,
-			constNumbers,
+			constTags,
+			constScalars,
 		);
 		const globalSlots = this.registerGlobalNames(
 			executionBoot.executionDomainId,
@@ -973,8 +1130,8 @@ export class CPU {
 			functionCount,
 			textAddress,
 			textByteCount,
-			constPool,
-			constNumbers,
+			constTags,
+			constScalars,
 			globalSlots,
 			systemGlobalSlots,
 			decodedPages: decoded.pages,
@@ -1148,7 +1305,13 @@ export class CPU {
 			page.disp[pageOffset] = ext;
 			if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
 				page.tableCacheIndexes[pageOffset] = tableLoadCaches.length;
-				tableLoadCaches.push({ table: null, version: 0, value: null });
+				tableLoadCaches.push({
+					table: null,
+					version: 0,
+					valueTag: ValueTag.Nil,
+					valueScalar: NaN,
+					valueReference: null,
+				});
 			}
 			wordIndex += width;
 		}
@@ -1246,7 +1409,7 @@ export class CPU {
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		this.completionValues.length = 0;
+		this.clearCompletionValues();
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true);
 	}
@@ -1381,10 +1544,20 @@ export class CPU {
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
-	private enterLuaFaultException(reason: number, errorValue: Value): void {
+	private enterLuaFaultException(
+		reason: number,
+		errorTag: ValueTag,
+		errorScalar: number,
+		errorReference: ValueReference,
+	): void {
 		this.luaFaultReasonWord = reason;
 		this.enterSynchronousException(this.frames[this.frames.length - 1], CPU_CAUSE_CODE_TRAP);
-		this.frames[this.frames.length - 1].registers.set(0, errorValue);
+		this.frames[this.frames.length - 1].registers.setEncoded(
+			0,
+			errorTag,
+			errorScalar,
+			errorReference,
+		);
 	}
 
 	private enterException(
@@ -1470,20 +1643,28 @@ export class CPU {
 				}
 			} catch (error) {
 				if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
-					if (!this.handleProtectedCallError(this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
+					const errorStringId = this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY];
+					if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
 						this.enterLuaFaultException(
 							LUA_FAULT_REASON_OUT_OF_MEMORY,
-							this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY],
+							ValueTag.String,
+							errorStringId,
+							null,
 						);
 					}
 				} else if (error instanceof LuaThrownValueError) {
-					if (!this.handleProtectedCallError(error.value)) {
-						this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
+					if (!this.handleProtectedCallError(error.tag, error.scalar, error.reference)) {
+						this.enterLuaFaultException(
+							LUA_FAULT_REASON_EXPLICIT_ERROR,
+							error.tag,
+							error.scalar,
+							error.reference,
+						);
 					}
 				} else if (error instanceof LuaExecutionError) {
-					const errorValue = this.luaFaultErrorValues[error.reason];
-					if (!this.handleProtectedCallError(errorValue)) {
-						this.enterLuaFaultException(error.reason, errorValue);
+					const errorStringId = this.luaFaultErrorStringIds[error.reason];
+					if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
+						this.enterLuaFaultException(error.reason, ValueTag.String, errorStringId, null);
 					}
 				} else {
 					throw error;
@@ -1562,6 +1743,10 @@ export class CPU {
 		return false;
 	}
 
+	public readCompletionValues(target: Value[]): void {
+		this.completionValueSlots.copyTo(target, this.completionValueCount);
+	}
+
 	public isExceptionFrame(frameIndex: number): boolean {
 		return this.frames[frameIndex].isExceptionFrame;
 	}
@@ -1583,7 +1768,11 @@ export class CPU {
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		return this.readUpvalue(this.frames[frameIndex].closure.upvalues[upvalueIndex]);
+		const upvalue = this.frames[frameIndex].closure.upvalues[upvalueIndex];
+		if (upvalue.open) {
+			return upvalue.frame!.registers.get(upvalue.index);
+		}
+		return materializeValue(upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
 	}
 
 	public readEpcWord(): number {
@@ -1632,59 +1821,61 @@ export class CPU {
 		this.frames[childFrameIndex].callSitePc = pc;
 	}
 
-	public setGlobalByKey(key: StringValue, value: Value): void {
-		this.globals.set(key, value);
-		const globalSlot = this.globalSlotByKey.get(key.id);
+	public setGlobalByKey(
+		key: StringId,
+		tag: ValueTag,
+		scalar: number,
+		reference: ValueReference,
+	): void {
+		this.globals.storeStringKey(key, tag, scalar, reference);
+		const globalSlot = this.globalSlotByKey.get(key);
 		if (globalSlot !== undefined) {
-			this.globalValues[globalSlot] = value;
+			this.globalSlots.setEncoded(globalSlot, tag, scalar, reference);
 		}
 	}
 
-	public setSystemGlobalByKey(key: StringValue, value: Value): void {
-		const slot = this.systemGlobalSlotByKey.get(key.id);
+	public setSystemGlobalByKey(
+		key: StringId,
+		tag: ValueTag,
+		scalar: number,
+		reference: ValueReference,
+	): void {
+		const slot = this.systemGlobalSlotByKey.get(key);
 		if (slot === undefined) {
-			throw new Error(`System global '${this.stringPool.toString(key.id)}' has no register slot.`);
+			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
 		}
-		this.systemGlobalValues[slot] = value;
+		this.systemGlobalSlots.setEncoded(slot, tag, scalar, reference);
 	}
 
 	public clearGlobalSlots(): void {
 		this.systemGlobalNames = [];
-		this.systemGlobalValues = [];
+		this.systemGlobalSlots = new ValueSlots(0);
 		this.systemGlobalSlotByKey = new Map();
 		this.globalNames = [];
-		this.globalValues = [];
+		this.globalSlots = new ValueSlots(0);
 		this.globalSlotByKey = new Map();
 	}
 
 	public syncGlobalSlotsToTable(): void {
 		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
-			this.globals.set(StringValue.get(this.globalNames[slot]), this.globalValues[slot]);
+			this.globals.storeStringKey(
+				this.globalNames[slot],
+				this.globalSlots.getTag(slot),
+				this.globalSlots.getScalar(slot),
+				this.globalSlots.getReference(slot),
+			);
 		}
 	}
 
-	public getGlobalByKey(key: StringValue): Value {
-		const globalSlot = this.globalSlotByKey.get(key.id);
+	public getGlobalByKey(key: StringId): Value {
+		const globalSlot = this.globalSlotByKey.get(key);
 		if (globalSlot !== undefined) {
-			return this.globalValues[globalSlot];
+			return this.globalSlots.get(globalSlot);
 		}
-		return this.globals.get(key);
-	}
-
-	private setSystemGlobalBySlot(slot: number, value: Value): void {
-		this.systemGlobalValues[slot] = value;
-	}
-
-	private setGlobalBySlot(slot: number, value: Value): void {
-		this.globalValues[slot] = value;
-	}
-
-	private getSystemGlobalBySlot(slot: number): Value {
-		return this.systemGlobalValues[slot];
-	}
-
-	private getGlobalBySlot(slot: number): Value {
-		return this.globalValues[slot];
+		this.globals.loadStringKey(key, this.tableScratch, 0);
+		const value = this.tableScratch.get(0);
+		this.tableScratch.setNil(0);
+		return value;
 	}
 
 	private executeInstruction(
@@ -1710,7 +1901,7 @@ export class CPU {
 					this.copyRegisterFast(frame, registers, a, b);
 					return;
 				case OpCode.LOADK: {
-					this.setRegisterFast(frame, registers, a, image.constPool[bx]);
+					this.setRegisterConstantFast(frame, registers, a, image, bx);
 					return;
 				}
 				case OpCode.KNIL:
@@ -1740,46 +1931,174 @@ export class CPU {
 					}
 					return;
 				case OpCode.GETSYS:
-					this.setRegisterFast(frame, registers, a, this.getSystemGlobalBySlot(bx));
+					registers.copySlotFrom(this.systemGlobalSlots, a, bx);
+					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETSYS:
-					this.setSystemGlobalBySlot(bx, registers.get(a));
+					this.systemGlobalSlots.copySlotFrom(registers, bx, a);
 					return;
 				case OpCode.GETGL:
-					this.setRegisterFast(frame, registers, a, this.getGlobalBySlot(bx));
+					registers.copySlotFrom(this.globalSlots, a, bx);
+					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETGL:
-					this.setGlobalBySlot(bx, registers.get(a));
+					this.globalSlots.copySlotFrom(registers, bx, a);
 					return;
 				case OpCode.GETI:
-					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(image.tableLoadCaches[tableCacheIndex], registers.get(b), c));
+					this.loadTableIntegerIndexCached(
+						image.tableLoadCaches[tableCacheIndex],
+						registers.getTag(b),
+						registers.getTable(b),
+						c,
+						registers,
+						a,
+					);
+					this.bumpRegisterTop(frame, a);
 					return;
-				case OpCode.SETI:
-					this.storeTableIntegerIndex(registers.get(a), b, this.readRK(frame, rkC));
+				case OpCode.SETI: {
+					let valueTag: ValueTag;
+					let valueScalar: number;
+					let valueReference: ValueReference;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						valueTag = image.constTags[constantIndex];
+						valueScalar = image.constScalars[constantIndex];
+						valueReference = null;
+					} else {
+						valueTag = registers.getTag(rkC);
+						valueScalar = registers.getScalar(rkC);
+						valueReference = registers.getReference(rkC);
+					}
+					this.storeTableIntegerIndex(
+						registers.getTag(a),
+						registers.getTable(a),
+						b,
+						valueTag,
+						valueScalar,
+						valueReference,
+					);
 					return;
+				}
 				case OpCode.GETFIELD:
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(image.tableLoadCaches[tableCacheIndex], registers.get(b), image.constPool[c] as StringValue));
+					this.loadTableFieldIndexCached(
+						image.tableLoadCaches[tableCacheIndex],
+						registers.getTag(b),
+						registers.getTable(b),
+						image.constScalars[c] as StringId,
+						registers,
+						a,
+					);
+					this.bumpRegisterTop(frame, a);
 					return;
-				case OpCode.SETFIELD:
-					this.storeTableFieldIndex(registers.get(a), image.constPool[b] as StringValue, this.readRK(frame, rkC));
+				case OpCode.SETFIELD: {
+					let valueTag: ValueTag;
+					let valueScalar: number;
+					let valueReference: ValueReference;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						valueTag = image.constTags[constantIndex];
+						valueScalar = image.constScalars[constantIndex];
+						valueReference = null;
+					} else {
+						valueTag = registers.getTag(rkC);
+						valueScalar = registers.getScalar(rkC);
+						valueReference = registers.getReference(rkC);
+					}
+					this.storeTableFieldIndex(
+						registers.getTag(a),
+						registers.getTable(a),
+						image.constScalars[b] as StringId,
+						valueTag,
+						valueScalar,
+						valueReference,
+					);
 					return;
+				}
 				case OpCode.SELF: {
-					const base = registers.get(b);
-					const key = image.constPool[c] as StringValue;
-					this.setRegisterFast(frame, registers, a + 1, base);
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(image.tableLoadCaches[tableCacheIndex], base, key));
+					const baseTag = registers.getTag(b);
+					const baseTable = registers.getTable(b);
+					const key = image.constScalars[c] as StringId;
+					registers.copySlot(a + 1, b);
+					this.bumpRegisterTop(frame, a + 1);
+					this.loadTableFieldIndexCached(
+						image.tableLoadCaches[tableCacheIndex],
+						baseTag,
+						baseTable,
+						key,
+						registers,
+						a,
+					);
+					this.bumpRegisterTop(frame, a);
 					return;
 				}
 		case OpCode.HALT:
 			this.haltUntilIrq();
 			return;
 				case OpCode.GETT: {
-					this.setRegisterFast(frame, registers, a, this.loadTableIndex(registers.get(b), this.readRK(frame, rkC)));
+					let keyTag: ValueTag;
+					let keyScalar: number;
+					let keyReference: ValueReference;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						keyTag = image.constTags[constantIndex];
+						keyScalar = image.constScalars[constantIndex];
+						keyReference = null;
+					} else {
+						keyTag = registers.getTag(rkC);
+						keyScalar = registers.getScalar(rkC);
+						keyReference = registers.getReference(rkC);
+					}
+					this.loadTableIndex(
+						registers.getTag(b),
+						registers.getTable(b),
+						keyTag,
+						keyScalar,
+						keyReference,
+						registers,
+						a,
+					);
+					this.bumpRegisterTop(frame, a);
 					return;
 				}
-				case OpCode.SETT:
-					this.storeTableIndex(registers.get(a), this.readRK(frame, rkB), this.readRK(frame, rkC));
+				case OpCode.SETT: {
+					let keyTag: ValueTag;
+					let keyScalar: number;
+					let keyReference: ValueReference;
+					if (rkB < 0) {
+						const constantIndex = -1 - rkB;
+						keyTag = image.constTags[constantIndex];
+						keyScalar = image.constScalars[constantIndex];
+						keyReference = null;
+					} else {
+						keyTag = registers.getTag(rkB);
+						keyScalar = registers.getScalar(rkB);
+						keyReference = registers.getReference(rkB);
+					}
+					let valueTag: ValueTag;
+					let valueScalar: number;
+					let valueReference: ValueReference;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						valueTag = image.constTags[constantIndex];
+						valueScalar = image.constScalars[constantIndex];
+						valueReference = null;
+					} else {
+						valueTag = registers.getTag(rkC);
+						valueScalar = registers.getScalar(rkC);
+						valueReference = registers.getReference(rkC);
+					}
+					this.storeTableIndex(
+						registers.getTag(a),
+						registers.getTable(a),
+						keyTag,
+						keyScalar,
+						keyReference,
+						valueTag,
+						valueScalar,
+						valueReference,
+					);
 					return;
+				}
 				case OpCode.NEWT:
 					this.setRegisterTableFast(frame, registers, a, this.createTable(b, c));
 					return;
@@ -1837,20 +2156,51 @@ export class CPU {
 					}
 				}
 				case OpCode.CONCAT: {
-					const left = this.readRK(frame, rkB);
-					const right = this.readRK(frame, rkC);
-					const text = valueToString(left, this.stringPool) + valueToString(right, this.stringPool);
+					let leftTag: ValueTag;
+					let leftScalar: number;
+					if (rkB < 0) {
+						const constantIndex = -1 - rkB;
+						leftTag = image.constTags[constantIndex];
+						leftScalar = image.constScalars[constantIndex];
+					} else {
+						leftTag = registers.getTag(rkB);
+						leftScalar = registers.getScalar(rkB);
+					}
+					let rightTag: ValueTag;
+					let rightScalar: number;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						rightTag = image.constTags[constantIndex];
+						rightScalar = image.constScalars[constantIndex];
+					} else {
+						rightTag = registers.getTag(rkC);
+						rightScalar = registers.getScalar(rkC);
+					}
+					const text = storedValueToString(
+						leftTag,
+						leftScalar,
+						this.stringPool,
+					) + storedValueToString(
+						rightTag,
+						rightScalar,
+						this.stringPool,
+					);
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, StringValue.get(handle));
+					this.setRegisterStringFast(frame, registers, a, handle);
 					return;
 				}
 				case OpCode.CONCATN: {
 					let text = '';
 					for (let index = 0; index < c; index += 1) {
-						text += valueToString(registers.get(b + index), this.stringPool);
+						const registerIndex = b + index;
+						text += storedValueToString(
+							registers.getTag(registerIndex),
+							registers.getScalar(registerIndex),
+							this.stringPool,
+						);
 					}
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, StringValue.get(handle));
+					this.setRegisterStringFast(frame, registers, a, handle);
 					return;
 				}
 				case OpCode.UNM: {
@@ -1862,15 +2212,14 @@ export class CPU {
 					this.setRegisterBoolFast(frame, registers, a, !registers.isTruthy(b));
 					return;
 				case OpCode.LEN: {
-					const value = registers.get(b);
-					switch (valueTag(value)) {
+					switch (registers.getTag(b)) {
 						case ValueTag.String: {
-							const cp = this.stringPool.codepointCount(asStringId(value as StringValue));
+							const cp = this.stringPool.codepointCount(registers.getStringId(b));
 							this.setRegisterNumberFast(frame, registers, a, cp);
 							return;
 						}
 						case ValueTag.Table:
-							this.setRegisterNumberFast(frame, registers, a, (value as Table).arrayLength);
+							this.setRegisterNumberFast(frame, registers, a, registers.getTable(b).arrayLength);
 							return;
 						default:
 							throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
@@ -1882,20 +2231,38 @@ export class CPU {
 					return;
 				}
 				case OpCode.EQ: {
-					const left = this.readRK(frame, rkB);
-					const right = this.readRK(frame, rkC);
-					const eq = left === right;
+					const eq = this.readRKEquals(frame, rkB, rkC);
 					if (eq !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
 					return;
 				}
 				case OpCode.LT: {
-					const left = this.readRK(frame, rkB);
-					const right = this.readRK(frame, rkC);
-					const ok = valueIsString(left) && valueIsString(right)
-						? this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right))
-						: this.readRKNumber(frame, rkB) < this.readRKNumber(frame, rkC);
+					let leftTag: ValueTag;
+					let leftScalar: number;
+					if (rkB < 0) {
+						const constantIndex = -1 - rkB;
+						leftTag = image.constTags[constantIndex];
+						leftScalar = image.constScalars[constantIndex];
+					} else {
+						leftTag = registers.getTag(rkB);
+						leftScalar = registers.getScalar(rkB);
+					}
+					let rightTag: ValueTag;
+					let rightScalar: number;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						rightTag = image.constTags[constantIndex];
+						rightScalar = image.constScalars[constantIndex];
+					} else {
+						rightTag = registers.getTag(rkC);
+						rightScalar = registers.getScalar(rkC);
+					}
+					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
+						? this.stringPool.toString(leftScalar as StringId)
+							< this.stringPool.toString(rightScalar as StringId)
+						: (leftTag === ValueTag.Number ? leftScalar : NaN)
+							< (rightTag === ValueTag.Number ? rightScalar : NaN);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -1971,15 +2338,35 @@ export class CPU {
 					}
 					return;
 				case OpCode.LOADKR:
-					this.setRegisterFast(frame, registers, a, image.constPool[registers.getNumber(b)]);
+					this.setRegisterConstantFast(frame, registers, a, image, registers.getNumber(b));
 					return;
 
 				case OpCode.LE: {
-					const left = this.readRK(frame, rkB);
-					const right = this.readRK(frame, rkC);
-					const ok = valueIsString(left) && valueIsString(right)
-						? this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right))
-						: this.readRKNumber(frame, rkB) <= this.readRKNumber(frame, rkC);
+					let leftTag: ValueTag;
+					let leftScalar: number;
+					if (rkB < 0) {
+						const constantIndex = -1 - rkB;
+						leftTag = image.constTags[constantIndex];
+						leftScalar = image.constScalars[constantIndex];
+					} else {
+						leftTag = registers.getTag(rkB);
+						leftScalar = registers.getScalar(rkB);
+					}
+					let rightTag: ValueTag;
+					let rightScalar: number;
+					if (rkC < 0) {
+						const constantIndex = -1 - rkC;
+						rightTag = image.constTags[constantIndex];
+						rightScalar = image.constScalars[constantIndex];
+					} else {
+						rightTag = registers.getTag(rkC);
+						rightScalar = registers.getScalar(rkC);
+					}
+					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
+						? this.stringPool.toString(leftScalar as StringId)
+							<= this.stringPool.toString(rightScalar as StringId)
+						: (leftTag === ValueTag.Number ? leftScalar : NaN)
+							<= (rightTag === ValueTag.Number ? rightScalar : NaN);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -2032,19 +2419,23 @@ export class CPU {
 				}
 				case OpCode.GETUP: {
 					const upvalue = frame.closure.upvalues[b];
-					this.setRegisterFast(frame, registers, a, this.readUpvalue(upvalue));
+					this.copyUpvalueToRegister(frame, registers, a, upvalue);
 					return;
 				}
 				case OpCode.SETUP: {
 					const upvalue = frame.closure.upvalues[b];
-					this.writeUpvalue(upvalue, registers.get(a));
+					this.copyRegisterToUpvalue(upvalue, registers, a);
 					return;
 				}
 				case OpCode.VARARG: {
 					const count = b === 0 ? frame.varargCount : b;
 					for (let index = 0; index < count; index += 1) {
-						const value = index < frame.varargCount ? this.stackRegisters.get(frame.varargBase + index) : null;
-						this.setRegisterFast(frame, registers, a + index, value);
+						if (index < frame.varargCount) {
+							registers.copySlotFrom(this.stackRegisters, a + index, frame.varargBase + index);
+							this.bumpRegisterTop(frame, a + index);
+						} else {
+							this.setRegisterNilFast(frame, registers, a + index);
+						}
 					}
 					if (b === 0) {
 						frame.top = a + count;
@@ -2052,14 +2443,22 @@ export class CPU {
 					return;
 				}
 				case OpCode.CALL: {
-					const callee = registers.get(a);
 					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
-					switch (valueTag(callee)) {
+					switch (registers.getTag(a)) {
 						case ValueTag.BuiltinFunction:
-							this.runBuiltinFunction(callee as BuiltinFunction, frame, a, c, argCount);
+							this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
 							return;
 						case ValueTag.Closure:
-							this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
+							this.pushFrameFromCaller(
+								frame,
+								registers.getClosure(a),
+								a + 1,
+								argCount,
+								a,
+								c,
+								false,
+								frame.pc - INSTRUCTION_BYTES,
+							);
 							return;
 						default:
 							throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -2081,14 +2480,14 @@ export class CPU {
 						}
 					}
 					if (frame.returnToCompletionLatch) {
-						this.captureValuesIntoArrayFromRegisters(this.completionValues, registers, a, total);
+						this.latchCompletionValues(registers, a, total);
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
 						return;
 					}
 					if (frameIndex === 0) {
-						this.captureValuesIntoArrayFromRegisters(this.completionValues, registers, a, total);
+						this.latchCompletionValues(registers, a, total);
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
@@ -2162,7 +2561,7 @@ export class CPU {
 						return;
 					}
 					const faultSequence = this.memory.readBusFaultSequence();
-					let value: Value;
+					let value: number;
 					switch (c) {
 						case MemoryAccessKind.Word:
 							value = this.memory.readMappedWord(addr);
@@ -2187,7 +2586,7 @@ export class CPU {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 						return;
 					}
-					this.setRegisterFast(frame, registers, a, value);
+					this.setRegisterNumberFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.LOAD_MEM: {
@@ -2197,7 +2596,7 @@ export class CPU {
 						return;
 					}
 					const faultSequence = this.memory.readBusFaultSequence();
-					let value: Value;
+					let value: number;
 					switch (c) {
 						case MemoryAccessKind.Word:
 							value = this.memory.readMappedWord(addr);
@@ -2222,7 +2621,7 @@ export class CPU {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 						return;
 					}
-					this.setRegisterFast(frame, registers, a, value);
+					this.setRegisterNumberFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.STORE_MEM: {
@@ -2279,7 +2678,7 @@ export class CPU {
 		}
 	}
 
-	private prepareFrameRegisters(frame: CallFrame, registerCount: number): RegisterFile {
+	private prepareFrameRegisters(frame: CallFrame, registerCount: number): ValueSlots {
 		const needed = Math.max(registerCount, 1);
 		let capacity = 1 << (32 - Math.clz32(needed - 1));
 		if (capacity < 8) {
@@ -2395,7 +2794,11 @@ export class CPU {
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.stackRegisters.set(frame.varargBase + index, callerRegisters.get(argBase + functionRecord.numParams + index));
+				this.stackRegisters.copySlotFrom(
+					callerRegisters,
+					frame.varargBase + index,
+					argBase + functionRecord.numParams + index,
+				);
 			}
 		}
 		this.frames.push(frame);
@@ -2452,7 +2855,9 @@ export class CPU {
 				open: true,
 				index: word & BLUA32_UPVALUE_INDEX_MASK,
 				frame,
-				value: null,
+				valueTag: ValueTag.Nil,
+				valueScalar: NaN,
+				valueReference: null,
 				nextOpen: null,
 			};
 			this.linkOpenUpvalue(frame, upvalue);
@@ -2468,7 +2873,9 @@ export class CPU {
 		frame.openUpvalueHead = null;
 		while (upvalue) {
 			const next = upvalue.nextOpen;
-			upvalue.value = frame.registers.get(upvalue.index);
+			upvalue.valueTag = frame.registers.getTag(upvalue.index);
+			upvalue.valueScalar = frame.registers.getScalar(upvalue.index);
+			upvalue.valueReference = frame.registers.getReference(upvalue.index);
 			upvalue.open = false;
 			upvalue.frame = null;
 			upvalue.nextOpen = null;
@@ -2476,22 +2883,36 @@ export class CPU {
 		}
 	}
 
-	private readUpvalue(upvalue: Upvalue): Value {
+	private copyUpvalueToRegister(
+		frame: CallFrame,
+		registers: ValueSlots,
+		registerIndex: number,
+		upvalue: Upvalue,
+	): void {
 		if (upvalue.open) {
-			return upvalue.frame.registers.get(upvalue.index);
+			registers.copySlotFrom(upvalue.frame!.registers, registerIndex, upvalue.index);
+		} else {
+			registers.setEncoded(
+				registerIndex,
+				upvalue.valueTag,
+				upvalue.valueScalar,
+				upvalue.valueReference,
+			);
 		}
-		return upvalue.value;
+		this.bumpRegisterTop(frame, registerIndex);
 	}
 
-	private writeUpvalue(upvalue: Upvalue, value: Value): void {
+	private copyRegisterToUpvalue(upvalue: Upvalue, registers: ValueSlots, registerIndex: number): void {
 		if (upvalue.open) {
-			upvalue.frame.registers.set(upvalue.index, value);
+			upvalue.frame!.registers.copySlotFrom(registers, upvalue.index, registerIndex);
 			return;
 		}
-		upvalue.value = value;
+		upvalue.valueTag = registers.getTag(registerIndex);
+		upvalue.valueScalar = registers.getScalar(registerIndex);
+		upvalue.valueReference = registers.getReference(registerIndex);
 	}
 
-	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: RegisterFile, sourceBase: number, sourceCount: number): void {
+	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const targetCount = count === 0 ? sourceCount : count;
 		if (targetCount > 0) {
 			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
@@ -2506,29 +2927,27 @@ export class CPU {
 		frame.top = base + targetCount;
 	}
 
-	private captureValuesIntoArrayFromRegisters(target: Value[], source: RegisterFile, sourceBase: number, sourceCount: number): void {
-		target.length = sourceCount;
-		for (let index = 0; index < sourceCount; index += 1) {
-			target[index] = source.get(sourceBase + index);
-		}
-	}
-
-	private writeReturnValues(frame: CallFrame, base: number, count: number, values: Value[]): void {
-		if (count === 0) {
-			for (let index = 0; index < values.length; index += 1) {
-				this.setRegister(frame, base + index, values[index]);
+	private writeReturnValuesFromBuiltinResults(
+		frame: CallFrame,
+		base: number,
+		count: number,
+		values: BuiltinResults,
+	): void {
+		const targetCount = count === 0 ? values.length : count;
+		if (targetCount > 0) {
+			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
+			const copiedCount = Math.min(values.length, targetCount);
+			if (copiedCount > 0) {
+				values.copyTo(registers, base, copiedCount);
 			}
-			frame.top = base + values.length;
-			return;
+			for (let index = copiedCount; index < targetCount; index += 1) {
+				registers.setNil(base + index);
+			}
 		}
-		for (let index = 0; index < count; index += 1) {
-			const value = index < values.length ? values[index] : null;
-			this.setRegister(frame, base + index, value);
-		}
-		frame.top = base + count;
+		frame.top = base + targetCount;
 	}
 
-	private ensureRegisterCapacity(frame: CallFrame, index: number): RegisterFile {
+	private ensureRegisterCapacity(frame: CallFrame, index: number): ValueSlots {
 		const registers = frame.registers;
 		if (index >= frame.stackCapacity) {
 			const frameIndex = this.frames.indexOf(frame);
@@ -2569,49 +2988,66 @@ export class CPU {
 		}
 	}
 
-	private copyRegisterFast(frame: CallFrame, registers: RegisterFile, dst: number, src: number): void {
+	private copyRegisterFast(frame: CallFrame, registers: ValueSlots, dst: number, src: number): void {
 		registers.copySlot(dst, src);
 		this.bumpRegisterTop(frame, dst);
 	}
 
-	private setRegisterNilFast(frame: CallFrame, registers: RegisterFile, index: number): void {
+	private setRegisterNilFast(frame: CallFrame, registers: ValueSlots, index: number): void {
 		registers.setNil(index);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterBoolFast(frame: CallFrame, registers: RegisterFile, index: number, value: boolean): void {
+	private setRegisterBoolFast(frame: CallFrame, registers: ValueSlots, index: number, value: boolean): void {
 		registers.setBool(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterNumberFast(frame: CallFrame, registers: RegisterFile, index: number, value: number): void {
+	private setRegisterNumberFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
 		registers.setNumber(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterStringFast(frame: CallFrame, registers: RegisterFile, index: number, value: StringValue): void {
-		registers.setString(index, value);
+	private setRegisterStringFast(frame: CallFrame, registers: ValueSlots, index: number, value: StringId): void {
+		registers.setStringId(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterTableFast(frame: CallFrame, registers: RegisterFile, index: number, value: Table): void {
+	private setRegisterTableFast(frame: CallFrame, registers: ValueSlots, index: number, value: Table): void {
 		registers.setTable(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterClosureFast(frame: CallFrame, registers: RegisterFile, index: number, value: Closure): void {
+	private setRegisterClosureFast(frame: CallFrame, registers: ValueSlots, index: number, value: Closure): void {
 		registers.setClosure(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterFast(frame: CallFrame, registers: RegisterFile, index: number, value: Value): void {
-		registers.set(index, value);
-		this.bumpRegisterTop(frame, index);
-	}
-
-	private setRegister(frame: CallFrame, index: number, value: Value): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
-		this.setRegisterFast(frame, registers, index, value);
+	private setRegisterConstantFast(
+		frame: CallFrame,
+		registers: ValueSlots,
+		registerIndex: number,
+		image: Blua32ExecutionImage,
+		constantIndex: number,
+	): void {
+		switch (image.constTags[constantIndex]) {
+			case ValueTag.Nil:
+				registers.setNil(registerIndex);
+				break;
+			case ValueTag.False:
+				registers.setBool(registerIndex, false);
+				break;
+			case ValueTag.True:
+				registers.setBool(registerIndex, true);
+				break;
+			case ValueTag.Number:
+				registers.setNumber(registerIndex, image.constScalars[constantIndex]);
+				break;
+			case ValueTag.String:
+				registers.setStringId(registerIndex, image.constScalars[constantIndex] as StringId);
+				break;
+		}
+		this.bumpRegisterTop(frame, registerIndex);
 	}
 
 	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
@@ -2627,38 +3063,74 @@ export class CPU {
 		}
 	}
 
-	private readRK(frame: CallFrame, rk: number): Value {
-		if (rk < 0) {
-			const index = -1 - rk;
-			return frame.executionImage.constPool[index];
+	private readRKEquals(frame: CallFrame, left: number, right: number): boolean {
+		const image = frame.executionImage;
+		const registers = frame.registers;
+		let leftTag: ValueTag;
+		let leftScalar: number;
+		let leftReference: ValueReference;
+		if (left < 0) {
+			const constantIndex = -1 - left;
+			leftTag = image.constTags[constantIndex];
+			leftScalar = image.constScalars[constantIndex];
+			leftReference = null;
+		} else {
+			leftTag = registers.getTag(left);
+			leftScalar = registers.getScalar(left);
+			leftReference = registers.getReference(left);
 		}
-		return frame.registers.get(rk);
+		let rightTag: ValueTag;
+		let rightScalar: number;
+		let rightReference: ValueReference;
+		if (right < 0) {
+			const constantIndex = -1 - right;
+			rightTag = image.constTags[constantIndex];
+			rightScalar = image.constScalars[constantIndex];
+			rightReference = null;
+		} else {
+			rightTag = registers.getTag(right);
+			rightScalar = registers.getScalar(right);
+			rightReference = registers.getReference(right);
+		}
+		if (leftTag !== rightTag) {
+			return false;
+		}
+		switch (leftTag) {
+			case ValueTag.Nil:
+			case ValueTag.False:
+			case ValueTag.True:
+				return true;
+			case ValueTag.Number:
+				return leftScalar === rightScalar;
+			case ValueTag.String:
+			case ValueTag.BuiltinFunction:
+				return leftScalar === rightScalar;
+			case ValueTag.Table:
+			case ValueTag.Closure:
+				return leftReference === rightReference;
+		}
 	}
 
 	private readRKNumber(frame: CallFrame, rk: number): number {
 		if (rk < 0) {
-			return frame.executionImage.constNumbers[-1 - rk];
+			const constantIndex = -1 - rk;
+			return frame.executionImage.constTags[constantIndex] === ValueTag.Number
+				? frame.executionImage.constScalars[constantIndex]
+				: NaN;
 		}
 		return frame.registers.getNumber(rk);
 	}
 
-	public callBuiltinFunction(fn: BuiltinFunction, args: ReadonlyArray<Value>, out: Value[]): void {
-		const builtinArgs = this.acquireArrayBuiltinArgs(args);
-		try {
-			this.callBuiltinFunctionView(fn, builtinArgs, out);
-		} finally {
-			this.releaseArrayBuiltinArgs(builtinArgs);
-		}
-	}
-
-	private callBuiltinFunctionView(fn: BuiltinFunction, args: BuiltinArgs, out: Value[]): void {
-		out.length = 0;
-		switch (fn.id) {
+	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
+		switch (id) {
 			case BuiltinFunctionId.Next:
-				this.runBuiltinNextValue(args.get(0), args.get(1), out);
+				this.runBuiltinNextValue(args, out);
 				break;
 			case BuiltinFunctionId.Type:
-				this.runBuiltinType(args.get(0), out);
+				this.runBuiltinType(
+					args.length > 0 ? args.registers.getTag(args.base) : ValueTag.Nil,
+					out,
+				);
 				break;
 			case BuiltinFunctionId.SetMetatable:
 				this.runBuiltinSetMetatable(args, out);
@@ -2682,7 +3154,10 @@ export class CPU {
 				this.runBuiltinStringChar(args, out);
 				break;
 			case BuiltinFunctionId.SetStringIndex:
-				this.stringIndexTable = args.get(0) as Table;
+				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
+				this.stringIndexTable = args.registers.getTable(args.base);
 				break;
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
@@ -2693,23 +3168,23 @@ export class CPU {
 		}
 	}
 
-	private runBuiltinFunction(fn: BuiltinFunction, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
-		this.charge(fn.cost.base);
-		if (fn.id === BuiltinFunctionId.PCall || fn.id === BuiltinFunctionId.XPCall) {
-			this.startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
+	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
+		this.charge(BUILTIN_FUNCTIONS[id].cost.base);
+		if (id === BuiltinFunctionId.PCall || id === BuiltinFunctionId.XPCall) {
+			this.startProtectedCall(id, frame, callBase, returnCount, callBase + 1, argCount, false);
 			return;
 		}
 		const builtinArgs = this.acquireRegisterBuiltinArgs();
-		const results = this.builtinReturnScratch.acquire();
+		const results = this.acquireBuiltinResults();
 		try {
 			builtinArgs.bind(frame.registers, callBase + 1, argCount);
-			this.callBuiltinFunctionView(fn, builtinArgs, results);
+			this.callBuiltinFunction(id, builtinArgs, results);
 			if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
-				this.writeReturnValues(frame, callBase, returnCount, results);
+				this.writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, results);
 			}
 		} finally {
 			this.releaseRegisterBuiltinArgs(builtinArgs);
-			this.builtinReturnScratch.release(results);
+			this.releaseBuiltinResults(results);
 		}
 	}
 
@@ -2723,8 +3198,9 @@ export class CPU {
 		returnsToProtectedParent: boolean,
 	): void {
 		if (id === BuiltinFunctionId.XPCall) {
-			const handler = argumentCount > 1 ? caller.registers.get(argumentBase + 1) : null;
-			const handlerTag = valueTag(handler);
+			const handlerTag = argumentCount > 1
+				? caller.registers.getTag(argumentBase + 1)
+				: ValueTag.Nil;
 			if (handlerTag !== ValueTag.Closure
 				&& handlerTag !== ValueTag.BuiltinFunction) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
@@ -2744,20 +3220,32 @@ export class CPU {
 		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
 		this.invokeProtectedTarget(
 			continuationIndex,
-			argumentCount > 0 ? caller.registers.get(argumentBase) : null,
+			caller.registers,
+			argumentBase,
+			argumentCount > 0,
 			argumentBase + targetArgumentOffset,
 			Math.max(argumentCount - targetArgumentOffset, 0),
 		);
 	}
 
-	private invokeProtectedTarget(continuationIndex: number, target: Value, argumentBase: number, argumentCount: number): void {
+	private invokeProtectedTarget(
+		continuationIndex: number,
+		targetRegisters: ValueSlots,
+		targetRegister: number,
+		targetPresent: boolean,
+		argumentBase: number,
+		argumentCount: number,
+	): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
-		switch (valueTag(target)) {
+		const targetTag = targetPresent
+			? targetRegisters.getTag(targetRegister)
+			: ValueTag.Nil;
+		switch (targetTag) {
 			case ValueTag.Closure:
 				continuation.target = this.pushFrameFromCaller(
 					caller,
-					target as Closure,
+					targetRegisters.getClosure(targetRegister),
 					argumentBase,
 					argumentCount,
 					0,
@@ -2767,21 +3255,21 @@ export class CPU {
 				);
 				return;
 			case ValueTag.BuiltinFunction: {
-				const builtinFunction = target as BuiltinFunction;
-				this.charge(builtinFunction.cost.base);
-				if (builtinFunction.id === BuiltinFunctionId.PCall || builtinFunction.id === BuiltinFunctionId.XPCall) {
-					this.startProtectedCall(builtinFunction.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+				const builtinId = targetRegisters.getBuiltinFunctionId(targetRegister);
+				this.charge(BUILTIN_FUNCTIONS[builtinId].cost.base);
+				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
+					this.startProtectedCall(builtinId, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();
-				const results = this.builtinReturnScratch.acquire();
+				const results = this.acquireBuiltinResults();
 				try {
 					builtinArgs.bind(caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunctionView(builtinFunction, builtinArgs, results);
-					this.finishProtectedCallFromArray(continuationIndex, results);
+					this.callBuiltinFunction(builtinId, builtinArgs, results);
+					this.finishProtectedCallFromBuiltinResults(continuationIndex, results);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
-					this.builtinReturnScratch.release(results);
+					this.releaseBuiltinResults(results);
 				}
 				return;
 			}
@@ -2790,27 +3278,60 @@ export class CPU {
 		}
 	}
 
-	private finishProtectedCallFromArray(continuationIndex: number, values: Value[]): void {
+	private finishProtectedCallFromBuiltinResults(continuationIndex: number, values: BuiltinResults): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
 		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
-			this.finishProtectedCallWithError(continuationIndex, values.length > 0 ? values[0] : null);
+			if (values.length > 0) {
+				this.finishProtectedCallWithError(
+					continuationIndex,
+					values.getTag(0),
+					values.getScalar(0),
+					values.getReference(0),
+				);
+			} else {
+				this.finishProtectedCallWithError(
+					continuationIndex,
+					ValueTag.Nil,
+					NaN,
+					null,
+				);
+			}
 			return;
 		}
-		const resultCount = this.writeProtectedResultsFromArray(continuation, true, values);
+		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuation, true, values);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
-	private finishProtectedCallFromRegisters(continuationIndex: number, source: RegisterFile, sourceBase: number, sourceCount: number): void {
+	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
 		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
-			this.finishProtectedCallWithError(continuationIndex, sourceCount > 0 ? source.get(sourceBase) : null);
+			if (sourceCount > 0) {
+				this.finishProtectedCallWithError(
+					continuationIndex,
+					source.getTag(sourceBase),
+					source.getScalar(sourceBase),
+					source.getReference(sourceBase),
+				);
+			} else {
+				this.finishProtectedCallWithError(
+					continuationIndex,
+					ValueTag.Nil,
+					NaN,
+					null,
+				);
+			}
 			return;
 		}
 		const resultCount = this.writeProtectedResultsFromRegisters(continuation, true, source, sourceBase, sourceCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
-	private finishProtectedCallWithError(continuationIndex: number, errorValue: Value): void {
+	private finishProtectedCallWithError(
+		continuationIndex: number,
+		errorTag: ValueTag,
+		errorScalar: number,
+		errorReference: ValueReference,
+	): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const resultCount = continuation.returnCount === 0 ? 2 : continuation.returnCount;
@@ -2818,7 +3339,12 @@ export class CPU {
 			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
 			registers.setBool(continuation.callBase, false);
 			if (resultCount > 1) {
-				registers.set(continuation.callBase + 1, errorValue);
+				registers.setEncoded(
+					continuation.callBase + 1,
+					errorTag,
+					errorScalar,
+					errorReference,
+				);
 				for (let index = 2; index < resultCount; index += 1) {
 					registers.setNil(continuation.callBase + index);
 				}
@@ -2828,15 +3354,19 @@ export class CPU {
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
-	private writeProtectedResultsFromArray(continuation: ProtectedCallContinuation, prefix: boolean, values: Value[]): number {
+	private writeProtectedResultsFromBuiltinResults(
+		continuation: ProtectedCallContinuation,
+		prefix: boolean,
+		values: BuiltinResults,
+	): number {
 		const caller = continuation.caller!;
 		const resultCount = continuation.returnCount === 0 ? values.length + 1 : continuation.returnCount;
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
 			registers.setBool(continuation.callBase, prefix);
 			const copiedCount = Math.min(values.length, resultCount - 1);
-			for (let index = 0; index < copiedCount; index += 1) {
-				registers.set(continuation.callBase + index + 1, values[index]);
+			if (copiedCount > 0) {
+				values.copyTo(registers, continuation.callBase + 1, copiedCount);
 			}
 			for (let index = copiedCount + 1; index < resultCount; index += 1) {
 				registers.setNil(continuation.callBase + index);
@@ -2849,7 +3379,7 @@ export class CPU {
 	private writeProtectedResultsFromRegisters(
 		continuation: ProtectedCallContinuation,
 		prefix: boolean,
-		source: RegisterFile,
+		source: ValueSlots,
 		sourceBase: number,
 		sourceCount: number,
 	): number {
@@ -2887,7 +3417,11 @@ export class CPU {
 		}
 	}
 
-	private handleProtectedCallError(errorValue: Value): boolean {
+	private handleProtectedCallError(
+		errorTag: ValueTag,
+		errorScalar: number,
+		errorReference: ValueReference,
+	): boolean {
 		for (;;) {
 			if (this.protectedCallDepth === 0) {
 				return false;
@@ -2903,27 +3437,56 @@ export class CPU {
 			}
 			this.unwindToDepth(callerIndex + 1);
 			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
-				const result = continuation.kind === ProtectedCallKind.XPCallHandler
-					? this.errorInErrorHandlingValue
-					: errorValue;
-				this.finishProtectedCallWithError(continuationIndex, result);
+				if (continuation.kind === ProtectedCallKind.XPCallHandler) {
+					this.finishProtectedCallWithError(
+						continuationIndex,
+						ValueTag.String,
+						this.errorInErrorHandlingStringId,
+						null,
+					);
+				} else {
+					this.finishProtectedCallWithError(
+						continuationIndex,
+						errorTag,
+						errorScalar,
+						errorReference,
+					);
+				}
 				return true;
 			}
 
 			continuation.kind = ProtectedCallKind.XPCallHandler;
 			continuation.target = null;
-			const handler = caller.registers.get(continuation.handlerRegister);
-			this.setRegister(caller, continuation.callBase, errorValue);
+			const handlerRegister = continuation.handlerRegister;
+			const registers = this.ensureRegisterCapacity(caller, continuation.callBase);
+			registers.setEncoded(
+				continuation.callBase,
+				errorTag,
+				errorScalar,
+				errorReference,
+			);
+			this.bumpRegisterTop(caller, continuation.callBase);
 			try {
-				this.invokeProtectedTarget(continuationIndex, handler, continuation.callBase, 1);
+				this.invokeProtectedTarget(
+					continuationIndex,
+					caller.registers,
+					handlerRegister,
+					true,
+					continuation.callBase,
+					1,
+				);
 				return true;
 			} catch (handlerError) {
 				if (handlerError instanceof LuaThrownValueError) {
-					errorValue = handlerError.value;
+					errorTag = handlerError.tag;
+					errorScalar = handlerError.scalar;
+					errorReference = handlerError.reference;
 					continue;
 				}
 				if (handlerError instanceof LuaExecutionError) {
-					errorValue = this.luaFaultErrorValues[handlerError.reason];
+					errorTag = ValueTag.String;
+					errorScalar = this.luaFaultErrorStringIds[handlerError.reason];
+					errorReference = null;
 					continue;
 				}
 				throw handlerError;
@@ -2931,101 +3494,214 @@ export class CPU {
 		}
 	}
 
-	private runBuiltinNextValue(target: Value, keyValue: Value, out: Value[]): void {
-		out.length = 0;
-		switch (valueTag(target)) {
-			case ValueTag.Table: {
-				const entry = (target as Table).nextEntry(keyValue);
-				if (entry === null) {
-					out.push(null);
-					return;
-				}
-				out.push(entry[0], entry[1]);
-				return;
-			}
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
+	private runBuiltinNextValue(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		const base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
+		}
+		const table = registers.getTable(base);
+		const found = args.length > 1
+			? table.next(
+				registers.getTag(base + 1),
+				registers.getScalar(base + 1),
+				registers.getReference(base + 1),
+				out,
+				0,
+			)
+			: table.next(ValueTag.Nil, NaN, null, out, 0);
+		if (!found) {
+			out.push(ValueTag.Nil);
 		}
 	}
 
-	private runBuiltinType(value: Value, out: Value[]): void {
-		out.push(StringValue.get(this.stringPool.intern(valueTypeNameForLua(value))));
+	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {
+		out.push(ValueTag.String, this.stringPool.intern(valueTypeNameForLuaTag(tag)));
 	}
 
-	private runBuiltinSetMetatable(args: BuiltinArgs, out: Value[]): void {
-		const target = args.get(0) as Table;
-		const metatable = args.get(1) as Table | null;
+	private runBuiltinSetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const target = registers.getTable(args.base);
+		let metatable: Table | null = null;
+		if (args.length > 1) {
+			const metatableIndex = args.base + 1;
+			const metatableTag = registers.getTag(metatableIndex);
+			if (metatableTag === ValueTag.Table) {
+				metatable = registers.getTable(metatableIndex);
+			} else if (metatableTag !== ValueTag.Nil) {
+				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
+		}
 		target.metatable = metatable;
-		out.push(target);
+		out.push(ValueTag.Table, NaN, target);
 	}
 
-	private runBuiltinGetMetatable(args: BuiltinArgs, out: Value[]): void {
-		out.push((args.get(0) as Table).metatable);
+	private runBuiltinGetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
+		if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const metatable = args.registers.getTable(args.base).metatable;
+		if (metatable) {
+			out.push(ValueTag.Table, NaN, metatable);
+		} else {
+			out.push(ValueTag.Nil);
+		}
 	}
 
-	private runBuiltinRawGet(args: BuiltinArgs, out: Value[]): void {
-		out.push((args.get(0) as Table).get(args.get(1)));
-	}
-
-	private runBuiltinRawSet(args: BuiltinArgs, out: Value[]): void {
-		const target = args.get(0) as Table;
-		target.set(args.get(1), args.get(2));
-		out.push(target);
-	}
-
-	private runBuiltinSelect(args: BuiltinArgs, out: Value[]): void {
-		const selector = args.get(0);
-		const count = args.length - 1;
-		if (valueIsString(selector) && this.stringPool.toString(asStringId(selector)) === '#') {
-			out.push(count);
+	private runBuiltinRawGet(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const table = registers.getTable(args.base);
+		if (args.length > 1) {
+			const keyIndex = args.base + 1;
+			table.load(
+				registers.getTag(keyIndex),
+				registers.getScalar(keyIndex),
+				registers.getReference(keyIndex),
+				out,
+				0,
+			);
 			return;
 		}
-		const startSelector = selector as number;
+		table.load(ValueTag.Nil, NaN, null, out, 0);
+	}
+
+	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		const base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const target = registers.getTable(base);
+		let keyTag = ValueTag.Nil;
+		let keyScalar = NaN;
+		let keyReference: ValueReference = null;
+		if (args.length > 1) {
+			const keyIndex = base + 1;
+			keyTag = registers.getTag(keyIndex);
+			keyScalar = registers.getScalar(keyIndex);
+			keyReference = registers.getReference(keyIndex);
+		}
+		let storedTag = ValueTag.Nil;
+		let storedScalar = NaN;
+		let storedReference: ValueReference = null;
+		if (args.length > 2) {
+			const valueIndex = base + 2;
+			storedTag = registers.getTag(valueIndex);
+			storedScalar = registers.getScalar(valueIndex);
+			storedReference = registers.getReference(valueIndex);
+		}
+		target.store(
+			keyTag,
+			keyScalar,
+			keyReference,
+			storedTag,
+			storedScalar,
+			storedReference,
+		);
+		out.push(ValueTag.Table, NaN, target);
+	}
+
+	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		const base = args.base;
+		const count = args.length - 1;
+		let selectorTag = ValueTag.Nil;
+		let selectorScalar = NaN;
+		if (args.length > 0) {
+			selectorTag = registers.getTag(base);
+			selectorScalar = registers.getScalar(base);
+		}
+		if (selectorTag === ValueTag.String
+			&& this.stringPool.toString(selectorScalar as StringId) === '#') {
+			out.push(ValueTag.Number, count);
+			return;
+		}
+		if (selectorTag !== ValueTag.Number) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const startSelector = selectorScalar | 0;
 		const start = startSelector >= 0
 			? startSelector
 			: count + startSelector + 1;
 		for (let index = start; index <= count; index += 1) {
 			if (index >= 1 && index < args.length) {
-				out.push(args.get(index));
+				const valueIndex = base + index;
+				out.push(
+					registers.getTag(valueIndex),
+					registers.getScalar(valueIndex),
+					registers.getReference(valueIndex),
+				);
 			}
 		}
 	}
 
-	private runBuiltinStringByte(args: BuiltinArgs, out: Value[]): void {
-		const source = this.stringPool.toString(asStringId(args.get(0) as StringValue));
+	private runBuiltinStringByte(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
+		const base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.String) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const source = this.stringPool.toString(registers.getStringId(base));
 		let position = 1;
 		if (args.length > 1) {
-			const positionValue = args.get(1);
-			if (positionValue !== null) {
-				position = Math.trunc(positionValue as number);
+			const positionIndex = base + 1;
+			const positionTag = registers.getTag(positionIndex);
+			if (positionTag !== ValueTag.Nil) {
+				if (positionTag !== ValueTag.Number) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
+				position = registers.getScalar(positionIndex) | 0;
 			}
 		}
 		if (position < 1) {
-			out.push(null);
+			out.push(ValueTag.Nil);
 			return;
 		}
 		let current = 1;
 		for (const char of source) {
 			if (current === position) {
-				out.push(char.codePointAt(0) as number);
+				out.push(ValueTag.Number, char.codePointAt(0) as number);
 				return;
 			}
 			current += 1;
 		}
-		out.push(null);
+		out.push(ValueTag.Nil);
 	}
 
-	private runBuiltinStringChar(args: BuiltinArgs, out: Value[]): void { // TODO: Check whether this is a performance bottleneck and optimize if necessary and do the same for the C++-version.
+	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {
+		const registers = args.registers;
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
-			result += String.fromCodePoint(Math.trunc(args.get(index) as number));
+			const valueIndex = args.base + index;
+			if (registers.getTag(valueIndex) !== ValueTag.Number) {
+				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
+			const codepoint = registers.getScalar(valueIndex) >>> 0;
+			if (codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff)) {
+				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
+			result += String.fromCodePoint(codepoint);
 		}
-		out.push(StringValue.get(this.stringPool.intern(result)));
+		out.push(ValueTag.String, this.stringPool.intern(result));
 	}
 
-	private runBuiltinError(args: BuiltinArgs): never {
-		const value = args.get(0);
-		throw new LuaThrownValueError(value);
+	private runBuiltinError(args: BuiltinArgsView): never {
+		if (args.length === 0) {
+			throw new LuaThrownValueError(ValueTag.Nil, NaN, null);
+		}
+		const registers = args.registers;
+		const index = args.base;
+		throw new LuaThrownValueError(
+			registers.getTag(index),
+			registers.getScalar(index),
+			registers.getReference(index),
+		);
 	}
 
 	public captureRuntimeState(): CpuRuntimeState {
@@ -3044,8 +3720,12 @@ export class CPU {
 			return id;
 		};
 
-		const captureValueState = (value: Value): CpuValueState => {
-			switch (valueTag(value)) {
+		const captureStoredValueState = (
+			tag: ValueTag,
+			scalar: number,
+			reference: ValueReference,
+		): CpuValueState => {
+			switch (tag) {
 				case ValueTag.Nil:
 					return { tag: 'nil' };
 				case ValueTag.False:
@@ -3053,15 +3733,15 @@ export class CPU {
 				case ValueTag.True:
 					return { tag: 'true' };
 				case ValueTag.Number:
-					return { tag: 'number', value: value as number };
+					return { tag: 'number', value: scalar };
 				case ValueTag.String:
-					return { tag: 'string', id: (value as StringValue).id };
+					return { tag: 'string', id: scalar as StringId };
 				case ValueTag.BuiltinFunction:
-					return { tag: 'builtin', id: (value as BuiltinFunction).id };
+					return { tag: 'builtin', id: scalar as BuiltinFunctionId };
 				case ValueTag.Table:
-					return { tag: 'ref', id: ensureObjectId(value as Table, 'table') };
+					return { tag: 'table', id: ensureObjectId(reference as Table, 'table') };
 				case ValueTag.Closure:
-					return { tag: 'ref', id: ensureObjectId(value as Closure, 'closure') };
+					return { tag: 'closure', id: ensureObjectId(reference as Closure, 'closure') };
 			}
 		};
 
@@ -3070,18 +3750,31 @@ export class CPU {
 				case 'table': {
 					const table = object as Table;
 					const tableState = table.captureRuntimeState();
-					const hash = new Array(tableState.hash.length);
-					for (let index = 0; index < tableState.hash.length; index += 1) {
-						const node = tableState.hash[index];
+					const hash = new Array(tableState.hashSize);
+					for (let index = 0; index < tableState.hashSize; index += 1) {
+						const keySlot = tableState.arrayCapacity + index;
+						const valueSlot = tableState.arrayCapacity + tableState.hashSize + index;
 						hash[index] = {
-							key: captureValueState(node.key),
-							value: captureValueState(node.value),
-							next: node.next,
+							key: captureStoredValueState(
+								tableState.tags[keySlot],
+								tableState.scalars[keySlot],
+								tableState.references[keySlot],
+							),
+							value: captureStoredValueState(
+								tableState.tags[valueSlot],
+								tableState.scalars[valueSlot],
+								tableState.references[valueSlot],
+							),
+							next: tableState.hashNext[index],
 						};
 					}
-					const array = new Array(tableState.array.length);
-					for (let index = 0; index < tableState.array.length; index += 1) {
-						array[index] = captureValueState(tableState.array[index]);
+					const array = new Array(tableState.arrayCapacity);
+					for (let index = 0; index < tableState.arrayCapacity; index += 1) {
+						array[index] = captureStoredValueState(
+							tableState.tags[index],
+							tableState.scalars[index],
+							tableState.references[index],
+						);
 					}
 					return {
 						kind: 'table',
@@ -3090,16 +3783,24 @@ export class CPU {
 						arrayLength: tableState.arrayLength,
 						hash,
 						hashFree: tableState.hashFree,
-						metatable: captureValueState(tableState.metatable),
+						metatable: captureStoredValueState(
+							tableState.metatable ? ValueTag.Table : ValueTag.Nil,
+							NaN,
+							tableState.metatable,
+						),
 					};
 				}
 				case 'upvalue': {
 					const upvalue = object as Upvalue;
 					let frameIndex = -1;
-					let value = upvalue.value;
+					let valueTag = upvalue.valueTag;
+					let valueScalar = upvalue.valueScalar;
+					let valueReference = upvalue.valueReference;
 					if (upvalue.open) {
 						frameIndex = this.frames.indexOf(upvalue.frame);
-						value = upvalue.frame.registers.get(upvalue.index);
+						valueTag = upvalue.frame!.registers.getTag(upvalue.index);
+						valueScalar = upvalue.frame!.registers.getScalar(upvalue.index);
+						valueReference = upvalue.frame!.registers.getReference(upvalue.index);
 					}
 					return {
 						kind: 'upvalue',
@@ -3107,7 +3808,7 @@ export class CPU {
 						open: upvalue.open,
 						index: upvalue.index,
 						frameIndex,
-						value: captureValueState(value),
+						value: captureStoredValueState(valueTag, valueScalar, valueReference),
 					};
 				}
 				case 'closure': {
@@ -3129,21 +3830,31 @@ export class CPU {
 
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			const value = this.systemGlobalValues[slot];
 			systemGlobals.push({
 				name: this.stringPool.toString(this.systemGlobalNames[slot]),
-				value: captureValueState(value),
+				value: captureStoredValueState(
+					this.systemGlobalSlots.getTag(slot),
+					this.systemGlobalSlots.getScalar(slot),
+					this.systemGlobalSlots.getReference(slot),
+				),
 			});
 		}
 
 		const globals: CpuRootValueState[] = [];
-		this.globals.forEachEntry((key, value) => {
-			if (!valueIsString(key)) {
+		this.globals.forEachStoredEntry((
+			keyTag,
+			keyScalar,
+			_keyReference,
+			valueTag,
+			valueScalar,
+			valueReference,
+		) => {
+			if (keyTag !== ValueTag.String) {
 				return;
 			}
 			globals.push({
-				name: this.stringPool.toString(asStringId(key)),
-				value: captureValueState(value),
+				name: this.stringPool.toString(keyScalar as StringId),
+				value: captureStoredValueState(valueTag, valueScalar, valueReference),
 			});
 		});
 
@@ -3152,11 +3863,20 @@ export class CPU {
 			const frame = this.frames[frameIndex];
 			const registers = new Array<CpuValueState>(frame.top);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				registers[registerIndex] = captureValueState(frame.registers.get(registerIndex));
+				registers[registerIndex] = captureStoredValueState(
+					frame.registers.getTag(registerIndex),
+					frame.registers.getScalar(registerIndex),
+					frame.registers.getReference(registerIndex),
+				);
 			}
 			const varargs = new Array<CpuValueState>(frame.varargCount);
 			for (let varargIndex = 0; varargIndex < frame.varargCount; varargIndex += 1) {
-				varargs[varargIndex] = captureValueState(this.stackRegisters.get(frame.varargBase + varargIndex));
+				const slot = frame.varargBase + varargIndex;
+				varargs[varargIndex] = captureStoredValueState(
+					this.stackRegisters.getTag(slot),
+					this.stackRegisters.getScalar(slot),
+					this.stackRegisters.getReference(slot),
+				);
 			}
 			frames[frameIndex] = {
 				functionAddress: frame.functionAddress,
@@ -3188,9 +3908,13 @@ export class CPU {
 			};
 		}
 
-		const completionValues = new Array<CpuValueState>(this.completionValues.length);
-		for (let index = 0; index < this.completionValues.length; index += 1) {
-			completionValues[index] = captureValueState(this.completionValues[index]);
+		const completionValues = new Array<CpuValueState>(this.completionValueCount);
+		for (let index = 0; index < this.completionValueCount; index += 1) {
+			completionValues[index] = captureStoredValueState(
+				this.completionValueSlots.getTag(index),
+				this.completionValueSlots.getScalar(index),
+				this.completionValueSlots.getReference(index),
+			);
 		}
 
 		const openUpvalues: number[] = [];
@@ -3201,7 +3925,11 @@ export class CPU {
 				upvalue = upvalue.nextOpen;
 			}
 		}
-		const stringIndexTable = captureValueState(this.stringIndexTable);
+		const stringIndexTable = captureStoredValueState(
+			this.stringIndexTable ? ValueTag.Table : ValueTag.Nil,
+			NaN,
+			this.stringIndexTable,
+		);
 
 		return {
 			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
@@ -3277,7 +4005,9 @@ export class CPU {
 						open: false,
 						index: objectState.index,
 						frame: null,
-						value: null,
+						valueTag: ValueTag.Nil,
+						valueScalar: NaN,
+						valueReference: null,
 						nextOpen: null,
 					};
 					break;
@@ -3285,22 +4015,50 @@ export class CPU {
 		}
 		this.observeObjectHashId(maxRestoredHashId);
 
-		const restoreValue = (valueState: CpuValueState): Value => {
+		let restoredTag = ValueTag.Nil;
+		let restoredScalar = NaN;
+		let restoredReference: ValueReference = null;
+		const decodeValueState = (valueState: CpuValueState): void => {
 			switch (valueState.tag) {
 				case 'nil':
-					return null;
+					restoredTag = ValueTag.Nil;
+					restoredScalar = NaN;
+					restoredReference = null;
+					return;
 				case 'false':
-					return false;
+					restoredTag = ValueTag.False;
+					restoredScalar = NaN;
+					restoredReference = null;
+					return;
 				case 'true':
-					return true;
+					restoredTag = ValueTag.True;
+					restoredScalar = NaN;
+					restoredReference = null;
+					return;
 				case 'number':
-					return valueState.value;
+					restoredTag = ValueTag.Number;
+					restoredScalar = valueFromNumber(valueState.value);
+					restoredReference = null;
+					return;
 				case 'string':
-					return StringValue.get(valueState.id);
+					restoredTag = ValueTag.String;
+					restoredScalar = valueState.id;
+					restoredReference = null;
+					return;
 				case 'builtin':
-					return createBuiltinFunction(valueState.id);
-				case 'ref':
-					return restoredObjects[valueState.id] as Table | Closure;
+					restoredTag = ValueTag.BuiltinFunction;
+					restoredScalar = valueState.id;
+					restoredReference = null;
+					return;
+				case 'table':
+					restoredTag = ValueTag.Table;
+					restoredScalar = NaN;
+					restoredReference = restoredObjects[valueState.id] as Table;
+					return;
+				case 'closure':
+					restoredTag = ValueTag.Closure;
+					restoredScalar = NaN;
+					restoredReference = restoredObjects[valueState.id] as Closure;
 			}
 		};
 
@@ -3309,16 +4067,44 @@ export class CPU {
 			switch (objectState.kind) {
 				case 'table': {
 					const table = restoredObjects[index] as Table;
+					const arrayCapacity = objectState.array.length;
+					const hashSize = objectState.hash.length;
+					const tags = new Uint8Array(arrayCapacity + (hashSize * 2));
+					const scalars = new Float64Array(tags.length);
+					scalars.fill(NaN);
+					const references = new Array<ValueReference>(tags.length);
+					references.fill(null);
+					const hashNext = new Int32Array(hashSize);
+					for (let slot = 0; slot < arrayCapacity; slot += 1) {
+						decodeValueState(objectState.array[slot]);
+						tags[slot] = restoredTag;
+						scalars[slot] = restoredScalar;
+						references[slot] = restoredReference;
+					}
+					for (let slot = 0; slot < hashSize; slot += 1) {
+						const keySlot = arrayCapacity + slot;
+						const valueSlot = arrayCapacity + hashSize + slot;
+						decodeValueState(objectState.hash[slot].key);
+						tags[keySlot] = restoredTag;
+						scalars[keySlot] = restoredScalar;
+						references[keySlot] = restoredReference;
+						decodeValueState(objectState.hash[slot].value);
+						tags[valueSlot] = restoredTag;
+						scalars[valueSlot] = restoredScalar;
+						references[valueSlot] = restoredReference;
+						hashNext[slot] = objectState.hash[slot].next;
+					}
+					decodeValueState(objectState.metatable);
 					this.observeObjectHashId(table.restoreRuntimeState({
-						array: objectState.array.map(restoreValue),
+						tags,
+						scalars,
+						references,
+						arrayCapacity,
 						arrayLength: objectState.arrayLength,
-						hash: objectState.hash.map(node => ({
-							key: restoreValue(node.key),
-							value: restoreValue(node.value),
-							next: node.next,
-						})),
+						hashSize,
+						hashNext,
 						hashFree: objectState.hashFree,
-						metatable: restoreValue(objectState.metatable) as Table | null,
+						metatable: restoredReference as Table | null,
 					}));
 					break;
 				}
@@ -3335,19 +4121,22 @@ export class CPU {
 					upvalue.open = objectState.open;
 					upvalue.index = objectState.index;
 					upvalue.frame = null;
-					upvalue.value = objectState.open ? null : restoreValue(objectState.value);
+					decodeValueState(objectState.value);
+					upvalue.valueTag = restoredTag;
+					upvalue.valueScalar = restoredScalar;
+					upvalue.valueReference = restoredReference;
 					break;
 				}
 			}
 		}
 
-		this.completionValues.length = 0;
+		this.clearCompletionValues();
 		this.clearCallStack();
 		this.globals.clear();
 		this.globals.prepareRestoreStorage(0, Table.hashCapacity(state.globals.length));
 		this.activeExecutionImage = executionImage;
-		this.systemGlobalValues.fill(null);
-		this.globalValues.fill(null);
+		this.systemGlobalSlots.clear(this.systemGlobalNames.length);
+		this.globalSlots.clear(this.globalNames.length);
 
 		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
 			const frameState = state.frames[frameIndex];
@@ -3373,10 +4162,22 @@ export class CPU {
 			frame.varargCount = frameState.varargs.length;
 			const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
 			for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
-				registers.set(registerIndex, restoreValue(frameState.registers[registerIndex]));
+				decodeValueState(frameState.registers[registerIndex]);
+				registers.setEncoded(
+					registerIndex,
+					restoredTag,
+					restoredScalar,
+					restoredReference,
+				);
 			}
 			for (let varargIndex = 0; varargIndex < frameState.varargs.length; varargIndex += 1) {
-				this.stackRegisters.set(frame.varargBase + varargIndex, restoreValue(frameState.varargs[varargIndex]));
+				decodeValueState(frameState.varargs[varargIndex]);
+				this.stackRegisters.setEncoded(
+					frame.varargBase + varargIndex,
+					restoredTag,
+					restoredScalar,
+					restoredReference,
+				);
 			}
 			frame.top = frameState.top;
 			this.frames.push(frame);
@@ -3401,22 +4202,51 @@ export class CPU {
 			upvalue.open = true;
 			upvalue.index = upvalueState.index;
 			upvalue.frame = frame;
-			upvalue.value = null;
+			upvalue.valueTag = ValueTag.Nil;
+			upvalue.valueScalar = NaN;
+			upvalue.valueReference = null;
 			this.linkOpenUpvalue(frame, upvalue);
 		}
 
 		for (let index = 0; index < state.systemGlobals.length; index += 1) {
 			const entry = state.systemGlobals[index];
-			this.setSystemGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
+			decodeValueState(entry.value);
+			this.setSystemGlobalByKey(
+				this.stringPool.intern(entry.name),
+				restoredTag,
+				restoredScalar,
+				restoredReference,
+			);
 		}
 		for (let index = 0; index < state.globals.length; index += 1) {
 			const entry = state.globals[index];
-			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
+			decodeValueState(entry.value);
+			this.setGlobalByKey(
+				this.stringPool.intern(entry.name),
+				restoredTag,
+				restoredScalar,
+				restoredReference,
+			);
 		}
-		this.stringIndexTable = restoreValue(state.stringIndexTable) as Table | null;
+		decodeValueState(state.stringIndexTable);
+		this.stringIndexTable = restoredReference as Table | null;
+		if (state.completionValues.length > this.completionValueSlots.capacity()) {
+			let capacity = this.completionValueSlots.capacity() * 2;
+			while (capacity < state.completionValues.length) {
+				capacity *= 2;
+			}
+			this.completionValueSlots = new ValueSlots(capacity);
+		}
 		for (let index = 0; index < state.completionValues.length; index += 1) {
-			this.completionValues[index] = restoreValue(state.completionValues[index]);
+			decodeValueState(state.completionValues[index]);
+			this.completionValueSlots.setEncoded(
+				index,
+				restoredTag,
+				restoredScalar,
+				restoredReference,
+			);
 		}
+		this.completionValueCount = state.completionValues.length;
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
@@ -3443,11 +4273,14 @@ export class CPU {
 		if (!metatable) {
 			return 0;
 		}
-		const modeValue = metatable.getStringKey(this.modeKey);
-		if (!valueIsString(modeValue)) {
+		metatable.loadStringKey(this.modeKey, this.tableScratch, 0);
+		if (this.tableScratch.getTag(0) !== ValueTag.String) {
+			this.tableScratch.setNil(0);
 			return 0;
 		}
-		const mode = this.stringPool.toString(asStringId(modeValue));
+		const modeId = this.tableScratch.getStringId(0);
+		this.tableScratch.setNil(0);
+		const mode = this.stringPool.toString(modeId);
 		let weakMode = 0;
 		for (let index = 0; index < mode.length; index += 1) {
 			switch (mode.charCodeAt(index)) {
@@ -3471,45 +4304,67 @@ export class CPU {
 			const cache = image.tableLoadCaches[index];
 			cache.table = null;
 			cache.version = 0;
-			cache.value = null;
+			cache.valueTag = ValueTag.Nil;
+			cache.valueScalar = NaN;
+			cache.valueReference = null;
 		}
-		for (let index = 0; index < image.constPool.length; index += 1) {
-			this.pushHeapValue(image.constPool[index]);
+		for (let index = 0; index < image.constTags.length; index += 1) {
+			if (image.constTags[index] === ValueTag.String) {
+				this.stringPool.markReachable(image.constScalars[index] as StringId);
+			}
 		}
 	}
 
 	public collectTrackedHeapBytes(
-		root0: Value = null,
-		root1: Value = null,
-		root2: Value = null,
+		root0Tag: ValueTag = ValueTag.Nil,
+		root0Scalar: number = NaN,
+		root0Reference: ValueReference = null,
+		root1Tag: ValueTag = ValueTag.Nil,
+		root1Scalar: number = NaN,
+		root1Reference: ValueReference = null,
+		root2Tag: ValueTag = ValueTag.Nil,
+		root2Scalar: number = NaN,
+		root2Reference: ValueReference = null,
 	): number {
 		this.heapEpoch += 1;
 		const seen = this.heapSeen;
 		let total = 0;
-		const valueStack = this.heapValueStack;
+		const objectStack = this.heapObjectStack;
 		const upvalueStack = this.heapUpvalueStack;
 		const weakTables = this.heapWeakTables;
 		const weakTableModes = this.heapWeakTableModes;
 		const ephemeronTables = this.heapEphemeronTables;
-		valueStack.length = 0;
+		objectStack.length = 0;
 		upvalueStack.length = 0;
 		weakTables.length = 0;
 		weakTableModes.length = 0;
 		ephemeronTables.length = 0;
 		this.stringPool.beginReachabilityEpoch();
-		this.stringPool.markReachable(asStringId(this.indexKey));
-		this.stringPool.markReachable(asStringId(this.modeKey));
+		this.stringPool.markReachable(this.indexKey);
+		this.stringPool.markReachable(this.modeKey);
 
-		this.pushHeapValue(this.globals);
-		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {
-			this.pushHeapValue(this.systemGlobalValues[slot]);
+		objectStack.push(this.globals);
+		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
+			this.pushHeapRegister(this.systemGlobalSlots, slot);
 		}
-		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
-			this.pushHeapValue(this.globalValues[slot]);
+		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
+			this.pushHeapRegister(this.globalSlots, slot);
 		}
-		this.pushHeapValue(this.stringIndexTable);
-		for (let index = 0; index < this.completionValues.length; index += 1) {
-			this.pushHeapValue(this.completionValues[index]);
+		if (this.stringIndexTable) {
+			objectStack.push(this.stringIndexTable);
+		}
+		for (let index = 0; index < this.completionValueCount; index += 1) {
+			this.pushHeapRegister(this.completionValueSlots, index);
+		}
+		for (let scratchIndex = 0; scratchIndex < this.builtinResultsScratchIndex; scratchIndex += 1) {
+			const scratch = this.builtinResultsScratch.peek(scratchIndex);
+			for (let valueIndex = 0; valueIndex < scratch.length; valueIndex += 1) {
+				this.pushHeapStoredValue(
+					scratch.getTag(valueIndex),
+					scratch.getScalar(valueIndex),
+					scratch.getReference(valueIndex),
+				);
+			}
 		}
 		for (let index = 0; index < this.executionImages.length; index += 1) {
 			this.pushHeapImage(this.executionImages[index]);
@@ -3517,12 +4372,14 @@ export class CPU {
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
 			this.pushHeapImage(frame.executionImage);
-			this.pushHeapValue(frame.closure);
+			if (frame.closure.heapBytes !== 0) {
+				objectStack.push(frame.closure);
+			}
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				this.pushHeapValue(frame.registers.get(registerIndex));
+				this.pushHeapRegister(frame.registers, registerIndex);
 			}
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.pushHeapValue(this.stackRegisters.get(frame.varargBase + index));
+				this.pushHeapRegister(this.stackRegisters, frame.varargBase + index);
 			}
 			let upvalue = frame.openUpvalueHead;
 			while (upvalue) {
@@ -3530,11 +4387,11 @@ export class CPU {
 				upvalue = upvalue.nextOpen;
 			}
 		}
-		this.pushHeapValue(root0);
-		this.pushHeapValue(root1);
-		this.pushHeapValue(root2);
+		this.pushHeapStoredValue(root0Tag, root0Scalar, root0Reference);
+		this.pushHeapStoredValue(root1Tag, root1Scalar, root1Reference);
+		this.pushHeapStoredValue(root2Tag, root2Scalar, root2Reference);
 		for (;;) {
-			while (valueStack.length > 0 || upvalueStack.length > 0) {
+			while (objectStack.length > 0 || upvalueStack.length > 0) {
 				if (upvalueStack.length > 0) {
 					const upvalue = upvalueStack.pop()!;
 					if (seen.get(upvalue) === this.heapEpoch) {
@@ -3543,23 +4400,28 @@ export class CPU {
 					seen.set(upvalue, this.heapEpoch);
 					total += UPVALUE_HEAP_BYTES;
 					if (upvalue.open) {
-						this.pushHeapValue(upvalue.frame.registers.get(upvalue.index));
-					}
-					else {
-						this.pushHeapValue(upvalue.value);
+						this.pushHeapRegister(upvalue.frame!.registers, upvalue.index);
+					} else {
+						this.pushHeapStoredValue(
+							upvalue.valueTag,
+							upvalue.valueScalar,
+							upvalue.valueReference,
+						);
 					}
 					continue;
 				}
-				const value = valueStack.pop()!;
-				switch (valueTag(value)) {
+				const object = objectStack.pop()!;
+				switch (object[VALUE_TAG]) {
 					case ValueTag.Table: {
-						const table = value as Table;
+						const table = object as Table;
 						if (seen.get(table) === this.heapEpoch) {
 							continue;
 						}
 						seen.set(table, this.heapEpoch);
 						total += table.getTrackedHeapBytes();
-						this.pushHeapValue(table.metatable);
+						if (table.metatable) {
+							objectStack.push(table.metatable);
+						}
 						this.heapTableWeakMode = this.tableWeakMode(table);
 						if (this.heapTableWeakMode !== 0) {
 							weakTables.push(table);
@@ -3569,12 +4431,12 @@ export class CPU {
 							}
 						}
 						if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
-							table.forEachEntry(this.visitHeapTableEntry);
+							table.forEachStoredEntry(this.visitHeapTableEntry);
 						}
 						continue;
 					}
 					case ValueTag.Closure: {
-						const closure = value as Closure;
+						const closure = object as Closure;
 						if (seen.get(closure) === this.heapEpoch) {
 							continue;
 						}
@@ -3585,13 +4447,11 @@ export class CPU {
 						}
 						continue;
 					}
-					default:
-					continue;
 				}
 			}
 			this.heapEphemeronChanged = false;
 			for (let index = 0; index < ephemeronTables.length; index += 1) {
-				ephemeronTables[index].forEachEntry(this.visitHeapEphemeronEntry);
+				ephemeronTables[index].forEachStoredEntry(this.visitHeapEphemeronEntry);
 			}
 			if (!this.heapEphemeronChanged) {
 				break;
@@ -3603,9 +4463,9 @@ export class CPU {
 			table.clearWeakEntries(
 				(weakMode & TABLE_WEAK_KEYS) !== 0,
 				(weakMode & TABLE_WEAK_VALUES) !== 0,
-				this.heapValueIsAlive,
+				this.heapStoredValueIsAlive,
 			);
-			table.forEachEntry(this.markWeakEntryStrings);
+			table.forEachStoredEntry(this.markWeakEntryStrings);
 		}
 		this.stringPool.reclaimUnreachableTracked();
 		total += this.stringPool.trackedLuaHeapBytes();

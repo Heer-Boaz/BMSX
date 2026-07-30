@@ -292,7 +292,7 @@ DISPATCH_LABEL(EQ) {
 	bool eq = false;
 	if (valueIsNumber(left) && valueIsNumber(right)) {
 		eq = asNumber(left) == asNumber(right);
-	} else if (valueIsTagged(left) && valueIsTagged(right)) {
+	} else {
 		eq = left == right;
 	}
 	if (eq != (a != 0)) {
@@ -480,14 +480,14 @@ DISPATCH_LABEL(RET) {
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->returnToCompletionLatch) {
-		completionValues.assign(results, results + count);
+		m_completionValues.assign(results, results + count);
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
 	if (m_frames.empty()) {
-		completionValues.assign(results, results + count);
+		m_completionValues.assign(results, results + count);
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
@@ -552,8 +552,8 @@ DISPATCH_LABEL(STORE_MEM_D) {
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
 		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
-		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
-		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(decodeNumber(value))); break;
+		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, decodeNumber(value)); break;
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -619,8 +619,8 @@ DISPATCH_LABEL(STORE_MEM) {
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
 		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
-		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
-		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(decodeNumber(value))); break;
+		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, decodeNumber(value)); break;
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);

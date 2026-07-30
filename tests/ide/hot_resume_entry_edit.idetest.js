@@ -25,9 +25,9 @@ const systemRevisionSource = (record, revision) => record.base_src.replace(
 const runtime = t.runtime();
 const sourceState = t.sourceState();
 const cpu = runtime.machine.cpu;
-const liveMathTable = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('math')));
-const liveStateProbeKey = StringValue.get(cpu.stringPool.intern('__hot_resume_live_state_probe'));
-cpu.setGlobalByKey(liveStateProbeKey, liveMathTable);
+const liveMathTable = cpu.getGlobalByKey(cpu.stringPool.intern('math'));
+const liveStateProbeKey = cpu.stringPool.intern('__hot_resume_live_state_probe');
+cpu.setGlobalByKey(liveStateProbeKey, tableValueTag, NaN, liveMathTable);
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
 const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
 const valueRecord = cartridge.luaSources.path2lua['value.lua'];
@@ -48,7 +48,7 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 }
 const lastExecutionDomainBeforeRejectedEdit = cpu.readLastExecutionDomain();
 const lastPcBeforeRejectedEdit = cpu.lastPc;
-const initCountBeforeRejectedEdit = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count')));
+const initCountBeforeRejectedEdit = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
 t.openLuaSource('entry.lua');
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
@@ -69,7 +69,7 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 	);
 }
 t.assert(
-	cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeRejectedEdit,
+	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeRejectedEdit,
 	'rejected edit reran init',
 );
 t.assert(
@@ -94,11 +94,11 @@ await t.frames(60);
 t.assert(t.runtime() === runtime, 'first Hot Resume replaced the live runtime');
 t.assert(runtime.machine.cpu === cpu, 'first Hot Resume replaced the live CPU');
 t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'first Hot Resume replaced a live heap object');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 1, 'first entry edit did not execute');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_module_probe'))) === 1, 'first module edit did not execute through init');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_system_probe'))) === 1, 'first system-ROM edit did not execute');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count'))) === 2, 'first Hot Resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'first Hot Resume reran new_game');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe')) === 1, 'first entry edit did not execute');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) === 1, 'first module edit did not execute through init');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) === 1, 'first system-ROM edit did not execute');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === 2, 'first Hot Resume did not rerun init exactly once');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'first Hot Resume reran new_game');
 
 installRevision(2);
 await t.frames(60);
@@ -106,11 +106,11 @@ await t.frames(60);
 t.assert(t.runtime() === runtime, 'second Hot Resume replaced the live runtime');
 t.assert(runtime.machine.cpu === cpu, 'second Hot Resume replaced the live CPU');
 t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'second Hot Resume replaced a live heap object');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'second consecutive entry edit did not execute');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_module_probe'))) === 2, 'second consecutive module edit did not execute through init');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_system_probe'))) === 2, 'second consecutive system-ROM edit did not execute');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_init_count'))) === 3, 'second Hot Resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'second Hot Resume reran new_game');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe')) === 2, 'second consecutive entry edit did not execute');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) === 2, 'second consecutive module edit did not execute through init');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) === 2, 'second consecutive system-ROM edit did not execute');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === 3, 'second Hot Resume did not rerun init exactly once');
+t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'second Hot Resume reran new_game');
 
 await t.reboot();
 await t.waitForCart();
@@ -118,6 +118,6 @@ await t.frames(20);
 
 const rebootedRuntime = t.runtime();
 const rebootedCpu = rebootedRuntime.machine.cpu;
-t.assert(rebootedCpu.getGlobalByKey(StringValue.get(rebootedCpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'cold boot did not execute the second cartridge-ROM revision');
-t.assert(rebootedCpu.getGlobalByKey(StringValue.get(rebootedCpu.stringPool.intern('hot_resume_module_probe'))) === 2, 'cold boot did not execute the second module revision');
-t.assert(rebootedCpu.getGlobalByKey(StringValue.get(rebootedCpu.stringPool.intern('hot_resume_system_probe'))) === 2, 'cold boot did not execute the second system-ROM revision');
+t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_entry_edit_probe')) === 2, 'cold boot did not execute the second cartridge-ROM revision');
+t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_module_probe')) === 2, 'cold boot did not execute the second module revision');
+t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_system_probe')) === 2, 'cold boot did not execute the second system-ROM revision');

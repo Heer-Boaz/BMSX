@@ -20,5 +20,6 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
+	runtime.readCompletionValues();
 	runtime.pendingCall = state.pendingEntryCall ? 'entry' : null;
 }

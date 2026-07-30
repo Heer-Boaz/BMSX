@@ -1,7 +1,10 @@
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
-import type { Value } from './value';
+import {
+	ValueTag,
+	type ValueReference,
+} from './value';
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 
@@ -16,13 +19,29 @@ export class LuaHeap {
 
 	public reserve(
 		byteCount: number,
-		root0: Value = null,
-		root1: Value = null,
-		root2: Value = null,
+		root0Tag: ValueTag = ValueTag.Nil,
+		root0Scalar: number = NaN,
+		root0Reference: ValueReference = null,
+		root1Tag: ValueTag = ValueTag.Nil,
+		root1Scalar: number = NaN,
+		root1Reference: ValueReference = null,
+		root2Tag: ValueTag = ValueTag.Nil,
+		root2Scalar: number = NaN,
+		root2Reference: ValueReference = null,
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > this.nextCollectionBytes || nextBytes > this.capacityBytes) {
-			this.cpu.collectTrackedHeapBytes(root0, root1, root2);
+			this.cpu.collectTrackedHeapBytes(
+				root0Tag,
+				root0Scalar,
+				root0Reference,
+				root1Tag,
+				root1Scalar,
+				root1Reference,
+				root2Tag,
+				root2Scalar,
+				root2Reference,
+			);
 			nextBytes = this.trackedBytes + byteCount;
 			if (nextBytes > this.capacityBytes) {
 				throw LUA_OUT_OF_MEMORY_SIGNAL;

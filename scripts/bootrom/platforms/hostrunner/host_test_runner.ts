@@ -123,7 +123,7 @@ export class HostTestRunner {
 				if (this.cartSettleFrames >= CART_SETTLE_FRAMES) {
 					const cpu = this.options.runtime.machine.cpu;
 					this.loader = cpu.getGlobalByKey(
-						StringValue.get(cpu.stringPool.intern(HOST_TEST_LOADER_GLOBAL)),
+						cpu.stringPool.intern(HOST_TEST_LOADER_GLOBAL),
 					) as Closure;
 					this.phase = 'install';
 				}
@@ -184,13 +184,13 @@ export class HostTestRunner {
 	private bindTest(): void {
 		const cpu = this.options.runtime.machine.cpu;
 		const testTable = cpu.getGlobalByKey(
-			StringValue.get(cpu.stringPool.intern(HOST_TEST_GLOBAL)),
+			cpu.stringPool.intern(HOST_TEST_GLOBAL),
 		) as Table;
 		this.ready = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('ready'))) as Closure;
 		this.setup = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('setup'))) as Closure;
 		this.update = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('update'))) as Closure;
 		this.newGame = cpu.getGlobalByKey(
-			StringValue.get(cpu.stringPool.intern('new_game')),
+			cpu.stringPool.intern('new_game'),
 		) as Closure;
 		this.frameKey = StringValue.get(cpu.stringPool.intern('frame'));
 		this.pressKey = StringValue.get(cpu.stringPool.intern('press'));
@@ -216,7 +216,7 @@ export class HostTestRunner {
 	}
 
 	private guestResult(): Value {
-		const results = this.options.runtime.machine.cpu.completionValues;
+		const results = this.options.runtime.readCompletionValues();
 		return results.length === 0 ? null : results[0];
 	}
 

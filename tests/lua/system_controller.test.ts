@@ -29,7 +29,7 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { Table } from '../../machine/ts/machine/cpu/table';
-import { StringValue } from '../../machine/ts/machine/cpu/value';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -347,17 +347,17 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
-	const selectedClosureResultName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME));
+	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
+	const selectedClosureResultName = cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const slot0Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 111);
-	const savedClosureName = StringValue.get(cpu.stringPool.intern('saved_closure'));
-	const closureTableName = StringValue.get(cpu.stringPool.intern('closure_table'));
+	const savedClosureName = cpu.stringPool.intern('saved_closure');
+	const closureTableName = cpu.stringPool.intern('closure_table');
 	const closureTable = cpu.createTable();
 	closureTable.set(slot0Closure, 77);
-	cpu.setGlobalByKey(savedClosureName, slot0Closure);
-	cpu.setGlobalByKey(closureTableName, closureTable);
+	cpu.setGlobalByKey(savedClosureName, ValueTag.Closure, NaN, slot0Closure);
+	cpu.setGlobalByKey(closureTableName, ValueTag.Table, NaN, closureTable);
 
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
@@ -419,7 +419,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
+	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const firstClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
@@ -429,25 +429,25 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	assert.notEqual(firstClosure, secondClosure);
 	assert.equal(firstClosure.functionAddress, secondClosure.functionAddress);
 
-	const firstName = StringValue.get(cpu.stringPool.intern('first_closure'));
-	const secondName = StringValue.get(cpu.stringPool.intern('second_closure'));
-	const tableName = StringValue.get(cpu.stringPool.intern('closure_table'));
+	const firstName = cpu.stringPool.intern('first_closure');
+	const secondName = cpu.stringPool.intern('second_closure');
+	const tableName = cpu.stringPool.intern('closure_table');
 	const closureTable = cpu.createTable(0, 2);
 	closureTable.set(firstClosure, 11);
 	closureTable.set(secondClosure, 22);
-	cpu.setGlobalByKey(firstName, firstClosure);
-	cpu.setGlobalByKey(secondName, secondClosure);
-	cpu.setGlobalByKey(tableName, closureTable);
+	cpu.setGlobalByKey(firstName, ValueTag.Closure, NaN, firstClosure);
+	cpu.setGlobalByKey(secondName, ValueTag.Closure, NaN, secondClosure);
+	cpu.setGlobalByKey(tableName, ValueTag.Table, NaN, closureTable);
 
-		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-		applyRuntimeSaveState(
-			runtime,
-			decodeRuntimeSaveState(
-				saveBytes,
-				runtime.machine.memory.ramByteCount(),
-				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
-			),
-		);
+	const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(
+			saveBytes,
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+		),
+	);
 
 	const restoredFirst = cpu.getGlobalByKey(firstName) as Closure;
 	const restoredSecond = cpu.getGlobalByKey(secondName) as Closure;
@@ -477,7 +477,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
+	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
@@ -487,24 +487,24 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(dynamicClosure.functionAddress, canonicalClosure.functionAddress);
 
-	const dynamicName = StringValue.get(cpu.stringPool.intern('dynamic_closure'));
-	const canonicalName = StringValue.get(cpu.stringPool.intern('canonical_closure'));
-	const tableName = StringValue.get(cpu.stringPool.intern('mixed_closure_table'));
+	const dynamicName = cpu.stringPool.intern('dynamic_closure');
+	const canonicalName = cpu.stringPool.intern('canonical_closure');
+	const tableName = cpu.stringPool.intern('mixed_closure_table');
 	const closureTable = cpu.createTable(0, 2);
 	closureTable.set(dynamicClosure, 11);
 	closureTable.set(canonicalClosure, 22);
-	cpu.setGlobalByKey(dynamicName, dynamicClosure);
-	cpu.setGlobalByKey(canonicalName, canonicalClosure);
-	cpu.setGlobalByKey(tableName, closureTable);
+	cpu.setGlobalByKey(dynamicName, ValueTag.Closure, NaN, dynamicClosure);
+	cpu.setGlobalByKey(canonicalName, ValueTag.Closure, NaN, canonicalClosure);
+	cpu.setGlobalByKey(tableName, ValueTag.Table, NaN, closureTable);
 
-		applyRuntimeSaveState(
-			runtime,
-			decodeRuntimeSaveState(
-				encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
-				runtime.machine.memory.ramByteCount(),
-				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
-			),
-		);
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(
+			encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+		),
+	);
 	let restoredDynamic = cpu.getGlobalByKey(dynamicName) as Closure;
 	let restoredCanonical = cpu.getGlobalByKey(canonicalName) as Closure;
 	let restoredTable = cpu.getGlobalByKey(tableName) as Table;
@@ -516,14 +516,14 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-		applyRuntimeSaveState(
-			runtime,
-			decodeRuntimeSaveState(
-				encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
-				runtime.machine.memory.ramByteCount(),
-				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
-			),
-		);
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(
+			encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+			runtime.machine.memory.ramByteCount(),
+			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+		),
+	);
 	restoredDynamic = cpu.getGlobalByKey(dynamicName) as Closure;
 	restoredCanonical = cpu.getGlobalByKey(canonicalName) as Closure;
 	restoredTable = cpu.getGlobalByKey(tableName) as Table;

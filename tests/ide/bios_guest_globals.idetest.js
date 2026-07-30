@@ -22,6 +22,6 @@ const names = [
 	'img_ctrl_start',
 ];
 for (const name of names) {
-	const value = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern(name)));
+	const value = cpu.getGlobalByKey(cpu.stringPool.intern(name));
 	t.assert(value === null, `${name} must not be a guest CPU global`);
 }

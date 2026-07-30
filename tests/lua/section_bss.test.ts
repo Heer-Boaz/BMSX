@@ -19,6 +19,7 @@ import {
 	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
+import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -56,7 +57,7 @@ function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ system
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	return { memory, values: Array.from(cpu.completionValues), image: finalized.image };
+	return { memory, values: materializeCpuCompletionValues(cpu), image: finalized.image };
 }
 
 function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[] } {

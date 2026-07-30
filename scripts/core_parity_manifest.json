@@ -186,7 +186,7 @@
 			"reason": "host_render_graph_not_core"
 		},
 		{
-			"pattern": "machine/ts/machine/cpu/register_file.ts",
+			"pattern": "machine/ts/machine/cpu/value_slots.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
 		},
@@ -2058,6 +2058,7 @@
 				"resetHardwareState",
 				"resetForSystemBoot",
 				"callClosure",
+				"readCompletionValues",
 				"applyPublishedGxGpuPcrtcTiming"
 			],
 			"reason": "runtime_lifecycle_and_external_closure_method_contract",
