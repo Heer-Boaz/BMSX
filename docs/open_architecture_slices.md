@@ -4,6 +4,16 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
+## Structurele uitvoeringsvolgorde
+
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `CPU-VALUE-01` | Houd de producer-owned guest-value-tag en payload in de TypeScript-CPU intact door registers, interpreterdispatch, builtins en Lua-tablehotpaths; classificeer niet opnieuw via JavaScript-hostwaarden. | TS en C++ hebben aan iedere VM-grens dezelfde guestrepresentatie en semantiek. De TS-hotpaths wissen geen bekende tags om ze daarna via `null`, booleans, `typeof`, objectidentiteit of shape-probes terug te vinden; er komen geen BigInt-hotpath, wrappers of allocaties bij. |
+| `HOST-BOUNDARY-01` | Ontmantel de brede TypeScript-`Platform`-service-locator en plaats storage, clipboard, HID, onscreen UI, audio, RNG, input en video bij hun werkelijke host/productowner. | De machine-facing hostgrens is klein en conceptueel gelijk in TS/C++; player, Studio, headless en libretro behouden hun features zonder optionele facade, callbackprovider of host-magie in de machine. |
+| `STUDIO-BOUNDARY-01` | Maak Studio een product boven de emulatorgrens in plaats van een consument van concrete TS-CPU-heapklassen. Neem de IDE-only firmwareasset hierbij mee. | AEM reload, Hot Resume, foutdiagnostiek en value-inspectie blijven werken via owner-defined runtime/toolingoperaties; Studio importeert geen concrete `Closure`-, `Table`- of `StringValue`-implementatie en de BIOS-ROM bevat geen IDE-assets. |
+| `PARITY-COVERAGE-01` | Laat de parity-audit de werkelijke machinegrens bewaken nadat host- en Studio-code hun juiste owner hebben. | Brede paduitzonderingen verbergen geen machinecode of afwijkende machinecontracten; iedere resterende uitsluiting is een echte taal-, host- of productgrens en een groene audit bewijst de geclaimde TS/C++-surface. |
+| `GX-REVISION-OWNER-01` | Leg de lifetime van GX command-, snapshot- en replacementrevisions bij de owner die backendinvalidatie over reset en machinevervanging werkelijk beheert. | Geen mutable process-global devicecounters; meerdere machines beïnvloeden elkaars revisions niet, terwijl iedere backend reset, restore en machinevervanging zonder stale cache verwerkt. TS, C++, software en accelerated backends volgen hetzelfde contract. |
+
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |
