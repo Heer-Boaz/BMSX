@@ -2553,6 +2553,13 @@ so blend, mask and texture feedback observe prior writes. Line and polyline
 segments keep their own order as well. Fill and image-transfer commands retain
 their separate VRAM datapaths.
 
+Every render-backend instance owns its GX programs, textures, buffers,
+readback state, retained command frontier and preallocated submission scratch.
+Render modules retain only immutable constants, shader sources and stateless
+datapath functions; WebGL2, WebGPU and GLES2 have no process-global mutable GX
+renderer state. Constructing a second backend therefore creates an independent
+renderer rather than replacing the resources or in-flight state of the first.
+
 Accelerated primitive batches retain the rasterizer class `Polygon`,
 `Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the
 same rectangle coverage without pretending to retain a representative GP0

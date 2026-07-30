@@ -26,7 +26,13 @@ struct GLES2Texture {
 	bool logicalSrgb = false;
 };
 
+struct OpenGLES2GxGpuState;
+struct OpenGLES2GxGpuStateDeleter {
+	void operator()(OpenGLES2GxGpuState* state) const noexcept;
+};
 struct OpenGLES2PostPipelines;
+struct RenderPassStateStorage;
+class VideoPresenter;
 
 struct GLES2AttributeBinding {
 	GLuint location;
@@ -138,6 +144,16 @@ public:
 	static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
 private:
+	friend void initGxGpu(OpenGLES2Backend& backend);
+	friend void shutdownGxGpu(OpenGLES2Backend& backend);
+	friend void executeGxGpuPass(
+		GPUBackend* backend,
+		VideoPresenter* presenter,
+		void* framebuffer,
+		RenderPassStateStorage& state,
+		void* context,
+		const GxGpuDeviceOutput& output);
+
 	static constexpr i32 kTrackedTextureUnits = 16;
 	void bindTextureForUpload(GLuint texture, const TextureParams& params);
 	FramebufferGetter m_get_framebuffer = nullptr;
@@ -168,6 +184,7 @@ private:
 	bool m_supports_uint_indices = false;
 	bool m_arm_framebuffer_fetch_available = false;
 	ProcAddress m_texture_barrier = nullptr;
+	std::unique_ptr<OpenGLES2GxGpuState, OpenGLES2GxGpuStateDeleter> m_gx_gpu;
 };
 
 } // namespace bmsx

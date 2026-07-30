@@ -12,7 +12,7 @@ import { registerCRT } from '../../post/crt/webgl/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
-import { captureRenderedVramSnapshot, executeGxGpuVramCommands, registerGxGpuPass } from './gx_gpu';
+import { captureRenderedVramSnapshot, executeGxGpuVramCommands, registerGxGpuPass, type WebGLGxGpuState } from './gx_gpu';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import { GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT } from '../../../spec/gx/vram';
 
@@ -72,6 +72,7 @@ export class WebGLBackend implements GPUBackend {
 	public readonly gxGpuVramTextureRows: number;
 	public readonly gxGpuVramTextureRowMask: number;
 	public readonly gxGpuVramPhysicalWordMask: number;
+	public gxGpuState: WebGLGxGpuState;
 	constructor(public gl: WebGL2RenderingContext, gxGpuVramBytes: number) {
 		this._context = gl;
 		this.gxGpuVramTextureRows = gxGpuVramBytes / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT;
@@ -766,11 +767,11 @@ export class WebGLBackend implements GPUBackend {
 	}
 	executeGxGpuReadback(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
-		executeGxGpuVramCommands(output, output.readbackPort.fenceCommandCount);
+		executeGxGpuVramCommands(this.gxGpuState, output, output.readbackPort.fenceCommandCount);
 	}
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
-		captureRenderedVramSnapshot(gxGpu, output);
+		captureRenderedVramSnapshot(this.gxGpuState, gxGpu, output);
 	}
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this.frameStats.bytesUploaded += bytes;
