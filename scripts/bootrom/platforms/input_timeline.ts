@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { InputEvt, InputHub, SubscriptionHandle } from 'bmsx/platform';
+import type { InputEvt, InputHub } from '../../../hosts/common/input/contracts';
 import {
 	HeadlessVideoOutput,
 	type HeadlessPresentedFrame,
-} from '../../../machine/ts/render/headless/video_output';
+} from '../../../hosts/node/headless/video_output';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { HeadlessCaptureCoordinator } from './headless_capture';
 
@@ -42,13 +42,13 @@ export class InputTimeline {
 
 	private readonly pendingInputs: PendingTimelineInput[] = [];
 	private readonly pendingCaptures: PendingTimelineCapture[] = [];
-	private readonly frameSubscription: SubscriptionHandle;
+	private readonly output: HeadlessVideoOutput;
 	private readonly finish: () => void;
 	private completionFrame = 0;
 	private cartridgeFrameOrigin = -1;
 
 	private constructor(
-		host: HeadlessVideoOutput,
+		output: HeadlessVideoOutput,
 		private readonly input: InputHub,
 		private readonly runtime: Runtime,
 		private readonly capture: HeadlessCaptureCoordinator,
@@ -57,6 +57,7 @@ export class InputTimeline {
 		source: string,
 		logger: (message: string) => void,
 	) {
+		this.output = output;
 		let finish!: () => void;
 		this.completion = new Promise((resolve) => {
 			finish = resolve;
@@ -92,13 +93,13 @@ export class InputTimeline {
 			}
 		}
 		this.completionFrame = lastFrame + 1;
-		this.frameSubscription = host.addPresentedFrameListener(this.handlePresentedFrame);
+		output.addPresentedFrameListener(this.handlePresentedFrame);
 	}
 
 	public static async load(
 		filePath: string,
 		frameIntervalMs: number,
-		host: HeadlessVideoOutput,
+		output: HeadlessVideoOutput,
 		input: InputHub,
 		runtime: Runtime,
 		capture: HeadlessCaptureCoordinator,
@@ -109,7 +110,7 @@ export class InputTimeline {
 			await fs.readFile(resolvedPath, 'utf8'),
 		) as InputTimelineEntry[];
 		return new InputTimeline(
-			host,
+			output,
 			input,
 			runtime,
 			capture,
@@ -152,7 +153,7 @@ export class InputTimeline {
 		}
 		this.pendingInputs.length = writeIndex;
 		if (cartridgeFrame >= this.completionFrame) {
-			this.frameSubscription.unsubscribe();
+			this.output.removePresentedFrameListener(this.handlePresentedFrame);
 			this.finish();
 		}
 	};

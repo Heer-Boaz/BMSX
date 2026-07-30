@@ -193,13 +193,14 @@ function existingCppCandidate(base: string): string | null {
 }
 
 function resolveCppInclude(fromFile: string, specifier: string, config: BoundaryConfig): string | null {
-	if (specifier.startsWith('.')) {
-		return existingCppCandidate(normalizePath(path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier))));
-	}
+	const relative = existingCppCandidate(normalizePath(path.posix.normalize(
+		path.posix.join(path.posix.dirname(fromFile), specifier),
+	)));
+	if (relative) return relative;
 	for (const root of config.cppIncludeRoots) {
 		const candidate = normalizePath(path.posix.join(root, specifier));
 		const resolved = existingCppCandidate(candidate);
-		if (resolved !== null) return resolved;
+		if (resolved) return resolved;
 	}
 	return null;
 }

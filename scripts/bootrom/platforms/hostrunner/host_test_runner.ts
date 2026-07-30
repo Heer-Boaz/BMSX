@@ -12,7 +12,8 @@ import {
 	type Value,
 } from '../../../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { HostClock, InputHub, TimerHandle } from 'bmsx/platform';
+import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
+import type { InputHub } from '../../../../hosts/common/input/contracts';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
 

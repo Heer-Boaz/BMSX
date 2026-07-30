@@ -1,13 +1,37 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
-import type { Platform } from 'bmsx/platform';
-import { prepareMachineHost, startMachineHostFrames } from '../../../hosts/common/machine_runtime';
+import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
+import { Input } from '../../../hosts/common/input/manager';
+import {
+	initializeMachineRuntime,
+	initializeMachineVideoPresenter,
+} from '../../../hosts/common/machine_runtime';
+import { HostAudioOutput } from '../../../hosts/common/audio_output';
+import {
+	HostFrameRunResult,
+	HostFrameSession,
+	runHostFrame,
+} from '../../../hosts/common/host_frame';
+import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { RenderPresentationState } from '../../../hosts/common/presentation_state';
+import { SystemOutputLog } from '../../../hosts/common/system_output_log';
+import { runGate } from '../../../machine/ts/common/taskgate';
+import type { HostClock } from '../../../hosts/common/clock';
+import type { FrameLoop } from '../../../hosts/common/frame_loop';
+import { ConsoleLogOutput } from '../../../hosts/common/log';
+import { SilentAudioSink } from '../../../hosts/node/common/silent_audio';
+import {
+	RealtimeHeadlessClock,
+	VirtualHeadlessClock,
+} from '../../../hosts/node/headless/clock';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
-	HeadlessPlatformServices,
-} from '../../../hosts/node/headless/platform_headless';
-import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
+	RealtimeHeadlessFrameLoop,
+	UnpacedHeadlessFrameLoop,
+} from '../../../hosts/node/headless/frame_loop';
+import { HeadlessInputHub } from '../../../hosts/node/headless/input';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import {
 	parseNodeLaunchOptions,
@@ -30,15 +54,6 @@ function printHelp(): void {
 	console.log('  --help, -h                 Show this help.');
 }
 
-function createPlatform(frameIntervalMs: number): Platform {
-	switch (BMSX_BOOTROM_TARGET) {
-		case 'headless':
-			return new HeadlessPlatformServices({ frameIntervalMs, unpaced: true });
-		case 'cli':
-			return new CLIPlatformServices({ frameIntervalMs });
-	}
-}
-
 async function main(): Promise<void> {
 	const options = parseNodeLaunchOptions(
 		process.argv.slice(2),
@@ -59,19 +74,86 @@ async function main(): Promise<void> {
 		fs.readFile(romPath),
 		options.slot1Path ? fs.readFile(path.resolve(options.slot1Path)) : Promise.resolve(null),
 	]);
-	const platform = createPlatform(options.frameIntervalMs);
-	const host = await prepareMachineHost({
+	let clock: HostClock;
+	let frames: FrameLoop;
+	switch (BMSX_BOOTROM_TARGET) {
+		case 'headless': {
+			const virtualClock = new VirtualHeadlessClock();
+			clock = virtualClock;
+			frames = new UnpacedHeadlessFrameLoop(
+				virtualClock,
+				options.frameIntervalMs,
+			);
+			break;
+		}
+		case 'cli':
+			clock = new RealtimeHeadlessClock();
+			frames = new RealtimeHeadlessFrameLoop(
+				clock,
+				options.frameIntervalMs,
+			);
+			break;
+	}
+	const input = new Input(
+		clock,
+		new HeadlessInputHub(),
+		-1,
+	);
+	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const runtime = initializeMachineRuntime(
 		systemRom,
-		cartridgeSlots: [slot0Rom, slot1Rom],
-		startingGamepadIndex: -1,
-		enableOnscreenGamepad: false,
-		platform,
-		machineModel: PSX_MACHINE_SPEC,
+		[slot0Rom, slot1Rom],
+		PSX_MACHINE_SPEC,
+		input,
+	);
+	const presenter = initializeMachineVideoPresenter(
+		runtime,
+		videoOutput,
+		new HeadlessGPUBackend(
+			videoOutput,
+			256,
+			212,
+			PSX_MACHINE_SPEC.gxGpuVramBytes,
+		),
+	);
+	const audioOutput = new HostAudioOutput(
+		new SilentAudioSink(),
+		runtime.machine.audioController,
+		runtime.machine.audioOutput.outputRing,
+		runtime.timing.ufpsScaled,
+	);
+	const logOutput = new ConsoleLogOutput();
+	const systemOutput = new SystemOutputLog();
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now());
+	runtime.resetForSystemBoot();
+	runtime.boot();
+	systemOutput.flush(runtime, logOutput);
+	audioOutput.bootstrap();
+	const presentation = new RenderPresentationState();
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
+	runtime.frameScheduler.clearQueuedTime();
+	const frameLoop = frames.start((currentTime) => {
+		const result = runHostFrame(
+			session,
+			runtime,
+			presenter,
+			input,
+			audioOutput,
+			systemOutput,
+			logOutput,
+			presentation,
+			hostOverlayMenu,
+			currentTime,
+			runGate.ready,
+		);
+		if (result === HostFrameRunResult.ExitRequested) {
+			frameLoop.stop();
+			process.exit(0);
+		}
 	});
-	startMachineHostFrames(host);
 	console.log(`[bootrom:${BMSX_BOOTROM_TARGET}] Game loop running.`);
 	const ttlMs = options.ttlMs > 0 ? options.ttlMs : 1000;
-	platform.clock.scheduleOnce(ttlMs, () => {
+	clock.scheduleOnce(ttlMs, () => {
 		console.log(`[bootrom:${BMSX_BOOTROM_TARGET}] TTL reached (${ttlMs}ms). Terminating.`);
 		process.exit(0);
 	});

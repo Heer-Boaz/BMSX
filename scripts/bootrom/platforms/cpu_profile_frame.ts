@@ -1,45 +1,72 @@
+import type { HostAudioOutput } from '../../../hosts/common/audio_output';
+import {
+	beginHostFrame,
+	executeHostMenuAction,
+	HostFrameAction,
+	HostFrameRunResult,
+	type HostFrameSession,
+	prepareHostPresentation,
+	presentHostPresentation,
+	syncAfterRuntimeUpdate,
+} from '../../../hosts/common/host_frame';
+import { HostMenuInput, type HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import type { Input } from '../../../hosts/common/input/manager';
+import type { LogOutput } from '../../../hosts/common/log';
+import type { RenderPresentationState } from '../../../hosts/common/presentation_state';
+import type { SystemOutputLog } from '../../../hosts/common/system_output_log';
 import { runGate } from '../../../machine/ts/common/taskgate';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import type { MachineHost } from '../../../hosts/common/machine_runtime';
-import {
-	beginMachineHostFrame,
-	beginMachineHostUpdate,
-	completeMachineHostUpdate,
-	executeMachineHostMenuAction,
-	MachineHostFrameAction,
-	prepareMachineHostPresentation,
-	presentMachineHostPresentation,
-} from '../../../hosts/common/host_frame';
-import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
-import { RenderPresentationState } from '../../../hosts/common/presentation_state';
+import type { VideoPresenter } from '../../../machine/ts/render/video_presenter';
 import type { CpuProfilerSession } from '../cpu_profiler';
 
-function runCpuProfileHostFrame(
-	host: MachineHost,
+export function runCpuProfileHostFrame(
+	frameSession: HostFrameSession,
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	input: Input,
+	audioOutput: HostAudioOutput,
+	systemOutput: SystemOutputLog,
+	logOutput: LogOutput,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
-	runtime: Runtime,
 	session: CpuProfilerSession,
 	currentTime: number,
-): void {
-	if (!host.running) {
-		return;
-	}
-	const hostDeltaMs = beginMachineHostFrame(host, currentTime);
+): HostFrameRunResult {
+	const hostDeltaMs = beginHostFrame(
+		frameSession,
+		input,
+		audioOutput,
+		logOutput,
+		currentTime,
+	);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeMachineHostMenuAction(hostMenuInput, screen, host)) {
-		return;
+	if (hostMenuInput === HostMenuInput.ExitGame) {
+		return HostFrameRunResult.ExitRequested;
 	}
-	let action = prepareMachineHostPresentation(
-		host,
+	if (executeHostMenuAction(
+		hostMenuInput,
+		frameSession,
+		screen,
+		runtime,
+		presenter,
+		input,
+		audioOutput,
+		systemOutput,
+		logOutput,
+	)) {
+		return HostFrameRunResult.Continue;
+	}
+	let action = prepareHostPresentation(
+		frameSession,
+		runtime,
 		screen,
 		hostOverlayMenu,
 		runGate.ready,
 		hostMenuInput,
 	);
-	if (action === MachineHostFrameAction.Execute) {
-		const previousTickSequence = beginMachineHostUpdate(host);
+	if (action === HostFrameAction.Execute) {
+		const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		let stepDeltaMs = hostDeltaMs;
 		while (true) {
 			const result = runtime.frameScheduler.stepInstruction(stepDeltaMs);
@@ -57,31 +84,27 @@ function runCpuProfileHostFrame(
 			if (!runtime.machine.gxGpu.backendReadbackPending()) {
 				break;
 			}
-			host.presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+			presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		}
-		completeMachineHostUpdate(host, screen, previousTickSequence);
-		action = MachineHostFrameAction.PresentPending;
-	}
-	presentMachineHostPresentation(host, action, screen, hostDeltaMs);
-	host.flushSystemOutput();
-}
-
-export function startCpuProfileHostFrames(
-	host: MachineHost,
-	session: CpuProfilerSession,
-): void {
-	const runtime = host.runtime;
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
-	host.start();
-	host.platform.frames.start((currentTime) => {
-		runCpuProfileHostFrame(
-			host,
-			presentation,
-			hostOverlayMenu,
+		syncAfterRuntimeUpdate(
+			frameSession,
 			runtime,
-			session,
-			currentTime,
+			input,
+			audioOutput,
+			screen,
+			previousTickSequence,
 		);
-	});
+		action = HostFrameAction.PresentPending;
+	}
+	presentHostPresentation(
+		frameSession,
+		runtime,
+		presenter,
+		audioOutput,
+		action,
+		screen,
+		hostDeltaMs,
+	);
+	systemOutput.flush(runtime, logOutput);
+	return HostFrameRunResult.Continue;
 }

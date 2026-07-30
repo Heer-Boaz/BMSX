@@ -3,20 +3,42 @@ import * as path from 'node:path';
 
 import {
 	prepareWorkbenchRuntime,
-	startWorkbenchHostFrames,
 } from '../../../ide/workbench/machine_runtime';
+import { runWorkbenchHostFrame } from '../../../ide/workbench/host_frame';
 import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
+import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
+import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
+import { Input } from '../../../hosts/common/input/manager';
+import { ConsoleLogOutput } from '../../../hosts/common/log';
+import { SilentAudioSink } from '../../../hosts/node/common/silent_audio';
+import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
-	HeadlessPlatformServices,
-} from '../../../hosts/node/headless/platform_headless';
+	UnpacedHeadlessFrameLoop,
+} from '../../../hosts/node/headless/frame_loop';
+import { HeadlessClipboard } from '../../../ide/testing/clipboard';
+import { HeadlessInputHub } from '../../../hosts/node/headless/input';
+import { MemoryStorage } from '../../../ide/testing/memory_storage';
 import {
-	prepareMachineHost,
-	startMachineHostFrames,
-	type MachineHost,
-	type MachineHostInitializationOptions,
+	persistWorkspaceSessionLocally,
+	shutdownWorkspaceStorage,
+} from '../../../ide/workbench/workspace/storage';
+import {
+	initializeMachineRuntime,
+	initializeMachineVideoPresenter,
 } from '../../../hosts/common/machine_runtime';
+import { HostAudioOutput } from '../../../hosts/common/audio_output';
+import {
+	HostFrameRunResult,
+	HostFrameSession,
+	runHostFrame,
+} from '../../../hosts/common/host_frame';
+import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { RenderPresentationState } from '../../../hosts/common/presentation_state';
+import { SystemOutputLog } from '../../../hosts/common/system_output_log';
+import { runGate } from '../../../machine/ts/common/taskgate';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import {
 	loadBlua32ToolingImage,
@@ -28,7 +50,7 @@ import {
 	SYSTEM_ROM_BASE,
 } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { startCpuProfileHostFrames } from './cpu_profile_frame';
+import { runCpuProfileHostFrame } from './cpu_profile_frame';
 import {
 	HeadlessCaptureCoordinator,
 	deriveHeadlessCaptureOutputDir,
@@ -83,18 +105,46 @@ async function main(): Promise<void> {
 		);
 	}
 
-	const platform = new HeadlessPlatformServices({
-		frameIntervalMs: options.frameIntervalMs,
-		unpaced: true,
-	});
-	const bootOptions: MachineHostInitializationOptions = {
-		cartridgeSlots: [slot0Rom, slot1Rom],
+	const clock = new VirtualHeadlessClock();
+	const frames = new UnpacedHeadlessFrameLoop(clock, options.frameIntervalMs);
+	const inputHub = new HeadlessInputHub();
+	const input = new Input(
+		clock,
+		inputHub,
+		-1,
+	);
+	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const videoBackend = new HeadlessGPUBackend(
+		videoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
+	const logOutput = new ConsoleLogOutput();
+	const runtime = initializeMachineRuntime(
 		systemRom,
-		startingGamepadIndex: -1,
-		enableOnscreenGamepad: false,
-		platform,
-		machineModel: PSX_MACHINE_SPEC,
-	};
+		[slot0Rom, slot1Rom],
+		PSX_MACHINE_SPEC,
+		input,
+	);
+	const presenter = initializeMachineVideoPresenter(
+		runtime,
+		videoOutput,
+		videoBackend,
+	);
+	const audioOutput = new HostAudioOutput(
+		new SilentAudioSink(),
+		runtime.machine.audioController,
+		runtime.machine.audioOutput.outputRing,
+		runtime.timing.ufpsScaled,
+	);
+	const systemOutput = new SystemOutputLog();
+	const frameSession = new HostFrameSession(
+		runtime.timing.ufpsScaled,
+		clock.now(),
+	);
+	const presentation = new RenderPresentationState();
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
 	const inputLogger = (message: string): void => {
 		console.log(`[bootrom:headless:input] ${message}`);
 	};
@@ -104,13 +154,9 @@ async function main(): Promise<void> {
 	);
 	console.log(`[bootrom:headless] TTL set to ${options.ttlMs}ms.`);
 
-	let profile: {
-		host: MachineHost;
-		session: CpuProfilerSession;
-	} | null = null;
+	let profile: CpuProfilerSession | null = null;
 	if (options.cpuProfile) {
 		const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
-		const host = await prepareMachineHost(bootOptions);
 		const systemLayer = media.system;
 		const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
 		for (let slot = 0; slot < media.cartridgeSlots.length; slot += 1) {
@@ -123,73 +169,145 @@ async function main(): Promise<void> {
 				CART_ROM_BASE,
 			);
 		}
-		const session = new CpuProfilerSession({
+		profile = new CpuProfilerSession({
 			system: loadBlua32ToolingImage(
 				systemLayer,
 				SYSTEM_ROM_BASE,
 			),
 			cartridgeSlots: cartridgeImages,
 		});
-		profile = { host, session };
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');
+	}
+	if (options.mode.kind !== 'ide-test') {
+		runtime.resetForSystemBoot();
+		runtime.boot();
+		systemOutput.flush(runtime, logOutput);
+		audioOutput.bootstrap();
 	}
 
 	try {
 		switch (options.mode.kind) {
 			case 'ide-test': {
 				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
-				const [ideHost, ide] = await prepareWorkbenchRuntime(
-					bootOptions,
+				const microtasks = new IdeMicrotaskQueue();
+				const storage = new MemoryStorage();
+				const ide = await prepareWorkbenchRuntime(
+					systemRom,
+					[slot0Rom, slot1Rom],
+					runtime,
+					presenter,
+					videoOutput,
+					input,
+					audioOutput,
+					storage,
+					clock,
+					new HeadlessClipboard(),
+					microtasks,
+					logOutput,
 					RESOURCE_PANEL_DEFAULT_RATIO,
 				);
-				const runtime = ideHost.runtime;
-				startWorkbenchHostFrames(ideHost, ide);
-				await Promise.race([
-					runIdeTest({
-						testPath: options.mode.path,
-						frameIntervalMs: options.frameIntervalMs,
-						ide: createHeadlessIdeHarness(
-							ide,
+				systemOutput.flush(runtime, logOutput);
+				audioOutput.bootstrap();
+				const interrupt = (): never => {
+					persistWorkspaceSessionLocally();
+					process.exit(130);
+				};
+				const terminate = (): never => {
+					persistWorkspaceSessionLocally();
+					process.exit(143);
+				};
+				process.once('SIGINT', interrupt);
+				process.once('SIGTERM', terminate);
+				try {
+					runtime.frameScheduler.clearQueuedTime();
+					const frameLoop = frames.start((currentTime) => {
+						const result = runWorkbenchHostFrame(
+							frameSession,
 							runtime,
-							ideHost.input,
-							ideHost.audioOutput,
-							ideHost.platform.microtasks,
-							ideHost.platform.storage,
-							ideHost.platform,
-						),
-						logger: inputLogger,
-						clock: platform.clock,
-					}),
-					new Promise<never>((_resolve, reject) => {
-						platform.clock.scheduleOnce(options.ttlMs, () => {
-							reject(new Error('IDE test did not finish before TTL.'));
-						});
-					}),
-				]);
+							presenter,
+							input,
+							audioOutput,
+							systemOutput,
+							logOutput,
+							ide,
+							presentation,
+							hostOverlayMenu,
+							currentTime,
+							runGate.ready,
+						);
+						if (result === HostFrameRunResult.ExitRequested) {
+							frameLoop.stop();
+							persistWorkspaceSessionLocally();
+							process.exit(0);
+						}
+					});
+					await Promise.race([
+						runIdeTest({
+							testPath: options.mode.path,
+							frameIntervalMs: options.frameIntervalMs,
+							ide: createHeadlessIdeHarness(
+								ide,
+								runtime,
+								audioOutput,
+								microtasks,
+								storage,
+								logOutput,
+							),
+							logger: inputLogger,
+							clock,
+						}),
+						new Promise<never>((_resolve, reject) => {
+							clock.scheduleOnce(options.ttlMs, () => {
+								reject(new Error('IDE test did not finish before TTL.'));
+							});
+						}),
+					]);
+				} finally {
+					process.removeListener('SIGINT', interrupt);
+					process.removeListener('SIGTERM', terminate);
+					await shutdownWorkspaceStorage();
+				}
 				return;
 			}
 			case 'host-test': {
 				const capture = new HeadlessCaptureCoordinator(
-					platform.videoOutput,
+					videoOutput,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
-					() => platform.clock.now(),
+					() => clock.now(),
 				);
 				console.log(
 					`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
 				);
 				let passed = false;
 				try {
-					const host = await prepareMachineHost(bootOptions);
-					const runtime = host.runtime;
-					startMachineHostFrames(host);
+					runtime.frameScheduler.clearQueuedTime();
+					const frameLoop = frames.start((currentTime) => {
+						const result = runHostFrame(
+							frameSession,
+							runtime,
+							presenter,
+							input,
+							audioOutput,
+							systemOutput,
+							logOutput,
+							presentation,
+							hostOverlayMenu,
+							currentTime,
+							runGate.ready,
+						);
+						if (result === HostFrameRunResult.ExitRequested) {
+							frameLoop.stop();
+							process.exit(0);
+						}
+					});
 					await new HostTestRunner({
 						testPath: options.mode.path,
 						frameIntervalMs: options.frameIntervalMs,
 						ttlMs: options.ttlMs,
 						logger: inputLogger,
 						runtime,
-						input: platform.input,
-						clock: platform.clock,
+						input: inputHub,
+						clock,
 						capture,
 					}).run();
 					passed = true;
@@ -201,36 +319,70 @@ async function main(): Promise<void> {
 			}
 			case 'timeline': {
 				const capture = new HeadlessCaptureCoordinator(
-					platform.videoOutput,
+					videoOutput,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
-					() => platform.clock.now(),
+					() => clock.now(),
 				);
 				console.log(
 					`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
 				);
 				let completed = false;
 				try {
-					const host = profile
-						? profile.host
-						: await prepareMachineHost(bootOptions);
 					const timeline = await InputTimeline.load(
 						options.mode.path,
 						options.frameIntervalMs,
-						platform.videoOutput,
-						platform.input,
-						host.runtime,
+						videoOutput,
+						inputHub,
+						runtime,
 						capture,
 						inputLogger,
 					);
+					runtime.frameScheduler.clearQueuedTime();
 					if (profile) {
-						startCpuProfileHostFrames(host, profile.session);
+						const frameLoop = frames.start((currentTime) => {
+							const result = runCpuProfileHostFrame(
+								frameSession,
+								runtime,
+								presenter,
+								input,
+								audioOutput,
+								systemOutput,
+								logOutput,
+								presentation,
+								hostOverlayMenu,
+								profile,
+								currentTime,
+							);
+							if (result === HostFrameRunResult.ExitRequested) {
+								frameLoop.stop();
+								process.exit(0);
+							}
+						});
 					} else {
-						startMachineHostFrames(host);
+						const frameLoop = frames.start((currentTime) => {
+							const result = runHostFrame(
+								frameSession,
+								runtime,
+								presenter,
+								input,
+								audioOutput,
+								systemOutput,
+								logOutput,
+								presentation,
+								hostOverlayMenu,
+								currentTime,
+								runGate.ready,
+							);
+							if (result === HostFrameRunResult.ExitRequested) {
+								frameLoop.stop();
+								process.exit(0);
+							}
+						});
 					}
 					await Promise.race([
 						timeline.completion,
 						new Promise<never>((_resolve, reject) => {
-							platform.clock.scheduleOnce(options.ttlMs, () => {
+							clock.scheduleOnce(options.ttlMs, () => {
 								reject(new Error('Input timeline did not finish before TTL.'));
 							});
 						}),
@@ -244,21 +396,57 @@ async function main(): Promise<void> {
 				return;
 			}
 			case 'plain': {
+				runtime.frameScheduler.clearQueuedTime();
 				if (profile) {
-					startCpuProfileHostFrames(profile.host, profile.session);
+					const frameLoop = frames.start((currentTime) => {
+						const result = runCpuProfileHostFrame(
+							frameSession,
+							runtime,
+							presenter,
+							input,
+							audioOutput,
+							systemOutput,
+							logOutput,
+							presentation,
+							hostOverlayMenu,
+							profile,
+							currentTime,
+						);
+						if (result === HostFrameRunResult.ExitRequested) {
+							frameLoop.stop();
+							process.exit(0);
+						}
+					});
 				} else {
-					const host = await prepareMachineHost(bootOptions);
-					startMachineHostFrames(host);
+					const frameLoop = frames.start((currentTime) => {
+						const result = runHostFrame(
+							frameSession,
+							runtime,
+							presenter,
+							input,
+							audioOutput,
+							systemOutput,
+							logOutput,
+							presentation,
+							hostOverlayMenu,
+							currentTime,
+							runGate.ready,
+						);
+						if (result === HostFrameRunResult.ExitRequested) {
+							frameLoop.stop();
+							process.exit(0);
+						}
+					});
 				}
 				await new Promise<void>((resolve) => {
-					platform.clock.scheduleOnce(options.ttlMs, () => resolve());
+					clock.scheduleOnce(options.ttlMs, () => resolve());
 				});
 			}
 		}
 	} finally {
 		if (profile) {
 			console.log('[bootrom:headless] Fantasy CPU profiler report:');
-			console.log(formatCpuProfilerReport(profile.session.snapshot()));
+			console.log(formatCpuProfilerReport(profile.snapshot()));
 		}
 	}
 }

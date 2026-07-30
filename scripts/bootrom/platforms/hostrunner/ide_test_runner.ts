@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
-import type { HostClock } from 'bmsx/platform';
+import type { HostClock } from '../../../../hosts/common/clock';
 
 export interface IdeTestRunnerOptions {
 	testPath: string;

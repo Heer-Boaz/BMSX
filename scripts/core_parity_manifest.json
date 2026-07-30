@@ -16,39 +16,9 @@
 			"reason": "machine_runtime_public_barrel"
 		},
 		{
-			"pattern": "machine/ts/input/host/assignment_processor.ts",
+			"pattern": "hosts/common/input/**",
 			"category": "host",
-			"reason": "host_input_assignment_ui_not_core"
-		},
-		{
-			"pattern": "machine/ts/input/dualsense_hid.ts",
-			"category": "host",
-			"reason": "host_input_hid_not_core"
-		},
-		{
-			"pattern": "machine/ts/input/onscreen_gamepad.ts",
-			"category": "host",
-			"reason": "browser_ui_not_core"
-		},
-		{
-			"pattern": "machine/ts/input/shortcuts.ts",
-			"category": "host",
-			"reason": "host_input_shortcuts_not_core"
-		},
-		{
-			"pattern": "machine/ts/input/**",
-			"category": "host",
-			"reason": "browser_ide_input_state_and_platform_to_icu_snapshot_adapter_not_machine_core"
-		},
-		{
-			"pattern": "machine/ts/platform/index.ts",
-			"category": "barrel",
-			"reason": "ts_barrel"
-		},
-		{
-			"pattern": "machine/ts/platform/**",
-			"category": "host",
-			"reason": "host_platform_not_core"
+			"reason": "browser_ide_input_state_and_host_to_icu_snapshot_adapter_not_machine_core"
 		},
 		{
 			"pattern": "hosts/common/audio_output.ts",
@@ -545,13 +515,6 @@
 			"reason": "runtime_machine_state_contract"
 		},
 		{
-			"ts": "machine/ts/machine/runtime/input.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/input.h"
-			],
-			"reason": "runtime_input_contract"
-		},
-		{
 			"ts": "machine/ts/machine/runtime/save_state.ts",
 			"cpp": [
 				"machine/cpp/machine/runtime/save_state.h",
@@ -833,8 +796,7 @@
 				"machine/ts/render/host_overlay/webgpu/pipeline.ts",
 				"machine/ts/common/fixed_point.ts",
 				"machine/cpp/common/fixed_point.h",
-				"machine/ts/render/headless/passes.ts",
-				"machine/ts/render/headless/video_output.ts"
+				"machine/ts/render/headless/passes.ts"
 			],
 			"reason": "cart_and_headless_hot_paths_must_not_allocate"
 		}
@@ -1209,13 +1171,6 @@
 				"machine/cpp/spec/blua32/image_format.h"
 			],
 			"reason": "blua32_executable_image_wire_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/scheduler/microtask_queue.ts",
-			"cpp": [
-				"machine/cpp/machine/scheduler/microtask_queue.h"
-			],
-			"reason": "machine_microtask_queue_boundary_contract"
 		},
 		{
 			"ts": "machine/ts/render/backend/webgl/gx_gpu.ts",
@@ -1692,13 +1647,6 @@
 			"reason": "workbench_overlay_publish_must_reuse_retained_frame_descriptors"
 		},
 		{
-			"file": "machine/ts/render/headless/passes.ts",
-			"functions": [
-				"presentHeadlessFrame"
-			],
-			"reason": "headless_present_hot_helpers_must_not_allocate_per_frame"
-		},
-		{
 			"file": "machine/ts/render/headless/backend.ts",
 			"functions": [
 				"beginFrame",
@@ -1728,18 +1676,18 @@
 			"reason": "webgpu_render_pass_begin_must_reuse_host_pass_wrapper_and_attachment_storage"
 		},
 		{
-			"file": "machine/ts/render/headless/present_surface.ts",
+			"file": "hosts/node/headless/video_output.ts",
 			"functions": [
-				"borrowPixels"
+				"borrowPresentedPixels"
 			],
-			"reason": "headless_present_surface_must_expose_borrowed_pixels_without_copying"
+			"reason": "headless_video_output_must_expose_borrowed_pixels_without_copying"
 		},
 		{
-			"file": "machine/ts/render/headless/video_output.ts",
+			"file": "hosts/node/headless/video_output.ts",
 			"functions": [
-				"presentFrameBuffer"
+				"presentSoftwareFrame"
 			],
-			"reason": "headless_present_host_must_reuse_presented_frame_event_object"
+			"reason": "headless_video_output_must_reuse_presented_frame_event_object"
 		},
 		{
 			"file": "machine/ts/render/backend/gx_gpu_render_rules.ts",

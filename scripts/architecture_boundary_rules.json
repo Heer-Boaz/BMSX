@@ -8,6 +8,7 @@
 		"hosts/browser",
 		"hosts/node",
 		"hosts/libretro",
+		"hosts/libretro_host",
 		"scripts/bootrom/platforms",
 		"scripts/products",
 		"scripts/rompacker",
@@ -38,6 +39,8 @@
 		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts"] },
 		{ "name": "ts-ide", "paths": ["ide/**"] },
 		{ "name": "ts-host-audio", "paths": ["hosts/common/audio_output.ts"] },
+		{ "name": "ts-frontend-input", "paths": ["hosts/common/input/**"] },
+		{ "name": "ts-host-contracts", "paths": ["hosts/common/clock.ts", "hosts/common/frame_loop.ts", "hosts/common/log.ts"] },
 		{ "name": "ts-host-common", "paths": ["hosts/common/**"] },
 		{ "name": "ts-browser-host", "paths": ["hosts/browser/**"] },
 		{ "name": "ts-node-launch", "paths": ["scripts/bootrom/platforms/node_launch.ts", "scripts/bootrom/platforms/node_option_values.ts"] },
@@ -48,8 +51,6 @@
 		{ "name": "ts-rompacker-tool", "paths": ["scripts/rompacker/**"] },
 		{ "name": "ts-tooling-common", "paths": ["scripts/tooling/**"] },
 		{ "name": "ts-render", "paths": ["machine/ts/render/**"] },
-		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
-		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },
 		{ "name": "ts-audio", "paths": ["machine/ts/audio/**"] },
 		{ "name": "ts-common", "paths": ["machine/ts/common/**"] },
 
@@ -61,21 +62,21 @@
 		{ "name": "cpp-rompack", "paths": ["machine/cpp/rompack/**"] },
 		{ "name": "cpp-core", "paths": ["machine/cpp/core/**"] },
 		{ "name": "cpp-render", "paths": ["machine/cpp/render/**"] },
-		{ "name": "cpp-platform", "paths": ["machine/cpp/platform/**"] },
-		{ "name": "cpp-input", "paths": ["machine/cpp/input/**"] },
 		{ "name": "cpp-audio", "paths": ["machine/cpp/audio/**"] },
 		{ "name": "cpp-lua", "paths": ["machine/cpp/lua/**"] },
-		{ "name": "cpp-common", "paths": ["machine/cpp/common/**"] }
+		{ "name": "cpp-common", "paths": ["machine/cpp/common/**"] },
+		{ "name": "cpp-libretro-host", "paths": ["hosts/libretro/**"] },
+		{ "name": "cpp-direct-host", "paths": ["hosts/libretro_host/**"] }
 	],
 	"rules": [
 		{
 			"from": "ts-machine-spec",
-			"deny": ["ts-gx-machine", "ts-machine", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompack", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-tooling-common", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-gx-machine", "ts-machine", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompack", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-tooling-common", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine specification files are dependency leaves shared by producers and consumers; they must not import emulator, compiler, tooling, host, IDE, or product implementation."
 		},
 		{
 			"from": "ts-gx-machine",
-			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS GX machine code must emit the GPU command contract, not depend on render backends."
 		},
 		{
@@ -85,38 +86,38 @@
 		},
 		{
 			"from": "ts-machine",
-			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
 		},
 		{
 			"from": "ts-blua-toolchain",
-			"deny": ["ts-rompack-toolchain", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-rompack-toolchain", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "The BLua frontend and compiler produce object code from machine specification contracts; they must not depend on ROM authoring, emulator, product, host, IDE, or backend implementation."
 		},
 		{
 			"from": "ts-rompack-toolchain",
-			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "ROM authoring consumes BLua object code and machine wire contracts; it must not depend on emulator, product, host, IDE, or backend implementation."
 		},
 		{
 			"from": "ts-rompack",
-			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS ROM wire-format code must not depend on emulator, core, host, IDE, render, input, audio, or language implementation."
 		},
 		{
 			"from": "ts-core",
-			"deny": ["ts-blua-toolchain", "ts-rompack-toolchain", "ts-ide", "ts-host-common", "ts-node-tooling"],
+			"deny": ["ts-blua-toolchain", "ts-rompack-toolchain", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-node-tooling"],
 			"reason": "TS core owns machine construction from raw ROM media; authoring metadata, compiler, IDE, application, and validation tooling compose above it."
 		},
 		{
 			"from": "ts-runtime-api",
-			"deny": ["ts-ide", "ts-host-common"],
+			"deny": ["ts-ide", "ts-host-contracts", "ts-host-common"],
 			"reason": "TS runtime entrypoints must stay below the IDE composition layer."
 		},
 		{
 			"from": "ts-render",
-			"deny": ["ts-ide", "ts-host-common"],
-			"reason": "TS render primitives and backends must not depend on IDE presentation policy."
+			"deny": ["ts-ide", "ts-host-contracts", "ts-host-common"],
+			"reason": "TS render primitives and backends consume mirrored render contracts and must not depend on host or IDE policy."
 		},
 		{
 			"from": "ts-ide",
@@ -146,7 +147,7 @@
 		{
 			"from": "ts-node-host",
 			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
-			"reason": "Node platform services must not depend on Studio, IDE, compiler, or test-tooling implementation."
+			"reason": "The Node host implementation must not depend on Studio, IDE, compiler, or test-tooling implementation."
 		},
 		{
 			"from": "ts-rompacker-tool",
@@ -155,28 +156,38 @@
 		},
 		{
 			"from": "cpp-machine-spec",
-			"deny": ["cpp-gx-machine", "cpp-machine", "cpp-rompack", "cpp-core", "cpp-render", "cpp-platform", "cpp-input", "cpp-audio", "cpp-lua"],
+			"deny": ["cpp-gx-machine", "cpp-machine", "cpp-rompack", "cpp-core", "cpp-render", "cpp-audio", "cpp-lua", "cpp-libretro-host", "cpp-direct-host"],
 			"reason": "C++ machine specification files are dependency leaves shared by producers and consumers; they must not include emulator, tooling, host, or product implementation."
 		},
 		{
 			"from": "cpp-gx-machine",
-			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-audio", "cpp-libretro-host", "cpp-direct-host"],
 			"reason": "C++ GX machine code must emit the GPU command contract, not depend on render backends."
 		},
 		{
 			"from": "cpp-gx-gles2-render",
-			"deny": ["cpp-software-render"],
+			"deny": ["cpp-software-render", "cpp-libretro-host", "cpp-direct-host"],
 			"reason": "C++ GX GLES2 must remain a host-GPU accelerated backend, not include software rendering."
 		},
 		{
 			"from": "cpp-machine",
-			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
-			"reason": "C++ machine code must stay below host, render, platform, input, and audio edge layers."
+			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-audio", "cpp-libretro-host", "cpp-direct-host"],
+			"reason": "C++ machine code must stay below host, render, input, and audio edge layers."
+		},
+		{
+			"from": "cpp-core",
+			"deny": ["cpp-libretro-host", "cpp-direct-host"],
+			"reason": "C++ core construction must remain usable without a concrete frontend product."
+		},
+		{
+			"from": "cpp-render",
+			"deny": ["cpp-libretro-host", "cpp-direct-host"],
+			"reason": "C++ render code consumes its output contract without depending on a concrete frontend."
 		},
 		{
 			"from": "cpp-rompack",
-			"deny": ["cpp-machine", "cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
-			"reason": "C++ ROM wire-format code must not depend on emulator, core, host, render, platform, input, or audio implementation."
+			"deny": ["cpp-machine", "cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-audio", "cpp-libretro-host", "cpp-direct-host"],
+			"reason": "C++ ROM wire-format code must not depend on emulator, core, host, render, input, or audio implementation."
 		}
 	]
 }
