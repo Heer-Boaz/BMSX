@@ -6,7 +6,6 @@ import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library'
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
 
 class LifecycleBackend extends HeadlessGPUBackend {
 	readonly destroyedPipelines: RenderPassInstanceHandle[] = [];
@@ -18,7 +17,6 @@ class LifecycleBackend extends HeadlessGPUBackend {
 
 test('render pass disposal tears down in reverse order and destroys a shared pipeline once', () => {
 	const backend = new LifecycleBackend(
-		new HeadlessVideoOutput(256, 212),
 		256,
 		212,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,

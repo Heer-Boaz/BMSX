@@ -7,17 +7,13 @@ import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pi
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../post/device_quantize/state';
 import type { HeadlessGPUBackend } from './backend';
-import type { SoftwareFrameOutput } from '../video_output';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerHeadlessGxGpuPass(registry);
 	registerHeadlessDeviceQuantizePass(registry);
 }
 
-export function registerHeadlessPresentPass(
-	registry: RenderPassLibrary,
-	output: SoftwareFrameOutput,
-): void {
+export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'headless_present',
 		name: 'HeadlessPresent',
@@ -25,11 +21,7 @@ export function registerHeadlessPresentPass(
 			graph: { reads: ['frame_color'] },
 			exec: (backend) => {
 				const headless = backend as HeadlessGPUBackend;
-				output.presentSoftwareFrame(
-					headless.framebufferPixels,
-					headless.framebufferWidth,
-					headless.framebufferHeight,
-				);
+				headless.publishPresentation();
 			},
 	});
 }

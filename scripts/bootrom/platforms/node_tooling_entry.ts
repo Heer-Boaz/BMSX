@@ -115,7 +115,6 @@ async function main(): Promise<void> {
 	);
 	const videoOutput = new HeadlessVideoOutput(256, 212);
 	const videoBackend = new HeadlessGPUBackend(
-		videoOutput,
 		256,
 		212,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
@@ -271,7 +270,7 @@ async function main(): Promise<void> {
 			}
 			case 'host-test': {
 				const capture = new HeadlessCaptureCoordinator(
-					videoOutput,
+					videoBackend,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
 					() => clock.now(),
 				);
@@ -319,7 +318,7 @@ async function main(): Promise<void> {
 			}
 			case 'timeline': {
 				const capture = new HeadlessCaptureCoordinator(
-					videoOutput,
+					videoBackend,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
 					() => clock.now(),
 				);
@@ -331,7 +330,7 @@ async function main(): Promise<void> {
 					const timeline = await InputTimeline.load(
 						options.mode.path,
 						options.frameIntervalMs,
-						videoOutput,
+						videoBackend,
 						inputHub,
 						runtime,
 						capture,

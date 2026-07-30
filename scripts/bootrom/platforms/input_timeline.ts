@@ -3,9 +3,9 @@ import * as path from 'node:path';
 
 import type { InputEventWriter, InputEvt } from '../../../hosts/common/input/contracts';
 import {
-	HeadlessVideoOutput,
+	HeadlessGPUBackend,
 	type HeadlessPresentedFrame,
-} from '../../../hosts/node/headless/video_output';
+} from '../../../machine/ts/render/headless/backend';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { HeadlessCaptureCoordinator } from './headless_capture';
 
@@ -42,13 +42,13 @@ export class InputTimeline {
 
 	private readonly pendingInputs: PendingTimelineInput[] = [];
 	private readonly pendingCaptures: PendingTimelineCapture[] = [];
-	private readonly output: HeadlessVideoOutput;
+	private readonly backend: HeadlessGPUBackend;
 	private readonly finish: () => void;
 	private completionFrame = 0;
 	private cartridgeFrameOrigin = -1;
 
 	private constructor(
-		output: HeadlessVideoOutput,
+		backend: HeadlessGPUBackend,
 		private readonly input: InputEventWriter,
 		private readonly runtime: Runtime,
 		private readonly capture: HeadlessCaptureCoordinator,
@@ -57,7 +57,7 @@ export class InputTimeline {
 		source: string,
 		logger: (message: string) => void,
 	) {
-		this.output = output;
+		this.backend = backend;
 		let finish!: () => void;
 		this.completion = new Promise((resolve) => {
 			finish = resolve;
@@ -93,13 +93,13 @@ export class InputTimeline {
 			}
 		}
 		this.completionFrame = lastFrame + 1;
-		output.addPresentedFrameListener(this.handlePresentedFrame);
+		backend.addPresentedFrameListener(this.handlePresentedFrame);
 	}
 
 	public static async load(
 		filePath: string,
 		frameIntervalMs: number,
-		output: HeadlessVideoOutput,
+		backend: HeadlessGPUBackend,
 		input: InputEventWriter,
 		runtime: Runtime,
 		capture: HeadlessCaptureCoordinator,
@@ -110,7 +110,7 @@ export class InputTimeline {
 			await fs.readFile(resolvedPath, 'utf8'),
 		) as InputTimelineEntry[];
 		return new InputTimeline(
-			output,
+			backend,
 			input,
 			runtime,
 			capture,
@@ -153,7 +153,7 @@ export class InputTimeline {
 		}
 		this.pendingInputs.length = writeIndex;
 		if (cartridgeFrame >= this.completionFrame) {
-			this.output.removePresentedFrameListener(this.handlePresentedFrame);
+			this.backend.removePresentedFrameListener(this.handlePresentedFrame);
 			this.finish();
 		}
 	};

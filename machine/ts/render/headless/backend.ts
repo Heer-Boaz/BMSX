@@ -20,7 +20,14 @@ import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../b
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessGlyphContext } from './host_2d';
-import type { SoftwareFrameOutput } from '../video_output';
+
+export interface HeadlessPresentedFrame {
+	frameIndex: number;
+	width: number;
+	height: number;
+}
+
+export type HeadlessPresentedFrameListener = (frame: HeadlessPresentedFrame) => void;
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -113,6 +120,13 @@ export class HeadlessGPUBackend implements GPUBackend {
 	public framebufferWords = new Uint32Array(0);
 	public framebufferWidth = 0;
 	public framebufferHeight = 0;
+	private readonly presentedFrameListeners: HeadlessPresentedFrameListener[] = [];
+	private readonly presentedFrame: HeadlessPresentedFrame = {
+		frameIndex: 0,
+		width: 0,
+		height: 0,
+	};
+	private presentedFrameCount = 0;
 	public readonly glyphContext: HeadlessGlyphContext = {
 		target: this.framebufferPixels,
 		width: 0,
@@ -124,7 +138,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 	};
 
 	constructor(
-		private readonly output: SoftwareFrameOutput,
 		width: number,
 		height: number,
 		gxGpuVramBytes: number,
@@ -157,7 +170,35 @@ export class HeadlessGPUBackend implements GPUBackend {
 		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
-		registerHeadlessPresentPass(registry, this.output);
+		registerHeadlessPresentPass(registry);
+	}
+
+	public publishPresentation(): void {
+		const frame = this.presentedFrame;
+		frame.frameIndex = this.presentedFrameCount;
+		frame.width = this.framebufferWidth;
+		frame.height = this.framebufferHeight;
+		this.presentedFrameCount += 1;
+		for (let index = this.presentedFrameListeners.length - 1; index >= 0; index -= 1) {
+			this.presentedFrameListeners[index](frame);
+		}
+	}
+
+	public borrowPresentedPixels(): Uint8Array {
+		return this.framebufferPixels;
+	}
+
+	public addPresentedFrameListener(listener: HeadlessPresentedFrameListener): void {
+		this.presentedFrameListeners.push(listener);
+	}
+
+	public removePresentedFrameListener(listener: HeadlessPresentedFrameListener): void {
+		const index = this.presentedFrameListeners.indexOf(listener);
+		this.presentedFrameListeners.splice(index, 1);
+	}
+
+	public get latestPresentedFrame(): HeadlessPresentedFrame | null {
+		return this.presentedFrameCount === 0 ? null : this.presentedFrame;
 	}
 
 	private getTextureId(handle: TextureHandle): number {

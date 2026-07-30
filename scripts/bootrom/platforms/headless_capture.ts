@@ -4,9 +4,9 @@ import { PNG } from 'pngjs';
 
 import { taskGate } from '../../../machine/ts/common/taskgate';
 import {
-	HeadlessVideoOutput,
+	HeadlessGPUBackend,
 	type HeadlessPresentedFrame,
-} from '../../../hosts/node/headless/video_output';
+} from '../../../machine/ts/render/headless/backend';
 
 export interface ScheduledHeadlessCapture {
 	dueTimeMs: number;
@@ -67,12 +67,12 @@ export class HeadlessCaptureCoordinator {
 	private lastPresentedFrame: HeadlessPresentedFrame | null = null;
 
 	constructor(
-		private readonly output: HeadlessVideoOutput,
+		private readonly backend: HeadlessGPUBackend,
 		public readonly outputDir: string,
 		private readonly nowMs: () => number,
 	) {
-		this.lastPresentedFrame = output.latestPresentedFrame;
-		output.addPresentedFrameListener(this.handlePresentedFrame);
+		this.lastPresentedFrame = backend.latestPresentedFrame;
+		backend.addPresentedFrameListener(this.handlePresentedFrame);
 	}
 
 	public schedule(capture: ScheduledHeadlessCapture): void {
@@ -110,7 +110,7 @@ export class HeadlessCaptureCoordinator {
 			return;
 		}
 		this.capturedFrames.add(outputFrameIndex);
-		const pixels = this.output.borrowPresentedPixels();
+		const pixels = this.backend.borrowPresentedPixels();
 		const png = encodePng(frame.width, frame.height, pixels);
 		const filename = this.buildFilename(outputFrameIndex);
 		const outputPath = path.join(this.outputDir, filename);
@@ -144,7 +144,7 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	public dispose(): void {
-		this.output.removePresentedFrameListener(this.handlePresentedFrame);
+		this.backend.removePresentedFrameListener(this.handlePresentedFrame);
 	}
 
 	private handlePresentedFrame = (frame: HeadlessPresentedFrame): void => {

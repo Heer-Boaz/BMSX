@@ -110,7 +110,6 @@ async function main(): Promise<void> {
 		runtime,
 		videoOutput,
 		new HeadlessGPUBackend(
-			videoOutput,
 			256,
 			212,
 			PSX_MACHINE_SPEC.gxGpuVramBytes,
