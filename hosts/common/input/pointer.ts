@@ -1,8 +1,7 @@
 import { getPressedState, makeButtonState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
+import type { ButtonState, KeyOrButtonId2ButtonState, PointerInputHandler } from './models';
 import type { HostClock } from '../clock';
 import {
-	type InputControllerPadSnapshot,
 	INP_POINTER_BUTTON_AUX,
 	INP_POINTER_BUTTON_BACK,
 	INP_POINTER_BUTTON_FORWARD,
@@ -34,10 +33,7 @@ function pointerButtonBit(code: string): number {
 	}
 }
 
-export class PointerInput implements InputHandler {
-	public static readonly VIRTUAL_POINTER_INDEX = 0x7fffffff;
-	public readonly gamepadIndex: number = PointerInput.VIRTUAL_POINTER_INDEX;
-
+export class PointerInput implements PointerInputHandler {
 	private buttonStates: KeyOrButtonId2ButtonState = {};
 	private nextPressId = 1;
 	private readonly pointerPosition: [number, number] = [0, 0];
@@ -63,12 +59,6 @@ export class PointerInput implements InputHandler {
 	) {
 		this.reset();
 	}
-
-	public get supportsVibrationEffect(): boolean {
-		return false;
-	}
-
-	public applyVibrationEffect(_durationMs: number, _intensity: number): void { }
 
 	public pollInput(): void {
 		const now = this.clock.now();
@@ -141,12 +131,9 @@ export class PointerInput implements InputHandler {
 		this.pendingButtonReleaseEdges = 0;
 	}
 
-	// disable-next-line single_line_method_pattern -- InputHandler state API exposes pointer-owned button storage through the shared button-state projection.
 	public getButtonState(btn: string): ButtonState {
 		return getPressedState(this.buttonStates, btn);
 	}
-
-	public writeInputControllerKeyWords(_keyWords: Uint32Array): void { }
 
 	public writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void {
 		snapshot.pointerButtons = (snapshot.pointerButtons | this.inputControllerButtons) >>> 0;
@@ -154,8 +141,6 @@ export class PointerInput implements InputHandler {
 		snapshot.pointerY = this.inputControllerY;
 		snapshot.pointerWheel = this.inputControllerWheel;
 	}
-
-	public writeInputControllerPadSnapshot(_snapshot: InputControllerPadSnapshot): void { }
 
 	private rebuildInputControllerState(): void {
 		this.inputControllerButtons = 0;

@@ -1,15 +1,14 @@
 import { getPressedState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
+import type { ButtonState, GamepadInputHandler, KeyOrButtonId2ButtonState } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
 import type { HostClock } from '../clock';
 import type { GamepadDevice } from './contracts';
 import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	type InputControllerPadSnapshot,
-	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 
-export class GamepadInput implements InputHandler {
+export class GamepadInput implements GamepadInputHandler {
 	public readonly gamepadIndex: number;
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
@@ -62,10 +61,6 @@ export class GamepadInput implements InputHandler {
 		snapshot.buttons = this.inputControllerButtons;
 		snapshot.axes.set(this.inputControllerAxes);
 	}
-
-	public writeInputControllerKeyWords(_keyWords: Uint32Array): void { }
-
-	public writeInputControllerPointerSnapshot(_snapshot: InputControllerSnapshot): void { }
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
 		const state = getPressedState(this.buttonStates, code);

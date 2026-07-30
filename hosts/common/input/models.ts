@@ -1,6 +1,6 @@
 /**
  * Host-side input vocabulary: button/action state shapes, source mappings, and
- * the InputHandler contract. The machine ICU only sees raw snapshot words.
+ * source-specific input contracts. The machine ICU only sees raw snapshot words.
  */
 
 import type { InputControllerPadSnapshot, InputControllerSnapshot } from '../../../machine/ts/machine/devices/input/contracts';
@@ -84,12 +84,6 @@ export interface InputHandler {
 	 */
 	getButtonState(btn: ButtonId): ButtonState;
 
-	writeInputControllerKeyWords(keyWords: Uint32Array): void;
-
-	writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void;
-
-	writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void;
-
 	/**
 	 * Consumes the specified button, marking it as processed.
 	 * @param button - The button name to consume.
@@ -101,20 +95,19 @@ export interface InputHandler {
 	 * @param except - An optional array of button names to exclude from the reset.
 	 */
 	reset(except?: string[]): void;
+}
 
-	/**
-	 * Gets the index of the gamepad.
-	 */
+export interface KeyboardInputHandler extends InputHandler {
+	writeInputControllerKeyWords(keyWords: Uint32Array): void;
+}
+
+export interface PointerInputHandler extends InputHandler {
+	writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void;
+}
+
+export interface GamepadInputHandler extends InputHandler {
 	get gamepadIndex(): number;
-
-	/**
-	 * Provides haptic feedback on the input device.
-	 * @param effect - The type of haptic feedback to provide.
-	 */
+	writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void;
 	applyVibrationEffect(durationMs: number, intensity: number): void;
-
-	/**
-	 * Checks if the gamepad has haptic feedback capabilities.
-	 */
 	get supportsVibrationEffect(): boolean;
 }

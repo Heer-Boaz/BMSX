@@ -28,6 +28,7 @@ export interface BrowserStartup {
 	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 	machineModel: typeof PSX_MACHINE_SPEC;
 	input: Input;
+	browserInput: BrowserInputHub;
 	clock: BrowserHostClock;
 	audio: HostAudioSink;
 	frames: BrowserFrameLoop;
@@ -69,6 +70,7 @@ export async function prepareBrowserStartup(
 		inputHub,
 		onscreenGamepad ? onscreenGamepad.gamepadIndex : startingGamepadIndex,
 	);
+	inputHub.setKeyboardCapture(input.shouldCaptureKey);
 	const videoOutput = new BrowserVideoOutput(gamescreen, onscreenGamepad);
 	const videoBackend = await createBrowserBackend(
 		gamescreen,
@@ -79,6 +81,7 @@ export async function prepareBrowserStartup(
 		systemRom,
 		machineModel: PSX_MACHINE_SPEC,
 		input,
+		browserInput: inputHub,
 		clock,
 		frames,
 		audio: new WorkerStreamingAudioSink(audioState.sndcontext),

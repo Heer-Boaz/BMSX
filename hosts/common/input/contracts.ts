@@ -3,13 +3,17 @@ import type { MonoTime } from '../clock';
 export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual';
 
 export type InputEvt =
-	| { type: 'button'; deviceId: string; code: string; down: boolean; value?: number; timestamp: MonoTime; pressId?: number }
+	| { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number }
 	| { type: 'supervisor-request'; down: boolean; timestamp: MonoTime }
 	| { type: 'axis1'; deviceId: string; code: string; x: number; timestamp: MonoTime }
 	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime }
 	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }
 	| { type: 'disconnect'; deviceId: string; timestamp: MonoTime }
 	| { type: 'reset' };
+
+export interface VibrationInitialization {
+	initialize(): Promise<void>;
+}
 
 interface InputDeviceIdentity {
 	id: string;
@@ -19,9 +23,8 @@ interface InputDeviceIdentity {
 export interface GamepadDevice extends InputDeviceIdentity {
 	kind: 'gamepad';
 	gamepadIndex: number;
-	vibrationInitializationRequired: boolean;
+	vibrationInitialization: VibrationInitialization | null;
 	supportsVibration: boolean;
-	initializeVibration(): Promise<void>;
 	setVibration(durationMs: number, intensity: number): void;
 }
 
@@ -48,10 +51,11 @@ export interface InputEventSink {
 	inputAxis2(deviceId: string, code: string, x: number, y: number, timestamp: MonoTime): void;
 }
 
-export interface InputHub {
+export interface InputSource {
 	subscribe(sink: InputEventSink): () => void;
-	post(event: InputEvt): void;
 	devices(): InputDevice[];
-	poll(time: MonoTime): void;
-	setKeyboardCapture(handler: (code: string) => boolean): void;
+}
+
+export interface InputEventWriter {
+	post(event: InputEvt): void;
 }

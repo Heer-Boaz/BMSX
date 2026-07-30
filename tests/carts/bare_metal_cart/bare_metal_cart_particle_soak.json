@@ -4,8 +4,12 @@
 		"frame": 141,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 2820,
+			"pressId": 1
 		}
 	},
 	{
@@ -13,8 +17,12 @@
 		"frame": 143,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 2860,
+			"pressId": 1
 		}
 	},
 	{
@@ -22,8 +30,12 @@
 		"frame": 271,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 5420,
+			"pressId": 2
 		}
 	},
 	{
@@ -31,8 +43,12 @@
 		"frame": 273,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 5460,
+			"pressId": 2
 		}
 	},
 	{
@@ -40,8 +56,12 @@
 		"frame": 401,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 8020,
+			"pressId": 3
 		}
 	},
 	{
@@ -49,8 +69,12 @@
 		"frame": 403,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 8060,
+			"pressId": 3
 		}
 	},
 	{
@@ -58,8 +82,12 @@
 		"frame": 531,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 10620,
+			"pressId": 4
 		}
 	},
 	{
@@ -67,8 +95,12 @@
 		"frame": 533,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 10660,
+			"pressId": 4
 		}
 	},
 	{
@@ -76,8 +108,12 @@
 		"frame": 661,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 13220,
+			"pressId": 5
 		}
 	},
 	{
@@ -85,8 +121,12 @@
 		"frame": 663,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 13260,
+			"pressId": 5
 		}
 	},
 	{
@@ -94,8 +134,12 @@
 		"frame": 761,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowLeft",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 15220,
+			"pressId": 6
 		}
 	},
 	{
@@ -103,8 +147,12 @@
 		"frame": 763,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowLeft",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 15260,
+			"pressId": 6
 		}
 	},
 	{
@@ -112,8 +160,12 @@
 		"frame": 831,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 16620,
+			"pressId": 7
 		}
 	},
 	{
@@ -121,8 +173,12 @@
 		"frame": 833,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 16660,
+			"pressId": 7
 		}
 	},
 	{
@@ -130,8 +186,12 @@
 		"frame": 861,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 17220,
+			"pressId": 8
 		}
 	},
 	{
@@ -139,8 +199,12 @@
 		"frame": 863,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 17260,
+			"pressId": 8
 		}
 	},
 	{
@@ -148,8 +212,12 @@
 		"frame": 981,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowLeft",
-			"down": true
+			"down": true,
+			"value": 1,
+			"timestamp": 19620,
+			"pressId": 9
 		}
 	},
 	{
@@ -157,8 +225,12 @@
 		"frame": 983,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowLeft",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 19660,
+			"pressId": 9
 		}
 	},
 	{
@@ -166,8 +238,12 @@
 		"frame": 1101,
 		"event": {
 			"type": "button",
+			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
-			"down": false
+			"down": false,
+			"value": 0,
+			"timestamp": 22020,
+			"pressId": 10
 		}
 	}
 ]

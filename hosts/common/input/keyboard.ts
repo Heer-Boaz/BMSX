@@ -1,7 +1,7 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
+import type { ButtonState, KeyboardButtonId, KeyboardInputHandler, KeyOrButtonId2ButtonState } from './models';
 import type { HostClock } from '../clock';
-import { INPUT_CONTROLLER_KEY_WORD_COUNT, type InputControllerPadSnapshot, type InputControllerSnapshot } from '../../../machine/ts/machine/devices/input/contracts';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from './hid_keys';
 
 
@@ -14,7 +14,7 @@ import { hidKeyUsageForCode } from './hid_keys';
  *
  * @implements {InputHandler}
  */
-export class KeyboardInput implements InputHandler {
+export class KeyboardInput implements KeyboardInputHandler {
 	/**
 	 * The state of each keyboard key.
 	 */
@@ -22,19 +22,6 @@ export class KeyboardInput implements InputHandler {
 	private readonly keyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 
 	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
-
-	public get supportsVibrationEffect(): boolean {
-		return false; // Keyboard does not support vibration effects
-	}
-
-	public applyVibrationEffect(_durationMs: number, _intensity: number): void {
-		// No vibration effect for keyboard
-	}
-
-	/**
-	 * The index of the input device, which defaults to 0 (the main player).
-	 */
-	public readonly gamepadIndex = 0;
 
 	private nextPressId = 1;
 
@@ -115,10 +102,6 @@ export class KeyboardInput implements InputHandler {
 		}
 	}
 
-	public writeInputControllerPointerSnapshot(_snapshot: InputControllerSnapshot): void { }
-
-	public writeInputControllerPadSnapshot(_snapshot: InputControllerPadSnapshot): void { }
-
 	/**
 	 * Polls the input from the keyboard.
 	 * This function should be called once per frame to ensure that keyboard input is up-to-date.
@@ -198,8 +181,6 @@ export class KeyboardInput implements InputHandler {
 			current.justreleased = false;
 		}
 	}
-
-	public ingestButton(_code: string, _state: ButtonState): void { }
 
 	/**
 	 * Sets the key state to true when a key is pressed.

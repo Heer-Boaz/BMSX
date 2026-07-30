@@ -13,7 +13,7 @@ import {
 } from '../../../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
-import type { InputHub } from '../../../../hosts/common/input/contracts';
+import type { InputEventWriter } from '../../../../hosts/common/input/contracts';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
 
@@ -23,7 +23,7 @@ export interface HostTestRunnerOptions {
 	ttlMs: number;
 	logger: (msg: string) => void;
 	runtime: Runtime;
-	input: InputHub;
+	input: InputEventWriter;
 	clock: HostClock;
 	capture: HeadlessCaptureCoordinator;
 }
@@ -68,6 +68,8 @@ export class HostTestRunner {
 	private guestCallPending = false;
 	private newGamePending = false;
 	private tickTimestampMs = 0;
+	private nextInputPressId = 1;
+	private readonly activeInputPressIds = new Map<string, number>();
 	private stopped = false;
 	private readonly completion: Promise<void>;
 	private readonly resolveCompletion: () => void;
@@ -326,12 +328,23 @@ export class HostTestRunner {
 	}
 
 	private postKey(code: string, down: boolean): void {
+		let pressId = this.activeInputPressIds.get(code);
+		if (!pressId) {
+			pressId = this.nextInputPressId++;
+		}
+		if (down) {
+			this.activeInputPressIds.set(code, pressId);
+		} else {
+			this.activeInputPressIds.delete(code);
+		}
 		this.options.input.post({
 			type: 'button',
 			deviceId: 'keyboard:0',
 			code,
 			down,
+			value: down ? 1 : 0,
 			timestamp: this.tickTimestampMs,
+			pressId,
 		});
 	}
 

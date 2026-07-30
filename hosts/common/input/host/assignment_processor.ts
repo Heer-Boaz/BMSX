@@ -1,7 +1,7 @@
 import { GamepadInput } from '../gamepad';
 import { GAMEPAD_BUTTON_IDS } from '../gamepad_buttons';
 import { Input } from '../manager';
-import type { BGamepadButton, InputHandler } from '../models';
+import type { BGamepadButton } from '../models';
 
 /**
  * Represents a processor for handling pending gamepad assignments.
@@ -16,7 +16,7 @@ export class PendingAssignmentProcessor {
 	 * @param gamepadInput - The gamepad input handler.
 	 * @returns A boolean value indicating whether the button is pressed and not consumed.
 	 */
-	private checkNonConsumedPressed(button: BGamepadButton, gamepadInput: InputHandler) {
+	private checkNonConsumedPressed(button: BGamepadButton, gamepadInput: GamepadInput) {
 		const state = gamepadInput.getButtonState(button);
 		return state.pressed && !state.consumed;
 	}
@@ -27,7 +27,7 @@ export class PendingAssignmentProcessor {
 	 * @param increment - The amount by which to increment or decrement the player index.
 	 * @param gamepadInput - The gamepad input handler.
 	 */
-	private handleSelectPlayerIndexButtonPress(button: BGamepadButton, increment: number, gamepadInput: InputHandler) {
+	private handleSelectPlayerIndexButtonPress(button: BGamepadButton, increment: number, gamepadInput: GamepadInput) {
 		if (this.checkNonConsumedPressed(button, gamepadInput)) {
 			gamepadInput.consumeButton(button);
 
@@ -64,7 +64,7 @@ export class PendingAssignmentProcessor {
 	 */
 	constructor(
 		private readonly input: Input,
-		public inputHandler: InputHandler,
+		public inputHandler: GamepadInput,
 		public proposedPlayerIndex: number,
 	) {
 		// Defer UI creation to ControllerAssignmentUI
@@ -77,7 +77,7 @@ export class PendingAssignmentProcessor {
 	 * Handles the movement of the joystick icon to change the proposed player index.
 	 */
 	run(): GamepadInput | null {
-		const gamepadInput = this.inputHandler as GamepadInput;
+		const gamepadInput = this.inputHandler;
 		gamepadInput.pollInput();
 
 		// Check whether the start button was pressed and not consumed yet to assign the gamepad to a player

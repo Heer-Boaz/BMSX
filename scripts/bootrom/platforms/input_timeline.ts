@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { InputEvt, InputHub } from '../../../hosts/common/input/contracts';
+import type { InputEventWriter, InputEvt } from '../../../hosts/common/input/contracts';
 import {
 	HeadlessVideoOutput,
 	type HeadlessPresentedFrame,
@@ -49,7 +49,7 @@ export class InputTimeline {
 
 	private constructor(
 		output: HeadlessVideoOutput,
-		private readonly input: InputHub,
+		private readonly input: InputEventWriter,
 		private readonly runtime: Runtime,
 		private readonly capture: HeadlessCaptureCoordinator,
 		frameIntervalMs: number,
@@ -100,7 +100,7 @@ export class InputTimeline {
 		filePath: string,
 		frameIntervalMs: number,
 		output: HeadlessVideoOutput,
-		input: InputHub,
+		input: InputEventWriter,
 		runtime: Runtime,
 		capture: HeadlessCaptureCoordinator,
 		logger: (message: string) => void,

@@ -1,7 +1,7 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from './audio_output';
-import type { GamepadDevice } from './input/contracts';
+import type { VibrationInitialization } from './input/contracts';
 import type { Input } from './input/manager';
 import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
 import { LogLevel, type LogOutput } from './log';
@@ -9,6 +9,11 @@ import type { RenderPresentationState } from './presentation_state';
 import type { SystemOutputLog } from './system_output_log';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
+
+const enum HostPauseReason {
+	Requested = 1 << 0,
+	VibrationInitialization = 1 << 1,
+}
 
 export const enum HostFrameAction {
 	Execute,
@@ -28,7 +33,7 @@ export const enum HostFrameRunResult {
 export class HostFrameSession {
 	public currentTimeMs: number;
 	public hostFps = 0;
-	private pausedState = false;
+	private pauseReasons = 0;
 	private hostUfpsScaled: number;
 
 	public constructor(ufpsScaled: number, currentTimeMs: number) {
@@ -37,15 +42,41 @@ export class HostFrameSession {
 	}
 
 	public get paused(): boolean {
-		return this.pausedState;
+		return this.pauseReasons !== 0;
+	}
+
+	public get vibrationInitializationActive(): boolean {
+		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
 	}
 
 	public setPaused(paused: boolean, audioOutput: HostAudioOutput): void {
-		if (this.pausedState === paused) {
-			return;
+		this.setPauseReason(HostPauseReason.Requested, paused, audioOutput);
+	}
+
+	public async initializeVibration(
+		initialization: VibrationInitialization,
+		audioOutput: HostAudioOutput,
+		logOutput: LogOutput,
+	): Promise<void> {
+		this.setPauseReason(
+			HostPauseReason.VibrationInitialization,
+			true,
+			audioOutput,
+		);
+		try {
+			await initialization.initialize();
+		} catch (error) {
+			logOutput.log(
+				LogLevel.Error,
+				error instanceof Error ? error.message : String(error),
+			);
+		} finally {
+			this.setPauseReason(
+				HostPauseReason.VibrationInitialization,
+				false,
+				audioOutput,
+			);
 		}
-		this.pausedState = paused;
-		audioOutput.mutePause(paused);
 	}
 
 	public syncMachineTiming(
@@ -61,26 +92,22 @@ export class HostFrameSession {
 		input.setFrameDurationMs(runtime.timing.frameDurationMs);
 		audioOutput.syncTiming(ufpsScaled);
 	}
-}
 
-async function initializeGamepadVibration(
-	session: HostFrameSession,
-	device: GamepadDevice,
-	audioOutput: HostAudioOutput,
-	logOutput: LogOutput,
-): Promise<void> {
-	const wasPaused = session.paused;
-	session.setPaused(true, audioOutput);
-	try {
-		await device.initializeVibration();
-	} catch (error) {
-		logOutput.log(
-			LogLevel.Error,
-			error instanceof Error ? error.message : String(error),
-		);
-	} finally {
-		if (!wasPaused) {
-			session.setPaused(false, audioOutput);
+	private setPauseReason(
+		reason: HostPauseReason,
+		active: boolean,
+		audioOutput: HostAudioOutput,
+	): void {
+		const previous = this.pauseReasons;
+		const next = active
+			? previous | reason
+			: previous & ~reason;
+		if (next === previous) {
+			return;
+		}
+		this.pauseReasons = next;
+		if ((previous === 0) !== (next === 0)) {
+			audioOutput.mutePause(next !== 0);
 		}
 	}
 }
@@ -141,14 +168,16 @@ export function beginHostFrame(
 	logOutput: LogOutput,
 	currentTime: number,
 ): number {
-	const vibrationDevice = input.pollInput();
-	if (vibrationDevice) {
-		void initializeGamepadVibration(
-			session,
-			vibrationDevice,
-			audioOutput,
-			logOutput,
-		);
+	input.pollInput();
+	if (!session.vibrationInitializationActive) {
+		const initialization = input.takePendingVibrationInitialization();
+		if (initialization) {
+			void session.initializeVibration(
+				initialization,
+				audioOutput,
+				logOutput,
+			);
+		}
 	}
 	const hostDeltaMs = Math.min(
 		currentTime - session.currentTimeMs,

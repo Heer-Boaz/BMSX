@@ -203,7 +203,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public readonly id = `gamepad:${BrowserOnscreenGamepad.GAMEPAD_INDEX}`;
 	public readonly kind = 'gamepad';
 	public readonly gamepadIndex = BrowserOnscreenGamepad.GAMEPAD_INDEX;
-	public readonly vibrationInitializationRequired = false;
+	public readonly vibrationInitialization = null;
 	public readonly supportsVibration = navigator.vibrate != null;
 	public readonly dpadElement: HTMLElement;
 	public readonly actionButtonsElement: HTMLElement;
@@ -251,8 +251,6 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.window.addEventListener('mouseout', this.reset);
 		this.reset();
 	}
-
-	public async initializeVibration(): Promise<void> { }
 
 	public setVibration(durationMs: number, intensity: number): void {
 		navigator.vibrate(durationMs * intensity);

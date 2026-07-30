@@ -1,12 +1,12 @@
 import {
 	type InputDevice,
 	type InputEventSink,
+	type InputEventWriter,
 	type InputEvt,
-	type InputHub,
+	type InputSource,
 } from '../../common/input/contracts';
-import type { MonoTime } from '../../common/clock';
 
-export class HeadlessInputHub implements InputHub {
+export class HeadlessInputHub implements InputSource, InputEventWriter {
 	private sink: InputEventSink;
 	private supervisorRequestLineHigh = false;
 	private readonly deviceList: InputDevice[] = [
@@ -55,9 +55,9 @@ export class HeadlessInputHub implements InputHub {
 					event.deviceId,
 					event.code,
 					event.down,
-					event.value ?? (event.down ? 1 : 0),
+					event.value,
 					event.timestamp,
-					event.pressId || 0,
+					event.pressId,
 				);
 		}
 	}
@@ -65,8 +65,4 @@ export class HeadlessInputHub implements InputHub {
 	public devices(): InputDevice[] {
 		return this.deviceList;
 	}
-
-	public poll(_time: MonoTime): void { }
-
-	public setKeyboardCapture(_handler: (code: string) => boolean): void { }
 }

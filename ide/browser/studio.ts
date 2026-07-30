@@ -98,6 +98,7 @@ async function startBrowserStudio(): Promise<void> {
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
+			options.browserInput.poll(currentTime);
 			const result = runWorkbenchHostFrame(
 				session,
 				runtime,

@@ -75,6 +75,7 @@ async function startBrowserPlayer(): Promise<void> {
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
+			options.browserInput.poll(currentTime);
 			const result = runHostFrame(
 				session,
 				runtime,

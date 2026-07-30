@@ -2,13 +2,16 @@ import {
 	type GamepadDevice as HostGamepadDevice,
 	type InputDevice,
 	type InputEventSink,
-	type InputEvt,
-	type InputHub,
+	type InputSource,
 } from '../common/input/contracts';
 import { type HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import type { BrowserOnscreenGamepad } from './onscreen_gamepad';
-import { SonyGamepadHID, sonyGamepadProductId } from './sony_gamepad_hid';
+import {
+	createGamepadHaptics,
+	type GamepadHaptics,
+} from './gamepad_haptics';
+import { sonyGamepadProductId } from './sony_gamepad_hid';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
@@ -27,7 +30,7 @@ class GamepadDevice implements HostGamepadDevice {
 		strongMagnitude: 0,
 		weakMagnitude: 0,
 	};
-	private readonly sonyHid: SonyGamepadHID;
+	readonly vibrationInitialization: GamepadHaptics | null;
 	private readonly browserVibration = navigator.vibrate != null;
 	private vibrationActuator: GamepadHapticActuator;
 	private nextPressId = 1;
@@ -50,23 +53,17 @@ class GamepadDevice implements HostGamepadDevice {
 		this.buttonPrev = new Uint8Array(this.mappedButtonCount);
 		this.pressIds = new Float64Array(this.mappedButtonCount);
 		this.vibrationActuator = source.vibrationActuator;
-		this.sonyHid = 'hid' in navigator && sonyProductId > 0
-			? new SonyGamepadHID(source.index, sonyProductId, clock)
-			: null;
-	}
-
-	get vibrationInitializationRequired(): boolean {
-		return this.sonyHid != null && !this.sonyHid.connected;
+		this.vibrationInitialization = createGamepadHaptics(
+			source.index,
+			source.id,
+			clock,
+		);
 	}
 
 	get supportsVibration(): boolean {
 		return this.vibrationActuator != null
-			|| (this.sonyHid != null && this.sonyHid.connected)
+			|| (this.vibrationInitialization != null && this.vibrationInitialization.connected)
 			|| this.browserVibration;
-	}
-
-	async initializeVibration(): Promise<void> {
-		await this.sonyHid.initialize();
 	}
 
 	setVibration(durationMs: number, intensity: number): void {
@@ -78,16 +75,16 @@ class GamepadDevice implements HostGamepadDevice {
 			void actuator.playEffect('dual-rumble', this.vibrationEffect);
 			return;
 		}
-		if (this.sonyHid != null && this.sonyHid.connected) {
-			this.sonyHid.setVibration(durationMs, intensity);
+		if (this.vibrationInitialization != null && this.vibrationInitialization.connected) {
+			this.vibrationInitialization.setVibration(durationMs, intensity);
 			return;
 		}
 		navigator.vibrate(durationMs * intensity);
 	}
 
 	disconnect(): void {
-		if (this.sonyHid != null) {
-			this.sonyHid.disconnect();
+		if (this.vibrationInitialization != null) {
+			this.vibrationInitialization.disconnect();
 		}
 	}
 
@@ -135,7 +132,7 @@ class GamepadDevice implements HostGamepadDevice {
 
 const SUPERVISOR_REQUEST_KEY_CODE = 'F2';
 
-export class BrowserInputHub implements InputHub {
+export class BrowserInputHub implements InputSource {
 	private sink: InputEventSink;
 	private readonly devicesList: InputDevice[];
 	private readonly gamepads: GamepadDevice[] = [];
@@ -182,38 +179,6 @@ export class BrowserInputHub implements InputHub {
 		return () => {
 			this.sink = null;
 		};
-	}
-
-	post(event: InputEvt): void {
-		switch (event.type) {
-			case 'reset':
-				this.sink.resetInput();
-				return;
-			case 'supervisor-request':
-				this.sink.setSupervisorRequestLine(event.down);
-				return;
-			case 'connect':
-				this.sink.connectInputDevice(event.device);
-				return;
-			case 'disconnect':
-				this.sink.disconnectInputDevice(event.deviceId);
-				return;
-			case 'button':
-				this.sink.inputButton(
-					event.deviceId,
-					event.code,
-					event.down,
-					event.value ?? (event.down ? 1 : 0),
-					event.timestamp,
-					event.pressId || 0,
-				);
-				return;
-			case 'axis1':
-				this.sink.inputAxis1(event.deviceId, event.code, event.x, event.timestamp);
-				return;
-			case 'axis2':
-				this.sink.inputAxis2(event.deviceId, event.code, event.x, event.y, event.timestamp);
-		}
 	}
 
 	devices(): InputDevice[] {

@@ -1,5 +1,11 @@
 import { GamepadInput } from './gamepad';
-import type { ButtonId, ButtonState, InputHandler, InputMap, InputSource, KeyboardInputMapping, KeyOrButtonId2ButtonState } from './models';
+import type {
+	ButtonId,
+	ButtonState,
+	InputMap,
+	KeyboardInputMapping,
+	KeyOrButtonId2ButtonState,
+} from './models';
 import { KeyboardInput } from './keyboard';
 import { GlobalShortcutRegistry } from './shortcuts';
 
@@ -7,7 +13,13 @@ import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
 import type { HostClock } from '../clock';
-import type { DeviceKind, GamepadDevice, InputDevice, InputEventSink, InputHub } from './contracts';
+import type {
+	GamepadDevice,
+	InputDevice,
+	InputEventSink,
+	InputSource,
+	VibrationInitialization,
+} from './contracts';
 import {
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
@@ -74,12 +86,23 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
-type DeviceBinding = {
-	handler: InputHandler;
-	source: InputSource;
-	assignedPlayer: number;
-	device: InputDevice;
-};
+type DeviceBinding =
+	| {
+		handler: KeyboardInput;
+		source: 'keyboard';
+		assignedPlayer: number;
+	}
+	| {
+		handler: PointerInput;
+		source: 'pointer';
+		assignedPlayer: number;
+	}
+	| {
+		handler: GamepadInput;
+		source: 'gamepad';
+		assignedPlayer: number | null;
+		device: GamepadDevice;
+	};
 
 /**
  * Represents the Input class, which manages player inputs and gamepad assignments.
@@ -108,8 +131,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
 	private readonly deviceBindingList: DeviceBinding[] = [];
-	private readonly inputControllerKeyboardHandlers: InputHandler[] = [];
-	private readonly inputControllerPointerHandlers: InputHandler[] = [];
+	private readonly inputControllerKeyboardHandlers: KeyboardInput[] = [];
+	private readonly inputControllerPointerHandlers: PointerInput[] = [];
 	public startupGamepadIndex = -1;
 
 	/**
@@ -118,10 +141,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 */
 	public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
-	private unsubscribeHostInput: (() => void) | null = null;
-	private pendingVibrationDevice: GamepadDevice = null;
-	private nextHostPressId = 1;
-	private readonly hostPressIds = new Map<string, Map<string, number>>();
+	private readonly unsubscribeHostInput: () => void;
+	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	public resetInput(): void {
 		this.supervisorRequestLine = false;
 		for (let i = 0; i < this.playerInputs.length; i++) {
@@ -216,7 +237,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	public constructor(
 		private readonly clock: HostClock,
-		private readonly inputHub: InputHub,
+		inputSource: InputSource,
 		startingGamepadIndex: number,
 	) {
 		this.startupGamepadIndex = startingGamepadIndex;
@@ -230,15 +251,20 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		const pointer = new PointerInput(this.clock, 'pointer:0');
 		player.inputHandlers['keyboard'] = keyboard;
 		player.inputHandlers['pointer'] = pointer;
-		const keyboardBinding: DeviceBinding = { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null };
-		const pointerBinding: DeviceBinding = { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null };
+		const keyboardBinding: DeviceBinding = { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex };
+		const pointerBinding: DeviceBinding = { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex };
 		this.deviceBindings.set('keyboard:0', keyboardBinding);
 		this.deviceBindings.set('pointer:0', pointerBinding);
 		this.deviceBindingList.push(keyboardBinding, pointerBinding);
 		this.inputControllerKeyboardHandlers.push(keyboard);
 		this.inputControllerPointerHandlers.push(pointer);
-		this.inputHub.setKeyboardCapture(this.shouldCaptureKey);
-		this.attachToHostInput();
+		const devices = inputSource.devices();
+		for (let index = 0; index < devices.length; index += 1) {
+			if (!this.deviceBindings.has(devices[index].id)) {
+				this.connectInputDevice(devices[index]);
+			}
+		}
+		this.unsubscribeHostInput = inputSource.subscribe(this);
 	}
 
 	public readonly shouldCaptureKey = (code: string): boolean => {
@@ -263,9 +289,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 		// Remove all player inputs
 		this.playerInputs = [];
-		this.detachFromHostInput();
+		this.unsubscribeHostInput();
 		this.inputControllerKeyboardHandlers.length = 0;
 		this.inputControllerPointerHandlers.length = 0;
+		this.pendingVibrationDevices.length = 0;
 		this.debugHotkeysPaused = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
@@ -285,7 +312,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
-		this.routeButtonEvent(binding, deviceId, code, down, value, timestamp, pressId);
+		this.routeButtonEvent(binding, code, down, value, timestamp, pressId);
 	}
 
 	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {
@@ -300,106 +327,40 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.routeAxis2(binding, code, x, y, timestamp);
 	}
 
-	private attachToHostInput(): void {
-		if (this.unsubscribeHostInput) {
-			const previous = this.unsubscribeHostInput;
-			this.unsubscribeHostInput = null;
-			previous();
-		}
-		const hub = this.inputHub;
-		const devices = hub.devices();
-		for (let i = 0; i < devices.length; i++) {
-			this.registerHostDevice(devices[i]);
-		}
-		this.unsubscribeHostInput = hub.subscribe(this);
-	}
-
-	private detachFromHostInput(): void {
-		if (!this.unsubscribeHostInput) return;
-		const unsubscribe = this.unsubscribeHostInput;
-		this.unsubscribeHostInput = null;
-		unsubscribe();
-	}
-
-	private registerHostDevice(device: InputDevice): void {
-		const existing = this.deviceBindings.get(device.id);
-		if (existing) {
-			existing.device = device;
-			if (device.kind === 'gamepad') {
-				const handler = existing.handler as GamepadInput;
-				handler.device = device;
-			}
-			return;
-		}
-		this.connectInputDevice(device);
-	}
-
 	private routeButtonEvent(
 		binding: DeviceBinding,
-		deviceId: string,
 		code: string,
 		down: boolean,
 		value: number,
 		timestamp: number,
-		hostPressId: number,
+		pressId: number,
 	): void {
-		const pressId = this.resolveHostPressId(deviceId, code, down, hostPressId);
 		switch (binding.source) {
-			case 'keyboard': {
-				const handler = binding.handler as KeyboardInput;
-				if (down) handler.keydown(code); else handler.keyup(code);
+			case 'keyboard':
+				if (down) binding.handler.keydown(code); else binding.handler.keyup(code);
 				break;
-			}
-			case 'pointer': {
-				const handler = binding.handler as PointerInput;
-				handler.ingestButton(code, down, value, timestamp, pressId);
+			case 'pointer':
+				binding.handler.ingestButton(code, down, value, timestamp, pressId);
 				break;
-			}
-			case 'gamepad': {
-				const handler = binding.handler as GamepadInput;
-				handler.ingestButton(code, down, value, timestamp, pressId);
+			case 'gamepad':
+				binding.handler.ingestButton(code, down, value, timestamp, pressId);
 				break;
-			}
 		}
-	}
-
-	private resolveHostPressId(deviceId: string, code: string, down: boolean, hostPressId: number): number {
-		if (hostPressId) {
-			return hostPressId;
-		}
-		if (down) {
-			const pressId = this.nextHostPressId;
-			this.nextHostPressId += 1;
-			let devicePressIds = this.hostPressIds.get(deviceId);
-			if (!devicePressIds) {
-				devicePressIds = new Map();
-				this.hostPressIds.set(deviceId, devicePressIds);
-			}
-			devicePressIds.set(code, pressId);
-			return pressId;
-		}
-		const devicePressIds = this.hostPressIds.get(deviceId)!;
-		const pressId = devicePressIds.get(code)!;
-		devicePressIds.delete(code);
-		return pressId;
 	}
 
 	private routeAxis1(binding: DeviceBinding, code: string, x: number, timestamp: number): void {
 		if (binding.source === 'pointer') {
-			const handler = binding.handler as PointerInput;
-			handler.ingestAxis1(code, x, timestamp);
+			binding.handler.ingestAxis1(code, x, timestamp);
 		}
 	}
 
 	private routeAxis2(binding: DeviceBinding, code: string, x: number, y: number, timestamp: number): void {
 		if (binding.source === 'pointer') {
-			const handler = binding.handler as PointerInput;
-			handler.ingestAxis2(code, x, y, timestamp);
+			binding.handler.ingestAxis2(code, x, y, timestamp);
 			return;
 		}
 		if (binding.source === 'gamepad') {
-			const handler = binding.handler as GamepadInput;
-			handler.ingestAxis2(code, x, y, timestamp);
+			binding.handler.ingestAxis2(code, x, y, timestamp);
 		}
 	}
 
@@ -418,55 +379,52 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			if (autoAssign) {
 				this.startupGamepadIndex = -1;
 				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
-				if (device.vibrationInitializationRequired) {
-					this.pendingVibrationDevice = device;
+				if (device.vibrationInitialization) {
+					this.pendingVibrationDevices.push(device);
 				}
 			} else {
 				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, handler, null));
 			}
 			return;
 		}
-		if (!this.deviceBindings.has(device.id)) {
-			const source = this.inferSourceFromKind(device.kind);
-				if (source === 'keyboard') {
-					const handler = new KeyboardInput(this.clock, device.id);
-					const binding: DeviceBinding = { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device };
-					this.deviceBindings.set(device.id, binding);
-					this.deviceBindingList.push(binding);
-					this.inputControllerKeyboardHandlers.push(handler);
-				} else if (source === 'pointer') {
-					const handler = new PointerInput(this.clock, device.id);
-					const binding: DeviceBinding = { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex, device };
-					this.deviceBindings.set(device.id, binding);
-					this.deviceBindingList.push(binding);
-					this.inputControllerPointerHandlers.push(handler);
-				}
-			}
-	}
-
-	private inferSourceFromKind(kind: DeviceKind): InputSource {
-		switch (kind) {
-			case 'keyboard': return 'keyboard';
-			case 'pointer':
-			case 'touch': return 'pointer';
-			default: return 'gamepad';
+		if (this.deviceBindings.has(device.id)) {
+			return;
 		}
-	}
-
-	private detachInputControllerHandler(list: InputHandler[], handler: InputHandler): void {
-		const index = list.indexOf(handler);
-		if (index >= 0) list.splice(index, 1);
+		switch (device.kind) {
+			case 'keyboard': {
+				const handler = new KeyboardInput(this.clock, device.id);
+				const binding: DeviceBinding = { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex };
+				this.deviceBindings.set(device.id, binding);
+				this.deviceBindingList.push(binding);
+				this.inputControllerKeyboardHandlers.push(handler);
+				return;
+			}
+			case 'pointer':
+			case 'touch': {
+				const handler = new PointerInput(this.clock, device.id);
+				const binding: DeviceBinding = { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex };
+				this.deviceBindings.set(device.id, binding);
+				this.deviceBindingList.push(binding);
+				this.inputControllerPointerHandlers.push(handler);
+				return;
+			}
+			case 'virtual':
+				return;
+		}
 	}
 
 	public disconnectInputDevice(deviceId: string): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
 		if (binding.source === 'gamepad') {
-			const handler = binding.handler as GamepadInput;
 			if (binding.assignedPlayer) {
-				this.getPlayerInput(binding.assignedPlayer).clearGamepad(handler);
+				this.getPlayerInput(binding.assignedPlayer).clearGamepad(binding.handler);
 			} else {
-				this.removePendingGamepadAssignment(handler.gamepadIndex);
+				this.removePendingGamepadAssignment(binding.handler.gamepadIndex);
+			}
+			const vibrationIndex = this.pendingVibrationDevices.indexOf(binding.device);
+			if (vibrationIndex >= 0) {
+				this.pendingVibrationDevices.splice(vibrationIndex, 1);
 			}
 		}
 		binding.handler.reset();
@@ -474,26 +432,19 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		const bindingIndex = this.deviceBindingList.indexOf(binding);
 		this.deviceBindingList.splice(bindingIndex, 1);
 		if (binding.source === 'keyboard') {
-			this.detachInputControllerHandler(this.inputControllerKeyboardHandlers, binding.handler);
+			const handlerIndex = this.inputControllerKeyboardHandlers.indexOf(binding.handler);
+			this.inputControllerKeyboardHandlers.splice(handlerIndex, 1);
 		} else if (binding.source === 'pointer') {
-			this.detachInputControllerHandler(this.inputControllerPointerHandlers, binding.handler);
+			const handlerIndex = this.inputControllerPointerHandlers.indexOf(binding.handler);
+			this.inputControllerPointerHandlers.splice(handlerIndex, 1);
 		}
-	}
-
-	private getBindingForHandler(handler: InputHandler): DeviceBinding {
-		for (let i = 0; i < this.deviceBindingList.length; i += 1) {
-			const binding = this.deviceBindingList[i];
-			if (binding.handler === handler) return binding;
-		}
-		return undefined;
 	}
 
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
-	public pollInput(): GamepadDevice | null {
+	public pollInput(): void {
 		const now = this.clock.now();
-		this.inputHub.poll(now);
 		for (let index = 0; index < this.playerInputs.length; index += 1) {
 			const player = this.playerInputs[index];
 			player.pollInput(now);
@@ -502,24 +453,28 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
 				if (buttonState.pressed && buttonState.presstime >= 50) {
-					gamepadInput.reset();
-					player.inputHandlers['gamepad'] = null;
+					player.clearGamepad(gamepadInput);
+					this.deviceBindings.get(gamepadInput.deviceId)!.assignedPlayer = null;
 					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, gamepadInput, null));
 				}
 			}
 		}
-		if (this.pendingVibrationDevice) {
-			const device = this.pendingVibrationDevice;
-			this.pendingVibrationDevice = null;
-			return device;
-		}
 		for (let index = 0; index < this.pendingGamepadAssignments.length; index += 1) {
 			const gamepadInput = this.pendingGamepadAssignments[index].run();
-			if (gamepadInput?.device.vibrationInitializationRequired) {
-				return gamepadInput.device;
+			if (gamepadInput?.device.vibrationInitialization) {
+				this.pendingVibrationDevices.push(gamepadInput.device);
 			}
 		}
-		return null;
+	}
+
+	public takePendingVibrationInitialization(): VibrationInitialization | null {
+		const index = this.pendingVibrationDevices.length - 1;
+		if (index < 0) {
+			return null;
+		}
+		const device = this.pendingVibrationDevices[index];
+		this.pendingVibrationDevices.length = index;
+		return device.vibrationInitialization;
 	}
 
 	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
@@ -622,12 +577,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 * @param gamepad The gamepad to assign.
 	 * @param playerIndex The index of the player.
 	 */
-	public assignGamepadToPlayer(gamepad: InputHandler, playerIndex: number): void {
+	public assignGamepadToPlayer(gamepad: GamepadInput, playerIndex: number): void {
 		const player = this.getPlayerInput(playerIndex);
 		player.assignGamepadToPlayer(gamepad);
-		const binding = this.getBindingForHandler(gamepad);
-		if (binding) {
-			binding.assignedPlayer = playerIndex;
-		}
+		this.deviceBindings.get(gamepad.deviceId)!.assignedPlayer = playerIndex;
 	}
 }

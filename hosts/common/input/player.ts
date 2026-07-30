@@ -1,5 +1,13 @@
 import { makeButtonState } from './manager';
-import { INPUT_SOURCES, type ButtonId, type ButtonState, type InputHandler, type InputSource } from './models';
+import {
+	INPUT_SOURCES,
+	type ButtonId,
+	type ButtonState,
+	type InputSource,
+} from './models';
+import type { GamepadInput } from './gamepad';
+import type { KeyboardInput } from './keyboard';
+import type { PointerInput } from './pointer';
 
 export { INPUT_SOURCES };
 export type { InputSource };
@@ -34,7 +42,11 @@ export class PlayerInput {
 	private frameDurationMs = 1000 / 60;
 
 	/** Input handlers keyed by source (keyboard / gamepad / pointer), or null if unbound. */
-	public inputHandlers: { [source in InputSource]: InputHandler } = {
+	public inputHandlers: {
+		keyboard: KeyboardInput | null;
+		gamepad: GamepadInput | null;
+		pointer: PointerInput | null;
+	} = {
 		keyboard: null,
 		gamepad: null,
 		pointer: null,
@@ -50,12 +62,9 @@ export class PlayerInput {
 	private frameCounter = 0;
 
 	public applyInputControllerVibrationEffect(durationMs: number, intensity: number): void {
-		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
-			const source = INPUT_SOURCES[i];
-			const handler = this.inputHandlers[source];
-			if (handler?.supportsVibrationEffect) {
-				handler.applyVibrationEffect(durationMs, intensity);
-			}
+		const gamepad = this.inputHandlers.gamepad;
+		if (gamepad?.supportsVibrationEffect) {
+			gamepad.applyVibrationEffect(durationMs, intensity);
 		}
 	}
 
@@ -102,14 +111,14 @@ export class PlayerInput {
 		return rawState.justpressed || repeat.lastResult;
 	}
 
-	assignGamepadToPlayer(gamepadInput: InputHandler): void {
+	assignGamepadToPlayer(gamepadInput: GamepadInput): void {
 		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			this.inputHandlers['gamepad']?.reset();
 		}
 		this.inputHandlers['gamepad'] = gamepadInput;
 	}
 
-	public clearGamepad(handler: InputHandler): void {
+	public clearGamepad(handler: GamepadInput): void {
 		if (this.inputHandlers['gamepad'] !== handler) return;
 		this.inputHandlers['gamepad'] = null;
 		handler.reset();
