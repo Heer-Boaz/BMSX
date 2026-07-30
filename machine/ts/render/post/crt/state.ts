@@ -1,6 +1,9 @@
 import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
 import type { VideoPresenter } from '../../video_presenter';
+import { fmix32 } from '../../../common/hash';
 import { DeviceQuantizeMode } from '../device_quantize/mode';
+
+const CRT_NOISE_OFFSET_SCALE = 1 / 0x1000000;
 
 export function shouldExecuteAutoPresentPass(presenter: VideoPresenter): boolean {
 	return !presenter.crt_postprocessing_enabled
@@ -47,7 +50,7 @@ export function shouldUpdatePresentationHistoryB(presenter: VideoPresenter): boo
 }
 
 export function writePresentationHistoryPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
-	const presenter = ctx.presenter as VideoPresenter;
+	const presenter = ctx.presenter;
 	state.width = presenter.offscreenCanvasSize.x;
 	state.height = presenter.offscreenCanvasSize.y;
 	state.srcWidth = presenter.offscreenCanvasSize.x;
@@ -66,7 +69,7 @@ export function createPresentPassState(): PresentPipelineState {
 }
 
 export function writePresentPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
-	const presenter = ctx.presenter as VideoPresenter;
+	const presenter = ctx.presenter;
 	state.width = presenter.canvasSize.x;
 	state.height = presenter.canvasSize.y;
 	state.srcWidth = presenter.offscreenCanvasSize.x;
@@ -81,6 +84,7 @@ export function createCrtPassState(): CRTPipelineState {
 		srcWidth: 0,
 		srcHeight: 0,
 		time: 0,
+		noiseOffset: 0,
 		colorTex: null,
 		options: {
 			applyNoise: false,
@@ -99,7 +103,7 @@ export function createCrtPassState(): CRTPipelineState {
 }
 
 export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelineState): void {
-	const presenter = ctx.presenter as VideoPresenter;
+	const presenter = ctx.presenter;
 	const applyCrt = presenter.crt_postprocessing_enabled;
 	state.width = presenter.canvasSize.x;
 	state.height = presenter.canvasSize.y;
@@ -109,6 +113,9 @@ export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelin
 	state.colorTex = presentedHistoryTexture(ctx, presenter);
 	const options = state.options;
 	options.applyNoise = applyCrt && presenter.enable_noise;
+	if (options.applyNoise) {
+		state.noiseOffset = (fmix32(ctx.frameIndex) >>> 8) * CRT_NOISE_OFFSET_SCALE;
+	}
 	options.applyColorBleed = applyCrt && presenter.enable_colorbleed;
 	options.applyScanlines = applyCrt && presenter.enable_scanlines;
 	options.applyBlur = applyCrt && presenter.enable_blur;

@@ -63,8 +63,8 @@ private:
 		f64 lastRepeatAtMs = -1.0;
 	};
 
-	void clearRenderCommands();
-	void publishRenderCommands();
+	void clearRenderCommands(VideoPresenter& presenter);
+	void publishRenderCommands(VideoPresenter& presenter);
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle();
 	void close();

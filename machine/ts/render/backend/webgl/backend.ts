@@ -7,10 +7,10 @@ import { RGBA8_LINEAR_TEXTURE_PARAMS, type TextureParams } from '../texture_para
 import { TEXTURE_UNIT_CUBEMAP, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { registerHostOverlayPass, registerHostMenuPass } from '../../host_overlay/webgl/pipeline';
+import { registerHostOverlayPassesWebGL } from '../../host_overlay/webgl/pipeline';
 import { registerCRT } from '../../post/crt/webgl/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipeline';
-import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
+import { createFrameUniformState, FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, executeGxGpuVramCommands, registerGxGpuPass, type WebGLGxGpuState } from './gx_gpu';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
@@ -87,6 +87,7 @@ export class WebGLBackend implements GPUBackend {
 	}
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
+		const frameUniforms = createFrameUniformState(this);
 		registry.register({
 			id: 'frame_resolve',
 			name: 'FrameResolve',
@@ -95,14 +96,16 @@ export class WebGLBackend implements GPUBackend {
 			exec: () => { },
 			prepare: (backend) => {
 				const gv = registry.presenter;
-				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
+				updateAndBindFrameUniforms(frameUniforms, backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
+			},
+			teardown: () => {
+				this.destroyBuffer(frameUniforms.buffer);
 			},
 		});
 		registerGxGpuPass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
-		registerHostOverlayPass(registry);
-		registerHostMenuPass(registry);
+		registerHostOverlayPassesWebGL(registry, frameUniforms);
 	}
 
 	bindRenderPassPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void {
@@ -552,6 +555,23 @@ export class WebGLBackend implements GPUBackend {
 		this.accountUpload('vertex', uploadBytes);
 		gl.bindBuffer(gl.ARRAY_BUFFER, null);
 		this.currentArrayBuffer = null;
+	}
+	destroyBuffer(buffer: WebGLBuffer): void {
+		this.bufferSizes.delete(buffer);
+		if (this.currentArrayBuffer === buffer) {
+			this.currentArrayBuffer = null;
+		}
+		if (this.currentElementArrayBuffer === buffer) {
+			this.currentElementArrayBuffer = null;
+		}
+		for (let bindingIndex = 0; bindingIndex < this.boundUniformBuffers.length; bindingIndex += 1) {
+			if (this.boundUniformBuffers[bindingIndex] === buffer) {
+				this.boundUniformBuffers[bindingIndex] = null;
+				this.boundUniformBufferOffsets[bindingIndex] = -1;
+				this.boundUniformBufferSizes[bindingIndex] = -1;
+			}
+		}
+		this.gl.deleteBuffer(buffer);
 	}
 	// moved below with cached variants
 

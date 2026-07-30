@@ -1,6 +1,6 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { GxGpuPipelineState, HostOverlayPipelineState, RenderPassStateRegistry } from '../backend/backend';
-import type { HeadlessPresentedFrameBuffer, HeadlessVideoOutput } from './video_output';
+import type { HeadlessVideoOutput } from './video_output';
 import type { HostMenuPipelineState } from '../backend/backend';
 import { renderHeadlessHost2DEntry } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
@@ -21,9 +21,9 @@ export function registerHeadlessPresentPass(registry: RenderPassLibrary, output:
 		name: 'HeadlessPresent',
 			stateOnly: true,
 			graph: { reads: ['frame_color'] },
-			exec: () => {
-				presentHeadlessFrame(output);
-		},
+			exec: (backend) => {
+				presentHeadlessFrame(output, backend as HeadlessGPUBackend);
+			},
 	});
 }
 
@@ -34,31 +34,9 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		graph: { skip: true },
 		exec: (backend) => {
-			resizeHeadlessFrame(backend as HeadlessGPUBackend, registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
+			(backend as HeadlessGPUBackend).resizeFramebuffer(registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
 		},
 	});
-}
-
-let headlessCompositePixels = new Uint8Array(0);
-let headlessCompositeWords = new Uint32Array(0);
-let headlessFrameWidth = 0;
-let headlessFrameHeight = 0;
-const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
-	pixels: headlessCompositePixels,
-	width: 0,
-	height: 0,
-};
-
-function resizeHeadlessFrame(backend: HeadlessGPUBackend, width: number, height: number): void {
-	const byteLength = width * height * 4;
-	if (headlessCompositePixels.byteLength !== byteLength) {
-		const buffer = new ArrayBuffer(byteLength);
-		headlessCompositePixels = new Uint8Array(buffer);
-		headlessCompositeWords = new Uint32Array(buffer);
-	}
-	headlessFrameWidth = width;
-	headlessFrameHeight = height;
-	backend.resizeFramebuffer(width, height);
 }
 
 function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
@@ -79,20 +57,21 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 			},
 		},
 		exec: (backend, _fbo, state, _pipelineHandle, output) => {
-			renderGxGpuSoftwareFrame((backend as HeadlessGPUBackend).gxGpuSoftware, state, output, headlessCompositeWords);
+			const headless = backend as HeadlessGPUBackend;
+			renderGxGpuSoftwareFrame(headless.gxGpuSoftware, state, output, headless.framebufferWords);
 		},
 	});
 }
 
-export function drawHeadlessHostMenuLayer(frame: HostMenuPipelineState): void {
+export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: HostMenuPipelineState): void {
 	for (let index = 0; index < frame.commandCount; index += 1) {
-		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, frame.commandKinds[index], frame.commandRefs[index]);
+		renderHeadlessHost2DEntry(backend.glyphContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.commandKinds[index], frame.commandRefs[index]);
 	}
 }
 
-export function drawHeadlessHostOverlayFrame(frame: HostOverlayPipelineState): void {
+export function drawHeadlessHostOverlayFrame(backend: HeadlessGPUBackend, frame: HostOverlayPipelineState): void {
 	for (let index = 0; index < frame.commandCount; index += 1) {
-		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, frame.commandKinds[index], frame.commandRefs[index]);
+		renderHeadlessHost2DEntry(backend.glyphContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.commandKinds[index], frame.commandRefs[index]);
 	}
 }
 
@@ -108,15 +87,17 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 			writeState: writeDeviceQuantizeState,
 		},
 		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
-		exec: (_backend, _fbo, state: RenderPassStateRegistry['device_quantize']) => {
-			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, state.luts);
+		exec: (backend, _fbo, state: RenderPassStateRegistry['device_quantize']) => {
+			const headless = backend as HeadlessGPUBackend;
+			applyHeadlessDeviceQuantize(headless.framebufferPixels, headless.framebufferWidth, headless.framebufferHeight, state.luts);
 		},
 	});
 }
 
-function presentHeadlessFrame(output: HeadlessVideoOutput): void {
-	headlessPresentedFrameBuffer.pixels = headlessCompositePixels;
-	headlessPresentedFrameBuffer.width = headlessFrameWidth;
-	headlessPresentedFrameBuffer.height = headlessFrameHeight;
-	output.presentFrameBuffer(headlessPresentedFrameBuffer);
+function presentHeadlessFrame(output: HeadlessVideoOutput, backend: HeadlessGPUBackend): void {
+	const frame = backend.presentedFrameBuffer;
+	frame.pixels = backend.framebufferPixels;
+	frame.width = backend.framebufferWidth;
+	frame.height = backend.framebufferHeight;
+	output.presentFrameBuffer(frame);
 }

@@ -10,7 +10,8 @@ import {
 import { type GxGpuCommandBufferView } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
-	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
+	GX_GPU_TRIANGLE_COLOR_COMPONENTS,
+	GX_GPU_TRIANGLE_UV_COMPONENTS,
 	gxGpuCommandRawTextureEnabled,
 	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuDrawModeDitherEnabled,
@@ -53,81 +54,6 @@ function edgeValue(ax: number, ay: number, bx: number, by: number, cx: number, c
 	return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
 }
 
-function floorQuotient(numerator: number, denominator: number): number {
-	const quotient = integerDivide(numerator, denominator);
-	return numerator - quotient * denominator < 0 ? quotient - 1 : quotient;
-}
-
-class TriangleEdgeSpan {
-	rowValue = 0;
-	rowStep = 0;
-	boundary = 0;
-	boundaryStep = 0;
-	remainder = 0;
-	remainderStep = 0;
-	denominator = 0;
-	boundaryKind = 0;
-
-	initialize(initialRowValue: number, stepX: number, stepY: number): void {
-		this.rowValue = initialRowValue;
-		this.rowStep = stepY;
-		this.boundary = 0;
-		this.boundaryStep = 0;
-		this.remainder = 0;
-		this.remainderStep = 0;
-		this.denominator = 0;
-		this.boundaryKind = 0;
-		let numerator: number;
-		let numeratorStep: number;
-		if (stepX > 0) {
-			this.denominator = stepX;
-			numerator = -this.rowValue + this.denominator - 1;
-			numeratorStep = -this.rowStep;
-			this.boundaryKind = 1;
-		} else if (stepX < 0) {
-			this.denominator = -stepX;
-			numerator = this.rowValue;
-			numeratorStep = this.rowStep;
-			this.boundaryKind = -1;
-		} else {
-			return;
-		}
-		this.boundary = floorQuotient(numerator, this.denominator);
-		this.remainder = numerator - this.boundary * this.denominator;
-		this.boundaryStep = floorQuotient(numeratorStep, this.denominator);
-		this.remainderStep = numeratorStep - this.boundaryStep * this.denominator;
-	}
-
-	intersect(bounds: Int32Array): boolean {
-		if (this.boundaryKind > 0) {
-			if (this.boundary > bounds[0]) {
-				bounds[0] = this.boundary;
-			}
-			return bounds[0] <= bounds[1];
-		}
-		if (this.boundaryKind < 0) {
-			if (this.boundary < bounds[1]) {
-				bounds[1] = this.boundary;
-			}
-			return bounds[0] <= bounds[1];
-		}
-		return this.rowValue >= 0;
-	}
-
-	advance(): void {
-		if (this.boundaryKind === 0) {
-			this.rowValue += this.rowStep;
-			return;
-		}
-		this.boundary += this.boundaryStep;
-		this.remainder += this.remainderStep;
-		if (this.remainder >= this.denominator) {
-			this.remainder -= this.denominator;
-			this.boundary += 1;
-		}
-	}
-}
-
 function colorR8(colorWord: number): number {
 	return colorWord & 0xff;
 }
@@ -153,14 +79,6 @@ const GX_GPU_SOFTWARE_LINE_XY_HALF = 0x80000000;
 const GX_GPU_SOFTWARE_LINE_SUBPIXEL_BIAS = 1024;
 const GX_GPU_SOFTWARE_LINE_RGB_SCALE = 0x1000;
 const GX_GPU_SOFTWARE_LINE_RGB_HALF = 0x800;
-const GX_GPU_TRIANGLE_UV_COMPONENTS = 2;
-const GX_GPU_TRIANGLE_COLOR_COMPONENTS = 3;
-const gxGpuTriangleUvPlaneScratch = new Uint32Array(GX_GPU_TRIANGLE_UV_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
-const gxGpuTriangleColorPlaneScratch = new Uint32Array(GX_GPU_TRIANGLE_COLOR_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
-const gxGpuTriangleEdge0 = new TriangleEdgeSpan();
-const gxGpuTriangleEdge1 = new TriangleEdgeSpan();
-const gxGpuTriangleEdge2 = new TriangleEdgeSpan();
-const gxGpuTriangleSpanBounds = new Int32Array(2);
 
 function lineMakeFixedXY(value: number): number {
 	return value * GX_GPU_SOFTWARE_LINE_XY_SCALE + GX_GPU_SOFTWARE_LINE_XY_HALF;
@@ -377,46 +295,51 @@ export function drawGxGpuSoftwareTriangle(software: GxGpuSoftwareState,
 	let rowR = 0;
 	let rowG = 0;
 	let rowB = 0;
+	const triangleColorPlaneScratch = software.triangleColorPlaneScratch;
+	const triangleEdge0 = software.triangleEdge0;
+	const triangleEdge1 = software.triangleEdge1;
+	const triangleEdge2 = software.triangleEdge2;
+	const triangleSpanBounds = software.triangleSpanBounds;
 	if (!sameColor) {
-		gxGpuTriangleColorPlaneScratch[0] = r0;
-		gxGpuTriangleColorPlaneScratch[1] = g0;
-		gxGpuTriangleColorPlaneScratch[2] = b0;
-		gxGpuTriangleColorPlaneScratch[3] = r1;
-		gxGpuTriangleColorPlaneScratch[4] = g1;
-		gxGpuTriangleColorPlaneScratch[5] = b1;
-		gxGpuTriangleColorPlaneScratch[6] = r2;
-		gxGpuTriangleColorPlaneScratch[7] = g2;
-		gxGpuTriangleColorPlaneScratch[8] = b2;
+		triangleColorPlaneScratch[0] = r0;
+		triangleColorPlaneScratch[1] = g0;
+		triangleColorPlaneScratch[2] = b0;
+		triangleColorPlaneScratch[3] = r1;
+		triangleColorPlaneScratch[4] = g1;
+		triangleColorPlaneScratch[5] = b1;
+		triangleColorPlaneScratch[6] = r2;
+		triangleColorPlaneScratch[7] = g2;
+		triangleColorPlaneScratch[8] = b2;
 		const determinant = -area * edgeSign;
-		gxGpuTriangleAttributePlane(gxGpuTriangleColorPlaneScratch, 0, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
-		rStepX = gxGpuTriangleColorPlaneScratch[3];
-		gStepX = gxGpuTriangleColorPlaneScratch[4];
-		bStepX = gxGpuTriangleColorPlaneScratch[5];
-		rStepY = gxGpuTriangleColorPlaneScratch[6];
-		gStepY = gxGpuTriangleColorPlaneScratch[7];
-		bStepY = gxGpuTriangleColorPlaneScratch[8];
-		rowR = gxGpuTriangleColorPlaneScratch[0] + (left * rStepX) + (top * rStepY);
-		rowG = gxGpuTriangleColorPlaneScratch[1] + (left * gStepX) + (top * gStepY);
-		rowB = gxGpuTriangleColorPlaneScratch[2] + (left * bStepX) + (top * bStepY);
+		gxGpuTriangleAttributePlane(triangleColorPlaneScratch, 0, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = triangleColorPlaneScratch[3];
+		gStepX = triangleColorPlaneScratch[4];
+		bStepX = triangleColorPlaneScratch[5];
+		rStepY = triangleColorPlaneScratch[6];
+		gStepY = triangleColorPlaneScratch[7];
+		bStepY = triangleColorPlaneScratch[8];
+		rowR = triangleColorPlaneScratch[0] + (left * rStepX) + (top * rStepY);
+		rowG = triangleColorPlaneScratch[1] + (left * gStepX) + (top * gStepY);
+		rowB = triangleColorPlaneScratch[2] + (left * bStepX) + (top * bStepY);
 	}
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
-	gxGpuTriangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
-	gxGpuTriangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
-	gxGpuTriangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
+	triangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
+	triangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
+	triangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
 		if ((y & 1) !== skippedLineParity) {
-			gxGpuTriangleSpanBounds[0] = 0;
-			gxGpuTriangleSpanBounds[1] = rightExclusive - left - 1;
-			if (gxGpuTriangleEdge0.intersect(gxGpuTriangleSpanBounds)
-				&& gxGpuTriangleEdge1.intersect(gxGpuTriangleSpanBounds)
-				&& gxGpuTriangleEdge2.intersect(gxGpuTriangleSpanBounds)) {
-				const firstOffset = gxGpuTriangleSpanBounds[0];
+			triangleSpanBounds[0] = 0;
+			triangleSpanBounds[1] = rightExclusive - left - 1;
+			if (triangleEdge0.intersect(triangleSpanBounds)
+				&& triangleEdge1.intersect(triangleSpanBounds)
+				&& triangleEdge2.intersect(triangleSpanBounds)) {
+				const firstOffset = triangleSpanBounds[0];
 				let rFixed = rowR + (firstOffset * rStepX);
 				let gFixed = rowG + (firstOffset * gStepX);
 				let bFixed = rowB + (firstOffset * bStepX);
-				const spanEnd = left + gxGpuTriangleSpanBounds[1];
+				const spanEnd = left + triangleSpanBounds[1];
 				for (let x = left + firstOffset; x <= spanEnd; x += 1) {
 					const r8 = sameColor ? r0 : (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const g8 = sameColor ? g0 : (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
@@ -430,9 +353,9 @@ export function drawGxGpuSoftwareTriangle(software: GxGpuSoftwareState,
 				}
 			}
 		}
-		gxGpuTriangleEdge0.advance();
-		gxGpuTriangleEdge1.advance();
-		gxGpuTriangleEdge2.advance();
+		triangleEdge0.advance();
+		triangleEdge1.advance();
+		triangleEdge2.advance();
 		if (!sameColor) {
 			rowR += rStepY;
 			rowG += gStepY;
@@ -549,61 +472,67 @@ export function drawGxGpuSoftwareTexturedTriangle(software: GxGpuSoftwareState,
 	let rowR = 0;
 	let rowG = 0;
 	let rowB = 0;
+	const triangleColorPlaneScratch = software.triangleColorPlaneScratch;
+	const triangleUvPlaneScratch = software.triangleUvPlaneScratch;
+	const triangleEdge0 = software.triangleEdge0;
+	const triangleEdge1 = software.triangleEdge1;
+	const triangleEdge2 = software.triangleEdge2;
+	const triangleSpanBounds = software.triangleSpanBounds;
 	const determinant = -area * edgeSign;
 	if (interpolatesColor) {
-		gxGpuTriangleColorPlaneScratch[0] = r0;
-		gxGpuTriangleColorPlaneScratch[1] = g0;
-		gxGpuTriangleColorPlaneScratch[2] = b0;
-		gxGpuTriangleColorPlaneScratch[3] = r1;
-		gxGpuTriangleColorPlaneScratch[4] = g1;
-		gxGpuTriangleColorPlaneScratch[5] = b1;
-		gxGpuTriangleColorPlaneScratch[6] = r2;
-		gxGpuTriangleColorPlaneScratch[7] = g2;
-		gxGpuTriangleColorPlaneScratch[8] = b2;
-		gxGpuTriangleAttributePlane(gxGpuTriangleColorPlaneScratch, 0, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
-		rStepX = gxGpuTriangleColorPlaneScratch[3];
-		gStepX = gxGpuTriangleColorPlaneScratch[4];
-		bStepX = gxGpuTriangleColorPlaneScratch[5];
-		rStepY = gxGpuTriangleColorPlaneScratch[6];
-		gStepY = gxGpuTriangleColorPlaneScratch[7];
-		bStepY = gxGpuTriangleColorPlaneScratch[8];
-		rowR = gxGpuTriangleColorPlaneScratch[0] + (left * rStepX) + (top * rStepY);
-		rowG = gxGpuTriangleColorPlaneScratch[1] + (left * gStepX) + (top * gStepY);
-		rowB = gxGpuTriangleColorPlaneScratch[2] + (left * bStepX) + (top * bStepY);
+		triangleColorPlaneScratch[0] = r0;
+		triangleColorPlaneScratch[1] = g0;
+		triangleColorPlaneScratch[2] = b0;
+		triangleColorPlaneScratch[3] = r1;
+		triangleColorPlaneScratch[4] = g1;
+		triangleColorPlaneScratch[5] = b1;
+		triangleColorPlaneScratch[6] = r2;
+		triangleColorPlaneScratch[7] = g2;
+		triangleColorPlaneScratch[8] = b2;
+		gxGpuTriangleAttributePlane(triangleColorPlaneScratch, 0, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = triangleColorPlaneScratch[3];
+		gStepX = triangleColorPlaneScratch[4];
+		bStepX = triangleColorPlaneScratch[5];
+		rStepY = triangleColorPlaneScratch[6];
+		gStepY = triangleColorPlaneScratch[7];
+		bStepY = triangleColorPlaneScratch[8];
+		rowR = triangleColorPlaneScratch[0] + (left * rStepX) + (top * rStepY);
+		rowG = triangleColorPlaneScratch[1] + (left * gStepX) + (top * gStepY);
+		rowB = triangleColorPlaneScratch[2] + (left * bStepX) + (top * bStepY);
 	}
-	gxGpuTriangleUvPlaneScratch[0] = u0;
-	gxGpuTriangleUvPlaneScratch[1] = v0;
-	gxGpuTriangleUvPlaneScratch[2] = u1;
-	gxGpuTriangleUvPlaneScratch[3] = v1;
-	gxGpuTriangleUvPlaneScratch[4] = u2;
-	gxGpuTriangleUvPlaneScratch[5] = v2;
-	gxGpuTriangleAttributePlane(gxGpuTriangleUvPlaneScratch, 0, GX_GPU_TRIANGLE_UV_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
-	const uStepX = gxGpuTriangleUvPlaneScratch[2];
-	const vStepX = gxGpuTriangleUvPlaneScratch[3];
-	const uStepY = gxGpuTriangleUvPlaneScratch[4];
-	const vStepY = gxGpuTriangleUvPlaneScratch[5];
-	let rowU = gxGpuTriangleUvPlaneScratch[0] + (left * uStepX) + (top * uStepY);
-	let rowV = gxGpuTriangleUvPlaneScratch[1] + (left * vStepX) + (top * vStepY);
+	triangleUvPlaneScratch[0] = u0;
+	triangleUvPlaneScratch[1] = v0;
+	triangleUvPlaneScratch[2] = u1;
+	triangleUvPlaneScratch[3] = v1;
+	triangleUvPlaneScratch[4] = u2;
+	triangleUvPlaneScratch[5] = v2;
+	gxGpuTriangleAttributePlane(triangleUvPlaneScratch, 0, GX_GPU_TRIANGLE_UV_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
+	const uStepX = triangleUvPlaneScratch[2];
+	const vStepX = triangleUvPlaneScratch[3];
+	const uStepY = triangleUvPlaneScratch[4];
+	const vStepY = triangleUvPlaneScratch[5];
+	let rowU = triangleUvPlaneScratch[0] + (left * uStepX) + (top * uStepY);
+	let rowV = triangleUvPlaneScratch[1] + (left * vStepX) + (top * vStepY);
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
-	gxGpuTriangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
-	gxGpuTriangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
-	gxGpuTriangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
+	triangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
+	triangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
+	triangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
 		if ((y & 1) !== skippedLineParity) {
-			gxGpuTriangleSpanBounds[0] = 0;
-			gxGpuTriangleSpanBounds[1] = rightExclusive - left - 1;
-			if (gxGpuTriangleEdge0.intersect(gxGpuTriangleSpanBounds)
-				&& gxGpuTriangleEdge1.intersect(gxGpuTriangleSpanBounds)
-				&& gxGpuTriangleEdge2.intersect(gxGpuTriangleSpanBounds)) {
-				const firstOffset = gxGpuTriangleSpanBounds[0];
+			triangleSpanBounds[0] = 0;
+			triangleSpanBounds[1] = rightExclusive - left - 1;
+			if (triangleEdge0.intersect(triangleSpanBounds)
+				&& triangleEdge1.intersect(triangleSpanBounds)
+				&& triangleEdge2.intersect(triangleSpanBounds)) {
+				const firstOffset = triangleSpanBounds[0];
 				let rFixed = rowR + (firstOffset * rStepX);
 				let gFixed = rowG + (firstOffset * gStepX);
 				let bFixed = rowB + (firstOffset * bStepX);
 				let uFixed = rowU + (firstOffset * uStepX);
 				let vFixed = rowV + (firstOffset * vStepX);
-				const spanEnd = left + gxGpuTriangleSpanBounds[1];
+				const spanEnd = left + triangleSpanBounds[1];
 				for (let x = left + firstOffset; x <= spanEnd; x += 1) {
 					const r8 = interpolatesColor ? (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : r0;
 					const g8 = interpolatesColor ? (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : g0;
@@ -647,9 +576,9 @@ export function drawGxGpuSoftwareTexturedTriangle(software: GxGpuSoftwareState,
 				}
 			}
 		}
-		gxGpuTriangleEdge0.advance();
-		gxGpuTriangleEdge1.advance();
-		gxGpuTriangleEdge2.advance();
+		triangleEdge0.advance();
+		triangleEdge1.advance();
+		triangleEdge2.advance();
 		if (interpolatesColor) {
 			rowR += rStepY;
 			rowG += gStepY;

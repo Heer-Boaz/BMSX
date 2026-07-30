@@ -12,27 +12,7 @@ constexpr float POST_PROCESS_TEXCOORDS[12] = {
 	1.0f, 0.0f
 };
 
-float fullscreenQuadPositionsScratch[12] = {};
-
 } // namespace
-
-const float* writeFullscreenQuadPositions(i32 width, i32 height) {
-	const float w = static_cast<float>(width);
-	const float h = static_cast<float>(height);
-	fullscreenQuadPositionsScratch[0] = 0.0f;
-	fullscreenQuadPositionsScratch[1] = 0.0f;
-	fullscreenQuadPositionsScratch[2] = 0.0f;
-	fullscreenQuadPositionsScratch[3] = h;
-	fullscreenQuadPositionsScratch[4] = w;
-	fullscreenQuadPositionsScratch[5] = 0.0f;
-	fullscreenQuadPositionsScratch[6] = w;
-	fullscreenQuadPositionsScratch[7] = 0.0f;
-	fullscreenQuadPositionsScratch[8] = 0.0f;
-	fullscreenQuadPositionsScratch[9] = h;
-	fullscreenQuadPositionsScratch[10] = w;
-	fullscreenQuadPositionsScratch[11] = h;
-	return fullscreenQuadPositionsScratch;
-}
 
 void createFullscreenQuad(FullscreenQuad& quad) {
 	glGenBuffers(1, &quad.positionBuffer);
@@ -57,9 +37,23 @@ void updateFullscreenQuad(FullscreenQuad& quad, i32 width, i32 height) {
 	}
 	quad.width = width;
 	quad.height = height;
+	const float w = static_cast<float>(width);
+	const float h = static_cast<float>(height);
+	quad.positions[0] = 0.0f;
+	quad.positions[1] = 0.0f;
+	quad.positions[2] = 0.0f;
+	quad.positions[3] = h;
+	quad.positions[4] = w;
+	quad.positions[5] = 0.0f;
+	quad.positions[6] = w;
+	quad.positions[7] = 0.0f;
+	quad.positions[8] = 0.0f;
+	quad.positions[9] = h;
+	quad.positions[10] = w;
+	quad.positions[11] = h;
 
 	glBindBuffer(GL_ARRAY_BUFFER, quad.positionBuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(fullscreenQuadPositionsScratch), writeFullscreenQuadPositions(width, height), GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quad.positions), quad.positions.data(), GL_STATIC_DRAW);
 }
 
 void bindFullscreenQuad(const FullscreenQuad& quad, GLint positionAttrib, GLint texcoordAttrib) {

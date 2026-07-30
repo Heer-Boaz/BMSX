@@ -9,13 +9,11 @@ import vertexShaderCRTCode from '../../webgl/shaders/fullscreen.vert.glsl';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
+	destroyFullscreenQuad,
 	updateFullscreenQuad,
 	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
 } from '../../../backend/webgl/fullscreen_quad';
-
-const crtColorBleedScratch = new Float32Array(3);
-const crtGlowColorScratch = new Float32Array(3);
 
 function writeCrtVec3(out: Float32Array, src: readonly number[]): Float32Array {
 	out[0] = src[0];
@@ -37,6 +35,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	let presentQuad: FullscreenQuad;
 	let crtSourceWidth = 0;
 	let crtSourceHeight = 0;
+	const crtColorBleedScratch = new Float32Array(3);
+	const crtGlowColorScratch = new Float32Array(3);
 	function bindCRTUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['crt']): void {
 		backend.setUniform2f('u_resolution', state.width, state.height);
 		backend.setUniform1f('u_scale', 1.0);
@@ -48,7 +48,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		}
 		const opts = state.options;
 		if (opts.applyNoise) {
-			backend.setUniform1f('u_random', Math.random());
+			backend.setUniform1f('u_random', state.noiseOffset);
 			backend.setUniform1f('u_time', state.time);
 		}
 		backend.setUniform1i('u_enableNoise', opts.applyNoise ? 1 : 0);
@@ -74,9 +74,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldUpdatePresentationHistoryA,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
-			const gl = webgl.gl as WebGL2RenderingContext;
 			historyQuadA = {
-				gl,
+				backend: webgl,
 				positionBuffer: null,
 				texcoordBuffer: null,
 				positionAttrib: -1,
@@ -84,10 +83,14 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				width: -1,
 				height: -1,
 				texcoords: POST_PROCESS_TEXCOORDS,
+				positions: new Float32Array(12),
 				label: 'PresentationHistoryA',
 			};
 			createFullscreenQuad(historyQuadA);
 			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+		},
+		teardown: () => {
+			destroyFullscreenQuad(historyQuadA);
 		},
 		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_a']) => {
 			renderFullscreenToFramebuffer(historyQuadA, fbo as WebGLFramebuffer, state.width, state.height);
@@ -107,9 +110,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldUpdatePresentationHistoryB,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
-			const gl = webgl.gl as WebGL2RenderingContext;
 			historyQuadB = {
-				gl,
+				backend: webgl,
 				positionBuffer: null,
 				texcoordBuffer: null,
 				positionAttrib: -1,
@@ -117,10 +119,14 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				width: -1,
 				height: -1,
 				texcoords: POST_PROCESS_TEXCOORDS,
+				positions: new Float32Array(12),
 				label: 'PresentationHistoryB',
 			};
 			createFullscreenQuad(historyQuadB);
 			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+		},
+		teardown: () => {
+			destroyFullscreenQuad(historyQuadB);
 		},
 		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_b']) => {
 			renderFullscreenToFramebuffer(historyQuadB, fbo as WebGLFramebuffer, state.width, state.height);
@@ -141,9 +147,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldExecuteAutoPresentPass,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
-			const gl = webgl.gl as WebGL2RenderingContext;
 			presentQuad = {
-				gl,
+				backend: webgl,
 				positionBuffer: null,
 				texcoordBuffer: null,
 				positionAttrib: -1,
@@ -151,10 +156,14 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				width: -1,
 				height: -1,
 				texcoords: POST_PROCESS_TEXCOORDS,
+				positions: new Float32Array(12),
 				label: 'Present',
 			};
 			createFullscreenQuad(presentQuad);
 			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+		},
+		teardown: () => {
+			destroyFullscreenQuad(presentQuad);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['present']) => {
 			renderFullscreenToFramebuffer(presentQuad, null, state.width, state.height);
@@ -176,9 +185,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldExecuteAutoCrtPass,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
-			const gl = webgl.gl as WebGL2RenderingContext;
 			crtQuad = {
-				gl,
+				backend: webgl,
 				positionBuffer: null,
 				texcoordBuffer: null,
 				positionAttrib: -1,
@@ -186,10 +194,14 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				width: -1,
 				height: -1,
 				texcoords: POST_PROCESS_TEXCOORDS,
+				positions: new Float32Array(12),
 				label: 'CRT',
 			};
 			createFullscreenQuad(crtQuad);
 			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+		},
+		teardown: () => {
+			destroyFullscreenQuad(crtQuad);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
 			renderFullscreenToFramebuffer(crtQuad, null, state.width, state.height);
@@ -203,7 +215,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 }
 
 function renderFullscreenToFramebuffer(fullscreenQuad: FullscreenQuad, fbo: WebGLFramebuffer | null, width: number, height: number): void {
-	const gl = fullscreenQuad.gl;
+	const gl = fullscreenQuad.backend.gl;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	gl.viewport(0, 0, width, height);
 	updateFullscreenQuad(fullscreenQuad, width, height);

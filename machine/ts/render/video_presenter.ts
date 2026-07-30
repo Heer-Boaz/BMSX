@@ -1,6 +1,6 @@
 import { BFont } from './shared/bitmap_font';
 import type { vec2 } from '../common/vector';
-import type { BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
+import type { BackendContext, GPUBackend, PresentationMode, TextureHandle } from './backend/backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';
 import { DeviceQuantizeMode } from './post/device_quantize/mode';
@@ -8,8 +8,9 @@ import { RenderGraphRuntime, type FrameData } from './graph/graph';
 import type { VideoOutput, VideoSurface } from '../platform';
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
 import { renderGate } from '../common/taskgate';
+import { HostOverlayQueue } from './host_overlay/overlay_queue';
 
-export class VideoPresenter implements RenderContext {
+export class VideoPresenter {
 	public readonly surface: VideoSurface;
 	public accessor default_font: BFont;
 	public viewportSize: vec2;
@@ -20,6 +21,7 @@ export class VideoPresenter implements RenderContext {
 	public readonly backend: GPUBackend;
 	public offscreenCanvasSize: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
+	public readonly hostOverlayQueue = new HostOverlayQueue();
 
 	public enable_noise = true;
 	public enable_colorbleed = true;

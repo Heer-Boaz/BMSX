@@ -2553,12 +2553,22 @@ so blend, mask and texture feedback observe prior writes. Line and polyline
 segments keep their own order as well. Fill and image-transfer commands retain
 their separate VRAM datapaths.
 
-Every render-backend instance owns its GX programs, textures, buffers,
+Every render-backend instance owns its core programs, textures, buffers,
 readback state, retained command frontier and preallocated submission scratch.
-Render modules retain only immutable constants, shader sources and stateless
-datapath functions; WebGL2, WebGPU and GLES2 have no process-global mutable GX
-renderer state. Constructing a second backend therefore creates an independent
-renderer rather than replacing the resources or in-flight state of the first.
+Browser pass registrations own their frame-uniform storage,
+fullscreen-geometry scratch and post-process resources for the lifetime of their
+`RenderPassLibrary`; the native GLES backend owns the corresponding pipeline
+state and retires its resources through the context/pass lifecycle. The
+headless backend owns its framebuffer views, handle sequences and
+glyph-rasterization context. Host-overlay publication belongs to the
+corresponding `VideoPresenter`; accelerated overlay resources belong to that
+presenter's backend/pass lifecycle. Render modules retain only immutable
+constants, shader sources and stateless datapath functions. Constructing a
+second backend/presenter pair therefore creates an independent renderer and
+overlay lane rather than replacing process-global resources or in-flight state.
+CRT noise derives its per-frame offset from the presenter frame index through
+the mirrored 32-bit hash; it does not consume a host-process random-number
+generator.
 
 Accelerated primitive batches retain the rasterizer class `Polygon`,
 `Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the

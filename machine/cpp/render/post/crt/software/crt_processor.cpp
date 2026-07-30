@@ -215,7 +215,7 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 	const f32 time = static_cast<f32>(state.time);
 	const auto& options = state.options;
 	const bool usesCollapsedKernel = options.applyBlur || options.applyFringing || options.applyAperture || options.applyScanlines;
-	const f32 random = options.applyNoise ? hashNoise(time, srcWf, srcHf) : 0.0f;
+	const f32 random = state.noiseOffset;
 	const u32* sampleSource = src;
 
 	for (i32 y = 0; y < dstHeight; ++y) {

@@ -16,43 +16,45 @@ export type HostMenuFrame = {
 	commandCount: number;
 };
 
-let pendingFrame: HostOverlayFrame;
-let hasPendingFrame = false;
-let pendingMenuFrame: HostMenuFrame;
-let hasPendingMenuFrame = false;
+export class HostOverlayQueue {
+	private pendingFrame: HostOverlayFrame;
+	private hasPendingFrame = false;
+	private pendingMenuFrame: HostMenuFrame;
+	private hasPendingMenuFrame = false;
 
-export function publishOverlayFrame(frame: HostOverlayFrame): void {
-	pendingFrame = frame;
-	hasPendingFrame = true;
-}
+	public publishOverlayFrame(frame: HostOverlayFrame): void {
+		this.pendingFrame = frame;
+		this.hasPendingFrame = true;
+	}
 
-export function hasPendingOverlayFrame(): boolean {
-	return hasPendingFrame;
-}
+	public hasPendingOverlayFrame(): boolean {
+		return this.hasPendingFrame;
+	}
 
-export function consumeOverlayFrame(): HostOverlayFrame {
-	hasPendingFrame = false;
-	return pendingFrame;
-}
+	public consumeOverlayFrame(): HostOverlayFrame {
+		this.hasPendingFrame = false;
+		return this.pendingFrame;
+	}
 
-export function clearOverlayFrame(): void {
-	hasPendingFrame = false;
-}
+	public clearOverlayFrame(): void {
+		this.hasPendingFrame = false;
+	}
 
-export function publishHostMenuFrame(frame: HostMenuFrame): void {
-	pendingMenuFrame = frame;
-	hasPendingMenuFrame = true;
-}
+	public publishHostMenuFrame(frame: HostMenuFrame): void {
+		this.pendingMenuFrame = frame;
+		this.hasPendingMenuFrame = true;
+	}
 
-export function hasPendingHostMenuFrame(): boolean {
-	return hasPendingMenuFrame;
-}
+	public hasPendingHostMenuFrame(): boolean {
+		return this.hasPendingMenuFrame;
+	}
 
-export function consumeHostMenuFrame(): HostMenuFrame {
-	hasPendingMenuFrame = false;
-	return pendingMenuFrame;
-}
+	public consumeHostMenuFrame(): HostMenuFrame {
+		this.hasPendingMenuFrame = false;
+		return this.pendingMenuFrame;
+	}
 
-export function clearHostMenuFrame(): void {
-	hasPendingMenuFrame = false;
+	public clearHostMenuFrame(): void {
+		this.hasPendingMenuFrame = false;
+	}
 }

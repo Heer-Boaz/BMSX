@@ -6,7 +6,15 @@ namespace bmsx {
 
 class VideoPresenter;
 
-void writeHostOverlayState(HostOverlayPipelineState& state, f64 time, f64 delta);
-void writeHostMenuState(HostMenuPipelineState& state, VideoPresenter& presenter);
+void writeHostOverlayPassState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+);
+void writeHostMenuPassState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+);
+bool shouldExecuteHostOverlayPass(VideoPresenter* presenter, void*);
+bool shouldExecuteHostMenuPass(VideoPresenter* presenter, void*);
 
 } // namespace bmsx

@@ -10,6 +10,7 @@
 #include "backend/backend.h"
 #include "shared/submissions.h"
 #include "render/post/device_quantize/mode.h"
+#include "render/host_overlay/overlay_queue.h"
 #include <array>
 #include <memory>
 #include <unordered_map>
@@ -68,6 +69,7 @@ public:
 	// Textures map
 	// ─────────────────────────────────────────────────────────────────────────
 	std::unordered_map<std::string, TextureHandle> textures;
+	HostOverlayQueue hostOverlayQueue;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

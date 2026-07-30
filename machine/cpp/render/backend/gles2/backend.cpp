@@ -117,10 +117,11 @@ void applyGLES2TextureParams(const TextureParams& params) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(params.wrapT));
 }
 
-struct OpenGLES2PostPipelines {
+struct OpenGLES2Pipelines {
 	DeviceQuantizePipeline::GLES2::State deviceQuantize;
 	CRTPipeline::PresentGLES2State present;
 	CRTPipeline::CRTGLES2State crt;
+	HostOverlayGLES2State hostOverlay;
 };
 
 struct GLES2DepthTexture {
@@ -170,13 +171,13 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
 
 	registerGxGpuPass(registry);
-	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
+	DeviceQuantizePipeline::GLES2::registerPass(registry, m_pipelines->deviceQuantize);
 
-	CRTPipeline::registerPresentationHistoryGLES2Passes(registry, m_post_pipelines->present);
-	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
-	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
+	CRTPipeline::registerPresentationHistoryGLES2Passes(registry, m_pipelines->present);
+	CRTPipeline::registerPresentGLES2Pass(registry, m_pipelines->present);
+	CRTPipeline::registerCRTGLES2Pass(registry, m_pipelines->crt);
 
-	registerHostOverlayBackendPassesWithLifecycle<OpenGLES2Backend, bootstrapHostOverlayGLES2, shutdownHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
+	registerHostOverlayBackendPassesWithLifecycle<OpenGLES2Backend, HostOverlayGLES2State, bootstrapHostOverlayGLES2, shutdownHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry, m_pipelines->hostOverlay);
 }
 
 OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* name) const {
@@ -223,7 +224,7 @@ OpenGLES2Backend::OpenGLES2Backend(
 	, m_target_height(height)
 	, m_profile_gx_uploads(profileGxUploads)
 	, m_gx_gpu_vram_texture_rows(gxGpuVramByteCount / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT)
-	, m_post_pipelines(std::make_unique<OpenGLES2PostPipelines>()) {}
+	, m_pipelines(std::make_unique<OpenGLES2Pipelines>()) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
 
@@ -520,12 +521,10 @@ void OpenGLES2Backend::beginFrame() {
 	invalidateTextureBindingCache();
 	m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
 	if (kGLES2VerboseLog) {
-	static u32 frameIndex = 0;
-	frameIndex++;
-	std::fprintf(
-			stderr, "[BMSX][GLES2] beginFrame #%u backbuffer_fbo=%u size=%dx%d\n",
-			frameIndex, static_cast<unsigned>(m_backbuffer_fbo), m_default_width, m_default_height);
-		}
+		std::fprintf(
+			stderr, "[BMSX][GLES2] beginFrame backbuffer_fbo=%u size=%dx%d\n",
+			static_cast<unsigned>(m_backbuffer_fbo), m_default_width, m_default_height);
+	}
 	m_current_fbo = m_backbuffer_fbo;
 	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	m_target_width = m_default_width;
@@ -614,7 +613,7 @@ void OpenGLES2Backend::onContextReset() {
 	m_target_width = m_default_width;
 	m_target_height = m_default_height;
 	m_readback_fbo = 0;
-	*m_post_pipelines = OpenGLES2PostPipelines{};
+	*m_pipelines = OpenGLES2Pipelines{};
 	m_touched_texture_units = 0u;
 	m_blend_color_valid = false;
 	invalidateTextureBindingCache();
@@ -627,9 +626,9 @@ void OpenGLES2Backend::onContextReset() {
 		? resolveProcAddress("glTextureBarrierNV")
 		: nullptr;
 	glGenFramebuffers(1, &m_readback_fbo);
-	DeviceQuantizePipeline::GLES2::init(*this, m_post_pipelines->deviceQuantize);
-	CRTPipeline::initPresentGLES2(*this, m_post_pipelines->present);
-	CRTPipeline::initCRTGLES2(*this, m_post_pipelines->crt);
+	DeviceQuantizePipeline::GLES2::init(*this, m_pipelines->deviceQuantize);
+	CRTPipeline::initPresentGLES2(*this, m_pipelines->present);
+	CRTPipeline::initCRTGLES2(*this, m_pipelines->crt);
 	if (kGLES2VerboseLog) {
 		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d ARM_framebuffer_fetch=%d NV_texture_barrier=%d\n",
 			m_supports_srgb_textures ? 1 : 0,
@@ -640,9 +639,9 @@ void OpenGLES2Backend::onContextReset() {
 }
 
 void OpenGLES2Backend::onContextDestroy() {
-	CRTPipeline::shutdownCRTGLES2(m_post_pipelines->crt);
-	CRTPipeline::shutdownPresentGLES2(m_post_pipelines->present);
-	DeviceQuantizePipeline::GLES2::shutdown(*this, m_post_pipelines->deviceQuantize);
+	CRTPipeline::shutdownCRTGLES2(m_pipelines->crt);
+	CRTPipeline::shutdownPresentGLES2(m_pipelines->present);
+	DeviceQuantizePipeline::GLES2::shutdown(*this, m_pipelines->deviceQuantize);
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 	}
@@ -652,13 +651,15 @@ void OpenGLES2Backend::onContextDestroy() {
 void OpenGLES2Backend::onContextLost() {
 	m_context_ready = false;
 	m_context_generation += 1u;
-	DeviceQuantizePipeline::GLES2::releaseLostTextureHandles(*this, m_post_pipelines->deviceQuantize);
+	DeviceQuantizePipeline::GLES2::releaseLostTextureHandles(*this, m_pipelines->deviceQuantize);
 	m_current_fbo = 0;
 	m_backbuffer_fbo = 0;
 	m_target_width = m_default_width;
 	m_target_height = m_default_height;
 	m_readback_fbo = 0;
-	*m_post_pipelines = OpenGLES2PostPipelines{};
+	m_pipelines->deviceQuantize = DeviceQuantizePipeline::GLES2::State{};
+	m_pipelines->present = CRTPipeline::PresentGLES2State{};
+	m_pipelines->crt = CRTPipeline::CRTGLES2State{};
 	m_touched_texture_units = 0u;
 	m_blend_color_valid = false;
 	invalidateTextureBindingCache();

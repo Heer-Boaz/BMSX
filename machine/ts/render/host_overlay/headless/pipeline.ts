@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
-import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { drawHeadlessHostMenuLayer, drawHeadlessHostOverlayFrame } from '../../headless/passes';
+import type { HeadlessGPUBackend } from '../../headless/backend';
 
 export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): void {
 	registry.register({
@@ -10,9 +10,9 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 		stateOnly: true,
 		initialState: createHostOverlayState(),
 		graph: { writes: ['frame_color'], writeState: writeHostOverlayState },
-		shouldExecute: () => hasPendingOverlayFrame(),
-		exec: (_backend, _fbo, state) => {
-			drawHeadlessHostOverlayFrame(state);
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
+		exec: (backend, _fbo, state) => {
+			drawHeadlessHostOverlayFrame(backend as HeadlessGPUBackend, state);
 		},
 	});
 }
@@ -24,9 +24,9 @@ export function registerHostMenuPass_Headless(registry: RenderPassLibrary): void
 		stateOnly: true,
 		initialState: createHostMenuState(),
 		graph: { writes: ['frame_color'], writeState: writeHostMenuState },
-		shouldExecute: () => hasPendingHostMenuFrame(),
-		exec: (_backend, _fbo, state) => {
-			drawHeadlessHostMenuLayer(state);
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingHostMenuFrame(),
+		exec: (backend, _fbo, state) => {
+			drawHeadlessHostMenuLayer(backend as HeadlessGPUBackend, state);
 		},
 	});
 }

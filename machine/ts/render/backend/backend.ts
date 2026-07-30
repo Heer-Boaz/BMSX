@@ -31,7 +31,6 @@ export type TextureSource = {
  *   RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
  *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
  *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types, and
- *   RenderContext.
  *   C++ owns the equivalent native pass scheduling in render/backend/pass files.
  * - TS-only GPUBackend methods here are browser/backend-resource controls:
  *   createImageBitmapFromSource(), createCubemapFromSources(),
@@ -40,7 +39,7 @@ export type TextureSource = {
  *   destroyRenderTarget(),
  *   createRenderPassInstance(),
  *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
- *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
+ *   getPassState(), createVertexBuffer(), updateVertexBuffer(), destroyBuffer(),
  *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),
  *   deleteVertexArray(), drawInstanced(), drawIndexedInstanced(),
  *   createUniformBuffer(), updateUniformBuffer(), bindUniformBufferBase(), and
@@ -61,9 +60,9 @@ export type TextureSource = {
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type HeadlessTextureHandle = { id: number; kind: string };
-export type HeadlessBufferHandle = { id: number; kind: string };
+export type HeadlessBufferHandle = { id: number; kind: 'vertex-buffer' | 'uniform-buffer' };
 export type TextureHandle = WebGLTexture | GPUTexture | HeadlessTextureHandle;
-export type BufferHandle = WebGLBuffer | HeadlessBufferHandle | null;
+export type BufferHandle = WebGLBuffer | GPUBuffer | HeadlessBufferHandle | null;
 export type BackendContext = WebGL2RenderingContext | GPUCanvasContext | null;
 export type SizedArrayBufferView = ArrayBufferView & { readonly BYTES_PER_ELEMENT?: number; readonly length?: number };
 // ---- Unified "FBO" a.k.a. render target ------------------------------------
@@ -115,7 +114,7 @@ export interface GraphicsPipelineBindingLayout {
 export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'frame_history_a' | 'frame_history_b' | 'device_color';
 
 export interface RenderGraphPassContext {
-	presenter: RenderContext;
+	presenter: VideoPresenter;
 	frameIndex: number;
 	time: number;
 	delta: number;
@@ -237,6 +236,7 @@ export interface GPUBackend {
 	// Optional buffer/VAO helpers
 	createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): BufferHandle;
 	updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number, sourceOffset?: number, elementCount?: number): void;
+	destroyBuffer(buf: BufferHandle): void;
 	bindArrayBuffer?(buf: BufferHandle): void;
 	createVertexArray?(): unknown;
 	bindVertexArray?(vao: unknown): void;
@@ -302,16 +302,6 @@ export type HostMenuPipelineState = Host2DPipelineState & {
 	commandCount: number;
 };
 
-export interface RenderContext {
-	viewportSize: { x: number; y: number };
-	offscreenCanvasSize: { x: number; y: number; };
-	backend: GPUBackend;
-	presentationMode: PresentationMode;
-	commitPresentationFrame: boolean;
-	presentationHistorySourceIndex: 0 | 1;
-	presentationHistoryDestinationIndex: 0 | 1;
-}
-
 export type RenderingViewportType = 'viewport' | 'offscreen';
 
 export interface DeviceQuantizePipelineState {
@@ -351,6 +341,7 @@ export interface CRTPipelineState {
 	srcWidth: number;
 	srcHeight: number;
 	time: number;
+	noiseOffset: number;
 	colorTex: TextureHandle;
 	options: CRTPipelineOptions;
 }

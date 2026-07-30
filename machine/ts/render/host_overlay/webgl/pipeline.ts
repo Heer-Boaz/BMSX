@@ -7,7 +7,7 @@ import type {
 	RenderPassDesc,
 	RenderPassStateRegistry,
 } from '../../backend/backend';
-import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
+import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms, type FrameUniformState } from '../../backend/frame_uniforms';
 import { RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import {
@@ -15,7 +15,6 @@ import {
 	HOST_OVERLAY_INSTANCE_FLOATS,
 	HostOverlayQuadStream,
 } from '../quad_stream';
-import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { HOST_SYSTEM_ATLAS } from '../atlas';
 import vertexShaderCode from './shaders/host_overlay.vert.glsl';
@@ -31,6 +30,7 @@ type HostOverlayRuntime = {
 	hostAtlasTexture: WebGLTexture;
 	stream: HostOverlayQuadStream;
 	instanceCapacity: number;
+	frameUniforms: FrameUniformState<WebGLBuffer>;
 };
 
 const HOST_OVERLAY_TEXTURE_UNIT = 0;
@@ -44,8 +44,6 @@ const UNIT_QUAD_CORNERS = new Float32Array([
 	1, 1,
 ]);
 
-let runtime: HostOverlayRuntime | null = null;
-
 function bindFloatAttribute(gl: WebGL2RenderingContext, program: WebGLProgram, name: string, size: number, offset: number): void {
 	const location = gl.getAttribLocation(program, name);
 	gl.enableVertexAttribArray(location);
@@ -53,7 +51,7 @@ function bindFloatAttribute(gl: WebGL2RenderingContext, program: WebGLProgram, n
 	gl.vertexAttribDivisor(location, 1);
 }
 
-function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
+function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUniforms: FrameUniformState<WebGLBuffer>): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const stream = new HostOverlayQuadStream();
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
@@ -94,31 +92,23 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 		hostAtlasTexture,
 		stream,
 		instanceCapacity: stream.capacity,
+		frameUniforms,
 	};
 }
 
-function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
-	const gl = runtimeToDestroy.gl;
-	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
-	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
-	gl.deleteBuffer(runtimeToDestroy.instanceTextureKindBuffer);
-	gl.deleteVertexArray(runtimeToDestroy.vao);
-	gl.deleteTexture(runtimeToDestroy.hostAtlasTexture);
-}
-
-function bootstrapRuntime(backend: WebGLBackend): void {
-	const gl = backend.gl as WebGL2RenderingContext;
-	if (runtime !== null) {
-		destroyRuntime(runtime);
-	}
-	runtime = createRuntime(backend, gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram);
+function destroyRuntime(backend: WebGLBackend, runtimeToDestroy: HostOverlayRuntime): void {
+	backend.destroyBuffer(runtimeToDestroy.cornerBuffer);
+	backend.destroyBuffer(runtimeToDestroy.instanceFloatBuffer);
+	backend.destroyBuffer(runtimeToDestroy.instanceTextureKindBuffer);
+	backend.deleteVertexArray(runtimeToDestroy.vao);
+	backend.destroyTexture(runtimeToDestroy.hostAtlasTexture);
 }
 
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	backend.useProgram(state.program);
-	updateAndBindFrameUniforms(backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
+	updateAndBindFrameUniforms(state.frameUniforms, backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	backend.setViewportRect(0, 0, passState.width, passState.height);
 	backend.setAlphaBlended2DState(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -166,7 +156,8 @@ function renderHostMenu(backend: WebGLBackend, state: HostOverlayRuntime, passSt
 	renderStream(backend, state, passState);
 }
 
-export function registerHostOverlayPass(registry: RenderPassLibrary): void {
+export function registerHostOverlayPassesWebGL(registry: RenderPassLibrary, frameUniforms: FrameUniformState<WebGLBuffer>): void {
+	let runtime: HostOverlayRuntime;
 	registry.register({
 		id: 'host_overlay',
 		name: 'HostOverlay',
@@ -176,16 +167,17 @@ export function registerHostOverlayPass(registry: RenderPassLibrary): void {
 		initialState: createHostOverlayState(),
 		graph: { writeState: writeHostOverlayState },
 		bootstrap: (backend) => {
-			bootstrapRuntime(backend as WebGLBackend);
+			const webgl = backend as WebGLBackend;
+			runtime = createRuntime(webgl, webgl.gl.getParameter(webgl.gl.CURRENT_PROGRAM) as WebGLProgram, frameUniforms);
 		},
-		shouldExecute: () => hasPendingOverlayFrame(),
+		teardown: (backend) => {
+			destroyRuntime(backend as WebGLBackend, runtime);
+		},
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderOverlay(backend, runtime as HostOverlayRuntime, state);
+			renderOverlay(backend, runtime, state);
 		},
 	});
-}
-
-export function registerHostMenuPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'host_menu',
 		name: 'HostMenu',
@@ -193,9 +185,9 @@ export function registerHostMenuPass(registry: RenderPassLibrary): void {
 		present: true,
 		initialState: createHostMenuState(),
 		graph: { writeState: writeHostMenuState },
-		shouldExecute: () => hasPendingHostMenuFrame(),
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingHostMenuFrame(),
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_menu']) => {
-			renderHostMenu(backend, runtime as HostOverlayRuntime, state);
+			renderHostMenu(backend, runtime, state);
 		},
 	});
 }

@@ -35,9 +35,8 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 		fsCode: fragmentShaderDeviceCode,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
-			const gl = webgl.gl as WebGL2RenderingContext;
 			fullscreenQuad = {
-				gl,
+				backend: webgl,
 				positionBuffer: null,
 				texcoordBuffer: null,
 				positionAttrib: -1,
@@ -45,6 +44,7 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 				width: -1,
 				height: -1,
 				texcoords: POST_PROCESS_TEXCOORDS,
+				positions: new Float32Array(12),
 				label: 'DeviceQuantize',
 			};
 			createFullscreenQuad(fullscreenQuad);
@@ -80,7 +80,7 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 }
 
 function renderDeviceQuantize(fullscreenQuad: FullscreenQuad, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['device_quantize']): void {
-	const gl = fullscreenQuad.gl;
+	const gl = fullscreenQuad.backend.gl;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	gl.viewport(0, 0, state.width, state.height);
 	updateFullscreenQuad(fullscreenQuad, state.width, state.height);

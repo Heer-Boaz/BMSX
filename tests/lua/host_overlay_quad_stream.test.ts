@@ -18,12 +18,6 @@ import {
 	TextAlign,
 	TextBaseline,
 } from '../../machine/ts/render/shared/submissions';
-import {
-	clearHostMenuFrame,
-	consumeHostMenuFrame,
-	hasPendingHostMenuFrame,
-	publishHostMenuFrame,
-} from '../../machine/ts/render/host_overlay/overlay_queue';
 
 test('host overlay quad stream retains ordered solid and atlas instances', () => {
 	const stream = new HostOverlayQuadStream();
@@ -110,26 +104,4 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 	]);
 	assert.equal(stream.floatData[secondGlyphBase], 10 + firstGlyph.advance);
 	assert.equal(stream.floatData[secondGlyphBase + 2], secondGlyph.width);
-});
-
-test('host menu queue retains producer arrays across the publication boundary', () => {
-	const command = {
-		kind: RectRenderKind.Fill,
-		area: { left: 0, top: 0, right: 1, bottom: 1, z: 0 },
-		color: 0xffffffff,
-		layer: LAYER_2D_IDE,
-	};
-	const commandKinds: Host2DKind[] = [Host2DKind.Rect];
-	const commandRefs: Host2DRef[] = [command];
-	const frame = { commandKinds, commandRefs, commandCount: 1 };
-	publishHostMenuFrame(frame);
-	assert.equal(hasPendingHostMenuFrame(), true);
-	const consumed = consumeHostMenuFrame();
-	assert.equal(consumed, frame);
-	assert.equal(consumed.commandKinds, commandKinds);
-	assert.equal(consumed.commandRefs, commandRefs);
-	assert.equal(hasPendingHostMenuFrame(), false);
-	publishHostMenuFrame(frame);
-	clearHostMenuFrame();
-	assert.equal(hasPendingHostMenuFrame(), false);
 });

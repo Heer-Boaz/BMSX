@@ -12,7 +12,6 @@
 #include "render/post/crt/gles2/shaders/crt_post_shaders.h"
 
 #include <cstdio>
-#include <cstdlib>
 
 #include <GLES2/gl2.h>
 
@@ -196,7 +195,7 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	}
 	if (state.options.applyNoise) {
 		glUniform1f(pipeline.uniform_time, state.time);
-		glUniform1f(pipeline.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
+		glUniform1f(pipeline.uniform_random, state.noiseOffset);
 	}
 
 	glUniform1i(pipeline.uniform_apply_noise, state.options.applyNoise ? 1 : 0);

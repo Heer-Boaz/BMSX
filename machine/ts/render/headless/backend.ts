@@ -2,6 +2,8 @@ import type { vec4arr } from '../../common/vector';
 import {
 	type GPUBackend,
 	type BackendCaps,
+	type HeadlessBufferHandle,
+	type HeadlessTextureHandle,
 	type TextureHandle,
 	type RenderPassDesc,
 	type PassEncoder,
@@ -13,11 +15,12 @@ import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
-import type { HeadlessVideoOutput } from './video_output';
+import type { HeadlessPresentedFrameBuffer, HeadlessVideoOutput } from './video_output';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
+import type { HeadlessGlyphContext } from './host_2d';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -45,15 +48,6 @@ type HeadlessFrameStats = {
 	uniformBytes: number;
 	textureBytes: number;
 };
-
-let textureIdSeq = 0;
-let passIdSeq = 0;
-let bufferIdSeq = 0;
-let vaoIdSeq = 0;
-
-function makeTextureHandle(kind: string): TextureHandle {
-	return { id: ++textureIdSeq, kind } as TextureHandle;
-}
 
 function createFrameStats(): HeadlessFrameStats {
 	return {
@@ -111,6 +105,28 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private activeTextureUnit = 0;
 	private readonly frameStats: HeadlessFrameStats = createFrameStats();
 	private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };
+	private textureIdSeq = 0;
+	private passIdSeq = 0;
+	private bufferIdSeq = 0;
+	private vaoIdSeq = 0;
+	public framebufferPixels = new Uint8Array(0);
+	public framebufferWords = new Uint32Array(0);
+	public framebufferWidth = 0;
+	public framebufferHeight = 0;
+	public readonly presentedFrameBuffer: HeadlessPresentedFrameBuffer = {
+		pixels: this.framebufferPixels,
+		width: 0,
+		height: 0,
+	};
+	public readonly glyphContext: HeadlessGlyphContext = {
+		target: this.framebufferPixels,
+		width: 0,
+		height: 0,
+		colorValue: 0,
+		hasBackgroundColor: false,
+		backgroundColor: 0,
+		lineHeight: 0,
+	};
 
 	constructor(private readonly output: HeadlessVideoOutput, gxGpuVramBytes: number) {
 		const size = output.surface.measureDisplay();
@@ -120,6 +136,14 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	resizeFramebuffer(width: number, height: number): void {
+		const byteLength = width * height * 4;
+		if (this.framebufferPixels.byteLength !== byteLength) {
+			const buffer = new ArrayBuffer(byteLength);
+			this.framebufferPixels = new Uint8Array(buffer);
+			this.framebufferWords = new Uint32Array(buffer);
+		}
+		this.framebufferWidth = width;
+		this.framebufferHeight = height;
 		if (width === this.gxGpuSoftware.interlacedWidth
 			&& height === this.gxGpuSoftware.interlacedHeight) {
 			return;
@@ -152,7 +176,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		pixels: Uint8Array | null,
 		cubemapFaces: [Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null] | null,
 	): TextureHandle {
-		const handle = makeTextureHandle(kind);
+		const handle: HeadlessTextureHandle = { id: ++this.textureIdSeq, kind };
 		const id = this.getTextureId(handle);
 		this.textures.set(id, { id, kind, width, height, pixels, cubemapFaces });
 		return handle;
@@ -293,7 +317,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createColorTexture(desc: { width: number; height: number; format?: unknown; initialClearColor?: vec4arr }): TextureHandle {
-		const handle = makeTextureHandle('color');
+		const handle: HeadlessTextureHandle = { id: ++this.textureIdSeq, kind: 'color' };
 		const id = this.getTextureId(handle);
 		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
 		if (desc.initialClearColor !== undefined) {
@@ -304,7 +328,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createDepthTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
-		const handle = makeTextureHandle('depth');
+		const handle: HeadlessTextureHandle = { id: ++this.textureIdSeq, kind: 'depth' };
 		const id = this.getTextureId(handle);
 		this.textures.set(id, { id, kind: 'depth', width: desc.width, height: desc.height, pixels: null, cubemapFaces: null });
 		return handle;
@@ -353,7 +377,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createRenderPassInstance(desc: { label?: string }): RenderPassInstanceHandle {
-		return { id: ++passIdSeq, label: desc.label };
+		return { id: ++this.passIdSeq, label: desc.label };
 	}
 
 	destroyRenderPassInstance(_p: RenderPassInstanceHandle): void { }
@@ -377,7 +401,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createVertexBuffer(data: ArrayBufferView, usage: 'static' | 'dynamic'): unknown {
-		const id = ++bufferIdSeq;
+		const id = ++this.bufferIdSeq;
 		this.vertexBuffers.set(id, { id, usage, byteLength: data.byteLength });
 		this.accountUpload('vertex', data.byteLength);
 		return { id, kind: 'vertex-buffer' };
@@ -396,10 +420,21 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.accountUpload('vertex', uploadBytes);
 	}
 
+	destroyBuffer(handle: HeadlessBufferHandle): void {
+		switch (handle.kind) {
+			case 'vertex-buffer':
+				this.vertexBuffers.delete(handle.id);
+				return;
+			case 'uniform-buffer':
+				this.uniformBuffers.delete(handle.id);
+				return;
+		}
+	}
+
 	bindArrayBuffer(_buf: unknown): void { }
 
 	createVertexArray(): unknown {
-		const id = ++vaoIdSeq;
+		const id = ++this.vaoIdSeq;
 		this.vaos.add(id);
 		return { id, kind: 'vertex-array' };
 	}
@@ -411,7 +446,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): unknown {
-		const id = ++bufferIdSeq;
+		const id = ++this.bufferIdSeq;
 		this.uniformBuffers.set(id, { id, usage, byteLength: byteSize });
 		this.accountUpload('uniform', byteSize);
 		return { id, kind: 'uniform-buffer' };

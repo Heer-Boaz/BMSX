@@ -25,7 +25,7 @@ export type OverlayResolutionMode = 'offscreen' | 'viewport';
 
 export class RuntimeIdeState {
 	public readonly editor: CartEditor;
-	public readonly overlayRenderer = new OverlayRenderer();
+	public readonly overlayRenderer: OverlayRenderer;
 	public lastIdeInputFrame = -1;
 	public readonly debugger: RuntimeDebuggerState = createRuntimeDebuggerState();
 	public shortcutDisposers: Array<() => void> = [];
@@ -47,6 +47,7 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
+		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(runtime, sources);
 		this.editor = new RuntimeCartEditor(
 			runtime,

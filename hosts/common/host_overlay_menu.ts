@@ -6,7 +6,7 @@ import type { PlayerInput } from '../../machine/ts/input/player';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 
 type HostMenuValue = {
@@ -358,12 +358,12 @@ export class HostOverlayMenu {
 
 	private clearRenderCommands(): void {
 		this.commandCount = 0;
-		clearHostMenuFrame();
+		this.presenter.hostOverlayQueue.clearHostMenuFrame();
 	}
 
 	private publishRenderCommands(): void {
 		this.renderFrame.commandCount = this.commandCount;
-		publishHostMenuFrame(this.renderFrame);
+		this.presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}
 
 	private queueCommand(kind: Host2DKind, ref: Host2DRef): void {

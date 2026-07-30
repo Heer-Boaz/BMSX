@@ -18,7 +18,7 @@ import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 import type { FontGlyph } from '../shared/bitmap_font';
 
-type HeadlessGlyphContext = {
+export type HeadlessGlyphContext = {
 	target: Uint8Array;
 	width: number;
 	height: number;
@@ -28,23 +28,13 @@ type HeadlessGlyphContext = {
 	lineHeight: number;
 };
 
-const headlessGlyphContext: HeadlessGlyphContext = {
-	target: new Uint8Array(0),
-	width: 0,
-	height: 0,
-	colorValue: 0,
-	hasBackgroundColor: false,
-	backgroundColor: 0,
-	lineHeight: 0,
-};
-
-export function renderHeadlessHost2DEntry(target: Uint8Array, width: number, height: number, kind: Host2DKind, item: Host2DRef): void {
+export function renderHeadlessHost2DEntry(context: HeadlessGlyphContext, target: Uint8Array, width: number, height: number, kind: Host2DKind, item: Host2DRef): void {
 	switch (kind) {
 		case Host2DKind.Rect:
 			drawRect(target, width, height, item as RectRenderSubmission);
 			return;
 		case Host2DKind.Glyphs:
-			drawBatchBlit(target, width, height, item as GlyphRenderSubmission);
+			drawBatchBlit(context, target, width, height, item as GlyphRenderSubmission);
 			return;
 		case Host2DKind.Img:
 			drawImage(target, width, height, item as HostImageRenderSubmission);
@@ -128,8 +118,7 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 	);
 }
 
-function drawBatchBlit(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
-	const context = headlessGlyphContext;
+function drawBatchBlit(context: HeadlessGlyphContext, target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
 	context.target = target;
 	context.width = width;
 	context.height = height;

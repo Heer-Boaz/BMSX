@@ -66,6 +66,7 @@ struct CRTPipelineState {
 	i32 srcWidth = 0;
 	i32 srcHeight = 0;
 	f32 time = 0.0f;
+	f32 noiseOffset = 0.0f;
 	TextureHandle colorTex = nullptr;
 	CRTPipelineOptions options;
 };
@@ -201,6 +202,20 @@ template<typename Backend, void (*Teardown)(Backend&)>
 void teardownBackendRenderPass(GPUBackend* backend, void*) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	Teardown(typedBackend);
+}
+
+template<typename Backend, typename Pipeline, void (*Bootstrap)(Backend&, Pipeline&)>
+void bootstrapPipelineRenderPass(GPUBackend* backend, void* context) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	auto& typedPipeline = *static_cast<Pipeline*>(context);
+	Bootstrap(typedBackend, typedPipeline);
+}
+
+template<typename Backend, typename Pipeline, void (*Teardown)(Backend&, Pipeline&)>
+void teardownPipelineRenderPass(GPUBackend* backend, void* context) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	auto& typedPipeline = *static_cast<Pipeline*>(context);
+	Teardown(typedBackend, typedPipeline);
 }
 
 void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot);

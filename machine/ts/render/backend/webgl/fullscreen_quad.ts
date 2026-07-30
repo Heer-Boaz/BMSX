@@ -1,5 +1,7 @@
+import type { WebGLBackend } from './backend';
+
 export interface FullscreenQuad {
-	gl: WebGL2RenderingContext;
+	backend: WebGLBackend;
 	positionBuffer: WebGLBuffer | null;
 	texcoordBuffer: WebGLBuffer | null;
 	positionAttrib: number;
@@ -7,6 +9,7 @@ export interface FullscreenQuad {
 	width: number;
 	height: number;
 	texcoords: Float32Array;
+	positions: Float32Array;
 	label: string;
 }
 
@@ -24,26 +27,8 @@ POST_PROCESS_TEXCOORDS[9] = 0.0;
 POST_PROCESS_TEXCOORDS[10] = 1.0;
 POST_PROCESS_TEXCOORDS[11] = 0.0;
 
-const fullscreenQuadPositionsScratch = new Float32Array(12);
-
-function writeFullscreenQuadPositions(width: number, height: number): Float32Array {
-	fullscreenQuadPositionsScratch[0] = 0.0;
-	fullscreenQuadPositionsScratch[1] = 0.0;
-	fullscreenQuadPositionsScratch[2] = 0.0;
-	fullscreenQuadPositionsScratch[3] = height;
-	fullscreenQuadPositionsScratch[4] = width;
-	fullscreenQuadPositionsScratch[5] = 0.0;
-	fullscreenQuadPositionsScratch[6] = width;
-	fullscreenQuadPositionsScratch[7] = 0.0;
-	fullscreenQuadPositionsScratch[8] = 0.0;
-	fullscreenQuadPositionsScratch[9] = height;
-	fullscreenQuadPositionsScratch[10] = width;
-	fullscreenQuadPositionsScratch[11] = height;
-	return fullscreenQuadPositionsScratch;
-}
-
 export function createFullscreenQuad(quad: FullscreenQuad): void {
-	const gl = quad.gl;
+	const gl = quad.backend.gl;
 	const vsProg = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	const positionBuffer = gl.createBuffer();
 	if (!positionBuffer) {
@@ -62,9 +47,8 @@ export function createFullscreenQuad(quad: FullscreenQuad): void {
 }
 
 export function destroyFullscreenQuad(quad: FullscreenQuad): void {
-	const gl = quad.gl;
-	gl.deleteBuffer(quad.positionBuffer);
-	gl.deleteBuffer(quad.texcoordBuffer);
+	quad.backend.destroyBuffer(quad.positionBuffer);
+	quad.backend.destroyBuffer(quad.texcoordBuffer);
 	quad.positionBuffer = null;
 	quad.texcoordBuffer = null;
 	quad.width = -1;
@@ -77,13 +61,26 @@ export function updateFullscreenQuad(quad: FullscreenQuad, width: number, height
 	}
 	quad.width = width;
 	quad.height = height;
-	const gl = quad.gl;
+	const gl = quad.backend.gl;
+	const positions = quad.positions;
+	positions[0] = 0.0;
+	positions[1] = 0.0;
+	positions[2] = 0.0;
+	positions[3] = height;
+	positions[4] = width;
+	positions[5] = 0.0;
+	positions[6] = width;
+	positions[7] = 0.0;
+	positions[8] = 0.0;
+	positions[9] = height;
+	positions[10] = width;
+	positions[11] = height;
 	gl.bindBuffer(gl.ARRAY_BUFFER, quad.positionBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, writeFullscreenQuadPositions(width, height), gl.STATIC_DRAW);
+	gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 }
 
 export function bindFullscreenQuad(quad: FullscreenQuad, positionAttrib: number, texcoordAttrib: number): void {
-	const gl = quad.gl;
+	const gl = quad.backend.gl;
 	gl.bindBuffer(gl.ARRAY_BUFFER, quad.positionBuffer);
 	if (positionAttrib !== -1) {
 		gl.enableVertexAttribArray(positionAttrib);

@@ -3,6 +3,7 @@
 #include "common/types.h"
 
 #include <GLES2/gl2.h>
+#include <array>
 
 namespace bmsx {
 
@@ -11,6 +12,7 @@ struct FullscreenQuad {
 	GLuint texcoordBuffer = 0u;
 	i32 width = -1;
 	i32 height = -1;
+	std::array<float, 12> positions{};
 };
 
 void createFullscreenQuad(FullscreenQuad& quad);

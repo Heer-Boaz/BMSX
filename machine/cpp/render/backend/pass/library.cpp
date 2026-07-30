@@ -3,6 +3,7 @@
  */
 
 #include "library.h"
+#include "common/hash.h"
 #include "common/primitives.h"
 #include "../../video_presenter.h"
 #include "../../graph/graph.h"
@@ -16,6 +17,8 @@
 namespace bmsx {
 
 namespace {
+
+constexpr f32 kCrtNoiseOffsetScale = 1.0f / 16777216.0f;
 
 void noopRenderPass(
 	GPUBackend*,
@@ -114,6 +117,9 @@ void writeAutoCRTPipelineState(
 
 	const bool applyCrt = presenter->crt_postprocessing_enabled;
 	crtState.options.applyNoise = applyCrt && presenter->applyNoise;
+	if (crtState.options.applyNoise) {
+		crtState.noiseOffset = static_cast<f32>(fmix32(ctx.frameIndex) >> 8u) * kCrtNoiseOffsetScale;
+	}
 	crtState.options.noiseIntensity = presenter->noiseIntensity;
 	crtState.options.applyColorBleed = applyCrt && presenter->applyColorBleed;
 	crtState.options.colorBleed = presenter->colorBleed;

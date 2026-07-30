@@ -1,49 +1,41 @@
 #include "render/host_overlay/overlay_queue.h"
 
 namespace bmsx {
-namespace {
 
-HostOverlayFrame g_pendingFrame;
-bool g_hasPendingFrame = false;
-HostMenuFrame g_pendingMenuFrame;
-bool g_hasPendingMenuFrame = false;
-
-} // namespace
-
-void publishOverlayFrame(const HostOverlayFrame& frame) {
-	g_pendingFrame = frame;
-	g_hasPendingFrame = true;
+void HostOverlayQueue::publishOverlayFrame(const HostOverlayFrame& frame) {
+	m_pendingFrame = frame;
+	m_hasPendingFrame = true;
 }
 
-bool hasPendingOverlayFrame() {
-	return g_hasPendingFrame;
+bool HostOverlayQueue::hasPendingOverlayFrame() const {
+	return m_hasPendingFrame;
 }
 
-HostOverlayFrame consumeOverlayFrame() {
-	g_hasPendingFrame = false;
-	return g_pendingFrame;
+HostOverlayFrame HostOverlayQueue::consumeOverlayFrame() {
+	m_hasPendingFrame = false;
+	return m_pendingFrame;
 }
 
-void clearOverlayFrame() {
-	g_hasPendingFrame = false;
+void HostOverlayQueue::clearOverlayFrame() {
+	m_hasPendingFrame = false;
 }
 
-void publishHostMenuFrame(const HostMenuFrame& frame) {
-	g_pendingMenuFrame = frame;
-	g_hasPendingMenuFrame = true;
+void HostOverlayQueue::publishHostMenuFrame(const HostMenuFrame& frame) {
+	m_pendingMenuFrame = frame;
+	m_hasPendingMenuFrame = true;
 }
 
-bool hasPendingHostMenuFrame() {
-	return g_hasPendingMenuFrame;
+bool HostOverlayQueue::hasPendingHostMenuFrame() const {
+	return m_hasPendingMenuFrame;
 }
 
-HostMenuFrame consumeHostMenuFrame() {
-	g_hasPendingMenuFrame = false;
-	return g_pendingMenuFrame;
+HostMenuFrame HostOverlayQueue::consumeHostMenuFrame() {
+	m_hasPendingMenuFrame = false;
+	return m_pendingMenuFrame;
 }
 
-void clearHostMenuFrame() {
-	g_hasPendingMenuFrame = false;
+void HostOverlayQueue::clearHostMenuFrame() {
+	m_hasPendingMenuFrame = false;
 }
 
 } // namespace bmsx

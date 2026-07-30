@@ -1,5 +1,4 @@
 import type { RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../../backend/backend';
-import type { VideoPresenter } from '../../video_presenter';
 import { DeviceQuantizeMode } from './mode';
 import { DEVICE_QUANTIZE_LUTS, type DeviceQuantizeLuts } from './lut';
 
@@ -14,7 +13,7 @@ export function createDeviceQuantizeState(): RenderPassStateRegistry['device_qua
 }
 
 export function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): boolean {
-	const presenter = ctx.presenter as VideoPresenter;
+	const presenter = ctx.presenter;
 	const configurationRevision = presenter.deviceQuantizeConfigurationRevision;
 	if (state.configurationRevision === configurationRevision) {
 		return false;

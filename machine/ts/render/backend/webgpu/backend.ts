@@ -12,7 +12,7 @@ import {
 	serviceGxGpuReadback,
 	type WebGpuGxGpuState,
 } from './gx_gpu';
-import { updateAndBindFrameUniforms } from '../frame_uniforms';
+import { createFrameUniformState, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { registerHostOverlayPassesWebGPU } from '../../host_overlay/webgpu/pipeline';
 import { GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT } from '../../../spec/gx/vram';
@@ -77,6 +77,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
+		const frameUniforms = createFrameUniformState(this);
 		registry.register({
 			id: 'frame_resolve',
 			name: 'FrameResolve',
@@ -85,7 +86,10 @@ export class WebGPUBackend implements GPUBackend {
 			exec: () => { },
 			prepare: (backend) => {
 				const gv = registry.presenter;
-				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
+				updateAndBindFrameUniforms(frameUniforms, backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
+			},
+			teardown: () => {
+				this.destroyBuffer(frameUniforms.buffer);
 			},
 		});
 		registerGxGpuPass(registry);
@@ -587,6 +591,15 @@ export class WebGPUBackend implements GPUBackend {
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {
 		void usage; // reserved for future usage hint mapping
 		return this.device.createBuffer({ size: byteSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, mappedAtCreation: false });
+	}
+	destroyBuffer(buffer: GPUBuffer): void {
+		for (const [bindingIndex, boundBuffer] of this.uniformBindings) {
+			if (boundBuffer === buffer) {
+				this.uniformBindings.delete(bindingIndex);
+			}
+		}
+		this.bindGroupCache.clear();
+		buffer.destroy();
 	}
 	updateUniformBuffer(buf: GPUBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
 		this.device.queue.writeBuffer(buf, dstByteOffset, data.buffer, data.byteOffset, data.byteLength);

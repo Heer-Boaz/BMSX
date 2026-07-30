@@ -4,13 +4,8 @@
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
-#include <array>
-
 namespace bmsx {
 namespace {
-
-constexpr size_t kGxGpuTriangleUvComponents = 2u;
-constexpr size_t kGxGpuTriangleColorComponents = 3u;
 
 inline i32 absI32(i32 value) {
 	return value < 0 ? -value : value;
@@ -50,78 +45,6 @@ inline u32 lineFixedRgbToByte(i32 value) {
 inline i64 edgeValue(i32 ax, i32 ay, i32 bx, i32 by, i32 cx, i32 cy) {
 	return static_cast<i64>(cx - ax) * static_cast<i64>(by - ay) - static_cast<i64>(cy - ay) * static_cast<i64>(bx - ax);
 }
-
-inline i32 floorQuotient(i32 numerator, i32 denominator, i32& remainder) {
-	i32 quotient = numerator / denominator;
-	remainder = numerator - quotient * denominator;
-	if (remainder < 0) {
-		quotient -= 1;
-		remainder += denominator;
-	}
-	return quotient;
-}
-
-struct TriangleEdgeSpan {
-	i32 rowValue;
-	i32 rowStep;
-	i32 boundary = 0;
-	i32 boundaryStep = 0;
-	i32 remainder = 0;
-	i32 remainderStep = 0;
-	i32 denominator = 0;
-	i32 boundaryKind = 0;
-
-	TriangleEdgeSpan(i64 initialRowValue, i64 stepX, i64 stepY)
-		: rowValue(static_cast<i32>(initialRowValue)),
-			rowStep(static_cast<i32>(stepY)) {
-		i32 numerator;
-		i32 numeratorStep;
-		if (stepX > 0) {
-			denominator = static_cast<i32>(stepX);
-			numerator = -rowValue + denominator - 1;
-			numeratorStep = -rowStep;
-			boundaryKind = 1;
-		} else if (stepX < 0) {
-			denominator = static_cast<i32>(-stepX);
-			numerator = rowValue;
-			numeratorStep = rowStep;
-			boundaryKind = -1;
-		} else {
-			return;
-		}
-		boundary = floorQuotient(numerator, denominator, remainder);
-		boundaryStep = floorQuotient(numeratorStep, denominator, remainderStep);
-	}
-
-	bool intersect(i32& firstOffset, i32& lastOffset) const {
-		if (boundaryKind > 0) {
-			if (boundary > firstOffset) {
-				firstOffset = boundary;
-			}
-			return firstOffset <= lastOffset;
-		}
-		if (boundaryKind < 0) {
-			if (boundary < lastOffset) {
-				lastOffset = boundary;
-			}
-			return firstOffset <= lastOffset;
-		}
-		return rowValue >= 0;
-	}
-
-	void advance() {
-		if (boundaryKind == 0) {
-			rowValue += rowStep;
-			return;
-		}
-		boundary += boundaryStep;
-		remainder += remainderStep;
-		if (remainder >= denominator) {
-			remainder -= denominator;
-			boundary += 1;
-		}
-	}
-};
 
 inline u32 colorR8(u32 colorWord) {
 	return colorWord & 0xffu;
@@ -364,23 +287,19 @@ void drawGxGpuSoftwareTriangleImpl(
 	u32 rowR = 0u;
 	u32 rowG = 0u;
 	u32 rowB = 0u;
+	auto& colorPlaneScratch = software.triangleColorPlaneScratch;
 	if constexpr (InterpolatesColor) {
-		std::array<
-			u32,
-			kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
-		> colorPlaneScratch{
-			r0,
-			g0,
-			b0,
-			colorR8(color1),
-			colorG8(color1),
-			colorB8(color1),
-			colorR8(color2),
-			colorG8(color2),
-			colorB8(color2),
-		};
+		colorPlaneScratch[0] = r0;
+		colorPlaneScratch[1] = g0;
+		colorPlaneScratch[2] = b0;
+		colorPlaneScratch[3] = colorR8(color1);
+		colorPlaneScratch[4] = colorG8(color1);
+		colorPlaneScratch[5] = colorB8(color1);
+		colorPlaneScratch[6] = colorR8(color2);
+		colorPlaneScratch[7] = colorG8(color2);
+		colorPlaneScratch[8] = colorB8(color2);
 		const i64 determinant = -area * edgeSign;
-		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
 		rStepX = colorPlaneScratch[3];
 		gStepX = colorPlaneScratch[4];
 		bStepX = colorPlaneScratch[5];
@@ -394,20 +313,25 @@ void drawGxGpuSoftwareTriangleImpl(
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
-	TriangleEdgeSpan edge0(rowW0, edge0StepX, edge0StepY);
-	TriangleEdgeSpan edge1(rowW1, edge1StepX, edge1StepY);
-	TriangleEdgeSpan edge2(rowW2, edge2StepX, edge2StepY);
+	auto& edge0 = software.triangleEdge0;
+	auto& edge1 = software.triangleEdge1;
+	auto& edge2 = software.triangleEdge2;
+	auto& spanBounds = software.triangleSpanBounds;
+	edge0.initialize(rowW0, edge0StepX, edge0StepY);
+	edge1.initialize(rowW1, edge1StepX, edge1StepY);
+	edge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (i32 y = top; y < bottomExclusive; y += 1) {
 		if ((y & 1) != skippedLineParity) {
-			i32 firstOffset = 0;
-			i32 lastOffset = rightExclusive - left - 1;
-			if (edge0.intersect(firstOffset, lastOffset)
-				&& edge1.intersect(firstOffset, lastOffset)
-				&& edge2.intersect(firstOffset, lastOffset)) {
+			spanBounds[0] = 0;
+			spanBounds[1] = rightExclusive - left - 1;
+			if (edge0.intersect(spanBounds[0], spanBounds[1])
+				&& edge1.intersect(spanBounds[0], spanBounds[1])
+				&& edge2.intersect(spanBounds[0], spanBounds[1])) {
+				const i32 firstOffset = spanBounds[0];
 				u32 rFixed = rowR + static_cast<u32>(firstOffset) * rStepX;
 				u32 gFixed = rowG + static_cast<u32>(firstOffset) * gStepX;
 				u32 bFixed = rowB + static_cast<u32>(firstOffset) * bStepX;
-				const i32 spanEnd = left + lastOffset;
+				const i32 spanEnd = left + spanBounds[1];
 				for (i32 x = left + firstOffset; x <= spanEnd; x += 1) {
 					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
 					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;
@@ -590,23 +514,19 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 	u32 rowR = 0u;
 	u32 rowG = 0u;
 	u32 rowB = 0u;
+	auto& colorPlaneScratch = software.triangleColorPlaneScratch;
 	const i64 determinant = -area * edgeSign;
 	if constexpr (InterpolatesColor) {
-		std::array<
-			u32,
-			kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
-		> colorPlaneScratch{
-			r0,
-			g0,
-			b0,
-			colorR8(color1),
-			colorG8(color1),
-			colorB8(color1),
-			colorR8(color2),
-			colorG8(color2),
-			colorB8(color2),
-		};
-		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		colorPlaneScratch[0] = r0;
+		colorPlaneScratch[1] = g0;
+		colorPlaneScratch[2] = b0;
+		colorPlaneScratch[3] = colorR8(color1);
+		colorPlaneScratch[4] = colorG8(color1);
+		colorPlaneScratch[5] = colorB8(color1);
+		colorPlaneScratch[6] = colorR8(color2);
+		colorPlaneScratch[7] = colorG8(color2);
+		colorPlaneScratch[8] = colorB8(color2);
+		gxGpuTriangleAttributePlane(colorPlaneScratch.data(), 0u, GX_GPU_TRIANGLE_COLOR_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
 		rStepX = colorPlaneScratch[3];
 		gStepX = colorPlaneScratch[4];
 		bStepX = colorPlaneScratch[5];
@@ -617,18 +537,14 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 		rowG = colorPlaneScratch[1] + static_cast<u32>(left) * gStepX + static_cast<u32>(top) * gStepY;
 		rowB = colorPlaneScratch[2] + static_cast<u32>(left) * bStepX + static_cast<u32>(top) * bStepY;
 	}
-	std::array<
-		u32,
-		kGxGpuTriangleUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES
-	> uvPlaneScratch{
-		static_cast<u32>(u0),
-		static_cast<u32>(v0),
-		static_cast<u32>(u1),
-		static_cast<u32>(v1),
-		static_cast<u32>(u2),
-		static_cast<u32>(v2),
-	};
-	gxGpuTriangleAttributePlane(uvPlaneScratch.data(), 0u, kGxGpuTriangleUvComponents, determinant, x0, y0, x1, y1, x2, y2);
+	auto& uvPlaneScratch = software.triangleUvPlaneScratch;
+	uvPlaneScratch[0] = static_cast<u32>(u0);
+	uvPlaneScratch[1] = static_cast<u32>(v0);
+	uvPlaneScratch[2] = static_cast<u32>(u1);
+	uvPlaneScratch[3] = static_cast<u32>(v1);
+	uvPlaneScratch[4] = static_cast<u32>(u2);
+	uvPlaneScratch[5] = static_cast<u32>(v2);
+	gxGpuTriangleAttributePlane(uvPlaneScratch.data(), 0u, GX_GPU_TRIANGLE_UV_COMPONENTS, determinant, x0, y0, x1, y1, x2, y2);
 	const u32 uStepX = uvPlaneScratch[2];
 	const u32 vStepX = uvPlaneScratch[3];
 	const u32 uStepY = uvPlaneScratch[4];
@@ -638,22 +554,27 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
-	TriangleEdgeSpan edge0(rowW0, edge0StepX, edge0StepY);
-	TriangleEdgeSpan edge1(rowW1, edge1StepX, edge1StepY);
-	TriangleEdgeSpan edge2(rowW2, edge2StepX, edge2StepY);
+	auto& edge0 = software.triangleEdge0;
+	auto& edge1 = software.triangleEdge1;
+	auto& edge2 = software.triangleEdge2;
+	auto& spanBounds = software.triangleSpanBounds;
+	edge0.initialize(rowW0, edge0StepX, edge0StepY);
+	edge1.initialize(rowW1, edge1StepX, edge1StepY);
+	edge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (i32 y = top; y < bottomExclusive; y += 1) {
 		if ((y & 1) != skippedLineParity) {
-			i32 firstOffset = 0;
-			i32 lastOffset = rightExclusive - left - 1;
-			if (edge0.intersect(firstOffset, lastOffset)
-				&& edge1.intersect(firstOffset, lastOffset)
-				&& edge2.intersect(firstOffset, lastOffset)) {
+			spanBounds[0] = 0;
+			spanBounds[1] = rightExclusive - left - 1;
+			if (edge0.intersect(spanBounds[0], spanBounds[1])
+				&& edge1.intersect(spanBounds[0], spanBounds[1])
+				&& edge2.intersect(spanBounds[0], spanBounds[1])) {
+				const i32 firstOffset = spanBounds[0];
 				u32 rFixed = rowR + static_cast<u32>(firstOffset) * rStepX;
 				u32 gFixed = rowG + static_cast<u32>(firstOffset) * gStepX;
 				u32 bFixed = rowB + static_cast<u32>(firstOffset) * bStepX;
 				u32 uFixed = rowU + static_cast<u32>(firstOffset) * uStepX;
 				u32 vFixed = rowV + static_cast<u32>(firstOffset) * vStepX;
-				const i32 spanEnd = left + lastOffset;
+				const i32 spanEnd = left + spanBounds[1];
 				for (i32 x = left + firstOffset; x <= spanEnd; x += 1) {
 					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
 					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;

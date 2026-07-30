@@ -2,7 +2,6 @@ import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
 	buildBlua32ExecutionRevision,
 } from '../../toolchain/ts/rompack/blua32_revision';
@@ -109,8 +108,6 @@ export function hotResume(
 		interpreter.clearLastFaultEnvironment();
 		clearFaultSnapshot(fault);
 		resetHandledLuaErrors(fault);
-		clearOverlayFrame();
-
 		const cpu = runtime.machine.cpu;
 		const initClosure = cpu.getGlobalByKey(
 			StringValue.get(cpu.stringPool.intern('init')),

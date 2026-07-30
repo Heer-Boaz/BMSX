@@ -15,7 +15,6 @@ import {
 	HOST_OVERLAY_INSTANCE_FLOATS,
 	HostOverlayQuadStream,
 } from '../quad_stream';
-import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { HOST_SYSTEM_ATLAS } from '../atlas';
 import vertexShaderCode from './shaders/host_overlay.vert.wgsl';
@@ -31,10 +30,11 @@ type HostOverlayRuntime = {
 	colorAttachment: ColorAttachmentSpec;
 	passDesc: RenderPassDesc;
 	stream: HostOverlayQuadStream;
+	hostAtlasTexture: GPUTexture;
+	uniformScratch: Float32Array;
 };
 
 const OVERLAY_UNIFORM_FLOATS = 4;
-const overlayUniformScratch = new Float32Array(OVERLAY_UNIFORM_FLOATS);
 
 function createInstanceFloatBuffer(device: GPUDevice, stream: HostOverlayQuadStream): GPUBuffer {
 	return device.createBuffer({
@@ -132,6 +132,8 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		colorAttachment,
 		passDesc: { label: 'HostOverlay (WebGPU)', color: colorAttachment },
 		stream,
+		hostAtlasTexture,
+		uniformScratch: new Float32Array(OVERLAY_UNIFORM_FLOATS),
 	};
 }
 
@@ -155,14 +157,15 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	}
 	const device = backend.device;
 	prepareInstanceBuffers(device, runtime);
-	overlayUniformScratch[0] = state.overlayWidth;
-	overlayUniformScratch[1] = state.overlayHeight;
-	device.queue.writeBuffer(runtime.uniformBuffer, 0, overlayUniformScratch);
+	const uniformScratch = runtime.uniformScratch;
+	uniformScratch[0] = state.overlayWidth;
+	uniformScratch[1] = state.overlayHeight;
+	device.queue.writeBuffer(runtime.uniformBuffer, 0, uniformScratch);
 	const floatBytes = count * HOST_OVERLAY_INSTANCE_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 	device.queue.writeBuffer(runtime.instanceFloatBuffer, 0, stream.floatData.buffer, stream.floatData.byteOffset, floatBytes);
 	const textureKindBytes = count * Uint32Array.BYTES_PER_ELEMENT;
 	device.queue.writeBuffer(runtime.instanceTextureKindBuffer, 0, stream.textureKinds.buffer, stream.textureKinds.byteOffset, textureKindBytes);
-	backend.accountUpload('uniform', overlayUniformScratch.byteLength);
+	backend.accountUpload('uniform', uniformScratch.byteLength);
 	backend.accountUpload('vertex', floatBytes + textureKindBytes);
 	runtime.colorAttachment.tex = backend.context.getCurrentTexture() as TextureHandle;
 	const pass = backend.beginRenderPass(runtime.passDesc) as WebGPUPassEncoder;
@@ -185,7 +188,13 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		bootstrap: (backend) => {
 			runtime = createRuntime(backend as WebGPUBackend);
 		},
-		shouldExecute: () => hasPendingOverlayFrame(),
+		teardown: (backend) => {
+			runtime.uniformBuffer.destroy();
+			runtime.instanceFloatBuffer.destroy();
+			runtime.instanceTextureKindBuffer.destroy();
+			backend.destroyTexture(runtime.hostAtlasTexture);
+		},
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
 			const stream = runtime.stream;
 			stream.reset();
@@ -201,7 +210,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		present: true,
 		initialState: createHostMenuState(),
 		graph: { writeState: writeHostMenuState },
-		shouldExecute: () => hasPendingHostMenuFrame(),
+		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingHostMenuFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_menu']) => {
 			const stream = runtime.stream;
 			stream.reset();

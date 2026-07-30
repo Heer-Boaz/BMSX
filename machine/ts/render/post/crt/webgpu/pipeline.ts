@@ -9,7 +9,6 @@ import vertexShaderCRTCode from '../../webgpu/shaders/fullscreen.vert.wgsl';
 import { DeviceQuantizeMode } from '../../device_quantize/mode';
 
 const CRT_UNIFORM_FLOATS = 24;
-const crtUniformScratch = new Float32Array(CRT_UNIFORM_FLOATS);
 
 type TextureBindCache = {
 	texture: GPUTexture | null;
@@ -24,7 +23,7 @@ function writeCrtUniforms(out: Float32Array, state: RenderPassStateRegistry['crt
 	out[3] = sourceTexelY;
 	const opts = state.options;
 	if (opts.applyNoise) {
-		out[4] = Math.random();
+		out[4] = state.noiseOffset;
 		out[14] = state.time;
 	}
 	out[5] = opts.applyNoise ? 1 : 0;
@@ -145,6 +144,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	let crtSourceHeight = 0;
 	let crtSourceTexelX = 0;
 	let crtSourceTexelY = 0;
+	const crtUniformScratch = new Float32Array(CRT_UNIFORM_FLOATS);
 	const historyACache: TextureBindCache = { texture: null, view: null, bindGroup: null };
 	const historyBCache: TextureBindCache = { texture: null, view: null, bindGroup: null };
 	const presentCache: TextureBindCache = { texture: null, view: null, bindGroup: null };
@@ -162,7 +162,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	};
 
 	function writeHistoryState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['presentation_history_a'] | RenderPassStateRegistry['presentation_history_b'], targetSlot: 'frame_history_a' | 'frame_history_b'): void {
-		const presenter = ctx.presenter as VideoPresenter;
+		const presenter = ctx.presenter;
 		state.width = presenter.offscreenCanvasSize.x;
 		state.height = presenter.offscreenCanvasSize.y;
 		state.srcWidth = presenter.offscreenCanvasSize.x;
@@ -179,6 +179,9 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		graph: { reads: ['frame_color', 'device_color'], writes: ['frame_history_a'], writeState: (ctx, state) => writeHistoryState(ctx, state as RenderPassStateRegistry['presentation_history_a'], 'frame_history_a') },
 		shouldExecute: shouldUpdatePresentationHistoryA,
 		bootstrap,
+		teardown: () => {
+			uniformBuffer.destroy();
+		},
 		exec: (backend, _fbo, state: RenderPassStateRegistry['presentation_history_a']) => {
 			const wgpu = backend as WebGPUBackend;
 			const bindGroup = presentBindGroupForTexture(wgpu.device, presentLayout, sampler, historyACache, state.colorTex as GPUTexture);

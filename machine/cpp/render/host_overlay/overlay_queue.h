@@ -21,13 +21,22 @@ struct HostMenuFrame {
 	size_t commandCount = 0;
 };
 
-void publishOverlayFrame(const HostOverlayFrame& frame);
-bool hasPendingOverlayFrame();
-HostOverlayFrame consumeOverlayFrame();
-void clearOverlayFrame();
-void publishHostMenuFrame(const HostMenuFrame& frame);
-bool hasPendingHostMenuFrame();
-HostMenuFrame consumeHostMenuFrame();
-void clearHostMenuFrame();
+class HostOverlayQueue {
+public:
+	void publishOverlayFrame(const HostOverlayFrame& frame);
+	bool hasPendingOverlayFrame() const;
+	HostOverlayFrame consumeOverlayFrame();
+	void clearOverlayFrame();
+	void publishHostMenuFrame(const HostMenuFrame& frame);
+	bool hasPendingHostMenuFrame() const;
+	HostMenuFrame consumeHostMenuFrame();
+	void clearHostMenuFrame();
+
+private:
+	HostOverlayFrame m_pendingFrame;
+	bool m_hasPendingFrame = false;
+	HostMenuFrame m_pendingMenuFrame;
+	bool m_hasPendingMenuFrame = false;
+};
 
 } // namespace bmsx

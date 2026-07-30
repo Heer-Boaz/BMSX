@@ -30,7 +30,7 @@ struct OpenGLES2GxGpuState;
 struct OpenGLES2GxGpuStateDeleter {
 	void operator()(OpenGLES2GxGpuState* state) const noexcept;
 };
-struct OpenGLES2PostPipelines;
+struct OpenGLES2Pipelines;
 struct RenderPassStateStorage;
 class VideoPresenter;
 
@@ -176,7 +176,7 @@ private:
 	GLfloat m_blend_blue = 0.0f;
 	GLfloat m_blend_alpha = 0.0f;
 	bool m_blend_color_valid = false;
-	std::unique_ptr<OpenGLES2PostPipelines> m_post_pipelines;
+	std::unique_ptr<OpenGLES2Pipelines> m_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;
 	bool m_context_ready = false;

@@ -1,5 +1,4 @@
 import type { HostMenuPipelineState, HostOverlayPipelineState, RenderGraphPassContext } from '../backend/backend';
-import { consumeHostMenuFrame, consumeOverlayFrame } from './overlay_queue';
 
 const EMPTY_HOST_2D_KINDS = [];
 const EMPTY_HOST_2D_REFS = [];
@@ -19,7 +18,7 @@ export function createHostOverlayState(): HostOverlayPipelineState {
 }
 
 export function writeHostOverlayState(ctx: RenderGraphPassContext, state: HostOverlayPipelineState): void {
-	const frame = consumeOverlayFrame();
+	const frame = ctx.presenter.hostOverlayQueue.consumeOverlayFrame();
 	state.width = frame.renderWidth;
 	state.height = frame.renderHeight;
 	state.overlayWidth = frame.logicalWidth;
@@ -47,7 +46,7 @@ export function createHostMenuState(): HostMenuPipelineState {
 
 export function writeHostMenuState(ctx: RenderGraphPassContext, state: HostMenuPipelineState): void {
 	const presenter = ctx.presenter;
-	const frame = consumeHostMenuFrame();
+	const frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	state.width = presenter.offscreenCanvasSize.x;
 	state.height = presenter.offscreenCanvasSize.y;
 	state.overlayWidth = presenter.viewportSize.x;

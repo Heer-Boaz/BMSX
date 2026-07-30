@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import { consumeOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import { HostOverlayQueue, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { drawCursor } from '../../ide/editor/render/caret';
@@ -12,7 +12,8 @@ import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
 
 function renderActiveCursor(baseColor: number): HostOverlayFrame {
-	const renderer = new OverlayRenderer();
+	const queue = new HostOverlayQueue();
+	const renderer = new OverlayRenderer(queue);
 	renderer.beginFrame({
 		offscreenCanvasSize: { x: 64, y: 32 },
 		viewportSize: { x: 64, y: 32 },
@@ -29,7 +30,7 @@ function renderActiveCursor(baseColor: number): HostOverlayFrame {
 		baseColor,
 	}, 0, true);
 	renderer.endFrame();
-	return consumeOverlayFrame();
+	return queue.consumeOverlayFrame();
 }
 
 test('active code caret redraws the underlying glyph with its inverse color', (t) => {

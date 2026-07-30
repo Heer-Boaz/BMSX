@@ -10,7 +10,7 @@ import {
 	type color,
 } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
-import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame, HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../common/viewport';
 
@@ -105,6 +105,9 @@ export class OverlayRenderer {
 	private frameRenderWidth = 0;
 	private frameRenderHeight = 0;
 	private overrideSize: Viewport = null;
+
+	public constructor(private readonly queue: HostOverlayQueue) {
+	}
 
 	public setViewportSize(viewport: Viewport): void {
 		this.overrideSize = { width: viewport.width, height: viewport.height };
@@ -259,7 +262,7 @@ export class OverlayRenderer {
 	public endFrame(): void {
 		const publishedBuffer = this.activeBuffer;
 		if (publishedBuffer.commandCount === 0) {
-			clearOverlayFrame();
+			this.queue.clearOverlayFrame();
 			return;
 		}
 		this.activeBuffer = this.standbyBuffer;
@@ -270,7 +273,7 @@ export class OverlayRenderer {
 		frame.renderWidth = this.frameRenderWidth;
 		frame.renderHeight = this.frameRenderHeight;
 		frame.commandCount = publishedBuffer.commandCount;
-		publishOverlayFrame(frame);
+		this.queue.publishOverlayFrame(frame);
 	}
 
 	public abandonFrame(): void {
@@ -280,6 +283,6 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
-		clearOverlayFrame();
+		this.queue.clearOverlayFrame();
 	}
 }

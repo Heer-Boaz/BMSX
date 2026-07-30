@@ -12,36 +12,22 @@
 namespace bmsx {
 namespace {
 
-struct HostOverlayGLES2State {
-	u32 generation = 0u;
-	GLuint program = 0;
-	GLint attribPos = -1;
-	GLint attribUv = -1;
-	GLint uniformResolution = -1;
-	GLint uniformColor = -1;
-	GLuint vbo = 0;
-	TextureHandle whiteTexture = nullptr;
-	TextureHandle hostAtlasTexture = nullptr;
-};
-
-HostOverlayGLES2State g_gles2;
-
 void bindTexture(OpenGLES2Backend& backend, TextureHandle texture) {
 	backend.setActiveTextureUnit(GLES2_TEXTURE_UNIT_HOST_2D);
 	backend.bindTexture2D(texture);
 }
 
-void drawVerticesGLES2(const float (&vertices)[24]) {
-	glBindBuffer(GL_ARRAY_BUFFER, g_gles2.vbo);
+void drawVerticesGLES2(HostOverlayGLES2State& pipeline, const float (&vertices)[24]) {
+	glBindBuffer(GL_ARRAY_BUFFER, pipeline.vbo);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STREAM_DRAW);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribPos));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribUv));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
+	glEnableVertexAttribArray(static_cast<GLuint>(pipeline.attribPos));
+	glVertexAttribPointer(static_cast<GLuint>(pipeline.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
+	glEnableVertexAttribArray(static_cast<GLuint>(pipeline.attribUv));
+	glVertexAttribPointer(static_cast<GLuint>(pipeline.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 color) {
+void drawQuadGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 color) {
 	const float left = static_cast<float>(x);
 	const float top = static_cast<float>(y);
 	const float right = static_cast<float>(x + w);
@@ -56,35 +42,35 @@ void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 
 	};
 	bindTexture(backend, texture);
 	glUniform4f(
-		g_gles2.uniformColor,
+		pipeline.uniformColor,
 		static_cast<f32>((color >> 16u) & 0xffu) / 255.0f,
 		static_cast<f32>((color >> 8u) & 0xffu) / 255.0f,
 		static_cast<f32>(color & 0xffu) / 255.0f,
 		static_cast<f32>((color >> 24u) & 0xffu) / 255.0f
 	);
-	drawVerticesGLES2(vertices);
+	drawVerticesGLES2(pipeline, vertices);
 }
 
-void drawRectGLES2(OpenGLES2Backend& backend, const RectRenderSubmission& command) {
+void drawRectGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const RectRenderSubmission& command) {
 	const i32 left = static_cast<i32>(command.area.left);
 	const i32 top = static_cast<i32>(command.area.top);
 	const i32 width = static_cast<i32>(command.area.right - command.area.left);
 	const i32 height = static_cast<i32>(command.area.bottom - command.area.top);
 	if (command.kind == RectRenderKind::Fill) {
-		drawQuadGLES2(backend, g_gles2.whiteTexture, left, top, width, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
+		drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left, top, width, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 		return;
 	}
-	drawQuadGLES2(backend, g_gles2.whiteTexture, left, top, width, 1, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
-	drawQuadGLES2(backend, g_gles2.whiteTexture, left, top + height - 1, width, 1, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
-	drawQuadGLES2(backend, g_gles2.whiteTexture, left, top, 1, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
-	drawQuadGLES2(backend, g_gles2.whiteTexture, left + width - 1, top, 1, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
+	drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left, top, width, 1, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
+	drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left, top + height - 1, width, 1, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
+	drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left, top, 1, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
+	drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left + width - 1, top, 1, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 }
 
-void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, u32 color, f32 thickness) {
+void drawLineGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, f32 x0, f32 y0, f32 x1, f32 y1, u32 color, f32 thickness) {
 	const f32 dx = x1 - x0;
 	const f32 dy = y1 - y0;
 	if (dx == 0.0f && dy == 0.0f) {
-		drawQuadGLES2(backend, g_gles2.whiteTexture, static_cast<i32>(x0), static_cast<i32>(y0), static_cast<i32>(thickness), static_cast<i32>(thickness), 0.0f, 0.0f, 1.0f, 1.0f, color);
+		drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, static_cast<i32>(x0), static_cast<i32>(y0), static_cast<i32>(thickness), static_cast<i32>(thickness), 0.0f, 0.0f, 1.0f, 1.0f, color);
 		return;
 	}
 	const f32 length = std::sqrt(dx * dx + dy * dy);
@@ -99,24 +85,24 @@ void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, u3
 		x0 + normalX * half, y0 + normalY * half, 0.0f, 1.0f,
 		x1 + normalX * half, y1 + normalY * half, 1.0f, 1.0f,
 	};
-	bindTexture(backend, g_gles2.whiteTexture);
+	bindTexture(backend, pipeline.whiteTexture);
 	glUniform4f(
-		g_gles2.uniformColor,
+		pipeline.uniformColor,
 		static_cast<f32>((color >> 16u) & 0xffu) / 255.0f,
 		static_cast<f32>((color >> 8u) & 0xffu) / 255.0f,
 		static_cast<f32>(color & 0xffu) / 255.0f,
 		static_cast<f32>((color >> 24u) & 0xffu) / 255.0f
 	);
-	drawVerticesGLES2(vertices);
+	drawVerticesGLES2(pipeline, vertices);
 }
 
-void drawPolyGLES2(OpenGLES2Backend& backend, const PolyRenderSubmission& command) {
+void drawPolyGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const PolyRenderSubmission& command) {
 	for (size_t index = 0; index + 3u < command.points.size(); index += 2u) {
-		drawLineGLES2(backend, command.points[index], command.points[index + 1u], command.points[index + 2u], command.points[index + 3u], command.color, command.thickness);
+		drawLineGLES2(backend, pipeline, command.points[index], command.points[index + 1u], command.points[index + 2u], command.points[index + 3u], command.color, command.thickness);
 	}
 }
 
-void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, f32 x, f32 y, f32 scaleX, f32 scaleY, const FlipOptions& flip, u32 color) {
+void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, std::string_view imgid, f32 x, f32 y, f32 scaleX, f32 scaleY, const FlipOptions& flip, u32 color) {
 	const HostSystemAtlasImage& source = hostSystemAtlasImage(imgid);
 	f32 u0 = static_cast<f32>(source.u) / static_cast<f32>(HOST_SYSTEM_ATLAS.width);
 	f32 v0 = static_cast<f32>(source.v) / static_cast<f32>(HOST_SYSTEM_ATLAS.height);
@@ -134,7 +120,8 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, 
 	}
 	drawQuadGLES2(
 		backend,
-		g_gles2.hostAtlasTexture,
+		pipeline,
+		pipeline.hostAtlasTexture,
 		static_cast<i32>(x),
 		static_cast<i32>(y),
 		static_cast<i32>(static_cast<f32>(source.width) * scaleX),
@@ -147,13 +134,14 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, 
 	);
 }
 
-void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
+void drawGlyphImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
 	const f32 atlasWidth = static_cast<f32>(HOST_SYSTEM_ATLAS.width);
 	const f32 atlasHeight = static_cast<f32>(HOST_SYSTEM_ATLAS.height);
 	drawQuadGLES2(
 		backend,
-		g_gles2.hostAtlasTexture,
+		pipeline,
+		pipeline.hostAtlasTexture,
 		static_cast<i32>(imageX),
 		static_cast<i32>(imageY),
 		static_cast<i32>(rect.w),
@@ -168,6 +156,7 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& item, f32 i
 
 struct GlyphGLES2Context {
 	OpenGLES2Backend& backend;
+	HostOverlayGLES2State& pipeline;
 	i32 lineHeight;
 	u32 color;
 };
@@ -180,7 +169,8 @@ void drawGlyphBackgroundGLES2(
 ) {
 	drawQuadGLES2(
 		context.backend,
-		g_gles2.whiteTexture,
+		context.pipeline,
+		context.pipeline.whiteTexture,
 		static_cast<i32>(imageX),
 		static_cast<i32>(imageY),
 		item.advance,
@@ -199,12 +189,13 @@ void drawGlyphGLES2(
 	f32 imageX,
 	f32 imageY
 ) {
-	drawGlyphImageGLES2(context.backend, item, imageX, imageY, context.color);
+	drawGlyphImageGLES2(context.backend, context.pipeline, item, imageX, imageY, context.color);
 }
 
-void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& command) {
+void drawGlyphsGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const GlyphRenderSubmission& command) {
 	GlyphGLES2Context context{
 		.backend = backend,
+		.pipeline = pipeline,
 		.lineHeight = 0,
 		.color = command.background_color,
 	};
@@ -218,57 +209,57 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 
 } // namespace
 
-void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
-	g_gles2.generation = backend.contextGeneration();
-	g_gles2.program = backend.buildProgram(kHostOverlayVertexShader, kHostOverlayFragmentShader, "host_overlay");
-	g_gles2.attribPos = glGetAttribLocation(g_gles2.program, "a_position");
-	g_gles2.attribUv = glGetAttribLocation(g_gles2.program, "a_texcoord");
-	g_gles2.uniformResolution = glGetUniformLocation(g_gles2.program, "u_resolution");
-	g_gles2.uniformColor = glGetUniformLocation(g_gles2.program, "u_color");
-	glUseProgram(g_gles2.program);
-	glUniform1i(glGetUniformLocation(g_gles2.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
-	glGenBuffers(1, &g_gles2.vbo);
+void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline) {
+	pipeline.generation = backend.contextGeneration();
+	pipeline.program = backend.buildProgram(kHostOverlayVertexShader, kHostOverlayFragmentShader, "host_overlay");
+	pipeline.attribPos = glGetAttribLocation(pipeline.program, "a_position");
+	pipeline.attribUv = glGetAttribLocation(pipeline.program, "a_texcoord");
+	pipeline.uniformResolution = glGetUniformLocation(pipeline.program, "u_resolution");
+	pipeline.uniformColor = glGetUniformLocation(pipeline.program, "u_color");
+	glUseProgram(pipeline.program);
+	glUniform1i(glGetUniformLocation(pipeline.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
+	glGenBuffers(1, &pipeline.vbo);
 	const TextureParams& params = RGBA8_LINEAR_TEXTURE_PARAMS;
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
-	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
-	g_gles2.hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels.data(), static_cast<i32>(HOST_SYSTEM_ATLAS.width), static_cast<i32>(HOST_SYSTEM_ATLAS.height), params);
+	pipeline.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
+	pipeline.hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels.data(), static_cast<i32>(HOST_SYSTEM_ATLAS.width), static_cast<i32>(HOST_SYSTEM_ATLAS.height), params);
 }
 
-void shutdownHostOverlayGLES2(OpenGLES2Backend& backend) {
-	if (g_gles2.generation == backend.contextGeneration()) {
-		glDeleteProgram(g_gles2.program);
-		glDeleteBuffers(1, &g_gles2.vbo);
+void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline) {
+	if (pipeline.generation == backend.contextGeneration()) {
+		glDeleteProgram(pipeline.program);
+		glDeleteBuffers(1, &pipeline.vbo);
 	}
-	backend.destroyTexture(g_gles2.whiteTexture);
-	backend.destroyTexture(g_gles2.hostAtlasTexture);
-	g_gles2 = HostOverlayGLES2State{};
+	backend.destroyTexture(pipeline.whiteTexture);
+	backend.destroyTexture(pipeline.hostAtlasTexture);
+	pipeline = HostOverlayGLES2State{};
 }
 
-void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState& state) {
+void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const Host2DPipelineState& state) {
 	backend.setRenderTarget(backend.backbuffer(), state.overlayWidth, state.overlayHeight);
 	glViewport(0, 0, state.overlayWidth, state.overlayHeight);
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glUseProgram(g_gles2.program);
-	glUniform2f(g_gles2.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
+	glUseProgram(pipeline.program);
+	glUniform2f(pipeline.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
 }
 
-void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRef ref) {
+void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
 		case Host2DKind::Img: {
 			const auto& command = *ref.img;
-			drawHostAtlasImageGLES2(backend, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
+			drawHostAtlasImageGLES2(backend, pipeline, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
 			return;
 		}
-		case Host2DKind::Rect: drawRectGLES2(backend, *ref.rect); return;
-		case Host2DKind::Poly: drawPolyGLES2(backend, *ref.poly); return;
-		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, *ref.glyphs); return;
+		case Host2DKind::Rect: drawRectGLES2(backend, pipeline, *ref.rect); return;
+		case Host2DKind::Poly: drawPolyGLES2(backend, pipeline, *ref.poly); return;
+		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, pipeline, *ref.glyphs); return;
 	}
 }
 
-void endHostOverlayGLES2(OpenGLES2Backend&) {
+void endHostOverlayGLES2(OpenGLES2Backend&, HostOverlayGLES2State&) {
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 }

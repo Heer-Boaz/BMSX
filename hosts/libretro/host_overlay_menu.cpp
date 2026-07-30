@@ -258,13 +258,13 @@ HostOverlayMenu::HostOverlayMenu() {
 	}
 }
 
-void HostOverlayMenu::clearRenderCommands() {
+void HostOverlayMenu::clearRenderCommands(VideoPresenter& presenter) {
 	m_commandCount = 0;
-	clearHostMenuFrame();
+	presenter.hostOverlayQueue.clearHostMenuFrame();
 }
 
-void HostOverlayMenu::publishRenderCommands() {
-	publishHostMenuFrame(HostMenuFrame{m_commandKinds.data(), m_commandRefs.data(), m_commandCount});
+void HostOverlayMenu::publishRenderCommands(VideoPresenter& presenter) {
+	presenter.hostOverlayQueue.publishHostMenuFrame(HostMenuFrame{m_commandKinds.data(), m_commandRefs.data(), m_commandCount});
 }
 
 void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
@@ -345,7 +345,7 @@ void HostOverlayMenu::resetInputState() {
 }
 
 void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
-	clearRenderCommands();
+	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_dirtyText) {
@@ -388,11 +388,11 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 		items.color = index == m_selected ? kTextColor : kDimColor;
 		queueCommand(itemsKind, Host2DRef{.glyphs = &items});
 	}
-	publishRenderCommands();
+	publishRenderCommands(presenter);
 }
 
 bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps) {
-	clearRenderCommands();
+	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_active) {
@@ -462,7 +462,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 		queued = true;
 	}
 	if (queued) {
-		publishRenderCommands();
+		publishRenderCommands(presenter);
 	}
 	return queued;
 }
