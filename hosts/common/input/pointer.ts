@@ -1,6 +1,6 @@
 import { getPressedState, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
-import type { HostClock, VibrationParams } from '../platform';
+import type { HostClock } from '../clock';
 import {
 	type InputControllerPadSnapshot,
 	INP_POINTER_BUTTON_AUX,
@@ -9,18 +9,19 @@ import {
 	INP_POINTER_BUTTON_PRIMARY,
 	INP_POINTER_BUTTON_SECONDARY,
 	type InputControllerSnapshot,
-} from '../machine/devices/input/contracts';
+} from '../../../machine/ts/machine/devices/input/contracts';
 
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
-	'pointer_secondary',
 	'pointer_aux',
+	'pointer_secondary',
 	'pointer_back',
 	'pointer_forward',
 	'pointer_position',
 	'pointer_delta',
 	'pointer_wheel',
 ] as const;
+const POINTER_BUTTON_CODE_COUNT = INP_POINTER_BUTTON_FORWARD + 1;
 
 function pointerButtonBit(code: string): number {
 	switch (code) {
@@ -39,10 +40,18 @@ export class PointerInput implements InputHandler {
 
 	private buttonStates: KeyOrButtonId2ButtonState = {};
 	private nextPressId = 1;
-	private lastPosition = { x: 0, y: 0 };
+	private readonly pointerPosition: [number, number] = [0, 0];
+	private readonly pointerDelta: [number, number] = [0, 0];
+	private lastPositionX = 0;
+	private lastPositionY = 0;
 	private lastPositionValid = false;
-	private lastDeltaTimestamp = 0;
-	private lastWheelTimestamp = 0;
+	private pendingButtonPressEdges = 0;
+	private pendingButtonReleaseEdges = 0;
+	private pendingDeltaX = 0;
+	private pendingDeltaY = 0;
+	private pendingDeltaTimestamp = 0;
+	private pendingWheel = 0;
+	private pendingWheelTimestamp = 0;
 	private inputControllerButtons = 0;
 	private inputControllerX = 0;
 	private inputControllerY = 0;
@@ -59,50 +68,77 @@ export class PointerInput implements InputHandler {
 		return false;
 	}
 
-	public applyVibrationEffect(_params: VibrationParams): void { }
+	public applyVibrationEffect(_durationMs: number, _intensity: number): void { }
 
 	public pollInput(): void {
 		const now = this.clock.now();
-		for (const key of Object.keys(this.buttonStates)) {
-			const state = this.buttonStates[key];
-			if (!state) continue;
+		const delta = this.buttonStates['pointer_delta'];
+		const deltaX = this.pendingDeltaX;
+		const deltaY = this.pendingDeltaY;
+		const deltaMoved = deltaX !== 0 || deltaY !== 0;
+		const deltaWasPressed = delta.pressed;
+		this.pointerDelta[0] = deltaX;
+		this.pointerDelta[1] = deltaY;
+		delta.value = deltaMoved ? Math.hypot(deltaX, deltaY) : 0;
+		delta.pressed = deltaMoved;
+		delta.justpressed = deltaMoved && !deltaWasPressed;
+		delta.justreleased = !deltaMoved && deltaWasPressed;
+		delta.waspressed = delta.waspressed || deltaMoved;
+		delta.wasreleased = delta.wasreleased || delta.justreleased;
+		if (deltaMoved) {
+			delta.timestamp = this.pendingDeltaTimestamp;
+			delta.consumed = false;
+			if (!deltaWasPressed) {
+				delta.pressedAtMs = delta.timestamp;
+				delta.releasedAtMs = 0;
+			}
+		} else if (deltaWasPressed) {
+			delta.pressedAtMs = 0;
+			delta.releasedAtMs = now;
+		}
+		this.pendingDeltaX = 0;
+		this.pendingDeltaY = 0;
+
+		const wheel = this.buttonStates['pointer_wheel'];
+		const wheelDelta = this.pendingWheel;
+		const wheelMoved = wheelDelta !== 0;
+		const wheelWasPressed = wheel.pressed;
+		wheel.value = wheelDelta;
+		wheel.pressed = wheelMoved;
+		wheel.justpressed = wheelMoved;
+		wheel.justreleased = !wheelMoved && wheelWasPressed;
+		wheel.waspressed = wheel.waspressed || wheelMoved;
+		wheel.wasreleased = wheel.wasreleased || wheel.justreleased;
+		if (wheelMoved) {
+			wheel.timestamp = this.pendingWheelTimestamp;
+			wheel.pressedAtMs = wheel.timestamp;
+			wheel.releasedAtMs = 0;
+			wheel.pressId = this.nextPressId++;
+			wheel.consumed = false;
+		} else if (wheelWasPressed) {
+			wheel.pressedAtMs = 0;
+			wheel.releasedAtMs = now;
+		}
+		this.inputControllerWheel = wheelDelta;
+		this.pendingWheel = 0;
+
+		for (let index = 0; index < POINTER_DEFAULT_CODES.length; index += 1) {
+			const state = this.buttonStates[POINTER_DEFAULT_CODES[index]];
+			if (index < POINTER_BUTTON_CODE_COUNT) {
+				const mask = 1 << index;
+				state.justpressed = (this.pendingButtonPressEdges & mask) !== 0;
+				state.justreleased = (this.pendingButtonReleaseEdges & mask) !== 0;
+			}
 			if (state.pressed) {
-				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now; // TODO: USE resolveStateTimestamp
-				state.presstime = now - pressedAt;
-				state.justpressed = false;
+				state.presstime = now - state.pressedAtMs;
 			} else {
 				state.presstime = null;
-				state.justreleased = false;
-			}
-			if (key === 'pointer_delta') {
-				const ts = state.timestamp ?? 0;
-				if (ts === this.lastDeltaTimestamp) {
-					state.value2d = [0, 0];
-					state.value = 0;
-					state.pressed = false;
-					state.justpressed = false;
-					state.justreleased = false;
-				} else {
-					this.lastDeltaTimestamp = ts;
-				}
-			} else if (key === 'pointer_wheel') {
-				const ts = state.timestamp ?? 0;
-				if (ts === this.lastWheelTimestamp) {
-					const wasPressed = state.pressed;
-					state.value = 0;
-					this.inputControllerWheel = 0;
-					state.pressed = false;
-					state.justpressed = false;
-					state.justreleased = wasPressed;
-				} else {
-					this.lastWheelTimestamp = ts;
-					state.justreleased = false;
-				}
 			}
 			state.waspressed = state.waspressed || state.pressed;
-			state.wasreleased = state.wasreleased || (!state.pressed);
-			state.consumed = state.consumed ?? false;
+			state.wasreleased = state.wasreleased || state.justreleased;
 		}
+		this.pendingButtonPressEdges = 0;
+		this.pendingButtonReleaseEdges = 0;
 	}
 
 	// disable-next-line single_line_method_pattern -- InputHandler state API exposes pointer-owned button storage through the shared button-state projection.
@@ -140,72 +176,80 @@ export class PointerInput implements InputHandler {
 			this.inputControllerY = 0;
 		}
 		const wheel = this.buttonStates['pointer_wheel'];
-		this.inputControllerWheel = wheel && wheel.value !== undefined ? wheel.value : 0;
+		this.inputControllerWheel = wheel ? wheel.value : 0;
 	}
 
-	public ingestButton(code: string, state: ButtonState): void {
-		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as [number, number]) : null };
-		if (target.pressed) {
-			if (!target.pressId) target.pressId = this.nextPressId++;
-			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? this.clock.now();
-		} else {
-			target.consumed = false;
+	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
+		const target = getPressedState(this.buttonStates, code);
+		const wasPressed = target.pressed;
+		target.pressed = down;
+		target.timestamp = timestamp;
+		target.pressId = pressId;
+		target.value = value;
+		target.presstime = null;
+		target.consumed = false;
+		if (down) {
+			if (!wasPressed) {
+				target.waspressed = true;
+				target.pressedAtMs = timestamp;
+				target.releasedAtMs = 0;
+			}
+		} else if (wasPressed) {
+			target.wasreleased = true;
+			target.pressedAtMs = 0;
+			target.releasedAtMs = timestamp;
 		}
-		this.buttonStates[code] = target;
 		const bit = pointerButtonBit(code);
 		if (bit >= 0) {
 			const mask = 1 << bit;
-			this.inputControllerButtons = target.pressed ? ((this.inputControllerButtons | mask) >>> 0) : ((this.inputControllerButtons & ~mask) >>> 0);
+			if (down) {
+				this.inputControllerButtons = (this.inputControllerButtons | mask) >>> 0;
+				if (!wasPressed) {
+					this.pendingButtonPressEdges = (this.pendingButtonPressEdges | mask) >>> 0;
+				}
+			} else {
+				this.inputControllerButtons = (this.inputControllerButtons & ~mask) >>> 0;
+				if (wasPressed) {
+					this.pendingButtonReleaseEdges = (this.pendingButtonReleaseEdges | mask) >>> 0;
+				}
+			}
 		}
 	}
 
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
-		const current = this.buttonStates[code] ?? makeButtonState();
-		const dx = this.lastPositionValid ? (x - this.lastPosition.x) : 0;
-		const dy = this.lastPositionValid ? (y - this.lastPosition.y) : 0;
-		this.lastPosition.x = x;
-		this.lastPosition.y = y;
+		const current = getPressedState(this.buttonStates, code);
+		const dx = this.lastPositionValid ? (x - this.lastPositionX) : 0;
+		const dy = this.lastPositionValid ? (y - this.lastPositionY) : 0;
+		this.lastPositionX = x;
+		this.lastPositionY = y;
 		this.lastPositionValid = true;
-		current.value2d = [x, y];
+		let value2d = current.value2d;
+		if (!value2d) {
+			value2d = code === 'pointer_position' ? this.pointerPosition : [0, 0];
+			current.value2d = value2d;
+		}
+		value2d[0] = x;
+		value2d[1] = y;
 		current.timestamp = timestamp;
-		this.buttonStates[code] = current;
 		if (code === 'pointer_position') {
 			this.inputControllerX = x;
 			this.inputControllerY = y;
 		}
 
-		const delta = this.buttonStates['pointer_delta'] ?? makeButtonState();
-		const moved = dx !== 0 || dy !== 0;
-		const wasPressed = delta.pressed;
-		delta.value2d = [dx, dy];
-		delta.value = Math.hypot(dx, dy);
-		delta.timestamp = timestamp;
-		delta.justreleased = !moved && wasPressed;
-		delta.pressed = moved;
-		delta.justpressed = moved && !wasPressed;
-		delta.waspressed = moved || wasPressed;
-		delta.consumed = false;
-		this.buttonStates['pointer_delta'] = delta;
+		this.pendingDeltaX += dx;
+		this.pendingDeltaY += dy;
+		this.pendingDeltaTimestamp = timestamp;
 	}
 
 	public ingestAxis1(code: string, x: number, timestamp: number): void {
-		const current = this.buttonStates[code] ?? makeButtonState();
-		current.value = x;
+		const current = getPressedState(this.buttonStates, code);
 		current.timestamp = timestamp;
 		if (code === 'pointer_wheel') {
-			this.inputControllerWheel = x;
-			const hasDelta = x !== 0;
-			if (hasDelta) {
-				current.pressed = true;
-				current.justpressed = true;
-				current.justreleased = false;
-				current.waspressed = true;
-				current.consumed = false;
-				current.pressedAtMs = current.timestamp;
-				current.pressId = this.nextPressId++;
-			}
+			this.pendingWheel += x;
+			this.pendingWheelTimestamp = timestamp;
+			return;
 		}
-		this.buttonStates[code] = current;
+		current.value = x;
 	}
 
 	public consumeButton(button: string): void {
@@ -223,13 +267,30 @@ export class PointerInput implements InputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			this.buttonStates = {};
-			for (const code of POINTER_DEFAULT_CODES) {
-				this.buttonStates[code] = makeButtonState();
+			for (let i = 0; i < POINTER_DEFAULT_CODES.length; i += 1) {
+				const code = POINTER_DEFAULT_CODES[i];
+				const state = makeButtonState();
+				if (code === 'pointer_position') {
+					state.value2d = this.pointerPosition;
+				} else if (code === 'pointer_delta') {
+					state.value2d = this.pointerDelta;
+				}
+				this.buttonStates[code] = state;
 			}
-			this.lastPosition = { x: 0, y: 0 };
+			this.pointerPosition[0] = 0;
+			this.pointerPosition[1] = 0;
+			this.pointerDelta[0] = 0;
+			this.pointerDelta[1] = 0;
+			this.lastPositionX = 0;
+			this.lastPositionY = 0;
 			this.lastPositionValid = false;
-			this.lastDeltaTimestamp = 0;
-			this.lastWheelTimestamp = 0;
+			this.pendingButtonPressEdges = 0;
+			this.pendingButtonReleaseEdges = 0;
+			this.pendingDeltaX = 0;
+			this.pendingDeltaY = 0;
+			this.pendingDeltaTimestamp = 0;
+			this.pendingWheel = 0;
+			this.pendingWheelTimestamp = 0;
 			this.inputControllerButtons = 0;
 			this.inputControllerX = 0;
 			this.inputControllerY = 0;
@@ -237,6 +298,11 @@ export class PointerInput implements InputHandler {
 			return;
 		}
 		resetObject(this.buttonStates, except);
+		this.pendingButtonPressEdges = 0;
+		this.pendingButtonReleaseEdges = 0;
+		this.pendingDeltaX = 0;
+		this.pendingDeltaY = 0;
+		this.pendingWheel = 0;
 		this.rebuildInputControllerState();
 	}
 }

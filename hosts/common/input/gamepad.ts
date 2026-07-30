@@ -1,62 +1,45 @@
-import { getPressedState, makeButtonState, resetObject } from './manager';
+import { getPressedState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
-import type { InputDevice, Platform } from '../platform';
-import type { VibrationParams } from '../platform';
-import { DualSenseHID } from './dualsense_hid';
+import type { HostClock } from '../clock';
+import type { GamepadDevice } from './contracts';
 import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	type InputControllerPadSnapshot,
 	type InputControllerSnapshot,
-} from '../machine/devices/input/contracts';
+} from '../../../machine/ts/machine/devices/input/contracts';
 
 export class GamepadInput implements InputHandler {
+	public readonly gamepadIndex: number;
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
 	private readonly inputControllerAxes = new Float32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
-	private readonly hidPad: DualSenseHID;
-	private nextPressId = 1;
+	private readonly leftAxis: [number, number] = [0, 0];
+	private readonly rightAxis: [number, number] = [0, 0];
 	private lastPollTime = 0;
 
-	private device: InputDevice;
-
 	constructor(
-		private readonly platform: Platform,
+		private readonly clock: HostClock,
 		public readonly deviceId: string,
-		public readonly description: string,
-		device: InputDevice,
+		public device: GamepadDevice,
 	) {
-		this.hidPad = new DualSenseHID(platform);
-		this.device = device;
+		this.gamepadIndex = device.gamepadIndex;
 		this.reset();
 	}
 
-	public get gamepadIndex(): number {
-		const index = parseInt(this.deviceId.split(':')[1] ?? '-1', 10);
-		return index;
-	}
-
 	public get supportsVibrationEffect(): boolean {
-		return !!this.device?.supportsVibration || this.hidPad.isConnected;
-	}
-
-	public setDevice(device: InputDevice): void {
-		this.device = device;
+		return this.device.supportsVibration;
 	}
 
 	public pollInput(): void {
-		const now = this.platform.clock.now();
+		const now = this.clock.now();
 		const prevPollTime = this.lastPollTime;
 		this.lastPollTime = now;
 
-		const keys = Object.keys(this.buttonStates);
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i];
+		for (const key in this.buttonStates) {
 			const state = this.buttonStates[key];
-			if (!state) continue;
 			if (state.pressed) {
-				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now; // TODO: USE resolveStateTimestamp
-				state.presstime = now - pressedAt;
+				state.presstime = now - state.pressedAtMs;
 				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
 					state.justpressed = false;
 				}
@@ -68,7 +51,6 @@ export class GamepadInput implements InputHandler {
 				}
 				state.justpressed = false;
 			}
-			state.consumed = state.consumed ?? false;
 		}
 	}
 
@@ -85,32 +67,32 @@ export class GamepadInput implements InputHandler {
 
 	public writeInputControllerPointerSnapshot(_snapshot: InputControllerSnapshot): void { }
 
-	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId?: number): void {
-		const state = this.buttonStates[code] ?? makeButtonState();
+	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
+		const state = getPressedState(this.buttonStates, code);
 		if (down) {
-			const existingPressId = pressId ?? state.pressId ?? this.nextPressId++;
 			state.pressed = true;
 			state.justpressed = true;
 			state.justreleased = false;
 			state.waspressed = true;
 			state.timestamp = timestamp;
 			state.pressedAtMs = timestamp;
+			state.releasedAtMs = 0;
 			state.value = value;
-			state.pressId = existingPressId;
+			state.pressId = pressId;
 		} else {
 			const wasPressed = state.pressed;
 			state.justreleased = wasPressed;
 			state.pressed = false;
 			state.justpressed = false;
 			state.timestamp = timestamp;
+			state.pressedAtMs = 0;
 			state.releasedAtMs = timestamp;
 			state.value = 0;
 			state.waspressed = state.waspressed || wasPressed;
 			state.wasreleased = state.wasreleased || wasPressed;
-			if (pressId !== undefined) state.pressId = pressId;
+			state.pressId = pressId;
 			state.consumed = false;
 		}
-		this.buttonStates[code] = state;
 		const bit = inputControllerGamepadButtonBit(code);
 		if (bit >= 0) {
 			const mask = 1 << bit;
@@ -124,11 +106,34 @@ export class GamepadInput implements InputHandler {
 	}
 
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
-		const state = this.buttonStates[code] ?? makeButtonState();
-		state.value2d = [x, y];
+		const state = getPressedState(this.buttonStates, code);
+		let value2d = state.value2d;
+		if (code === 'ls') {
+			value2d = this.leftAxis;
+		} else if (code === 'rs') {
+			value2d = this.rightAxis;
+		} else if (!value2d) {
+			value2d = [0, 0];
+		}
+		state.value2d = value2d;
+		value2d[0] = x;
+		value2d[1] = y;
 		state.value = Math.hypot(x, y);
+		const wasPressed = state.pressed;
+		state.pressed = state.value > 0;
+		state.justpressed = state.pressed && !wasPressed;
+		state.justreleased = !state.pressed && wasPressed;
+		state.waspressed = state.waspressed || state.pressed || wasPressed;
+		state.wasreleased = state.wasreleased || state.justreleased;
+		state.consumed = false;
+		if (state.justpressed) {
+			state.pressedAtMs = timestamp;
+			state.releasedAtMs = 0;
+		} else if (state.justreleased) {
+			state.pressedAtMs = 0;
+			state.releasedAtMs = timestamp;
+		}
 		state.timestamp = timestamp;
-		this.buttonStates[code] = state;
 		if (code === 'ls') {
 			this.inputControllerAxes[0] = x;
 			this.inputControllerAxes[1] = y;
@@ -147,10 +152,15 @@ export class GamepadInput implements InputHandler {
 
 	public reset(except?: string[]): void {
 		if (!except) {
-			const keys = Object.keys(this.buttonStates);
-			for (let i = 0; i < keys.length; i++) delete this.buttonStates[keys[i]];
+			for (const key in this.buttonStates) {
+				delete this.buttonStates[key];
+			}
 			this.inputControllerButtons = 0;
 			this.inputControllerAxes.fill(0);
+			this.leftAxis[0] = 0;
+			this.leftAxis[1] = 0;
+			this.rightAxis[0] = 0;
+			this.rightAxis[1] = 0;
 			this.lastPollTime = 0;
 			return;
 		}
@@ -161,9 +171,7 @@ export class GamepadInput implements InputHandler {
 	private rebuildInputControllerState(): void {
 		this.inputControllerButtons = 0;
 		this.inputControllerAxes.fill(0);
-		const keys = Object.keys(this.buttonStates);
-		for (let i = 0; i < keys.length; i += 1) {
-			const code = keys[i];
+		for (const code in this.buttonStates) {
 			const state = this.buttonStates[code];
 			if (state.pressed) {
 				const bit = inputControllerGamepadButtonBit(code);
@@ -178,43 +186,14 @@ export class GamepadInput implements InputHandler {
 				this.inputControllerAxes[2] = state.value2d[0];
 				this.inputControllerAxes[3] = state.value2d[1];
 			} else if (code === 'lt') {
-				this.inputControllerAxes[4] = state.pressed ? (state.value ?? 0) : 0;
+				this.inputControllerAxes[4] = state.pressed ? state.value : 0;
 			} else if (code === 'rt') {
-				this.inputControllerAxes[5] = state.pressed ? (state.value ?? 0) : 0;
+				this.inputControllerAxes[5] = state.pressed ? state.value : 0;
 			}
 		}
 	}
 
-	public applyVibrationEffect(params: VibrationParams): void {
-		if (this.device && this.device.supportsVibration) {
-			this.device.setVibration({ effect: 'dual-rumble', duration: params.duration, intensity: params.intensity });
-			return;
-		}
-		if (!this.hidPad.isConnected) {
-			const nav = globalThis.navigator as (Navigator & { vibrate?: (pattern: number | number[]) => boolean }) | undefined;
-			nav?.vibrate?.(params.duration * params.intensity);
-			return;
-		}
-		const strongMagnitude = ~~(params.intensity > 0.5 ? params.intensity * 255 : 0);
-		const weakMagnitude = ~~(params.intensity <= 0.5 ? params.intensity * 255 : 0);
-		try {
-			this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
-		} catch (err) {
-			console.warn(`Error applying HID rumble: ${err}`);
-			this.hidPad.disconnect();
-		}
-	}
-
-	public async init(): Promise<void> {
-		try {
-			await this.hidPad.initForDevice(this.gamepadIndex, this.description);
-		} catch (err) {
-			console.warn(`Error initialising HID device for rumble: ${err}`);
-		}
-	}
-
-	public dispose(): void {
-		this.reset();
-		this.hidPad.disconnect();
+	public applyVibrationEffect(durationMs: number, intensity: number): void {
+		this.device.setVibration(durationMs, intensity);
 	}
 }

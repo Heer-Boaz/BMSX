@@ -1,4 +1,5 @@
 import { GamepadInput } from '../gamepad';
+import { GAMEPAD_BUTTON_IDS } from '../gamepad_buttons';
 import { Input } from '../manager';
 import type { BGamepadButton, InputHandler } from '../models';
 
@@ -9,14 +10,6 @@ import type { BGamepadButton, InputHandler } from '../models';
 export class PendingAssignmentProcessor {
 
 	/**
-	 * Gets the pending index of the gamepad input.
-	 * @returns The pending index of the gamepad input.
-	 */
-	private get pendingIndex() { return this.inputHandler.gamepadIndex; }
-
-	// UI is handled by ControllerAssignmentUI via events
-
-	/**
 	 * Checks if a specific gamepad button is pressed and not consumed.
 	 *
 	 * @param button - The gamepad button to check.
@@ -24,16 +17,8 @@ export class PendingAssignmentProcessor {
 	 * @returns A boolean value indicating whether the button is pressed and not consumed.
 	 */
 	private checkNonConsumedPressed(button: BGamepadButton, gamepadInput: InputHandler) {
-		return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
-	}
-
-	private lastNotified: { proposed: number; positionIndex: number } = null;
-	private setLastNotifiedIfChanged(proposedPlayerIndex: number): void {
-		const pos = this.pendingIndex;
-		const prev = this.lastNotified;
-		if (!prev || prev.proposed !== proposedPlayerIndex || prev.positionIndex !== pos) {
-			this.lastNotified = { proposed: proposedPlayerIndex, positionIndex: pos };
-		}
+		const state = gamepadInput.getButtonState(button);
+		return state.pressed && !state.consumed;
 	}
 
 	/**
@@ -61,12 +46,10 @@ export class PendingAssignmentProcessor {
 
 			if (newProposedPlayerIndex !== null) {
 				this.proposedPlayerIndex = newProposedPlayerIndex;
-				this.setLastNotifiedIfChanged(this.proposedPlayerIndex);
 			}
 			else {
 				// No new player index available for gamepad assignment found => don't do anything!
 			}
-			console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${newProposedPlayerIndex ?? 'none (no free slots left)'}.`);
 		}
 	}
 
@@ -105,12 +88,10 @@ export class PendingAssignmentProcessor {
 
 				if (proposedPlayerIndex !== null) {
 					this.proposedPlayerIndex = proposedPlayerIndex;
-					console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
 				}
 			}
 		}
 		else {
-			this.setLastNotifiedIfChanged(this.proposedPlayerIndex);
 			if (this.checkNonConsumedPressed('a', gamepadInput)) {
 				// Assign gamepad to player and remove the joystick icon
 				gamepadInput.consumeButton('a');
@@ -131,7 +112,8 @@ export class PendingAssignmentProcessor {
 				this.handleSelectPlayerIndexButtonPress('down', -1, gamepadInput);
 				this.handleSelectPlayerIndexButtonPress('left', -1, gamepadInput);
 				// Consume any other pressed buttons on this device to prevent gameplay leakage while selecting
-				for (const btn of Input.BUTTON_IDS) {
+				for (let i = 0; i < GAMEPAD_BUTTON_IDS.length; i += 1) {
+					const btn = GAMEPAD_BUTTON_IDS[i];
 					const st = gamepadInput.getButtonState(btn);
 					if (st?.pressed && !st.consumed) gamepadInput.consumeButton(btn);
 				}

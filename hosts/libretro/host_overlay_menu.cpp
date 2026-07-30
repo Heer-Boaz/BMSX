@@ -1,8 +1,7 @@
 #include "host_overlay_menu.h"
 
+#include "input.h"
 #include "render/shared/bitmap_font.h"
-#include "input/hid_keys.h"
-#include "input/manager.h"
 #include "machine/runtime/runtime.h"
 #include "render/video_presenter.h"
 #include "render/host_overlay/overlay_queue.h"
@@ -35,21 +34,21 @@ constexpr i32 kButtonRepeatIntervalFrames = 4;
 constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
 struct HostMenuButton {
-	GamepadButton gamepad;
+	InputControllerGamepadButtonBit gamepad;
 	u8 keyboardUsage;
 };
 
 constexpr auto kHostMenuButtons = std::to_array<HostMenuButton>({
-	{GamepadButton::Start, HID_USAGE_ENTER},
-	{GamepadButton::Select, HID_USAGE_BACKSPACE},
-	{GamepadButton::LeftBumper, HID_USAGE_SHIFT_LEFT},
-	{GamepadButton::RightBumper, HID_USAGE_SHIFT_RIGHT},
-	{GamepadButton::Up, HID_USAGE_ARROW_UP},
-	{GamepadButton::Down, HID_USAGE_ARROW_DOWN},
-	{GamepadButton::Left, HID_USAGE_ARROW_LEFT},
-	{GamepadButton::Right, HID_USAGE_ARROW_RIGHT},
-	{GamepadButton::A, HID_USAGE_KEY_X},
-	{GamepadButton::B, HID_USAGE_KEY_C},
+	{InputControllerGamepadButtonBit::Start, HID_USAGE_ENTER},
+	{InputControllerGamepadButtonBit::Select, HID_USAGE_BACKSPACE},
+	{InputControllerGamepadButtonBit::LeftBumper, HID_USAGE_SHIFT_LEFT},
+	{InputControllerGamepadButtonBit::RightBumper, HID_USAGE_SHIFT_RIGHT},
+	{InputControllerGamepadButtonBit::Up, HID_USAGE_ARROW_UP},
+	{InputControllerGamepadButtonBit::Down, HID_USAGE_ARROW_DOWN},
+	{InputControllerGamepadButtonBit::Left, HID_USAGE_ARROW_LEFT},
+	{InputControllerGamepadButtonBit::Right, HID_USAGE_ARROW_RIGHT},
+	{InputControllerGamepadButtonBit::A, HID_USAGE_KEY_X},
+	{InputControllerGamepadButtonBit::B, HID_USAGE_KEY_C},
 });
 static_assert(kHostMenuButtons.size() == static_cast<size_t>(HostMenuButtonId::Count));
 
@@ -273,7 +272,7 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-HostMenuInput HostOverlayMenu::tickInput(const Input& input, VideoPresenter& presenter, f64 currentTimeMs) {
+HostMenuInput HostOverlayMenu::tickInput(const LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs) {
 	const bool comboEdge = buttonPressed(input, HostMenuButtonId::Start) &&
 		buttonPressed(input, HostMenuButtonId::Select) &&
 		buttonPressed(input, HostMenuButtonId::LeftBumper) &&
@@ -481,17 +480,17 @@ void HostOverlayMenu::close() {
 	resetButtonRepeats();
 }
 
-bool HostOverlayMenu::buttonPressed(const Input& input, HostMenuButtonId button) const {
+bool HostOverlayMenu::buttonPressed(const LibretroInput& input, HostMenuButtonId button) const {
 	const HostMenuButton& binding = kHostMenuButtons[static_cast<size_t>(button)];
 	return input.gamepadButtonPressed(0u, binding.gamepad) || input.keyboardUsagePressed(binding.keyboardUsage);
 }
 
-bool HostOverlayMenu::buttonJustPressed(const Input& input, HostMenuButtonId button) const {
+bool HostOverlayMenu::buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const {
 	const size_t index = static_cast<size_t>(button);
 	return buttonPressed(input, button) && !m_previousButtonStates[index];
 }
 
-void HostOverlayMenu::latchButtonStates(const Input& input) {
+void HostOverlayMenu::latchButtonStates(const LibretroInput& input) {
 	for (size_t button = 0u; button < m_previousButtonStates.size(); button += 1u) {
 		m_previousButtonStates[button] = buttonPressed(input, static_cast<HostMenuButtonId>(button));
 	}

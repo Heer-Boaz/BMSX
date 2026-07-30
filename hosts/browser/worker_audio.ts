@@ -1,5 +1,5 @@
 import { isIOSAudioTarget } from './audio_target';
-import { type AudioOutputPuller, type AudioService } from 'bmsx/platform';
+import { type AudioOutputPuller, type HostAudioSink } from '../common/audio_output';
 
 const CORE_CTRL_READ_PTR = 0;
 const CORE_CTRL_WRITE_PTR = 1;
@@ -25,13 +25,13 @@ const NEED_PUMP_BUDGET_FRAMES = 8192;
 
 function requireWorkerStreamingAudioSupport(): void {
 	if (!globalThis.crossOriginIsolated) {
-		throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer audio backend requires crossOriginIsolated=true.');
+		throw new Error('[WorkerStreamingAudioSink] SharedArrayBuffer audio backend requires crossOriginIsolated=true.');
 	}
 	if (!('SharedArrayBuffer' in globalThis)) {
-		throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer is not available.');
+		throw new Error('[WorkerStreamingAudioSink] SharedArrayBuffer is not available.');
 	}
 	if (!('AudioWorkletNode' in globalThis)) {
-		throw new Error('[WorkerStreamingAudioService] AudioWorkletNode is not available.');
+		throw new Error('[WorkerStreamingAudioSink] AudioWorkletNode is not available.');
 	}
 }
 
@@ -53,7 +53,7 @@ type MainToWorkletMessage =
 	| { type: 'configure'; targetAheadSec: number; preferHighLead: boolean }
 	| { type: 'set_target_ahead'; targetAheadSec: number };
 
-export class WorkerStreamingAudioService implements AudioService {
+export class WorkerStreamingAudioSink implements HostAudioSink {
 	private readonly ctx: AudioContext;
 	private readonly coreStreamCapacityFrames: number;
 	private readonly coreStreamSamplesBuffer: SharedArrayBuffer;
@@ -384,13 +384,13 @@ export class WorkerStreamingAudioService implements AudioService {
 			case 'stats':
 				return;
 			case 'need_port_error':
-				this.setFatal(new Error('[WorkerStreamingAudioService] Worklet control error: ' + message.reason));
+				this.setFatal(new Error('[WorkerStreamingAudioSink] Worklet control error: ' + message.reason));
 				return;
 			case 'worklet_error':
-				this.setFatal(new Error('[WorkerStreamingAudioService] Worklet runtime error: ' + message.message));
+				this.setFatal(new Error('[WorkerStreamingAudioSink] Worklet runtime error: ' + message.message));
 				return;
 			default:
-				this.setFatal(new Error('[WorkerStreamingAudioService] Unsupported worklet control message.'));
+				this.setFatal(new Error('[WorkerStreamingAudioSink] Unsupported worklet control message.'));
 		}
 	};
 
@@ -477,13 +477,13 @@ export class WorkerStreamingAudioService implements AudioService {
 		await this.readyPromise;
 		this.ensureHealthy();
 		if (this.workletNode === null) {
-			throw new Error('[WorkerStreamingAudioService] AudioWorkletNode initialization failed.');
+			throw new Error('[WorkerStreamingAudioSink] AudioWorkletNode initialization failed.');
 		}
 	}
 
 	private postWorkletMessage(message: MainToWorkletMessage): void {
 		if (this.workletNode === null) {
-			throw new Error('[WorkerStreamingAudioService] AudioWorkletNode is not initialized.');
+			throw new Error('[WorkerStreamingAudioSink] AudioWorkletNode is not initialized.');
 		}
 		this.workletNode.port.postMessage(message);
 	}

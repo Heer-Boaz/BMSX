@@ -2,7 +2,21 @@ import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import type { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import type { ApuOutputRing } from '../../machine/ts/machine/devices/audio/output_ring';
 import { HZ_SCALE } from '../../machine/ts/spec/bmsx/timing';
-import type { AudioOutputPuller, AudioService } from '../../machine/ts/platform/platform';
+
+export type AudioOutputPuller = (
+	output: Int16Array,
+	frameCount: number,
+	sampleRate: number,
+) => number;
+
+export interface HostAudioSink {
+	setRuntimeAudioPuller(puller: AudioOutputPuller | null): void;
+	clearRuntimeAudioTransport(): void;
+	pumpRuntimeAudio(): void;
+	resume(): Promise<void>;
+	suspend(): Promise<void>;
+	setEmulationFrameTimeSec(seconds: number): void;
+}
 
 const MUTE_REASON_PAUSE = 0x01;
 const MUTE_REASON_UI = 0x02;
@@ -11,7 +25,6 @@ const MUTE_REASON_SYSTEM = 0x08;
 
 export class HostAudioOutput {
 	private muteReasons = 0;
-	private ufpsScaled: number;
 	private readonly outputResampler = new AudioOutputResampler();
 	private readonly pullRuntimeAudio: AudioOutputPuller = (
 		output,
@@ -25,12 +38,11 @@ export class HostAudioOutput {
 	);
 
 	public constructor(
-		private readonly audio: AudioService,
+		private readonly audio: HostAudioSink,
 		private readonly audioController: AudioController,
 		private readonly outputRing: ApuOutputRing,
 		ufpsScaled: number,
 	) {
-		this.ufpsScaled = ufpsScaled;
 		this.audio.setEmulationFrameTimeSec(HZ_SCALE / ufpsScaled);
 	}
 
@@ -53,11 +65,11 @@ export class HostAudioOutput {
 	}
 
 	public syncTiming(ufpsScaled: number): void {
-		if (ufpsScaled === this.ufpsScaled) {
-			return;
-		}
-		this.ufpsScaled = ufpsScaled;
 		this.audio.setEmulationFrameTimeSec(HZ_SCALE / ufpsScaled);
+	}
+
+	public pumpRuntimeAudio(): void {
+		this.audio.pumpRuntimeAudio();
 	}
 
 	public mutePause(muted: boolean): void {

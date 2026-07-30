@@ -1,6 +1,5 @@
-#include "platform.h"
+#include "host.h"
 
-#include "input/manager.h"
 #include "machine/runtime/runtime.h"
 #include "render/video_presenter.h"
 
@@ -9,10 +8,7 @@ namespace {
 constexpr f64 kMaxFrameDeltaMs = 250.0;
 }
 
-bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
-	if (!m_running) {
-		return false;
-	}
+bool LibretroHost::runHostFrame(Runtime& runtime, f64 deltaTime) {
 	m_screen.recordHostFrame();
 
 	f64 hostDeltaMs = deltaTime * 1000.0;
@@ -23,16 +19,15 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 	m_total_time += hostDeltaSeconds;
 	m_host_fps = 1.0 / hostDeltaSeconds;
 
-	m_input->pollInput();
 	const HostMenuInput hostMenuInput =
-		m_host_overlay_menu.tickInput(*m_input, *m_video_presenter, m_clock->now());
+		m_host_overlay_menu.tickInput(m_input, m_video_presenter, m_total_time * 1000.0);
 	switch (hostMenuInput) {
 		case HostMenuInput::RebootCart:
 			runtime.rebootSystem();
 			activateLoadedRuntime(runtime);
 			return false;
 		case HostMenuInput::ExitGame:
-			requestShutdown();
+			m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 			return false;
 		case HostMenuInput::Inactive:
 		case HostMenuInput::Active:
@@ -41,35 +36,33 @@ bool LibretroPlatform::runHostFrame(Runtime& runtime, f64 deltaTime) {
 	const bool hostMenuActive = hostMenuInput == HostMenuInput::Active;
 
 	m_screen.clearPresentation();
-	if (!m_platform_paused && !hostMenuActive) {
+	if (runtime.isDrawPending() && !m_paused && !hostMenuActive) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		while (runtime.machine.gxGpu.backendReadbackPending()) {
-			m_video_presenter->backend().executeGxGpuReadback(runtime.machine.gxGpu);
+			m_video_presenter.backend().executeGxGpuReadback(runtime.machine.gxGpu);
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-	} else {
+	} else if (runtime.isDrawPending()) {
 		runtime.frameScheduler.clearQueuedTime();
 	}
-	m_microtask_queue->flush();
-
 	if (hostMenuActive) {
-		m_host_overlay_menu.queueRenderCommands(*m_video_presenter);
+		m_host_overlay_menu.queueRenderCommands(m_video_presenter);
 		m_screen.requestHeldPresentation();
 	} else if (m_host_overlay_menu.queueFrameOverlayCommands(
 		runtime,
-		*m_video_presenter,
+		m_video_presenter,
 		m_host_fps
 	)) {
 		m_screen.requestHeldPresentation();
 	}
 	return m_screen.render(
-		*m_video_presenter,
+		m_video_presenter,
 		runtime,
 		m_total_time,
 		hostDeltaSeconds,
-		m_platform_paused
+		m_paused
 	);
 }
 

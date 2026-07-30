@@ -1,9 +1,17 @@
-import { LogLevel } from '../../machine/ts/platform/platform';
-import type { MachineHost } from '../common/machine_runtime';
+import { LogLevel } from '../common/log';
+import type { HostAudioOutput } from '../common/audio_output';
+import type { HostFrameSession } from '../common/host_frame';
+import type { Input } from '../common/input/manager';
+import type { LogOutput } from '../common/log';
 
-export function bindBrowserFullscreenShortcut(host: MachineHost): void {
-	host.input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {
-		if (host.input.debugHotkeysPaused) {
+export function bindBrowserFullscreenShortcut(
+	input: Input,
+	session: HostFrameSession,
+	audioOutput: HostAudioOutput,
+	logOutput: LogOutput,
+): void {
+	input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {
+		if (input.debugHotkeysPaused) {
 			return;
 		}
 		const enterFullscreen = document.fullscreenElement !== document.documentElement;
@@ -12,7 +20,7 @@ export function bindBrowserFullscreenShortcut(host: MachineHost): void {
 				return;
 			}
 			window.removeEventListener('keyup', onKeyUp);
-			host.paused = true;
+			session.setPaused(true, audioOutput);
 			try {
 				if (enterFullscreen) {
 					await document.documentElement.requestFullscreen();
@@ -20,12 +28,12 @@ export function bindBrowserFullscreenShortcut(host: MachineHost): void {
 					await document.exitFullscreen();
 				}
 			} catch (error) {
-				host.platform.log(
+				logOutput.log(
 					LogLevel.Error,
 					error instanceof Error ? error.message : String(error),
 				);
 			} finally {
-				host.paused = false;
+				session.setPaused(false, audioOutput);
 			}
 		};
 		window.addEventListener('keyup', onKeyUp);

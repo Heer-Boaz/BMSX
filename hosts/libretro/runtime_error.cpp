@@ -1,4 +1,4 @@
-#include "platform.h"
+#include "host.h"
 
 #include "machine/devices/system/controller.h"
 #include "machine/runtime/runtime.h"
@@ -12,7 +12,7 @@
 
 namespace bmsx {
 
-void LibretroPlatform::flushSystemOutput(Runtime& runtime) {
+void LibretroHost::flushSystemOutput(Runtime& runtime) {
 	SystemController& output = runtime.machine.systemController;
 	const u32 byteCount = output.hostOutputAvailableByteCount();
 	if (byteCount == 0u) {
@@ -25,7 +25,7 @@ void LibretroPlatform::flushSystemOutput(Runtime& runtime) {
 	size_t lineStart = 0u;
 	for (u32 index = 0u; index < byteCount; ++index) {
 		if (bytes[index] == '\n') {
-			log(LogLevel::Info, std::string_view(
+			log(RETRO_LOG_INFO, std::string_view(
 				bytes.data() + lineStart,
 				static_cast<size_t>(index) - lineStart
 			));
@@ -34,14 +34,14 @@ void LibretroPlatform::flushSystemOutput(Runtime& runtime) {
 	}
 }
 
-void LibretroPlatform::reportRuntimeError(
+void LibretroHost::reportRuntimeError(
 	Runtime& runtime,
 	std::string_view message
 ) {
-	m_running = false;
+	runtime.suspendExecution();
 	std::ostringstream runtimeError;
 	runtimeError << "Runtime error: " << message;
-	log(LogLevel::Error, runtimeError.str());
+	log(RETRO_LOG_ERROR, runtimeError.str());
 
 	CPU& cpu = runtime.machine.cpu;
 	Blua32ToolingMedia toolingMedia;
@@ -97,9 +97,9 @@ void LibretroPlatform::reportRuntimeError(
 			) << ')';
 		}
 	}
-	log(LogLevel::Error, summary.str());
+	log(RETRO_LOG_ERROR, summary.str());
 	log(
-		LogLevel::Error,
+		RETRO_LOG_ERROR,
 		"debug: instr=" + instruction.pcText + ": " + instruction.instructionText
 	);
 	if (instruction.sourceRange) {
@@ -107,7 +107,7 @@ void LibretroPlatform::reportRuntimeError(
 		std::ostringstream source;
 		source << "debug: source=" << range.path << ':'
 			<< range.start.line << ':' << range.start.column;
-		log(LogLevel::Error, source.str());
+		log(RETRO_LOG_ERROR, source.str());
 	}
 
 	if (frameDepth == 0) {
@@ -121,7 +121,7 @@ void LibretroPlatform::reportRuntimeError(
 		} else {
 			frame << "  at <current> (pc=0x" << std::hex << cpu.lastPc << ')';
 		}
-		log(LogLevel::Error, frame.str());
+		log(RETRO_LOG_ERROR, frame.str());
 		return;
 	}
 
@@ -154,14 +154,14 @@ void LibretroPlatform::reportRuntimeError(
 			if (range) {
 				frame << " (" << range->path << ':'
 					<< range->start.line << ':' << range->start.column << ')';
-				log(LogLevel::Error, frame.str());
+				log(RETRO_LOG_ERROR, frame.str());
 				continue;
 			}
 		} else {
 			frame << "  at function@0x" << std::hex << functionAddress << std::dec;
 		}
 		frame << " (pc=0x" << std::hex << pc << ')';
-		log(LogLevel::Error, frame.str());
+		log(RETRO_LOG_ERROR, frame.str());
 	}
 }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "input/gamepad_buttons.h"
 #include "render/host_overlay/commands.h"
 #include "render/shared/submissions.h"
 #include <array>
@@ -12,7 +11,7 @@ namespace bmsx {
 
 class Runtime;
 class VideoPresenter;
-class Input;
+class LibretroInput;
 
 enum class HostMenuInput : u8 {
 	Inactive,
@@ -46,7 +45,7 @@ enum class HostMenuRepeatId : u8 {
 class HostOverlayMenu {
 public:
 	HostOverlayMenu();
-	HostMenuInput tickInput(const Input& input, VideoPresenter& presenter, f64 currentTimeMs);
+	HostMenuInput tickInput(const LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs);
 	void resetInputState();
 	void queueRenderCommands(VideoPresenter& presenter);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
@@ -71,9 +70,9 @@ private:
 	void changeSelected(VideoPresenter& presenter, i32 direction);
 	HostMenuInput activateSelected();
 	void rebuildText(VideoPresenter& presenter);
-	bool buttonPressed(const Input& input, HostMenuButtonId button) const;
-	bool buttonJustPressed(const Input& input, HostMenuButtonId button) const;
-	void latchButtonStates(const Input& input);
+	bool buttonPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	bool buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	void latchButtonStates(const LibretroInput& input);
 	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
 	void resetButtonRepeats();
 

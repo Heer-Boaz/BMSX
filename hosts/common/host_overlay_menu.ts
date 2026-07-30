@@ -1,8 +1,8 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
-import type { Input } from '../../machine/ts/input/manager';
-import type { PlayerInput } from '../../machine/ts/input/player';
+import type { Input } from './input/manager';
+import type { PlayerInput } from './input/player';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
@@ -113,9 +113,9 @@ function buttonJustPressed(player: PlayerInput, button: HostMenuButton): boolean
 }
 
 function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
-	const gamepad = player.getButtonRepeatState(button.gamepad, 'gamepad');
-	const keyboard = player.getButtonRepeatState(button.keyboard, 'keyboard');
-	return gamepad.justpressed || keyboard.justpressed || gamepad.repeatpressed || keyboard.repeatpressed;
+	const gamepadEdge = player.buttonRepeatEdge(button.gamepad, 'gamepad');
+	const keyboardEdge = player.buttonRepeatEdge(button.keyboard, 'keyboard');
+	return gamepadEdge || keyboardEdge;
 }
 
 function consumeButton(player: PlayerInput, button: HostMenuButton): void {
@@ -325,14 +325,12 @@ export class HostOverlayMenu {
 			this.toggle();
 			consumeButtons(player, MENU_TOGGLE_BUTTONS);
 		}
-		this.input.setGameplayCaptureEnabled(!this.active);
 		if (!this.active) {
 			return HostMenuInput.Inactive;
 		}
 		if (buttonJustPressed(player, BUTTON_B)) {
 			this.toggle();
 			consumeButtons(player, MENU_NAV_BUTTONS);
-			this.input.setGameplayCaptureEnabled(true);
 			return HostMenuInput.Inactive;
 		}
 		if (buttonEdge(player, BUTTON_UP)) {

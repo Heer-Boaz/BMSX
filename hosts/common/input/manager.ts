@@ -1,24 +1,22 @@
-﻿import { GamepadInput } from './gamepad';
-import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, InputMap, InputSource, KeyboardInputMapping, KeyOrButtonId2ButtonState } from './models';
+import { GamepadInput } from './gamepad';
+import type { ButtonId, ButtonState, InputHandler, InputMap, InputSource, KeyboardInputMapping, KeyOrButtonId2ButtonState } from './models';
 import { KeyboardInput } from './keyboard';
-import { OnscreenGamepad } from './onscreen_gamepad';
 import { GlobalShortcutRegistry } from './shortcuts';
 
 import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
-import type { DeviceKind, InputDevice, InputEvt, Platform, SubscriptionHandle } from '../platform';
+import type { HostClock } from '../clock';
+import type { DeviceKind, GamepadDevice, InputDevice, InputEventSink, InputHub } from './contracts';
 import {
-	INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS,
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	INPUT_CONTROLLER_PAD_COUNT,
+	type InputControllerInputSource,
 	type InputControllerSnapshot,
-} from '../machine/devices/input/contracts';
-import type { RuntimeInputSource } from '../machine/runtime/input';
+} from '../../../machine/ts/machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
-const EMPTY_ACTION_STATE_PATCH: Readonly<Partial<ActionState>> = Object.freeze({});
 
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
@@ -29,11 +27,11 @@ const EMPTY_ACTION_STATE_PATCH: Readonly<Partial<ActionState>> = Object.freeze({
  * @param except - An optional array of keys to exclude from deletion.
  */
 export function resetObject(obj: any, except?: string[]) {
-	Object.keys(obj).forEach(key => {
+	for (const key in obj) {
 		if (!except || !except.includes(key)) {
 			delete obj[key];
 		}
-	});
+	}
 };
 
 /**
@@ -47,25 +45,12 @@ export function getPressedState(
 	stateMap: KeyOrButtonId2ButtonState,
 	keyOrButtonId: ButtonId
 ): ButtonState {
-	const state = stateMap[keyOrButtonId];
-	if (!state) return makeButtonState();
-	return {
-		pressed: state.pressed ?? false,
-		justpressed: state.justpressed ?? false,
-		justreleased: state.justreleased ?? false,
-		waspressed: state.waspressed ?? false,
-		wasreleased: state.wasreleased ?? false,
-		repeatpressed: state.repeatpressed ?? false,
-		repeatcount: state.repeatcount ?? 0,
-		consumed: state.consumed ?? false,
-		presstime: state.presstime,
-		timestamp: state.timestamp,
-		pressedAtMs: state.pressedAtMs,
-		releasedAtMs: state.releasedAtMs,
-		pressId: state.pressId,
-		value: state.value,
-		value2d: state.value2d,
-	};
+	let state = stateMap[keyOrButtonId];
+	if (!state) {
+		state = makeButtonState();
+		stateMap[keyOrButtonId] = state;
+	}
+	return state;
 }
 
 export function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
@@ -80,49 +65,14 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		consumed = false,
 		presstime = null,
 		timestamp = 0,
-		pressedAtMs = null,
-		releasedAtMs = null,
-		pressId = null,
-		value = null,
+		pressedAtMs = 0,
+		releasedAtMs = 0,
+		pressId = 0,
+		value = 0,
 		value2d = null,
 	} = partialState ?? EMPTY_BUTTON_STATE_PATCH;
 	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
-
-export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
-	const {
-		action = actionname,
-		alljustpressed = false,
-		allwaspressed = false,
-		alljustreleased = false,
-		guardedjustpressed = false,
-		repeatpressed = false,
-		repeatcount = 0,
-		...buttonState
-	} = partialState ?? EMPTY_ACTION_STATE_PATCH;
-	return {
-		action,
-		alljustpressed,
-		allwaspressed,
-		alljustreleased,
-		guardedjustpressed,
-		repeatpressed,
-		repeatcount,
-		...makeButtonState(buttonState),
-	};
-}
-
-type BufferedInputEvent = InputEvent & {
-	frame: number;
-};
-
-type BufferedEdgeRecord = {
-	edgeId: number;
-	frame: number;
-	consumed: boolean;
-};
-
-const RECENT_BUFFERED_EDGE_FRAMES = 2;
 
 type DeviceBinding = {
 	handler: InputHandler;
@@ -132,403 +82,9 @@ type DeviceBinding = {
 };
 
 /**
- * Manages the input state for a player, including button states and input events.
- *
- * The `InputStateManager` class is responsible for tracking the state of input buttons,
- * processing input events, and maintaining an input buffer. It provides methods to update
- * the state based on current time, retrieve button states, and consume button presses.
- */
-
-export class InputStateManager {
-	/**
-	 * Represents the input buffer used for processing input data.
-	 * @type {InputBuffer}
-	 */
-	private inputBuffer: BufferedInputEvent[];
-	private readonly buttonStates = new Map<ButtonId, ButtonState>();
-	private readonly bufferedPressEdges = new Map<ButtonId, BufferedEdgeRecord>();
-	private readonly bufferedReleaseEdges = new Map<ButtonId, BufferedEdgeRecord>();
-	private readonly pendingFrameStates = new Map<ButtonId, ButtonState>();
-	private currentFrame = 0;
-	private currentTimeMs = 0;
-
-	/**
-	 * Constructs an instance of the InputStateManager.
-	 *
-	 * @param bufferframeDuration - The number of simulation frames for which input events are buffered.
-	 * This value determines how long input events are retained in the buffer before being cleaned up.
-	 */
-	constructor(public bufferframeDuration: number = 150) {
-		this.inputBuffer = [];
-	}
-
-	public get frame(): number {
-		return this.currentFrame;
-	}
-
-	/** Prepare per-button edge flags for a new frame. */
-	beginFrame(currentTime: number): void {
-		this.currentTimeMs = currentTime;
-		this.currentFrame += 1;
-		for (const state of this.buttonStates.values()) {
-			state.justpressed = false;
-			state.justreleased = false;
-			state.consumed = state.consumed ?? false;
-			if (state.pressed) {
-				const pressedAt = state.pressedAtMs ?? state.timestamp ?? currentTime;
-				state.presstime = currentTime - pressedAt;
-			} else {
-				state.presstime = null;
-			}
-		}
-	}
-
-	/**
-	 * Updates the input state based on the current time.
-	 * Cleans up old events from the input buffer used for windowed queries.
-	 */
-	update(_currentTime: number): void {
-		let write = 0;
-		for (let read = 0; read < this.inputBuffer.length; read += 1) {
-			const event = this.inputBuffer[read];
-			if (this.isBufferedFrameInWindow(event.frame, this.bufferframeDuration)) {
-				this.inputBuffer[write++] = event;
-			}
-		}
-		this.inputBuffer.length = write;
-		this.pruneBufferedEdges(this.bufferedPressEdges);
-		this.pruneBufferedEdges(this.bufferedReleaseEdges);
-	}
-
-	/**
-	 * Adds an input event to the input buffer and updates the immediate button state cache.
-	 *
-	 * @param event - The input event to be added.
-	 */
-	addInputEvent(event: InputEvent): void {
-		const bufferedEvent: BufferedInputEvent = {
-			...event,
-			frame: this.currentFrame + 1,
-		};
-		const pending = this.pendingFrameStates.get(event.identifier) ?? makeButtonState();
-		pending.timestamp = event.timestamp;
-		pending.pressId = event.pressId;
-		pending.consumed = event.consumed;
-		if (bufferedEvent.eventType === 'press') {
-			pending.pressed = true;
-			pending.justpressed = true;
-			pending.justreleased = false;
-			pending.pressedAtMs = event.timestamp;
-			pending.releasedAtMs = null;
-			pending.value = 1;
-			this.inputBuffer.push(bufferedEvent);
-			this.bufferEdge(this.bufferedPressEdges, bufferedEvent);
-		} else {
-			pending.pressed = false;
-			pending.justreleased = true;
-			pending.value = 0;
-			this.inputBuffer.push(bufferedEvent);
-			this.bufferEdge(this.bufferedReleaseEdges, bufferedEvent);
-		}
-		this.pendingFrameStates.set(event.identifier, pending);
-	}
-
-	recordAxis1Sample(identifier: ButtonId, value: number, timestamp: number): void {
-		const state = this.pendingFrameStates.get(identifier) ?? makeButtonState();
-		if (identifier === 'pointer_wheel') {
-			const accumulated = (state.value ?? 0) + value;
-			state.value = accumulated;
-			state.pressed = accumulated !== 0;
-			state.justpressed = accumulated !== 0;
-			state.timestamp = timestamp;
-			state.pressedAtMs = state.pressedAtMs ?? timestamp;
-			state.consumed = false;
-		} else {
-			const magnitude = Math.abs(value);
-			state.value = value;
-			state.pressed = magnitude > 0;
-			state.justpressed = state.justpressed || magnitude > 0;
-			state.timestamp = timestamp;
-			if (magnitude > 0) {
-				state.pressedAtMs = state.pressedAtMs ?? timestamp;
-			}
-			state.consumed = false;
-		}
-		this.pendingFrameStates.set(identifier, state);
-	}
-
-	recordAxis2Sample(identifier: ButtonId, x: number, y: number, timestamp: number): void {
-		const state = this.pendingFrameStates.get(identifier) ?? makeButtonState();
-		if (identifier === 'pointer_delta') {
-			let value2d = state.value2d;
-			if (value2d === undefined || value2d === null) {
-				value2d = [0, 0];
-				state.value2d = value2d;
-			}
-			value2d[0] += x;
-			value2d[1] += y;
-			const nextX = value2d[0];
-			const nextY = value2d[1];
-			state.value = Math.hypot(nextX, nextY);
-			state.pressed = state.value > 0;
-			state.justpressed = state.justpressed || state.pressed;
-			state.timestamp = timestamp;
-			state.pressedAtMs = state.pressedAtMs ?? timestamp;
-			state.consumed = false;
-		} else if (identifier === 'pointer_position') {
-			state.value2d = [x, y];
-			state.value = Math.hypot(x, y);
-			state.timestamp = timestamp;
-			state.consumed = false;
-		} else {
-			state.value2d = [x, y];
-			state.value = Math.hypot(x, y);
-			state.pressed = state.value > 0;
-			state.justpressed = state.justpressed || state.pressed;
-			state.timestamp = timestamp;
-			if (state.pressed) {
-				state.pressedAtMs = state.pressedAtMs ?? timestamp;
-			}
-			state.consumed = false;
-		}
-		this.pendingFrameStates.set(identifier, state);
-	}
-
-	latchButtonState(identifier: ButtonId, rawState: ButtonState, currentTime: number): void {
-		let state = this.buttonStates.get(identifier);
-		if (!state) {
-			state = makeButtonState();
-			this.buttonStates.set(identifier, state);
-		}
-		const pending = this.pendingFrameStates.get(identifier);
-		const bufferedPress = this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1);
-		const bufferedRelease = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1);
-		const previousPressed = state.pressed;
-		const nextPressed = pending?.pressed ?? rawState.pressed ?? false;
-		const sampledPress = nextPressed && !previousPressed;
-		const sampledRelease = !nextPressed && previousPressed;
-		const nextTimestamp = pending !== undefined || sampledPress || sampledRelease
-			? currentTime
-			: (state.timestamp ?? currentTime);
-		const nextPressId = pending?.pressId ?? rawState.pressId ?? state.pressId;
-		const nextPressedAtMs = nextPressed
-			? (previousPressed && state.pressedAtMs != null ? state.pressedAtMs : currentTime)
-			: null;
-		const nextReleasedAtMs = nextPressed
-			? null
-			: (sampledRelease || bufferedRelease !== null || !!pending?.justreleased || !!rawState.justreleased ? currentTime : state.releasedAtMs);
-		const nextConsumed = nextPressed && state.consumed;
-		state.pressed = nextPressed;
-		state.justpressed = bufferedPress != null || sampledPress || (!!pending?.justpressed && !previousPressed) || (!!rawState.justpressed && !previousPressed);
-		state.justreleased = bufferedRelease != null || sampledRelease || (!!pending?.justreleased && previousPressed) || (!!rawState.justreleased && previousPressed);
-		state.consumed = nextConsumed;
-		state.timestamp = nextTimestamp;
-		state.pressedAtMs = nextPressedAtMs;
-		state.releasedAtMs = nextReleasedAtMs;
-		state.pressId = nextPressId;
-		state.value = pending?.value ?? rawState.value ?? (nextPressed ? 1 : 0);
-		state.value2d = pending?.value2d ?? rawState.value2d;
-		state.presstime = nextPressed
-			? currentTime - (nextPressedAtMs ?? nextTimestamp)
-			: null;
-		this.pendingFrameStates.delete(identifier);
-	}
-
-	/**
-	 * Retrieves the current state of a button based on its identifier.
-	 *
-	 * @param identifier - The unique identifier for the button, which can be a string or a number.
-	 * @param framewindow - Optional number of frames for windowed evaluation.
-	 * @returns The current button state including edge flags and windowed history.
-	 */
-	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
-		const window = framewindow != null
-			? framewindow
-			: this.bufferframeDuration;
-		const currentTime = this.currentTimeMs;
-		const baseState = this.buttonStates.get(identifier);
-		const pressed = baseState?.pressed ?? false;
-		const justpressed = !!baseState?.justpressed || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
-		const justreleased = !!baseState?.justreleased || this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
-		const presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? currentTime - baseState.pressedAtMs : null);
-		let consumed = baseState?.consumed ?? false;
-		const pressedAtMs = baseState?.pressedAtMs;
-		const releasedAtMs = baseState?.releasedAtMs;
-		const timestamp = baseState?.timestamp;
-		const pressId = baseState?.pressId;
-		const value = baseState?.value ?? (pressed ? 1 : 0);
-		const value2d = baseState?.value2d;
-
-		let waspressed = pressed;
-		let wasreleased = justreleased;
-		for (let i = 0; i < this.inputBuffer.length; i += 1) {
-			const event = this.inputBuffer[i];
-			if (event.identifier !== identifier || event.frame > this.currentFrame || !this.isBufferedFrameInWindow(event.frame, window)) {
-				continue;
-			}
-			if (event.eventType === 'press') {
-				waspressed = true;
-			}
-			if (event.eventType === 'release') {
-				wasreleased = true;
-			}
-			if (event.consumed && (pressId == null || event.pressId === pressId)) consumed = true;
-		}
-
-		return makeButtonState({
-			pressed,
-			justpressed,
-			justreleased,
-			waspressed,
-			wasreleased,
-			consumed,
-			presstime,
-			timestamp,
-			pressedAtMs,
-			releasedAtMs,
-			pressId,
-			value,
-			value2d,
-		});
-	}
-
-	/** Returns true if an unconsumed press edge happened recently. */
-	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = RECENT_BUFFERED_EDGE_FRAMES): boolean {
-		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
-			const event = this.inputBuffer[i];
-			if (event.frame > this.currentFrame) {
-				continue;
-			}
-			if (!this.isBufferedFrameInWindow(event.frame, windowFrames)) {
-				break;
-			}
-			if (event.identifier !== identifier) {
-				continue;
-			}
-			if (event.eventType === 'press' && !event.consumed) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	public getLatestUnconsumedEdgeId(
-		identifier: ButtonId,
-		eventType: 'press' | 'release'
-	): number | undefined {
-		const edgeMap = eventType === 'press'
-			? this.bufferedPressEdges
-			: this.bufferedReleaseEdges;
-		return this.getBufferedEdgeRecord(edgeMap, identifier, RECENT_BUFFERED_EDGE_FRAMES)?.edgeId;
-	}
-
-	private isBufferedFrameInWindow(frame: number, windowFrames: number): boolean {
-		if (windowFrames <= 0) {
-			return false;
-		}
-		return this.currentFrame - frame < windowFrames;
-	}
-
-	private bufferEdge(edgeMap: Map<ButtonId, BufferedEdgeRecord>, event: BufferedInputEvent): void {
-		if (event.pressId == null) {
-			return;
-		}
-		edgeMap.set(event.identifier, {
-			edgeId: event.pressId,
-			frame: event.frame,
-			consumed: event.consumed,
-		});
-	}
-
-	private getBufferedEdgeRecord(
-		edgeMap: Map<ButtonId, BufferedEdgeRecord>,
-		identifier: ButtonId,
-		windowFrames: number
-	): BufferedEdgeRecord | null {
-		const edge = edgeMap.get(identifier);
-		if (!edge) {
-			return null;
-		}
-		if (edge.consumed) {
-			return null;
-		}
-		if (edge.frame > this.currentFrame) {
-			return null;
-		}
-		if (!this.isBufferedFrameInWindow(edge.frame, windowFrames)) {
-			return null;
-		}
-		return edge;
-	}
-
-	private consumeBufferedEdge(edgeMap: Map<ButtonId, BufferedEdgeRecord>, identifier: ButtonId, pressId?: number): void {
-		const edge = edgeMap.get(identifier);
-		if (!edge) {
-			return;
-		}
-		if (pressId == null || edge.edgeId === pressId) {
-			edge.consumed = true;
-		}
-	}
-
-	private pruneBufferedEdges(edgeMap: Map<ButtonId, BufferedEdgeRecord>): void {
-		for (const [identifier, edge] of edgeMap) {
-			if (!this.isBufferedFrameInWindow(edge.frame, this.bufferframeDuration)) {
-				edgeMap.delete(identifier);
-			}
-		}
-	}
-
-	public hasTrackedButton(identifier: ButtonId): boolean {
-		return this.buttonStates.has(identifier);
-	}
-
-	/**
-	 * Marks the specified button as consumed, preventing further interactions.
-	 *
-	 * @param identifier - The unique identifier of the button, which can be a string or a number.
-	 * If the button state exists, it will be marked as consumed.
-	 */
-	consumeBufferedEvent(identifier: ButtonId, pressId?: number): void {
-		for (const event of this.inputBuffer) {
-			if (event.identifier === identifier && (pressId == null || event.pressId === pressId)) {
-				event.consumed = true;
-			}
-		}
-		this.consumeBufferedEdge(this.bufferedPressEdges, identifier, pressId);
-		this.consumeBufferedEdge(this.bufferedReleaseEdges, identifier, pressId);
-		const state = this.buttonStates.get(identifier);
-		if (state) {
-			state.consumed = true;
-		}
-	}
-
-	/** Clears transient edge flags and buffered events without discarding held state. */
-	resetEdgeState(): void {
-		for (const state of this.buttonStates.values()) {
-			state.justpressed = false;
-			state.justreleased = false;
-			state.consumed = false;
-			if (!state.pressed) {
-				state.presstime = null;
-				state.pressedAtMs = null;
-				state.pressId = null;
-				state.value = 0;
-				state.value2d = null;
-			}
-		}
-		this.inputBuffer = [];
-		this.bufferedPressEdges.clear();
-		this.bufferedReleaseEdges.clear();
-		this.pendingFrameStates.clear();
-		this.currentFrame = 0;
-	}
-}
-
-/**
  * Represents the Input class, which manages player inputs and gamepad assignments.
  */
-export class Input implements RuntimeInputSource {
+export class Input implements InputControllerInputSource, InputEventSink {
 	/**
 	 * The maximum number of players allowed.
 	 */
@@ -544,11 +100,6 @@ export class Input implements RuntimeInputSource {
 	 */
 	public static readonly DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
 	/**
-	 * The default player index for the on-screen gamepad. Maps to player 1.
-	 */
-	public static readonly DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX = 1;
-
-	/**
 	 * An array of player inputs for each player.
 	 * The Player 1 input is at index 0, Player 2 input is at index 1, and so on.
 	 * @see PlayerInput
@@ -556,6 +107,7 @@ export class Input implements RuntimeInputSource {
 	private playerInputs: PlayerInput[] = [];
 
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
+	private readonly deviceBindingList: DeviceBinding[] = [];
 	private readonly inputControllerKeyboardHandlers: InputHandler[] = [];
 	private readonly inputControllerPointerHandlers: InputHandler[] = [];
 	public startupGamepadIndex = -1;
@@ -566,37 +118,25 @@ export class Input implements RuntimeInputSource {
 	 */
 	public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
-	/**
-	 * Represents the onscreen gamepad.
-	 * @see OnscreenGamepad
-	 */
-	private onscreenGamepad: OnscreenGamepad = null;
-
-	private platformInputUnsubscribe: SubscriptionHandle = null;
-	private focusChangeUnsubscribe: SubscriptionHandle = null;
-	private pendingHidGamepad: GamepadInput = null;
-	private nextPlatformPressId = 1;
-	private readonly platformPressIds = new Map<string, Map<string, number>>();
-	private readonly platformInputListener = (event: InputEvt): void => {
-		this.handleInputEvent(event);
-	};
-	private readonly handleFocusChange = (_focused: boolean): void => {
+	private unsubscribeHostInput: (() => void) | null = null;
+	private pendingVibrationDevice: GamepadDevice = null;
+	private nextHostPressId = 1;
+	private readonly hostPressIds = new Map<string, Map<string, number>>();
+	public resetInput(): void {
 		this.supervisorRequestLine = false;
 		for (let i = 0; i < this.playerInputs.length; i++) {
 			const player = this.playerInputs[i];
 			if (!player) continue;
 			player.reset();
 		}
-		const iterator = this.deviceBindings.values();
-		for (let current = iterator.next(); !current.done; current = iterator.next()) {
-			const binding = current.value;
-			if (binding.assignedPlayer !== null) continue;
+		for (let i = 0; i < this.deviceBindingList.length; i += 1) {
+			const binding = this.deviceBindingList[i];
+			if (binding.assignedPlayer) continue;
 			binding.handler.reset();
 		}
-	};
+	}
 
 	public debugHotkeysPaused = false;
-	private gameplayCaptureEnabled = true;
 	private supervisorRequestLine = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts: GlobalShortcutRegistry;
@@ -620,15 +160,15 @@ export class Input implements RuntimeInputSource {
 		this.getPlayerInput(padIndex + 1).applyInputControllerVibrationEffect(durationMs, intensity);
 	}
 
-	public setRuntimeInputFrameDurationMs(frameDurationMs: number): void {
+	public setFrameDurationMs(frameDurationMs: number): void {
+		if (this.frameDurationMs === frameDurationMs) {
+			return;
+		}
 		this.frameDurationMs = frameDurationMs;
 		for (let index = 0; index < this.playerInputs.length; index += 1) {
 			this.playerInputs[index].setFrameDurationMs(frameDurationMs);
 		}
 	}
-
-	/** All gamepad button names, in ICU pad-button bit order. */
-	public static readonly BUTTON_IDS = INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS;
 
 	private static createKeyboardToGamepadMap(keyboard: KeyboardInputMapping): Record<string, string> {
 		const inverse: Record<string, string> = {};
@@ -675,7 +215,8 @@ export class Input implements RuntimeInputSource {
 	 */
 
 	public constructor(
-		private readonly platform: Platform,
+		private readonly clock: HostClock,
+		private readonly inputHub: InputHub,
 		startingGamepadIndex: number,
 	) {
 		this.startupGamepadIndex = startingGamepadIndex;
@@ -685,46 +226,26 @@ export class Input implements RuntimeInputSource {
 		this.globalShortcuts = new GlobalShortcutRegistry(this);
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		const player = this.getPlayerInput(defaultPlayerIndex);
-		const keyboard = new KeyboardInput(this.platform.clock, 'keyboard:0');
-		const pointer = new PointerInput(this.platform.clock, 'pointer:0');
+		const keyboard = new KeyboardInput(this.clock, 'keyboard:0');
+		const pointer = new PointerInput(this.clock, 'pointer:0');
 		player.inputHandlers['keyboard'] = keyboard;
 		player.inputHandlers['pointer'] = pointer;
-		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null });
-		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null });
+		const keyboardBinding: DeviceBinding = { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null };
+		const pointerBinding: DeviceBinding = { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null };
+		this.deviceBindings.set('keyboard:0', keyboardBinding);
+		this.deviceBindings.set('pointer:0', pointerBinding);
+		this.deviceBindingList.push(keyboardBinding, pointerBinding);
 		this.inputControllerKeyboardHandlers.push(keyboard);
 		this.inputControllerPointerHandlers.push(pointer);
-		this.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
-		this.attachToPlatformInput();
-		this.focusChangeUnsubscribe = this.platform.lifecycle.onFocusChange(this.handleFocusChange);
+		this.inputHub.setKeyboardCapture(this.shouldCaptureKey);
+		this.attachToHostInput();
 	}
 
-	/**
-	 * Checks if the onscreen gamepad is enabled.
-	 * @returns {boolean} True if the onscreen gamepad is enabled, false otherwise.
-	 */
-	public get isOnscreenGamepadEnabled(): boolean {
-		return this.onscreenGamepad !== null;
-	}
-
-	public enableOnscreenGamepad(): void {
-		if (!this.onscreenGamepad) {
-			this.onscreenGamepad = new OnscreenGamepad(
-				this.platform.onscreenGamepad,
-				this.platform.clock,
-			);
-		}
-		this.onscreenGamepad.init();
-		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
-	}
-
-	public shouldCaptureKey(code: string): boolean {
+	public readonly shouldCaptureKey = (code: string): boolean => {
 		return this.additionalCaptureKeys.has(code);
-	}
+	};
 
 	public setKeyboardCapture(code: string, enabled: boolean): void {
-		if (!code) {
-			throw new Error('[Input] Keyboard capture code must be a non-empty string.');
-		}
 		if (enabled) {
 			this.additionalCaptureKeys.add(code);
 		} else {
@@ -742,11 +263,7 @@ export class Input implements RuntimeInputSource {
 
 		// Remove all player inputs
 		this.playerInputs = [];
-		if (this.onscreenGamepad) {
-			this.onscreenGamepad.dispose();
-			this.onscreenGamepad = null;
-		}
-		this.unbind();
+		this.detachFromHostInput();
 		this.inputControllerKeyboardHandlers.length = 0;
 		this.inputControllerPointerHandlers.length = 0;
 		this.debugHotkeysPaused = false;
@@ -754,195 +271,156 @@ export class Input implements RuntimeInputSource {
 		this.additionalCaptureKeys.clear();
 	}
 
-	public setGameplayCaptureEnabled(enabled: boolean): void {
-		if (this.gameplayCaptureEnabled === enabled) {
-			return;
-		}
-		this.gameplayCaptureEnabled = enabled;
-		if (!enabled) {
-			for (let i = 0; i < this.playerInputs.length; i++) {
-				const player = this.playerInputs[i];
-				if (!player) {
-					continue;
-				}
-				player.clearEdgeState();
-			}
-		}
+	public setSupervisorRequestLine(down: boolean): void {
+		this.supervisorRequestLine = down;
 	}
 
-	public handleInputEvent(evt: InputEvt): void {
-		if (evt.type === 'supervisor-request') {
-			this.supervisorRequestLine = evt.down;
-			return;
-		}
-		if (evt.type === 'connect') {
-			this.onDeviceConnected(evt.device);
-			return;
-		}
-		if (evt.type === 'disconnect') {
-			this.onDeviceDisconnected(evt.deviceId);
-			return;
-		}
-		const binding = this.deviceBindings.get(evt.deviceId);
+	public inputButton(
+		deviceId: string,
+		code: string,
+		down: boolean,
+		value: number,
+		timestamp: number,
+		pressId: number,
+	): void {
+		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
-		if (evt.type === 'button') {
-			this.routeButtonEvent(binding, evt);
-			return;
-		}
-		if (evt.type === 'axis1') {
-			this.routeAxis1(binding, evt);
-			return;
-		}
-		if (evt.type === 'axis2') {
-			this.routeAxis2(binding, evt);
-		}
+		this.routeButtonEvent(binding, deviceId, code, down, value, timestamp, pressId);
 	}
 
-	private attachToPlatformInput(): void {
-		if (this.platformInputUnsubscribe) {
-			const previous = this.platformInputUnsubscribe;
-			this.platformInputUnsubscribe = null;
-			previous.unsubscribe();
+	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {
+		const binding = this.deviceBindings.get(deviceId);
+		if (!binding) return;
+		this.routeAxis1(binding, code, x, timestamp);
+	}
+
+	public inputAxis2(deviceId: string, code: string, x: number, y: number, timestamp: number): void {
+		const binding = this.deviceBindings.get(deviceId);
+		if (!binding) return;
+		this.routeAxis2(binding, code, x, y, timestamp);
+	}
+
+	private attachToHostInput(): void {
+		if (this.unsubscribeHostInput) {
+			const previous = this.unsubscribeHostInput;
+			this.unsubscribeHostInput = null;
+			previous();
 		}
-		const hub = this.platform.input;
+		const hub = this.inputHub;
 		const devices = hub.devices();
 		for (let i = 0; i < devices.length; i++) {
-			this.registerPlatformDevice(devices[i]);
+			this.registerHostDevice(devices[i]);
 		}
-		this.platformInputUnsubscribe = hub.subscribe(this.platformInputListener);
+		this.unsubscribeHostInput = hub.subscribe(this);
 	}
 
-	private detachFromPlatformInput(): void {
-		if (!this.platformInputUnsubscribe) return;
-		const unsubscribe = this.platformInputUnsubscribe;
-		this.platformInputUnsubscribe = null;
-		unsubscribe.unsubscribe();
+	private detachFromHostInput(): void {
+		if (!this.unsubscribeHostInput) return;
+		const unsubscribe = this.unsubscribeHostInput;
+		this.unsubscribeHostInput = null;
+		unsubscribe();
 	}
 
-	private registerPlatformDevice(device: InputDevice): void {
+	private registerHostDevice(device: InputDevice): void {
 		const existing = this.deviceBindings.get(device.id);
 		if (existing) {
 			existing.device = device;
-			if (existing.source === 'gamepad') {
+			if (device.kind === 'gamepad') {
 				const handler = existing.handler as GamepadInput;
-				handler.setDevice(device);
+				handler.device = device;
 			}
 			return;
 		}
-		this.onDeviceConnected(device);
+		this.connectInputDevice(device);
 	}
 
-	private routeButtonEvent(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'button' }>): void {
-		const pressId = this.resolvePlatformPressId(evt);
+	private routeButtonEvent(
+		binding: DeviceBinding,
+		deviceId: string,
+		code: string,
+		down: boolean,
+		value: number,
+		timestamp: number,
+		hostPressId: number,
+	): void {
+		const pressId = this.resolveHostPressId(deviceId, code, down, hostPressId);
 		switch (binding.source) {
 			case 'keyboard': {
 				const handler = binding.handler as KeyboardInput;
-				if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
+				if (down) handler.keydown(code); else handler.keyup(code);
 				break;
 			}
 			case 'pointer': {
-				const value = evt.value ?? (evt.down ? 1 : 0);
 				const handler = binding.handler as PointerInput;
-				handler.ingestButton(evt.code, makeButtonState({
-					pressed: evt.down,
-					justpressed: evt.down,
-					justreleased: !evt.down,
-					timestamp: evt.timestamp,
-					pressId,
-					value,
-				}));
+				handler.ingestButton(code, down, value, timestamp, pressId);
 				break;
 			}
 			case 'gamepad': {
-				const value = evt.value ?? (evt.down ? 1 : 0);
 				const handler = binding.handler as GamepadInput;
-				handler.ingestButton(evt.code, evt.down, value, evt.timestamp, pressId);
+				handler.ingestButton(code, down, value, timestamp, pressId);
 				break;
 			}
 		}
-		if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
-			this.enqueueButtonEvent(binding.assignedPlayer, binding.source, evt.code, evt.down ? 'press' : 'release', evt.timestamp, pressId);
-		}
 	}
 
-	private resolvePlatformPressId(evt: Extract<InputEvt, { type: 'button' }>): number {
-		if (evt.pressId !== undefined) {
-			return evt.pressId;
+	private resolveHostPressId(deviceId: string, code: string, down: boolean, hostPressId: number): number {
+		if (hostPressId) {
+			return hostPressId;
 		}
-		if (evt.down) {
-			const pressId = this.nextPlatformPressId;
-			this.nextPlatformPressId += 1;
-			let devicePressIds = this.platformPressIds.get(evt.deviceId);
-			if (devicePressIds === undefined) {
+		if (down) {
+			const pressId = this.nextHostPressId;
+			this.nextHostPressId += 1;
+			let devicePressIds = this.hostPressIds.get(deviceId);
+			if (!devicePressIds) {
 				devicePressIds = new Map();
-				this.platformPressIds.set(evt.deviceId, devicePressIds);
+				this.hostPressIds.set(deviceId, devicePressIds);
 			}
-			devicePressIds.set(evt.code, pressId);
+			devicePressIds.set(code, pressId);
 			return pressId;
 		}
-		const devicePressIds = this.platformPressIds.get(evt.deviceId)!;
-		const pressId = devicePressIds.get(evt.code)!;
-		devicePressIds.delete(evt.code);
+		const devicePressIds = this.hostPressIds.get(deviceId)!;
+		const pressId = devicePressIds.get(code)!;
+		devicePressIds.delete(code);
 		return pressId;
 	}
 
-	private routeAxis1(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis1' }>): void {
+	private routeAxis1(binding: DeviceBinding, code: string, x: number, timestamp: number): void {
 		if (binding.source === 'pointer') {
 			const handler = binding.handler as PointerInput;
-			handler.ingestAxis1(evt.code, evt.x, evt.timestamp);
-			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
-				this.getPlayerInput(binding.assignedPlayer).recordAxis1Input('pointer', evt.code, evt.x, evt.timestamp);
-			}
+			handler.ingestAxis1(code, x, timestamp);
 		}
 	}
 
-	private routeAxis2(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis2' }>): void {
+	private routeAxis2(binding: DeviceBinding, code: string, x: number, y: number, timestamp: number): void {
 		if (binding.source === 'pointer') {
 			const handler = binding.handler as PointerInput;
-			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
-			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
-				const player = this.getPlayerInput(binding.assignedPlayer);
-				player.recordAxis2Input('pointer', evt.code, evt.x, evt.y, evt.timestamp);
-				const delta = handler.getButtonState('pointer_delta').value2d;
-				if (delta === undefined || delta === null) {
-					player.recordAxis2Input('pointer', 'pointer_delta', 0, 0, evt.timestamp);
-				} else {
-					player.recordAxis2Input('pointer', 'pointer_delta', delta[0], delta[1], evt.timestamp);
-				}
-			}
+			handler.ingestAxis2(code, x, y, timestamp);
 			return;
 		}
 		if (binding.source === 'gamepad') {
 			const handler = binding.handler as GamepadInput;
-			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
-			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
-				this.getPlayerInput(binding.assignedPlayer).recordAxis2Input('gamepad', evt.code, evt.x, evt.y, evt.timestamp);
-			}
+			handler.ingestAxis2(code, x, y, timestamp);
 		}
 	}
 
-	private enqueueButtonEvent(playerIndex: number, source: InputSource, code: string, type: 'press' | 'release', timestamp: number, pressId?: number): void {
-		const player = this.getPlayerInput(playerIndex);
-		player.recordButtonEvent(source, code, { eventType: type, identifier: code, timestamp, consumed: false, pressId });
-	}
-
-	private onDeviceConnected(device: InputDevice): void {
+	public connectInputDevice(device: InputDevice): void {
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		if (device.kind === 'gamepad') {
 			const handler = new GamepadInput(
-				this.platform,
+				this.clock,
 				device.id,
-				device.description,
 				device,
 			);
-			handler.setDevice(device);
 			const binding: DeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
 			this.deviceBindings.set(device.id, binding);
+			this.deviceBindingList.push(binding);
 			const autoAssign = this.startupGamepadIndex >= 0 && device.id === `gamepad:${this.startupGamepadIndex}`;
 			if (autoAssign) {
 				this.startupGamepadIndex = -1;
 				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
-				this.pendingHidGamepad = handler;
+				if (device.vibrationInitializationRequired) {
+					this.pendingVibrationDevice = device;
+				}
 			} else {
 				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, handler, null));
 			}
@@ -951,15 +429,19 @@ export class Input implements RuntimeInputSource {
 		if (!this.deviceBindings.has(device.id)) {
 			const source = this.inferSourceFromKind(device.kind);
 				if (source === 'keyboard') {
-					const handler = new KeyboardInput(this.platform.clock, device.id);
-					this.deviceBindings.set(device.id, { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device });
+					const handler = new KeyboardInput(this.clock, device.id);
+					const binding: DeviceBinding = { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device };
+					this.deviceBindings.set(device.id, binding);
+					this.deviceBindingList.push(binding);
 					this.inputControllerKeyboardHandlers.push(handler);
 				} else if (source === 'pointer') {
-					const handler = new PointerInput(this.platform.clock, device.id);
-					this.deviceBindings.set(device.id, { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex, device });
+					const handler = new PointerInput(this.clock, device.id);
+					const binding: DeviceBinding = { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex, device };
+					this.deviceBindings.set(device.id, binding);
+					this.deviceBindingList.push(binding);
 					this.inputControllerPointerHandlers.push(handler);
 				}
-		}
+			}
 	}
 
 	private inferSourceFromKind(kind: DeviceKind): InputSource {
@@ -976,20 +458,21 @@ export class Input implements RuntimeInputSource {
 		if (index >= 0) list.splice(index, 1);
 	}
 
-	private onDeviceDisconnected(deviceId: string): void {
+	public disconnectInputDevice(deviceId: string): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
 		if (binding.source === 'gamepad') {
 			const handler = binding.handler as GamepadInput;
-			if (binding.assignedPlayer !== null) {
+			if (binding.assignedPlayer) {
 				this.getPlayerInput(binding.assignedPlayer).clearGamepad(handler);
 			} else {
 				this.removePendingGamepadAssignment(handler.gamepadIndex);
 			}
-			handler.dispose();
 		}
 		binding.handler.reset();
 		this.deviceBindings.delete(deviceId);
+		const bindingIndex = this.deviceBindingList.indexOf(binding);
+		this.deviceBindingList.splice(bindingIndex, 1);
 		if (binding.source === 'keyboard') {
 			this.detachInputControllerHandler(this.inputControllerKeyboardHandlers, binding.handler);
 		} else if (binding.source === 'pointer') {
@@ -998,31 +481,22 @@ export class Input implements RuntimeInputSource {
 	}
 
 	private getBindingForHandler(handler: InputHandler): DeviceBinding {
-		for (const value of this.deviceBindings.values()) {
-			if (value.handler === handler) return value;
+		for (let i = 0; i < this.deviceBindingList.length; i += 1) {
+			const binding = this.deviceBindingList[i];
+			if (binding.handler === handler) return binding;
 		}
 		return undefined;
-	}
-
-	private unbind(): void {
-		this.detachFromPlatformInput();
-		if (this.focusChangeUnsubscribe) {
-			const unsubscribe = this.focusChangeUnsubscribe;
-			this.focusChangeUnsubscribe = null;
-			unsubscribe.unsubscribe();
-		}
 	}
 
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
-	public pollInput(): GamepadInput | null {
-		this.pollPlatformDevices();
-		const now = this.platform.clock.now();
+	public pollInput(): GamepadDevice | null {
+		const now = this.clock.now();
+		this.inputHub.poll(now);
 		for (let index = 0; index < this.playerInputs.length; index += 1) {
 			const player = this.playerInputs[index];
 			player.pollInput(now);
-			player.update(now);
 			this.globalShortcuts.pollPlayer(player);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
@@ -1034,25 +508,21 @@ export class Input implements RuntimeInputSource {
 				}
 			}
 		}
-		if (this.pendingHidGamepad) {
-			const gamepadInput = this.pendingHidGamepad;
-			this.pendingHidGamepad = null;
-			return gamepadInput;
+		if (this.pendingVibrationDevice) {
+			const device = this.pendingVibrationDevice;
+			this.pendingVibrationDevice = null;
+			return device;
 		}
 		for (let index = 0; index < this.pendingGamepadAssignments.length; index += 1) {
 			const gamepadInput = this.pendingGamepadAssignments[index].run();
-			if (gamepadInput) {
-				return gamepadInput;
+			if (gamepadInput?.device.vibrationInitializationRequired) {
+				return gamepadInput.device;
 			}
 		}
 		return null;
 	}
 
-	public sampleInputControllerSnapshot(currentTime: number, snapshot: InputControllerSnapshot): void {
-		for (let playerIndex = 0; playerIndex < this.playerInputs.length; playerIndex += 1) {
-			const player = this.playerInputs[playerIndex];
-			player.beginFrame(currentTime);
-		}
+	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
 		this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;
 		snapshot.pointerX = 0;
@@ -1096,20 +566,6 @@ export class Input implements RuntimeInputSource {
 
 	public getGlobalShortcutRegistry(): GlobalShortcutRegistry {
 		return this.globalShortcuts;
-	}
-
-	private pollPlatformDevices(): void {
-		const iterator = this.deviceBindings.values();
-		const clock = this.platform.clock;
-		let current = iterator.next();
-		while (!current.done) {
-			const binding = current.value;
-			const device = binding.device;
-			if (device) {
-				device.poll(clock);
-			}
-			current = iterator.next();
-		}
 	}
 
 	/**

@@ -2,9 +2,18 @@
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import type { MachineHostInitializationOptions } from '../common/machine_runtime';
-import { BrowserPlatform } from './platform';
+import { Input } from '../common/input/manager';
+import { WorkerStreamingAudioSink } from './worker_audio';
+import { BrowserInputHub } from './input';
+import { ConsoleLogOutput } from '../common/log';
+import { BrowserOnscreenGamepad } from './onscreen_gamepad';
+import { BrowserFrameLoop, BrowserHostClock } from './timing';
+import { BrowserVideoOutput } from './video_output';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
+import { createBrowserBackend } from './backend';
+import type { HostAudioSink } from '../common/audio_output';
+import type { LogOutput } from '../common/log';
+import type { GPUBackend } from '../../machine/ts/render/backend/backend';
 
 const audioState: BootAudioState = {
 	sndcontext: null,
@@ -14,11 +23,24 @@ let bootAnimationComplete = false;
 let startingGamepadIndex = -1;
 let enableOnscreenGamepad = false;
 
+export interface BrowserStartup {
+	systemRom: Uint8Array;
+	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
+	machineModel: typeof PSX_MACHINE_SPEC;
+	input: Input;
+	clock: BrowserHostClock;
+	audio: HostAudioSink;
+	frames: BrowserFrameLoop;
+	videoOutput: BrowserVideoOutput;
+	videoBackend: GPUBackend;
+	logOutput: LogOutput;
+}
+
 export async function prepareBrowserStartup(
 	debug: boolean,
 	systemRomPath: string,
 	defaultRom: string,
-): Promise<MachineHostInitializationOptions> {
+): Promise<BrowserStartup> {
 	const romUrl = getRomFromUrlParameter() || defaultRom;
 	if (!romUrl) {
 		throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
@@ -36,18 +58,33 @@ export async function prepareBrowserStartup(
 	}
 	gamescreen.hidden = false;
 	gamescreen.style.display = 'block';
-	const platform = new BrowserPlatform(gamescreen, {
-		audioContext: audioState.sndcontext,
-		debug,
-		enableOnscreenGamepad,
-	});
+	const clock = new BrowserHostClock();
+	const frames = new BrowserFrameLoop();
+	const onscreenGamepad = enableOnscreenGamepad
+		? new BrowserOnscreenGamepad(gamescreen.ownerDocument, window)
+		: null;
+	const inputHub = new BrowserInputHub(gamescreen, clock, onscreenGamepad);
+	const input = new Input(
+		clock,
+		inputHub,
+		onscreenGamepad ? onscreenGamepad.gamepadIndex : startingGamepadIndex,
+	);
+	const videoOutput = new BrowserVideoOutput(gamescreen, onscreenGamepad);
+	const videoBackend = await createBrowserBackend(
+		gamescreen,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
 	return {
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		systemRom,
-		startingGamepadIndex,
-		enableOnscreenGamepad,
-		platform,
 		machineModel: PSX_MACHINE_SPEC,
+		input,
+		clock,
+		frames,
+		audio: new WorkerStreamingAudioSink(audioState.sndcontext),
+		videoOutput,
+		videoBackend,
+		logOutput: new ConsoleLogOutput(),
 	};
 }
 

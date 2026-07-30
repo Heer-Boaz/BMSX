@@ -111,26 +111,25 @@ export class GlobalShortcutRegistry {
 	}
 
 	private pollGamepadChord(gamepad: PlayerInput['inputHandlers']['gamepad'], entry: { buttons: string[]; handler: () => void; latchKeys: string[] }): void {
-		let allPressed = true;
-		const states: Array<ButtonState | undefined> = [];
-		for (let i = 0; i < entry.buttons.length; i++) {
-			let state: ButtonState | undefined;
-			if (gamepad) {
-				state = gamepad.getButtonState(entry.buttons[i]);
-			}
-			states.push(state);
-			if (!state?.pressed) {
-				allPressed = false;
-			}
-		}
-		if (!allPressed) {
+		if (!gamepad) {
 			for (let i = 0; i < entry.latchKeys.length; i++) {
-				this.release(entry.latchKeys[i], states[i]);
+				this.release(entry.latchKeys[i]);
 			}
 			return;
 		}
-		for (let i = 0; i < states.length; i++) {
-			if (this.shouldAccept(entry.latchKeys[i], states[i])) {
+		let allPressed = true;
+		for (let i = 0; i < entry.buttons.length; i++) {
+			const state = gamepad.getButtonState(entry.buttons[i]);
+			if (!state.pressed) {
+				allPressed = false;
+			}
+			this.release(entry.latchKeys[i], state);
+		}
+		if (!allPressed) {
+			return;
+		}
+		for (let i = 0; i < entry.buttons.length; i++) {
+			if (this.shouldAccept(entry.latchKeys[i], gamepad.getButtonState(entry.buttons[i]))) {
 				entry.handler();
 				return;
 			}
@@ -143,7 +142,7 @@ export class GlobalShortcutRegistry {
 			return false;
 		}
 		const existing = this.latch.get(code) ;
-		if (typeof state.pressId === 'number') {
+		if (state.pressId) {
 			if (existing === state.pressId) {
 				return false;
 			}

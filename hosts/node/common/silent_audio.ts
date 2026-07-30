@@ -1,6 +1,6 @@
-import { type AudioOutputPuller, type AudioService } from 'bmsx/platform';
+import { type AudioOutputPuller, type HostAudioSink } from '../../common/audio_output';
 
-export class SilentAudioService implements AudioService {
+export class SilentAudioSink implements HostAudioSink {
 	setRuntimeAudioPuller(_puller: AudioOutputPuller | null): void { }
 	clearRuntimeAudioTransport(): void { }
 	pumpRuntimeAudio(): void { }

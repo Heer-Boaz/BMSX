@@ -1,7 +1,7 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
-import type { HostClock, VibrationParams } from '../platform';
-import { INPUT_CONTROLLER_KEY_WORD_COUNT, type InputControllerPadSnapshot, type InputControllerSnapshot } from '../machine/devices/input/contracts';
+import type { HostClock } from '../clock';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT, type InputControllerPadSnapshot, type InputControllerSnapshot } from '../../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from './hid_keys';
 
 
@@ -20,8 +20,6 @@ export class KeyboardInput implements InputHandler {
 	 */
 	public keyStates: KeyOrButtonId2ButtonState = {};
 	private readonly keyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
-	private readonly pendingPresses = new Set<string>();
-	private readonly pendingReleases = new Set<string>();
 
 	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
@@ -29,7 +27,7 @@ export class KeyboardInput implements InputHandler {
 		return false; // Keyboard does not support vibration effects
 	}
 
-	public applyVibrationEffect(_params: VibrationParams): void {
+	public applyVibrationEffect(_durationMs: number, _intensity: number): void {
 		// No vibration effect for keyboard
 	}
 
@@ -57,23 +55,11 @@ export class KeyboardInput implements InputHandler {
 		if (!except) {
 			this.keyStates = {};
 			this.gamepadButtonStates = {};
-			this.pendingPresses.clear();
-			this.pendingReleases.clear();
 			this.keyUsageWords.fill(0);
 		}
 		else {
 			resetObject(this.keyStates, except);
 			resetObject(this.gamepadButtonStates, except);
-			for (const key of [...this.pendingPresses]) {
-				if (!except.includes(key)) {
-					this.pendingPresses.delete(key);
-				}
-			}
-			for (const key of [...this.pendingReleases]) {
-				if (!except.includes(key)) {
-					this.pendingReleases.delete(key);
-				}
-			}
 			this.rebuildKeyUsageWords();
 		}
 	}
@@ -120,10 +106,7 @@ export class KeyboardInput implements InputHandler {
 	 *          If the provided key is null, a default ButtonState is returned.
 	 */
 	public getButtonState(key: string): ButtonState {
-		if (key === null) return makeButtonState();
 		return getPressedState(this.gamepadButtonStates, key);
-		// const convertedKey = Input.KEYBOARDKEY2GAMEPADBUTTON[key] ? Input.KEYBOARDKEY2GAMEPADBUTTON[key] : key;
-		// return getPressedState(this.gamepadButtonStates, convertedKey);
 	}
 
 	public writeInputControllerKeyWords(keyWords: Uint32Array): void {
@@ -144,65 +127,58 @@ export class KeyboardInput implements InputHandler {
 	 */
 	pollInput(): void {
 		const now = this.clock.now();
-		// Update existing keys in place, create states on demand
-		Object.keys(this.keyStates).forEach(buttonId => {
-			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
+		for (const buttonId in this.keyStates) {
+			const state = getPressedState(this.gamepadButtonStates, buttonId);
 			const current = this.keyStates[buttonId];
 			const isDown = current.pressed;
-			const wasDown = prev.pressed;
-			const justpressed = this.pendingPresses.has(buttonId);
-			const justreleased = this.pendingReleases.has(buttonId);
+			const wasDown = state.pressed;
+			const wasPressed = state.waspressed;
+			const wasReleased = state.wasreleased;
+			const previousTimestamp = state.timestamp;
+			const previousReleasedAtMs = state.releasedAtMs;
+			const previousPressId = state.pressId;
+			const previousConsumed = state.consumed;
+			const justpressed = current.justpressed;
+			const justreleased = current.justreleased;
 
-			let pressId = current.pressId ?? prev.pressId;
+			let pressId = current.pressId || previousPressId;
 			if ((isDown || justpressed || justreleased) && !pressId) {
 				pressId = this.nextPressId++;
 				current.pressId = pressId;
 			}
-			const pressedAt = isDown
-				? (current.pressedAtMs ?? prev.pressedAtMs ?? prev.timestamp ?? now)
-				: null;
+			const pressedAt = current.pressedAtMs;
 
-			let state: ButtonState;
 			if (isDown) {
-				const stickyConsumed = prev.consumed;
-				state = {
-					...prev,
-					pressed: true,
-					justpressed,
-					justreleased: false,
-					waspressed: true,
-					wasreleased: prev.wasreleased,
-					presstime: now - pressedAt,
-					pressedAtMs: pressedAt,
-					releasedAtMs: null,
-					timestamp: justpressed ? (current.timestamp ?? now) : (prev.timestamp ?? pressedAt),
-					pressId,
-					value: 1,
-					consumed: stickyConsumed,
-				};
+				state.pressed = true;
+				state.justpressed = justpressed;
+				state.justreleased = false;
+				state.waspressed = true;
+				state.wasreleased = wasReleased;
+				state.presstime = now - pressedAt;
+				state.pressedAtMs = pressedAt;
+				state.releasedAtMs = 0;
+				state.timestamp = justpressed ? current.timestamp : previousTimestamp;
+				state.pressId = pressId;
+				state.value = 1;
+				state.consumed = previousConsumed;
 			} else {
-				state = {
-					...prev,
-					pressed: false,
-					justpressed,
-					justreleased,
-					waspressed: prev.waspressed || wasDown || justpressed,
-					wasreleased: prev.wasreleased || wasDown || justreleased,
-					presstime: null,
-					pressedAtMs: null,
-					releasedAtMs: justreleased ? (current.releasedAtMs ?? current.timestamp ?? now) : prev.releasedAtMs,
-					timestamp: (justreleased || justpressed) ? (current.timestamp ?? now) : (prev.timestamp ?? now),
-					pressId: (justpressed || justreleased || wasDown) ? pressId : null,
-					value: 0,
-					consumed: false,
-				};
+				state.pressed = false;
+				state.justpressed = justpressed;
+				state.justreleased = justreleased;
+				state.waspressed = wasPressed || wasDown || justpressed;
+				state.wasreleased = wasReleased || wasDown || justreleased;
+				state.presstime = null;
+				state.pressedAtMs = 0;
+				state.releasedAtMs = justreleased ? current.releasedAtMs : previousReleasedAtMs;
+				state.timestamp = (justreleased || justpressed) ? current.timestamp : previousTimestamp;
+				state.pressId = (justpressed || justreleased || wasDown) ? pressId : 0;
+				state.value = 0;
+				state.consumed = false;
 			}
-
-			this.gamepadButtonStates[buttonId] = state;
 
 			const mapped = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 			if (mapped) {
-				const dst = this.gamepadButtonStates[mapped] ?? makeButtonState();
+				const dst = getPressedState(this.gamepadButtonStates, mapped);
 				dst.pressed = state.pressed;
 				dst.justpressed = state.justpressed;
 				dst.justreleased = state.justreleased;
@@ -215,13 +191,12 @@ export class KeyboardInput implements InputHandler {
 				dst.releasedAtMs = state.releasedAtMs;
 				dst.pressId = state.pressId;
 				dst.value = state.value;
-				dst.value2d = state.value2d ;
-				this.gamepadButtonStates[mapped] = dst;
+				dst.value2d = state.value2d;
 			}
 
-			this.pendingPresses.delete(buttonId);
-			this.pendingReleases.delete(buttonId);
-		});
+			current.justpressed = false;
+			current.justreleased = false;
+		}
 	}
 
 	public ingestButton(_code: string, _state: ButtonState): void { }
@@ -237,9 +212,9 @@ export class KeyboardInput implements InputHandler {
 			state.pressed = true;
 			state.timestamp = now;
 			state.pressedAtMs = now;
-			state.releasedAtMs = null;
+			state.releasedAtMs = 0;
 			state.pressId = this.nextPressId++;
-			this.pendingPresses.add(key_code);
+			state.justpressed = true;
 			this.setKeyUsageWord(key_code, true);
 		}
 	}
@@ -250,11 +225,12 @@ export class KeyboardInput implements InputHandler {
 	 */
 	keyup(key_code: KeyboardButtonId | string): void {
 		const state = this.keyStates[key_code];
-		if (!state || (!state.pressed && !this.pendingPresses.has(key_code))) return;
+		if (!state || (!state.pressed && !state.justpressed)) return;
 		state.pressed = false;
 		state.timestamp = this.clock.now();
+		state.pressedAtMs = 0;
 		state.releasedAtMs = state.timestamp;
-		this.pendingReleases.add(key_code);
+		state.justreleased = true;
 		this.setKeyUsageWord(key_code, false);
 	}
 
