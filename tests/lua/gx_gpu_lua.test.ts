@@ -15,13 +15,23 @@ import {
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import {
+	createTestBlua32PairCpu,
+	createTestSystemCpu,
+	linkTestBlua32Pair,
+	linkTestSystemBlua32,
+} from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
-const ENTRY_SOURCE = `
+const SYSTEM_BOOT_SOURCE = `
+math = require('lua/math')
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+`;
+const CART_ENTRY_SOURCE = `
 local gx_gpu<const> = require('cartlib/gx/gpu')
-local bios_gpu<const> = require('bios/gx_gpu')
 local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
 if *mode_selector == 0 then
 	gx_gpu.reset_256x240()
@@ -37,41 +47,67 @@ elseif *mode_selector == 5 then
 	gx_gpu.reset_640x480i()
 elseif *mode_selector == 6 then
 	gx_gpu.reset_640x448i()
-elseif *mode_selector == 7 then
-	gx_gpu.reset_640x512i()
 else
-	local smode1_low<const>: *word = 0x080103a8
-	local display2_low<const>: *word = 0x08010370
-	*smode1_low = 0x40200504
-	*display2_low = 420 | (40 << 12)
-	bios_gpu.prepare_supervisor_320x240(0)
-	return 320, 240
+	gx_gpu.reset_640x512i()
 end
 return gx_gpu.display_size()
 `;
-
-const MODULE_FILES = [
-	['stdlib/util/round_to_nearest', 'machine/firmware/stdlib/util/round_to_nearest.lua'],
+const BIOS_ENTRY_SOURCE = `
+local bios_gpu<const> = require('gpu/gpu')
+local smode1_low<const>: *word = 0x080103a8
+local display2_low<const>: *word = 0x08010370
+*smode1_low = 0x40200504
+*display2_low = 420 | (40 << 12)
+bios_gpu.prepare_supervisor_320x240(0)
+return 320, 240
+`;
+const SYSTEM_MODULE_FILES = [
+	['lua/math', 'bios/lua/math.lua'],
+	['lua/math/sincos', 'bios/lua/math/sincos.lua'],
+] as const;
+const CART_MODULE_FILES = [
 	['cartlib/gx/gpu', 'cartlib/gx/gpu.lua'],
-	['bios/gx_gpu', 'machine/firmware/bios/gx_gpu.lua'],
+] as const;
+const BIOS_MODULE_FILES = [
+	['gpu/gpu', 'bios/gpu/gpu.lua'],
 ] as const;
 
-const modules = MODULE_FILES.map(([path, file]) => {
-	const source = readFileSync(file, 'utf8');
-	return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
-});
-const compiled = compileLuaChunkToProgram(parseLuaChunk(ENTRY_SOURCE, 'entry.lua'), modules, { entrySource: ENTRY_SOURCE, optLevel: 3 });
-const finalized = linkTestSystemBlua32(compiled);
-const image = finalized.image;
+function sourceModules(files: ReadonlyArray<readonly [string, string]>) {
+	return files.map(([path, file]) => {
+		const source = readFileSync(file, 'utf8');
+		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
+	});
+}
 
-type FirmwareMode = {
+const systemModules = sourceModules(SYSTEM_MODULE_FILES);
+const cartModules = sourceModules(CART_MODULE_FILES);
+const biosModules = sourceModules(BIOS_MODULE_FILES);
+const systemCompiled = compileLuaChunkToProgram(
+	parseLuaChunk(SYSTEM_BOOT_SOURCE, 'boot.lua'),
+	systemModules,
+	{ entrySource: SYSTEM_BOOT_SOURCE, optLevel: 3, programDomain: 'system' },
+);
+const cartCompiled = compileLuaChunkToProgram(
+	parseLuaChunk(CART_ENTRY_SOURCE, 'cart.lua'),
+	cartModules,
+	{ entrySource: CART_ENTRY_SOURCE, optLevel: 3, programDomain: 'cart' },
+);
+const gxImages = linkTestBlua32Pair(systemCompiled, cartCompiled);
+const biosCompiled = compileLuaChunkToProgram(
+	parseLuaChunk(BIOS_ENTRY_SOURCE, 'bios.lua'),
+	biosModules,
+	{ entrySource: BIOS_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
+);
+const biosImage = linkTestSystemBlua32(biosCompiled);
+
+type OutputMode = {
 	width: number;
 	height: number;
 	interlaced: boolean;
 	refreshUfpsScaled: number;
 };
 
-const FIRMWARE_MODES: readonly FirmwareMode[] = [
+const OUTPUT_MODES: readonly OutputMode[] = [
 	{ width: 256, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
 	{ width: 320, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
 	{ width: 368, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
@@ -82,17 +118,17 @@ const FIRMWARE_MODES: readonly FirmwareMode[] = [
 	{ width: 640, height: 512, interlaced: true, refreshUfpsScaled: 50_000_000 },
 ];
 
-function runFirmwareMode(modeIndex: number): { memory: Memory; cpu: CPU } {
-	const { memory, cpu } = createTestSystemCpu(finalized);
+function runCartMode(modeIndex: number): { memory: Memory; cpu: CPU } {
+	const { memory, cpu } = createTestBlua32PairCpu(gxImages);
 	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	return { memory, cpu };
 }
 
 test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () => {
-	for (let modeIndex = 0; modeIndex < FIRMWARE_MODES.length; modeIndex += 1) {
-		const expected = FIRMWARE_MODES[modeIndex]!;
-		const { memory, cpu } = runFirmwareMode(modeIndex);
+	for (let modeIndex = 0; modeIndex < OUTPUT_MODES.length; modeIndex += 1) {
+		const expected = OUTPUT_MODES[modeIndex]!;
+		const { memory, cpu } = runCartMode(modeIndex);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected.width, expected.height]);
 		const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 		for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
@@ -113,7 +149,8 @@ test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () 
 });
 
 test('BIOS GX code aligns the supervisor circuit to a retained PS2 DTV origin', () => {
-	const { memory, cpu } = runFirmwareMode(FIRMWARE_MODES.length);
+	const { memory, cpu } = createTestSystemCpu(biosImage);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [320, 240]);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 319 | (239 << 12));

@@ -2,7 +2,7 @@ local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
-local abs<const> = require('stdlib/math').abs
+local abs<const> = math.abs
 
 local muziekfoe<const> = {}
 muziekfoe.__index = muziekfoe

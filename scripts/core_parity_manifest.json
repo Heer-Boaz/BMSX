@@ -167,7 +167,6 @@
 		}
 	],
 	"core_roots": [
-		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
@@ -828,7 +827,6 @@
 				"docs/vdp_rpu_resume_handoff.md",
 				"docs/vdp_rpu_abi_draft.md",
 				"docs/lua_struct_support_plan.md",
-				"machine/firmware/system",
 				"machine/ts/machine/devices/vdp",
 				"machine/cpp/machine/devices/vdp",
 				"machine/ts/machine/devices/dma/image_copy.ts",
@@ -933,7 +931,6 @@
 				"machine/cpp/render/backend/gles2/vdp_2d_blit.cpp",
 				"machine/cpp/render/backend/pass/framebuffer_execution.cpp",
 				"machine/cpp/render/backend/pass/framebuffer_execution.h",
-				"machine/firmware/bios/vdp_stream.lua",
 				"machine/ts/machine/devices/vdp/blitter.ts",
 				"machine/ts/machine/devices/vdp/blitter_source.ts",
 				"machine/cpp/machine/devices/vdp/blitter.h",
@@ -1019,11 +1016,6 @@
 				"machine/cpp/lua/syntax",
 				"machine/ts/machine/program",
 				"machine/cpp/machine/program",
-				"machine/ts/machine/firmware/system_boot_symbols.ts",
-				"machine/ts/machine/firmware/builtin_descriptors.ts",
-				"machine/ts/machine/firmware/builtins.ts",
-				"machine/ts/machine/firmware/devtools.ts",
-				"machine/ts/machine/firmware/handler_registry.ts",
 				"ide/runtime/native_bridge.ts",
 				"machine/ts/machine/runtime/host/native_bridge.ts",
 				"machine/ts/machine/runtime/resume_snapshot.ts"

@@ -240,6 +240,7 @@ public:
 	);
 
 	void reset();
+	void installBootPrimitives();
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
 	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;
 	void clearExecutionEnvironment();

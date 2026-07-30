@@ -1,4 +1,4 @@
-require('stdlib/base')
+require('lua/base')
 local table<const> = {}
 
 table.pack = function(...)

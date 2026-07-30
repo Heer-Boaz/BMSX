@@ -1,12 +1,12 @@
-local string<const> = require('stdlib/string_base')
-local table<const> = require('stdlib/table')
+local string<const> = require('lua/string/base')
+local table<const> = require('lua/table')
+local math<const> = require('lua/math')
 local byte<const> = string.byte
 local char<const> = string.char
 local sub<const> = string.sub
 local rep<const> = string.rep
 local concat<const> = table.concat
-local numeric<const> = require('stdlib/common/numeric')
-local trunc<const> = numeric.trunc
+local modf<const> = math.modf
 
 local ascii_percent<const> = 37
 local ascii_zero<const> = 48
@@ -106,7 +106,7 @@ local sign_prefix<const> = function(value, plus, space)
 end
 
 local uint32<const> = function(value)
-	local unsigned<const> = trunc(value) & 0xffffffff
+	local unsigned<const> = modf(value) & 0xffffffff
 	if unsigned < 0 then
 		return unsigned + u32_mod
 	end
@@ -149,7 +149,7 @@ end
 
 local fixed_digits<const> = function(value, precision, alternate)
 	local scale<const> = pow10(precision)
-	local rounded<const> = trunc(value * scale + 0.5)
+	local rounded<const> = modf(value * scale + 0.5)
 	local whole<const> = rounded // scale
 	local fraction<const> = rounded % scale
 	local text = tostring(whole)
@@ -190,7 +190,7 @@ local scientific_digits<const> = function(value, precision, alternate, uppercase
 	end
 	local exponent, mantissa<const> = exponent10(value)
 	local scale<const> = pow10(precision)
-	local rounded = trunc(mantissa * scale + 0.5)
+	local rounded = modf(mantissa * scale + 0.5)
 	if rounded >= 10 * scale then
 		rounded = rounded // 10
 		exponent = exponent + 1
@@ -325,7 +325,7 @@ local format<const> = function(format, ...)
 				if cursor <= length and byte(format, cursor) == 42 then
 					local width_value<const> = select(argument_index, ...)
 					argument_index = argument_index + 1
-					local width_arg<const> = trunc(width_value)
+					local width_arg<const> = modf(width_value)
 					if width_arg < 0 then
 						left_align = true
 						width = -width_arg
@@ -350,7 +350,7 @@ local format<const> = function(format, ...)
 					if byte(format, cursor) == 42 then
 						local precision_value<const> = select(argument_index, ...)
 						argument_index = argument_index + 1
-						local precision_arg<const> = trunc(precision_value)
+						local precision_arg<const> = modf(precision_value)
 						if precision_arg >= 0 then
 							precision = precision_arg
 						end
@@ -386,13 +386,13 @@ local format<const> = function(format, ...)
 				elseif specifier == 99 then
 					local value<const> = select(argument_index, ...)
 					argument_index = argument_index + 1
-					formatted = char(trunc(value))
+					formatted = char((modf(value)))
 					output = output .. apply_padding(formatted, '', '', width, left_align, false)
 				elseif specifier == 100 or specifier == 105 or specifier == 117 or specifier == 111 or specifier == 120 or specifier == 88 then
 					local raw<const> = select(argument_index, ...)
 					argument_index = argument_index + 1
 					local unsigned<const> = specifier == 117 or specifier == 111 or specifier == 120 or specifier == 88
-					local integer<const> = unsigned and uint32(raw) or trunc(raw)
+					local integer<const> = unsigned and uint32(raw) or modf(raw)
 					local negative<const> = not unsigned and integer < 0
 					local sign = ''
 					if specifier == 100 or specifier == 105 then

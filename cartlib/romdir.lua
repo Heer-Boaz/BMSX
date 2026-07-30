@@ -1,6 +1,6 @@
 local bin<const> = require('cartlib/bin')
-local string<const> = require('stdlib/string_base')
-local table<const> = require('stdlib/table')
+local string_lib<const> = string
+local table_lib<const> = table
 
 local romdir<const> = {}
 
@@ -120,14 +120,14 @@ local read_toc_string<const> = function(toc_base, string_table_offset, string_ta
 		chunk_len = chunk_len + 1
 		chunk[chunk_len] = mem8[source + index]
 		if chunk_len == 256 then
-			out[#out + 1] = string.char(table.unpack(chunk, 1, chunk_len))
+			out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 			chunk_len = 0
 		end
 	end
 	if chunk_len > 0 then
-		out[#out + 1] = string.char(table.unpack(chunk, 1, chunk_len))
+		out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 	end
-	return table.concat(out)
+	return table_lib.concat(out)
 end
 
 local parse_metadata_header<const> = function(header)
@@ -230,7 +230,7 @@ local hash_id<const> = function(id)
 	local lo = 0x84222325
 	local hi = 0xcbf29ce4
 	for index = 1, #id do
-		local xored_lo<const> = (lo ~ string.byte(id, index)) % u32_mod
+		local xored_lo<const> = (lo ~ string_lib.byte(id, index)) % u32_mod
 		local lo_mul<const> = xored_lo * hash_prime
 		local carry<const> = lo_mul // u32_mod
 		local hi_mul<const> = hi * hash_prime + carry

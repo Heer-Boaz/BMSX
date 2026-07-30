@@ -1,6 +1,6 @@
-local terminal<const> = require('bios/terminal')
-local monitor_commands<const> = require('bios/monitor_commands')
-local layout<const> = require('bios/terminal_layout')
+local terminal<const> = require('tty/terminal')
+local monitor_commands<const> = require('shell/commands')
+local layout<const> = require('tty/layout')
 
 local monitor_editor<const> = {}
 

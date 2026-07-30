@@ -1,7 +1,6 @@
 import { RunResult } from '../cpu/cpu';
 import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, type Value } from '../cpu/value';
-import { installLuaBootPrimitives } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
@@ -97,14 +96,14 @@ export class Runtime {
 	public boot(): void {
 		this.completionValues.length = 0;
 		this.machine.cpu.reset();
-		installLuaBootPrimitives(this);
+		this.machine.cpu.installBootPrimitives();
 		this.finishSystemBoot();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
 		this.machine.cpu.reset();
-		installLuaBootPrimitives(this);
+		this.machine.cpu.installBootPrimitives();
 		this.finishSystemBoot();
 	}
 

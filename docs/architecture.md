@@ -146,10 +146,11 @@ hardware documentation lists cart-visible values. Cart, BIOS, or cart-library
 source defines the constants it uses. The emulator runtime must not make a
 value observable merely by seeding a friendly global name.
 
-Runtime-injected host Lua globals are not a cart API. Machine TS/C++ may expose
-temporary hidden `__bmsx_*` boot primitives only for BIOS Lua to capture; runtime
-boot clears those primitives before cart code runs. Public guest names are
-installed by BIOS/firmware Lua or ordinary cart Lua, not by host seeding.
+Runtime-injected host Lua globals are not a cart API. System boot asks the CPU
+to seed temporary hidden `__bmsx_*` primitive values into its system global
+registerfile for BIOS Lua to capture; system startup clears those slots before
+cart code runs. Public guest names are installed by BIOS Lua or ordinary cart
+Lua, not by host seeding.
 
 Migration warning: earlier slices sometimes used cart manifests or host-seeded
 Lua library globals as convenient cart-visible API. Treat that as host-magic
@@ -182,9 +183,8 @@ not compiler, CPU, interpreter, or device intrinsics.
 
 The guest Lua language deliberately includes its table and string value types
 and the normal base, table, string, math and OS libraries. The boot ROM installs
-`machine/firmware/stdlib/base.lua` as the core Lua global library,
-`stdlib/table.lua` as `table`, `stdlib/string.lua` as `string`,
-`stdlib/math.lua` as `math`, and `stdlib/os.lua` as `os`. Those modules execute
+`bios/lua/base.lua` as the core Lua global library, `lua/table` as `table`,
+`lua/string` as `string`, `lua/math` as `math`, and `lua/os` as `os`. Those modules execute
 as BLua using ordinary calls, ROM lookup tables, and integer/number
 instructions; carts are not expected to avoid normal Lua features. More
 generally, broadly useful language/runtime basics may be firmware-provided
@@ -240,7 +240,7 @@ transcendental precision. `math.tan` is the ratio of those Q16.16 sine/cosine
 results: exact turn singularities divide by zero and produce the normal Lua
 numeric infinity; near-singular radian inputs remain finite.
 
-The `os` library is also firmware-owned. `machine/firmware/stdlib/os.lua`
+The `os` library is also BIOS-owned. `bios/lua/os.lua`
 implements `os.clock`, `os.time`, `os.date`, and `os.difftime` in BLua; elapsed
 time comes from the CPU-visible `sys_time_ms` word and civil-time conversion is
 deterministic BMSX UTC-equivalent logic, not host wall-clock, host timezone,
@@ -348,8 +348,10 @@ cycle zero remains a valid hardware deadline.
 
 Ownership terms are architectural roles, not interchangeable directory labels:
 
-- `machine` owns cart-observable semantics: CPU, memory, MMIO, firmware,
-  scheduler, devices, ROM/BLua32-image formats, and deterministic save-state.
+- `machine` owns cart-observable execution semantics: CPU, memory, MMIO,
+  scheduler, devices, installed-ROM decoding, BLua32 execution, and
+  deterministic save-state.
+- `bios` owns the guest system-ROM program and its resources.
 - `host` owns the process, window/device/runtime environment, files, physical
   input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
@@ -563,9 +565,9 @@ Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
 
-The exception is firmware/source material that ships with the machine runtime:
-BIOS, firmware helpers, and default boot/source assets belong under the
-machine firmware owner. That is not a general cart collection.
+The exception is the BIOS program that ships as the default system ROM. Its
+guest code and assets live in the standalone `bios` source tree. That tree is
+not part of the emulator implementation and is not a general cart collection.
 
 ## Machine specification owner
 
@@ -899,7 +901,7 @@ vectors, global slots, boot, or restore behavior.
 
 Release ROMs omit `__blua32_symbols__`. The system build publishes the encoded
 system symbols beside its ROM as `<system-rom>.blua32-symbols`; the cartridge
-linker consumes that build artifact while resolving firmware calls. Debug ROMs
+linker consumes that build artifact while resolving the system global-slot ABI. Debug ROMs
 also embed the symbols asset for the debugger and Hot Resume. The sidecar is
 never mounted, mapped, copied or decoded by the emulated machine, and
 cartridges do not carry a duplicate of the firmware symbols.
@@ -952,17 +954,17 @@ BLua32 objects exist only between compiler and ROM-building/Hot-Resume tooling.
 Symbolic module, static-function, section-address, generated-module constant,
 global-slot, and indexed-operand relocations are resolved before bytes are
 installed. They never become placeholder Lua values or mutable machine state.
-Cartridge objects link against the firmware image's published global-slot ABI
+Cartridge objects link against the BIOS image's published global-slot ABI
 and physical static function addresses; system and cartridge code, constants,
 and functions remain separate physical domains.
 
 The compiler emits a startup function that performs section initialization,
 initializes statically required modules in dependency order, clears the
 firmware-only boot primitives where applicable, calls the source entry, and
-returns. On cold reset the CPU resolves and activates the system domain and
-enters the raw reset-vector word in supervisor mode. Host runtime code
-may bind native primitives before scheduling that frame, but it never reads,
-returns, or passes the startup address.
+returns. On cold reset the CPU resolves and activates the system domain, system
+boot seeds the CPU-owned primitive values, and execution enters the raw
+reset-vector word in supervisor mode. Runtime coordination never reads, returns,
+or passes the startup address.
 Firmware inspects the raw cartridge headers through `CART_SELECT` and transfers
 to the selected cartridge startup address through the privileged `CP0.EXEC`
 control word. The host never calls a cartridge entry or assembles a combined
@@ -3011,13 +3013,13 @@ datapath and exact raw-word vectors. The sample loop performs no trigonometry,
 host-number validation, table construction, or allocation.
 
 AEM keeps its author-facing filter names and parameters in cartlib. During AEM
-rule compilation, `cartlib/aem_biquad.lua` uses the BIOS math owner to design
-the section once and the BIOS numeric owner to round and saturate each
-coefficient to signed Q14 before packing the four hardware words. The AEM
-tooling rejects non-positive Q and frequencies outside the open interval from
-zero to the APU Nyquist frequency; no runtime clamp repairs invalid authored
-data. This split follows the production pattern of separating coefficient
-design from retained raw filter state, as in
+rule compilation, `cartlib/aem_biquad.lua` uses the resident `math` library to
+design the section once. `cartlib/apu.lua`, the cart-side APU ABI owner, rounds
+and saturates each coefficient to signed Q14 and packs the four hardware words.
+The AEM tooling rejects non-positive Q and frequencies outside the open
+interval from zero to the APU Nyquist frequency; no runtime clamp repairs
+invalid authored data. This split follows the production pattern of separating
+coefficient design from retained raw filter state, as in
 [MAME's biquad device](https://github.com/mamedev/mame/blob/master/src/devices/sound/flt_biquad.cpp),
 while the integer sample boundary and explicit saturation follow the
 [MAME PSX SPU](https://github.com/mamedev/mame/blob/master/src/devices/sound/spu.cpp),
@@ -3135,19 +3137,24 @@ boundary and passes one output command to the selected pad's input hardware.
 Status reads expose a bitmask of host output support by pad; that support mirror
 is restored with the registerfile but is not gameplay state.
 
-## Firmware and Lua layer
+## BIOS and Lua layer
 
-`SYSTEM_ROM` has one physical firmware owner with two source roles:
+`bios` is the BMSX firmware: one standalone guest program linked into
+`SYSTEM_ROM`, not a distinct layer below another firmware abstraction and not a
+subsystem of either emulator implementation. Its source tree follows the
+program's actual owners:
 
-- `machine/firmware/bios` owns reset, interrupt, exception, monitor and
-  terminal control flow plus the private device programming those paths need;
-- `machine/firmware/stdlib` owns the resident BLua base, table, string, math and
-  OS libraries.
+- `boot` owns the reset entry and cartridge handoff;
+- `kernel` owns interrupt, VBlank, and BIOS DMA control;
+- `gpu` owns only the private command path used by BIOS presentation;
+- `tty` owns terminal state and raster submission;
+- `shell` owns the resumable supervisor monitor;
+- `lua` contains the resident base, table, string, math, and OS implementations.
 
-Both execute in the same system domain; the folders are source ownership, not
-separate runtimes, ROMs or host layers. There is no second
-`machine/firmware/system` execution root. Only `stdlib` is an external source
-context for cart linking. BIOS-private modules are not a cart SDK.
+There is no parallel `firmware`, `system`, or `stdlib` source root. Cart builds
+do not receive BIOS source modules as a linker context. Normal Lua facilities
+are installed as globals before cartridge initialization; cart-side hardware
+and gameplay libraries are linked from `cartlib`.
 
 `cartlib` owns the cart-side SDK. Its GX and DMA modules program the same
 guest-visible registers and command ports that bare carts can program directly;

@@ -1,5 +1,4 @@
-local numeric<const> = require('stdlib/common/numeric')
-local sincos_turn32<const> = require('stdlib/util/sincos_turn32')
+local sincos_turn32<const> = require('lua/math/sincos')
 
 local pi<const> = 3.141592653589793238462643383279502884
 local half_pi<const> = pi * 0.5
@@ -7,7 +6,7 @@ local two_pi<const> = pi * 2.0
 local deg_per_rad<const> = 180.0 / pi
 local rad_per_deg<const> = pi / 180.0
 local turn32_per_rad<const> = 4294967296.0 / two_pi
-local q16_inv_scale<const> = numeric.q16_inv_scale
+local q16_inv_scale<const> = 1.0 / 65536.0
 local maxinteger<const> = 9007199254740991
 local mininteger<const> = -9007199254740991
 local huge<const> = 1.0 / 0.0
@@ -24,7 +23,12 @@ local u32_mod<const> = 4294967296.0
 
 data rng_state: word = 0x12345678
 
-local trunc<const> = numeric.trunc
+local trunc<const> = function(value)
+	if value < 0 then
+		return -((-value) // 1)
+	end
+	return value // 1
+end
 local abs<const> = function(value)
 	if value < 0 then
 		return -value
@@ -38,6 +42,13 @@ end
 
 local ceil<const> = function(value)
 	return -((-value) // 1)
+end
+
+local round<const> = function(value)
+	if value >= 0 then
+		return (value + 0.5) // 1
+	end
+	return -(((-value) + 0.5) // 1)
 end
 
 local fmod<const> = function(left, right)
@@ -354,6 +365,7 @@ return {
 	rad = rad,
 	random = random_number,
 	randomseed = randomseed,
+	round = round,
 	sign = sign,
 	sin = sin,
 	sqrt = sqrt,

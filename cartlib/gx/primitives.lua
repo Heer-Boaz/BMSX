@@ -1,5 +1,5 @@
 local gx_gpu<const> = require('cartlib/gx/gpu')
-local sqrt<const> = require('stdlib/math').sqrt
+local sqrt<const> = math.sqrt
 
 local primitives<const> = {}
 

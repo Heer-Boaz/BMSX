@@ -1,4 +1,4 @@
-local interrupts<const> = require('bios/interrupts')
+local interrupts<const> = require('kernel/interrupts')
 
 local vblank<const> = {}
 local irq_vblank<const> = 0x0004

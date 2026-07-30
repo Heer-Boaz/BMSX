@@ -1,6 +1,6 @@
 -- apu.lua
 -- Cart-library APU command helpers. Audio control reaches the device through MMIO.
-local endian<const> = require("stdlib/common/endian")
+local endian<const> = require("cartlib/memory")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
 local dma<const> = require("cartlib/dma")
@@ -33,6 +33,7 @@ end
 local apu<const> = {}
 local output_sample_rate_hz<const> = 0x0000ac44
 local filter_coefficient_one<const> = 0x00004000
+local filter_coefficient_scale<const> = 0x00004000
 
 local command_registers<const>: *apu_command_registers = 0x08000120
 local transfer_address<const>: *word = 0x080001e8
@@ -67,6 +68,23 @@ end
 
 function apu.ms_to_samples(ms)
 	return ms * output_sample_rate_hz / 1000
+end
+
+function apu.encode_filter_coefficient(value)
+	local scaled<const> = value < 0
+		and -(((-value * filter_coefficient_scale) + 0.5) // 1)
+		or ((value * filter_coefficient_scale) + 0.5) // 1
+	if scaled < -0x8000 then
+		return 0x8000
+	end
+	if scaled > 0x7fff then
+		return 0x7fff
+	end
+	return scaled & 0xffff
+end
+
+function apu.pack_filter_coefficients(low, high)
+	return (low & 0xffff) | ((high & 0xffff) << 16)
 end
 
 local read_badp_source<const> = function(addr, source_bytes)

@@ -11,7 +11,6 @@ import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
@@ -21,9 +20,9 @@ import {
 	decodeBlua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
@@ -317,56 +316,27 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 	try {
 		const cartPrefix = layoutRomPrefix(assets, true, null);
-		const entrySource = `module<entry>
-require('stdlib/base')
-require('stdlib/table')
-require('stdlib/string_base')
-local romdir<const> = require('cartlib/romdir')
-local texture<const> = require('cartlib/gx/texture')
-local imgdec<const> = require('cartlib/gx/imgdec')
-local first_texture<const> = texture.from_image(romdir.image('first'))
-local second_texture<const> = texture.from_image(romdir.image('second'))
-texture.upload(first_texture, 0x00200040, 0)
-return first_texture == second_texture and 1 or 0, imgdec.last_upload()
+		const systemEntrySource = `module<entry>
+require('lua/base')
+table = require('lua/table')
+string = require('lua/string/base')
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
-		const moduleSources = [
-			['stdlib/base', readFileSync('machine/firmware/stdlib/base.lua', 'utf8')],
-			['stdlib/table', readFileSync('machine/firmware/stdlib/table.lua', 'utf8')],
-			['stdlib/string_base', readFileSync('machine/firmware/stdlib/string_base.lua', 'utf8')],
-			['stdlib/common/endian', readFileSync('machine/firmware/stdlib/common/endian.lua', 'utf8')],
-			['stdlib/common/float_bits', readFileSync('machine/firmware/stdlib/common/float_bits.lua', 'utf8')],
-			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
-			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
-			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
-			['cartlib/gx/imgdec', `
-local imgdec<const> = {}
-local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
-function imgdec.upload(source, source_words, texture_words, clut_words, target, target_size, clut_target)
-	source_addr = source
-	source_word_count = source_words
-	texture_word_count = texture_words
-	clut_word_count = clut_words
-	destination = target
-	size = target_size
-	clut_destination = clut_target
-end
-function imgdec.last_upload()
-	return source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination
-end
-return imgdec
-`],
-			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
+		const systemModuleSources = [
+			['lua/base', readFileSync('bios/lua/base.lua', 'utf8')],
+			['lua/table', readFileSync('bios/lua/table.lua', 'utf8')],
+			['lua/string/base', readFileSync('bios/lua/string/base.lua', 'utf8')],
 		] as const;
-		const executableSources: RomAsset[] = [{
+		const systemExecutableSources: RomAsset[] = [{
 			type: 'lua',
 			resid: 'entry',
-			buffer: Buffer.from(entrySource),
-			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
+			buffer: Buffer.from(systemEntrySource),
+			compiled_buffer: compileLuaChunkBuffer(systemEntrySource, 'entry.lua'),
 			source_path: 'entry.lua',
 		}];
-		for (let index = 0; index < moduleSources.length; index += 1) {
-			const [path, source] = moduleSources[index];
-			executableSources.push({
+		for (let index = 0; index < systemModuleSources.length; index += 1) {
+			const [path, source] = systemModuleSources[index];
+			systemExecutableSources.push({
 				type: 'lua',
 				resid: path,
 				buffer: Buffer.from(source),
@@ -375,7 +345,7 @@ return imgdec
 			});
 		}
 		const systemPrefix = layoutRomPrefix([], false, null);
-		const systemBlua32 = buildRomBlua32Tail(executableSources, {
+		const systemBlua32 = buildRomBlua32Tail(systemExecutableSources, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
@@ -403,14 +373,58 @@ return imgdec
 			systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
 			SYSTEM_ROM_BASE + systemImageEntry.start!,
 		);
-		const cartEntrySource = 'module<entry>\nreturn 0';
-		const cartBlua32 = buildRomBlua32Tail([{
+
+		const cartEntrySource = `module<entry>
+local romdir<const> = require('cartlib/romdir')
+local texture<const> = require('cartlib/gx/texture')
+local imgdec<const> = require('cartlib/gx/imgdec')
+local first_texture<const> = texture.from_image(romdir.image('first'))
+local second_texture<const> = texture.from_image(romdir.image('second'))
+texture.upload(first_texture, 0x00200040, 0)
+return first_texture == second_texture and 1 or 0, imgdec.last_upload()
+`;
+		const cartModuleSources = [
+			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
+			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
+			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
+			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
+			['cartlib/gx/imgdec', `
+local imgdec<const> = {}
+local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
+function imgdec.upload(source, source_words, texture_words, clut_words, target, target_size, clut_target)
+	source_addr = source
+	source_word_count = source_words
+	texture_word_count = texture_words
+	clut_word_count = clut_words
+	destination = target
+	size = target_size
+	clut_destination = clut_target
+end
+function imgdec.last_upload()
+	return source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination
+end
+return imgdec
+`],
+			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
+		] as const;
+		const cartExecutableSources: RomAsset[] = [{
 			type: 'lua',
 			resid: 'cart',
 			buffer: Buffer.from(cartEntrySource),
 			compiled_buffer: compileLuaChunkBuffer(cartEntrySource, 'cart.lua'),
 			source_path: 'cart.lua',
-		}], {
+		}];
+		for (let index = 0; index < cartModuleSources.length; index += 1) {
+			const [path, source] = cartModuleSources[index];
+			cartExecutableSources.push({
+				type: 'lua',
+				resid: path,
+				buffer: Buffer.from(source),
+				compiled_buffer: compileLuaChunkBuffer(source, `${path}.lua`),
+				source_path: `${path}.lua`,
+			});
+		}
+		const cartBlua32 = buildRomBlua32Tail(cartExecutableSources, {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
@@ -456,33 +470,23 @@ return imgdec
 		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
 
-		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
-		const executionAddressSpace = new ExecutionAddressSpace(memory);
-		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-		const cartSymbolsEntry = loaded.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
-		const cartSymbols = decodeBlua32SymbolsImage(rom.subarray(cartSymbolsEntry.start, cartSymbolsEntry.end));
-		cpu.reset();
-		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
-			const primitive = LUA_BOOT_PRIMITIVES[index];
-			cpu.setSystemGlobalByKey(
-				cpu.stringPool.intern(primitive.name),
-				ValueTag.BuiltinFunction,
-				primitive.id,
-				null,
-			);
-		}
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
-			1,
+			const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
+			const executionAddressSpace = new ExecutionAddressSpace(memory);
+			const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
+			cpu.reset();
+			cpu.installBootPrimitives();
+			assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
+				1,
 			CART_ROM_BASE + loadedTexture.start!,
 			(loadedTexture.end! - loadedTexture.start!) >> 2,
 			loadedTexture.texturemeta!.texture_word_count,
 			loadedTexture.texturemeta!.clut_word_count,
 			0x00200040,
 			loadedTexture.texturemeta!.word_width | (loadedTexture.texturemeta!.height << 16),
-			0,
-		]);
-	} finally {
-		await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
-	}
-});
+				0,
+			]);
+		} finally {
+			await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
+		}
+	});

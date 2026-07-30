@@ -1,9 +1,9 @@
 -- os.lua
 -- BIOS os compatibility backed by BMSX time registers.
 
-local string<const> = require('stdlib/string')
-local numeric<const> = require('stdlib/common/numeric')
-local trunc<const> = numeric.trunc
+local string<const> = require('lua/string')
+local math<const> = require('lua/math')
+local modf<const> = math.modf
 local os<const> = {}
 local time_ms<const>: *word = 0x08010224
 
@@ -22,7 +22,7 @@ local date_extended_o_specifiers<const> = { d = true, e = true, ['H'] = true, ['
 local date_iso_week_specifiers<const> = { ['G'] = true, g = true, ['V'] = true }
 
 local require_integer<const> = function(value, message)
-	local integer<const> = trunc(value)
+	local integer<const> = modf(value)
 	if integer ~= value then
 		error(message)
 	end
@@ -323,8 +323,8 @@ os.date = function(format, timestamp)
 end
 
 os.difftime = function(t2, t1)
-	local t2_int<const> = trunc(t2)
-	local t1_int<const> = trunc(t1)
+	local t2_int<const> = modf(t2)
+	local t1_int<const> = modf(t1)
 	if t2_int ~= t2 then
 		error('os.difftime t2 must be an integer.')
 	end

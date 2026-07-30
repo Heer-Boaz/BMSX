@@ -24,7 +24,7 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - `machine/ts/common`: low-level shared helpers
 - `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
 - `ide`: editor, terminal, workbench, and IDE runtime tooling
-- `machine/firmware`: one system-ROM owner split into BIOS control flow, resident BLua standard libraries, and resources
+- `bios`: the standalone guest system-ROM program, with boot, kernel, GPU, TTY, shell, Lua-library, and resource owners
 - `cartlib`: the cart-side SDK, including direct device programming; bundled into cart ROMs when required
 - `hosts/browser`: browser player/product owners
 - `hosts/node`: headless and CLI product owners
@@ -39,9 +39,9 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Build Model
 
-- BIOS assets live in `machine/firmware/res`
-- BIOS control flow lives in `machine/firmware/bios`
-- resident BLua libraries live in `machine/firmware/stdlib`
+- BIOS code lives in `bios`
+- BIOS assets live in `bios/res`
+- resident Lua libraries live in `bios/lua`
 - shared cart Lua lives in `cartlib`
 - current carts live in `carts/<cart-folder>`
 - current cart resources live in `carts/<cart-folder>/res`
@@ -62,7 +62,7 @@ the emulator runtime.
 Preferred direction for cart-visible features:
 
 ```text
-cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host output
+cart Lua -> BIOS service or cart library -> MMIO/RAM -> machine device -> host output
 ```
 
 Avoid this for new hardware-facing behavior:
@@ -97,7 +97,7 @@ The standard mode envelope reaches 1920×1080. Raw PCRTC programming covers the 
 240p/480i family, PS2 640×448i NTSC and 640×512i PAL, and the PS2 DTV outputs
 720×480p, 656×576p, 1280×720p and 1920×1080i. This envelope is not a register
 clamp: other representable words still flow through the PCRTC datapath. The
-firmware exposes direct reset presets for 256/320/368/512/640×240,
+cartlib exposes direct reset presets for 256/320/368/512/640×240,
 640×480i, 640×448i and 640×512i; bare-metal carts may instead program the raw
 registerfile. Libretro advertises 1920×1080 initially and raises its complete AV
 contract when raw dual-circuit composition exceeds that standard envelope, so

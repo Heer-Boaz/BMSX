@@ -1,10 +1,7 @@
 local bin<const> = {}
-local read_u32le<const> = require('stdlib/common/endian').read_u32le
-local float_bits<const> = require('stdlib/common/float_bits')
-local string<const> = require('stdlib/string_base')
-local table<const> = require('stdlib/table')
-local u32_to_f32<const> = float_bits.u32_to_f32
-local u32s_to_f64<const> = float_bits.u32s_to_f64
+local read_u32le<const> = require('cartlib/memory').read_u32le
+local string_lib<const> = string
+local table_lib<const> = table
 
 local version<const> = 0xa1
 local tag_null<const> = 0
@@ -84,14 +81,14 @@ local read_string<const> = function(reader, label)
 		chunk[chunk_len] = mem8[reader.pos]
 		reader.pos = reader.pos + 1
 		if chunk_len == 256 then
-			out[#out + 1] = string.char(table.unpack(chunk, 1, chunk_len))
+			out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 			chunk_len = 0
 		end
 	end
 	if chunk_len > 0 then
-		out[#out + 1] = string.char(table.unpack(chunk, 1, chunk_len))
+		out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 	end
-	return table.concat(out)
+	return table_lib.concat(out)
 end
 
 local read_prop_names<const> = function(reader)
@@ -155,7 +152,7 @@ read_value = function(reader)
 		value = false
 	elseif tag == tag_f64 then
 		need(reader, 8, 'float64')
-		value = u32s_to_f64(read_u32le(reader.pos + 4), read_u32le(reader.pos))
+		value = memf64le[reader.pos]
 		reader.pos = reader.pos + 8
 	elseif tag == tag_str then
 		value = read_string(reader, 'string')
@@ -171,7 +168,7 @@ read_value = function(reader)
 		value = read_varint(reader, 'int')
 	elseif tag == tag_f32 then
 		need(reader, 4, 'float32')
-		value = u32_to_f32(read_u32le(reader.pos))
+		value = memf32le[reader.pos]
 		reader.pos = reader.pos + 4
 	elseif tag == tag_set then
 		value = read_array(reader)

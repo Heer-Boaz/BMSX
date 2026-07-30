@@ -88,7 +88,6 @@ private:
 		None,
 		Entry,
 	};
-	void installLuaBootPrimitives();
 	void finishSystemBoot();
 
 	// Runtime core

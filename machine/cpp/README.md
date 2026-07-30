@@ -15,7 +15,7 @@ machine/cpp/
 ├── common/                # Shared low-level C++ helpers
 ├── core/                  # Runtime coordination and system bootstrap
 ├── lua/                   # Lua syntax/runtime support
-├── machine/               # CPU, memory, MMIO, devices, firmware, scheduler
+├── machine/               # CPU, memory, MMIO, devices, scheduler
 ├── render/                # C++ render backends and presentation edge
 ├── rompack/               # ROM package format/loaders
 └── vendor/                # C/C++ third-party implementation files
@@ -28,7 +28,9 @@ that can run a libretro core lives in `hosts/libretro_host`.
 
 The C++ runtime focuses on mirroring the machine boundary from the TypeScript implementation.
 
-- `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
+- `machine/` owns CPU, memory, MMIO registers, device controllers, installed-ROM execution, timing, and runtime state.
+- `/bios` owns the guest program and resources installed in system ROM; neither
+  emulator implementation contains a separate firmware subsystem.
 - `render/` and `audio/` contain the mirrored presentation datapaths used by
   concrete hosts.
 - Physical input, frontend callbacks, media ownership, output buffers, and
@@ -90,7 +92,7 @@ or Node owners above the same machine-facing device and render boundaries.
 
 ### Key Patterns
 
-1. **Machine-first ownership**: CPU, RAM/ROM, MMIO, device state, firmware, and save-state live under `machine/cpp/machine`.
+1. **Machine-first ownership**: CPU, RAM/ROM, MMIO, device state, execution, and save-state live under `machine/cpp/machine`; the BIOS remains guest media.
 2. **Host edges stay outside the machine**: libretro entrypoint code lives in `hosts/libretro`; the local frontend executable lives in `hosts/libretro_host`.
 3. **Mirrored contracts**: TS and C++ runtime slices are audited by `npm run audit:core-parity`.
 

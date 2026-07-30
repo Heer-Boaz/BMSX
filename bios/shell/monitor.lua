@@ -1,10 +1,10 @@
-local terminal<const> = require('bios/terminal')
-local layout<const> = require('bios/terminal_layout')
-local monitor_editor<const> = require('bios/monitor_editor')
-local monitor_commands<const> = require('bios/monitor_commands')
-local vblank<const> = require('bios/vblank')
-local dma_transfer<const> = require('bios/dma_transfer')
-local gx_gpu<const> = require('bios/gx_gpu')
+local terminal<const> = require('tty/terminal')
+local layout<const> = require('tty/layout')
+local monitor_editor<const> = require('shell/editor')
+local monitor_commands<const> = require('shell/commands')
+local vblank<const> = require('kernel/vblank')
+local dma_transfer<const> = require('kernel/dma')
+local gx_gpu<const> = require('gpu/gpu')
 local assets<const> = require('bmsx/system_assets')
 
 local byte<const> = __bmsx_string_byte

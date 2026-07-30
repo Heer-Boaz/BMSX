@@ -114,7 +114,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	const cartEntry = luaEntry('main', 'cart.lua', 'cart', 11);
 	const activeEntry = luaEntry('main', 'cart.lua', 'cart', 22);
 	const generatedEntry = luaEntry(GX_TEXTURE_LAYOUT_MODULE_PATH, GX_TEXTURE_LAYOUT_SOURCE_PATH, 'cart', 0);
-	const systemEntry = luaEntry('sys', 'bios/interrupts.lua', 'system', 0);
+	const systemEntry = luaEntry('sys', 'kernel/interrupts.lua', 'system', 0);
 	const cartSource = new TestRomSource([cartEntry, generatedEntry], {
 		main: 'module<entry>\nreturn 1',
 		[GX_TEXTURE_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
@@ -137,7 +137,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua.cart, record);
-	assert.equal(registry.path2lua['bios/interrupts.lua'], undefined);
+	assert.equal(registry.path2lua['kernel/interrupts.lua'], undefined);
 });
 
 test('release BLua32 images do not synthesize editable Lua source records', () => {
@@ -147,7 +147,7 @@ test('release BLua32 images do not synthesize editable Lua source records', () =
 
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
-	assert.equal(registry.path2lua['bios/bootrom.lua'], undefined);
+	assert.equal(registry.path2lua['boot/bootrom.lua'], undefined);
 });
 
 test('debug package source boot resolves the persisted GX texture layout module', async () => {

@@ -1,6 +1,6 @@
-local string<const> = require('stdlib/string')
+local string_lib<const> = string
 local romdir<const> = require('cartlib/romdir')
-local byte<const> = string.byte
+local byte<const> = string_lib.byte
 
 local font<const> = {}
 
@@ -11,8 +11,8 @@ local default_glyphs<const> = {
 }
 
 for codepoint = 0x20, 0x7e do
-	local c<const> = string.char(codepoint)
-	default_glyphs[c] = string.format('tiny_3b_font_code_0x%02x', codepoint)
+	local c<const> = string_lib.char(codepoint)
+	default_glyphs[c] = string_lib.format('tiny_3b_font_code_0x%02x', codepoint)
 end
 
 local build_descriptor<const> = function(definition)

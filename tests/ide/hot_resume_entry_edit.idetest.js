@@ -19,8 +19,8 @@ const moduleRevisionSource = (record, revision) => record.base_src
 		'\tget = get,\n\tinserted_before_get = inserted_before_get,\n',
 	);
 const systemRevisionSource = (record, revision) => record.base_src.replace(
-	'function gx_gpu.clear_color(color)\n',
-	`function gx_gpu.clear_color(color)\n\thot_resume_system_probe = ${revision}\n`,
+	'function gx_gpu.draw_target(origin_word)\n',
+	`function gx_gpu.draw_target(origin_word)\n\thot_resume_system_probe = ${revision}\n`,
 );
 const runtime = t.runtime();
 const sourceState = t.sourceState();
@@ -31,7 +31,7 @@ cpu.setGlobalByKey(liveStateProbeKey, tableValueTag, NaN, liveMathTable);
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
 const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
 const valueRecord = cartridge.luaSources.path2lua['value.lua'];
-const gxGpuRecord = sourceState.systemLuaSources.path2lua['bios/gx_gpu.lua'];
+const gxGpuRecord = sourceState.systemLuaSources.path2lua['gpu/gpu.lua'];
 const dataOnlySlot = cpu.activeCartridgeSlot() === 0 ? 1 : 0;
 const dataOnlyCartridge = sourceState.cartridgeSlots[dataOnlySlot];
 t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
@@ -83,7 +83,7 @@ const installRevision = (revision) => {
 	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));
 	t.openLuaSource('value.lua');
 	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
-	t.openLuaSource('bios/gx_gpu.lua');
+	t.openLuaSource('gpu/gpu.lua');
 	t.replaceActiveCodeSource(systemRevisionSource(gxGpuRecord, revision));
 	t.performHotResume();
 };

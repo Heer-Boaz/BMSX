@@ -83,7 +83,7 @@ import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
-import { BuiltinFunctionId } from '../../spec/blua32/builtin';
+import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
 	VALUE_TAG,
@@ -852,6 +852,18 @@ export class CPU {
 			false,
 		);
 		this.collectTrackedHeapBytes();
+	}
+
+	public installBootPrimitives(): void {
+		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
+			const primitive = LUA_BOOT_PRIMITIVES[index];
+			this.setSystemGlobalByKey(
+				this.stringPool.intern(primitive.name),
+				ValueTag.BuiltinFunction,
+				primitive.id,
+				null,
+			);
+		}
 	}
 
 	public clearExecutionEnvironment(): void {

@@ -1,4 +1,4 @@
-local interrupts<const> = require('bios/interrupts')
+local interrupts<const> = require('kernel/interrupts')
 
 local dma_transfer<const> = {}
 local dma0_read_addr<const>: *word = 0x0800000c

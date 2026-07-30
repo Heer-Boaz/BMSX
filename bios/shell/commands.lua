@@ -1,5 +1,5 @@
-local terminal<const> = require('bios/terminal')
-local layout<const> = require('bios/terminal_layout')
+local terminal<const> = require('tty/terminal')
+local layout<const> = require('tty/layout')
 
 local byte<const> = __bmsx_string_byte
 

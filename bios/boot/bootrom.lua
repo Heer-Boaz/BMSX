@@ -2,21 +2,21 @@ module<entry>
 -- bootrom.lua
 -- BMSX system boot firmware
 
-require('stdlib/base')
-table = require('stdlib/table')
-string = require('stdlib/string')
-os = require('stdlib/os')
+require('lua/base')
+table = require('lua/table')
+string = require('lua/string')
+os = require('lua/os')
 
-math = require('stdlib/math')
+math = require('lua/math')
 
-local dma_transfer<const> = require('bios/dma_transfer')
-local gx_gpu<const> = require('bios/gx_gpu')
+local dma_transfer<const> = require('kernel/dma')
+local gx_gpu<const> = require('gpu/gpu')
 local assets<const> = require('bmsx/system_assets')
-local interrupts<const> = require('bios/interrupts')
-local monitor<const> = require('bios/monitor')
-local terminal<const> = require('bios/terminal')
-local terminal_layout<const> = require('bios/terminal_layout')
-local vblank<const> = require('bios/vblank')
+local interrupts<const> = require('kernel/interrupts')
+local monitor<const> = require('shell/monitor')
+local terminal<const> = require('tty/terminal')
+local terminal_layout<const> = require('tty/layout')
+local vblank<const> = require('kernel/vblank')
 
 local irq_mask<const>: *word = 0x08000008
 local input_control<const>: *word = 0x08000064

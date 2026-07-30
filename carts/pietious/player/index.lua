@@ -75,7 +75,7 @@
 --    exit animation timeline completes.
 
 local clamp<const> = require('cartlib/util/clamp')
-local abs<const> = require('stdlib/math').abs
+local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
 local components<const> = require('cartlib/components')

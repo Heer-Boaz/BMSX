@@ -1,6 +1,6 @@
 local builders<const> = {}
 require('globals')
-local round_number<const> = require('stdlib/util/round_to_nearest')
+local round_number<const> = math.round
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
 local ease_in_out_quad<const> = require('cartlib/easing').ease_in_out_quad
@@ -8,7 +8,7 @@ local arc01<const> = require('cartlib/easing').arc01
 local ease_out_quad<const> = require('cartlib/easing').ease_out_quad
 local ease_in_quad<const> = require('cartlib/easing').ease_in_quad
 local ease_out_back<const> = require('cartlib/easing').ease_out_back
-local sqrt<const> = require('stdlib/math').sqrt
+local sqrt<const> = math.sqrt
 local color<const> = require('cartlib/color')
 
 local shake_hash<const> = function(seed)

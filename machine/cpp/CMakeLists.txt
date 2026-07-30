@@ -267,7 +267,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
-	machine/firmware/globals.cpp
 	machine/machine.cpp
 	spec/bmsx/model.cpp
 	machine/save_state.cpp

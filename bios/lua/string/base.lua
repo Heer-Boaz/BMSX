@@ -1,6 +1,6 @@
 local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
-local table<const> = require('stdlib/table')
+local table<const> = require('lua/table')
 local concat<const> = table.concat
 local string<const> = {}
 

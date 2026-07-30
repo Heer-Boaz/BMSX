@@ -1,4 +1,4 @@
-local round_to_nearest<const> = require('stdlib/util/round_to_nearest')
+local round_to_nearest<const> = math.round
 local gx_gpu<const> = {}
 
 local gp0<const>: *word = 0x08010238

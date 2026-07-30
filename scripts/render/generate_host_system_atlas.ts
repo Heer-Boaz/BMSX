@@ -1,6 +1,6 @@
 import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import {
-	commonResPath,
+	biosResPath,
 	createTextureAtlases,
 	getResMetaList,
 	getResourcesList,
@@ -161,9 +161,9 @@ async function writeHostSystemAtlasArtifacts(build: HostAtlasBuild): Promise<boo
 }
 
 async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
-	const biosProjectRoot = join(commonResPath, '..');
+	const biosProjectRoot = join(biosResPath, '..');
 	const biosVirtualRoot = biosProjectRoot.replace(/^\.\//, '');
-	const resourceRoots = [commonResPath, HOST_RESOURCE_PATH];
+	const resourceRoots = [biosResPath, HOST_RESOURCE_PATH];
 	const resMeta = await getResMetaList(resourceRoots, SYSTEM_ROM_NAME, {
 		extraLuaPaths: [],
 		virtualRoot: biosVirtualRoot,

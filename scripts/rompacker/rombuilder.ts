@@ -151,7 +151,7 @@ export function normalizeWorkspacePath(input: string): string {
 }
 
 const CART_ROOT_SEGMENT = 'carts/';
-const FIRMWARE_RES_SEGMENT = 'machine/firmware/res';
+const BIOS_RES_SEGMENT = 'bios/res';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -159,10 +159,10 @@ function isCartPath(path?: string): boolean {
 	return normalized.includes(CART_ROOT_SEGMENT);
 }
 
-function isFirmwareResPath(path?: string): boolean {
+function isBiosResPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
 	const normalized = normalizeWorkspacePath(path);
-	return normalized === FIRMWARE_RES_SEGMENT || normalized.startsWith(`${FIRMWARE_RES_SEGMENT}/`);
+	return normalized === BIOS_RES_SEGMENT || normalized.startsWith(`${BIOS_RES_SEGMENT}/`);
 }
 
 function toWorkspaceRelativePath(filepath: string): string {
@@ -552,29 +552,6 @@ export function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	return Buffer.from(encoded);
 }
 
-export async function buildBluaSourceContextAssets(luaRoots: readonly string[], virtualRoot: string): Promise<RomAsset[]> {
-	const files: string[] = [];
-	for (let index = 0; index < luaRoots.length; index += 1) {
-		files.push(...await getFiles(luaRoots[index], [], '.lua'));
-	}
-	files.sort((a, b) => a.localeCompare(b));
-	const assets: RomAsset[] = [];
-	for (const file of files) {
-		const sourcePath = normalizeWorkspacePath(resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file));
-		const modulePath = toLuaModulePath(sourcePath);
-		const buffer = await readFile(file);
-		const source = buffer.toString('utf8');
-		assets.push({
-			resid: `__blua_source_context__/${sourcePath}`,
-			type: 'lua',
-			buffer,
-			compiled_buffer: compileLuaChunkBuffer(source, modulePath),
-			source_path: sourcePath,
-		});
-	}
-	return assets;
-}
-
 /**
  * Returns an object containing the name, extension, and type of a resource file based on its filepath.
  * @param filepath The path of the resource file.
@@ -764,7 +741,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
 	const scanRoots = cartProject
-		? respaths.filter(path => !isFirmwareResPath(path))
+		? respaths.filter(path => !isBiosResPath(path))
 		: respaths;
 	const extraLuaRoots = options.extraLuaPaths;
 	const systemResourceRoots = options.systemResourceRoots ?? DEFAULT_SYSTEM_RESOURCE_ROOTS;
@@ -1685,14 +1662,14 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 		resNeedsRebuild;
 }
 
-// Define common assets path
-export const commonResPath = `./machine/firmware/res`;
-const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [commonResPath];
-export const firmwarePublicLuaPaths = [
-	'./machine/firmware/stdlib',
-];
-export const firmwareLuaPaths = [
-	'./machine/firmware/bios',
-	...firmwarePublicLuaPaths,
+export const biosResPath = './bios/res';
+const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [biosResPath];
+export const biosSourcePaths = [
+	'./bios/boot',
+	'./bios/kernel',
+	'./bios/gpu',
+	'./bios/tty',
+	'./bios/shell',
+	'./bios/lua',
 ];
 export const cartlibLuaPath = './cartlib';

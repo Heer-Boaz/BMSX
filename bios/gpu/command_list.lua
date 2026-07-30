@@ -1,6 +1,6 @@
-local dma_transfer<const> = require('bios/dma_transfer')
-local interrupts<const> = require('bios/interrupts')
-local gx_gpu<const> = require('bios/gx_gpu')
+local dma_transfer<const> = require('kernel/dma')
+local interrupts<const> = require('kernel/interrupts')
+local gx_gpu<const> = require('gpu/gpu')
 
 local gx_command_list<const> = {}
 local irq_gpu<const> = 0x0040

@@ -3,6 +3,7 @@
 #include "machine/common/numeric.h"
 #include "spec/blua32/numeric.h"
 #include "machine/devices/irq/controller.h"
+#include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
@@ -414,6 +415,15 @@ void CPU::reset() {
 	Closure* systemResetClosure = &m_staticClosuresByAddress.at(systemResetFunctionAddress);
 	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
 	collectHeap();
+}
+
+void CPU::installBootPrimitives() {
+	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
+		setSystemGlobalByKey(
+			m_stringPool.intern(primitive.name),
+			createBuiltinFunction(primitive.id)
+		);
+	}
 }
 
 StringId CPU::internExecutionString(
