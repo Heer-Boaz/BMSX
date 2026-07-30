@@ -1,8 +1,7 @@
-import type { VideoSurface } from '../../../../machine/ts/platform/platform';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
-import type { HostClock } from '../../../../machine/ts/platform/platform';
-import type { Viewport } from '../../../common/viewport';
+import type { HostClock } from '../../../../hosts/common/clock';
+import type { EditorDisplay, Viewport } from '../../../common/viewport';
 import * as constants from '../../../common/constants';
 import { CodeLayout } from '../code/layout';
 import { markDiagnosticsDirty } from '../../contrib/diagnostics/state';
@@ -101,11 +100,11 @@ export function refreshViewportLayout(): void {
 }
 
 export function mapScreenPointToViewport(
-	surface: VideoSurface,
+	display: EditorDisplay,
 	screenX: number,
 	screenY: number,
 ): { x: number; y: number; inside: boolean; valid: boolean } {
-	const rect = surface.measureDisplay();
+	const rect = display.measureDisplay();
 	if (rect.width <= 0 || rect.height <= 0) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}

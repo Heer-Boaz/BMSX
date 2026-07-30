@@ -3,12 +3,9 @@ import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
-import type {
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { LogOutput } from '../../hosts/common/log';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { editorDocumentState } from '../editor/editing/document_state';
 import { activateEditor } from '../workbench/overlay_modes';
@@ -62,10 +59,9 @@ export type HeadlessIdeHeapStats = {
 export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
-	storage: StorageService,
+	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): HeadlessIdeHarness {
 	return {
@@ -93,7 +89,6 @@ export function createHeadlessIdeHarness(
 				ide.luaTooling,
 				ide.overlayRenderer,
 				runtime,
-				input,
 				audioOutput,
 				microtasks,
 				storage,
@@ -108,7 +103,6 @@ export function createHeadlessIdeHarness(
 			ide.luaGate,
 			ide.overlayRenderer,
 			runtime,
-			input,
 			audioOutput,
 			storage,
 			logOutput,
@@ -119,7 +113,6 @@ export function createHeadlessIdeHarness(
 				ide.sources,
 				ide.overlayRenderer,
 				runtime,
-				input,
 				audioOutput,
 			);
 			const resource = resolveRuntimeResourceForContext(

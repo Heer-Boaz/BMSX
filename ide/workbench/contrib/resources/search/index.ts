@@ -1,4 +1,4 @@
-import type { MicrotaskQueue } from '../../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../../common/microtask_queue';
 import * as constants from '../../../../common/constants';
 import { renameController } from '../../code_editor/rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';

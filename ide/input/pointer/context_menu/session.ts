@@ -7,7 +7,7 @@ import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorConte
 import { executeEditorContextMenuAction } from '../../../workbench/contrib/context_menu/actions';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import type { CartEditor } from '../../../cart_editor';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../../common/clipboard';
 
 export const CONTEXT_MENU_POINTER_IGNORED = 0;
 export const CONTEXT_MENU_POINTER_HANDLED = 1;
@@ -15,7 +15,7 @@ export const CONTEXT_MENU_POINTER_CONSUME_PRIMARY = 2;
 export const CONTEXT_MENU_POINTER_CONSUME_SECONDARY = 3;
 
 export function handleEditorContextMenuPointerSession(
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	editor: CartEditor,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,

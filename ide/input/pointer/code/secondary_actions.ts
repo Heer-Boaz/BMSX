@@ -1,4 +1,4 @@
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { BreakpointController } from '../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';

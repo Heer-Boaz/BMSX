@@ -1,26 +1,33 @@
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
-	beginMachineHostFrame,
-	executeMachineHostUpdate,
-	MachineHostFrameAction,
-	type MachineHostPresentation,
-	prepareMachineHostPresentation,
-	presentMachineHostPresentation,
+	beginHostFrame,
+	executeHostUpdate,
+	HostFrameAction,
+	HostFrameRunResult,
+	type HostFramePresentation,
+	type HostFrameSession,
+	prepareHostPresentation,
+	presentHostPresentation,
 } from '../../hosts/common/host_frame';
+import { HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import type { Input } from '../../hosts/common/input/manager';
+import type { LogOutput } from '../../hosts/common/log';
 import type { RenderPresentationState } from '../../hosts/common/presentation_state';
-import type { MachineHost } from '../../hosts/common/machine_runtime';
+import type { SystemOutputLog } from '../../hosts/common/system_output_log';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { rebootPreparedRuntime } from './blua32_boot';
 import * as workbenchMode from './mode';
 
 function executeWorkbenchHostMenuAction(
-	host: MachineHost,
 	ide: RuntimeIdeState,
 	screen: RenderPresentationState,
 	input: HostMenuInput,
 	runtime: Runtime,
+	presenter: VideoPresenter,
+	audioOutput: HostAudioOutput,
 ): boolean {
 	switch (input) {
 		case HostMenuInput.Inactive:
@@ -36,16 +43,14 @@ function executeWorkbenchHostMenuAction(
 				ide.luaGate,
 				ide.overlayRenderer,
 				runtime,
-				host.input,
-				host.audioOutput,
-				host.platform.storage,
-				host.platform,
+				audioOutput,
+				ide.storage,
+				ide.logOutput,
 			).then(() => {
-				screen.reset(host.presenter, runtime);
+				screen.reset(presenter, runtime);
 			});
 			return true;
 		case HostMenuInput.ExitGame:
-			host.platform.requestShutdown();
 			return true;
 	}
 }
@@ -63,23 +68,29 @@ function runWorkbenchOverlay(
 }
 
 function presentWorkbenchFrame(
-	host: MachineHost,
+	session: HostFrameSession,
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	audioOutput: HostAudioOutput,
 	ide: RuntimeIdeState,
-	action: MachineHostPresentation,
+	action: HostFramePresentation,
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
 	if (
-		action === MachineHostFrameAction.PresentPending
+		action === HostFrameAction.PresentPending
 		&& !screen.pending
 	) {
 		return;
 	}
-	if (action === MachineHostFrameAction.PresentPending) {
-		workbenchMode.tickIDEDraw(ide, host.presenter);
+	if (action === HostFrameAction.PresentPending) {
+		workbenchMode.tickIDEDraw(ide, presenter);
 	}
-	presentMachineHostPresentation(
-		host,
+	presentHostPresentation(
+		session,
+		runtime,
+		presenter,
+		audioOutput,
 		action,
 		screen,
 		hostDeltaMs,
@@ -87,10 +98,12 @@ function presentWorkbenchFrame(
 }
 
 function presentWorkbenchError(
-	host: MachineHost,
+	session: HostFrameSession,
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	audioOutput: HostAudioOutput,
 	ide: RuntimeIdeState,
 	screen: RenderPresentationState,
-	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
 	if (!ide.overlayRenderer.active) {
@@ -98,72 +111,121 @@ function presentWorkbenchError(
 	}
 	runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
 	presentWorkbenchFrame(
-		host,
+		session,
+		runtime,
+		presenter,
+		audioOutput,
 		ide,
-		MachineHostFrameAction.PresentPending,
+		HostFrameAction.PresentPending,
 		screen,
 		hostDeltaMs,
 	);
 }
 
 export function runWorkbenchHostFrame(
-	host: MachineHost,
+	session: HostFrameSession,
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	input: Input,
+	audioOutput: HostAudioOutput,
+	systemOutput: SystemOutputLog,
+	logOutput: LogOutput,
 	ide: RuntimeIdeState,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	currentTime: number,
 	runReady: boolean,
-): void {
-	const runtime = host.runtime;
-	if (!host.running) {
-		return;
-	}
+): HostFrameRunResult {
 	let hostDeltaMs = 0;
 	try {
-		hostDeltaMs = beginMachineHostFrame(host, currentTime);
-		workbenchMode.tickIdeInput(ide, host.input);
+		hostDeltaMs = beginHostFrame(
+			session,
+			input,
+			audioOutput,
+			logOutput,
+			currentTime,
+		);
+		workbenchMode.tickIdeInput(ide, input);
 		const hostMenuInput = hostOverlayMenu.tickInput();
-		if (executeWorkbenchHostMenuAction(host, ide, screen, hostMenuInput, runtime)) {
+		if (hostMenuInput === HostMenuInput.ExitGame) {
+			return HostFrameRunResult.ExitRequested;
+		}
+		if (executeWorkbenchHostMenuAction(
+			ide,
+			screen,
+			hostMenuInput,
+			runtime,
+			presenter,
+			audioOutput,
+		)) {
 			runtime.frameScheduler.clearQueuedTime();
-			host.flushSystemOutput();
-			return;
+			systemOutput.flush(runtime, logOutput);
+			return HostFrameRunResult.Continue;
 		}
 
 		const runtimeReady = runReady && !ide.fault.faultSnapshot;
-		let action: MachineHostFrameAction;
+		let action: HostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
 			&& ide.overlayRenderer.active
 		) {
-			hostOverlayMenu.queueFrameOverlayCommands(host.hostFps);
+			hostOverlayMenu.queueFrameOverlayCommands(session.hostFps);
 			runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
-			host.platform.microtasks.flush();
-			action = MachineHostFrameAction.PresentPending;
+			ide.microtasks.flush();
+			action = HostFrameAction.PresentPending;
 		} else {
 			const machineWillAdvance = (
 				hostMenuInput === HostMenuInput.Inactive
-				&& !host.paused
+				&& !session.paused
 				&& runtimeReady
 			);
-			action = prepareMachineHostPresentation(
-				host,
+			action = prepareHostPresentation(
+				session,
+				runtime,
 				screen,
 				hostOverlayMenu,
 				runtimeReady,
 				hostMenuInput,
 			);
-			if (action === MachineHostFrameAction.Execute) {
-				executeMachineHostUpdate(host, screen, hostDeltaMs);
-				action = MachineHostFrameAction.PresentPending;
+			if (action === HostFrameAction.Execute) {
+				executeHostUpdate(
+					session,
+					runtime,
+					presenter,
+					input,
+					audioOutput,
+					screen,
+					hostDeltaMs,
+				);
+				action = HostFrameAction.PresentPending;
 			}
+			ide.microtasks.flush();
 			if (machineWillAdvance) {
 				syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
 			}
 		}
-		presentWorkbenchFrame(host, ide, action, screen, hostDeltaMs);
+		presentWorkbenchFrame(
+			session,
+			runtime,
+			presenter,
+			audioOutput,
+			ide,
+			action,
+			screen,
+			hostDeltaMs,
+		);
 	} catch (error) {
-		workbenchMode.surfaceHostFrameError(ide, host.platform, runtime, error);
-		presentWorkbenchError(host, ide, screen, runtime, hostDeltaMs);
+		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
+		presentWorkbenchError(
+			session,
+			runtime,
+			presenter,
+			audioOutput,
+			ide,
+			screen,
+			hostDeltaMs,
+		);
 	}
-	host.flushSystemOutput();
+	systemOutput.flush(runtime, logOutput);
+	return HostFrameRunResult.Continue;
 }

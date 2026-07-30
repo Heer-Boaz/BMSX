@@ -38,10 +38,11 @@ import {
 	type WorkspaceSessionGeneration,
 } from './models';
 import type { CartEditor } from '../../cart_editor';
-import type { HostClock, StorageService } from '../../../machine/ts/platform/platform';
+import type { HostClock } from '../../../hosts/common/clock';
+import type { KeyValueStorage } from '../../workspace/key_value_storage';
 
 export function commitWorkspaceSessionLocally(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

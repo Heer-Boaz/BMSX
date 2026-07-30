@@ -1,5 +1,6 @@
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../runtime/source_registry';
-import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
+import type { HostClock } from '../../hosts/common/clock';
+import type { KeyValueStorage } from './key_value_storage';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { ROM_GENERATED_MODULE_PATHS } from '../../toolchain/ts/rompack/generated_modules';
 import {
@@ -76,7 +77,7 @@ export function applyLuaCodeTabSources(
 }
 
 export async function saveLuaResourceSource(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
@@ -107,7 +108,7 @@ export async function saveLuaResourceSource(
 }
 
 export async function createLuaResource(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	sources: RuntimeSourceState,
 	request: LuaResourceCreationRequest,
@@ -152,7 +153,7 @@ export async function createLuaResource(
 }
 
 export async function applyWorkspaceOverridesToRegistry(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	params: {
 		dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
@@ -175,7 +176,7 @@ export async function applyWorkspaceOverridesToRegistry(
 }
 
 export async function applyAllWorkspaceSourceOverrides(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 ): Promise<Set<string>> {

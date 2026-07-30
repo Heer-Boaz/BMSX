@@ -7,17 +7,15 @@ import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { CartEditor } from '../../../cart_editor';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type {
-	ClipboardService,
-	HostClock,
-	StorageService,
-} from '../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../common/clipboard';
+import type { HostClock } from '../../../../hosts/common/clock';
+import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 
 export function handleCreateResourceInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
-	storage: StorageService,
+	clipboard: Clipboard,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

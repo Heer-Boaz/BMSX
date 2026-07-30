@@ -1,6 +1,6 @@
 import type { BreakpointController } from '../../workbench/contrib/debugger/controller';
 import { consumeIdeKey, isKeyJustPressed } from './key_input';
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../hosts/common/input/player';
 
 export function handleEditorBreakpointInput(playerInput: PlayerInput, breakpoints: BreakpointController): boolean {
 	if (!isKeyJustPressed('F9', playerInput)) {

@@ -1,4 +1,4 @@
-import type { BGamepadButton } from '../../machine/ts/input/models';
+import type { BGamepadButton } from '../../hosts/common/input/models';
 import {
 	THEME_TOKEN_ACCENT_BLUE,
 	THEME_TOKEN_ACCENT_RED,

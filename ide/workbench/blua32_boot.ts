@@ -1,10 +1,7 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
-import type {
-	LogOutput,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { LogOutput } from '../../hosts/common/log';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { clearFaultSnapshot } from '../runtime/fault_state';
 import { bootActiveBlua32Media } from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
@@ -49,12 +46,11 @@ async function prepareRebootToBootRom(
 	fault: RuntimeFaultState,
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
-	input: Input,
 	audioOutput: HostAudioOutput,
-	storage: StorageService,
+	storage: KeyValueStorage,
 ): Promise<boolean> {
 	clearFaultSnapshot(fault);
-	deactivateEditor(editor, overlayRenderer, input, audioOutput);
+	deactivateEditor(editor, overlayRenderer, audioOutput);
 	editor.clearRuntimeErrorOverlay();
 	await applyAllWorkspaceSourceOverrides(
 		storage,
@@ -73,9 +69,8 @@ export async function rebootPreparedRuntime(
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
-	storage: StorageService,
+	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): Promise<void> {
 	const gateToken = luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
@@ -85,7 +80,6 @@ export async function rebootPreparedRuntime(
 			fault,
 			editor,
 			overlayRenderer,
-			input,
 			audioOutput,
 			storage,
 		);

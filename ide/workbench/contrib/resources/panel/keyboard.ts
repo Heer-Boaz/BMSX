@@ -3,7 +3,7 @@ import { showEditorMessage } from '../../../../common/feedback_state';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
 import { resetBlink } from '../../../../editor/render/caret';
 import type { ResourcePanelController } from './controller';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 
 export function handleResourcePanelKeyboardInput(playerInput: PlayerInput, controller: ResourcePanelController): void {
 	const ctrlDown = isCtrlDown(playerInput);

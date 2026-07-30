@@ -1,17 +1,14 @@
-import { KeyModifier } from '../../machine/ts/input/player';
+import { KeyModifier } from '../../hosts/common/input/player';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
+import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type {
-	ClipboardService,
-	HostClock,
-	Lifecycle,
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { Clipboard } from '../common/clipboard';
+import type { HostClock } from '../../hosts/common/clock';
+import type { LogOutput } from '../../hosts/common/log';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { Viewport } from '../common/viewport';
+import type { EditorDisplay, Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
 import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY } from '../common/constants';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
@@ -43,12 +40,12 @@ import {
 export async function initializeIdeFeatures(
 	runtime: Runtime,
 	presenter: VideoPresenter,
+	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
-	lifecycle: Lifecycle,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	logOutput: LogOutput,
 	resourcePanelWidthRatio: number,
@@ -63,7 +60,6 @@ export async function initializeIdeFeatures(
 		workspacePayload = await initializeWorkspaceStorage(
 			storage,
 			clock,
-			lifecycle,
 			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
 			sources,
 		);
@@ -78,6 +74,7 @@ export async function initializeIdeFeatures(
 	const state = new RuntimeIdeState(
 		runtime,
 		presenter,
+		display,
 		input,
 		audioOutput,
 		storage,
@@ -90,7 +87,7 @@ export async function initializeIdeFeatures(
 		sources,
 	);
 	seedDefaultLuaBuiltins();
-	updateGamePipelineExts(state.editor, state.overlayRenderer, input, audioOutput);
+	updateGamePipelineExts(state.editor, state.overlayRenderer, audioOutput);
 	input.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
@@ -123,7 +120,6 @@ export function registerRuntimeShortcuts(
 			state.sources,
 			state.overlayRenderer,
 			runtime,
-			input,
 			audioOutput,
 		);
 	}));
@@ -135,7 +131,6 @@ export function registerRuntimeShortcuts(
 			state.sources,
 			state.overlayRenderer,
 			runtime,
-			input,
 			audioOutput,
 		),
 	));

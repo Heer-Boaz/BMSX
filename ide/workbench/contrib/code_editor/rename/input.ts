@@ -3,12 +3,12 @@ import { isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyF
 import { redo, undo } from '../../../../editor/editing/undo_controller';
 import type { RenameController } from './controller';
 import type { CrossFileRenameManager } from './operations';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../../common/clipboard';
 
 export function handleRenameControllerInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	controller: RenameController,
 	crossFileRename: CrossFileRenameManager,
 ): void {

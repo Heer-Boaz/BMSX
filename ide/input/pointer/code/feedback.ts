@@ -8,7 +8,7 @@ import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 export function updateCodeAreaPointerFeedback(
 	playerInput: PlayerInput,

@@ -1,4 +1,4 @@
-import type { StorageService } from '../../../../machine/ts/platform/platform';
+import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeResource } from '../../../common/models';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
@@ -26,7 +26,7 @@ export class EditorNavigationController {
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		private readonly resourcePanel: ResourcePanelController,
-		private readonly storage: StorageService,
+		private readonly storage: KeyValueStorage,
 	) {
 	}
 

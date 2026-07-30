@@ -3,7 +3,7 @@ import type { EditorCommandId } from '../../common/commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { handleEscapeKey } from './modal_input';
 import { ESCAPE_KEY } from '../../common/constants';
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../hosts/common/input/player';
 
 type ModifierKey = 'ctrl' | 'meta' | 'shift' | 'alt';
 

@@ -1,9 +1,7 @@
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { runGate } from '../../machine/ts/common/taskgate';
-import {
-	type HostClock,
-	type MicrotaskQueue,
-} from '../../machine/ts/platform/platform';
+import { type HostClock } from '../../hosts/common/clock';
+import { type MicrotaskQueue } from './microtask_queue';
 
 export type BackgroundTask = () => boolean;
 

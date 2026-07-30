@@ -39,7 +39,7 @@ import { resetBlink } from '../../../../editor/render/caret';
 import type { FileSemanticData, ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/model';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { createResourceState, resourceSearchState } from '../../resources/widget_state';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';

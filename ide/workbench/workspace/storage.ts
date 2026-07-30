@@ -1,9 +1,5 @@
-import type {
-	HostClock,
-	Lifecycle,
-	StorageService,
-	TimerHandle,
-} from '../../../machine/ts/platform/platform';
+import type { HostClock, TimerHandle } from '../../../hosts/common/clock';
+import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
@@ -57,23 +53,8 @@ let reconnectTask: Promise<void> = null;
 let editor: CartEditor = null;
 let sources: RuntimeSourceState = null;
 let debuggerState: RuntimeDebuggerState = null;
-let storage: StorageService = null;
+let storage: KeyValueStorage = null;
 let clock: HostClock = null;
-let lifecycle: Lifecycle = null;
-
-function detachWorkspaceExitHandler(): void {
-	if (workspaceState.disposeExitListener) {
-		workspaceState.disposeExitListener.unsubscribe();
-		workspaceState.disposeExitListener = null;
-	}
-}
-
-function attachWorkspaceExitHandler(): void {
-	detachWorkspaceExitHandler();
-	workspaceState.disposeExitListener = lifecycle.onWillExit(() => {
-		persistWorkspaceSessionLocally();
-	});
-}
 
 function cancelWorkspaceReconnect(): void {
 	reconnectHandle?.cancel();
@@ -83,7 +64,6 @@ function cancelWorkspaceReconnect(): void {
 export async function shutdownWorkspaceStorage(): Promise<void> {
 	cancelWorkspaceAutosave();
 	cancelWorkspaceReconnect();
-	detachWorkspaceExitHandler();
 	try {
 		if (workspaceState.autosaveTask) {
 			await workspaceState.autosaveTask;
@@ -120,7 +100,6 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			debuggerState = null;
 			storage = null;
 			clock = null;
-			lifecycle = null;
 			clearWorkspaceSourceCaches();
 			closeWorkspaceRecords();
 		}
@@ -128,16 +107,14 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 }
 
 export async function initializeWorkspaceStorage(
-	workspaceStorage: StorageService,
+	workspaceStorage: KeyValueStorage,
 	workspaceClock: HostClock,
-	workspaceLifecycle: Lifecycle,
 	projectRootPath: string,
 	runtimeSources: RuntimeSourceState,
 ): Promise<WorkspaceAutosavePayload | null> {
 	await shutdownWorkspaceStorage();
 	storage = workspaceStorage;
 	clock = workspaceClock;
-	lifecycle = workspaceLifecycle;
 	workspaceState.projectRootPath = projectRootPath;
 	await openWorkspaceRecords(
 		storage,
@@ -291,7 +268,6 @@ export async function restoreWorkspaceStorageSession(
 	editor = workspaceEditor;
 	sources = runtimeSources;
 	debuggerState = runtimeDebuggerState;
-	attachWorkspaceExitHandler();
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	}
@@ -405,7 +381,7 @@ async function syncWorkspaceAutosave(): Promise<void> {
 	}
 }
 
-function persistWorkspaceSessionLocally(): void {
+export function persistWorkspaceSessionLocally(): void {
 	if (!editor) {
 		return;
 	}

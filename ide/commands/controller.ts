@@ -1,12 +1,9 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
-import type {
-	HostClock,
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { HostClock } from '../../hosts/common/clock';
+import type { LogOutput } from '../../hosts/common/log';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { ActionPromptAction } from '../common/models';
@@ -36,10 +33,9 @@ export class IdeCommandController {
 		private readonly luaGate: GateGroup,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
-		private readonly input: Input,
 		private readonly audioOutput: HostAudioOutput,
 		private readonly microtasks: MicrotaskQueue,
-		private readonly storage: StorageService,
+		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
 	) {
@@ -74,7 +70,6 @@ export class IdeCommandController {
 				this.luaGate,
 				this.overlayRenderer,
 				this.runtime,
-				this.input,
 				this.audioOutput,
 				this.microtasks,
 				this.storage,
@@ -111,7 +106,6 @@ export class IdeCommandController {
 			this.luaGate,
 			this.overlayRenderer,
 			this.runtime,
-			this.input,
 			this.audioOutput,
 			this.microtasks,
 			this.storage,

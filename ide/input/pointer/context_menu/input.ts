@@ -1,11 +1,11 @@
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { CONTEXT_MENU_POINTER_CONSUME_PRIMARY, CONTEXT_MENU_POINTER_CONSUME_SECONDARY, CONTEXT_MENU_POINTER_IGNORED, handleEditorContextMenuPointerSession, openEditorContextMenuAtPointer } from './session';
 import type { PointerSnapshot } from '../../../common/models';
 import type { CartEditor } from '../../../cart_editor';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../../common/clipboard';
 
 export function handleEditorContextMenuPointer(
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	editor: CartEditor,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,

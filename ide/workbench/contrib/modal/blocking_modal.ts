@@ -7,7 +7,7 @@ import {
 	hasActionPrompt,
 } from './action_prompt';
 import type { CartEditor } from '../../../cart_editor';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 export function hasBlockingWorkbenchModal(): boolean {
 	return hasActionPrompt();

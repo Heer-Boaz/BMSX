@@ -2,7 +2,7 @@ import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../.
 import type { ProblemsPanelController } from './controller';
 import { handleProblemsPanelNavigationCommand } from './navigation';
 import type { ResourcePanelController } from '../../resources/panel/controller';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 
 export function handleProblemsPanelKeyboardInput(
 	playerInput: PlayerInput,

@@ -37,7 +37,7 @@ import {
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
-import type { ClipboardService } from '../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../common/clipboard';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
@@ -870,7 +870,7 @@ export function unindentSelectionOrLine(): void {
  * Copies the current selection to the clipboard.
  * Shows a message if nothing is selected.
  */
-export async function copySelectionToClipboard(clipboard: ClipboardService): Promise<void> {
+export async function copySelectionToClipboard(clipboard: Clipboard): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
 		showEditorMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
@@ -883,7 +883,7 @@ export async function copySelectionToClipboard(clipboard: ClipboardService): Pro
  * Cuts the current selection to the clipboard (copy + delete).
  * Shows a message if nothing is selected.
  */
-export async function cutSelectionToClipboard(clipboard: ClipboardService): Promise<void> {
+export async function cutSelectionToClipboard(clipboard: Clipboard): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
 		showEditorMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
@@ -902,7 +902,7 @@ export async function cutSelectionToClipboard(clipboard: ClipboardService): Prom
  * Cuts the current line to the clipboard.
  * Used when no selection is active.
  */
-export async function cutLineToClipboard(clipboard: ClipboardService): Promise<void> {
+export async function cutLineToClipboard(clipboard: Clipboard): Promise<void> {
 	const buffer = editorDocumentState.buffer;
 	const lineCount = buffer.getLineCount();
 	const row = editorDocumentState.cursorRow;
@@ -970,7 +970,7 @@ export function pasteFromClipboard(): void {
  * @param successMessage Message to show on success
  */
 export async function writeClipboard(
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	text: string,
 	successMessage: string,
 ): Promise<void> {

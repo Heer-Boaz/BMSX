@@ -1,18 +1,16 @@
-import type { Viewport } from '../common/viewport';
+import type { EditorDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import { taskGate } from '../../machine/ts/common/taskgate';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
-import type {
-	ClipboardService,
-	HostClock,
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { Input } from '../../hosts/common/input/manager';
+import type { Clipboard } from '../common/clipboard';
+import type { HostClock } from '../../hosts/common/clock';
+import type { LogOutput } from '../../hosts/common/log';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, type RuntimeDebuggerState } from './debugger_state';
 import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
@@ -36,13 +34,14 @@ export class RuntimeIdeState {
 	public constructor(
 		runtime: Runtime,
 		presenter: VideoPresenter,
+		display: EditorDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
-		storage: StorageService,
+		public readonly storage: KeyValueStorage,
 		clock: HostClock,
-		clipboard: ClipboardService,
-		microtasks: MicrotaskQueue,
-		logOutput: LogOutput,
+		clipboard: Clipboard,
+		public readonly microtasks: MicrotaskQueue,
+		public readonly logOutput: LogOutput,
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
@@ -52,6 +51,7 @@ export class RuntimeIdeState {
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
+			display,
 			input,
 			audioOutput,
 			storage,

@@ -12,15 +12,13 @@ import { resourceSearchState } from '../../../workbench/contrib/resources/widget
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RenameController } from '../../../workbench/contrib/code_editor/rename/controller';
 import type { CartEditor } from '../../../cart_editor';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type {
-	ClipboardService,
-	MicrotaskQueue,
-} from '../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../common/clipboard';
+import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleResourceSearchInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	bridge: RuntimeLuaTooling,

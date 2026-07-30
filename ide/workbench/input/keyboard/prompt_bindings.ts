@@ -7,7 +7,7 @@ import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { editorDocumentState } from '../../../editor/editing/document_state';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 function handleCreateResourceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyN', playerInput)) {

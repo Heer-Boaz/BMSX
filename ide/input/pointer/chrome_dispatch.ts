@@ -1,5 +1,5 @@
 import type { CartEditor } from '../../cart_editor';
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
 import { handleEditorPanelResizePointer } from './panel';

@@ -1,4 +1,4 @@
-import type { Input } from '../../../../../../machine/ts/input/manager';
+import type { Input } from '../../../../../../hosts/common/input/manager';
 import { insertText } from '../../../../../editor/editing/text_editing_and_selection';
 import { handleEditorBreakpointInput } from '../../../../../input/keyboard/debug_input';
 import { handleEditorNavigationKeys } from './navigation_input';
@@ -6,7 +6,7 @@ import { handleEditorEditingKeys } from './editing_input';
 import { handleEditorCharacterInput } from './character_input';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from '../../../../../input/keyboard/key_input';
 import type { CartEditor } from '../../../../../cart_editor';
-import type { PlayerInput } from '../../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
 export class InputController {
 	public handleEditorInput(playerInput: PlayerInput, editor: CartEditor): void {

@@ -1,7 +1,7 @@
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../../../common/character_map';
 import { insertText } from '../../../../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown } from '../../../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
 export function handleEditorCharacterInput(playerInput: PlayerInput): void {
 	for (let i = 0; i < CHARACTER_CODES.length; i += 1) {

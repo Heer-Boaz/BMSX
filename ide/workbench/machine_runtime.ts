@@ -1,67 +1,58 @@
-import { runGate } from '../../machine/ts/common/taskgate';
-import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
-import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { startPreparedRuntime } from './blua32_boot';
-import { runWorkbenchHostFrame } from './host_frame';
 import * as workbenchMode from './mode';
-import {
-	initializeMachineHost,
-	type MachineHost,
-	type MachineHostInitializationOptions,
-} from '../../hosts/common/machine_runtime';
+import type { Clipboard } from '../common/clipboard';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
+import type { EditorDisplay } from '../common/viewport';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import type { Input } from '../../hosts/common/input/manager';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { HostClock } from '../../hosts/common/clock';
+import type { LogOutput } from '../../hosts/common/log';
 
 export async function prepareWorkbenchRuntime(
-	options: MachineHostInitializationOptions,
+	systemRom: Uint8Array,
+	cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	display: EditorDisplay,
+	input: Input,
+	audioOutput: HostAudioOutput,
+	storage: KeyValueStorage,
+	clock: HostClock,
+	clipboard: Clipboard,
+	microtasks: MicrotaskQueue,
+	logOutput: LogOutput,
 	resourcePanelWidthRatio: number,
-): Promise<readonly [MachineHost, RuntimeIdeState]> {
+): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
-		options.systemRom,
-		options.cartridgeSlots,
+		systemRom,
+		cartridgeSlots,
 	);
-	const host = await initializeMachineHost(options);
-	const runtime = host.runtime;
 	const sources = createRuntimeSourceState(
 		media.system,
 		media.cartridgeSlots,
 	);
-	const viewport = host.presenter.viewportSize;
+	const viewport = presenter.viewportSize;
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
-		host.presenter,
-		host.input,
-		host.audioOutput,
-		host.platform.storage,
-		host.platform.clock,
-		host.platform.lifecycle,
-		host.platform.clipboard,
-		host.platform.microtasks,
-		host.platform,
+		presenter,
+		display,
+		input,
+		audioOutput,
+		storage,
+		clock,
+		clipboard,
+		microtasks,
+		logOutput,
 		resourcePanelWidthRatio,
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
-	await startPreparedRuntime(ide, runtime, host.platform);
-	host.flushSystemOutput();
-	host.audioOutput.bootstrap();
-	return [host, ide];
-}
-
-export function startWorkbenchHostFrames(host: MachineHost, ide: RuntimeIdeState): void {
-	const runtime = host.runtime;
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
-	host.start();
-	host.platform.frames.start((currentTime) => {
-		runWorkbenchHostFrame(
-			host,
-			ide,
-			presentation,
-			hostOverlayMenu,
-			currentTime,
-			runGate.ready,
-		);
-	});
+	await startPreparedRuntime(ide, runtime, logOutput);
+	return ide;
 }

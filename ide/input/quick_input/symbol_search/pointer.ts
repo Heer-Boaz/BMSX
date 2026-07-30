@@ -12,7 +12,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleSymbolSearchPointer(
 	microtasks: MicrotaskQueue,

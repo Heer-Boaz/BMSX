@@ -1,5 +1,6 @@
 import type { LuaSourceRecord, LuaSourceRegistry } from '../runtime/source_registry';
-import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
+import type { HostClock } from '../../hosts/common/clock';
+import type { KeyValueStorage } from './key_value_storage';
 import {
 	deleteWorkspaceLuaSourceOverride,
 	getWorkspaceLuaSourceOverride,
@@ -54,7 +55,7 @@ export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: 
 }
 
 export async function persistWorkspaceSourceFile(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	path: string,
 	source: string,
@@ -72,7 +73,7 @@ export async function persistWorkspaceSourceFile(
 }
 
 export async function loadWorkspaceSourceFile(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	path: string,
 	projectRootPath: string,
 ): Promise<string | null> {
@@ -97,7 +98,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	domain: ResourceDomain;
 	registry: LuaSourceRegistry;
-	storage: StorageService;
+	storage: KeyValueStorage;
 	projectRootPath: string;
 }): Promise<Set<string>> {
 	const rejectedDirtyPaths = new Set<string>();

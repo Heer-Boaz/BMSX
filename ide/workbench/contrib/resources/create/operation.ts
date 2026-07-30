@@ -8,13 +8,11 @@ import { extractErrorMessage } from '../../../../language/lua/interpreter/value'
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './index';
 import { createResourceState } from '../widget_state';
 import type { CartEditor } from '../../../../cart_editor';
-import type {
-	HostClock,
-	StorageService,
-} from '../../../../../machine/ts/platform/platform';
+import type { HostClock } from '../../../../../hosts/common/clock';
+import type { KeyValueStorage } from '../../../../workspace/key_value_storage';
 
 export async function confirmCreateResourcePrompt(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

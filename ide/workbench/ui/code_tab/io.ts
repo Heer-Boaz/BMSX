@@ -34,7 +34,8 @@ import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
-import type { HostClock, StorageService } from '../../../../machine/ts/platform/platform';
+import type { HostClock } from '../../../../hosts/common/clock';
+import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: EditorDocumentMode): void {
 	context.resource = resource;
@@ -59,7 +60,7 @@ export function openLuaCodeTab(
 }
 
 export async function openAemCodeTab(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
@@ -90,7 +91,7 @@ export async function openAemCodeTab(
 }
 
 export async function openCodeTabForResource(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
@@ -109,7 +110,7 @@ export async function openCodeTabForResource(
 }
 
 export async function save(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

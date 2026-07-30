@@ -6,8 +6,8 @@ import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_se
 import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../common/clipboard';
 
 type SearchSelectionOptions = {
 	preview?: boolean;
@@ -50,7 +50,7 @@ function stepSearchSelectionFromInput(
 
 export function handleSearchInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {

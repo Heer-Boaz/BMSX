@@ -12,13 +12,11 @@ import type { CrossFileRenameManager } from '../workbench/contrib/code_editor/re
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
-import type { PlayerInput } from '../../machine/ts/input/player';
-import type {
-	ClipboardService,
-	HostClock,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../hosts/common/input/player';
+import type { Clipboard } from '../common/clipboard';
+import type { HostClock } from '../../hosts/common/clock';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active
@@ -31,9 +29,9 @@ export function isInlineWidgetFocused(): boolean {
 
 export function handleInlineWidgetInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

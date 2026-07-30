@@ -7,7 +7,7 @@ import { handleSymbolSearchPointer } from '../symbol_search/pointer';
 import { handleRenamePointer } from '../rename/pointer';
 import { handleLineJumpPointer } from '../line_jump/pointer';
 import { handleSearchPointer } from '../search/pointer';
-import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleQuickInputPointer(
 	microtasks: MicrotaskQueue,

@@ -5,7 +5,7 @@ import { getActiveResourceViewer } from '../../contrib/resources/view_tabs';
 import type { ResourceViewerState } from '../../../common/models';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 export function handleResourceViewerInput(playerInput: PlayerInput): void {
 	const viewer = getActiveResourceViewer();

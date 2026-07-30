@@ -3,10 +3,10 @@ import type { CartEditor } from '../../../cart_editor';
 import { focusEditorAtPosition } from '../../ui/focus';
 import { writeClipboard } from '../../../editor/editing/text_editing_and_selection';
 import type { EditorContextMenuAction, EditorContextToken } from '../../../common/models';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../../common/clipboard';
 
 export function executeEditorContextMenuAction(
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	editor: CartEditor,
 	commands: IdeCommandController,
 	action: EditorContextMenuAction,

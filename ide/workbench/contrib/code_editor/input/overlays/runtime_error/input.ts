@@ -13,10 +13,10 @@ import {
 } from './pointer/hover';
 import type { CartEditor } from '../../../../../../cart_editor';
 import type { Runtime } from '../../../../../../../machine/ts/machine/runtime/runtime';
-import type { ClipboardService } from '../../../../../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../../../../../common/clipboard';
 
 export function processRuntimeErrorOverlayPointer(
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	editor: CartEditor,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,

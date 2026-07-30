@@ -1,4 +1,4 @@
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';

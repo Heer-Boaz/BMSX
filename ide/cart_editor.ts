@@ -1,18 +1,16 @@
 import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { GateGroup } from '../machine/ts/common/taskgate';
-import type { Input } from '../machine/ts/input/manager';
+import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
-import type {
-	ClipboardService,
-	HostClock,
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../machine/ts/platform/platform';
+import type { Clipboard } from './common/clipboard';
+import type { HostClock } from '../hosts/common/clock';
+import type { LogOutput } from '../hosts/common/log';
+import type { MicrotaskQueue } from './common/microtask_queue';
+import type { KeyValueStorage } from './workspace/key_value_storage';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../toolchain/ts/rompack/blua32_media';
-import type { Viewport } from './common/viewport';
+import type { EditorDisplay, Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
@@ -156,10 +154,11 @@ export class RuntimeCartEditor implements CartEditor {
 	private editorRenderTargetBaselineHeight = 0;
 	private readonly runtime: Runtime;
 	private readonly presenter: VideoPresenter;
+	private readonly display: EditorDisplay;
 	private readonly input: Input;
-	private readonly storage: StorageService;
+	private readonly storage: KeyValueStorage;
 	private readonly clock: HostClock;
-	private readonly clipboard: ClipboardService;
+	private readonly clipboard: Clipboard;
 	private readonly microtasks: MicrotaskQueue;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
@@ -183,11 +182,12 @@ export class RuntimeCartEditor implements CartEditor {
 	public constructor(
 		runtime: Runtime,
 		presenter: VideoPresenter,
+		display: EditorDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
-		storage: StorageService,
+		storage: KeyValueStorage,
 		clock: HostClock,
-		clipboard: ClipboardService,
+		clipboard: Clipboard,
 		microtasks: MicrotaskQueue,
 		logOutput: LogOutput,
 		resourcePanelWidthRatio: number,
@@ -202,6 +202,7 @@ export class RuntimeCartEditor implements CartEditor {
 	) {
 		this.runtime = runtime;
 		this.presenter = presenter;
+		this.display = display;
 		this.input = input;
 		this.storage = storage;
 		this.clock = clock;
@@ -221,7 +222,6 @@ export class RuntimeCartEditor implements CartEditor {
 			luaGate,
 			overlayRenderer,
 			runtime,
-			input,
 			audioOutput,
 			microtasks,
 			storage,
@@ -367,7 +367,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const breakpointRevision = this.breakpoints.revision;
 		handleEditorWheelInput(this, playerInput);
 		handleTextEditorPointerInput(
-			this.presenter.surface,
+			this.display,
 			playerInput,
 			editorRuntimeState.currentTimeMs,
 			this.clipboard,

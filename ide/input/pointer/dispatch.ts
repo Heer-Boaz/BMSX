@@ -1,5 +1,5 @@
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../hosts/common/input/player';
 import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
 import { handleCodeAreaPointerInput } from './code/index';
@@ -16,17 +16,15 @@ import type { CartEditor } from '../../cart_editor';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
-import type {
-	ClipboardService,
-	MicrotaskQueue,
-	VideoSurface,
-} from '../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../common/clipboard';
+import type { MicrotaskQueue } from '../../common/microtask_queue';
+import type { EditorDisplay } from '../../common/viewport';
 
 export function handleTextEditorPointerInput(
-	surface: VideoSurface,
+	display: EditorDisplay,
 	playerInput: PlayerInput,
 	now: number,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
@@ -38,7 +36,7 @@ export function handleTextEditorPointerInput(
 	const metaDown = isMetaDown(playerInput);
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
-	const snapshot = readEditorPointerSnapshot(surface, playerInput);
+	const snapshot = readEditorPointerSnapshot(display, playerInput);
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}

@@ -1,5 +1,5 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import type { EditorDocumentContext } from '../../../editor/editing/document_state';
 import * as constants from '../../../common/constants';
@@ -15,7 +15,7 @@ import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { Clipboard } from '../../../common/clipboard';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
@@ -30,7 +30,7 @@ export function handleCodeAreaPointerInput(
 	pointerSecondaryJustPressed: boolean,
 	playerInput: PlayerInput,
 	now: number,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 ): void {
 	const bounds = getCodeAreaBounds();
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible

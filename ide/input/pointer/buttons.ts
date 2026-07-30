@@ -1,4 +1,4 @@
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../hosts/common/input/player';
 import { editorPointerState } from './state';
 
 export const POINTER_PRIMARY_JUST_PRESSED = 1;

@@ -1,4 +1,4 @@
-import type { PlayerInput } from '../../../machine/ts/input/player';
+import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/player';
 
 export function isKeyJustPressed(code: string, playerInput: PlayerInput): boolean {
 	const keyboard = playerInput.inputHandlers.keyboard;
@@ -7,8 +7,7 @@ export function isKeyJustPressed(code: string, playerInput: PlayerInput): boolea
 }
 
 export function shouldRepeatKeyFromPlayer(code: string, playerInput: PlayerInput): boolean {
-	const state = playerInput.getButtonRepeatState(code, 'keyboard');
-	return state.justpressed || state.repeatpressed;
+	return playerInput.buttonRepeatEdge(code, 'keyboard');
 }
 
 export function consumeIdeKey(code: string, playerInput: PlayerInput): void {
@@ -16,21 +15,17 @@ export function consumeIdeKey(code: string, playerInput: PlayerInput): void {
 }
 
 export function isCtrlDown(playerInput: PlayerInput): boolean {
-	const mods = playerInput.getModifiersState();
-	return mods.ctrl;
+	return (playerInput.getModifiers() & KeyModifier.ctrl) !== 0;
 }
 
 export function isShiftDown(playerInput: PlayerInput): boolean {
-	const mods = playerInput.getModifiersState();
-	return mods.shift;
+	return (playerInput.getModifiers() & KeyModifier.shift) !== 0;
 }
 
 export function isAltDown(playerInput: PlayerInput): boolean {
-	const mods = playerInput.getModifiersState();
-	return mods.alt;
+	return (playerInput.getModifiers() & KeyModifier.alt) !== 0;
 }
 
 export function isMetaDown(playerInput: PlayerInput): boolean {
-	const mods = playerInput.getModifiersState();
-	return mods.meta;
+	return (playerInput.getModifiers() & KeyModifier.meta) !== 0;
 }

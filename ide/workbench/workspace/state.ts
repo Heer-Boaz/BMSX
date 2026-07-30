@@ -1,7 +1,4 @@
-import type {
-	SubscriptionHandle,
-	TimerHandle,
-} from '../../../machine/ts/platform/platform';
+import type { TimerHandle } from '../../../hosts/common/clock';
 import type { WorkspaceRecord } from '../../workspace/records';
 import {
 	WorkspaceAutosaveChange,
@@ -20,7 +17,6 @@ type WorkspaceState = {
 	remotePayload: WorkspaceAutosavePayload | null;
 	remoteDirtyRecords: ReadonlyMap<string, WorkspaceRecord> | null;
 	pendingChanges: WorkspaceAutosaveChange;
-	disposeExitListener: SubscriptionHandle | null;
 };
 
 export const workspaceDirtyRecords = new Map<string, WorkspaceRecord>();
@@ -37,5 +33,4 @@ export const workspaceState: WorkspaceState = {
 	remotePayload: null,
 	remoteDirtyRecords: null,
 	pendingChanges: WorkspaceAutosaveChange.None,
-	disposeExitListener: null,
 };

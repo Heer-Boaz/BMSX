@@ -1,4 +1,5 @@
-import type { HostClock, HttpResponse, StorageService } from '../../machine/ts/platform/platform';
+import type { HostClock } from '../../hosts/common/clock';
+import type { KeyValueStorage } from './key_value_storage';
 import { joinWorkspacePaths } from './path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
@@ -19,7 +20,7 @@ export const workspaceRecordState = {
 
 let lastWorkspaceRecordTimestamp = 0;
 type PendingRemoteWorkspaceRecord = {
-	storage: StorageService;
+	storage: KeyValueStorage;
 	projectRootPath: string;
 	record: WorkspaceRecord;
 };
@@ -43,7 +44,7 @@ export function createWorkspaceRecord(clock: HostClock, contents: string): Works
 }
 
 export function readLocalWorkspaceRecord(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 ): WorkspaceRecord | null {
@@ -59,7 +60,7 @@ export function readLocalWorkspaceRecord(
 }
 
 export function writeLocalWorkspaceRecord(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 	record: WorkspaceRecord,
@@ -71,7 +72,7 @@ export function writeLocalWorkspaceRecord(
 }
 
 export function deleteLocalWorkspaceRecord(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 ): void {
@@ -79,7 +80,7 @@ export function deleteLocalWorkspaceRecord(
 }
 
 export async function writeWorkspaceRecord(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 	record: WorkspaceRecord,
@@ -111,7 +112,7 @@ export function selectNewestWorkspaceRecord(
 }
 
 export async function readWorkspaceRecord(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 ): Promise<WorkspaceRecord | null> {
@@ -144,7 +145,7 @@ export async function readWorkspaceRecord(
 }
 
 export async function readWorkspaceRecordVersion(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	projectRootPath: string,
 	relativePath: string,
 	updatedAt: number,
@@ -221,7 +222,7 @@ export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void>
 }
 
 export async function openWorkspaceRecords(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	projectRootPath: string,
 ): Promise<void> {
@@ -327,7 +328,7 @@ export function workspaceRecordsEqual(
 async function workspaceResponseError(
 	operation: string,
 	relativePath: string,
-	response: HttpResponse,
+	response: Response,
 ): Promise<string> {
 	const detail = await response.text();
 	return `[WorkspaceStorage] Failed to ${operation} file '${relativePath}': ${detail}`;

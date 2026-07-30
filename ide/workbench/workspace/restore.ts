@@ -20,10 +20,10 @@ import {
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
-import type { StorageService } from '../../../machine/ts/platform/platform';
+import type { KeyValueStorage } from '../../workspace/key_value_storage';
 
 export async function applyWorkspaceAutosavePayload(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeDebuggerState,
@@ -38,7 +38,7 @@ export async function applyWorkspaceAutosavePayload(
 }
 
 async function openDirtyFileTabs(
-	storage: StorageService,
+	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],

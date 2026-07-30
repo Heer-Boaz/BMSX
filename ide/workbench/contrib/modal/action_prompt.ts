@@ -3,7 +3,7 @@ import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';

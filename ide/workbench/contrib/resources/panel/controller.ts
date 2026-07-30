@@ -41,7 +41,7 @@ import {
 	refreshResourcePanelResourceState,
 } from './refresh';
 import { handleResourcePanelKeyboardInput } from './keyboard';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';

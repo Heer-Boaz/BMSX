@@ -1,7 +1,7 @@
 import { insertText } from '../../../../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../../../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
 export function handleEditorEditingKeys(playerInput: PlayerInput): void {
 	const ctrlDown = isCtrlDown(playerInput);

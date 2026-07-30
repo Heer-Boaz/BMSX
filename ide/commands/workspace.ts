@@ -4,13 +4,10 @@ import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
-import type {
-	HostClock,
-	LogOutput,
-	MicrotaskQueue,
-	StorageService,
-} from '../../machine/ts/platform/platform';
+import type { HostClock } from '../../hosts/common/clock';
+import type { LogOutput } from '../../hosts/common/log';
+import type { MicrotaskQueue } from '../common/microtask_queue';
+import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import { editorDocumentState } from '../editor/editing/document_state';
 import type { CartEditor } from '../cart_editor';
@@ -40,10 +37,9 @@ export function executeEditorWorkspaceCommand(
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
-	storage: StorageService,
+	storage: KeyValueStorage,
 	clock: HostClock,
 	logOutput: LogOutput,
 	command: EditorWorkspaceCommandId,
@@ -75,7 +71,6 @@ export function executeEditorWorkspaceCommand(
 				luaGate,
 				overlayRenderer,
 				runtime,
-				input,
 				audioOutput,
 				microtasks,
 				storage,
@@ -93,7 +88,6 @@ export function executeEditorWorkspaceCommand(
 				luaGate,
 				overlayRenderer,
 				runtime,
-				input,
 				audioOutput,
 				microtasks,
 				storage,

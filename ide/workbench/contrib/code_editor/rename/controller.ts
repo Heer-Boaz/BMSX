@@ -13,8 +13,8 @@ import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../../common/clipboard';
 
 export type RenameStartOptions = ReferenceLookupOptions;
 
@@ -78,7 +78,7 @@ export class RenameController {
 
 	public handleInput(
 		playerInput: PlayerInput,
-		clipboard: ClipboardService,
+		clipboard: Clipboard,
 		crossFileRename: CrossFileRenameManager,
 	): void {
 		if (!this.active) {
@@ -143,7 +143,7 @@ export class RenameController {
 		this.close();
 	}
 
-	public applyFieldEditing(playerInput: PlayerInput, clipboard: ClipboardService): void {
+	public applyFieldEditing(playerInput: PlayerInput, clipboard: Clipboard): void {
 		applyInlineFieldEditing(playerInput, clipboard, this.field, this.inlineInputOptions);
 	}
 

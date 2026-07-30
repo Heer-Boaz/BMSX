@@ -1,5 +1,5 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import type { HostClock, TimerHandle } from '../../../../../machine/ts/platform/platform';
+import type { HostClock, TimerHandle } from '../../../../../hosts/common/clock';
 import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './analysis';
 import type { EditorDiagnostic } from '../../../../common/models';
 import type { CodeTabContext } from '../../../ui/code_tab/model';

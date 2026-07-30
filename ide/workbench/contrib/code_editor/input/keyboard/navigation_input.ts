@@ -2,7 +2,7 @@ import type { EditorNavigationController } from '../../../resources/navigation';
 import * as TextEditing from '../../../../../editor/editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../../../../editor/ui/view/caret/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
 type NavigationHistoryCommands = {
 	goBackward(): void;

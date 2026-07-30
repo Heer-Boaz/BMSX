@@ -2087,7 +2087,7 @@ export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: L
 		}
 		let summary = `<${labelName ?? 'native'}>`;
 		const identifier = (native as { id?: unknown }).id;
-		if (identifier !== undefined && identifier !== null) {
+		if (identifier != null) {
 			summary = `${summary} id=${String(identifier)}`;
 		}
 		return { lines: [summary], valueType: labelName ?? 'native', isFunction: false };

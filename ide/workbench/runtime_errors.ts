@@ -5,7 +5,7 @@ import {
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { LogLevel, type LogOutput } from '../../machine/ts/platform/platform';
+import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';

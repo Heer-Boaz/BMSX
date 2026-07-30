@@ -12,7 +12,7 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import type { CartEditor } from '../../../cart_editor';
-import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleResourceSearchPointer(
 	microtasks: MicrotaskQueue,

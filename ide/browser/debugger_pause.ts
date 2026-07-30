@@ -1,6 +1,6 @@
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { runGate } from '../../machine/ts/common/taskgate';
-import type { Input } from '../../machine/ts/input/manager';
+import type { Input } from '../../hosts/common/input/manager';
 import { GAME_PAUSE_KEY } from '../common/constants';
 
 let debuggerControlsVisible = false;

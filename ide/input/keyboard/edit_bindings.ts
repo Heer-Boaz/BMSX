@@ -12,8 +12,8 @@ import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
-import type { PlayerInput } from '../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { Clipboard } from '../../common/clipboard';
 
 export function handleSearchNavigationKeybinding(playerInput: PlayerInput): boolean {
 	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3', playerInput)) {
@@ -84,7 +84,7 @@ function handleSaveBinding(playerInput: PlayerInput, commands: IdeCommandControl
 	return true;
 }
 
-function handleCopyBinding(playerInput: PlayerInput, clipboard: ClipboardService): boolean {
+function handleCopyBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
 	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyC', playerInput)) {
 		return false;
 	}
@@ -93,7 +93,7 @@ function handleCopyBinding(playerInput: PlayerInput, clipboard: ClipboardService
 	return true;
 }
 
-function handleCutBinding(playerInput: PlayerInput, clipboard: ClipboardService): boolean {
+function handleCutBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
 	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyX', playerInput)) {
 		return false;
 	}
@@ -172,7 +172,7 @@ export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolea
 
 export function handleEditorClipboardAndCommandBindings(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 	commands: IdeCommandController,

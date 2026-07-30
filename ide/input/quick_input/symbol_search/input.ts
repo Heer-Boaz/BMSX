@@ -10,15 +10,13 @@ import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbol
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type {
-	ClipboardService,
-	MicrotaskQueue,
-} from '../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../common/clipboard';
+import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleSymbolSearchInput(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

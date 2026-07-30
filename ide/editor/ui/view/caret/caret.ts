@@ -10,7 +10,7 @@ import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
-import type { PlayerInput } from '../../../../../machine/ts/input/player';
+import type { PlayerInput } from '../../../../../hosts/common/input/player';
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;

@@ -1,6 +1,6 @@
 // start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
 // start required-state editorDocumentState,editorViewState -- editor layout state roots are owned singletons in this module.
-import type { HostClock, TimerHandle } from '../../../../machine/ts/platform/platform';
+import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../../language/lua/syntax_highlight';

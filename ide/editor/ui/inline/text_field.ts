@@ -17,8 +17,8 @@ import {
 } from '../../editing/cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '../../editing/cursor/words';
 import { editorRuntimeState } from '../../common/runtime_state';
-import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { Clipboard } from '../../../common/clipboard';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -77,7 +77,7 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 	setSingleCursorSelectionAnchor(field, row, column);
 }
 
-const writeInlineFieldClipboard = (clipboard: ClipboardService, payload: string): void => {
+const writeInlineFieldClipboard = (clipboard: Clipboard, payload: string): void => {
 	editorDocumentState.customClipboard = payload;
 	void clipboard.writeText(payload);
 };
@@ -418,7 +418,7 @@ export function setFieldText(field: TextField, value: string, moveCursorToEnd: b
 
 export function applyInlineFieldEditing(
 	playerInput: PlayerInput,
-	clipboard: ClipboardService,
+	clipboard: Clipboard,
 	field: TextField,
 	options: InlineInputOptions,
 ): boolean {
@@ -477,7 +477,7 @@ export function applyInlineFieldEditing(
 				insertion = filtered;
 			}
 			if (insertion.length > 0) {
-				if (maxLength !== undefined) {
+				if (maxLength != null) {
 					const currentLength = totalLength(field);
 					const selectedLength = selectionLength(field);
 					const remaining = maxLength - (currentLength - selectedLength);
@@ -570,7 +570,7 @@ export function applyInlineFieldEditing(
 					consumeIdeKey(code, playerInput);
 					continue;
 				}
-				if (maxLength !== undefined) {
+				if (maxLength != null) {
 					const currentLength = totalLength(field);
 					const selectedLength = selectionLength(field);
 					const available = maxLength - (currentLength - selectedLength);

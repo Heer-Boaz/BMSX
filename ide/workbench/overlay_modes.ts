@@ -1,6 +1,5 @@
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -20,11 +19,9 @@ export function isManagedOverlayEditorActive(editor: CartEditor): boolean {
 export function updateGamePipelineExts(
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
-	input: Input,
 	audioOutput: HostAudioOutput,
 ): void {
 	const overlayActive = editor.blocksRuntimePipeline && overlayRenderer.active;
-	input.setGameplayCaptureEnabled(!overlayActive);
 	audioOutput.muteUi(overlayActive);
 }
 
@@ -33,14 +30,13 @@ export function toggleEditor(
 	sources: RuntimeSourceState,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
 ): void {
 	if (editor.isActive) {
-		deactivateEditor(editor, overlayRenderer, input, audioOutput);
+		deactivateEditor(editor, overlayRenderer, audioOutput);
 		return;
 	}
-	activateEditor(editor, sources, overlayRenderer, runtime, input, audioOutput);
+	activateEditor(editor, sources, overlayRenderer, runtime, audioOutput);
 }
 
 export function activateEditor(
@@ -48,7 +44,6 @@ export function activateEditor(
 	sources: RuntimeSourceState,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
 ): void {
 	if (!blua32ToolingImageForDomain(
@@ -60,18 +55,17 @@ export function activateEditor(
 	if (!editor.isActive) {
 		editor.activate();
 	}
-	updateGamePipelineExts(editor, overlayRenderer, input, audioOutput);
+	updateGamePipelineExts(editor, overlayRenderer, audioOutput);
 }
 
 export function deactivateEditor(
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
-	input: Input,
 	audioOutput: HostAudioOutput,
 ): void {
 	if (editor.isActive) {
 		editor.deactivate();
 	}
 	overlayRenderer.abandonFrame();
-	updateGamePipelineExts(editor, overlayRenderer, input, audioOutput);
+	updateGamePipelineExts(editor, overlayRenderer, audioOutput);
 }
