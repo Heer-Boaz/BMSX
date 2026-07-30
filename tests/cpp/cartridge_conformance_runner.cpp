@@ -1,14 +1,13 @@
+#include "common/mmap_file.h"
+#include "machine/devices/input/contracts.h"
+#include "machine/devices/system/controller.h"
+#include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state/codec.h"
+#include "rompack/image.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
-#include "machine/memory/memory.h"
-#include "machine/runtime/runtime.h"
 #include "spec/bmsx/model.h"
-#include "host.h"
-#include "support/libretro_software_product.h"
 
-#include <cstdarg>
-#include <cstdio>
-#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -17,34 +16,31 @@
 
 namespace {
 
+constexpr std::string_view transcriptPrefix = "CART-CONFORMANCE:";
 std::vector<std::string> transcript;
 
-void captureLog(enum retro_log_level, const char* format, ...) {
-	char buffer[2048];
-	va_list args;
-	va_start(args, format);
-	std::vsnprintf(buffer, sizeof(buffer), format, args);
-	va_end(args);
-	const std::string_view message(buffer);
-	constexpr std::string_view prefix = "CART-CONFORMANCE:";
-	if (message.starts_with(prefix)) {
-		transcript.emplace_back(message.substr(prefix.size()));
+class IdleInput final : public bmsx::InputControllerInputSource {
+public:
+	void sampleInputControllerSnapshot(
+		bmsx::InputControllerSnapshot& snapshot
+	) override {
+		snapshot = bmsx::createInputControllerSnapshot();
 	}
-}
 
-void discardInputPoll() {
-}
+	auto supervisorRequestLineHigh() const -> bool override {
+		return false;
+	}
 
-int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
-	return 0;
-}
-
-bool supervisorRequestLineLow() {
-	return false;
-}
+	void applyInputControllerVibrationEffect(
+		bmsx::i32,
+		bmsx::f64,
+		bmsx::f32
+	) override {
+	}
+};
 
 size_t transcriptCount(std::string_view entry) {
-	size_t count = 0;
+	size_t count = 0u;
 	for (const std::string& value : transcript) {
 		if (value == entry) {
 			count += 1u;
@@ -53,12 +49,34 @@ size_t transcriptCount(std::string_view entry) {
 	return count;
 }
 
-void runUntil(bmsx::LibretroHost& host, std::string_view entry, size_t count) {
-	for (bmsx::u32 frame = 0; frame < 240u; ++frame) {
+void captureSystemOutput(bmsx::Runtime& runtime) {
+	bmsx::SystemController& output = runtime.machine.systemController;
+	const bmsx::u32 byteCount = output.hostOutputAvailableByteCount();
+	std::string line;
+	for (bmsx::u32 index = 0u; index < byteCount; ++index) {
+		const char byte = static_cast<char>(output.readHostOutputByte());
+		if (byte == '\n') {
+			if (line.starts_with(transcriptPrefix)) {
+				transcript.emplace_back(line.substr(transcriptPrefix.size()));
+			}
+			line.clear();
+		} else {
+			line.push_back(byte);
+		}
+	}
+}
+
+void runUntil(
+	bmsx::Runtime& runtime,
+	std::string_view entry,
+	size_t count
+) {
+	for (bmsx::u32 frame = 0u; frame < 240u; ++frame) {
 		if (transcriptCount(entry) >= count) {
 			return;
 		}
-		host.runFrame();
+		runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs);
+		captureSystemOutput(runtime);
 	}
 	throw std::runtime_error("Guest conformance transcript did not complete.");
 }
@@ -71,39 +89,75 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 
-	bmsx::test::LibretroSoftwareProduct product(
-		supervisorRequestLineLow,
-		nullptr,
-		captureLog,
-		std::filesystem::path(argv[1]).parent_path().string());
-	bmsx::LibretroHost& host = product.host;
-	product.input.setInputPollCallback(discardInputPoll);
-	product.input.setInputStateCallback(discardInputState);
-	if (!host.loadCartridgeSlotsFromPaths({ argv[2], argv[3] })) {
-		throw std::runtime_error("Cartridge media did not load.");
+	bmsx::MmapFile systemFile;
+	bmsx::MmapFile dataCartFile;
+	bmsx::MmapFile bootableCartFile;
+	if (!systemFile.open(argv[1])
+		|| !dataCartFile.open(argv[2])
+		|| !bootableCartFile.open(argv[3])) {
+		throw std::runtime_error("Cartridge conformance media did not map.");
 	}
+	const bmsx::RomImage systemImage = bmsx::parseRomImage(
+		systemFile.data(),
+		systemFile.size(),
+		bmsx::RomImageDomain::System);
+	const bmsx::RomImage dataCartImage = bmsx::parseRomImage(
+		dataCartFile.data(),
+		dataCartFile.size(),
+		bmsx::RomImageDomain::Cartridge);
+	const bmsx::RomImage bootableCartImage = bmsx::parseRomImage(
+		bootableCartFile.data(),
+		bootableCartFile.size(),
+		bmsx::RomImageDomain::Cartridge);
+	const bmsx::CartridgeSlotMediaPair cartridgeMedia{{
+		{
+			dataCartImage.bytes,
+			dataCartImage.header.cartridgeBoardWord,
+			dataCartImage.header.cartridgeRamByteCount,
+			true,
+		},
+		{
+			bootableCartImage.bytes,
+			bootableCartImage.header.cartridgeBoardWord,
+			bootableCartImage.header.cartridgeRamByteCount,
+			true,
+		},
+	}};
+	IdleInput input;
+	bmsx::Runtime runtime(
+		bmsx::RuntimeOptions{
+			systemImage.bytes,
+			cartridgeMedia,
+			bmsx::PSX_MACHINE_SPEC,
+		},
+		input);
+	runtime.resetForSystemBoot();
+	runtime.boot();
+	runtime.frameScheduler.clearQueuedTime();
+	captureSystemOutput(runtime);
 
-	runUntil(host, "READY", 1u);
-	std::vector<bmsx::u8> saved(host.getStateSize());
-	if (!host.saveState(saved.data(), saved.size())) {
-		throw std::runtime_error("Save-state capture failed.");
-	}
+	runUntil(runtime, "READY", 1u);
+	const std::vector<bmsx::u8> saved = bmsx::encodeRuntimeSaveState(
+		bmsx::captureRuntimeSaveState(runtime));
 	const bmsx::u32 mailboxControl =
 		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET;
-	host.loadedRuntime().machine.memory.writeMappedU32LE(
-		mailboxControl,
-		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil(host, "STEP1", 1u);
-	if (!host.loadState(saved.data(), saved.size())) {
-		throw std::runtime_error("Save-state restore failed.");
+	for (size_t occurrence = 1u; occurrence <= 2u; ++occurrence) {
+		if (occurrence == 2u) {
+			bmsx::applyRuntimeSaveState(
+				runtime,
+				bmsx::decodeRuntimeSaveState(
+					saved,
+					runtime.machine.memory.ramByteCount(),
+					runtime.machine.gxGpu.readVramSnapshotBytes().size()));
+		}
+		runtime.machine.memory.writeMappedU32LE(
+			mailboxControl,
+			bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
+		runUntil(runtime, "STEP1", occurrence);
 	}
-	host.loadedRuntime().machine.memory.writeMappedU32LE(
-		mailboxControl,
-		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil(host, "STEP1", 2u);
 
 	std::cout << "BMSX-CARTRIDGE-CONFORMANCE=";
-	for (size_t index = 0; index < transcript.size(); ++index) {
+	for (size_t index = 0u; index < transcript.size(); ++index) {
 		if (index != 0u) {
 			std::cout << '|';
 		}

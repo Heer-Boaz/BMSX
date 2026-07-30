@@ -13,18 +13,25 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
-#include <cctype>
 #include <array>
 #include <memory>
+#include <optional>
+#include <span>
 
 #include "audio_output.h"
 #include "bmsx_libretro.h"
-#include "host.h"
+#include "content.h"
+#include "host_frame.h"
+#include "host_overlay_menu.h"
 #include "input.h"
+#include "libretro_state.h"
+#include "presentation_state.h"
+#include "runtime_error.h"
 #include "video_output.h"
 #include "spec/bmsx/model.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
+#include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
 #include "render/shared/bmsx_font.h"
 #include "render/video_presenter.h"
@@ -81,36 +88,24 @@ static bmsx::BackendType g_active_backend = bmsx::BackendType::Software;
 static std::string g_backend_error;
 static std::string g_system_dir;
 
-static std::string sanitizeSystemDir(std::string_view path) {
-	size_t start = 0;
-	size_t end = path.size();
-	while (start < end && std::isspace(static_cast<unsigned char>(path[start]))) {
-		++start;
-	}
-	while (end > start && std::isspace(static_cast<unsigned char>(path[end - 1]))) {
-		--end;
-	}
-	if (end - start >= 2) {
-		const char first = path[start];
-		const char last = path[end - 1];
-		if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
-			++start;
-			--end;
-		}
-	}
-	return std::string(path.substr(start, end - start));
-}
-
 static std::unique_ptr<bmsx::LibretroInput> g_input;
 static std::unique_ptr<bmsx::LibretroAudioOutput> g_audio_output;
 static std::unique_ptr<bmsx::LibretroVideoOutput> g_video_output;
 static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
-static std::unique_ptr<bmsx::LibretroHost> g_host;
+static bmsx::LibretroContentMedia g_content_media;
+static std::unique_ptr<bmsx::Runtime> g_runtime;
+static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
+static std::optional<bmsx::RenderPresentationState> g_presentation;
+static double g_frame_time_sec =
+	static_cast<double>(bmsx::HZ_SCALE)
+	/ static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
+static double g_total_time = 0.0;
+static int64_t g_runtime_ufps_scaled = 0;
 
 static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
-	return g_host->activeExecutionDomainId();
+	return g_runtime->machine.cpu.activeCartridgeSlot();
 }
 
 static retro_system_av_info g_cached_av_info{};
@@ -166,7 +161,7 @@ static void sync_current_av_info(int64_t ufps_scaled) {
 	g_cached_av_info.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = ufps_scaled;
-	g_host->setFrameTime(1.0 / g_cached_av_info.timing.fps);
+	g_frame_time_sec = 1.0 / g_cached_av_info.timing.fps;
 	g_video_presenter->setRenderTargetSize(
 		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_width),
 		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_height));
@@ -1084,6 +1079,122 @@ void retro_set_input_state(retro_input_state_t cb) {
 	}
 }
 
+static void sync_runtime_timing(bmsx::Runtime& runtime) {
+	if (runtime.timing.ufpsScaled == g_runtime_ufps_scaled) {
+		return;
+	}
+	g_runtime_ufps_scaled = runtime.timing.ufpsScaled;
+	g_input->setFrameDurationMs(runtime.timing.frameDurationMs);
+	g_audio_output->setEmulationFrameTimeSec(
+		static_cast<bmsx::f64>(bmsx::HZ_SCALE)
+		/ static_cast<bmsx::f64>(g_runtime_ufps_scaled));
+}
+
+static void activate_runtime(bmsx::Runtime& runtime) {
+	g_audio_output->resetPlayback();
+	g_presentation->reset(*g_video_presenter, runtime);
+	sync_runtime_timing(runtime);
+	runtime.frameScheduler.clearQueuedTime();
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+}
+
+static void start_runtime() {
+	g_runtime = std::make_unique<bmsx::Runtime>(
+		bmsx::RuntimeOptions{
+			g_content_media.systemRomImage.bytes,
+			g_content_media.makeCartridgeMedia(),
+			bmsx::PSX_MACHINE_SPEC,
+		},
+		*g_input);
+	g_runtime->resetForSystemBoot();
+	g_runtime->boot();
+	activate_runtime(*g_runtime);
+}
+
+static void unload_content() {
+	const bool wasLoaded = g_runtime != nullptr;
+	if (wasLoaded) {
+		g_input->reset();
+		g_overlay_menu->resetInputState();
+		g_presentation->clearPresentation();
+	}
+	g_runtime.reset();
+	g_runtime_ufps_scaled = 0;
+	g_content_media.releaseCartridgeSlots();
+	if (wasLoaded) {
+		logging.log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
+	}
+}
+
+static bool load_default_content() {
+	unload_content();
+	if (!g_content_media.loadSystemRom(g_system_dir, logging)) {
+		return false;
+	}
+	start_runtime();
+	logging.log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
+	return true;
+}
+
+static bool load_content_from_paths(
+	const std::array<std::string, bmsx::CARTRIDGE_SLOT_COUNT>& paths
+) {
+	unload_content();
+	if (!g_content_media.loadSystemRom(g_system_dir, logging)) {
+		return false;
+	}
+	if (!g_content_media.loadCartridgeSlotsFromPaths(paths, logging)) {
+		return false;
+	}
+	start_runtime();
+	return true;
+}
+
+static void reset_hardware_context() {
+#if BMSX_ENABLE_GLES2
+	auto& presenter = *g_video_presenter;
+	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
+	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
+	backend.resizePresentationTarget(
+		static_cast<bmsx::i32>(presenter.viewportSize.x),
+		static_cast<bmsx::i32>(presenter.viewportSize.y));
+	backend.onContextReset();
+	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
+	presenter.installRenderPipeline(
+		std::make_unique<bmsx::RenderPassLibrary>(&backend, &presenter));
+	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
+	presenter.initializeDefaultTextures();
+	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
+#else
+	throw BMSX_RUNTIME_ERROR("OpenGLES2 backend disabled at compile time.");
+#endif
+}
+
+static void destroy_hardware_context() {
+#if BMSX_ENABLE_GLES2
+	auto& presenter = *g_video_presenter;
+	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
+	backend.captureGxGpuVramSnapshot(g_runtime->machine.gxGpu);
+	presenter.releaseRenderPipeline();
+	presenter.clearTextures();
+	backend.onContextDestroy();
+#else
+	throw BMSX_RUNTIME_ERROR("OpenGLES2 backend disabled at compile time.");
+#endif
+}
+
+static void lose_hardware_context() {
+#if BMSX_ENABLE_GLES2
+	auto& presenter = *g_video_presenter;
+	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
+	backend.onContextLost();
+	presenter.releaseRenderPipeline();
+	presenter.clearTextures();
+#else
+	throw BMSX_RUNTIME_ERROR("OpenGLES2 backend disabled at compile time.");
+#endif
+}
+
 /* ============================================================================
  * Core lifecycle
  * ============================================================================
@@ -1106,21 +1217,19 @@ void retro_init(void) {
 	g_backend_preference = preference;
 	g_active_backend = desired_backend;
 	request_hw_context_for_backend(desired_backend);
+#if BMSX_ENABLE_GLES2
 	const bool profile_gx_uploads =
 		offerGxUploadProfileInterface(environ_cb);
+#endif
 	set_core_options(BMSX_ENABLE_GLES2);
 
 	const char* system_dir = nullptr;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
-	g_system_dir = sanitizeSystemDir(system_dir);
-	if (!g_system_dir.empty()) {
+		g_system_dir = system_dir;
 		logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
 	} else {
+		g_system_dir.clear();
 		logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
-	}
-	} else {
-	g_system_dir.clear();
-	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
 	}
 	if (!isHardwareBackendActive()) {
 		const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
@@ -1207,14 +1316,10 @@ void retro_init(void) {
 	g_video_presenter->setDeviceQuantizeMode(g_device_quantize_mode);
 	g_video_presenter->showResourceUsageGizmo = g_resource_usage_gizmo_enabled;
 
-	g_host = std::make_unique<bmsx::LibretroHost>(
-		bmsx::PSX_MACHINE_SPEC,
-		*g_input,
-		*g_audio_output,
-		*g_video_presenter,
-		environ_cb,
-		logging.log,
-		g_system_dir);
+	g_overlay_menu.emplace();
+	g_presentation.emplace();
+	g_total_time = 0.0;
+	g_runtime_ufps_scaled = 0;
 	if (isHardwareBackendActive()) {
 		try {
 #if BMSX_ENABLE_GLES2
@@ -1243,7 +1348,10 @@ void retro_init(void) {
 void retro_deinit(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_deinit\n");
 
-	g_host.reset();
+	unload_content();
+	g_content_media.releaseSystemRom();
+	g_presentation.reset();
+	g_overlay_menu.reset();
 	g_video_presenter.reset();
 	g_default_font.reset();
 	g_video_output.reset();
@@ -1306,7 +1414,7 @@ static bool begin_content_load() {
 }
 
 static void complete_content_load() {
-	sync_current_av_info(g_host->refreshUfpsScaled());
+	sync_current_av_info(g_runtime->timing.ufpsScaled);
 	retro_keyboard_callback keyboardCallback = { keyboard_event };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
 }
@@ -1319,23 +1427,19 @@ bool retro_load_game(const struct retro_game_info* game) {
 	if (!game) {
 		logging.log(RETRO_LOG_INFO,
 					"[BMSX] No game provided, loading empty cart\n");
-		loaded_ok = g_host->loadEmptyCart();
+		loaded_ok = load_default_content();
+	} else if (game->path) {
+		logging.log(
+			RETRO_LOG_INFO,
+			"[BMSX] Loading game: %s\n",
+			game->path);
+		loaded_ok = load_content_from_paths(
+			{ std::string(game->path), std::string{} });
 	} else {
-		logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
-					game->path ? game->path : "(memory)");
-
-		if (game->data && game->size > 0) {
-			if (!g_host->loadSystemRom(game->path ? game->path : "")) {
-				return false;
-			}
-			loaded_ok = g_host->loadRom(static_cast<const uint8_t*>(game->data),
-											game->size);
-		} else if (game->path) {
-			loaded_ok = g_host->loadRomFromPath(game->path);
-		} else {
-			logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
-			return false;
-		}
+		logging.log(
+			RETRO_LOG_ERROR,
+			"[BMSX] Full-path content is required\n");
+		return false;
 	}
 	if (!loaded_ok) {
 		return false;
@@ -1363,7 +1467,7 @@ bool retro_load_game_special(unsigned game_type,
 		info[0].path,
 		info[1].path ? info[1].path : "",
 	};
-	if (!g_host->loadCartridgeSlotsFromPaths(paths)) {
+	if (!load_content_from_paths(paths)) {
 		return false;
 	}
 	complete_content_load();
@@ -1372,7 +1476,7 @@ bool retro_load_game_special(unsigned game_type,
 
 void retro_unload_game(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
-	g_host->unloadRom();
+	unload_content();
 	sync_current_av_info(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
 }
 
@@ -1383,7 +1487,16 @@ void retro_unload_game(void) {
 
 void retro_reset(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
-	g_host->reset();
+	if (g_runtime) {
+		g_runtime->rebootSystem();
+		activate_runtime(*g_runtime);
+	} else if (!load_default_content()) {
+		logging.log(
+			RETRO_LOG_ERROR,
+			"[BMSX] Reset failed: empty cart boot failed\n");
+		return;
+	}
+	logging.log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
 void retro_run(void) {
@@ -1395,24 +1508,29 @@ void retro_run(void) {
 		case HardwareContextLifecycle::Software:
 		case HardwareContextLifecycle::Ready:
 			break;
-		case HardwareContextLifecycle::ResetPending:
+		case HardwareContextLifecycle::ResetPending: {
+			bool contextResetFailed = false;
 			try {
-				g_host->onContextReset();
+				reset_hardware_context();
 				g_hw_context_lifecycle = HardwareContextLifecycle::Ready;
 			} catch (const std::exception& err) {
 				logging.log(RETRO_LOG_ERROR,
 							"[BMSX] %s context reset exception: %s\n",
 							backend_label(g_active_backend),
 							err.what());
-				g_host->onContextLost();
+				lose_hardware_context();
 				const std::string reason =
 					std::string("[BMSX] ") + backend_label(g_active_backend) +
 					" context reset failed: " + err.what();
 				fail_hardware_backend(g_active_backend, reason.c_str());
 				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+				contextResetFailed = true;
+			}
+			if (contextResetFailed) {
 				return;
 			}
 			break;
+		}
 		case HardwareContextLifecycle::AwaitingReset: {
 			const std::string reason =
 				std::string("[BMSX] ") + backend_label(g_active_backend) +
@@ -1498,8 +1616,55 @@ void retro_run(void) {
 		}
 	}
 	const bool hardware_frame = isHardwareBackendActive();
-	const bool video_frame_presented = g_host->runFrame();
-	const int64_t runtime_ufps_scaled = g_host->refreshUfpsScaled();
+	const bmsx::f64 deltaTime = g_frame_time_sec;
+	g_input->poll(
+		static_cast<bmsx::i32>(g_video_presenter->viewportSize.x),
+		static_cast<bmsx::i32>(g_video_presenter->viewportSize.y),
+		(g_total_time + deltaTime) * 1000.0);
+	bmsx::Runtime& runtime = *g_runtime;
+	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;
+	try {
+		frameResult = bmsx::runLibretroFrame(
+			runtime,
+			*g_input,
+			*g_overlay_menu,
+			*g_presentation,
+			*g_video_presenter,
+			g_total_time,
+			deltaTime);
+		switch (frameResult) {
+			case bmsx::LibretroFrameResult::RebootRequested:
+				runtime.rebootSystem();
+				activate_runtime(runtime);
+				break;
+			case bmsx::LibretroFrameResult::ExitRequested:
+				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+				break;
+			case bmsx::LibretroFrameResult::NotPresented:
+			case bmsx::LibretroFrameResult::Presented:
+				break;
+		}
+	} catch (const std::exception& error) {
+		bmsx::reportLibretroRuntimeError(
+			runtime,
+			g_content_media.systemRomImage,
+			g_content_media.cartridgeRomImages,
+			error.what(),
+			logging);
+	} catch (...) {
+		bmsx::reportLibretroRuntimeError(
+			runtime,
+			g_content_media.systemRomImage,
+			g_content_media.cartridgeRomImages,
+			"Unhandled host frame exception.",
+			logging);
+	}
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	sync_runtime_timing(runtime);
+	g_audio_output->collectFrame(runtime.machine.audioController);
+	const bool video_frame_presented =
+		frameResult == bmsx::LibretroFrameResult::Presented;
+	const int64_t runtime_ufps_scaled = runtime.timing.ufpsScaled;
 	const bool timing_changed = runtime_ufps_scaled != g_current_ufps_scaled;
 	if (timing_changed) {
 		sync_current_av_info(runtime_ufps_scaled);
@@ -1539,13 +1704,51 @@ void retro_run(void) {
  * ============================================================================
  */
 
-size_t retro_serialize_size(void) { return g_host->getStateSize(); }
+size_t retro_serialize_size(void) {
+	return g_runtime ? bmsx::libretroStateSize(*g_runtime) : 0u;
+}
 
 bool retro_serialize(void* data, size_t size) {
-	return g_host->saveState(data, size);
+	if (!g_runtime) {
+		return false;
+	}
+	bool serialized = false;
+	try {
+		g_video_presenter->backend().captureGxGpuVramSnapshot(
+			g_runtime->machine.gxGpu);
+		serialized = bmsx::serializeLibretroState(
+			*g_runtime,
+			std::span<bmsx::u8>(static_cast<bmsx::u8*>(data), size));
+	} catch (const std::exception& error) {
+		logging.log(
+			RETRO_LOG_ERROR,
+			"[BMSX] Save state failed: %s\n",
+			error.what());
+	}
+	return serialized;
 }
+
 bool retro_unserialize(const void* data, size_t size) {
-	return g_host->loadState(data, size);
+	if (!g_runtime) {
+		return false;
+	}
+	bool restored = false;
+	try {
+		restored = bmsx::unserializeLibretroState(
+			*g_runtime,
+			std::span<const bmsx::u8>(
+				static_cast<const bmsx::u8*>(data),
+				size));
+		if (restored) {
+			g_audio_output->resetPlayback();
+		}
+	} catch (const std::exception& error) {
+		logging.log(
+			RETRO_LOG_ERROR,
+			"[BMSX] Load state failed: %s\n",
+			error.what());
+	}
+	return restored;
 }
 
 /* ============================================================================
@@ -1553,13 +1756,9 @@ bool retro_unserialize(const void* data, size_t size) {
  * ============================================================================
  */
 
-// disable-next-line single_line_method_pattern -- libretro cheat reset is a public C ABI callback delegating to host-owned cheat state.
-void retro_cheat_reset(void) { g_host->resetCheats(); }
+void retro_cheat_reset(void) {}
 
-// disable-next-line single_line_method_pattern -- libretro cheat set is a public C ABI callback delegating to host-owned cheat state.
-void retro_cheat_set(unsigned index, bool enabled, const char* code) {
-	g_host->setCheat(index, enabled, code);
-}
+void retro_cheat_set(unsigned, bool, const char*) {}
 
 /* ============================================================================
  * Memory access
@@ -1576,7 +1775,10 @@ void* retro_get_memory_data(unsigned id) {
 	case RETRO_MEMORY_SAVE_RAM:
 		return nullptr;
 	case RETRO_MEMORY_SYSTEM_RAM:
-		return g_host->getSystemRAM();
+		if (!g_runtime) {
+			return nullptr;
+		}
+		return g_runtime->machine.memory.ramData();
 	default:
 		return nullptr;
 	}
@@ -1587,7 +1789,9 @@ size_t retro_get_memory_size(unsigned id) {
 	case RETRO_MEMORY_SAVE_RAM:
 		return 0;
 	case RETRO_MEMORY_SYSTEM_RAM:
-		return g_host->getSystemRAMSize();
+		return g_runtime
+			? g_runtime->machine.memory.ramByteCount()
+			: 0u;
 	default:
 		return 0;
 	}
@@ -1607,7 +1811,7 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 }
 
 static void hw_context_reset() {
-	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_host=%p\n", g_host.get());
+	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called\n");
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::AwaitingReset:
 		case HardwareContextLifecycle::ResetPending:
@@ -1616,7 +1820,7 @@ static void hw_context_reset() {
 		case HardwareContextLifecycle::Ready: {
 			// Libretro omits context_destroy only when the old context is already dead.
 			// Retired GX commands cannot reconstruct newer GPU-only VRAM from the last snapshot.
-			g_host->onContextLost();
+			lose_hardware_context();
 			const std::string reason =
 				std::string("[BMSX] ") + backend_label(g_active_backend) +
 				" context was lost before guest VRAM could be checkpointed.";
@@ -1634,7 +1838,7 @@ static void hw_context_destroy() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::Ready:
-			g_host->onContextDestroy();
+			destroy_hardware_context();
 			g_hw_context_lifecycle = HardwareContextLifecycle::AwaitingReset;
 			return;
 		case HardwareContextLifecycle::ResetPending:

@@ -417,13 +417,14 @@ endif()
 
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
-set(BMSX_LIBRETRO_HOST_SOURCES
+set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/audio_output.cpp
+	${BMSX_LIBRETRO_DIR}/content.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/input.cpp
+	${BMSX_LIBRETRO_DIR}/libretro_state.cpp
 	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
-	${BMSX_LIBRETRO_DIR}/host.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
@@ -431,7 +432,7 @@ set(BMSX_LIBRETRO_HOST_SOURCES
 
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
-		${BMSX_LIBRETRO_HOST_SOURCES}
+		${BMSX_LIBRETRO_CORE_SOURCES}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 	)
 
@@ -682,9 +683,10 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
-		${BMSX_LIBRETRO_HOST_SOURCES}
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
 	)
-	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
@@ -695,7 +697,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
-		${BMSX_LIBRETRO_HOST_SOURCES}
+		${BMSX_LIBRETRO_CORE_SOURCES}
 	)
 	target_link_libraries(bmsx_libretro_environment_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_environment_tests PRIVATE
@@ -705,12 +707,9 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cartridge_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
-		${BMSX_LIBRETRO_HOST_SOURCES}
+		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp
 	)
-	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
-	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
-		${BMSX_LIBRETRO_DIR}
-	)
+	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_core bmsx_rom_image)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

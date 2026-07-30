@@ -1,4 +1,4 @@
-#include "host.h"
+#include "runtime_error.h"
 
 #include "machine/devices/system/controller.h"
 #include "machine/runtime/runtime.h"
@@ -9,10 +9,14 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <string>
 
 namespace bmsx {
 
-void LibretroHost::flushSystemOutput(Runtime& runtime) {
+void flushLibretroSystemOutput(
+	Runtime& runtime,
+	const retro_log_callback& logging
+) {
 	SystemController& output = runtime.machine.systemController;
 	const u32 byteCount = output.hostOutputAvailableByteCount();
 	if (byteCount == 0u) {
@@ -25,32 +29,40 @@ void LibretroHost::flushSystemOutput(Runtime& runtime) {
 	size_t lineStart = 0u;
 	for (u32 index = 0u; index < byteCount; ++index) {
 		if (bytes[index] == '\n') {
-			log(RETRO_LOG_INFO, std::string_view(
+			const std::string_view line(
 				bytes.data() + lineStart,
-				static_cast<size_t>(index) - lineStart
-			));
+				static_cast<size_t>(index) - lineStart);
+			logging.log(
+				RETRO_LOG_INFO,
+				"%.*s",
+				static_cast<int>(line.size()),
+				line.data());
 			lineStart = static_cast<size_t>(index) + 1u;
 		}
 	}
 }
 
-void LibretroHost::reportRuntimeError(
+void reportLibretroRuntimeError(
 	Runtime& runtime,
-	std::string_view message
+	const RomImage& systemRom,
+	const std::array<RomImage, CARTRIDGE_SLOT_COUNT>& cartridgeRoms,
+	std::string_view message,
+	const retro_log_callback& logging
 ) {
 	runtime.suspendExecution();
 	std::ostringstream runtimeError;
 	runtimeError << "Runtime error: " << message;
-	log(RETRO_LOG_ERROR, runtimeError.str());
+	const std::string runtimeErrorText = runtimeError.str();
+	logging.log(RETRO_LOG_ERROR, "%s", runtimeErrorText.c_str());
 
 	CPU& cpu = runtime.machine.cpu;
 	Blua32ToolingMedia toolingMedia;
 	toolingMedia.system = loadBlua32ToolingImage(
-		m_system_rom_image,
+		systemRom,
 		SYSTEM_ROM_BASE
 	);
 	for (u32 slot = 0u; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
-		const RomImage& image = m_cartridge_rom_images[slot];
+		const RomImage& image = cartridgeRoms[slot];
 		if (!image.bytes.empty()) {
 			toolingMedia.cartridgeSlots[slot] =
 				loadBlua32ToolingImage(image, CART_ROM_BASE);
@@ -62,11 +74,13 @@ void LibretroHost::reportRuntimeError(
 	const Blua32ToolingImage& toolingImage =
 		*blua32ToolingImageForDomain(toolingMedia, executionDomainId);
 	const Blua32ImageLayout& image = toolingImage.layout;
-	const Blua32SymbolsImage* symbols =
-		toolingImage.symbols ? &*toolingImage.symbols : nullptr;
+	const Blua32SymbolsImage* instructionSymbols = nullptr;
+	if (toolingImage.symbols) {
+		instructionSymbols = &*toolingImage.symbols;
+	}
 	const InstructionDebugInfo instruction = describeBlua32InstructionAtPc(
 		image,
-		symbols,
+		instructionSymbols,
 		cpu.lastPc
 	);
 	int instructionFrameIndex = -1;
@@ -97,23 +111,28 @@ void LibretroHost::reportRuntimeError(
 			) << ')';
 		}
 	}
-	log(RETRO_LOG_ERROR, summary.str());
-	log(
-		RETRO_LOG_ERROR,
-		"debug: instr=" + instruction.pcText + ": " + instruction.instructionText
-	);
+	const std::string summaryText = summary.str();
+	logging.log(RETRO_LOG_ERROR, "%s", summaryText.c_str());
+	const std::string instructionText =
+		"debug: instr=" + instruction.pcText + ": " + instruction.instructionText;
+	logging.log(RETRO_LOG_ERROR, "%s", instructionText.c_str());
 	if (instruction.sourceRange) {
 		const SourceRange& range = *instruction.sourceRange;
 		std::ostringstream source;
 		source << "debug: source=" << range.path << ':'
 			<< range.start.line << ':' << range.start.column;
-		log(RETRO_LOG_ERROR, source.str());
+		const std::string sourceText = source.str();
+		logging.log(RETRO_LOG_ERROR, "%s", sourceText.c_str());
 	}
 
 	if (frameDepth == 0) {
-		const std::optional<SourceRange> range = symbols
-			? blua32SourceRangeAtPc(*symbols, image.header.textAddress, cpu.lastPc)
-			: std::nullopt;
+		std::optional<SourceRange> range;
+		if (toolingImage.symbols) {
+			range = blua32SourceRangeAtPc(
+				*toolingImage.symbols,
+				image.header.textAddress,
+				cpu.lastPc);
+		}
 		std::ostringstream frame;
 		if (range) {
 			frame << "  at <current> (" << range->path << ':'
@@ -121,7 +140,8 @@ void LibretroHost::reportRuntimeError(
 		} else {
 			frame << "  at <current> (pc=0x" << std::hex << cpu.lastPc << ')';
 		}
-		log(RETRO_LOG_ERROR, frame.str());
+		const std::string frameText = frame.str();
+		logging.log(RETRO_LOG_ERROR, "%s", frameText.c_str());
 		return;
 	}
 
@@ -130,8 +150,6 @@ void LibretroHost::reportRuntimeError(
 		const Blua32ToolingImage& frameToolingImage =
 			*blua32ToolingImageForDomain(toolingMedia, frameDomainId);
 		const Blua32ImageLayout& frameImage = frameToolingImage.layout;
-		const Blua32SymbolsImage* frameSymbols =
-			frameToolingImage.symbols ? &*frameToolingImage.symbols : nullptr;
 		const u32 functionAddress = cpu.readFrameFunctionAddress(frameIndex);
 		const u32 functionIndex =
 			blua32FunctionIndexAtAddress(frameImage, functionAddress);
@@ -144,24 +162,27 @@ void LibretroHost::reportRuntimeError(
 				? cpu.lastPc
 				: cpu.readFramePc(frameIndex);
 		std::ostringstream frame;
-		if (frameSymbols) {
-			frame << "  at " << frameSymbols->metadata.functionIds[functionIndex];
+		if (frameToolingImage.symbols) {
+			const Blua32SymbolsImage& frameSymbols = *frameToolingImage.symbols;
+			frame << "  at " << frameSymbols.metadata.functionIds[functionIndex];
 			const std::optional<SourceRange> range = blua32SourceRangeAtPc(
-				*frameSymbols,
+				frameSymbols,
 				frameImage.header.textAddress,
 				pc
 			);
 			if (range) {
 				frame << " (" << range->path << ':'
 					<< range->start.line << ':' << range->start.column << ')';
-				log(RETRO_LOG_ERROR, frame.str());
+				const std::string frameText = frame.str();
+				logging.log(RETRO_LOG_ERROR, "%s", frameText.c_str());
 				continue;
 			}
 		} else {
 			frame << "  at function@0x" << std::hex << functionAddress << std::dec;
 		}
 		frame << " (pc=0x" << std::hex << pc << ')';
-		log(RETRO_LOG_ERROR, frame.str());
+		const std::string frameText = frame.str();
+		logging.log(RETRO_LOG_ERROR, "%s", frameText.c_str());
 	}
 }
 

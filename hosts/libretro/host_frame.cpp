@@ -1,69 +1,72 @@
-#include "host.h"
+#include "host_frame.h"
 
+#include "host_overlay_menu.h"
+#include "input.h"
 #include "machine/runtime/runtime.h"
+#include "presentation_state.h"
 #include "render/video_presenter.h"
 
 namespace bmsx {
-namespace {
-constexpr f64 kMaxFrameDeltaMs = 250.0;
-}
 
-bool LibretroHost::runHostFrame(Runtime& runtime, f64 deltaTime) {
-	m_screen.recordHostFrame();
+LibretroFrameResult runLibretroFrame(
+	Runtime& runtime,
+	LibretroInput& input,
+	HostOverlayMenu& overlayMenu,
+	RenderPresentationState& presentation,
+	VideoPresenter& presenter,
+	f64& totalTime,
+	f64 deltaTime
+) {
+	presentation.recordHostFrame();
 
-	f64 hostDeltaMs = deltaTime * 1000.0;
-	if (hostDeltaMs > kMaxFrameDeltaMs) {
-		hostDeltaMs = kMaxFrameDeltaMs;
-	}
-	const f64 hostDeltaSeconds = hostDeltaMs / 1000.0;
-	m_total_time += hostDeltaSeconds;
-	m_host_fps = 1.0 / hostDeltaSeconds;
+	const f64 hostDeltaMs = deltaTime * 1000.0;
+	totalTime += deltaTime;
+	const f64 hostFps = 1.0 / deltaTime;
 
 	const HostMenuInput hostMenuInput =
-		m_host_overlay_menu.tickInput(m_input, m_video_presenter, m_total_time * 1000.0);
+		overlayMenu.tickInput(input, presenter, totalTime * 1000.0);
 	switch (hostMenuInput) {
 		case HostMenuInput::RebootCart:
-			runtime.rebootSystem();
-			activateLoadedRuntime(runtime);
-			return false;
+			return LibretroFrameResult::RebootRequested;
 		case HostMenuInput::ExitGame:
-			m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
-			return false;
+			return LibretroFrameResult::ExitRequested;
 		case HostMenuInput::Inactive:
 		case HostMenuInput::Active:
 			break;
 	}
 	const bool hostMenuActive = hostMenuInput == HostMenuInput::Active;
 
-	m_screen.clearPresentation();
-	if (runtime.isDrawPending() && !m_paused && !hostMenuActive) {
+	presentation.clearPresentation();
+	if (runtime.isDrawPending() && !hostMenuActive) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		while (runtime.machine.gxGpu.backendReadbackPending()) {
-			m_video_presenter.backend().executeGxGpuReadback(runtime.machine.gxGpu);
+			presenter.backend().executeGxGpuReadback(runtime.machine.gxGpu);
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
-		m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	} else if (runtime.isDrawPending()) {
 		runtime.frameScheduler.clearQueuedTime();
 	}
 	if (hostMenuActive) {
-		m_host_overlay_menu.queueRenderCommands(m_video_presenter);
-		m_screen.requestHeldPresentation();
-	} else if (m_host_overlay_menu.queueFrameOverlayCommands(
+		overlayMenu.queueRenderCommands(presenter);
+		presentation.requestHeldPresentation();
+	} else if (overlayMenu.queueFrameOverlayCommands(
 		runtime,
-		m_video_presenter,
-		m_host_fps
+		presenter,
+		hostFps
 	)) {
-		m_screen.requestHeldPresentation();
+		presentation.requestHeldPresentation();
 	}
-	return m_screen.render(
-		m_video_presenter,
+	return presentation.render(
+		presenter,
 		runtime,
-		m_total_time,
-		hostDeltaSeconds,
-		m_paused
-	);
+		totalTime,
+		deltaTime,
+		false
+	)
+		? LibretroFrameResult::Presented
+		: LibretroFrameResult::NotPresented;
 }
 
 } // namespace bmsx

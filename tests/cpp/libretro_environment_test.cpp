@@ -33,6 +33,7 @@ bool insideRetroRun = false;
 bool lastVideoWasNull = false;
 retro_game_geometry lastGeometry{};
 retro_system_av_info lastSystemAvInfo{};
+std::string systemDirectory;
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -83,6 +84,10 @@ bool softwareFrontendEnvironment(unsigned command, void* data) {
 	}
 	if (command == RETRO_ENVIRONMENT_GET_LOG_INTERFACE) {
 		static_cast<retro_log_callback*>(data)->log = discardLog;
+		return true;
+	}
+	if (command == RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY) {
+		*static_cast<const char**>(data) = systemDirectory.c_str();
 		return true;
 	}
 	if (command == RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO) {
@@ -146,6 +151,7 @@ int main() {
 	const std::filesystem::path testDirectory =
 		std::filesystem::temp_directory_path() / "bmsx_libretro_environment_test";
 	std::filesystem::create_directories(testDirectory);
+	systemDirectory = testDirectory.string();
 	const std::vector<bmsx::u8> system =
 		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System);
 	std::ofstream systemRom(testDirectory / "bmsx-bios.rom", std::ios::binary);
