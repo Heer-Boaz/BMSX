@@ -94,8 +94,7 @@ static std::unique_ptr<bmsx::LibretroVideoOutput> g_video_output;
 static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
-static bmsx::LibretroContentMedia g_content_media;
-static std::unique_ptr<bmsx::Runtime> g_runtime;
+static std::unique_ptr<bmsx::LibretroContent> g_content;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
 static double g_frame_time_sec =
@@ -105,7 +104,7 @@ static double g_total_time = 0.0;
 static int64_t g_runtime_ufps_scaled = 0;
 
 static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
-	return g_runtime->machine.cpu.activeCartridgeSlot();
+	return g_content->runtime.machine.cpu.activeCartridgeSlot();
 }
 
 static retro_system_av_info g_cached_av_info{};
@@ -1098,29 +1097,15 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 	bmsx::flushLibretroSystemOutput(runtime, logging);
 }
 
-static void start_runtime() {
-	g_runtime = std::make_unique<bmsx::Runtime>(
-		bmsx::RuntimeOptions{
-			g_content_media.systemRomImage.bytes,
-			g_content_media.makeCartridgeMedia(),
-			bmsx::PSX_MACHINE_SPEC,
-		},
-		*g_input);
-	g_runtime->resetForSystemBoot();
-	g_runtime->boot();
-	activate_runtime(*g_runtime);
-}
-
 static void unload_content() {
-	const bool wasLoaded = g_runtime != nullptr;
+	const bool wasLoaded = g_content != nullptr;
 	if (wasLoaded) {
 		g_input->reset();
 		g_overlay_menu->resetInputState();
 		g_presentation->clearPresentation();
 	}
-	g_runtime.reset();
+	g_content.reset();
 	g_runtime_ufps_scaled = 0;
-	g_content_media.releaseCartridgeSlots();
 	if (wasLoaded) {
 		logging.log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
 	}
@@ -1128,10 +1113,13 @@ static void unload_content() {
 
 static bool load_default_content() {
 	unload_content();
-	if (!g_content_media.loadSystemRom(g_system_dir, logging)) {
-		return false;
-	}
-	start_runtime();
+	g_content = bmsx::loadLibretroContent(
+		g_system_dir,
+		{},
+		*g_input,
+		logging);
+	if (!g_content) return false;
+	activate_runtime(g_content->runtime);
 	logging.log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 	return true;
 }
@@ -1140,13 +1128,13 @@ static bool load_content_from_paths(
 	const std::array<std::string, bmsx::CARTRIDGE_SLOT_COUNT>& paths
 ) {
 	unload_content();
-	if (!g_content_media.loadSystemRom(g_system_dir, logging)) {
-		return false;
-	}
-	if (!g_content_media.loadCartridgeSlotsFromPaths(paths, logging)) {
-		return false;
-	}
-	start_runtime();
+	g_content = bmsx::loadLibretroContent(
+		g_system_dir,
+		paths,
+		*g_input,
+		logging);
+	if (!g_content) return false;
+	activate_runtime(g_content->runtime);
 	return true;
 }
 
@@ -1174,7 +1162,7 @@ static void destroy_hardware_context() {
 #if BMSX_ENABLE_GLES2
 	auto& presenter = *g_video_presenter;
 	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
-	backend.captureGxGpuVramSnapshot(g_runtime->machine.gxGpu);
+	backend.captureGxGpuVramSnapshot(g_content->runtime.machine.gxGpu);
 	presenter.releaseRenderPipeline();
 	presenter.clearTextures();
 	backend.onContextDestroy();
@@ -1349,7 +1337,6 @@ void retro_deinit(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_deinit\n");
 
 	unload_content();
-	g_content_media.releaseSystemRom();
 	g_presentation.reset();
 	g_overlay_menu.reset();
 	g_video_presenter.reset();
@@ -1414,7 +1401,7 @@ static bool begin_content_load() {
 }
 
 static void complete_content_load() {
-	sync_current_av_info(g_runtime->timing.ufpsScaled);
+	sync_current_av_info(g_content->runtime.timing.ufpsScaled);
 	retro_keyboard_callback keyboardCallback = { keyboard_event };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
 }
@@ -1487,9 +1474,9 @@ void retro_unload_game(void) {
 
 void retro_reset(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
-	if (g_runtime) {
-		g_runtime->rebootSystem();
-		activate_runtime(*g_runtime);
+	if (g_content) {
+		g_content->runtime.rebootSystem();
+		activate_runtime(g_content->runtime);
 	} else if (!load_default_content()) {
 		logging.log(
 			RETRO_LOG_ERROR,
@@ -1621,7 +1608,7 @@ void retro_run(void) {
 		static_cast<bmsx::i32>(g_video_presenter->viewportSize.x),
 		static_cast<bmsx::i32>(g_video_presenter->viewportSize.y),
 		(g_total_time + deltaTime) * 1000.0);
-	bmsx::Runtime& runtime = *g_runtime;
+	bmsx::Runtime& runtime = g_content->runtime;
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;
 	try {
 		frameResult = bmsx::runLibretroFrame(
@@ -1647,15 +1634,15 @@ void retro_run(void) {
 	} catch (const std::exception& error) {
 		bmsx::reportLibretroRuntimeError(
 			runtime,
-			g_content_media.systemRomImage,
-			g_content_media.cartridgeRomImages,
+			g_content->systemRomImage,
+			g_content->cartridgeRomImages,
 			error.what(),
 			logging);
 	} catch (...) {
 		bmsx::reportLibretroRuntimeError(
 			runtime,
-			g_content_media.systemRomImage,
-			g_content_media.cartridgeRomImages,
+			g_content->systemRomImage,
+			g_content->cartridgeRomImages,
 			"Unhandled host frame exception.",
 			logging);
 	}
@@ -1705,19 +1692,19 @@ void retro_run(void) {
  */
 
 size_t retro_serialize_size(void) {
-	return g_runtime ? bmsx::libretroStateSize(*g_runtime) : 0u;
+	return g_content ? bmsx::libretroStateSize(g_content->runtime) : 0u;
 }
 
 bool retro_serialize(void* data, size_t size) {
-	if (!g_runtime) {
+	if (!g_content) {
 		return false;
 	}
 	bool serialized = false;
 	try {
 		g_video_presenter->backend().captureGxGpuVramSnapshot(
-			g_runtime->machine.gxGpu);
+			g_content->runtime.machine.gxGpu);
 		serialized = bmsx::serializeLibretroState(
-			*g_runtime,
+			g_content->runtime,
 			std::span<bmsx::u8>(static_cast<bmsx::u8*>(data), size));
 	} catch (const std::exception& error) {
 		logging.log(
@@ -1729,13 +1716,13 @@ bool retro_serialize(void* data, size_t size) {
 }
 
 bool retro_unserialize(const void* data, size_t size) {
-	if (!g_runtime) {
+	if (!g_content) {
 		return false;
 	}
 	bool restored = false;
 	try {
 		restored = bmsx::unserializeLibretroState(
-			*g_runtime,
+			g_content->runtime,
 			std::span<const bmsx::u8>(
 				static_cast<const bmsx::u8*>(data),
 				size));
@@ -1775,10 +1762,10 @@ void* retro_get_memory_data(unsigned id) {
 	case RETRO_MEMORY_SAVE_RAM:
 		return nullptr;
 	case RETRO_MEMORY_SYSTEM_RAM:
-		if (!g_runtime) {
+		if (!g_content) {
 			return nullptr;
 		}
-		return g_runtime->machine.memory.ramData();
+		return g_content->runtime.machine.memory.ramData();
 	default:
 		return nullptr;
 	}
@@ -1789,8 +1776,8 @@ size_t retro_get_memory_size(unsigned id) {
 	case RETRO_MEMORY_SAVE_RAM:
 		return 0;
 	case RETRO_MEMORY_SYSTEM_RAM:
-		return g_runtime
-			? g_runtime->machine.memory.ramByteCount()
+		return g_content
+			? g_content->runtime.machine.memory.ramByteCount()
 			: 0u;
 	default:
 		return 0;
