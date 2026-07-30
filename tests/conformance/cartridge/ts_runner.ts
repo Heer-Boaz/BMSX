@@ -17,7 +17,6 @@ async function main(): Promise<void> {
 
 	const [
 		{
-			captureRuntimeSaveStateBytes,
 			initializeMachineRuntime,
 			initializeMachineVideoPresenter,
 		},
@@ -26,15 +25,14 @@ async function main(): Promise<void> {
 		{ HostOverlayMenu },
 		{ HostAudioOutput },
 		{ SystemOutputLog },
-		{ runGate },
 		{ HeadlessGPUBackend },
 		{ HeadlessVideoOutput },
 		{ Input },
 		{ DiscardingAudioSink },
 		{ VirtualHeadlessClock },
 		{ HeadlessInputHub },
-		{ decodeRuntimeSaveState },
-		{ applyRuntimeSaveState },
+		{ decodeRuntimeSaveState, encodeRuntimeSaveState },
+		{ applyRuntimeSaveState, captureRuntimeSaveState },
 		{ CART_MMIO_BASE },
 		{ CARTRIDGE_MAILBOX_CONTROL_OFFSET, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER },
 		{ PSX_MACHINE_SPEC },
@@ -45,7 +43,6 @@ async function main(): Promise<void> {
 		import('../../../hosts/common/host_overlay_menu'),
 		import('../../../hosts/common/audio_output'),
 		import('../../../hosts/common/system_output_log'),
-		import('../../../machine/ts/common/taskgate'),
 		import('../../../machine/ts/render/headless/backend'),
 		import('../../../hosts/node/headless/video_output'),
 		import('../../../hosts/common/input/manager'),
@@ -137,14 +134,14 @@ async function main(): Promise<void> {
 				presentation,
 				hostOverlayMenu,
 				currentTimeMs,
-				runGate.ready,
 			);
 		}
 		throw new Error(`Guest did not publish ${entry} x${count}.`);
 	};
 
 	runUntil('READY', 1);
-	const saved = await captureRuntimeSaveStateBytes(runtime, presenter);
+	await presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const mailboxControl = CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET;
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 1);

@@ -35,19 +35,25 @@ function executeWorkbenchHostMenuAction(
 			return false;
 		case HostMenuInput.RebootCart:
 			screen.clearPresentation();
-			void rebootPreparedRuntime(
-				ide.sources,
-				ide.fault,
-				ide.luaTooling,
-				ide.editor,
-				ide.luaGate,
-				ide.overlayRenderer,
-				runtime,
-				audioOutput,
-				ide.storage,
-				ide.logOutput,
-			).then(() => {
+			ide.runtimeTasks.schedule(async () => {
+				await rebootPreparedRuntime(
+					ide.sources,
+					ide.fault,
+					ide.luaTooling,
+					ide.editor,
+					ide.overlayRenderer,
+					runtime,
+					audioOutput,
+					ide.storage,
+				);
 				screen.reset(presenter, runtime);
+			}, (error) => {
+				workbenchMode.surfaceHostFrameError(
+					ide,
+					ide.logOutput,
+					runtime,
+					error,
+				);
 			});
 			return true;
 		case HostMenuInput.ExitGame:
@@ -134,7 +140,6 @@ export function runWorkbenchHostFrame(
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	currentTime: number,
-	runReady: boolean,
 ): HostFrameRunResult {
 	let hostDeltaMs = 0;
 	try {
@@ -163,7 +168,7 @@ export function runWorkbenchHostFrame(
 			return HostFrameRunResult.Continue;
 		}
 
-		const runtimeReady = runReady && !ide.fault.faultSnapshot;
+		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.faultSnapshot;
 		let action: HostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active

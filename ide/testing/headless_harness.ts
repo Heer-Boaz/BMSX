@@ -4,7 +4,6 @@ import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { LogOutput } from '../../hosts/common/log';
-import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { editorDocumentState } from '../editor/editing/document_state';
@@ -60,7 +59,6 @@ export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	microtasks: MicrotaskQueue,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): HeadlessIdeHarness {
@@ -87,10 +85,10 @@ export function createHeadlessIdeHarness(
 				ide.sources,
 				ide.fault,
 				ide.luaTooling,
+				ide.runtimeTasks,
 				ide.overlayRenderer,
 				runtime,
 				audioOutput,
-				microtasks,
 				storage,
 				logOutput,
 			);
@@ -100,12 +98,10 @@ export function createHeadlessIdeHarness(
 			ide.fault,
 			ide.luaTooling,
 			ide.editor,
-			ide.luaGate,
 			ide.overlayRenderer,
 			runtime,
 			audioOutput,
 			storage,
-			logOutput,
 		),
 		openLuaSource: (path: string) => {
 			activateEditor(

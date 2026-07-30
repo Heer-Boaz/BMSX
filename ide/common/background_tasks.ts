@@ -1,17 +1,9 @@
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import { runGate } from '../../machine/ts/common/taskgate';
 import { type HostClock } from '../../hosts/common/clock';
-import { type MicrotaskQueue } from './microtask_queue';
 
 export type BackgroundTask = () => boolean;
 
 const backgroundTasks: BackgroundTask[] = [];
-let runtimeTaskTail = Promise.resolve();
-let pendingRuntimeTasks = 0;
-let runtimeTaskQueueFailed = false;
 const backgroundTaskBudgetMs = 2.0;
-const RUNTIME_TASK_CATEGORY = 'ide-runtime-task';
-const RUNTIME_TASK_FAILURE_CATEGORY = 'ide-runtime-task-failure';
 
 export function enqueueBackgroundTask(task: BackgroundTask): void {
 	backgroundTasks.push(task);
@@ -39,47 +31,4 @@ export function runBackgroundTasks(clock: HostClock): void {
 
 export function clearBackgroundTasks(): void {
 	backgroundTasks.length = 0;
-}
-
-export function scheduleRuntimeTask(
-	microtasks: MicrotaskQueue,
-	audioOutput: HostAudioOutput,
-	task: () => void | Promise<void>,
-	onError: (error: unknown) => void,
-): void {
-	if (pendingRuntimeTasks === 0) {
-		runGate.endCategory(RUNTIME_TASK_FAILURE_CATEGORY);
-		runtimeTaskQueueFailed = false;
-		audioOutput.muteSystem(true);
-	}
-	pendingRuntimeTasks += 1;
-	const token = runGate.begin({
-		blocking: true,
-		category: RUNTIME_TASK_CATEGORY,
-		tag: RUNTIME_TASK_CATEGORY,
-	});
-	microtasks.queueMicrotask(() => {
-		runtimeTaskTail = runtimeTaskTail.then(async () => {
-			let succeeded = false;
-			try {
-				await task();
-				succeeded = true;
-			} catch (error) {
-				runtimeTaskQueueFailed = true;
-				onError(error);
-			} finally {
-				pendingRuntimeTasks -= 1;
-				runGate.end(token);
-				if (succeeded && !runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
-					audioOutput.muteSystem(false);
-				} else if (runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
-					runGate.begin({
-						blocking: true,
-						category: RUNTIME_TASK_FAILURE_CATEGORY,
-						tag: RUNTIME_TASK_FAILURE_CATEGORY,
-					});
-				}
-			}
-		});
-	});
 }

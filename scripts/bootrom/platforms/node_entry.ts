@@ -17,7 +17,6 @@ import {
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../../hosts/common/system_output_log';
-import { runGate } from '../../../machine/ts/common/taskgate';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { FrameLoop } from '../../../hosts/common/frame_loop';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
@@ -143,7 +142,6 @@ async function main(): Promise<void> {
 			presentation,
 			hostOverlayMenu,
 			currentTime,
-			runGate.ready,
 		);
 		if (result === HostFrameRunResult.ExitRequested) {
 			frameLoop.stop();

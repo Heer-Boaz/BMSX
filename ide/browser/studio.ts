@@ -23,7 +23,6 @@ import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { runWorkbenchHostFrame } from '../workbench/host_frame';
-import { runGate } from '../../machine/ts/common/taskgate';
 
 declare const BMSX_BROWSER_DEBUG: boolean;
 
@@ -80,7 +79,7 @@ async function startBrowserStudio(): Promise<void> {
 			audioOutput,
 			options.logOutput,
 		);
-		bindBrowserDebuggerPauseShortcut(options.input, audioOutput);
+		bindBrowserDebuggerPauseShortcut(options.input, session, audioOutput);
 		window.addEventListener('beforeunload', (event) => {
 			if (!BMSX_BROWSER_DEBUG) {
 				event.preventDefault();
@@ -111,7 +110,6 @@ async function startBrowserStudio(): Promise<void> {
 				presentation,
 				hostOverlayMenu,
 				currentTime,
-				runGate.ready,
 			);
 			if (result === HostFrameRunResult.ExitRequested) {
 				window.close();

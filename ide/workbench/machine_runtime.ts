@@ -53,6 +53,6 @@ export async function prepareWorkbenchRuntime(
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
-	await startPreparedRuntime(ide, runtime, logOutput);
+	startPreparedRuntime(ide, runtime, logOutput);
 	return ide;
 }

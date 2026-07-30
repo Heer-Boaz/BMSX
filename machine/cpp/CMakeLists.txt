@@ -316,7 +316,6 @@ target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 
 add_library(bmsx_host_support STATIC
 	common/vector.cpp
-	common/taskgate.cpp
 	common/byte_hex_string.cpp
 	common/mmap_file.cpp
 	audio/output_resampler.cpp

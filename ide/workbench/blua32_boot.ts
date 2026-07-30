@@ -10,7 +10,6 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { CartEditor } from '../cart_editor';
-import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import { applyAllWorkspaceSourceOverrides } from '../workspace/workspace';
 import { workspaceDirtyRecords } from './workspace/state';
@@ -23,18 +22,17 @@ function blua32MediaOverridesRequireRebuild(sources: RuntimeSourceState): boolea
 		|| sources.cartridgeBlua32MediaDirty[1];
 }
 
-export async function startPreparedRuntime(
+export function startPreparedRuntime(
 	state: RuntimeIdeState,
 	runtime: Runtime,
 	logOutput: LogOutput,
-): Promise<void> {
+): void {
 	enterSystemSources(state.sources);
-	await bootPreparedBlua32Media(
+	bootPreparedBlua32Media(
 		state.sources,
 		state.fault,
 		state.luaTooling,
 		state.editor,
-		state.luaGate,
 		runtime,
 		logOutput,
 		blua32MediaOverridesRequireRebuild(state.sources),
@@ -66,52 +64,38 @@ export async function rebootPreparedRuntime(
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	editor: CartEditor,
-	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
-	logOutput: LogOutput,
 ): Promise<void> {
-	const gateToken = luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
-	try {
-		const rebuildBlua32Media = await prepareRebootToBootRom(
-			sources,
-			fault,
-			editor,
-			overlayRenderer,
-			audioOutput,
-			storage,
-		);
-		try {
-			bootActiveBlua32Media(
-				sources,
-				fault,
-				luaTooling,
-				runtime,
-				rebuildBlua32Media,
-			);
-		} catch (error) {
-			handleLuaError(logOutput, fault, sources, runtime, error);
-			throw error;
-		}
-		audioOutput.restart(runtime.timing.ufpsScaled);
-	} finally {
-		luaGate.end(gateToken);
-	}
+	const rebuildBlua32Media = await prepareRebootToBootRom(
+		sources,
+		fault,
+		editor,
+		overlayRenderer,
+		audioOutput,
+		storage,
+	);
+	bootActiveBlua32Media(
+		sources,
+		fault,
+		luaTooling,
+		runtime,
+		rebuildBlua32Media,
+	);
+	audioOutput.restart(runtime.timing.ufpsScaled);
 }
 
-async function bootPreparedBlua32Media(
+function bootPreparedBlua32Media(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	editor: CartEditor,
-	luaGate: GateGroup,
 	runtime: Runtime,
 	logOutput: LogOutput,
 	rebuildBlua32Media: boolean,
-): Promise<void> {
-	const gateToken = luaGate.begin({ blocking: true, tag: 'boot' });
+): void {
 	try {
 		clearFaultSnapshot(fault);
 		editor.clearRuntimeErrorOverlay();
@@ -125,7 +109,5 @@ async function bootPreparedBlua32Media(
 	} catch (error) {
 		handleLuaError(logOutput, fault, sources, runtime, error);
 		throw new Error(`failed to boot runtime: ${error}`);
-	} finally {
-		luaGate.end(gateToken);
 	}
 }

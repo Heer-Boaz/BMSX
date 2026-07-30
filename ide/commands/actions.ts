@@ -1,11 +1,9 @@
 import { editorRuntimeState } from '../editor/common/runtime_state';
-import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { LogOutput } from '../../hosts/common/log';
-import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
@@ -21,19 +19,18 @@ import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
-import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
+import type { RuntimeTaskQueue } from '../runtime/task_queue';
 
 export function performEditorAction(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
+	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	microtasks: MicrotaskQueue,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 	action: ActionPromptAction,
@@ -45,10 +42,10 @@ export function performEditorAction(
 				sources,
 				fault,
 				luaTooling,
+				runtimeTasks,
 				overlayRenderer,
 				runtime,
 				audioOutput,
-				microtasks,
 				storage,
 				logOutput,
 			);
@@ -58,11 +55,10 @@ export function performEditorAction(
 				sources,
 				fault,
 				luaTooling,
-				luaGate,
+				runtimeTasks,
 				overlayRenderer,
 				runtime,
 				audioOutput,
-				microtasks,
 				storage,
 				logOutput,
 			);
@@ -82,10 +78,10 @@ export function performHotResume(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	microtasks: MicrotaskQueue,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): boolean {
@@ -93,7 +89,7 @@ export function performHotResume(
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(microtasks, audioOutput, async () => {
+	runtimeTasks.schedule(async () => {
 		await applyAllWorkspaceSourceOverrides(
 			storage,
 			sources,
@@ -123,18 +119,17 @@ export function performReboot(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
+	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	microtasks: MicrotaskQueue,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(microtasks, audioOutput, async () => {
+	runtimeTasks.schedule(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		applyLuaCodeTabSources(sources, pendingSources);
 		await rebootPreparedRuntime(
@@ -142,12 +137,10 @@ export function performReboot(
 			fault,
 			luaTooling,
 			editor,
-			luaGate,
 			overlayRenderer,
 			runtime,
 			audioOutput,
 			storage,
-			logOutput,
 		);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {

@@ -1,31 +1,31 @@
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import { runGate } from '../../machine/ts/common/taskgate';
+import type { HostFrameSession } from '../../hosts/common/host_frame';
 import type { Input } from '../../hosts/common/input/manager';
 import { GAME_PAUSE_KEY } from '../common/constants';
 
 let debuggerControlsVisible = false;
-const DEBUGGER_PAUSE_CATEGORY = 'debugger-pause';
 const pauseOverlay = document.createElement('div');
 pauseOverlay.id = 'pause-overlay';
 
-export function bindBrowserDebuggerPauseShortcut(input: Input, audioOutput: HostAudioOutput): void {
+export function bindBrowserDebuggerPauseShortcut(
+	input: Input,
+	session: HostFrameSession,
+	audioOutput: HostAudioOutput,
+): void {
 	input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => {
-		toggleDebuggerControls(audioOutput);
+		toggleDebuggerControls(session, audioOutput);
 	});
 }
 
-function toggleDebuggerControls(audioOutput: HostAudioOutput): void {
+function toggleDebuggerControls(
+	session: HostFrameSession,
+	audioOutput: HostAudioOutput,
+): void {
 	if (debuggerControlsVisible) {
-		runGate.endCategory(DEBUGGER_PAUSE_CATEGORY);
-		audioOutput.muteDebugger(false);
+		session.setDebuggerPaused(false, audioOutput);
 		hideDebuggerControls();
 	} else {
-		runGate.begin({
-			blocking: true,
-			category: DEBUGGER_PAUSE_CATEGORY,
-			tag: DEBUGGER_PAUSE_CATEGORY,
-		});
-		audioOutput.muteDebugger(true);
+		session.setDebuggerPaused(true, audioOutput);
 		showDebuggerControls();
 	}
 }

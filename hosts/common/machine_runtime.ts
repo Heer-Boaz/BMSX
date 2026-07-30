@@ -1,7 +1,4 @@
-import { renderGate, runGate } from '../../machine/ts/common/taskgate';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import type { CartridgeSlotMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../../machine/ts/machine/devices/gx/gpu_display';
 import type { MachineModelSpec } from '../../machine/ts/spec/bmsx/model';
@@ -79,19 +76,4 @@ export function initializeMachineVideoPresenter(
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.initializeDefaultTextures();
 	return presenter;
-}
-
-export async function captureRuntimeSaveStateBytes(
-	runtime: Runtime,
-	presenter: VideoPresenter,
-): Promise<Uint8Array> {
-	const renderToken = renderGate.begin({ blocking: true, tag: 'save-state-capture' });
-	const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
-	try {
-		await presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
-		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	} finally {
-		renderGate.end(renderToken);
-		runGate.end(runToken);
-	}
 }

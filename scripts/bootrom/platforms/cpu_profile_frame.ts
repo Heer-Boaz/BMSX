@@ -14,7 +14,6 @@ import type { Input } from '../../../hosts/common/input/manager';
 import type { LogOutput } from '../../../hosts/common/log';
 import type { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import type { SystemOutputLog } from '../../../hosts/common/system_output_log';
-import { runGate } from '../../../machine/ts/common/taskgate';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../../machine/ts/render/video_presenter';
@@ -62,7 +61,7 @@ export function runCpuProfileHostFrame(
 		runtime,
 		screen,
 		hostOverlayMenu,
-		runGate.ready,
+		true,
 		hostMenuInput,
 	);
 	if (action === HostFrameAction.Execute) {

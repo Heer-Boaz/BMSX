@@ -146,11 +146,6 @@
 			"reason": "headless_host_overlay_not_core"
 		},
 		{
-			"pattern": "machine/ts/render/texture_load_barrier.ts",
-			"category": "host",
-			"reason": "host_texture_loading_not_core"
-		},
-		{
 			"pattern": "machine/ts/render/graph/**",
 			"category": "host",
 			"reason": "host_render_graph_not_core"
@@ -172,7 +167,6 @@
 		}
 	],
 	"core_roots": [
-		"machine/ts/common/taskgate.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
@@ -1650,9 +1644,11 @@
 			"file": "machine/ts/render/headless/backend.ts",
 			"functions": [
 				"beginFrame",
-				"beginRenderPass"
+				"beginRenderPass",
+				"publishPresentation",
+				"borrowPresentedPixels"
 			],
-			"reason": "headless_backend_frame_stats_reset_must_not_allocate_per_frame"
+			"reason": "headless_backend_frame_and_presentation_paths_must_reuse_retained_state"
 		},
 		{
 			"file": "machine/ts/render/video_presenter.ts",
@@ -1674,20 +1670,6 @@
 				"beginRenderPass"
 			],
 			"reason": "webgpu_render_pass_begin_must_reuse_host_pass_wrapper_and_attachment_storage"
-		},
-		{
-			"file": "hosts/node/headless/video_output.ts",
-			"functions": [
-				"borrowPresentedPixels"
-			],
-			"reason": "headless_video_output_must_expose_borrowed_pixels_without_copying"
-		},
-		{
-			"file": "hosts/node/headless/video_output.ts",
-			"functions": [
-				"presentSoftwareFrame"
-			],
-			"reason": "headless_video_output_must_reuse_presented_frame_event_object"
 		},
 		{
 			"file": "machine/ts/render/backend/gx_gpu_render_rules.ts",

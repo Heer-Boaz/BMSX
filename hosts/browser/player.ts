@@ -1,4 +1,3 @@
-import { runGate } from '../../machine/ts/common/taskgate';
 import {
 	initializeMachineRuntime,
 	initializeMachineVideoPresenter,
@@ -87,7 +86,6 @@ async function startBrowserPlayer(): Promise<void> {
 				presentation,
 				hostOverlayMenu,
 				currentTime,
-				runGate.ready,
 			);
 			if (result === HostFrameRunResult.ExitRequested) {
 				window.close();

@@ -7,7 +7,6 @@ import { DeviceQuantizeMode } from './post/device_quantize/mode';
 import { RenderGraphRuntime, type FrameData } from './graph/graph';
 import type { VideoOutput } from './video_output';
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
-import { renderGate } from '../common/taskgate';
 import { HostOverlayQueue } from './host_overlay/overlay_queue';
 
 export class VideoPresenter {
@@ -99,7 +98,6 @@ export class VideoPresenter {
 	}
 
 	public present(output: GxGpuDeviceOutput, timeSeconds: number, deltaSeconds: number): void {
-		if (!renderGate.ready) return;
 		this.backend.beginFrame();
 		try {
 			this.frame.time = timeSeconds;

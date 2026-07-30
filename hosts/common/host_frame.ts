@@ -13,7 +13,12 @@ const MAX_HOST_FRAME_DELTA_MS = 250;
 const enum HostPauseReason {
 	Requested = 1 << 0,
 	VibrationInitialization = 1 << 1,
+	Debugger = 1 << 2,
 }
+
+const HOST_PAUSE_AUDIO_REASONS =
+	HostPauseReason.Requested
+	| HostPauseReason.VibrationInitialization;
 
 export const enum HostFrameAction {
 	Execute,
@@ -50,7 +55,19 @@ export class HostFrameSession {
 	}
 
 	public setPaused(paused: boolean, audioOutput: HostAudioOutput): void {
-		this.setPauseReason(HostPauseReason.Requested, paused, audioOutput);
+		if (!this.updatePauseReason(HostPauseReason.Requested, paused)) {
+			return;
+		}
+		audioOutput.mutePause(
+			(this.pauseReasons & HOST_PAUSE_AUDIO_REASONS) !== 0,
+		);
+	}
+
+	public setDebuggerPaused(paused: boolean, audioOutput: HostAudioOutput): void {
+		if (!this.updatePauseReason(HostPauseReason.Debugger, paused)) {
+			return;
+		}
+		audioOutput.muteDebugger(paused);
 	}
 
 	public async initializeVibration(
@@ -58,11 +75,8 @@ export class HostFrameSession {
 		audioOutput: HostAudioOutput,
 		logOutput: LogOutput,
 	): Promise<void> {
-		this.setPauseReason(
-			HostPauseReason.VibrationInitialization,
-			true,
-			audioOutput,
-		);
+		this.updatePauseReason(HostPauseReason.VibrationInitialization, true);
+		audioOutput.mutePause(true);
 		try {
 			await initialization.initialize();
 		} catch (error) {
@@ -71,10 +85,9 @@ export class HostFrameSession {
 				error instanceof Error ? error.message : String(error),
 			);
 		} finally {
-			this.setPauseReason(
-				HostPauseReason.VibrationInitialization,
-				false,
-				audioOutput,
+			this.updatePauseReason(HostPauseReason.VibrationInitialization, false);
+			audioOutput.mutePause(
+				(this.pauseReasons & HOST_PAUSE_AUDIO_REASONS) !== 0,
 			);
 		}
 	}
@@ -93,22 +106,19 @@ export class HostFrameSession {
 		audioOutput.syncTiming(ufpsScaled);
 	}
 
-	private setPauseReason(
+	private updatePauseReason(
 		reason: HostPauseReason,
 		active: boolean,
-		audioOutput: HostAudioOutput,
-	): void {
+	): boolean {
 		const previous = this.pauseReasons;
 		const next = active
 			? previous | reason
 			: previous & ~reason;
 		if (next === previous) {
-			return;
+			return false;
 		}
 		this.pauseReasons = next;
-		if ((previous === 0) !== (next === 0)) {
-			audioOutput.mutePause(next !== 0);
-		}
+		return true;
 	}
 }
 
@@ -300,7 +310,6 @@ export function runHostFrame(
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	currentTime: number,
-	runReady: boolean,
 ): HostFrameRunResult {
 	const hostDeltaMs = beginHostFrame(
 		session,
@@ -331,7 +340,7 @@ export function runHostFrame(
 		runtime,
 		screen,
 		hostOverlayMenu,
-		runReady,
+		true,
 		hostMenuInput,
 	);
 	if (action === HostFrameAction.Execute) {

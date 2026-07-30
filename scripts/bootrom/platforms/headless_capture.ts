@@ -2,7 +2,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
-import { taskGate } from '../../../machine/ts/common/taskgate';
 import {
 	HeadlessGPUBackend,
 	type HeadlessPresentedFrame,
@@ -59,10 +58,10 @@ export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
 }
 
 export class HeadlessCaptureCoordinator {
-	private readonly gate = taskGate.group('headless:capture');
 	private readonly pending: PendingHeadlessCapture[] = [];
 	private readonly pendingFrames: PendingHeadlessFrameCapture[] = [];
 	private readonly capturedFrames = new Set<number>();
+	private readonly pendingWrites = new Set<Promise<void>>();
 	private readonly writeFailures: unknown[] = [];
 	private lastPresentedFrame: HeadlessPresentedFrame | null = null;
 
@@ -114,29 +113,36 @@ export class HeadlessCaptureCoordinator {
 		const png = encodePng(frame.width, frame.height, pixels);
 		const filename = this.buildFilename(outputFrameIndex);
 		const outputPath = path.join(this.outputDir, filename);
-		const writePromise = this.gate.trackFn(async () => {
-			await fs.mkdir(this.outputDir, { recursive: true });
-			await fs.writeFile(outputPath, png);
-		}, {
-			blocking: true,
-			category: 'screenshot',
-			tag: filename,
-		});
-		void writePromise.catch((error: unknown) => {
-			this.writeFailures.push(error);
-			console.error(`[headless:capture] Failed to write ${outputPath}:`, error);
+		const writePromise = (async () => {
+			try {
+				await fs.mkdir(this.outputDir, { recursive: true });
+				await fs.writeFile(outputPath, png);
+			} catch (error) {
+				this.writeFailures.push(error);
+				console.error(`[headless:capture] Failed to write ${outputPath}:`, error);
+			}
+		})();
+		this.pendingWrites.add(writePromise);
+		void writePromise.then(() => {
+			this.pendingWrites.delete(writePromise);
 		});
 	}
 
 	public async flushWrites(drainPendingCaptures = false): Promise<void> {
-		if (drainPendingCaptures && this.hasDrainablePendingCaptures()) {
-			this.capturePendingFromLatestFrame();
-		}
-		while ((drainPendingCaptures && this.hasDrainablePendingCaptures()) || !this.gate.ready) {
-			if (drainPendingCaptures && this.hasDrainablePendingCaptures()) {
+		for (;;) {
+			const capturesPending =
+				drainPendingCaptures && this.hasDrainablePendingCaptures();
+			if (!capturesPending && this.pendingWrites.size === 0) {
+				break;
+			}
+			if (capturesPending) {
 				this.capturePendingFromLatestFrame();
 			}
-			await sleep(1);
+			if (this.pendingWrites.size > 0) {
+				await Promise.all(this.pendingWrites);
+			} else {
+				await sleep(1);
+			}
 		}
 		if (this.writeFailures.length > 0) {
 			throw this.writeFailures[0];
@@ -178,28 +184,7 @@ export class HeadlessCaptureCoordinator {
 		if (!frame) {
 			throw new Error('[headless:capture] Cannot flush pending captures before any frame was presented.');
 		}
-		let writeIndex = 0;
-		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
-			const pending = this.pending[readIndex]!;
-			if (this.nowMs() >= pending.deadlineMs) {
-				this.capturePresentedFrame(frame);
-				continue;
-			}
-			this.pending[writeIndex] = pending;
-			writeIndex += 1;
-		}
-		this.pending.length = writeIndex;
-		writeIndex = 0;
-		for (let readIndex = 0; readIndex < this.pendingFrames.length; readIndex += 1) {
-			const pending = this.pendingFrames[readIndex]!;
-			if (this.shouldCaptureFrame(pending, frame.frameIndex)) {
-				this.capturePresentedFrame(frame, pending.outputFrame);
-				continue;
-			}
-			this.pendingFrames[writeIndex] = pending;
-			writeIndex += 1;
-		}
-		this.pendingFrames.length = writeIndex;
+		this.handlePresentedFrame(frame);
 	}
 
 	private shouldCapture(capture: PendingHeadlessCapture): boolean {

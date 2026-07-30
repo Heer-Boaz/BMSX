@@ -38,7 +38,6 @@ import {
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../../hosts/common/system_output_log';
-import { runGate } from '../../../machine/ts/common/taskgate';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import {
 	loadBlua32ToolingImage,
@@ -232,7 +231,6 @@ async function main(): Promise<void> {
 							presentation,
 							hostOverlayMenu,
 							currentTime,
-							runGate.ready,
 						);
 						if (result === HostFrameRunResult.ExitRequested) {
 							frameLoop.stop();
@@ -248,7 +246,6 @@ async function main(): Promise<void> {
 								ide,
 								runtime,
 								audioOutput,
-								microtasks,
 								storage,
 								logOutput,
 							),
@@ -292,7 +289,6 @@ async function main(): Promise<void> {
 							presentation,
 							hostOverlayMenu,
 							currentTime,
-							runGate.ready,
 						);
 						if (result === HostFrameRunResult.ExitRequested) {
 							frameLoop.stop();
@@ -370,7 +366,6 @@ async function main(): Promise<void> {
 								presentation,
 								hostOverlayMenu,
 								currentTime,
-								runGate.ready,
 							);
 							if (result === HostFrameRunResult.ExitRequested) {
 								frameLoop.stop();
@@ -429,7 +424,6 @@ async function main(): Promise<void> {
 							presentation,
 							hostOverlayMenu,
 							currentTime,
-							runGate.ready,
 						);
 						if (result === HostFrameRunResult.ExitRequested) {
 							frameLoop.stop();

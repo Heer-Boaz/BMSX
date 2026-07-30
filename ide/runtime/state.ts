@@ -2,8 +2,6 @@ import type { EditorDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { GateGroup } from '../../machine/ts/common/taskgate';
-import { taskGate } from '../../machine/ts/common/taskgate';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Clipboard } from '../common/clipboard';
@@ -17,6 +15,7 @@ import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
 import { RuntimeLuaTooling } from './lua_tooling';
 import { OverlayRenderer } from './overlay_renderer';
 import type { RuntimeSourceState } from './sources';
+import { RuntimeTaskQueue } from './task_queue';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -27,8 +26,8 @@ export class RuntimeIdeState {
 	public lastIdeInputFrame = -1;
 	public readonly debugger: RuntimeDebuggerState = createRuntimeDebuggerState();
 	public shortcutDisposers: Array<() => void> = [];
-	public readonly luaGate: GateGroup = taskGate.group('ide:lua');
 	public readonly luaTooling: RuntimeLuaTooling;
+	public readonly runtimeTasks: RuntimeTaskQueue;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -48,6 +47,7 @@ export class RuntimeIdeState {
 	) {
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(runtime, sources);
+		this.runtimeTasks = new RuntimeTaskQueue(microtasks, audioOutput);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -66,7 +66,7 @@ export class RuntimeIdeState {
 			this.fault,
 			this.luaTooling,
 			this.debugger,
-			this.luaGate,
+			this.runtimeTasks,
 			this.overlayRenderer,
 		);
 		this.overlayRenderer.setViewportSize(viewport);

@@ -6,7 +6,6 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
-import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import { editorDocumentState } from '../editor/editing/document_state';
@@ -14,8 +13,8 @@ import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
-import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
+import type { RuntimeTaskQueue } from '../runtime/task_queue';
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
@@ -34,11 +33,10 @@ export function executeEditorWorkspaceCommand(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
+	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	microtasks: MicrotaskQueue,
 	storage: KeyValueStorage,
 	clock: HostClock,
 	logOutput: LogOutput,
@@ -68,11 +66,10 @@ export function executeEditorWorkspaceCommand(
 				sources,
 				fault,
 				luaTooling,
-				luaGate,
+				runtimeTasks,
 				overlayRenderer,
 				runtime,
 				audioOutput,
-				microtasks,
 				storage,
 				logOutput,
 				command,
@@ -85,11 +82,10 @@ export function executeEditorWorkspaceCommand(
 				sources,
 				fault,
 				luaTooling,
-				luaGate,
+				runtimeTasks,
 				overlayRenderer,
 				runtime,
 				audioOutput,
-				microtasks,
 				storage,
 				logOutput,
 				command,

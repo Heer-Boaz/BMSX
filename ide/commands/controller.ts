@@ -2,7 +2,6 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
-import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
@@ -21,8 +20,8 @@ import { save } from '../workbench/ui/code_tab/io';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
-import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
+import type { RuntimeTaskQueue } from '../runtime/task_queue';
 
 export class IdeCommandController {
 	public constructor(
@@ -30,11 +29,10 @@ export class IdeCommandController {
 		private readonly sources: RuntimeSourceState,
 		private readonly fault: RuntimeFaultState,
 		private readonly luaTooling: RuntimeLuaTooling,
-		private readonly luaGate: GateGroup,
+		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
 		private readonly audioOutput: HostAudioOutput,
-		private readonly microtasks: MicrotaskQueue,
 		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
@@ -67,11 +65,10 @@ export class IdeCommandController {
 				this.sources,
 				this.fault,
 				this.luaTooling,
-				this.luaGate,
+				this.runtimeTasks,
 				this.overlayRenderer,
 				this.runtime,
 				this.audioOutput,
-				this.microtasks,
 				this.storage,
 				this.clock,
 				this.logOutput,
@@ -103,11 +100,10 @@ export class IdeCommandController {
 			this.sources,
 			this.fault,
 			this.luaTooling,
-			this.luaGate,
+			this.runtimeTasks,
 			this.overlayRenderer,
 			this.runtime,
 			this.audioOutput,
-			this.microtasks,
 			this.storage,
 			this.logOutput,
 			action,

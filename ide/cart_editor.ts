@@ -1,5 +1,4 @@
 import type { HostAudioOutput } from '../hosts/common/audio_output';
-import type { GateGroup } from '../machine/ts/common/taskgate';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from './common/clipboard';
@@ -17,6 +16,7 @@ import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './ru
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
+import type { RuntimeTaskQueue } from './runtime/task_queue';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks, runBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
@@ -197,7 +197,7 @@ export class RuntimeCartEditor implements CartEditor {
 		fault: RuntimeFaultState,
 		luaTooling: RuntimeLuaTooling,
 		debuggerState: RuntimeDebuggerState,
-		luaGate: GateGroup,
+		runtimeTasks: RuntimeTaskQueue,
 		overlayRenderer: OverlayRenderer,
 	) {
 		this.runtime = runtime;
@@ -219,11 +219,10 @@ export class RuntimeCartEditor implements CartEditor {
 			sources,
 			fault,
 			luaTooling,
-			luaGate,
+			runtimeTasks,
 			overlayRenderer,
 			runtime,
 			audioOutput,
-			microtasks,
 			storage,
 			clock,
 			logOutput,
