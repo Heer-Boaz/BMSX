@@ -79,13 +79,13 @@ try {
 		dataRom,
 		bootableCartRom,
 	]);
-	const cppOutput = run('native libretro conformance', 'build-cpp-tests/bmsx_cartridge_conformance_runner', [
+	const cppOutput = run('native C++ conformance', 'build-cpp-tests/bmsx_cartridge_conformance_runner', [
 		systemRom,
 		dataRom,
 		bootableCartRom,
 	]);
 	const tsSignature = signature(tsOutput, 'TypeScript headless');
-	const cppSignature = signature(cppOutput, 'native libretro');
+	const cppSignature = signature(cppOutput, 'native C++ runtime');
 	if (tsSignature !== expected || cppSignature !== expected || tsSignature !== cppSignature) {
 		throw new Error(
 			`Conformance mismatch: expected=${expected}, TypeScript=${tsSignature}, native=${cppSignature}.`,
