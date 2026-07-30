@@ -63,7 +63,6 @@ typedef struct VideoPresenter {
 	bool layout_dirty;
 	bool drop_presentation;
 	bool presented_frame;
-	uint64_t presentation_count;
 	double target_fps;
 	uint8_t* software_row;
 	size_t software_row_capacity;
@@ -1094,9 +1093,7 @@ static uint8_t* capture_pixels(size_t required_bytes) {
 static void capture_software_frame(void) {
 	VideoPresenter* presenter = &g_presenter;
 	uint64_t capture_frame;
-	if (!input_timeline_consume_presented_capture(
-			presenter->presentation_count,
-			&capture_frame)) {
+	if (!input_timeline_consume_presented_capture(&capture_frame)) {
 		return;
 	}
 	BmsxVideoSurface* surface = presenter->surface;
@@ -1133,9 +1130,7 @@ static void capture_software_frame(void) {
 static void capture_hardware_frame(unsigned width, unsigned height) {
 	VideoPresenter* presenter = &g_presenter;
 	uint64_t capture_frame;
-	if (!input_timeline_consume_presented_capture(
-			presenter->presentation_count,
-			&capture_frame)) {
+	if (!input_timeline_consume_presented_capture(&capture_frame)) {
 		return;
 	}
 	fprintf(stderr,
@@ -1364,7 +1359,6 @@ void video_presenter_refresh(
 	if (presenter->uses_hw_render && data == RETRO_HW_FRAME_BUFFER_VALID) {
 		if (present_hardware_frame()) {
 			presenter->presented_frame = true;
-			++presenter->presentation_count;
 		}
 		const uint64_t swap_start_ns =
 				presenter->frame_timing->record_frame
@@ -1399,18 +1393,9 @@ void video_presenter_refresh(
 	capture_software_frame();
 	message_render_software();
 	presenter->presented_frame = true;
-	++presenter->presentation_count;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	bmsx_video_context_present_software();
 #endif
-}
-
-uint64_t video_presenter_presentation_count(void) {
-	return g_presenter.presentation_count;
-}
-
-void video_presenter_reset_presentation_timeline(void) {
-	g_presenter.presentation_count = 0;
 }
 
 static int16_t pointer_axis(int position, int start, int extent) {

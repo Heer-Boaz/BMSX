@@ -54,8 +54,10 @@ typedef struct BmsxCoreSession {
 	uint64_t frame_period_usec;
 	uint64_t frame_period_ns;
 	BmsxGxUploadProfileInterfaceV1 gx_upload_profile;
+	BmsxExecutionDomainInterfaceV1 execution_domain;
 	bool accept_gx_upload_profile_interface;
 	bool gx_upload_profile_interface_set;
+	bool execution_domain_interface_set;
 	bool shutdown_requested;
 } BmsxCoreSession;
 

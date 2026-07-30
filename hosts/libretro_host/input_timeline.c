@@ -70,7 +70,10 @@ static size_t g_test_capture_event_count = 0;
 static size_t g_test_capture_event_capacity = 0;
 static size_t g_test_capture_event_next = 0;
 static uint64_t g_timeline_last_frame = 0;
+static uint64_t g_cartridge_presented_frame_count = 0;
+static bmsx_read_execution_domain_id_t g_read_execution_domain_id = NULL;
 static bool g_timeline_active = false;
+static bool g_cartridge_timeline_started = false;
 
 static uint64_t ms_to_frame_index(uint64_t milliseconds, uint64_t frame_usec) {
 	if (frame_usec == 0) {
@@ -722,7 +725,9 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	g_test_capture_events = NULL;
 	g_test_capture_event_capacity = 0;
 	g_timeline_last_frame = 0;
+	g_cartridge_presented_frame_count = 0;
 	g_timeline_active = false;
+	g_cartridge_timeline_started = false;
 
 	json_cursor_skip_ws(&cursor);
 	if (!json_cursor_ensure(&cursor, '[')) {
@@ -836,10 +841,16 @@ static bool extract_rom_folder_from_path(const char* game_path, char* out, size_
 	return true;
 }
 
-void input_timeline_configure(const char* explicit_timeline_path, const char* rom_folder, const char* game_path, uint64_t frame_usec) {
+void input_timeline_configure(
+		const char* explicit_timeline_path,
+		const char* rom_folder,
+		const char* game_path,
+		uint64_t frame_usec,
+		bmsx_read_execution_domain_id_t read_execution_domain_id) {
 	char timeline_path[kInputTimelinePathBuffer];
 	const char* selected_path = NULL;
 	char game_rom_folder[kJsonKeyBuffer];
+	g_read_execution_domain_id = read_execution_domain_id;
 
 	if (explicit_timeline_path && explicit_timeline_path[0]) {
 		if (!file_exists(explicit_timeline_path)) {
@@ -881,25 +892,34 @@ void input_timeline_configure(const char* explicit_timeline_path, const char* ro
 	}
 }
 
-void input_timeline_dispatch_before_run(uint64_t accepted_presentation_count) {
-	if (accepted_presentation_count == 0) {
+void input_timeline_dispatch_before_run(void) {
+	if (!g_cartridge_timeline_started) {
 		return;
 	}
-	/* Frame N is the boundary after accepted presentation N; its input affects the next accepted presentation. */
-	const uint64_t frame = accepted_presentation_count - 1u;
 	while (g_test_input_event_next < g_test_input_event_count &&
-			g_test_input_events[g_test_input_event_next].frame <= frame) {
+			g_test_input_events[g_test_input_event_next].frame <=
+					g_cartridge_presented_frame_count) {
 		const TestInputEvent* event = &g_test_input_events[g_test_input_event_next];
 		keyboard_input_post(KEYBOARD_INPUT_SOURCE_TIMELINE, event->key, event->down);
 		++g_test_input_event_next;
 	}
 }
 
-bool input_timeline_consume_presented_capture(uint64_t presentation_ordinal, uint64_t* out_frame) {
+bool input_timeline_consume_presented_capture(uint64_t* out_frame) {
+	if (!g_timeline_active) {
+		return false;
+	}
+	if (!g_cartridge_timeline_started) {
+		if (g_read_execution_domain_id() < 0) {
+			return false;
+		}
+		g_cartridge_timeline_started = true;
+	}
+	++g_cartridge_presented_frame_count;
 	bool should_capture = false;
-	/* Captures retain the boundary label and record the following accepted presentation. */
 	while (g_test_capture_event_next < g_test_capture_event_count &&
-			g_test_capture_events[g_test_capture_event_next].frame < presentation_ordinal) {
+			g_test_capture_events[g_test_capture_event_next].frame <
+					g_cartridge_presented_frame_count) {
 		*out_frame = g_test_capture_events[g_test_capture_event_next].frame;
 		should_capture = true;
 		++g_test_capture_event_next;
@@ -911,7 +931,7 @@ bool input_timeline_is_active(void) {
 	return g_timeline_active;
 }
 
-bool input_timeline_should_auto_quit(uint64_t completed_frame, uint64_t trailing_frames) {
+bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
 	if (!g_timeline_active) {
 		return false;
 	}
@@ -921,7 +941,8 @@ bool input_timeline_should_auto_quit(uint64_t completed_frame, uint64_t trailing
 	if (g_test_capture_event_next < g_test_capture_event_count) {
 		return false;
 	}
-	return completed_frame > (g_timeline_last_frame + trailing_frames);
+	return g_cartridge_presented_frame_count >
+			(g_timeline_last_frame + trailing_frames);
 }
 
 void input_timeline_shutdown(void) {
@@ -937,5 +958,7 @@ void input_timeline_shutdown(void) {
 	g_test_capture_event_capacity = 0;
 	g_test_capture_event_next = 0;
 	g_timeline_last_frame = 0;
+	g_cartridge_presented_frame_count = 0;
 	g_timeline_active = false;
+	g_cartridge_timeline_started = false;
 }

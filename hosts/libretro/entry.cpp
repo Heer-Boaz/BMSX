@@ -96,6 +96,11 @@ static std::string sanitizeSystemDir(std::string_view path) {
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
+
+static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
+	return g_platform->runtime().machine.cpu.activeCartridgeSlot();
+}
+
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 static retro_system_av_info g_frontend_av_info{};
@@ -969,6 +974,11 @@ void retro_set_environment(retro_environment_t cb) {
 	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
 	offerGxUploadProfileInterface(cb);
+	BmsxExecutionDomainInterfaceV1 executionDomainInterface{
+		read_active_execution_domain_id,
+	};
+	cb(BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1,
+		&executionDomainInterface);
 	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
 		supervisor_request_line_low,
 	};

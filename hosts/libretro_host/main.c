@@ -304,6 +304,10 @@ int main(int argc, char** argv) {
 	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
 		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
+	if ((use_input_timeline || auto_timeline) &&
+			!session.execution_domain_interface_set) {
+		host_fatal("Input timeline requires execution domain interface v1");
+	}
 	fprintf(stderr, "[libretro-host] core=%s v%s api=%u\n",
 			session.system_info.library_name,
 			session.system_info.library_version,
@@ -313,7 +317,6 @@ int main(int argc, char** argv) {
 
 	core->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
 	core_session_load_content(&session, no_game, game_path, slot1_path);
-	video_presenter_reset_presentation_timeline();
 
 	struct retro_system_av_info av = {0};
 	core->retro_get_system_av_info(&av);
@@ -335,7 +338,8 @@ int main(int argc, char** argv) {
 		input_timeline_configure(use_input_timeline ? input_timeline : NULL,
 				rom_folder,
 				game_path,
-				session.frame_period_usec);
+				session.frame_period_usec,
+				session.execution_domain.read_active_domain_id);
 	}
 	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
 	BmsxFramePacer frame_pacer;
@@ -372,7 +376,7 @@ int main(int argc, char** argv) {
 				: session.frame_time.reference;
 			session.frame_time.callback(frame_time_usec);
 		}
-		input_timeline_dispatch_before_run(video_presenter_presentation_count());
+		input_timeline_dispatch_before_run();
 		video_presenter_begin_frame(drop_video);
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
@@ -402,11 +406,8 @@ int main(int argc, char** argv) {
 					!drop_video && presented_frame);
 		}
 		++run_frame_count;
-		const uint64_t presentation_count =
-				video_presenter_presentation_count();
-		if (maximum_run_frames == 0 && presentation_count > 1u &&
+		if (maximum_run_frames == 0 &&
 				input_timeline_should_auto_quit(
-					presentation_count - 2u,
 					kInputTimelineAutoQuitGraceFrames)) {
 			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
 			runloop_quit_requested = true;

@@ -24,9 +24,6 @@ void video_presenter_begin_frame(bool drop_presentation);
 bool video_presenter_end_frame(void);
 void video_presenter_refresh(const void* data, unsigned width, unsigned height, size_t pitch);
 
-uint64_t video_presenter_presentation_count(void);
-void video_presenter_reset_presentation_timeline(void);
-
 void video_presenter_map_surface_point(
 		int surface_x,
 		int surface_y,

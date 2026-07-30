@@ -187,6 +187,11 @@ void core_session_close(BmsxCoreSession* session) {
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
+		case BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1:
+			session->execution_domain =
+					*(const BmsxExecutionDomainInterfaceV1*)data;
+			session->execution_domain_interface_set = true;
+			return true;
 		case BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1:
 			if (!session->accept_gx_upload_profile_interface) {
 				return false;

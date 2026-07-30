@@ -15,6 +15,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4251u)
 #define BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4261u)
+#define BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x4271u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 typedef bool (RETRO_CALLCONV *bmsx_supervisor_request_line_t)(void);
@@ -40,6 +42,12 @@ typedef bool (RETRO_CALLCONV *bmsx_read_gx_upload_profile_frame_t)(
 typedef struct BmsxGxUploadProfileInterfaceV1 {
 	bmsx_read_gx_upload_profile_frame_t read_frame;
 } BmsxGxUploadProfileInterfaceV1;
+
+typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
+
+typedef struct BmsxExecutionDomainInterfaceV1 {
+	bmsx_read_execution_domain_id_t read_active_domain_id;
+} BmsxExecutionDomainInterfaceV1;
 
 #ifdef __cplusplus
 }
