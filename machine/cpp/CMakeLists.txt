@@ -280,7 +280,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/frame/loop.cpp
-	machine/runtime/lua_scratch.cpp
 	machine/scheduler/frame.cpp
 	machine/runtime/timing/index.cpp
 	machine/runtime/timing/state.cpp

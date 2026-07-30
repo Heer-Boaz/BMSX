@@ -747,8 +747,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	}
 	const metadata: Blua32DebugMetadata = {
 		functionIds: functionLayout.functionIds,
-		globalNames: input.globalNames,
-		systemGlobalNames: input.systemGlobalNames,
+		globalNames: input.metadata.globalNames,
+		systemGlobalNames: input.metadata.systemGlobalNames,
 		staticFunctionIdBySlot: input.metadata.exportProtoIdBySlot,
 		debugRanges: functionLayout.hasTombstones
 			? [...input.metadata.debugRanges, null]

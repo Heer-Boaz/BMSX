@@ -1,5 +1,5 @@
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { RuntimeCpuFaultFrame, RuntimeFaultState } from '../../../runtime/fault_state';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../language/lua/interpreter/environment';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
@@ -11,8 +11,10 @@ import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../toolchain/ts/lua/api_metadata';
 import { blua32FunctionIndexAtAddress } from '../../../../toolchain/ts/rompack/blua32_image';
-import { Table } from '../../../../machine/ts/machine/cpu/table';
-import { asStringId, StringValue, valueTag, ValueTag, type BuiltinFunction, type Value } from '../../../../machine/ts/machine/cpu/value';
+import {
+	SuspendedGuestValueKind,
+	type SuspendedGuestValue,
+} from '../../../../tooling/ts/runtime/suspended_guest';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
@@ -20,12 +22,15 @@ import {
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
-import { buildMarshalContext, runtimeValueToHost } from '../../../runtime/lua_tooling';
 import { buildLuaSemanticFrontend } from '../../../../toolchain/ts/lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
 import {
+	blua32ToolingImageForDomain,
+	type Blua32ToolingImage,
+} from '../../../../toolchain/ts/rompack/blua32_media';
+import {
+	Blua32GlobalRegisterFile,
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
@@ -55,7 +60,10 @@ import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
 import type { ApiCompletionMetadata, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
-import type { ResourceDomain } from '../../../common/resource';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDomain,
+} from '../../../common/resource';
 import { Pool } from '../../../../machine/ts/common/pool';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import { splitText } from '../../../../machine/ts/common/text_lines';
@@ -67,6 +75,16 @@ import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
+
+type ResolvedIntellisenseValue =
+	| {
+		readonly source: 'runtime';
+		readonly value: SuspendedGuestValue;
+	}
+	| {
+		readonly source: 'interpreter';
+		readonly value: LuaValue;
+	};
 
 const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
 const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
@@ -630,11 +648,11 @@ export function clearHoverTooltip(): void {
 	intellisenseUiState.lastInspectorResult = null;
 }
 
-export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, objectName: string, operator: '.' | ':', path: string): LuaCompletionItem[] {
+export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, objectName: string, operator: '.' | ':', domain: ResourceDomain, path: string): LuaCompletionItem[] {
 	if (objectName.length === 0) {
 		return [];
 	}
-	const response = listLuaObjectMembers(bridge, fault, runtime, objectName, path, operator);
+	const response = listLuaObjectMembers(bridge, fault, runtime, objectName, domain, path, operator);
 	if (response.length === 0) {
 		return [];
 	}
@@ -1162,7 +1180,16 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 	if (!chain) {
 		return null;
 	}
-	const resolved = resolveLuaChainValue(bridge, fault, runtime, chain, path, row, column);
+	const resolved = resolveLuaChainValue(
+		bridge,
+		fault,
+		runtime,
+		chain,
+		activeContext.resource.domain,
+		path,
+		row,
+		column,
+	);
 	const staticDefinition = findStaticDefinitionLocation(bridge, chain, row, column, path, activeContext);
 	if (!resolved) {
 		if (!staticDefinition) {
@@ -1193,7 +1220,9 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 			definition: staticDefinition,
 		};
 	}
-	const formatted = describeLuaValueForInspector(bridge, resolved.value);
+	const formatted = resolved.source === 'runtime'
+		? describeSuspendedGuestValueForInspector(bridge, resolved.value)
+		: describeLuaValueForInspector(bridge, resolved.value);
 	const isFunction = formatted.isFunction;
 	const isLocalFunction = isFunction && resolved.scope === 'path';
 	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(chain[0]);
@@ -1217,7 +1246,7 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 	};
 }
 
-export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
+export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, domain: ResourceDomain, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
 	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return [];
@@ -1226,9 +1255,18 @@ export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFa
 	if (!chain) {
 		return [];
 	}
-	const resolved = resolveLuaChainValue(bridge, fault, runtime, chain, path, null, null);
+	const resolved = resolveLuaChainValue(bridge, fault, runtime, chain, domain, path, null, null);
 	if (!resolved || resolved.kind !== 'value') {
 		return [];
+	}
+	if (resolved.source === 'runtime') {
+		return bridge.suspendedGuest.kind(resolved.value) === SuspendedGuestValueKind.Table
+			? buildSuspendedGuestTableMemberCompletionEntries(
+				bridge,
+				resolved.value,
+				operator,
+			)
+			: [];
 	}
 	const value = resolved.value;
 	if (value === null) {
@@ -1682,102 +1720,6 @@ function wrapHostValueForIntellisense(bridge: RuntimeLuaTooling, value: unknown)
 	return null;
 }
 
-function wrapRuntimeValueForIntellisense(bridge: RuntimeLuaTooling, runtime: Runtime, value: Value): LuaValue {
-	switch (valueTag(value)) {
-		case ValueTag.Nil:
-			return null;
-		case ValueTag.False:
-			return false;
-		case ValueTag.True:
-			return true;
-		case ValueTag.Number:
-			return value as number;
-		case ValueTag.String:
-			return runtime.machine.cpu.stringPool.toString(asStringId(value as StringValue));
-		case ValueTag.Closure:
-			break;
-		case ValueTag.Table:
-			break;
-		case ValueTag.BuiltinFunction:
-			return bridge.luaInterpreter.getOrCreateNativeValue(value as BuiltinFunction, 'builtin_function');
-	}
-	const marshalContext = buildMarshalContext(bridge.sources);
-	const hostValue = runtimeValueToHost(bridge, value, marshalContext, new WeakMap<Table, unknown>());
-	return wrapHostValueForIntellisense(bridge, hostValue);
-}
-
-export type FrameLocal = {
-	name: string;
-	value: LuaValue;
-};
-
-export function collectFrameLocals(bridge: RuntimeLuaTooling, runtime: Runtime, snapshot: readonly RuntimeCpuFaultFrame[], cpuFrameIndex: number): FrameLocal[] {
-	const frame = snapshot[cpuFrameIndex];
-	const image = blua32ToolingImageForDomain(bridge.sources.currentBlua32Media, frame.executionDomainId);
-	const symbols = image ? image.symbols : null;
-	if (symbols === null) {
-		return [];
-	}
-	const metadata = symbols.metadata;
-	const frameRange = blua32SourceRangeAtPc(symbols, frame.textAddress, frame.tracePc);
-	if (!frameRange) {
-		return [];
-	}
-	const slots = metadata.localSlotsByFunction[frame.functionIndex];
-	if (slots.length === 0) {
-		return [];
-	}
-	const byName = new Map<string, Blua32LocalSlotDebug>();
-	for (let i = 0; i < slots.length; i += 1) {
-		const slot = slots[i];
-		if (!positionWithinRange(frameRange.start.line, frameRange.start.column, slot.scope)) {
-			continue;
-		}
-		const existing = byName.get(slot.name);
-		if (!existing || rangeArea(slot.scope) < rangeArea(existing.scope)) {
-			byName.set(slot.name, slot);
-		}
-	}
-	const result: FrameLocal[] = [];
-	for (const [name, slot] of byName) {
-		result.push({ name, value: wrapRuntimeValueForIntellisense(bridge, runtime, frame.registers[slot.registerIndex]) });
-	}
-	result.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-	return result;
-}
-
-export function resolveSnapshotExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string): LuaValue | null {
-	const parts = parseLuaIdentifierChain(expression);
-	if (!parts || parts.length === 0) {
-		return null;
-	}
-	const snapshot = fault.lastCpuFaultSnapshot;
-	if (snapshot.length === 0) {
-		return null;
-	}
-	const rootName = parts[0];
-	for (let i = snapshot.length - 1; i >= 0; i -= 1) {
-		const locals = collectFrameLocals(bridge, runtime, snapshot, i);
-		for (let li = 0; li < locals.length; li += 1) {
-			if (locals[li].name !== rootName) {
-				continue;
-			}
-			if (parts.length === 1) {
-				return locals[li].value;
-			}
-			const chained = walkValueChain(bridge, locals[li].value, parts, 1);
-			if (chained !== null) {
-				return chained;
-			}
-		}
-	}
-	const globalResult = resolveRuntimeGlobalChainValue(bridge, runtime, parts);
-	if (globalResult && globalResult.kind === 'value') {
-		return globalResult.value;
-	}
-	return null;
-}
-
 function walkValueChain(bridge: RuntimeLuaTooling, root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
 	let current: LuaValue = root;
 	for (let index = startIndex; index < parts.length; index += 1) {
@@ -1789,7 +1731,7 @@ function walkValueChain(bridge: RuntimeLuaTooling, root: LuaValue, parts: Readon
 		} else {
 			return null;
 		}
-		if (current === null) {
+		if (current == null) {
 			return null;
 		}
 	}
@@ -1804,7 +1746,7 @@ function resolveRuntimeLocalChainValue(
 	path: string,
 	usageRow: number,
 	usageColumn: number,
-): ({ kind: 'value'; value: LuaValue; definitionRange: LuaSourceRange } | { kind: 'not_defined' }) | null {
+): ({ kind: 'value'; value: SuspendedGuestValue; definitionRange: LuaSourceRange } | { kind: 'not_defined' }) | null {
 	if (parts.length === 0 || !path || usageRow === null) {
 		return null;
 	}
@@ -1829,7 +1771,7 @@ function resolveRuntimeLocalChainValue(
 	let selectedFrameIndex = -1;
 	let selectedSlot: Blua32LocalSlotDebug = null;
 	let upvalueFound = false;
-	let rawUpvalue: Value = null;
+	let rawUpvalue: SuspendedGuestValue = null;
 	for (let frameIndex = frameDepth - 1; frameIndex >= 0; frameIndex -= 1) {
 		let functionIndex: number;
 		let textAddress: number;
@@ -1914,9 +1856,8 @@ function resolveRuntimeLocalChainValue(
 	}
 	if (selectedFrameIndex < 0 || !selectedSlot) {
 		if (upvalueFound) {
-			const chained = walkValueChain(
-				bridge,
-				wrapRuntimeValueForIntellisense(bridge, runtime, rawUpvalue),
+			const chained = bridge.suspendedGuest.readStringPath(
+				rawUpvalue,
 				parts,
 				1,
 			);
@@ -1930,7 +1871,7 @@ function resolveRuntimeLocalChainValue(
 	const rawRegValue = useFaultSnapshot
 		? faultFrames[selectedFrameIndex].registers[selectedSlot.registerIndex]
 		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.registerIndex);
-	const chained = walkValueChain(bridge, wrapRuntimeValueForIntellisense(bridge, runtime, rawRegValue), parts, 1);
+	const chained = bridge.suspendedGuest.readStringPath(rawRegValue, parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
 	}
@@ -1941,13 +1882,28 @@ function resolveRuntimeLocalChainValue(
 	};
 }
 
-function resolveRuntimeGlobalChainValue(bridge: RuntimeLuaTooling, runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
-	const cpu = runtime.machine.cpu;
-	const rootRaw = cpu.getGlobalByKey(cpu.stringPool.intern(parts[0]));
+function resolveRuntimeGlobalChainValue(
+	bridge: RuntimeLuaTooling,
+	parts: ReadonlyArray<string>,
+	domain: ResourceDomain,
+): ({ kind: 'value'; value: SuspendedGuestValue } | { kind: 'not_defined' }) | null {
+	const image = domain === SYSTEM_RESOURCE_DOMAIN
+		? bridge.sources.currentBlua32Media.system
+		: bridge.sources.currentBlua32Media.cartridgeSlots[domain];
+	if (!image) {
+		return null;
+	}
+	const registerFile = image.globalRegisterFileByName.get(parts[0]);
+	if (!registerFile) {
+		return null;
+	}
+	const rootRaw = registerFile === Blua32GlobalRegisterFile.System
+		? bridge.suspendedGuest.systemGlobal(parts[0])
+		: bridge.suspendedGuest.global(parts[0]);
 	if (rootRaw === null) {
 		return null;
 	}
-	const chained = walkValueChain(bridge, wrapRuntimeValueForIntellisense(bridge, runtime, rootRaw), parts, 1);
+	const chained = bridge.suspendedGuest.readStringPath(rootRaw, parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
 	}
@@ -1977,10 +1933,14 @@ export function resolveLuaChainValue(
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	parts: string[],
+	domain: ResourceDomain,
 	path: string,
 	usageRow: number,
 	usageColumn: number,
-): ({ kind: 'value'; value: LuaValue; scope: LuaHoverScope; definitionRange: LuaSourceRange } | { kind: 'not_defined'; scope: LuaHoverScope }) {
+): (
+	| ({ kind: 'value'; scope: LuaHoverScope; definitionRange: LuaSourceRange } & ResolvedIntellisenseValue)
+	| { kind: 'not_defined'; scope: LuaHoverScope }
+) {
 	if (!parts || parts.length === 0) {
 		return null;
 	}
@@ -1994,16 +1954,28 @@ export function resolveLuaChainValue(
 		if (localResult.kind === 'not_defined') {
 			return { kind: 'not_defined', scope: 'path' };
 		}
-		return { kind: 'value', value: localResult.value, scope: 'path', definitionRange: localResult.definitionRange };
+		return {
+			kind: 'value',
+			source: 'runtime',
+			value: localResult.value,
+			scope: 'path',
+			definitionRange: localResult.definitionRange,
+		};
 	}
 
 	// Priority 2: CPU globals table
-	const globalResult = resolveRuntimeGlobalChainValue(bridge, runtime, parts);
+	const globalResult = resolveRuntimeGlobalChainValue(bridge, parts, domain);
 	if (globalResult) {
 		if (globalResult.kind === 'not_defined') {
 			return { kind: 'not_defined', scope: 'global' };
 		}
-		return { kind: 'value', value: globalResult.value, scope: 'global', definitionRange: null };
+		return {
+			kind: 'value',
+			source: 'runtime',
+			value: globalResult.value,
+			scope: 'global',
+			definitionRange: null,
+		};
 	}
 
 	// Priority 3: Interpreter fault environment (tree-walker)
@@ -2017,6 +1989,7 @@ export function resolveLuaChainValue(
 			}
 			return {
 				kind: 'value',
+				source: 'interpreter',
 				value: chained,
 				scope: resolved.scope,
 				definitionRange: resolved.environment.getDefinition(root),
@@ -2032,6 +2005,7 @@ export function resolveLuaChainValue(
 		}
 		return {
 			kind: 'value',
+			source: 'interpreter',
 			value: chained,
 			scope: 'global',
 			definitionRange: globalEnv.getDefinition(root),
@@ -2053,6 +2027,50 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 		current = current.getParent();
 	}
 	return null;
+}
+
+function describeSuspendedGuestValueForInspector(
+	bridge: RuntimeLuaTooling,
+	value: SuspendedGuestValue,
+): { lines: string[]; valueType: string; isFunction: boolean } {
+	const inspection = bridge.suspendedGuest;
+	switch (inspection.kind(value)) {
+		case SuspendedGuestValueKind.Nil:
+			return { lines: ['Nil'], valueType: 'nil', isFunction: false };
+		case SuspendedGuestValueKind.Boolean:
+			return {
+				lines: [inspection.formatValue(value)],
+				valueType: 'boolean',
+				isFunction: false,
+			};
+		case SuspendedGuestValueKind.Number:
+			return {
+				lines: [inspection.formatValue(value)],
+				valueType: 'number',
+				isFunction: false,
+			};
+		case SuspendedGuestValueKind.String:
+			return {
+				lines: [JSON.stringify(inspection.formatValue(value))],
+				valueType: 'string',
+				isFunction: false,
+			};
+		case SuspendedGuestValueKind.Table:
+			return {
+				lines: [
+					'<table>',
+					bridge.suspendedGuest.previewValue(
+						value,
+						PREVIEW_MAX_DEPTH,
+						PREVIEW_MAX_ENTRIES,
+					),
+				],
+				valueType: 'table',
+				isFunction: false,
+			};
+		case SuspendedGuestValueKind.Function:
+			return { lines: ['<function>'], valueType: 'function', isFunction: true };
+	}
 }
 
 export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
@@ -2187,35 +2205,74 @@ export function buildNativePrototypeMemberEntries(native: object | Function, ope
 	return entries;
 }
 
+function registerTableMemberCompletion(
+	registry: Map<string, LuaMemberCompletion>,
+	key: string,
+	isFunction: boolean,
+	operator: '.' | ':',
+	typeName?: string,
+): void {
+	if (key.length === 0 || key === '__index' || key === '__metatable') {
+		return;
+	}
+	if (operator === ':' && !isFunction) {
+		return;
+	}
+	if (registry.has(key)) {
+		return;
+	}
+	const kind: 'method' | 'property' = isFunction ? 'method' : 'property';
+	const detail = isFunction
+		? (typeName ? `function ${typeName}${operator === ':' ? ':' : '.'}${key}` : `function ${key}`)
+		: (typeName ? `${typeName}.${key}` : `table field '${key}'`);
+	registry.set(key, { name: key, kind, detail, parameters: [] });
+}
+
+function sortedTableMemberCompletions(
+	registry: Map<string, LuaMemberCompletion>,
+): LuaMemberCompletion[] {
+	const results = Array.from(registry.values());
+	results.sort((a, b) => a.name.localeCompare(b.name));
+	return results;
+}
+
+function buildSuspendedGuestTableMemberCompletionEntries(
+	bridge: RuntimeLuaTooling,
+	table: SuspendedGuestValue,
+	operator: '.' | ':',
+): LuaMemberCompletion[] {
+	const registry = new Map<string, LuaMemberCompletion>();
+	bridge.suspendedGuest.visitTableStringMembers(
+		table,
+		(key, entryValue) => {
+			registerTableMemberCompletion(
+				registry,
+				key,
+				bridge.suspendedGuest.kind(entryValue) === SuspendedGuestValueKind.Function,
+				operator,
+			);
+		},
+	);
+	return sortedTableMemberCompletions(registry);
+}
+
 export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':', typeName?: string): LuaMemberCompletion[] {
 	const registry = new Map<string, LuaMemberCompletion>();
-	const includeProperties = operator === '.';
 
 	const appendFromTable = (target: LuaTable) => {
 		const entries = target.entriesArray();
 		for (let index = 0; index < entries.length; index += 1) {
 			const [key, entryValue] = entries[index];
-			if (typeof key !== 'string' || key.length === 0) {
+			if (typeof key !== 'string') {
 				continue;
 			}
-			if (key === '__index' || key === '__metatable') {
-				continue;
-			}
-			const isFunction = isLuaFunctionValue(entryValue);
-			if (operator === ':' && !isFunction) {
-				continue;
-			}
-			const kind: 'method' | 'property' = isFunction ? 'method' : 'property';
-			if (!includeProperties && kind === 'property') {
-				continue;
-			}
-			if (registry.has(key)) {
-				continue;
-			}
-			const detail = isFunction
-				? (typeName ? `function ${typeName}${operator === ':' ? ':' : '.'}${key}` : `function ${key}`)
-				: (typeName ? `${typeName}.${key}` : `table field '${key}'`);
-			registry.set(key, { name: key, kind, detail, parameters: [] });
+			registerTableMemberCompletion(
+				registry,
+				key,
+				isLuaFunctionValue(entryValue),
+				operator,
+				typeName,
+			);
 		}
 	};
 
@@ -2224,12 +2281,7 @@ export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.'
 		appendFromTable(chain[i]);
 	}
 
-	const results: LuaMemberCompletion[] = [];
-	for (const entry of registry.values()) {
-		results.push({ name: entry.name, kind: entry.kind, detail: entry.detail, parameters: entry.parameters.slice() });
-	}
-	results.sort((a, b) => a.name.localeCompare(b.name));
-	return results;
+	return sortedTableMemberCompletions(registry);
 }
 
 export function resolveNativeCompletionCacheKey(native: object | Function): object {

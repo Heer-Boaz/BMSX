@@ -10,12 +10,9 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
-	StringValue,
 	createBuiltinFunction,
+	valueString,
 	ValueTag,
-	valueIsClosure,
-	valueIsHeap,
-	valueIsNumber,
 	valueIsTable,
 	valueTag,
 	type Value,
@@ -27,7 +24,7 @@ import { runCompiledLua } from './cpu_test_harness';
 test('runtime values expose one numeric representation tag', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const stringValue = StringValue.get(cpu.stringPool.intern('tagged'));
+	const stringValue = valueString(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
 	const closure = new Closure(0x1000, [], 0);
 	const builtinFunction = createBuiltinFunction(BuiltinFunctionId.Next);
@@ -45,13 +42,7 @@ test('runtime values expose one numeric representation tag', () => {
 	for (let index = 0; index < values.length; index += 1) {
 		assert.equal(valueTag(values[index][0]), values[index][1]);
 	}
-	assert.equal(valueIsNumber(42), true);
-	assert.equal(valueIsNumber(closure), false);
-	assert.equal(valueIsClosure(closure), true);
-	assert.equal(valueIsClosure(table), false);
 	assert.equal(valueIsTable(table), true);
-	assert.equal(valueIsHeap(table), true);
-	assert.equal(valueIsHeap({ valueTag: ValueTag.Table }), false);
 });
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {

@@ -108,7 +108,14 @@ export function performHotResume(
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		console.error(error);
-		handleLuaError(logOutput, fault, sources, runtime, error);
+		handleLuaError(
+			logOutput,
+			fault,
+			sources,
+			runtime,
+			luaTooling.suspendedGuest,
+			error,
+		);
 		editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	});
 	return true;
@@ -144,7 +151,14 @@ export function performReboot(
 		);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
-		handleLuaError(logOutput, fault, sources, runtime, error);
+		handleLuaError(
+			logOutput,
+			fault,
+			sources,
+			runtime,
+			luaTooling.suspendedGuest,
+			error,
+		);
 		editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;

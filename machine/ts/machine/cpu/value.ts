@@ -25,9 +25,9 @@ export class StringValue {
 		this.id = id;
 	}
 
-	public static get(id: StringId): StringValue {
+	public static fromId(id: StringId): StringValue {
 		let value = STRING_VALUES[id];
-		if (value === undefined) {
+		if (!value) {
 			value = new StringValue(id);
 			STRING_VALUES[id] = value;
 		}
@@ -37,9 +37,10 @@ export class StringValue {
 
 const STRING_VALUES: StringValue[] = [];
 
+export const valueString = StringValue.fromId;
+
 export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction;
 export type ValueReference = Table | Closure | null;
-export type HeapValue = StringValue | Table | Closure;
 export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 
 export function valueFromNumber(value: number): number {
@@ -57,7 +58,7 @@ export function materializeValue(tag: ValueTag, scalar: number, reference: Value
 		case ValueTag.Number:
 			return scalar;
 		case ValueTag.String:
-			return StringValue.get(scalar);
+			return valueString(scalar);
 		case ValueTag.Table:
 		case ValueTag.Closure:
 			return reference;
@@ -80,14 +81,6 @@ export function valueTag(value: Value): ValueTag {
 		return ValueTag.Number;
 	}
 	return value[VALUE_TAG];
-}
-
-export function valueIsHeap(value: unknown): value is HeapValue {
-	if (!value || typeof value !== 'object' || !(VALUE_TAG in value)) {
-		return false;
-	}
-	const tag = value[VALUE_TAG];
-	return tag === ValueTag.String || tag === ValueTag.Table || tag === ValueTag.Closure;
 }
 
 export function valueIsString(value: Value): value is StringValue {
@@ -188,14 +181,6 @@ export function storedValueToString(tag: ValueTag, scalar: number, stringPool: S
 		case ValueTag.BuiltinFunction:
 			return 'function';
 	}
-}
-
-export function valueIsClosure(value: Value): value is Closure {
-	return valueTag(value) === ValueTag.Closure;
-}
-
-export function valueIsNumber(value: Value): value is number {
-	return valueTag(value) === ValueTag.Number;
 }
 
 export function valueIsTable(value: Value): value is Table {

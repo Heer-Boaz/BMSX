@@ -1231,6 +1231,13 @@ dispatch branch, GC path, or save-state representation. Studio language tooling
 may copy plain data into ordinary guest tables and inspect guest tables and
 closures, but it cannot inject host callbacks or opaque host objects into the
 machine.
+Suspended TypeScript inspection lives in the separate `tooling/ts/runtime`
+module above `@bmsx/machine`. Fault capture retains only shallow guest-value
+references; table fields and metatable chains are read lazily from that retained
+guest representation. Tooling never turns a closure into a JavaScript
+function, recursively clones a reachable table graph, or adds debugger state
+or an observer branch to the CPU. Ordinary browser and Node player products do
+not import this solution.
 Builtin argument transport is a borrowed VM register/result view. C++
 `BuiltinArgsView` exposes direct indexed access over the caller-owned value
 span; it does not carry a checked `at()`/exception path in builtin dispatch.

@@ -253,6 +253,7 @@ public:
 	const Memory& memory() const { return m_memory; }
 	void setGlobalByKey(StringId key, const Value& value);
 	void setSystemGlobalByKey(StringId key, const Value& value);
+	Value getSystemGlobalByKey(StringId key) const;
 	Value getGlobalByKey(StringId key) const;
 	void clearGlobalSlots();
 	void syncGlobalSlotsToTable();
@@ -399,8 +400,6 @@ private:
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
 	const Value& readRK(CallFrame& frame, int rk);
-	template <typename Getter>
-	Value resolveTableIndexChain(Table* table, Getter get);
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);

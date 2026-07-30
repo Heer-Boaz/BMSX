@@ -576,7 +576,15 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const path = this.getActivePath();
-			const runtimeItems = buildMemberCompletionItems(this.bridge, this.fault, this.runtime, context.objectName, context.operator, path);
+			const runtimeItems = buildMemberCompletionItems(
+				this.bridge,
+				this.fault,
+				this.runtime,
+				context.objectName,
+				context.operator,
+				editorDocumentState.resource.domain,
+				path,
+			);
 			appendItems(runtimeItems);
 			if (merged.length > 0) {
 				return buildCanonicalCompletionItems(merged);

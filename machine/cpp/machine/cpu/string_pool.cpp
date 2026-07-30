@@ -49,6 +49,11 @@ StringId StringPool::intern(std::string_view value, bool tracked) {
 	return stringEntry.id;
 }
 
+std::optional<StringId> StringPool::find(std::string_view value) const {
+	const auto it = m_stringMap.find(value);
+	return it != m_stringMap.end() ? std::optional<StringId>(it->second) : std::nullopt;
+}
+
 const std::string& StringPool::toString(StringId id) const {
 	return entry(id).value;
 }

@@ -11,6 +11,8 @@
 namespace bmsx {
 class LuaHeap;
 
+inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
+
 struct TableHashNodeState {
 	Value key = valueNil();
 	Value value = valueNil();
@@ -37,6 +39,32 @@ public:
 	void setInteger(int index, const Value& value);
 	Value getStringKey(StringId key) const;
 	void setStringKey(StringId key, const Value& value);
+	Table* metatableIndexTable(StringId indexKey) const {
+		if (!metatable) {
+			return nullptr;
+		}
+		const Value indexer = metatable->getStringKey(indexKey);
+		return valueIsTable(indexer) ? asTable(indexer) : nullptr;
+	}
+	bool resolveIndex(
+		StringId indexKey,
+		const Value& key,
+		Value& value
+	) const {
+		return resolveIndexChain(indexKey, value, [&key](const Table& table) {
+			return table.get(key);
+		});
+	}
+	bool resolveIntegerIndex(StringId indexKey, int key, Value& value) const {
+		return resolveIndexChain(indexKey, value, [key](const Table& table) {
+			return table.getInteger(key);
+		});
+	}
+	bool resolveStringIndex(StringId indexKey, StringId key, Value& value) const {
+		return resolveIndexChain(indexKey, value, [key](const Table& table) {
+			return table.getStringKey(key);
+		});
+	}
 	int length() const;
 	void clear();
 	template <typename Fn>
@@ -121,6 +149,21 @@ private:
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
+	template <typename Lookup>
+	bool resolveIndexChain(StringId indexKey, Value& value, Lookup&& lookup) const {
+		const Table* current = this;
+		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+			value = lookup(*current);
+			if (!isNil(value)) {
+				return true;
+			}
+			current = current->metatableIndexTable(indexKey);
+			if (!current) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	LuaHeap& m_luaHeap;
 	std::vector<Value> m_array;

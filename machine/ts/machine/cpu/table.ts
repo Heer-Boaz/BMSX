@@ -16,7 +16,7 @@ import {
 	type Value,
 	type ValueReference,
 } from './value';
-import type { ValueWriteTarget } from './value_slots';
+import { ValueSlots, type ValueWriteTarget } from './value_slots';
 
 // start repeated-sequence-acceptable -- Lua table mutation hot paths keep direct column writes instead of routing through host-value dispatch.
 
@@ -28,6 +28,7 @@ const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
 const TABLE_ENTRY_MISSING = -1;
 const TABLE_HASH_ENTRY_BASE = -2;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
+export const TABLE_INDEX_CHAIN_LIMIT = 32;
 
 export type TableRuntimeState = {
 	tags: Uint8Array;
@@ -244,8 +245,8 @@ export class Table {
 		);
 	}
 
-	public getStringKey(key: StringValue): Value {
-		const nodeIndex = this.findNodeIndex(ValueTag.String, asStringId(key), null);
+	public getStringKey(key: StringId): Value {
+		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
 		return nodeIndex >= 0 ? this.valueAt(this.hashValueSlot(nodeIndex)) : null;
 	}
 
@@ -264,8 +265,88 @@ export class Table {
 		target.setNil(targetIndex);
 	}
 
-	public setStringKey(key: StringValue, value: Value): void {
-		this.setHostValue(ValueTag.String, asStringId(key), null, value);
+	public metatableIndexTable(indexKey: StringId): Table | null {
+		const metatable = this.tableMetatable;
+		if (!metatable) {
+			return null;
+		}
+		const nodeIndex = metatable.findNodeIndex(ValueTag.String, indexKey, null);
+		if (nodeIndex < 0) {
+			return null;
+		}
+		const valueSlot = metatable.hashValueSlot(nodeIndex);
+		return metatable.tags[valueSlot] === ValueTag.Table
+			? metatable.references[valueSlot] as Table
+			: null;
+	}
+
+	public resolveIndex(
+		indexKey: StringId,
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		target: ValueSlots,
+		targetIndex: number,
+	): boolean {
+		let current: Table = this;
+		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
+			current.load(keyTag, keyScalar, keyReference, target, targetIndex);
+			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+				return true;
+			}
+			const next = current.metatableIndexTable(indexKey);
+			if (!next) {
+				return true;
+			}
+			current = next;
+		}
+		return false;
+	}
+
+	public resolveIntegerIndex(
+		indexKey: StringId,
+		key: number,
+		target: ValueSlots,
+		targetIndex: number,
+	): boolean {
+		let current: Table = this;
+		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
+			current.loadInteger(key, target, targetIndex);
+			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+				return true;
+			}
+			const next = current.metatableIndexTable(indexKey);
+			if (!next) {
+				return true;
+			}
+			current = next;
+		}
+		return false;
+	}
+
+	public resolveStringIndex(
+		indexKey: StringId,
+		key: StringId,
+		target: ValueSlots,
+		targetIndex: number,
+	): boolean {
+		let current: Table = this;
+		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
+			current.loadStringKey(key, target, targetIndex);
+			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+				return true;
+			}
+			const next = current.metatableIndexTable(indexKey);
+			if (!next) {
+				return true;
+			}
+			current = next;
+		}
+		return false;
+	}
+
+	public setStringKey(key: StringId, value: Value): void {
+		this.setHostValue(ValueTag.String, key, null, value);
 	}
 
 	public storeStringKey(

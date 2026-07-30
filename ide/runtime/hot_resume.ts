@@ -1,6 +1,4 @@
 import { convertToError } from '../language/lua/interpreter/value';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -129,11 +127,8 @@ export function hotResume(
 		interpreter.clearLastFaultEnvironment();
 		clearFaultSnapshot(fault);
 		resetHandledLuaErrors(fault);
-		const cpu = runtime.machine.cpu;
-		const initClosure = cpu.getGlobalByKey(
-			cpu.stringPool.intern('init'),
-		) as Closure;
-		runtime.callClosure(initClosure, EMPTY_CALL_ARGS);
+		const suspendedGuest = luaTooling.suspendedGuest;
+		suspendedGuest.callClosure(suspendedGuest.global('init'));
 	} catch (error) {
 		throw convertToError(error);
 	}

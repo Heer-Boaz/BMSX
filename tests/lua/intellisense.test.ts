@@ -16,13 +16,17 @@ import {
 import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
-import { valueIsClosure } from '../../machine/ts/machine/cpu/value';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest';
+import {
+	createBlua32SourceImage,
+	type RuntimeSourceState,
+} from '../../ide/runtime/sources';
 import {
 	createTestRuntime,
 	createTestRuntimeRomPayload,
@@ -40,6 +44,7 @@ const referenceNavigationModulePromise = import('../../ide/editor/contrib/refere
 const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intellisense/engine');
 
 const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
+const EMPTY_TOOLING_RUNTIME = createTestRuntime(EMPTY_ROM_PAYLOAD);
 
 function createSourceState(files: Record<string, string>, systemRom: Uint8Array): RuntimeSourceState {
 	const systemLuaSources: LuaSourceRegistry = {
@@ -71,8 +76,10 @@ function createSourceState(files: Record<string, string>, systemRom: Uint8Array)
 }
 
 function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeLuaTooling {
-	const runtime = createTestRuntime(EMPTY_ROM_PAYLOAD);
-	const bridge = new RuntimeLuaTooling(runtime, createSourceState(files, EMPTY_ROM_PAYLOAD));
+	const bridge = new RuntimeLuaTooling(
+		createSourceState(files, EMPTY_ROM_PAYLOAD),
+		new SuspendedGuestSession(EMPTY_TOOLING_RUNTIME),
+	);
 	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return bridge;
 }
@@ -158,10 +165,10 @@ function createIntellisenseRuntime(source: string) {
 	registerLuaSourceRecord(systemLuaSources, record);
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
 	sources.currentBlua32Media = {
-		system: { layout: image.image, symbols: image.symbols },
+		system: createBlua32SourceImage(image.image, image.symbols),
 		cartridgeSlots: [null, null],
 	};
-	const bridge = new RuntimeLuaTooling(runtime, sources);
+	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return {
 		bridge,
@@ -272,7 +279,16 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	const { bridge, fault, runtime, sourcePath } = runtimeWithPausedCpuLocal(source);
 	const counterColumn = source.indexOf('counter') + 1;
 
-	const resolved = resolveLuaChainValue(bridge, fault, runtime, ['counter'], sourcePath, 1, counterColumn);
+	const resolved = resolveLuaChainValue(
+		bridge,
+		fault,
+		runtime,
+		['counter'],
+		SYSTEM_RESOURCE_DOMAIN,
+		sourcePath,
+		1,
+		counterColumn,
+	);
 	assert.ok(resolved);
 	assert.equal(resolved.kind, 'value');
 	if (resolved.kind !== 'value') {
@@ -301,8 +317,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const closure = materializeCpuCompletionValues(cpu)[0];
-	assert.ok(valueIsClosure(closure));
+	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
 	runtime.callClosure(closure);
 	assert.equal(cpu.getFrameDepth(), 1);
 
@@ -321,6 +336,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 		fault,
 		runtime,
 		['captured', 'value'],
+		SYSTEM_RESOURCE_DOMAIN,
 		sourcePath,
 		4,
 		usageColumn,

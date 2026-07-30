@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -29,6 +30,7 @@ public:
 
 	StringId intern(std::string_view value);
 	StringId intern(std::string_view value, bool tracked);
+	std::optional<StringId> find(std::string_view value) const;
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
 	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }

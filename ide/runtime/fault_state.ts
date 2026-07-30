@@ -13,8 +13,8 @@ import {
 import { buildLuaStackFrames, type StackTraceFrame } from './stack_trace';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { SuspendedGuestValue } from '../../tooling/ts/runtime/suspended_guest';
 import { resolveWorkspacePath } from '../workspace/path';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from './sources';
@@ -40,8 +40,8 @@ export type RuntimeCpuFaultFrame = {
 	readonly functionIndex: number;
 	readonly textAddress: number;
 	readonly tracePc: number;
-	readonly registers: readonly Value[];
-	readonly upvalues: readonly Value[];
+	readonly registers: readonly SuspendedGuestValue[];
+	readonly upvalues: readonly SuspendedGuestValue[];
 };
 
 export type RuntimeFaultState = {
@@ -183,12 +183,12 @@ function captureRuntimeCpuFaultFrames(
 		const functionIndex = blua32FunctionIndexAtAddress(image.layout, functionAddress);
 		const functionRecord = image.layout.functions[functionIndex];
 		const registerCount = cpu.getFrameRegisterCount(frameIndex);
-		const registers = new Array<Value>(registerCount);
+		const registers = new Array<SuspendedGuestValue>(registerCount);
 		for (let registerIndex = 0; registerIndex < registerCount; registerIndex += 1) {
 			registers[registerIndex] = cpu.readFrameRegister(frameIndex, registerIndex);
 		}
 		const upvalueCount = cpu.getFrameUpvalueCount(frameIndex);
-		const upvalues = new Array<Value>(upvalueCount);
+		const upvalues = new Array<SuspendedGuestValue>(upvalueCount);
 		for (let upvalueIndex = 0; upvalueIndex < upvalueCount; upvalueIndex += 1) {
 			upvalues[upvalueIndex] = cpu.readFrameUpvalue(frameIndex, upvalueIndex);
 		}

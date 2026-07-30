@@ -3,23 +3,26 @@ import {
 	type InstructionOperandDebugInfo,
 } from '../../toolchain/ts/rompack/disassembler';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
-import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import {
+	type SuspendedGuestSession,
+	type SuspendedGuestValue,
+} from '../../tooling/ts/runtime/suspended_guest';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
 
-const EMPTY_REGISTER_VALUES: readonly Value[] = [];
+const EMPTY_REGISTER_VALUES: readonly SuspendedGuestValue[] = [];
 
 function formatInstructionOperandDebug(
-	runtime: Runtime,
+	session: SuspendedGuestSession,
 	operand: InstructionOperandDebugInfo,
-	registers: ReadonlyArray<Value>,
+	registers: ReadonlyArray<SuspendedGuestValue>,
 ): string {
 	let text = `${operand.label}=${operand.text}`;
 	if (operand.registerIndex >= 0 && operand.registerIndex < registers.length) {
-		text += `(${valueToString(registers[operand.registerIndex], runtime.machine.cpu.stringPool)})`;
+		text += `(${session.formatValue(registers[operand.registerIndex])})`;
 	}
 	return text;
 }
@@ -32,7 +35,7 @@ function logFaultInstruction(
 	logOutput: LogOutput,
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
-	runtime: Runtime,
+	session: SuspendedGuestSession,
 ): void {
 	const snapshot = fault.lastCpuFaultSnapshot;
 	const executionDomainId = fault.lastCpuFaultExecutionDomainId;
@@ -60,7 +63,7 @@ function logFaultInstruction(
 		pc,
 	);
 	const operandSummary = instruction.operands
-		.map(operand => formatInstructionOperandDebug(runtime, operand, registers))
+		.map(operand => formatInstructionOperandDebug(session, operand, registers))
 		.join(' ');
 	logOutput.log(
 		LogLevel.Error,
@@ -77,11 +80,12 @@ export function handleLuaError(
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
 	runtime: Runtime,
+	session: SuspendedGuestSession,
 	whatever: unknown,
 ): void {
 	const recorded = recordLuaError(fault, sources, runtime, whatever);
 	if (recorded) {
 		logOutput.log(LogLevel.Error, recorded.stackText);
-		logFaultInstruction(logOutput, fault, sources, runtime);
+		logFaultInstruction(logOutput, fault, sources, session);
 	}
 }

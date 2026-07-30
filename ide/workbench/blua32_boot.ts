@@ -107,7 +107,14 @@ function bootPreparedBlua32Media(
 			rebuildBlua32Media,
 		);
 	} catch (error) {
-		handleLuaError(logOutput, fault, sources, runtime, error);
+		handleLuaError(
+			logOutput,
+			fault,
+			sources,
+			runtime,
+			luaTooling.suspendedGuest,
+			error,
+		);
 		throw new Error(`failed to boot runtime: ${error}`);
 	}
 }

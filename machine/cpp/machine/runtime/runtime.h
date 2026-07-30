@@ -14,7 +14,6 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
-#include "machine/runtime/lua_scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
@@ -84,7 +83,6 @@ public:
 	CpuExecutionState cpuExecution;
 	FrameLoopState frameLoop;
 	VblankState vblank;
-	LuaScratchState luaScratch;
 private:
 	enum class PendingCall {
 		None,

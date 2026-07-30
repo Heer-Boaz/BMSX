@@ -172,7 +172,14 @@ export function surfaceHostFrameError(
 ): void {
 	state.overlayRenderer.abandonFrame();
 	state.fault.hostFrameFailed = true;
-	handleLuaError(logOutput, state.fault, state.sources, runtime, error);
+	handleLuaError(
+		logOutput,
+		state.fault,
+		state.sources,
+		runtime,
+		state.luaTooling.suspendedGuest,
+		error,
+	);
 }
 
 export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {

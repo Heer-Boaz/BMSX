@@ -9,7 +9,6 @@ import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, MAX_CPU_SLICE_CYCLES, runDueRuntimeTimers } from './cpu_executor';
-import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from '../../spec/bmsx/timing';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
@@ -73,7 +72,6 @@ export class Runtime {
 	public readonly frameLoop: FrameLoopState;
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
-	public readonly luaScratch = new LuaScratchState();
 	public readonly machine: Machine;
 	private readonly completionValues: Value[] = [];
 

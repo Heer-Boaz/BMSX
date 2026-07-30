@@ -715,6 +715,10 @@ void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
 	m_systemGlobalValues[slot->second] = value;
 }
 
+Value CPU::getSystemGlobalByKey(StringId key) const {
+	return m_systemGlobalValues[m_systemGlobalSlotByKey.find(key)->second];
+}
+
 Value CPU::getGlobalByKey(StringId key) const {
 	const auto globalIt = m_globalSlotByKey.find(key);
 	if (globalIt != m_globalSlotByKey.end()) {
@@ -2567,43 +2571,40 @@ const Value& CPU::readRK(CallFrame& frame, int rk) {
 	return frame.registers[static_cast<size_t>(rk)];
 }
 
-template <typename Getter>
-Value CPU::resolveTableIndexChain(Table* table, Getter get) {
-	Table* current = table;
-	for (int depth = 0; depth < 32; depth += 1) {
-		const Value value = get(current);
-		if (!isNil(value)) {
-			return value;
-		}
-		Table* metatable = current->metatable;
-		if (!metatable) {
-			return valueNil();
-		}
-		const Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-		if (!valueIsTable(indexerValue)) {
-			return valueNil();
-		}
-		current = asTable(indexerValue);
+Value CPU::resolveTableIndex(Table* table, const Value& key) {
+	Value value;
+	if (table->resolveIndex(
+		asStringId(m_indexKey),
+		key,
+		value
+	)) {
+		return value;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 }
 
-Value CPU::resolveTableIndex(Table* table, const Value& key) {
-	return resolveTableIndexChain(table, [&](Table* current) {
-		return current->get(key);
-	});
-}
-
 Value CPU::resolveTableIntegerIndex(Table* table, int index) {
-	return resolveTableIndexChain(table, [index](Table* current) {
-		return current->getInteger(index);
-	});
+	Value value;
+	if (table->resolveIntegerIndex(
+		asStringId(m_indexKey),
+		index,
+		value
+	)) {
+		return value;
+	}
+	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 }
 
 Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
-	return resolveTableIndexChain(table, [key](Table* current) {
-		return current->getStringKey(key);
-	});
+	Value value;
+	if (table->resolveStringIndex(
+		asStringId(m_indexKey),
+		key,
+		value
+	)) {
+		return value;
+	}
+	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 }
 
 Value CPU::loadTableIndex(const Value& base, const Value& key) {

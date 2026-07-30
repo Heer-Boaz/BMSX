@@ -1,6 +1,3 @@
-import { Closure } from '../../machine/ts/machine/cpu/closure';
-import { Table } from '../../machine/ts/machine/cpu/table';
-import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import {
@@ -32,15 +29,6 @@ function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
 	});
 }
 
-function reloadAem(runtime: Runtime): void {
-	const cpu = runtime.machine.cpu;
-	const resourceId = StringValue.get(cpu.stringPool.intern('aem'));
-	const rget = cpu.getGlobalByKey(cpu.stringPool.intern('rget')) as Closure;
-	const resource = runtime.callClosure(rget, [resourceId])[0] as Table;
-	const reload = resource.getStringKey(StringValue.get(cpu.stringPool.intern('reload_from_rom'))) as Closure;
-	runtime.callClosure(reload, EMPTY_CALL_ARGS);
-}
-
 export function applyAemSourceToRuntime(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
@@ -65,5 +53,12 @@ export function applyAemSourceToRuntime(
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;
 	runtimePackage.audioevents[assetId] = doc as Record<string, unknown>;
-	reloadAem(runtime);
+	const suspendedGuest = luaTooling.suspendedGuest;
+	const aemResource = suspendedGuest.callClosure(
+		suspendedGuest.global('rget'),
+		[suspendedGuest.existingString('aem')],
+	)[0];
+	suspendedGuest.callClosure(
+		suspendedGuest.readStringMember(aemResource, 'reload_from_rom'),
+	);
 }

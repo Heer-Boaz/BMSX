@@ -22,10 +22,28 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 import {
 	loadBlua32ToolingImage,
 	type Blua32ToolingImage,
-	type Blua32ToolingMedia,
 } from '../../toolchain/ts/rompack/blua32_media';
+import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
 const SYSTEM_PROJECT_ROOT_PATH = 'machine/firmware';
+
+export const enum Blua32GlobalRegisterFile {
+	Global = 1,
+	System = 2,
+}
+
+export type Blua32SourceImage = Blua32ToolingImage & {
+	readonly globalRegisterFileByName: ReadonlyMap<string, Blua32GlobalRegisterFile>;
+};
+
+export type Blua32SourceMedia = {
+	readonly system: Blua32SourceImage | null;
+	readonly cartridgeSlots: readonly [
+		Blua32SourceImage | null,
+		Blua32SourceImage | null,
+	];
+};
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
@@ -59,7 +77,7 @@ export type RuntimeSourceState = {
 	systemBlua32MediaDirty: boolean;
 	cartridgeBlua32MediaDirty: [boolean, boolean];
 	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
-	currentBlua32Media: Blua32ToolingMedia;
+	currentBlua32Media: Blua32SourceMedia;
 };
 
 export type RuntimeLuaSourceMatch = LuaSourceMatch & {
@@ -75,6 +93,33 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 	return sourceByPath;
 }
 
+export function createBlua32SourceImage(
+	layout: Blua32ImageLayout,
+	symbols: Blua32SymbolsImage | null,
+): Blua32SourceImage {
+	const globalRegisterFileByName = new Map<string, Blua32GlobalRegisterFile>();
+	if (symbols) {
+		const metadata = symbols.metadata;
+		for (let index = 0; index < metadata.globalNames.length; index += 1) {
+			globalRegisterFileByName.set(
+				metadata.globalNames[index],
+				Blua32GlobalRegisterFile.Global,
+			);
+		}
+		for (let index = 0; index < metadata.systemGlobalNames.length; index += 1) {
+			globalRegisterFileByName.set(
+				metadata.systemGlobalNames[index],
+				Blua32GlobalRegisterFile.System,
+			);
+		}
+	}
+	return {
+		layout,
+		symbols,
+		globalRegisterFileByName,
+	};
+}
+
 export function createRuntimeSourceState(
 	systemLayer: RomToolingLayer,
 	cartridgeLayers: readonly [RomToolingLayer | null, RomToolingLayer | null],
@@ -85,7 +130,7 @@ export function createRuntimeSourceState(
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	const systemProjectRootPath = systemLuaSources.projectRootPath || SYSTEM_PROJECT_ROOT_PATH;
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
-	const cartridgeToolingImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
+	const cartridgeToolingImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 		const cartLayer = cartridgeLayers[slot];
 		if (cartLayer === null) {
@@ -108,11 +153,15 @@ export function createRuntimeSourceState(
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 			aemResources: [],
 		};
-		cartridgeToolingImages[slot] = loadBlua32ToolingImage(
+		const image = loadBlua32ToolingImage(
 			cartLayer,
 			CART_ROM_BASE,
 		);
+		cartridgeToolingImages[slot] = image
+			? createBlua32SourceImage(image.layout, image.symbols)
+			: null;
 	}
+	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
 		cartridgeSlots,
@@ -135,7 +184,9 @@ export function createRuntimeSourceState(
 		cartridgeBlua32MediaDirty: [false, false],
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
 		currentBlua32Media: {
-			system: loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE),
+			system: systemImage
+				? createBlua32SourceImage(systemImage.layout, systemImage.symbols)
+				: null,
 			cartridgeSlots: cartridgeToolingImages,
 		},
 	};

@@ -1381,9 +1381,9 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 test('CPU runtime snapshot preserves nested table object identities', () => {
 	const { cpu } = makeHaltCpu();
 	const rootName = cpu.stringPool.intern('root');
-	const childKey = StringValue.get(cpu.stringPool.intern('child'));
-	const parentKey = StringValue.get(cpu.stringPool.intern('parent'));
-	const objectKeyName = StringValue.get(cpu.stringPool.intern('object_key'));
+	const childKey = cpu.stringPool.intern('child');
+	const parentKey = cpu.stringPool.intern('parent');
+	const objectKeyName = cpu.stringPool.intern('object_key');
 	const root = cpu.createTable(0, 64);
 	const child = cpu.createTable(0, 1);
 	const objectKey = cpu.createTable(0, 0);

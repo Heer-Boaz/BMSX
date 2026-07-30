@@ -46,6 +46,11 @@ export class StringPool {
 		return id;
 	}
 
+	public find(value: string): StringId | undefined {
+		const interned = this.byText.get(value);
+		return interned ? interned - 1 : undefined;
+	}
+
 	public toString(id: StringId): string {
 		return this.values[id];
 	}

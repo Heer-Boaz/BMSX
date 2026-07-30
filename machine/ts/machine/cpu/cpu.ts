@@ -230,12 +230,6 @@ export const enum RunResult {
 }
 
 
-const enum TableIndexKeyKind {
-	Value,
-	Integer,
-	Field,
-}
-
 const TABLE_WEAK_KEYS = 1;
 const TABLE_WEAK_VALUES = 2;
 const TABLE_WEAK_KEY_CODE_UNIT = 0x6b;
@@ -585,45 +579,6 @@ export class CPU {
 		previous.nextOpen = upvalue;
 	}
 
-	private resolveTableIndexChain(
-		table: Table,
-		keyTag: ValueTag,
-		keyScalar: number,
-		keyReference: ValueReference,
-		kind: TableIndexKeyKind,
-		target: ValueSlots,
-		targetIndex: number,
-	): void {
-		let current = table;
-		for (let depth = 0; depth < 32; depth += 1) {
-			switch (kind) {
-				case TableIndexKeyKind.Integer:
-					current.loadInteger(keyScalar, target, targetIndex);
-					break;
-				case TableIndexKeyKind.Field:
-					current.loadStringKey(keyScalar as StringId, target, targetIndex);
-					break;
-				case TableIndexKeyKind.Value:
-					current.load(keyTag, keyScalar, keyReference, target, targetIndex);
-					break;
-			}
-			if (target.getTag(targetIndex) !== ValueTag.Nil) {
-				return;
-			}
-			const metatable = current.metatable;
-			if (!metatable) {
-				return;
-			}
-			metatable.loadStringKey(this.indexKey, target, targetIndex);
-			if (target.getTag(targetIndex) !== ValueTag.Table) {
-				target.setNil(targetIndex);
-				return;
-			}
-			current = target.getTable(targetIndex);
-		}
-		throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-	}
-
 	private loadTableIndex(
 		baseTag: ValueTag,
 		baseTable: Table | null,
@@ -648,15 +603,16 @@ export class CPU {
 			table.load(keyTag, keyScalar, keyReference, target, targetIndex);
 			return;
 		}
-		this.resolveTableIndexChain(
-			table,
+		if (!table.resolveIndex(
+			this.indexKey,
 			keyTag,
 			keyScalar,
 			keyReference,
-			TableIndexKeyKind.Value,
 			target,
 			targetIndex,
-		);
+		)) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		}
 	}
 
 	private loadTableIntegerIndexCached(
@@ -667,7 +623,6 @@ export class CPU {
 		target: ValueSlots,
 		targetIndex: number,
 	): void {
-		const indexKind = TableIndexKeyKind.Integer;
 		let table: Table;
 		switch (baseTag) {
 			case ValueTag.Table:
@@ -680,15 +635,14 @@ export class CPU {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 		if (table.metatable) {
-			this.resolveTableIndexChain(
-				table,
-				ValueTag.Number,
+			if (!table.resolveIntegerIndex(
+				this.indexKey,
 				index,
-				null,
-				indexKind,
 				target,
 				targetIndex,
-			);
+			)) {
+				throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+			}
 			return;
 		}
 		const version = table.getVersion();
@@ -724,15 +678,14 @@ export class CPU {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 		if (table.metatable) {
-			this.resolveTableIndexChain(
-				table,
-				ValueTag.String,
+			if (!table.resolveStringIndex(
+				this.indexKey,
 				key,
-				null,
-				TableIndexKeyKind.Field,
 				target,
 				targetIndex,
-			);
+			)) {
+				throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+			}
 			return;
 		}
 		const version = table.getVersion();
@@ -1829,7 +1782,7 @@ export class CPU {
 	): void {
 		this.globals.storeStringKey(key, tag, scalar, reference);
 		const globalSlot = this.globalSlotByKey.get(key);
-		if (globalSlot) {
+		if (globalSlot != null) {
 			this.globalSlots.setEncoded(globalSlot, tag, scalar, reference);
 		}
 	}
@@ -1845,6 +1798,10 @@ export class CPU {
 			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
 		}
 		this.systemGlobalSlots.setEncoded(slot, tag, scalar, reference);
+	}
+
+	public getSystemGlobalByKey(key: StringId): Value {
+		return this.systemGlobalSlots.get(this.systemGlobalSlotByKey.get(key)!);
 	}
 
 	public clearGlobalSlots(): void {
@@ -1869,7 +1826,7 @@ export class CPU {
 
 	public getGlobalByKey(key: StringId): Value {
 		const globalSlot = this.globalSlotByKey.get(key);
-		if (globalSlot) {
+		if (globalSlot != null) {
 			return this.globalSlots.get(globalSlot);
 		}
 		this.globals.loadStringKey(key, this.tableScratch, 0);

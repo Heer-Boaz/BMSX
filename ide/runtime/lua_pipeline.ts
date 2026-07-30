@@ -12,8 +12,10 @@ import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image'
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
+	createBlua32SourceImage,
 	installRuntimeRomLayers,
 	resolveRuntimeLuaSource,
+	type Blua32SourceImage,
 	type RuntimeSourceState,
 } from './sources';
 import {
@@ -35,7 +37,6 @@ import {
 } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeLuaTooling } from './lua_tooling';
-import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import {
 	buildRomAssetLinkValuesFromSymbols,
@@ -429,7 +430,7 @@ export function installBlua32Media(
 	installRuntimeRomLayers(sources, systemLayer, cartridgeLayers);
 	const currentMedia = sources.currentBlua32Media;
 	let systemImage = currentMedia.system;
-	const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [
+	const cartridgeImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [
 		currentMedia.cartridgeSlots[0],
 		currentMedia.cartridgeSlots[1],
 	];
@@ -438,10 +439,10 @@ export function installBlua32Media(
 		commitInstalledBlua32Sources(sources.systemLuaSources, rebuilt.system!.sources);
 		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
 		sources.systemBlua32MediaDirty = false;
-		systemImage = {
-			layout: rebuilt.system!.linked.layout,
-			symbols: rebuilt.system!.linked.symbols,
-		};
+		systemImage = createBlua32SourceImage(
+			rebuilt.system!.linked.layout,
+			rebuilt.system!.linked.symbols,
+		);
 	}
 	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
 		const layer = cartridgeLayers[slot];
@@ -455,10 +456,10 @@ export function installBlua32Media(
 		);
 		sources.cartridgeSlots[slot]!.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
 		sources.cartridgeBlua32MediaDirty[slot] = false;
-		cartridgeImages[slot] = {
-			layout: rebuilt.cartridgeSlots[slot]!.linked.layout,
-			symbols: rebuilt.cartridgeSlots[slot]!.linked.symbols,
-		};
+		cartridgeImages[slot] = createBlua32SourceImage(
+			rebuilt.cartridgeSlots[slot]!.linked.layout,
+			rebuilt.cartridgeSlots[slot]!.linked.symbols,
+		);
 	}
 	sources.currentBlua32Media = {
 		system: systemImage,

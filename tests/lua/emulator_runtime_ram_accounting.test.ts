@@ -5,8 +5,8 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
-	StringValue,
 	createBuiltinFunction,
+	valueString,
 } from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
@@ -38,13 +38,13 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 
 test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	const key = StringValue.get(cpu.stringPool.intern('state'));
+	const key = valueString(cpu.stringPool.intern('state'));
 
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
 	table.set(1, 11);
-	table.set(StringValue.get(cpu.stringPool.intern('hp')), 7);
+	table.set(valueString(cpu.stringPool.intern('hp')), 7);
 	cpu.globals.set(key, table);
 
 	const afterTable = cpu.collectTrackedHeapBytes();
@@ -68,7 +68,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('foo')), createBuiltinFunction(BuiltinFunctionId.Next));
+	cpu.globals.setStringKey(cpu.stringPool.intern('foo'), createBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
 	assert.deepEqual(state.globals, [
@@ -78,7 +78,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
-		restoredCpu.globals.getStringKey(StringValue.get(restoredCpu.stringPool.intern('foo'))),
+		restoredCpu.globals.getStringKey(restoredCpu.stringPool.intern('foo')),
 		createBuiltinFunction(BuiltinFunctionId.Next),
 	);
 });
@@ -104,8 +104,8 @@ test('runtime string materialization tracks RAM even when the same text exists i
 	// A materialized runtime string is always held somewhere live (here: a global).
 	// It must count as RAM even though the identical text already exists in ROM as
 	// an untracked literal.
-	const runtimeString = StringValue.get(cpu.stringPool.intern('rom literal'));
-	cpu.globals.set(StringValue.get(cpu.stringPool.intern('held', false)), runtimeString);
+	const runtimeString = valueString(cpu.stringPool.intern('rom literal'));
+	cpu.globals.set(valueString(cpu.stringPool.intern('held', false)), runtimeString);
 
 	assert.ok(cpu.collectTrackedHeapBytes() > before);
 });
