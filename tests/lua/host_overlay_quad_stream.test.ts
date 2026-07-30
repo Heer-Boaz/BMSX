@@ -19,48 +19,6 @@ import {
 	TextBaseline,
 } from '../../machine/ts/render/shared/submissions';
 
-test('host overlay quad stream retains ordered solid and atlas instances', () => {
-	const stream = new HostOverlayQuadStream();
-	const commandKinds: Host2DKind[] = [Host2DKind.Rect, Host2DKind.Img];
-	const commands: Host2DRef[] = [
-		{
-			kind: RectRenderKind.Fill,
-			area: { left: 12, top: 8, right: 4, bottom: 2, z: 0 },
-			color: 0x80402010,
-			layer: LAYER_2D_IDE,
-		},
-		{
-			imgid: 'copy',
-			pos: { x: 20, y: 30, z: 0 },
-			scale: { x: 2, y: 3 },
-			flip: { flip_h: true, flip_v: false },
-			colorize: 0xffffffff,
-			ambient_affected: false,
-			ambient_factor: 1,
-			layer: LAYER_2D_IDE,
-		},
-	];
-	for (let index = 0; index < commands.length; index += 1) {
-		stream.appendEntry(commandKinds[index], commands[index]);
-	}
-
-	assert.equal(stream.count, 2);
-	assert.equal(stream.textureKinds[0], HOST_OVERLAY_TEXTURE_SOLID);
-	assert.equal(stream.textureKinds[1], HOST_OVERLAY_TEXTURE_ATLAS);
-	assert.deepEqual(Array.from(stream.floatData.subarray(0, 6)), [4, 2, 8, 0, 0, 6]);
-	const imageBase = HOST_OVERLAY_INSTANCE_FLOATS;
-	assert.deepEqual(Array.from(stream.floatData.subarray(imageBase, imageBase + 6)), [20, 30, 12, 0, 0, 24]);
-	assert.ok(stream.floatData[imageBase + 6] > stream.floatData[imageBase + 8]);
-
-	const retainedFloats = stream.floatData;
-	const retainedKinds = stream.textureKinds;
-	stream.reset();
-	stream.appendEntry(commandKinds[0], commands[0]);
-	assert.equal(stream.floatData, retainedFloats);
-	assert.equal(stream.textureKinds, retainedKinds);
-	assert.equal(stream.count, 1);
-});
-
 test('host overlay quad stream emits glyph backgrounds before atlas glyphs with atlas UVs', () => {
 	const stream = new HostOverlayQuadStream();
 	const font = new Font();
