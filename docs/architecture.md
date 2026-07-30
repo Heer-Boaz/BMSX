@@ -771,16 +771,16 @@ or an explicit tooling inspection reads them.
 
 `__blua32__` begins the deliberately mutable executable tail after that prefix.
 It is one ordinary TOC payload containing a fixed binary image; it has no
-generic serializer descriptor and no parallel compiled range. A Studio AEM
-save is also a physical-media revision: the edited AEM payload moves from the
-immutable pack prefix into the mutable tail immediately after `__blua32__`.
-Later source or AEM revisions retain every AEM payload already owned by that
-tail and compact them against the new executable end. All other asset,
-metadata, and manifest spans remain in the immutable prefix.
-`__blua32_symbols__`, when present, follows those authoring AEM payloads and
-contains tooling metadata only. The movable TOC follows the complete mutable
-tail. Hot Resume replaces the ROM header, executable bytes, authoring AEM
-payloads, symbols, and TOC; it does not maintain a parallel host-only AEM
+generic serializer descriptor and no parallel compiled range. Editing a
+ROM-backed authoring asset is also a physical-media revision: that asset moves
+from the immutable pack prefix into the mutable tail immediately after
+`__blua32__`. Later source or asset revisions retain every public asset already
+owned by that tail and compact them against the new executable end. Unedited
+assets that still precede `__blua32__`, metadata, and manifest spans remain in
+the immutable prefix. `__blua32_symbols__`, when present, follows the authoring
+assets and contains tooling metadata only. The movable TOC follows the complete
+mutable tail. Hot Resume replaces the ROM header, executable bytes, authoring
+assets, symbols, and TOC; it does not maintain a parallel host-only asset
 override.
 
 The outer ROM header exposes the executable without a TOC lookup:
@@ -906,12 +906,12 @@ cartridges do not carry a duplicate of the firmware symbols.
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
 recognises that module as compile-time only. Stable immutable-prefix exports
-remain ordinary foldable compile-time constants. Studio marks only mutable-tail
-AEM exports as deduplicated constant-pool relocations, and the linker resolves
-those loads to their final physical address or length. The module never
-produces a runtime Lua table, module function, global slot, or `require` call in
-executable cart code. Using the module root as a value is a compile-time error;
-cart code must read concrete exports such as
+remain ordinary foldable compile-time constants. Studio marks only exports for
+assets in the mutable tail as deduplicated constant-pool relocations, and the
+linker resolves those loads to their final physical address or length. The
+module never produces a runtime Lua table, module function, global slot, or
+`require` call in executable cart code. Using the module root as a value is a
+compile-time error; cart code must read concrete exports such as
 `assets.data_transition_config_addr` and
 `assets.data_transition_config_len`.
 Do not add a `rom_asset("name")`-style API, even as a compile-time builtin: the

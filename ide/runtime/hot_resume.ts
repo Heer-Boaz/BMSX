@@ -9,7 +9,7 @@ import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import {
 	buildBlua32Media,
 	installBlua32Media,
-	type RuntimeAemRevision,
+	type RuntimeRomAssetRevision,
 } from './lua_pipeline';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
@@ -29,7 +29,7 @@ export function applyBlua32Revision(
 	runtime: Runtime,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
-	aemRevision?: RuntimeAemRevision,
+	assetRevision?: RuntimeRomAssetRevision,
 ): void {
 	const rebuilt = buildBlua32Media(
 		sources,
@@ -37,7 +37,7 @@ export function applyBlua32Revision(
 		runtime.machine.memory.ramByteCount(),
 		rebuildSystem,
 		rebuildCartridgeSlots,
-		aemRevision,
+		assetRevision,
 	);
 	const revisions: [
 		HotResumeRevision | null,
@@ -79,7 +79,7 @@ export function applyBlua32Revision(
 	const cpu = runtime.machine.cpu;
 	const executionAddressSpace = runtime.machine.executionAddressSpace;
 	const relocation = buildHotResumeRelocation(cpu, revisions);
-	installBlua32Media(sources, runtime, rebuilt, aemRevision);
+	installBlua32Media(sources, runtime, rebuilt, assetRevision);
 
 	if (rebuilt.system !== null) {
 		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());

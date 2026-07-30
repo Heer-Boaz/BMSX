@@ -59,7 +59,7 @@ export function applyAemSourceToRuntime(
 		runtime,
 		resource.domain === SYSTEM_RESOURCE_DOMAIN,
 		[resource.domain === 0, resource.domain === 1],
-		[resource.domain, [assetId, encodeBinary(doc)]],
+		[resource.domain, ['aem', assetId, encodeBinary(doc)]],
 	);
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage

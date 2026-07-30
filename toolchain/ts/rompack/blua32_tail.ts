@@ -9,19 +9,23 @@ import {
 	parseCartHeader,
 } from '../../../machine/ts/rompack/format';
 import type { RomAsset } from './assets';
-import type { AssetId } from '../../../machine/ts/rompack/toc';
+import type { AssetId, AssetType } from '../../../machine/ts/rompack/toc';
 import { alignRomAssetOffset } from './asset_layout';
 import type { RomSourceLayer } from './source';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
 
-export type Blua32AemEdit = readonly [assetId: AssetId, payload: Uint8Array];
+export type RomAssetEdit = readonly [
+	type: AssetType,
+	id: AssetId,
+	payload: Uint8Array,
+];
 
 export function layoutBlua32PublicAssets(
 	layer: RomSourceLayer,
 	imageByteCount: number,
-	aemEdit?: Blua32AemEdit,
+	assetEdit?: RomAssetEdit,
 ): readonly [entries: RomAsset[], tailOffset: number] {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
@@ -33,12 +37,14 @@ export function layoutBlua32PublicAssets(
 		if (entry.resid === BLUA32_IMAGE_ID || entry.resid === BLUA32_SYMBOLS_IMAGE_ID) {
 			continue;
 		}
-		const isEdited = aemEdit && entry.type === 'aem' && entry.resid === aemEdit[0];
-		if (entry.type !== 'aem' || (!isEdited && entry.start! < imageOffset)) {
+		const isEdited = assetEdit
+			&& entry.type === assetEdit[0]
+			&& entry.resid === assetEdit[1];
+		if (!isEdited && (entry.start == null || entry.start < imageOffset)) {
 			entries.push(entry);
 			continue;
 		}
-		const byteLength = isEdited ? aemEdit[1].byteLength : entry.end! - entry.start!;
+		const byteLength = isEdited ? assetEdit[2].byteLength : entry.end! - entry.start!;
 		entries.push({
 			...entry,
 			start: tailOffset,
@@ -49,8 +55,8 @@ export function layoutBlua32PublicAssets(
 			edited = true;
 		}
 	}
-	if (aemEdit && !edited) {
-		throw new Error(`AEM asset '${aemEdit[0]}' is not present in the ROM.`);
+	if (assetEdit && !edited) {
+		throw new Error(`${assetEdit[0]} asset '${assetEdit[1]}' is not present in the ROM.`);
 	}
 	return [entries, tailOffset];
 }
@@ -58,7 +64,7 @@ export function layoutBlua32PublicAssets(
 export function buildBlua32Tail(
 	layer: RomSourceLayer,
 	linked: LinkedBlua32Image,
-	aemEdit?: Blua32AemEdit,
+	assetEdit?: RomAssetEdit,
 ): RomSourceLayer {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
@@ -66,10 +72,11 @@ export function buildBlua32Tail(
 	const [entries, symbolsOffset] = layoutBlua32PublicAssets(
 		layer,
 		linked.bytes.byteLength,
-		aemEdit,
+		assetEdit,
 	);
 	const symbols = encodeBlua32SymbolsImage(linked.symbols);
 	const symbolsEnd = symbolsOffset + symbols.byteLength;
+	const publicEntryCount = entries.length;
 	entries.push({
 		resid: BLUA32_IMAGE_ID,
 		type: 'code',
@@ -99,13 +106,15 @@ export function buildBlua32Tail(
 	const payload = new Uint8Array(payloadByteCount);
 	payload.set(layer.bytes.subarray(0, imageOffset));
 	payload.set(linked.bytes, imageOffset);
-	for (let index = 0; index < entries.length; index += 1) {
+	for (let index = 0; index < publicEntryCount; index += 1) {
 		const entry = entries[index];
-		if (entry.type !== 'aem' || entry.start! < imageEnd) {
+		if (entry.start == null || entry.start < imageEnd) {
 			continue;
 		}
-		if (aemEdit && entry.resid === aemEdit[0]) {
-			payload.set(aemEdit[1], entry.start);
+		if (assetEdit
+			&& entry.type === assetEdit[0]
+			&& entry.resid === assetEdit[1]) {
+			payload.set(assetEdit[2], entry.start);
 			continue;
 		}
 		let sourceIndex = 0;

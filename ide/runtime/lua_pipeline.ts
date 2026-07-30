@@ -28,7 +28,7 @@ import {
 import {
 	buildBlua32Tail,
 	layoutBlua32PublicAssets,
-	type Blua32AemEdit,
+	type RomAssetEdit,
 } from '../../toolchain/ts/rompack/blua32_tail';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import {
@@ -71,9 +71,9 @@ export type RebuiltBlua32Media = {
 	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
 };
 
-export type RuntimeAemRevision = readonly [
+export type RuntimeRomAssetRevision = readonly [
 	domain: ResourceDomain,
-	edit: Blua32AemEdit,
+	edit: RomAssetEdit,
 ];
 
 function createFreshLuaInterpreter(
@@ -268,15 +268,16 @@ function buildAssetModule(
 	entries: ReadonlyArray<RomAsset>,
 	domain: RomSourceLayer['id'],
 	imageOffset: number,
-	aemEdit?: Blua32AemEdit,
+	assetEdit?: RomAssetEdit,
 ): readonly [source: string, linkValues: ReadonlyMap<string, number>] {
 	const symbols = collectRomAssetSymbols(entries, domain);
 	const linkSymbols: RomAssetSymbol[] = [];
 	for (let index = 0; index < symbols.length; index += 1) {
 		const symbol = symbols[index];
-		if (symbol.assetType === 'aem'
-			&& (symbol.offset >= imageOffset
-				|| (aemEdit && symbol.assetId === aemEdit[0]))) {
+		if (symbol.offset >= imageOffset
+			|| (assetEdit
+				&& symbol.assetType === assetEdit[0]
+				&& symbol.assetId === assetEdit[1])) {
 			linkSymbols.push(symbol);
 		}
 	}
@@ -343,7 +344,7 @@ export function buildBlua32Media(
 	ramByteCount: number,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
-	aemRevision?: RuntimeAemRevision,
+	assetRevision?: RuntimeRomAssetRevision,
 ): RebuiltBlua32Media {
 	const systemRegistry = sources.systemLuaSources;
 	const cartridgeImageOffsets: [number, number] = [0, 0];
@@ -364,8 +365,8 @@ export function buildBlua32Media(
 	if (rebuildSystem) {
 		const imageOffset = sources.systemRom.header.blua32ImageOffset;
 		const imageAddress = SYSTEM_ROM_BASE + imageOffset;
-		const systemAemEdit = aemRevision && aemRevision[0] === SYSTEM_RESOURCE_DOMAIN
-			? aemRevision[1]
+		const assetEdit = assetRevision && assetRevision[0] === SYSTEM_RESOURCE_DOMAIN
+			? assetRevision[1]
 			: undefined;
 		const compiledSystem = compileRegistryProgramObject(
 			sources,
@@ -377,7 +378,7 @@ export function buildBlua32Media(
 				sources.systemRom.index.entries,
 				sources.systemRom.id,
 				imageOffset,
-				systemAemEdit,
+				assetEdit,
 			),
 		);
 		const linked = linkSystemBlua32Image(
@@ -390,7 +391,7 @@ export function buildBlua32Media(
 		const [entries] = layoutBlua32PublicAssets(
 			sources.systemRom,
 			linked.bytes.byteLength,
-			systemAemEdit,
+			assetEdit,
 		);
 		applyLinkedAssetModule(
 			compiledSystem,
@@ -425,8 +426,8 @@ export function buildBlua32Media(
 			continue;
 		}
 		const cartridge = sources.cartridgeSlots[slot]!;
-		const cartridgeAemEdit = aemRevision && aemRevision[0] === slot
-			? aemRevision[1]
+		const assetEdit = assetRevision && assetRevision[0] === slot
+			? assetRevision[1]
 			: undefined;
 		const compiled = compileRegistryProgramObject(
 			sources,
@@ -438,7 +439,7 @@ export function buildBlua32Media(
 				cartridge.rom.index.entries,
 				cartridge.rom.id,
 				imageOffset,
-				cartridgeAemEdit,
+				assetEdit,
 			),
 		);
 		const imageAddress = CART_ROM_BASE + imageOffset;
@@ -455,7 +456,7 @@ export function buildBlua32Media(
 		const [entries] = layoutBlua32PublicAssets(
 			cartridge.rom,
 			linked.bytes.byteLength,
-			cartridgeAemEdit,
+			assetEdit,
 		);
 		applyLinkedAssetModule(
 			compiled,
@@ -484,7 +485,7 @@ export function installBlua32Media(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
 	rebuilt: RebuiltBlua32Media,
-	aemRevision?: RuntimeAemRevision,
+	assetRevision?: RuntimeRomAssetRevision,
 ): void {
 	let systemLayer: RomSourceLayer | null = null;
 	const cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null] = [null, null];
@@ -492,8 +493,8 @@ export function installBlua32Media(
 		systemLayer = buildBlua32Tail(
 			sources.systemRom,
 			rebuilt.system.linked,
-			aemRevision && aemRevision[0] === SYSTEM_RESOURCE_DOMAIN
-				? aemRevision[1]
+			assetRevision && assetRevision[0] === SYSTEM_RESOURCE_DOMAIN
+				? assetRevision[1]
 				: undefined,
 		);
 	}
@@ -503,8 +504,8 @@ export function installBlua32Media(
 			cartridgeLayers[slot] = buildBlua32Tail(
 				sources.cartridgeSlots[slot]!.rom,
 				image.linked,
-				aemRevision && aemRevision[0] === slot
-					? aemRevision[1]
+				assetRevision && assetRevision[0] === slot
+					? assetRevision[1]
 					: undefined,
 			);
 		}
