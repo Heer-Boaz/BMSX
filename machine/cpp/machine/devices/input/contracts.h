@@ -9,35 +9,36 @@ namespace bmsx {
 // Raw ICU snapshot contract. The ICU latches one full input snapshot per armed
 // VBlank edge into plain MMIO words; it carries no key names, mappings, or
 // action semantics. Keyboard bits are indexed by USB HID usage IDs
-// (usage page 0x07); pad button bits follow INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS.
+// (usage page 0x07); pad button bits use InputControllerGamepadButtonBit.
 // Mirrors machine/ts/machine/devices/input/contracts.ts.
 
 constexpr int INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 constexpr int INPUT_CONTROLLER_PAD_COUNT = 4;
 constexpr int INPUT_CONTROLLER_PAD_AXIS_COUNT = 6; // lx, ly, rx, ry, lt, rt
 
-// Canonical pad button bit order: bit i in the pad buttons word.
-inline const char* const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[] = {
-	"a",
-	"b",
-	"x",
-	"y",
-	"lb",
-	"rb",
-	"lt",
-	"rt",
-	"select",
-	"start",
-	"ls",
-	"rs",
-	"up",
-	"down",
-	"left",
-	"right",
-	"home",
-	"touch",
+// Raw bit positions in each latched pad-buttons word.
+enum class InputControllerGamepadButtonBit : u8 {
+	A = 0,
+	B = 1,
+	X = 2,
+	Y = 3,
+	LeftBumper = 4,
+	RightBumper = 5,
+	LeftTrigger = 6,
+	RightTrigger = 7,
+	Select = 8,
+	Start = 9,
+	LeftStick = 10,
+	RightStick = 11,
+	Up = 12,
+	Down = 13,
+	Left = 14,
+	Right = 15,
+	Home = 16,
+	Touchpad = 17,
 };
-constexpr int INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT = sizeof(INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS) / sizeof(INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[0]);
+constexpr int INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT =
+	static_cast<int>(InputControllerGamepadButtonBit::Touchpad) + 1;
 
 // Pointer button bit order mirrors the W3C MouseEvent.button index order.
 constexpr int INP_POINTER_BUTTON_PRIMARY = 0;
@@ -68,7 +69,7 @@ inline InputControllerSnapshot createInputControllerSnapshot() {
 class InputControllerInputSource {
 public:
 	virtual ~InputControllerInputSource() = default;
-	virtual void sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) = 0;
+	virtual void sampleInputControllerSnapshot(InputControllerSnapshot& snapshot) = 0;
 	virtual auto supervisorRequestLineHigh() const -> bool = 0;
 	virtual void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) = 0;
 };

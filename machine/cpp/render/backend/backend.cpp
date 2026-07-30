@@ -133,19 +133,17 @@ static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* 
  * ============================================================================ */
 
 SoftwareBackend::SoftwareBackend(
-	u32* framebuffer,
 	i32 width,
 	i32 height,
-	i32 pitch,
 	size_t gxGpuVramByteCount)
-	: m_default_framebuffer(framebuffer)
+	: m_default_framebuffer(nullptr)
 	, m_default_width(width)
 	, m_default_height(height)
-	, m_default_pitch(pitch)
-	, m_framebuffer(framebuffer)
+	, m_default_pitch(width * static_cast<i32>(sizeof(u32)))
+	, m_framebuffer(nullptr)
 	, m_width(width)
 	, m_height(height)
-	, m_pitch(pitch)
+	, m_pitch(width * static_cast<i32>(sizeof(u32)))
 	, m_gx_gpu_software(
 		gxGpuVramByteCount,
 		static_cast<size_t>(width) * static_cast<size_t>(height)) {
@@ -170,17 +168,29 @@ void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32
 	m_pitch = pitch;
 }
 
-void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
-	m_default_framebuffer = fb;
+void SoftwareBackend::resizePresentationTarget(i32 width, i32 height) {
+	m_presentation_target.m_pixels.resize(
+		static_cast<size_t>(width) * static_cast<size_t>(height));
+	m_presentation_target.m_width = width;
+	m_presentation_target.m_height = height;
+	m_presentation_target.m_pitch = width * static_cast<i32>(sizeof(u32));
+	m_default_framebuffer = m_presentation_target.m_pixels.data();
 	m_default_width = width;
 	m_default_height = height;
-	m_default_pitch = pitch;
-	m_gx_gpu_software.interlacedPixels.resize(
-		static_cast<size_t>(width) * static_cast<size_t>(height));
-	m_gx_gpu_software.interlacedWidth = width;
-	m_gx_gpu_software.interlacedHeight = height;
-	m_gx_gpu_software.interlacedValid = false;
-	applyFramebufferTarget(fb, width, height, pitch);
+	m_default_pitch = m_presentation_target.m_pitch;
+	if (width != m_gx_gpu_software.interlacedWidth
+		|| height != m_gx_gpu_software.interlacedHeight) {
+		m_gx_gpu_software.interlacedPixels.resize(
+			static_cast<size_t>(width) * static_cast<size_t>(height));
+		m_gx_gpu_software.interlacedWidth = width;
+		m_gx_gpu_software.interlacedHeight = height;
+		m_gx_gpu_software.interlacedValid = false;
+	}
+	applyFramebufferTarget(
+		m_default_framebuffer,
+		m_default_width,
+		m_default_height,
+		m_default_pitch);
 }
 
 TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) {

@@ -7,7 +7,6 @@
 #include "video_presenter.h"
 #include "backend/pass/library.h"
 #include "graph/graph.h"
-#include "platform/platform.h"
 #include <stdexcept>
 #include <utility>
 
@@ -39,7 +38,8 @@ void VideoPresenter::setRenderTargetSize(i32 width, i32 height) {
 	viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
 	canvasSize = viewportSize;
 	offscreenCanvasSize = viewportSize;
-	m_output.setRenderTargetSize(*m_backend, width, height);
+	m_backend->resizePresentationTarget(width, height);
+	m_output.setDisplaySize(width, height);
 	rebuildGraph();
 }
 void VideoPresenter::clearTextures() {

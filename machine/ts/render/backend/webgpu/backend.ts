@@ -76,6 +76,11 @@ export class WebGPUBackend implements GPUBackend {
 		this.gxGpuVramPhysicalWordMask = (gxGpuVramBytes >>> 1) - 1;
 	}
 
+	resizePresentationTarget(width: number, height: number): void {
+		this._context.canvas.width = width;
+		this._context.canvas.height = height;
+	}
+
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
 		const frameUniforms = createFrameUniformState(this);
 		registry.register({
@@ -313,7 +318,7 @@ export class WebGPUBackend implements GPUBackend {
 			format,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
 		});
-		if (desc.initialClearColor !== undefined) {
+		if (desc.initialClearColor != null) {
 			const commandEncoder = this.device.createCommandEncoder();
 			const passEncoder = commandEncoder.beginRenderPass({
 				colorAttachments: [{
@@ -354,8 +359,8 @@ export class WebGPUBackend implements GPUBackend {
 		}
 		const clear = color.clear;
 		attachment.view = this.textureView(color.tex as GPUTexture);
-		attachment.clearValue = clear !== undefined ? clear : WEBGPU_ZERO_CLEAR;
-		attachment.loadOp = clear !== undefined ? 'clear' : 'load';
+		attachment.clearValue = clear != null ? clear : WEBGPU_ZERO_CLEAR;
+		attachment.loadOp = clear != null ? 'clear' : 'load';
 		attachment.storeOp = color.discardAfter ? 'discard' : 'store';
 	}
 
@@ -395,12 +400,12 @@ export class WebGPUBackend implements GPUBackend {
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
 		const commandEncoder = this.device.createCommandEncoder();
 		let colorAttachmentCount = 0;
-		if (desc.colors !== undefined) {
+		if (desc.colors != null) {
 			for (let colorIndex = 0; colorIndex < desc.colors.length; colorIndex++) {
 				this.writeRenderPassColorAttachment(colorIndex, desc.colors[colorIndex]);
 			}
 			colorAttachmentCount = desc.colors.length;
-		} else if (desc.color !== undefined) {
+		} else if (desc.color != null) {
 			this.writeRenderPassColorAttachment(0, desc.color);
 			colorAttachmentCount = 1;
 		}
@@ -409,13 +414,13 @@ export class WebGPUBackend implements GPUBackend {
 
 		const passDesc = this.renderPassDesc;
 		passDesc.colorAttachments = colorAttachments;
-		if (desc.depth !== undefined) {
+		if (desc.depth != null) {
 			const depth = desc.depth;
 			const depthStencilAttachment = this.renderPassDepthStencilAttachment;
 			const depthClear = depth.clearDepth;
 			depthStencilAttachment.view = this.textureView(depth.tex as GPUTexture);
-			depthStencilAttachment.depthClearValue = depthClear !== undefined ? depthClear : 1.0;
-			depthStencilAttachment.depthLoadOp = depthClear !== undefined ? 'clear' : 'load';
+			depthStencilAttachment.depthClearValue = depthClear != null ? depthClear : 1.0;
+			depthStencilAttachment.depthLoadOp = depthClear != null ? 'clear' : 'load';
 			depthStencilAttachment.depthStoreOp = depth.discardAfter ? 'discard' : 'store';
 			passDesc.depthStencilAttachment = depthStencilAttachment;
 		} else {

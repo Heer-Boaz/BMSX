@@ -86,6 +86,11 @@ export class WebGLBackend implements GPUBackend {
 		}
 	}
 
+	resizePresentationTarget(width: number, height: number): void {
+		this.gl.canvas.width = width;
+		this.gl.canvas.height = height;
+	}
+
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
 		const frameUniforms = createFrameUniformState(this);
 		registry.register({

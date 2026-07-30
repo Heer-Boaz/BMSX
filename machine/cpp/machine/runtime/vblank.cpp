@@ -40,7 +40,6 @@ void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1u;
 	runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge(
-		runtime.machine.systemController.elapsedMilliseconds(),
 		static_cast<u32>(runtime.machine.scheduler.nowCycles())
 	);
 	runtime.machine.irqController.raise(IRQ_VBLANK);

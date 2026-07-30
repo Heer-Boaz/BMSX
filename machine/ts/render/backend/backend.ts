@@ -204,6 +204,7 @@ export interface GPUBackend {
 	type: 'webgpu' | 'webgl2' | 'headless';
 	context: BackendContext;
 
+	resizePresentationTarget(width: number, height: number): void;
 	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
 	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, desc: TextureParams): void;

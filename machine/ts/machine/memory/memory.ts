@@ -163,6 +163,10 @@ export class Memory {
 		this.clearBusFault();
 	}
 
+	public ramData(): Uint8Array {
+		return this.ram;
+	}
+
 	public ramByteCount(): number {
 		return this.ram.byteLength;
 	}

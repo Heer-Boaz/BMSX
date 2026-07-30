@@ -15,12 +15,12 @@ import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
-import type { HeadlessPresentedFrameBuffer, HeadlessVideoOutput } from './video_output';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessGlyphContext } from './host_2d';
+import type { SoftwareFrameOutput } from '../video_output';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -113,11 +113,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 	public framebufferWords = new Uint32Array(0);
 	public framebufferWidth = 0;
 	public framebufferHeight = 0;
-	public readonly presentedFrameBuffer: HeadlessPresentedFrameBuffer = {
-		pixels: this.framebufferPixels,
-		width: 0,
-		height: 0,
-	};
 	public readonly glyphContext: HeadlessGlyphContext = {
 		target: this.framebufferPixels,
 		width: 0,
@@ -128,14 +123,18 @@ export class HeadlessGPUBackend implements GPUBackend {
 		lineHeight: 0,
 	};
 
-	constructor(private readonly output: HeadlessVideoOutput, gxGpuVramBytes: number) {
-		const size = output.surface.measureDisplay();
-		this.gxGpuSoftware = new GxGpuSoftwareState(gxGpuVramBytes, size.width * size.height);
-		this.gxGpuSoftware.interlacedWidth = size.width;
-		this.gxGpuSoftware.interlacedHeight = size.height;
+	constructor(
+		private readonly output: SoftwareFrameOutput,
+		width: number,
+		height: number,
+		gxGpuVramBytes: number,
+	) {
+		this.gxGpuSoftware = new GxGpuSoftwareState(gxGpuVramBytes, width * height);
+		this.gxGpuSoftware.interlacedWidth = width;
+		this.gxGpuSoftware.interlacedHeight = height;
 	}
 
-	resizeFramebuffer(width: number, height: number): void {
+	resizePresentationTarget(width: number, height: number): void {
 		const byteLength = width * height * 4;
 		if (this.framebufferPixels.byteLength !== byteLength) {
 			const buffer = new ArrayBuffer(byteLength);
@@ -320,7 +319,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const handle: HeadlessTextureHandle = { id: ++this.textureIdSeq, kind: 'color' };
 		const id = this.getTextureId(handle);
 		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
-		if (desc.initialClearColor !== undefined) {
+		if (desc.initialClearColor != null) {
 			writeLinearColorRgba8Pixels(pixels, desc.initialClearColor);
 		}
 		this.textures.set(id, { id, kind: 'color', width: desc.width, height: desc.height, pixels, cubemapFaces: null });
@@ -353,8 +352,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 	clear(_color: vec4arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
-		const colorSpec = desc.colors !== undefined && desc.colors[0] !== undefined ? desc.colors[0] : desc.color;
-		if (colorSpec !== undefined && colorSpec.clear !== undefined && colorSpec.tex !== undefined && colorSpec.tex !== null) {
+		const colorSpec = desc.colors != null && desc.colors[0] != null ? desc.colors[0] : desc.color;
+		if (colorSpec != null && colorSpec.clear != null && colorSpec.tex != null) {
 			const record = this.getTextureRecord(colorSpec.tex);
 			const pixels = this.texturePixels(record);
 			writeLinearColorRgba8Pixels(pixels, colorSpec.clear);

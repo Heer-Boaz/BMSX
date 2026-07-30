@@ -11,6 +11,7 @@
 #include "shared/submissions.h"
 #include "render/post/device_quantize/mode.h"
 #include "render/host_overlay/overlay_queue.h"
+#include "render/video_output.h"
 #include <array>
 #include <memory>
 #include <unordered_map>
@@ -19,7 +20,6 @@
 namespace bmsx {
 
 // Forward declarations
-class VideoOutput;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 struct GxGpuDeviceOutput;
@@ -51,8 +51,6 @@ public:
 	Vec2 viewportSize;       // Native machine scanout size.
 	Vec2 canvasSize;         // The backing buffer size
 	Vec2 offscreenCanvasSize;// Offscreen render target size
-	f32 viewportScale = 1.0f;
-	f32 canvasScale = 1.0f;
 
 	void setRenderTargetSize(i32 width, i32 height);
 

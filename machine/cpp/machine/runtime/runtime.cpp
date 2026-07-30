@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/input.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"
 #include <limits>
@@ -51,10 +50,9 @@ void runHaltedClosureUntilInterrupt(Runtime& runtime) {
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
-	RuntimeInputSource& input
+	InputControllerInputSource& input
 	)
 	: timing(options.machineModel)
-	, m_input(input)
 	, m_memory(MemoryInit{
 		options.systemRomBytes,
 		options.cartridgeSlots
@@ -205,14 +203,12 @@ void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming
 		timing.ufps = 0.0;
 		timing.frameDurationMs = 0.0;
 		timing.cycleBudgetPerFrame = 0;
-		m_input.setRuntimeInputFrameDurationMs(0.0);
 		return;
 	}
 	timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
 	timing.ufpsScaled = pcrtcTiming.refreshUfpsScaled;
 	timing.ufps = static_cast<f64>(pcrtcTiming.refreshUfpsScaled) / static_cast<f64>(HZ_SCALE);
 	timing.frameDurationMs = pcrtcTiming.frameDurationMs;
-	m_input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
 }
 
 void Runtime::boot() {
@@ -230,6 +226,12 @@ void Runtime::rebootSystem() {
 	machine.cpu.reset();
 	installLuaBootPrimitives();
 	finishSystemBoot();
+}
+
+void Runtime::suspendExecution() {
+	m_pendingCall = PendingCall::None;
+	frameLoop.abandonFrameState(*this);
+	frameScheduler.clearQueuedTime();
 }
 
 void Runtime::resetForSystemBoot() {

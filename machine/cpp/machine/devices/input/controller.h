@@ -12,7 +12,7 @@ class InputController {
 public:
 	InputController(Memory& memory, InputControllerInputSource& input, SystemController& system);
 	void reset();
-	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);
+	void onVblankEdge(u32 nowCycles);
 	void cancelSampleArm();
 	InputControllerState captureState() const;
 	void restoreState(const InputControllerState& state);

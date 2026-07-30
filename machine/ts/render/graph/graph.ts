@@ -172,7 +172,7 @@ export class RenderGraphRuntime {
 			const io: IOBuilder = {
 				createTex: (desc) => allocTex(desc, pIndex),
 				readTex: (h) => { const r = texMap.get(h); if (r) { r.readers++; r.readPasses.push(pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (r.firstUse === undefined) r.firstUse = pIndex; passReads[pIndex].push({ tex: h }); } },
-				writeTex: (h, opts) => { const r = texMap.get(h); if (r) { if (r.writerPasses[r.writerPasses.length - 1] !== pIndex) r.writerPasses.push(pIndex); r.firstUse = r.firstUse === undefined ? pIndex : Math.min(r.firstUse, pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (opts && (opts.clearColor || opts.clearDepth !== undefined)) r.clearOnWrite = { color: opts.clearColor, depth: opts.clearDepth }; passWrites[pIndex].push({ tex: h, clear: r.clearOnWrite }); } },
+				writeTex: (h, opts) => { const r = texMap.get(h); if (r) { if (r.writerPasses[r.writerPasses.length - 1] !== pIndex) r.writerPasses.push(pIndex); r.firstUse = r.firstUse === undefined ? pIndex : Math.min(r.firstUse, pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (opts && (opts.clearColor || opts.clearDepth != null)) r.clearOnWrite = { color: opts.clearColor, depth: opts.clearDepth }; passWrites[pIndex].push({ tex: h, clear: r.clearOnWrite }); } },
 				exportToBackbuffer: (h) => { const r = texMap.get(h); if (r) { r.present = true; r.exportPass = pIndex; r.lastUse = Math.max(r.lastUse ?? -1, pIndex); } },
 			};
 			const data = pass.setup(io, frame);
@@ -205,7 +205,7 @@ export class RenderGraphRuntime {
 		}
 		// Present texture's writer chain
 		const finalRes = presentTex;
-		if (finalRes.exportPass !== undefined) markPass(finalRes.exportPass);
+		if (finalRes.exportPass != null) markPass(finalRes.exportPass);
 		// Mark all writers of the presented resource so overlays are retained in execution order
 		if (finalRes.writerPasses.length) for (const wp of finalRes.writerPasses) markPass(wp);
 		// Also seed reachability from any pass that reads the presented texture (e.g. Present pass)
@@ -375,7 +375,7 @@ export class RenderGraphRuntime {
 		}
 		for (let physicalId = 1; physicalId < this.physicalTextures.length; physicalId += 1) {
 			const texture = this.physicalTextures[physicalId];
-			if (texture !== undefined) {
+			if (texture != null) {
 				this.backend.destroyTexture(texture);
 			}
 		}

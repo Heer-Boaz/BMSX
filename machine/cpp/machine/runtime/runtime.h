@@ -17,7 +17,6 @@
 #include "machine/runtime/lua_scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
-#include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
 #include "common/primitives.h"
 #include <cstddef>
@@ -44,7 +43,7 @@ public:
 
 	Runtime(
 		const RuntimeOptions& options,
-		RuntimeInputSource& input
+		InputControllerInputSource& input
 	);
 	~Runtime();
 
@@ -55,6 +54,7 @@ public:
 	void boot();
 
 	void rebootSystem();
+	void suspendExecution();
 
 	void applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming);
 
@@ -92,8 +92,6 @@ private:
 	};
 	void installLuaBootPrimitives();
 	void finishSystemBoot();
-
-	RuntimeInputSource& m_input;
 
 	// Runtime core
 	Memory m_memory;

@@ -5,18 +5,15 @@ import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backen
 import { RenderPassLibrary } from './backend/pass/library';
 import { DeviceQuantizeMode } from './post/device_quantize/mode';
 import { RenderGraphRuntime, type FrameData } from './graph/graph';
-import type { VideoOutput, VideoSurface } from '../platform';
+import type { VideoOutput } from './video_output';
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
 import { renderGate } from '../common/taskgate';
 import { HostOverlayQueue } from './host_overlay/overlay_queue';
 
 export class VideoPresenter {
-	public readonly surface: VideoSurface;
 	public accessor default_font: BFont;
 	public viewportSize: vec2;
-	public viewportScale = 1;
 	public canvasSize: vec2;
-	public canvasScale = 1;
 	public readonly nativeCtx: BackendContext;
 	public readonly backend: GPUBackend;
 	public offscreenCanvasSize: vec2;
@@ -48,7 +45,6 @@ export class VideoPresenter {
 	private _deviceQuantizeConfigurationRevision = 0;
 
 	constructor(private readonly output: VideoOutput, backend: GPUBackend, viewportWidth: number, viewportHeight: number) {
-		this.surface = output.surface;
 		this.backend = backend;
 		this.nativeCtx = backend.context;
 		this.viewportSize = { x: viewportWidth, y: viewportHeight };
@@ -76,7 +72,6 @@ export class VideoPresenter {
 
 	public initialize(pipelineRegistry: RenderPassLibrary): void {
 		this.pipelineRegistry = pipelineRegistry;
-		this.surface.setRenderTargetSize(this.canvasSize.x, this.canvasSize.y);
 		this.resetPresentationHistory();
 		this._deviceQuantizeConfigurationRevision += 1;
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph();
@@ -98,10 +93,8 @@ export class VideoPresenter {
 		this.canvasSize.y = height;
 		this.offscreenCanvasSize.x = width;
 		this.offscreenCanvasSize.y = height;
-		this.surface.setRenderTargetSize(width, height);
-		const dimensions = this.output.getSize(this.viewportSize, this.canvasSize);
-		this.viewportScale = dimensions.viewportScale;
-		this.canvasScale = dimensions.canvasScale;
+		this.backend.resizePresentationTarget(width, height);
+		this.output.setDisplaySize(width, height);
 		this.rebuildGraph();
 	}
 

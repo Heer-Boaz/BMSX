@@ -56,7 +56,7 @@ export class Pool<T> {
 		// 1. Find inactive slot
 		for (const s of this.slots) {
 			if (!s.active) {
-				if (this.opts.maxActive !== undefined && this.activeCount >= this.opts.maxActive) return undefined;
+				if (this.opts.maxActive && this.activeCount >= this.opts.maxActive) return undefined;
 				s.active = true; this.activeCount++;
 				this.opts.onAcquire?.(s.item);
 				this.opts.onReset?.(s.item);
@@ -65,8 +65,8 @@ export class Pool<T> {
 		}
 		// 2. Grow if allowed
 		if (this.opts.fixed) return undefined;
-		if (this.opts.maxTotal !== undefined && this.slots.length >= this.opts.maxTotal) return undefined;
-		if (this.opts.maxActive !== undefined && this.activeCount >= this.opts.maxActive) return undefined;
+		if (this.opts.maxTotal && this.slots.length >= this.opts.maxTotal) return undefined;
+		if (this.opts.maxActive && this.activeCount >= this.opts.maxActive) return undefined;
 		const item = this.opts.onCreate();
 		this.slots.push({ item, active: true });
 		this.activeCount++;

@@ -74,9 +74,9 @@ export class InputController {
 		}
 	}
 
-	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
+	public onVblankEdge(nowCycles: number): void {
 		if (this.sampleArmed) {
-			this.input.sampleInputControllerSnapshot(currentTimeMs, this.snapshot);
+			this.input.sampleInputControllerSnapshot(this.snapshot);
 		}
 		const supervisorRequestLineHigh = this.input.supervisorRequestLineHigh();
 		if (supervisorRequestLineHigh && !this.supervisorRequestLineWasHigh) {

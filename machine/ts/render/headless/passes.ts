@@ -1,6 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { GxGpuPipelineState, HostOverlayPipelineState, RenderPassStateRegistry } from '../backend/backend';
-import type { HeadlessVideoOutput } from './video_output';
 import type { HostMenuPipelineState } from '../backend/backend';
 import { renderHeadlessHost2DEntry } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
@@ -8,34 +7,30 @@ import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pi
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../post/device_quantize/state';
 import type { HeadlessGPUBackend } from './backend';
+import type { SoftwareFrameOutput } from '../video_output';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
-	registerFramePasses(registry);
 	registerHeadlessGxGpuPass(registry);
 	registerHeadlessDeviceQuantizePass(registry);
 }
 
-export function registerHeadlessPresentPass(registry: RenderPassLibrary, output: HeadlessVideoOutput): void {
+export function registerHeadlessPresentPass(
+	registry: RenderPassLibrary,
+	output: SoftwareFrameOutput,
+): void {
 	registry.register({
 		id: 'headless_present',
 		name: 'HeadlessPresent',
 			stateOnly: true,
 			graph: { reads: ['frame_color'] },
 			exec: (backend) => {
-				presentHeadlessFrame(output, backend as HeadlessGPUBackend);
+				const headless = backend as HeadlessGPUBackend;
+				output.presentSoftwareFrame(
+					headless.framebufferPixels,
+					headless.framebufferWidth,
+					headless.framebufferHeight,
+				);
 			},
-	});
-}
-
-function registerFramePasses(registry: RenderPassLibrary): void {
-	registry.register({
-		id: 'frame_resolve',
-		name: 'HeadlessFrameResolve',
-		stateOnly: true,
-		graph: { skip: true },
-		exec: (backend) => {
-			(backend as HeadlessGPUBackend).resizeFramebuffer(registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
-		},
 	});
 }
 
@@ -92,12 +87,4 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 			applyHeadlessDeviceQuantize(headless.framebufferPixels, headless.framebufferWidth, headless.framebufferHeight, state.luts);
 		},
 	});
-}
-
-function presentHeadlessFrame(output: HeadlessVideoOutput, backend: HeadlessGPUBackend): void {
-	const frame = backend.presentedFrameBuffer;
-	frame.pixels = backend.framebufferPixels;
-	frame.width = backend.framebufferWidth;
-	frame.height = backend.framebufferHeight;
-	output.presentFrameBuffer(frame);
 }

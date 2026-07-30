@@ -45,9 +45,9 @@ void InputController::writeControl([[maybe_unused]] u32 addr, u32 value) {
 	}
 }
 
-void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
+void InputController::onVblankEdge(u32 nowCycles) {
 	if (m_sampleArmed) {
-		m_input.sampleInputControllerSnapshot(currentTimeMs, m_snapshot);
+		m_input.sampleInputControllerSnapshot(m_snapshot);
 	}
 	const bool supervisorRequestLineHigh = m_input.supervisorRequestLineHigh();
 	if (supervisorRequestLineHigh && !m_supervisorRequestLineWasHigh) {

@@ -315,14 +315,11 @@ target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 # =============================================================================
 
 add_library(bmsx_host_support STATIC
-	platform/platform.cpp
-	common/subscription.cpp
 	common/vector.cpp
 	common/taskgate.cpp
 	common/byte_hex_string.cpp
 	common/mmap_file.cpp
 	audio/output_resampler.cpp
-	input/manager.cpp
 	render/backend/backend.cpp
 	render/backend/software/gx_gpu.cpp
 	render/backend/software/gx_gpu_commands.cpp
@@ -420,19 +417,21 @@ endif()
 
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
-set(BMSX_LIBRETRO_PLATFORM_SOURCES
+set(BMSX_LIBRETRO_HOST_SOURCES
 	${BMSX_LIBRETRO_DIR}/audio_output.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
+	${BMSX_LIBRETRO_DIR}/input.cpp
 	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
-	${BMSX_LIBRETRO_DIR}/platform.cpp
+	${BMSX_LIBRETRO_DIR}/host.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
+	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
 
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
-		${BMSX_LIBRETRO_PLATFORM_SOURCES}
+		${BMSX_LIBRETRO_HOST_SOURCES}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 	)
 
@@ -683,7 +682,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
-		${BMSX_LIBRETRO_PLATFORM_SOURCES}
+		${BMSX_LIBRETRO_HOST_SOURCES}
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE
@@ -696,7 +695,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
-		${BMSX_LIBRETRO_PLATFORM_SOURCES}
+		${BMSX_LIBRETRO_HOST_SOURCES}
 	)
 	target_link_libraries(bmsx_libretro_environment_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_environment_tests PRIVATE
@@ -706,7 +705,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cartridge_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
-		${BMSX_LIBRETRO_PLATFORM_SOURCES}
+		${BMSX_LIBRETRO_HOST_SOURCES}
 	)
 	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
@@ -716,9 +715,8 @@ if(BMSX_BUILD_TESTS)
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_hw_context_test.cpp
-			${BMSX_LIBRETRO_PLATFORM_SOURCES}
 		)
-		target_link_libraries(bmsx_libretro_hw_context_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+		target_link_libraries(bmsx_libretro_hw_context_tests PRIVATE bmsx_host_support)
 		target_include_directories(bmsx_libretro_hw_context_tests PRIVATE
 			${BMSX_LIBRETRO_DIR}
 		)

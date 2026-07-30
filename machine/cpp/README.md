@@ -14,10 +14,8 @@ machine/cpp/
 ├── audio/                 # C++ host audio edge
 ├── common/                # Shared low-level C++ helpers
 ├── core/                  # Runtime coordination and system bootstrap
-├── input/                 # Host input models and mapping
 ├── lua/                   # Lua syntax/runtime support
 ├── machine/               # CPU, memory, MMIO, devices, firmware, scheduler
-├── platform/              # C++ platform service interfaces
 ├── render/                # C++ render backends and presentation edge
 ├── rompack/               # ROM package format/loaders
 └── vendor/                # C/C++ third-party implementation files
@@ -31,7 +29,11 @@ that can run a libretro core lives in `hosts/libretro_host`.
 The C++ runtime focuses on mirroring the machine boundary from the TypeScript implementation.
 
 - `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
-- `render/`, `audio/`, `input/`, and `platform/` adapt machine state to C++ host edges.
+- `render/` and `audio/` contain the mirrored presentation datapaths used by
+  concrete hosts.
+- Physical input, frontend callbacks, media ownership, output buffers, and
+  product lifecycle stay under `hosts/`; the machine consumes only its raw
+  device-facing contracts.
 - `audio/AudioOutputResampler` owns retained output-rate conversion. Buffering and underrun policy belong to browser and libretro output owners. The machine owns the continuous 44.1-kHz AOUT timeline next to the APU controller; source bytes, cursor/remainder, fade/filter/BADP state, mixing, END timing, and the presentation ring live under `machine/devices/audio`.
 
 ## Building
@@ -78,17 +80,13 @@ cmake .. -DBMSX_BUILD_LIBRETRO_HOST=ON
 
 ## Architecture
 
-### Platform Abstraction
+### Host Boundary
 
-The C++ implementation mirrors the TypeScript platform abstraction layer, making it easier to maintain both versions in parallel:
-
-| TypeScript | C++ |
-|------------|-----|
-| `platform.ts` | `platform.h` |
-| `SubscriptionHandle` | `SubscriptionHandle` struct |
-| `HostClock`, `FrameLoop`, etc. | Abstract base classes |
-| `platform_browser.ts` | N/A (web only) |
-| N/A | `platform.cpp` |
+There is no generic platform service locator in either runtime. The C++ render
+presenter consumes the small mirrored `render/video_output.h` contract.
+`hosts/libretro` owns concrete video, audio, input, media, diagnostics, and
+libretro lifecycle directly. TypeScript products compose their concrete browser
+or Node owners above the same machine-facing device and render boundaries.
 
 ### Key Patterns
 

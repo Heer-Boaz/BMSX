@@ -13,9 +13,9 @@ import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from '../../spec/bmsx/timing';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
+import type { InputControllerInputSource } from '../devices/input/contracts';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
-import type { RuntimeInputSource } from './input';
 
 function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
 	const machine = runtime.machine;
@@ -108,6 +108,12 @@ export class Runtime {
 		this.machine.cpu.reset();
 		installLuaBootPrimitives(this);
 		this.finishSystemBoot();
+	}
+
+	public suspendExecution(): void {
+		this.pendingCall = null;
+		this.frameLoop.abandonFrameState();
+		this.frameScheduler.clearQueuedTime();
 	}
 
 	private finishSystemBoot(): void {
@@ -227,7 +233,7 @@ export class Runtime {
 
 	public constructor(
 		options: RuntimeOptions,
-		private readonly input: RuntimeInputSource,
+		input: InputControllerInputSource,
 	) {
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
@@ -268,14 +274,12 @@ export class Runtime {
 			timing.ufps = 0;
 			timing.frameDurationMs = 0;
 			timing.cycleBudgetPerFrame = 0;
-			this.input.setRuntimeInputFrameDurationMs(0);
 			return;
 		}
 		timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
 		timing.ufpsScaled = pcrtcTiming.refreshUfpsScaled;
 		timing.ufps = pcrtcTiming.refreshUfpsScaled / HZ_SCALE;
 		timing.frameDurationMs = pcrtcTiming.frameDurationMs;
-		this.input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
 	}
 
 }

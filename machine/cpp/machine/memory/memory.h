@@ -38,6 +38,7 @@ public:
 
 	CartridgeController& cartridgeController() { return m_cartridgeController; }
 	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
+	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	void installSystemRom(std::span<const u8> rom);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);

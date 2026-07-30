@@ -1829,7 +1829,7 @@ export class CPU {
 	): void {
 		this.globals.storeStringKey(key, tag, scalar, reference);
 		const globalSlot = this.globalSlotByKey.get(key);
-		if (globalSlot !== undefined) {
+		if (globalSlot) {
 			this.globalSlots.setEncoded(globalSlot, tag, scalar, reference);
 		}
 	}
@@ -1869,7 +1869,7 @@ export class CPU {
 
 	public getGlobalByKey(key: StringId): Value {
 		const globalSlot = this.globalSlotByKey.get(key);
-		if (globalSlot !== undefined) {
+		if (globalSlot) {
 			return this.globalSlots.get(globalSlot);
 		}
 		this.globals.loadStringKey(key, this.tableScratch, 0);
@@ -2315,7 +2315,7 @@ export class CPU {
 					const returnFromNmi = frame.isNonMaskableExceptionFrame;
 					const returnPc = this.epcWord;
 					const caller = this.frames[this.frames.length - 2];
-					if (caller !== undefined
+					if (caller
 						&& (returnPc < caller.codeAddress
 							|| returnPc >= caller.codeAddress + caller.codeByteCount)) {
 						this.hardHalt();
@@ -2327,7 +2327,7 @@ export class CPU {
 					this.releaseFrame(frame);
 					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
-					if (caller !== undefined) {
+					if (caller) {
 						caller.pc = returnPc;
 					}
 					if (returnFromNmi) {

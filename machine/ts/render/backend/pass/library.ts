@@ -214,14 +214,16 @@ export class RenderPassLibrary {
 		});
 
 		// Ensure the frame UBO is uploaded/bound before any draw pass.
-		rg.addPass({
-			name: 'FrameResolve',
-			alwaysExecute: true,
-			setup: () => null,
-			execute: (_ctx, _frame, _data, output) => {
-				this.execute('frame_resolve', null, output);
-			},
-		});
+		if (this.has('frame_resolve')) {
+			rg.addPass({
+				name: 'FrameResolve',
+				alwaysExecute: true,
+				setup: () => null,
+				execute: (_ctx, _frame, _data, output) => {
+					this.execute('frame_resolve', null, output);
+				},
+			});
+		}
 
 		// Build pass sequence from registry
 		for (const desc of passList) {

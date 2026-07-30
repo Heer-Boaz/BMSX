@@ -74,6 +74,7 @@ public:
 	void activateRenderTarget(void* target, i32 width, i32 height) override;
 	void activateDefaultRenderTarget() override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	void resizePresentationTarget(i32 width, i32 height) override;
 
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;
@@ -91,7 +92,6 @@ public:
 	BackendCaps getCaps() const override;
 	bool readyForTextureUpload() const override { return m_context_ready; }
 
-	void setViewportSize(i32 width, i32 height);
 	void setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter);
 	void onContextReset();
 	void onContextDestroy();

@@ -56,7 +56,6 @@ export class VblankState {
 		this.vblankSequence += 1;
 		runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge(
-			runtime.machine.systemController.elapsedMilliseconds(),
 			runtime.machine.scheduler.nowCycles,
 		);
 		runtime.machine.irqController.raise(IRQ_VBLANK);

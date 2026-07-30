@@ -183,6 +183,7 @@ public:
 	virtual void activateRenderTarget(void* target, i32 width, i32 height) = 0;
 	virtual void activateDefaultRenderTarget() = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
+	virtual void resizePresentationTarget(i32 width, i32 height) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
@@ -219,9 +220,25 @@ public:
  * Renders directly to a framebuffer that libretro presents.
  * ============================================================================ */
 
+class SoftwarePresentationTarget {
+public:
+	const u32* data() const { return m_pixels.data(); }
+	i32 width() const { return m_width; }
+	i32 height() const { return m_height; }
+	i32 pitch() const { return m_pitch; }
+
+private:
+	friend class SoftwareBackend;
+
+	std::vector<u32> m_pixels;
+	i32 m_width = 0;
+	i32 m_height = 0;
+	i32 m_pitch = 0;
+};
+
 class SoftwareBackend : public GPUBackend {
 public:
-	SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch, size_t gxGpuVramByteCount);
+	SoftwareBackend(i32 width, i32 height, size_t gxGpuVramByteCount);
 	~SoftwareBackend() override;
 
 	BackendType type() const override { return BackendType::Software; }
@@ -241,6 +258,7 @@ public:
 	void activateRenderTarget(void* target, i32 width, i32 height) override;
 	void activateDefaultRenderTarget() override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	void resizePresentationTarget(i32 width, i32 height) override;
 
 	// Render pass management
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -275,9 +293,7 @@ public:
 	i32 width() const { return m_width; }
 	i32 height() const { return m_height; }
 	i32 pitch() const { return m_pitch; }
-
-	// Update framebuffer pointer (e.g., on resize)
-	void setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch);
+	const SoftwarePresentationTarget& presentationTarget() const { return m_presentation_target; }
 
 private:
 	friend void renderGxGpuSoftwareFrame(
@@ -285,6 +301,7 @@ private:
 		const GxGpuPipelineState& state,
 		const GxGpuDeviceOutput& output);
 
+	SoftwarePresentationTarget m_presentation_target;
 	u32* m_default_framebuffer;
 	i32 m_default_width;
 	i32 m_default_height;

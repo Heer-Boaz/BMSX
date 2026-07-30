@@ -595,7 +595,7 @@ BackendCaps OpenGLES2Backend::getCaps() const {
 	return caps;
 }
 
-void OpenGLES2Backend::setViewportSize(i32 width, i32 height) {
+void OpenGLES2Backend::resizePresentationTarget(i32 width, i32 height) {
 	m_default_width = width;
 	m_default_height = height;
 }

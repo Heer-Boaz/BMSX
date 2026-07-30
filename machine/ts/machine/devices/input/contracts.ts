@@ -3,34 +3,34 @@ import { FIX16_ONE } from '../../common/numeric';
 // Raw ICU snapshot contract. The ICU latches one full input snapshot per armed
 // VBlank edge into plain MMIO words; it carries no key names, mappings, or
 // action semantics. Keyboard bits are indexed by USB HID usage IDs
-// (usage page 0x07); pad button bits follow INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS.
+// (usage page 0x07); pad button bits use InputControllerGamepadButtonBit.
 
 export const INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 export const INPUT_CONTROLLER_PAD_COUNT = 4;
 export const INPUT_CONTROLLER_PAD_AXIS_COUNT = 6; // lx, ly, rx, ry, lt, rt
 
-// Canonical pad button bit order: bit i in the pad buttons word.
-export const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS = [
-	'a',
-	'b',
-	'x',
-	'y',
-	'lb',
-	'rb',
-	'lt',
-	'rt',
-	'select',
-	'start',
-	'ls',
-	'rs',
-	'up',
-	'down',
-	'left',
-	'right',
-	'home',
-	'touch',
-] as const;
-export const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT = INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS.length;
+// Raw bit positions in each latched pad-buttons word.
+export const enum InputControllerGamepadButtonBit {
+	A = 0,
+	B = 1,
+	X = 2,
+	Y = 3,
+	LeftBumper = 4,
+	RightBumper = 5,
+	LeftTrigger = 6,
+	RightTrigger = 7,
+	Select = 8,
+	Start = 9,
+	LeftStick = 10,
+	RightStick = 11,
+	Up = 12,
+	Down = 13,
+	Left = 14,
+	Right = 15,
+	Home = 16,
+	Touchpad = 17,
+}
+export const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT = InputControllerGamepadButtonBit.Touchpad + 1;
 
 // Pointer button bit order mirrors the W3C MouseEvent.button index order.
 export const INP_POINTER_BUTTON_PRIMARY = 0;
@@ -83,7 +83,7 @@ export function createInputControllerSnapshot(): InputControllerSnapshot {
 }
 
 export interface InputControllerInputSource {
-	sampleInputControllerSnapshot(currentTimeMs: number, snapshot: InputControllerSnapshot): void;
+	sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void;
 	supervisorRequestLineHigh(): boolean;
 	applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void;
 }
