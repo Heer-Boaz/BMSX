@@ -4,15 +4,12 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramComp
 import type { ProgramMetadata } from '../../toolchain/ts/lua/compiler/program';
 import type { ProgramObjectImage } from '../../toolchain/ts/lua/compiler/program_object';
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
-import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
-import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import type { LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	installRuntimeRomLayers,
@@ -80,87 +77,6 @@ function createFreshLuaInterpreter(
 	bridge: RuntimeLuaTooling,
 ): LuaInterpreter {
 	return new LuaInterpreter(bridge.luaJsBridge);
-}
-
-function describeSymbolTag(tag: ValueTag): { kind: RuntimeSymbolKind; valueType: string } {
-	switch (tag) {
-		case ValueTag.Nil:
-			return { kind: 'constant', valueType: 'nil' };
-		case ValueTag.False:
-		case ValueTag.True:
-			return { kind: 'constant', valueType: 'boolean' };
-		case ValueTag.Number:
-			return { kind: 'constant', valueType: 'number' };
-		case ValueTag.String:
-			return { kind: 'constant', valueType: 'string' };
-		case ValueTag.Table:
-			return { kind: 'table', valueType: 'table' };
-		case ValueTag.Closure:
-		case ValueTag.BuiltinFunction:
-			return { kind: 'function', valueType: 'function' };
-	}
-}
-
-function buildSymbolModuleSlotPrefix(modulePath: string): string {
-	const compactPath = toLuaModulePath(modulePath);
-	const parts = compactPath.split('/').filter(part => part.length > 0);
-	const normalizedParts = parts.length > 0 ? parts : [compactPath];
-	let prefix = '';
-	for (let index = 0; index < normalizedParts.length; index += 1) {
-		if (index > 0) {
-			prefix += '__';
-		}
-		prefix += normalizedParts[index].replace(/[^A-Za-z0-9_]/g, '_');
-	}
-	return prefix;
-}
-
-function collectHiddenSymbolPrefixes(sources: RuntimeSourceState): Set<string> {
-	const prefixes = new Set<string>();
-	for (let registryIndex = 0; registryIndex < sources.luaSourceRegistries.length; registryIndex += 1) {
-		const registry = sources.luaSourceRegistries[registryIndex];
-		for (let assetIndex = 0; assetIndex < registry.records.length; assetIndex += 1) {
-			prefixes.add(buildSymbolModuleSlotPrefix(registry.records[assetIndex].source_path));
-		}
-	}
-	return prefixes;
-}
-
-function shouldHideGeneratedModuleSymbolName(name: string, hiddenPrefixes: ReadonlySet<string>): boolean {
-	for (const prefix of hiddenPrefixes) {
-		if (name === prefix || name.startsWith(`${prefix}__`)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-export function listSymbols(sources: RuntimeSourceState, runtime: Runtime): RuntimeSymbolEntry[] {
-	runtime.machine.cpu.syncGlobalSlotsToTable();
-	const hiddenPrefixes = collectHiddenSymbolPrefixes(sources);
-	const symbolsByName = new Map<string, RuntimeSymbolEntry>();
-	runtime.machine.cpu.globals.forEachStoredEntry((
-		keyTag,
-		keyScalar,
-		_keyReference,
-		valueTag,
-	) => {
-		if (keyTag !== ValueTag.String) {
-			return;
-		}
-		const name = runtime.machine.cpu.stringPool.toString(keyScalar);
-		if (shouldHideGeneratedModuleSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
-			return;
-		}
-		const classification = describeSymbolTag(valueTag);
-		symbolsByName.set(name, {
-			name,
-			kind: classification.kind,
-			valueType: classification.valueType,
-			origin: 'global',
-		});
-	});
-	return Array.from(symbolsByName.values());
 }
 
 function buildProgramSources(
