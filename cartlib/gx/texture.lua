@@ -1,4 +1,4 @@
-local gx_gpu<const> = require('bios/gx_gpu')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local romdir<const> = require('cartlib/romdir')
 

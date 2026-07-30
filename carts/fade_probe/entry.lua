@@ -1,5 +1,5 @@
 module<entry>
-local gx_gpu<const> = require('bios/gx_gpu')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
 require('cartlib/prelude')
 local frame = 0

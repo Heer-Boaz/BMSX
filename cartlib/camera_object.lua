@@ -31,10 +31,10 @@ local q_look_at<const>  = camera.q_look_at
 local screen_look<const> = camera.screen_look
 local flight_look<const> = camera.flight_look
 local projection<const> = require('cartlib/projection')
-local pi<const> = require('bios/math').pi
-local tan<const> = require('bios/math').tan
-local abs<const> = require('bios/math').abs
-local atan<const> = require('bios/math').atan
+local pi<const> = require('stdlib/math').pi
+local tan<const> = require('stdlib/math').tan
+local abs<const> = require('stdlib/math').abs
+local atan<const> = require('stdlib/math').atan
 
 bss next_cam_id: word
 

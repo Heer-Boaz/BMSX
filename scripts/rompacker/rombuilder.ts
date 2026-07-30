@@ -1688,5 +1688,11 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 // Define common assets path
 export const commonResPath = `./machine/firmware/res`;
 const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [commonResPath];
-export const biosLuaPath = './machine/firmware/bios';
+export const firmwarePublicLuaPaths = [
+	'./machine/firmware/stdlib',
+];
+export const firmwareLuaPaths = [
+	'./machine/firmware/bios',
+	...firmwarePublicLuaPaths,
+];
 export const cartlibLuaPath = './cartlib';

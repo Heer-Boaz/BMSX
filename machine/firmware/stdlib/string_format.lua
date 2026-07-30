@@ -1,11 +1,11 @@
-local string<const> = require('bios/string_base')
-local table<const> = require('bios/table')
+local string<const> = require('stdlib/string_base')
+local table<const> = require('stdlib/table')
 local byte<const> = string.byte
 local char<const> = string.char
 local sub<const> = string.sub
 local rep<const> = string.rep
 local concat<const> = table.concat
-local numeric<const> = require('bios/common/numeric')
+local numeric<const> = require('stdlib/common/numeric')
 local trunc<const> = numeric.trunc
 
 local ascii_percent<const> = 37

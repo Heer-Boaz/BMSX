@@ -1,4 +1,4 @@
-local dma<const> = require('bios/dma')
+local dma<const> = require('cartlib/dma')
 
 local imgdec<const> = {}
 local input_word_count<const>: *word = 0x080103f8

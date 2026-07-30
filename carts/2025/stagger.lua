@@ -5,7 +5,7 @@ local ease_out_quad<const> = require('cartlib/easing').ease_out_quad
 local ease_out_back<const> = require('cartlib/easing').ease_out_back
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local color<const> = require('cartlib/color')
-local round_number<const> = require('bios/util/round_to_nearest')
+local round_number<const> = require('stdlib/util/round_to_nearest')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 local immediate_text_opts<const> = { typed = false, snap = true }
 

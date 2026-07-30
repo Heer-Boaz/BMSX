@@ -1,9 +1,9 @@
 -- apu.lua
 -- Cart-library APU command helpers. Audio control reaches the device through MMIO.
-local endian<const> = require("bios/common/endian")
+local endian<const> = require("stdlib/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
-local dma<const> = require("bios/dma")
+local dma<const> = require("cartlib/dma")
 
 struct apu_command_registers
 	source_addr: word

@@ -4,13 +4,13 @@ local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
-local round_number<const> = require('bios/util/round_to_nearest')
+local round_number<const> = require('stdlib/util/round_to_nearest')
 local cart_input<const> = require('cartlib/input/player')
 local components<const> = require('cartlib/components')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
-local sin<const> = require('bios/math').sin
-local pi<const> = require('bios/math').pi
+local sin<const> = require('stdlib/math').sin
+local pi<const> = require('stdlib/math').pi
 local immediate_text_opts<const> = { typed = false, snap = true }
 local prompt_select<const> = { '(A) select' }
 local prompt_attack<const> = { '(A) ATTACK' }

@@ -1,4 +1,4 @@
-local string<const> = require('bios/string')
+local string<const> = require('stdlib/string')
 local romdir<const> = require('cartlib/romdir')
 local byte<const> = string.byte
 

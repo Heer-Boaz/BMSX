@@ -1,8 +1,8 @@
 -- os.lua
 -- BIOS os compatibility backed by BMSX time registers.
 
-local string<const> = require('bios/string')
-local numeric<const> = require('bios/common/numeric')
+local string<const> = require('stdlib/string')
+local numeric<const> = require('stdlib/common/numeric')
 local trunc<const> = numeric.trunc
 local os<const> = {}
 local time_ms<const>: *word = 0x08010224

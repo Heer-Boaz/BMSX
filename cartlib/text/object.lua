@@ -5,7 +5,7 @@ local worldobject<const> = require('cartlib/world/object')
 local components<const> = require('cartlib/components')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
-local gx_gpu<const> = require('bios/gx_gpu')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 

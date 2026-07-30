@@ -182,12 +182,13 @@ not compiler, CPU, interpreter, or device intrinsics.
 
 The guest Lua language deliberately includes its table and string value types
 and the normal base, table, string, math and OS libraries. The boot ROM installs
-`bios/base.lua` as the core Lua global library, `bios/table.lua` as `table`,
-`bios/string.lua` as `string`, `bios/math.lua` as `math`, and `bios/os.lua` as
-`os`. Those modules execute as BLua using ordinary calls, ROM lookup tables, and
-integer/number instructions; carts are not expected to avoid normal Lua
-features. More generally, broadly useful language/runtime basics may be
-firmware-provided guest services.
+`machine/firmware/stdlib/base.lua` as the core Lua global library,
+`stdlib/table.lua` as `table`, `stdlib/string.lua` as `string`,
+`stdlib/math.lua` as `math`, and `stdlib/os.lua` as `os`. Those modules execute
+as BLua using ordinary calls, ROM lookup tables, and integer/number
+instructions; carts are not expected to avoid normal Lua features. More
+generally, broadly useful language/runtime basics may be firmware-provided
+guest services.
 
 The prohibition is narrower: machine TS/C++ must not implement or inject those
 public guest functions as native host callbacks. It exposes only temporary
@@ -239,16 +240,16 @@ transcendental precision. `math.tan` is the ratio of those Q16.16 sine/cosine
 results: exact turn singularities divide by zero and produce the normal Lua
 numeric infinity; near-singular radian inputs remain finite.
 
-The `os` library is also firmware-owned. `bios/os.lua` implements `os.clock`,
-`os.time`, `os.date`, and `os.difftime` in BLua; elapsed time comes from the
-CPU-visible `sys_time_ms` word and civil-time conversion is deterministic BMSX
-UTC-equivalent logic, not host wall-clock, host timezone, JavaScript `Date`, or
-libc local-time behavior. VM primitives required by the dynamic Lua object-world
-remain CPU intrinsics, but their cart-visible API surface is installed by BIOS
-Lua and is not precedent for implementing guest libraries through removed
-host-native callbacks. The firmware implementations of `math.*` and the other
-Lua basics remain part of the machine; animation `easing` remains a cart
-library.
+The `os` library is also firmware-owned. `machine/firmware/stdlib/os.lua`
+implements `os.clock`, `os.time`, `os.date`, and `os.difftime` in BLua; elapsed
+time comes from the CPU-visible `sys_time_ms` word and civil-time conversion is
+deterministic BMSX UTC-equivalent logic, not host wall-clock, host timezone,
+JavaScript `Date`, or libc local-time behavior. VM primitives required by the
+dynamic Lua object-world remain CPU intrinsics, but their cart-visible API
+surface is installed by BIOS Lua and is not precedent for implementing guest
+libraries through removed host-native callbacks. The firmware implementations
+of `math.*` and the other Lua basics remain part of the machine; animation
+`easing` remains a cart library.
 
 ## Hard boundary
 
@@ -2243,7 +2244,7 @@ one timed sample-RAM batch. A short final block carries its actual word count.
 GX CPU-to-GP0 command-sync producers must keep each polygon or line packet
 wholly inside one block; longer polylines or unaligned command streams select
 FIFO or forced request mode. Packet alignment is command-list ownership, not a
-hidden repair in `bios/dma.lua`.
+hidden repair in `cartlib/dma.lua`.
 
 GX-read DREQ is the readback port's ready-to-send line, not a polled GPUSTAT
 copy. Backend completion raises that line and schedules a waiting channel at the
@@ -3136,12 +3137,23 @@ is restored with the registerfile but is not gameplay state.
 
 ## Firmware and Lua layer
 
-`machine/firmware/bios` is the single source root for the firmware package in
-`SYSTEM_ROM`. It contains the reset entry, exception and monitor code, Lua
-libraries, and device-facing firmware routines. All of those modules execute in
-the same system domain and use the `bios/` module namespace; there is no second
-`machine/firmware/system` source layer. Device-facing helpers remain firmware
-code: they emit RAM/MMIO words and do not own host renderer/audio state.
+`SYSTEM_ROM` has one physical firmware owner with two source roles:
+
+- `machine/firmware/bios` owns reset, interrupt, exception, monitor and
+  terminal control flow plus the private device programming those paths need;
+- `machine/firmware/stdlib` owns the resident BLua base, table, string, math and
+  OS libraries.
+
+Both execute in the same system domain; the folders are source ownership, not
+separate runtimes, ROMs or host layers. There is no second
+`machine/firmware/system` execution root. Only `stdlib` is an external source
+context for cart linking. BIOS-private modules are not a cart SDK.
+
+`cartlib` owns the cart-side SDK. Its GX and DMA modules program the same
+guest-visible registers and command ports that bare carts can program directly;
+they are packaged into the cartridge ROM rather than exported by BIOS. Derived
+game-facing geometry such as thick-line construction also belongs to
+`cartlib/gx`.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

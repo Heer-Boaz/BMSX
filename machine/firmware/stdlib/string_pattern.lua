@@ -1,5 +1,5 @@
-local string<const> = require('bios/string_base')
-local table<const> = require('bios/table')
+local string<const> = require('stdlib/string_base')
+local table<const> = require('stdlib/table')
 local byte<const> = string.byte
 local sub<const> = string.sub
 local concat<const> = table.concat

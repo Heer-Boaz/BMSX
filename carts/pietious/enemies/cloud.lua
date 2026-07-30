@@ -1,7 +1,7 @@
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
-local abs<const> = require('bios/math').abs
+local abs<const> = require('stdlib/math').abs
 
 local cloud<const> = {}
 cloud.__index = cloud

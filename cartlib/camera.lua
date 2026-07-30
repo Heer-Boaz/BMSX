@@ -3,12 +3,12 @@
 -- All operations use flat scalar components — no tables, no allocations.
 -- Quaternion component order throughout: qx, qy, qz, qw  (xyzw).
 
-local sqrt<const> = require('bios/math').sqrt
-local sin<const> = require('bios/math').sin
-local cos<const> = require('bios/math').cos
-local atan<const> = require('bios/math').atan
-local asin<const> = require('bios/math').asin
-local acos<const> = require('bios/math').acos
+local sqrt<const> = require('stdlib/math').sqrt
+local sin<const> = require('stdlib/math').sin
+local cos<const> = require('stdlib/math').cos
+local atan<const> = require('stdlib/math').atan
+local asin<const> = require('stdlib/math').asin
+local acos<const> = require('stdlib/math').acos
 local clamp<const> = require('cartlib/util/clamp')
 
 -- ── q_mul ─────────────────────────────────────────────────────────────────────

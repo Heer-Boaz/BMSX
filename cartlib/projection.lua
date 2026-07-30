@@ -8,10 +8,10 @@
 --   index 12-15 = column 3
 -- Angles in radians throughout.
 
-local tan<const> = require('bios/math').tan
-local abs<const> = require('bios/math').abs
-local atan<const> = require('bios/math').atan
-local sqrt<const> = require('bios/math').sqrt
+local tan<const> = require('stdlib/math').tan
+local abs<const> = require('stdlib/math').abs
+local atan<const> = require('stdlib/math').atan
+local sqrt<const> = require('stdlib/math').sqrt
 
 -- ── proj_perspective ──────────────────────────────────────────────────────────
 -- Standard symmetric perspective frustum.

@@ -1,7 +1,7 @@
 local timeline_apply<const> = {}
 local pingpong01<const> = require('cartlib/easing').pingpong01
-local sin<const> = require('bios/math').sin
-local pi<const> = require('bios/math').pi
+local sin<const> = require('stdlib/math').sin
+local pi<const> = require('stdlib/math').pi
 
 local copy_path<const> = function(path)
 	local out<const> = {}

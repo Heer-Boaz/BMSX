@@ -1,12 +1,17 @@
 module<entry>
-local dma<const> = require('bios/dma')
 
 local irq_mask_register<const>: *word = 0x08000008
 local irq_ack_register<const>: *word = 0x08000004
+local dma0_read_addr<const>: *word = 0x0800000c
+local dma0_write_addr<const>: *word = 0x08000010
+local dma0_transfer_count<const>: *word = 0x08000014
+local dma0_control<const>: *word = 0x08000018
+local dma0_trigger<const>: *word = 0x08000020
 local inp_keys<const>: *word[8] = 0x0800006c
 local inp_ctrl_register<const>: *word = 0x08000064
 local gp0<const>: *word = 0x08010238
 local gp1<const>: *word = 0x0801023c
+local gx_gp0_addr<const> = 0x08010238
 local pcrtc_pmode<const>: *word = 0x08010350
 local pcrtc_dispfb1_low<const>: *word = 0x08010358
 local pcrtc_dispfb1_high<const>: *word = 0x0801035c
@@ -18,6 +23,8 @@ local gte_command<const>: *word = 0x08010340
 
 local irq_dma_done<const> = 0x0001
 local irq_vblank<const> = 0x0004
+local dma_control_read_increment_gx_write<const> = 0x00003c41
+local dma_trigger_start<const> = 0x00000001
 local irq_pending_flags = 0
 
 function irq(flags)
@@ -553,7 +560,11 @@ local upload_frame<const> = function()
 		build_frame_upload_command()
 		frame_upload_command_ready = true
 	end
-	dma.copy_to_gp0(&frame_upload_command_words, frame_upload_command_word_count)
+	*dma0_read_addr = &frame_upload_command_words
+	*dma0_write_addr = gx_gp0_addr
+	*dma0_transfer_count = frame_upload_command_word_count
+	*dma0_control = dma_control_read_increment_gx_write
+	*dma0_trigger = dma_trigger_start
 	wait_dma_done()
 end
 

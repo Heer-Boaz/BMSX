@@ -318,9 +318,9 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	try {
 		const cartPrefix = layoutRomPrefix(assets, true, null);
 		const entrySource = `module<entry>
-require('bios/base')
-require('bios/table')
-require('bios/string_base')
+require('stdlib/base')
+require('stdlib/table')
+require('stdlib/string_base')
 local romdir<const> = require('cartlib/romdir')
 local texture<const> = require('cartlib/gx/texture')
 local imgdec<const> = require('cartlib/gx/imgdec')
@@ -330,14 +330,14 @@ texture.upload(first_texture, 0x00200040, 0)
 return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 `;
 		const moduleSources = [
-			['bios/base', readFileSync('machine/firmware/bios/base.lua', 'utf8')],
-			['bios/table', readFileSync('machine/firmware/bios/table.lua', 'utf8')],
-			['bios/string_base', readFileSync('machine/firmware/bios/string_base.lua', 'utf8')],
-			['bios/common/endian', readFileSync('machine/firmware/bios/common/endian.lua', 'utf8')],
-			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
+			['stdlib/base', readFileSync('machine/firmware/stdlib/base.lua', 'utf8')],
+			['stdlib/table', readFileSync('machine/firmware/stdlib/table.lua', 'utf8')],
+			['stdlib/string_base', readFileSync('machine/firmware/stdlib/string_base.lua', 'utf8')],
+			['stdlib/common/endian', readFileSync('machine/firmware/stdlib/common/endian.lua', 'utf8')],
+			['stdlib/common/float_bits', readFileSync('machine/firmware/stdlib/common/float_bits.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
-			['bios/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
+			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
 			['cartlib/gx/imgdec', `
 local imgdec<const> = {}
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0

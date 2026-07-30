@@ -20,7 +20,8 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
 const ENTRY_SOURCE = `
-local gx_gpu<const> = require('bios/gx_gpu')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local bios_gpu<const> = require('bios/gx_gpu')
 local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
 if *mode_selector == 0 then
 	gx_gpu.reset_256x240()
@@ -43,16 +44,15 @@ else
 	local display2_low<const>: *word = 0x08010370
 	*smode1_low = 0x40200504
 	*display2_low = 420 | (40 << 12)
-	gx_gpu.prepare_supervisor_320x240(0)
+	bios_gpu.prepare_supervisor_320x240(0)
+	return 320, 240
 end
 return gx_gpu.display_size()
 `;
 
 const MODULE_FILES = [
-	['bios/common/numeric', 'machine/firmware/bios/common/numeric.lua'],
-	['bios/util/sincos_turn32', 'machine/firmware/bios/util/sincos_turn32.lua'],
-	['bios/math', 'machine/firmware/bios/math.lua'],
-	['bios/util/round_to_nearest', 'machine/firmware/bios/util/round_to_nearest.lua'],
+	['stdlib/util/round_to_nearest', 'machine/firmware/stdlib/util/round_to_nearest.lua'],
+	['cartlib/gx/gpu', 'cartlib/gx/gpu.lua'],
 	['bios/gx_gpu', 'machine/firmware/bios/gx_gpu.lua'],
 ] as const;
 
@@ -89,7 +89,7 @@ function runFirmwareMode(modeIndex: number): { memory: Memory; cpu: CPU } {
 	return { memory, cpu };
 }
 
-test('GX firmware programs native PSX widths and PS2 SD interlaced outputs', () => {
+test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () => {
 	for (let modeIndex = 0; modeIndex < FIRMWARE_MODES.length; modeIndex += 1) {
 		const expected = FIRMWARE_MODES[modeIndex]!;
 		const { memory, cpu } = runFirmwareMode(modeIndex);
@@ -112,7 +112,7 @@ test('GX firmware programs native PSX widths and PS2 SD interlaced outputs', () 
 	}
 });
 
-test('GX firmware aligns the supervisor circuit to a retained PS2 DTV origin', () => {
+test('BIOS GX code aligns the supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = runFirmwareMode(FIRMWARE_MODES.length);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [320, 240]);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));

@@ -2,12 +2,12 @@ module<entry>
 -- bootrom.lua
 -- BMSX system boot firmware
 
-require('bios/base')
-table = require('bios/table')
-string = require('bios/string')
-os = require('bios/os')
+require('stdlib/base')
+table = require('stdlib/table')
+string = require('stdlib/string')
+os = require('stdlib/os')
 
-math = require('bios/math')
+math = require('stdlib/math')
 
 local dma_transfer<const> = require('bios/dma_transfer')
 local gx_gpu<const> = require('bios/gx_gpu')

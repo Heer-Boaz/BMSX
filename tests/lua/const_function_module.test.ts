@@ -31,10 +31,10 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 const BOOL01_PATH = 'cartlib/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'cartlib/util/div_toward_zero';
 const ROL8_PATH = 'cartlib/util/rol8';
-const ROUND_TO_NEAREST_PATH = 'bios/util/round_to_nearest';
+const ROUND_TO_NEAREST_PATH = 'stdlib/util/round_to_nearest';
 const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
-const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
+const SINCOS_TURN32_PATH = 'stdlib/util/sincos_turn32';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 
@@ -148,7 +148,7 @@ return rol8(5), rol8(128)
 		{
 			path: ROUND_TO_NEAREST_PATH,
 			name: 'round_to_nearest',
-			sourcePath: 'machine/firmware/bios/util/round_to_nearest.lua',
+			sourcePath: 'machine/firmware/stdlib/util/round_to_nearest.lua',
 			entry: `
 local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
 return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), round_to_nearest(-1.6)
@@ -171,7 +171,7 @@ return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), rou
 });
 
 test('sincos_turn32 is a const function module backed by visible rodata', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
+	const moduleSource = readFileSync('machine/firmware/stdlib/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
 local s0<const>, c0<const> = require("${SINCOS_TURN32_PATH}")(0)
 local s90<const>, c90<const> = require("${SINCOS_TURN32_PATH}")(1073741824)
@@ -184,12 +184,12 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
-	const slotName = 'bios__util__sincos_turn32';
+	const slotName = 'stdlib__util__sincos_turn32';
 	assert.equal(compiled.moduleProtoMap.has(SINCOS_TURN32_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
 	assert.deepEqual(image.sections.rodata.symbols, [{
-		name: 'module:bios/util/sincos_turn32/rodata:sin_quarter_lut',
+		name: 'module:stdlib/util/sincos_turn32/rodata:sin_quarter_lut',
 		offset: 0,
 		byteCount: 257 * 4,
 		alignment: 4,
@@ -213,7 +213,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 });
 
 test('sincos_turn32 rodata relocations survive O3 constant folding', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
+	const moduleSource = readFileSync('machine/firmware/stdlib/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
 return require("${SINCOS_TURN32_PATH}")(0)
 `;
@@ -222,13 +222,13 @@ return require("${SINCOS_TURN32_PATH}")(0)
 });
 
 test('const function export aliases stay compile-time call targets', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
+	const moduleSource = readFileSync('machine/firmware/stdlib/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
 local sincos_turn32<const> = require("${SINCOS_TURN32_PATH}")
 return sincos_turn32(0)
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
-	const slotName = 'bios__util__sincos_turn32';
+	const slotName = 'stdlib__util__sincos_turn32';
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
 	const disasm = disassembleConstExport(compiled, slotName);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
@@ -267,7 +267,7 @@ return easing.clamp(1.2, 0, 1)
 });
 
 test('cart const-function calls link to system export protos', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/round_to_nearest.lua', 'utf8');
+	const moduleSource = readFileSync('machine/firmware/stdlib/util/round_to_nearest.lua', 'utf8');
 	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(CART_BOOT_SOURCE, 'system.lua'),
@@ -287,7 +287,7 @@ return round_to_nearest(1.6)
 });
 
 test('installed const-function modules stay call targets without Lua value materialization', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/round_to_nearest.lua', 'utf8');
+	const moduleSource = readFileSync('machine/firmware/stdlib/util/round_to_nearest.lua', 'utf8');
 	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(CART_BOOT_SOURCE, 'system.lua'),
@@ -320,7 +320,7 @@ return dynamic(1.6)
 });
 
 test('installed nested const-function modules reject root runtime values', () => {
-	const modulePath = 'bios/util/nested_clamp';
+	const modulePath = 'stdlib/util/nested_clamp';
 	const moduleSource = `
 module<const>
 local function clamp(value, low, high)
@@ -353,7 +353,7 @@ return api.math.clamp(12, 0, 10)
 			[],
 			{ entrySource: rootSource, externalModules: [module], programDomain: 'cart' },
 		),
-		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
+		/Module 'stdlib\/util\/nested_clamp' root is compile-time only/,
 	);
 	const aliasSource = `
 local api<const> = require("${modulePath}")
@@ -366,7 +366,7 @@ return dynamic
 			[],
 			{ entrySource: aliasSource, externalModules: [module], programDomain: 'cart' },
 		),
-		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
+		/Module 'stdlib\/util\/nested_clamp' root is compile-time only/,
 	);
 });
 

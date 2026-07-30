@@ -8,7 +8,7 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { firmwareLuaPaths, firmwarePublicLuaPaths, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -341,7 +341,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 	} else {
 		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, BIOSResPath, {
-			extraLuaPaths: [biosLuaPath],
+			extraLuaPaths: firmwareLuaPaths,
 			debug,
 			romFilePath: BIOSRomPath,
 		});
@@ -366,10 +366,10 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		return result;
 	};
-	const biosLuaRoots = [normalizePathKey(biosLuaPath)];
-	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: biosLuaRoots, profile: 'bios' }));
+	const firmwareLuaRoots = firmwareLuaPaths.map(normalizePathKey);
+	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: firmwareLuaRoots, profile: 'bios' }));
 
-	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, biosLuaPath], BIOSRomName, {
+	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, ...firmwareLuaPaths], BIOSRomName, {
 		extraLuaPaths: [],
 		virtualRoot: BIOSVirtualRoot,
 	}));
@@ -552,7 +552,7 @@ async function main() {
 					update_timestamp: 0,
 				});
 			}
-			const biosBluaSourceContextAssets = await buildBluaSourceContextAssets([biosLuaPath], '');
+			const firmwareBluaSourceContextAssets = await buildBluaSourceContextAssets(firmwarePublicLuaPaths, '');
 			const systemRom = new Uint8Array(readFileSync(systemRomPath));
 			const systemIndex = await loadRomAssetList(systemRom, 'system');
 			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
@@ -572,18 +572,18 @@ async function main() {
 				domain: 'cart',
 				systemImage,
 				systemSymbols,
-				externalLuaAssets: biosBluaSourceContextAssets,
+				externalLuaAssets: firmwareBluaSourceContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
 			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);
 			await progress.taskCompleted();
 			const cartLuaRoots = Array.from(extraLuaPathSet);
 			const cartlibLuaRoots = Array.from(libraryLuaPathSet);
-			const biosLuaRoots = [normalizePathKey(biosLuaPath)];
+			const firmwareLuaRoots = firmwareLuaPaths.map(normalizePathKey);
 			await progress.runWithDetail('Lint cart + cartlib + firmware Lua', async () => {
 				await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
 				await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
-				await lintCartSources({ roots: biosLuaRoots, profile: 'bios' });
+				await lintCartSources({ roots: firmwareLuaRoots, profile: 'bios' });
 			});
 			await progress.taskCompleted();
 

@@ -1,6 +1,6 @@
 local bin<const> = require('cartlib/bin')
-local string<const> = require('bios/string_base')
-local table<const> = require('bios/table')
+local string<const> = require('stdlib/string_base')
+local table<const> = require('stdlib/table')
 
 local romdir<const> = {}
 

@@ -1,8 +1,8 @@
 -- aem_biquad.lua
 -- Authoring-time Audio Event Map biquad design. The APU consumes only packed raw coefficients.
 
-local numeric<const> = require('bios/common/numeric')
-local bios_math<const> = require('bios/math')
+local numeric<const> = require('stdlib/common/numeric')
+local bios_math<const> = require('stdlib/math')
 local apu<const> = require('cartlib/apu')
 
 local design_coefficients<const> = function(filter_type, frequency, q, gain)

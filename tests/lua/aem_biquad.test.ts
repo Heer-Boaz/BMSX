@@ -7,11 +7,11 @@ import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
 const MODULE_FILES = [
-	['bios/common/numeric', 'machine/firmware/bios/common/numeric.lua'],
-	['bios/common/endian', 'machine/firmware/bios/common/endian.lua'],
-	['bios/util/sincos_turn32', 'machine/firmware/bios/util/sincos_turn32.lua'],
-	['bios/math', 'machine/firmware/bios/math.lua'],
-	['bios/dma', 'machine/firmware/bios/dma.lua'],
+	['stdlib/common/numeric', 'machine/firmware/stdlib/common/numeric.lua'],
+	['stdlib/common/endian', 'machine/firmware/stdlib/common/endian.lua'],
+	['stdlib/util/sincos_turn32', 'machine/firmware/stdlib/util/sincos_turn32.lua'],
+	['stdlib/math', 'machine/firmware/stdlib/math.lua'],
+	['cartlib/dma', 'cartlib/dma.lua'],
 	['cartlib/apu', 'cartlib/apu.lua'],
 	['cartlib/aem_biquad', 'cartlib/aem_biquad.lua'],
 ] as const;
@@ -19,7 +19,7 @@ const MODULE_FILES = [
 test('AEM biquad design emits the exact packed Q14 APU register words', () => {
 	const entrySource = `
 local biquad<const> = require('cartlib/aem_biquad')
-local numeric<const> = require('bios/common/numeric')
+local numeric<const> = require('stdlib/common/numeric')
 local control<const>, b0_b1<const>, b2_a1<const>, a2<const> = biquad.design({
 	type = 'lowpass',
 	frequency = 1000,
