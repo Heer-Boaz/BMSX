@@ -138,7 +138,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)));
-	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
+	const inputSampleEdges: number[] = [];
 	const completedFrames: unknown[] = [];
 	let raisedIrq = 0;
 	let gxPresentCount = 0;
@@ -154,8 +154,8 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 			scheduler,
 			inputController: {
 				cancelSampleArm() { },
-				onVblankEdge(currentTimeMs: number, nowCycles: number) {
-					inputSampleEdges.push({ currentTimeMs, nowCycles });
+				onVblankEdge(nowCycles: number) {
+					inputSampleEdges.push(nowCycles);
 				},
 			},
 			irqController: {
@@ -191,7 +191,7 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 	vblank.handleGpuRuntimeEdge(GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN);
 	assert.equal(raisedIrq, IRQ_VBLANK);
 	assert.equal(gxPresentCount, 1);
-	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
+	assert.equal(inputSampleEdges[0], 80);
 	assert.equal(vblank.tickCompleted, true);
 	assert.deepEqual(completedFrames, [frameState]);
 

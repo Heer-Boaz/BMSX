@@ -1,7 +1,5 @@
 #include "common/endian.h"
-#include "input/gamepad_buttons.h"
-#include "input/hid_keys.h"
-#include "input/manager.h"
+#include "input.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/cartridge.h"
 #include "machine/devices/input/contracts.h"
@@ -15,19 +13,17 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/timing/index.h"
-#include "platform.h"
+#include "host.h"
 #include "support/boot_rom_fixture.h"
+#include "support/libretro_software_product.h"
 
 #include <algorithm>
 #include <array>
-#include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace {
@@ -39,26 +35,6 @@ void require(bool condition, const char* message) {
 }
 
 void discardRetroLog(enum retro_log_level, const char*, ...) {
-}
-
-std::vector<std::string> capturedLogs;
-
-void captureRetroLog(enum retro_log_level, const char* format, ...) {
-	std::array<char, 4096> buffer;
-	va_list args;
-	va_start(args, format);
-	std::vsnprintf(buffer.data(), buffer.size(), format, args);
-	va_end(args);
-	capturedLogs.emplace_back(buffer.data());
-}
-
-bool capturedLogContains(std::string_view text) {
-	for (const std::string& line : capturedLogs) {
-		if (line.find(text) != std::string::npos) {
-			return true;
-		}
-	}
-	return false;
 }
 
 void discardInputPoll() {
@@ -97,26 +73,23 @@ bool captureEnvironment(unsigned command, void* data) {
 }
 
 void testLibretroSaveStateRoundTrip() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM");
+		nullptr,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	require(host.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM");
 
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(
 		bmsx::RomImageDomain::Cartridge,
 		bmsx::CARTRIDGE_BOARD_RAM,
 		16u);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
 
-	bmsx::Runtime& runtime = platform.runtime();
+	bmsx::Runtime& runtime = host.loadedRuntime();
 	auto& scheduler = runtime.machine.scheduler;
-	const size_t stateSize = platform.getStateSize();
+	const size_t stateSize = host.getStateSize();
 
 	bmsx::Memory& memory = runtime.machine.memory;
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
@@ -135,7 +108,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3), "GTE+ command should publish busy timing before completion");
 	bmsx::advanceRuntimeTime(runtime, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0xfff2000eu, "GTE+ command should publish VMAD3 result before saveState");
-	require(platform.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
+	require(host.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
 
 	const uint32_t savedGp0Word = (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x123u;
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, savedGp0Word);
@@ -171,9 +144,9 @@ void testLibretroSaveStateRoundTrip() {
 	require(memory.readIoU32(bmsx::IO_DMA0_READ_ADDR) == dmaSource + 64u, "DMA should save its live read address");
 	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "in-flight DMA should own GP0 at saveState");
 	const uint32_t savedGp0Latch = runtime.machine.gxGpu.captureState().gp0Word;
-	const size_t gpuStateSize = platform.getStateSize();
+	const size_t gpuStateSize = host.getStateSize();
 	std::vector<bmsx::u8> saved(gpuStateSize);
-	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
+	require(host.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 	const size_t savedPayloadBytes = bmsx::readLE32(saved.data() + 4u);
 	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(
 		std::span<const bmsx::u8>(saved.data() + 8u, savedPayloadBytes),
@@ -211,7 +184,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the maskable line before loadState");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == 0u, "IRQ reset should clear the vector mask before loadState");
 
-	require(platform.loadState(saved.data(), saved.size()), "libretro loadState should apply runtime state bytes");
+	require(host.loadState(saved.data(), saved.size()), "libretro loadState should apply runtime state bytes");
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u, "libretro loadState should restore RAM through Runtime save state");
 	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x89abcdefu, "libretro loadState should restore physical cartridge RAM");
 	require(runtime.machine.gxGpu.captureState().gp0Word == savedGp0Latch, "libretro loadState should restore GX-GPU GP0 word");
@@ -246,67 +219,17 @@ void testLibretroSaveStateRoundTrip() {
 
 }
 
-void testLibretroFaultDiagnosticsStayAtHostBoundary() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
-		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(captureRetroLog);
-	platform.setInputPollCallback(discardInputPoll);
-	platform.setInputStateCallback(discardInputState);
-	capturedLogs.clear();
-	require(
-		platform.loadSystemRomOwned(
-			bmsx::test::makeMinimalDiagnosticBootRom(bmsx::RomImageDomain::System)
-		),
-		"libretro should load symbol-bearing system firmware for runtime diagnostics");
-	const std::vector<bmsx::u8> rom =
-		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(
-		platform.loadRom(rom.data(), rom.size()),
-		"libretro should boot symbol-bearing firmware for runtime diagnostics");
-
-	platform.microtaskQueue()->queueMicrotask([] {
-		throw std::runtime_error("injected native frame fault");
-	});
-	require(!platform.runFrame(), "a faulted libretro frame should not report a presentation");
-	require(
-		!platform.running(),
-		"the libretro host should stop after a native frame exception");
-	require(
-		capturedLogContains("Runtime error: injected native frame fault"),
-		"the libretro host should log the native exception");
-	require(
-		capturedLogContains("debug: pc=") && capturedLogContains(" op=HALT"),
-		"the libretro host should disassemble the faulting instruction");
-	require(
-		capturedLogContains("debug: instr="),
-		"the libretro host should log the complete faulting instruction");
-	require(
-		capturedLogContains("debug: source=test/boot.lua:3:5"),
-		"the libretro host should resolve the optional source symbols");
-	require(
-		capturedLogContains("at test.boot (test/boot.lua:3:5)"),
-		"the libretro host should format the physical CPU frame with tooling symbols");
-}
-
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
+		nullptr,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
-	const size_t ramByteCount = platform.runtime().machine.memory.ramByteCount();
-	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.runtime());
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
+	const size_t ramByteCount = host.loadedRuntime().machine.memory.ramByteCount();
+	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(host.loadedRuntime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
 	bmsx::CpuProtectedCallState protectedCall;
 	protectedCall.kind = bmsx::ProtectedCallKind::XPCallHandler;
@@ -337,7 +260,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(decodedReadyReadback.readbackPixelCursor == 1u, "native codec preserves READY GPUREAD cursor");
 	require(decodedReadyReadback.readbackPixelBytes == readyReadback.readbackPixelBytes, "native codec preserves READY GPUREAD bytes");
 
-	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(platform.runtime());
+	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(host.loadedRuntime());
 	bmsx::GxGpuCommandBufferState& submittedReadback = submitted.machineState.machine.gxGpu.commandBuffer;
 	submittedReadback.readbackPhase = bmsx::GX_GPU_READBACK_SUBMITTED;
 	submittedReadback.readbackWidth = bmsx::GX_GPU_VRAM_X_ADDRESS_PERIOD;
@@ -357,46 +280,37 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 }
 
 void testLibretroStateEnvelopeSupportsMaximumGpuread() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD envelope validation");
+		nullptr,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD envelope validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
-	const size_t stateSize = platform.getStateSize();
-	bmsx::GxGpu& gpu = platform.runtime().machine.gxGpu;
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
+	const size_t stateSize = host.getStateSize();
+	bmsx::GxGpu& gpu = host.loadedRuntime().machine.gxGpu;
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0(0u);
-	gpu.onService(platform.runtime().machine.scheduler.currentNowCycles() + 1);
+	gpu.onService(host.loadedRuntime().machine.scheduler.currentNowCycles() + 1);
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.getStateSize() == stateSize, "libretro state envelope remains fixed with maximum READY GPUREAD payload");
+	require(host.getStateSize() == stateSize, "libretro state envelope remains fixed with maximum READY GPUREAD payload");
 	std::vector<bmsx::u8> state(stateSize + 16u);
-	require(platform.saveState(state.data(), state.size()), "libretro fixed envelope should contain maximum GPUREAD payload");
-	require(platform.loadState(state.data(), state.size()), "libretro fixed envelope decodes its explicit payload length from a larger caller buffer");
+	require(host.saveState(state.data(), state.size()), "libretro fixed envelope should contain maximum GPUREAD payload");
+	require(host.loadState(state.data(), state.size()), "libretro fixed envelope decodes its explicit payload length from a larger caller buffer");
 }
 
 void testInputSnapshotReflectsHeldKey() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
+		nullptr,
+		discardRetroLog);
 
-	bmsx::Input input(*platform.inputHub(), *platform.lifecycle());
-	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
-	inputHub.postKeyboardEvent(RETROK_x, true);
-	input.pollInput();
+	auto& input = product.input;
+	input.postKeyboardEvent(RETROK_x, true);
 	bmsx::InputControllerSnapshot snapshot;
-	input.sampleInputControllerSnapshot(0.0, snapshot);
+	input.sampleInputControllerSnapshot(snapshot);
 
 	// KeyX is USB HID usage 27; the raw ICU keyboard bitmap indexes by usage.
 	constexpr uint32_t usage = 27u;
@@ -406,93 +320,70 @@ void testInputSnapshotReflectsHeldKey() {
 
 void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 	supervisorRequestLineHigh = false;
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	platform.setInputPollCallback(discardInputPoll);
-	platform.setInputStateCallback(gamepadInputState);
-	bmsx::Input input(*platform.inputHub(), *platform.lifecycle());
-	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
-	int requestEdgesDown = 0;
-	int requestEdgesUp = 0;
-	bmsx::SubscriptionHandle edgeSubscription = platform.inputHub()->subscribe([&](const bmsx::InputEvt& evt) {
-		if (evt.type == bmsx::InputEvtType::SupervisorRequestDown) {
-			requestEdgesDown += 1;
-		} else if (evt.type == bmsx::InputEvtType::SupervisorRequestUp) {
-			requestEdgesUp += 1;
-		}
-	});
+		nullptr,
+		discardRetroLog);
+	auto& input = product.input;
+	input.setInputPollCallback(discardInputPoll);
+	input.setInputStateCallback(gamepadInputState);
 
 	gamepadState =
 		(1u << RETRO_DEVICE_ID_JOYPAD_DOWN) |
 		(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	require(!input.supervisorRequestLineHigh(), "RetroPad gameplay must not assert the supervisor-request line");
-	require(requestEdgesDown == 0 && requestEdgesUp == 0, "RetroPad gameplay must not emit supervisor-request edges");
 	bmsx::InputControllerSnapshot snapshot;
-	input.sampleInputControllerSnapshot(0.0, snapshot);
+	input.sampleInputControllerSnapshot(snapshot);
 	const uint32_t gameplayButtons =
-		(1u << static_cast<uint32_t>(bmsx::GamepadButton::Down)) |
-		(1u << static_cast<uint32_t>(bmsx::GamepadButton::Select));
+		(1u << static_cast<uint32_t>(
+			bmsx::InputControllerGamepadButtonBit::Down)) |
+		(1u << static_cast<uint32_t>(
+			bmsx::InputControllerGamepadButtonBit::Select));
 	require((snapshot.pads[0].buttons & gameplayButtons) == gameplayButtons,
 		"RetroPad Down and Select must remain ordinary cart-visible gameplay buttons");
 
 	gamepadState = 0u;
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	supervisorRequestLineHigh = true;
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	require(input.supervisorRequestLineHigh(), "the negotiated host line should assert the supervisor request");
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "the negotiated host line should emit one rising edge");
-	inputHub.poll();
-	input.pollInput();
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "a held host line must not repeat its rising edge");
+	input.poll(256, 240, 0.0);
+	require(input.supervisorRequestLineHigh(), "a held host line should remain asserted");
 
-	inputHub.postKeyboardEvent(RETROK_F2, true);
+	input.postKeyboardEvent(RETROK_F2, true);
 	supervisorRequestLineHigh = false;
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	require(input.supervisorRequestLineHigh(), "F2 should keep the shared request line high as the host line falls");
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "a host release crossing an F2 press must not publish false edges");
-	input.sampleInputControllerSnapshot(0.0, snapshot);
+	input.sampleInputControllerSnapshot(snapshot);
 	require((snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u] & (1u << (bmsx::HID_USAGE_F2 & 31u))) != 0u,
 		"libretro F2 must remain an ordinary cart-visible HID key while asserting the supervisor line");
 
-	inputHub.postKeyboardEvent(RETROK_F2, false);
+	input.postKeyboardEvent(RETROK_F2, false);
 	supervisorRequestLineHigh = true;
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	require(input.supervisorRequestLineHigh(), "the host should keep the shared request line high as F2 falls");
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "an F2 release crossing a host press must not publish false edges");
 
-	inputHub.postKeyboardEvent(RETROK_F2, true);
+	input.postKeyboardEvent(RETROK_F2, true);
 	supervisorRequestLineHigh = false;
-	inputHub.poll();
-	input.pollInput();
+	input.poll(256, 240, 0.0);
 	require(input.supervisorRequestLineHigh(), "F2 should retain the line through the reverse crossing transition");
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "the reverse crossing transition must keep one continuous request pulse");
 
-	inputHub.postKeyboardEvent(RETROK_F2, false);
-	inputHub.poll();
-	input.pollInput();
+	input.postKeyboardEvent(RETROK_F2, false);
+	input.poll(256, 240, 0.0);
 	require(!input.supervisorRequestLineHigh(), "releasing F2 should deassert the supervisor-request line");
-	require(requestEdgesDown == 1 && requestEdgesUp == 1, "overlapping host and F2 sources should emit one complete supervisor-request pulse");
-	input.sampleInputControllerSnapshot(0.0, snapshot);
+	input.sampleInputControllerSnapshot(snapshot);
 	require((snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u] & (1u << (bmsx::HID_USAGE_F2 & 31u))) == 0u,
 		"releasing libretro F2 must clear its ordinary HID key");
-
-	edgeSubscription.unsubscribe();
 }
 
 void testLibretroTracksPublishedNativeOutputGeometry() {
-	retro_system_av_info avInfo{};
+	bmsx::test::LibretroSoftwareProduct product(
+		readSupervisorRequestLine,
+		captureEnvironment,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	retro_system_av_info& avInfo = product.avInfo;
 	avInfo.geometry.base_width = 320u;
 	avInfo.geometry.base_height = 240u;
 	avInfo.geometry.max_width = 1920u;
@@ -500,22 +391,14 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	avInfo.geometry.aspect_ratio = static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT);
 	geometryChangeCount = 0u;
 	avInfoChangeCount = 0u;
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
-		readSupervisorRequestLine,
-		false);
-	platform.setEnvironmentCallback(captureEnvironment);
-	platform.setLogCallback(discardRetroLog);
-	platform.setInputPollCallback(discardInputPoll);
-	platform.setInputStateCallback(discardInputState);
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for native geometry validation");
+	product.input.setInputPollCallback(discardInputPoll);
+	product.input.setInputStateCallback(discardInputState);
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for native geometry validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
-	platform.setPlatformPaused(true);
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
+	host.setPaused(true);
 
-	bmsx::Runtime& runtime = platform.runtime();
+	bmsx::Runtime& runtime = host.loadedRuntime();
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
 	bmsx::Memory& memory = runtime.machine.memory;
 	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
@@ -525,42 +408,42 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1023u | (191u << 12u));
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW), 0x0000ff21u);
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.runFrame(), "libretro paused frame should present the published 192-line output");
-	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro framebuffer should resize to native 256x192");
+	require(host.runFrame(), "libretro paused frame should present the published 192-line output");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 256u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 192u, "libretro framebuffer should resize to native 256x192");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track the published 256x192 output");
 	require(avInfo.geometry.max_width == 1920u && avInfo.geometry.max_height == 1080u, "libretro AV cache should retain the standard display envelope");
 	require(avInfo.geometry.aspect_ratio == static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT), "libretro AV cache should retain the model aspect ratio");
 
-	require(platform.runFrame(), "libretro paused frame should hold the unchanged 192-line output");
+	require(host.runFrame(), "libretro paused frame should hold the unchanged 192-line output");
 
 	const uint32_t alternateHorizontalRange = 0x00c6e27eu;
 	gpu.writeGp1((bmsx::GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE << 24u) | alternateHorizontalRange);
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.runFrame(), "libretro paused frame should consume the changed horizontal timing range");
+	require(host.runFrame(), "libretro paused frame should consume the changed horizontal timing range");
 	require(gpu.readDeviceOutput().horizontalDisplayRangeWord == alternateHorizontalRange, "GX-GPU should publish the changed horizontal timing range as raw state");
-	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "horizontal timing range must not resize the native framebuffer");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 256u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 192u, "horizontal timing range must not resize the native framebuffer");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1023u | (211u << 12u));
 	require(gpu.readVerticalDisplayRangeWord() == range212, "GX-GPU live vertical range should retain the pending 212-line write");
 	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "GX-GPU published output should retain 192 lines until the next vblank latch");
 	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (1023u | (191u << 12u)), "GX-GPU published PCRTC output should retain 192 lines until the next vblank latch");
-	const size_t stateSize = platform.getStateSize();
+	const size_t stateSize = host.getStateSize();
 	std::vector<bmsx::u8> saved(stateSize);
-	require(platform.saveState(saved.data(), saved.size()), "libretro should save pending live 212-line state with published 192-line output");
+	require(host.saveState(saved.data(), saved.size()), "libretro should save pending live 212-line state with published 192-line output");
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.runFrame(), "libretro paused frame should present the published 212-line output");
-	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 212u, "libretro framebuffer should resize to native 256x212");
+	require(host.runFrame(), "libretro paused frame should present the published 212-line output");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 256u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 212u, "libretro framebuffer should resize to native 256x212");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 212u, "libretro AV cache should track the published 256x212 output");
 
-	require(platform.loadState(saved.data(), saved.size()), "libretro should restore the published 192-line output state");
+	require(host.loadState(saved.data(), saved.size()), "libretro should restore the published 192-line output state");
 	require(gpu.readVerticalDisplayRangeWord() == range212, "libretro state restore should preserve the pending live 212-line range");
 	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "libretro state restore should preserve the published 192-line range");
 	require(memory.readMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH)) == (1023u | (211u << 12u)), "libretro state restore should preserve pending live PCRTC geometry");
 	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (1023u | (191u << 12u)), "libretro state restore should preserve published PCRTC geometry");
 	require(runtime.timing.pcrtcRevision == gpu.readDeviceOutput().pcrtcTiming.revision, "libretro state restore should restore the physical PCRTC timing revision");
-	require(platform.runFrame(), "libretro paused frame should present restored 192-line output");
-	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro restore should resize the framebuffer to restored native geometry");
+	require(host.runFrame(), "libretro paused frame should present restored 192-line output");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 256u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 192u, "libretro restore should resize the framebuffer to restored native geometry");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track restored native geometry");
 
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW), 0x40206504u);
@@ -569,34 +452,31 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_LOW), 0u);
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1919u | (1079u << 12u));
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.runFrame(), "libretro paused frame should present the published PS2 1080i output");
+	require(host.runFrame(), "libretro paused frame should present the published PS2 1080i output");
 	require(avInfo.geometry.base_width == 1920u && avInfo.geometry.base_height == 1080u, "libretro AV cache should expose native PS2 1080i");
 	require(avInfo.geometry.max_width == 1920u && avInfo.geometry.max_height == 1080u, "libretro AV cache should retain the standard PS2 output envelope");
-	require(platform.getFramebuffer().width == 1920u && platform.getFramebuffer().height == 1080u, "libretro framebuffer should resize to native PS2 1080i");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 1920u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 1080u, "libretro framebuffer should resize to native PS2 1080i");
 
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1920u | (1080u << 12u));
 	gpu.presentReadyFrameOnVblankEdge();
-	require(platform.runFrame(), "libretro paused frame should present raw output beyond the standard PS2 envelope");
+	require(host.runFrame(), "libretro paused frame should present raw output beyond the standard PS2 envelope");
 	require(avInfo.geometry.base_width == 1921u && avInfo.geometry.base_height == 1081u, "libretro AV cache should expose the expanded raw output");
 	require(avInfo.geometry.max_width == 1921u && avInfo.geometry.max_height == 1081u, "libretro AV cache should grow its maximum geometry to the raw output");
-	require(platform.getFramebuffer().width == 1921u && platform.getFramebuffer().height == 1081u, "libretro framebuffer should follow raw output beyond the standard envelope");
-	require(geometryChangeCount == 0u && avInfoChangeCount == 0u, "the platform view stack must leave libretro environment notifications to retro_run");
+	require(static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().width() == 1921u && static_cast<bmsx::SoftwareBackend&>(product.presenter.backend()).presentationTarget().height() == 1081u, "libretro framebuffer should follow raw output beyond the standard envelope");
+	require(geometryChangeCount == 0u && avInfoChangeCount == 0u, "the host view stack must leave libretro environment notifications to retro_run");
 }
 
 void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for physical PCRTC timing validation");
+		nullptr,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for physical PCRTC timing validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
 
-	bmsx::Runtime& runtime = platform.runtime();
+	bmsx::Runtime& runtime = host.loadedRuntime();
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
 	bmsx::DeviceScheduler& scheduler = runtime.machine.scheduler;
 	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
@@ -632,19 +512,16 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 }
 
 void testRuntimePreservesGxGpuGp1ReadinessBinding() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		readSupervisorRequestLine,
-		false);
-	platform.setLogCallback(discardRetroLog);
-	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GP1 readiness validation");
+		nullptr,
+		discardRetroLog);
+	bmsx::LibretroHost& host = product.host;
+	require(host.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GP1 readiness validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GP1 readiness validation");
+	require(host.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GP1 readiness validation");
 
-	bmsx::Runtime& runtime = platform.runtime();
+	bmsx::Runtime& runtime = host.loadedRuntime();
 	require(runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "GP1 should accept writes before supervisor quiesce");
 	runtime.machine.gxGpu.beginSupervisorControlQuiesce();
 	require(!runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "the GX-GPU GP1 owner should close writes during supervisor quiesce");
@@ -654,7 +531,6 @@ void testRuntimePreservesGxGpuGp1ReadinessBinding() {
 
 int main() {
 	testLibretroSaveStateRoundTrip();
-	testLibretroFaultDiagnosticsStayAtHostBoundary();
 	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
 	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();

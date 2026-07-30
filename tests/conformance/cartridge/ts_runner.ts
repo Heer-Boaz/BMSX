@@ -16,12 +16,23 @@ async function main(): Promise<void> {
 	}
 
 	const [
-		{ prepareMachineHost },
-		{ runMachineHostFrame },
+		{
+			captureRuntimeSaveStateBytes,
+			initializeMachineRuntime,
+			initializeMachineVideoPresenter,
+		},
+		{ HostFrameSession, runHostFrame },
 		{ RenderPresentationState },
 		{ HostOverlayMenu },
+		{ HostAudioOutput },
+		{ SystemOutputLog },
 		{ runGate },
-		{ HeadlessPlatformServices },
+		{ HeadlessGPUBackend },
+		{ HeadlessVideoOutput },
+		{ Input },
+		{ SilentAudioSink },
+		{ VirtualHeadlessClock },
+		{ HeadlessInputHub },
 		{ decodeRuntimeSaveState },
 		{ applyRuntimeSaveState },
 		{ CART_MMIO_BASE },
@@ -32,8 +43,15 @@ async function main(): Promise<void> {
 		import('../../../hosts/common/host_frame'),
 		import('../../../hosts/common/presentation_state'),
 		import('../../../hosts/common/host_overlay_menu'),
+		import('../../../hosts/common/audio_output'),
+		import('../../../hosts/common/system_output_log'),
 		import('../../../machine/ts/common/taskgate'),
-		import('../../../hosts/node/headless/platform_headless'),
+		import('../../../machine/ts/render/headless/backend'),
+		import('../../../hosts/node/headless/video_output'),
+		import('../../../hosts/common/input/manager'),
+		import('../../../hosts/node/common/silent_audio'),
+		import('../../../hosts/node/headless/clock'),
+		import('../../../hosts/node/headless/input'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
 		import('../../../machine/ts/machine/runtime/save_state'),
 		import('../../../machine/ts/spec/bmsx/memory_map'),
@@ -42,33 +60,58 @@ async function main(): Promise<void> {
 	]);
 
 	const transcript: string[] = [];
-	class ConformancePlatform extends HeadlessPlatformServices {
-		public override log(_level: number, message: string): void {
+	const logOutput = {
+		log(_level: number, message: string): void {
 			if (message.startsWith('CART-CONFORMANCE:')) {
 				transcript.push(message.slice('CART-CONFORMANCE:'.length));
 			}
-		}
-	}
+		},
+	};
 
 	const [systemRom, dataRom, bootableCartRom] = await Promise.all([
 		readFile(systemPath),
 		readFile(dataPath),
 		readFile(bootableCartPath),
 	]);
-	const platform = new ConformancePlatform();
-	const host = await prepareMachineHost({
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(
+		clock,
+		new HeadlessInputHub(),
+		-1,
+	);
+	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const runtime = initializeMachineRuntime(
 		systemRom,
-		cartridgeSlots: [dataRom, bootableCartRom],
-		startingGamepadIndex: -1,
-		enableOnscreenGamepad: false,
-		platform,
-		machineModel: PSX_MACHINE_SPEC,
-	});
-	const runtime = host.runtime;
+		[dataRom, bootableCartRom],
+		PSX_MACHINE_SPEC,
+		input,
+	);
+	const presenter = initializeMachineVideoPresenter(
+		runtime,
+		videoOutput,
+		new HeadlessGPUBackend(
+			videoOutput,
+			256,
+			212,
+			PSX_MACHINE_SPEC.gxGpuVramBytes,
+		),
+	);
+	const audioOutput = new HostAudioOutput(
+		new SilentAudioSink(),
+		runtime.machine.audioController,
+		runtime.machine.audioOutput.outputRing,
+		runtime.timing.ufpsScaled,
+	);
+	const systemOutput = new SystemOutputLog();
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now());
+	runtime.resetForSystemBoot();
+	runtime.boot();
+	systemOutput.flush(runtime, logOutput);
+	audioOutput.bootstrap();
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
-	host.start();
-	let currentTimeMs = host.currentTimeMs;
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
+	runtime.frameScheduler.clearQueuedTime();
+	let currentTimeMs = session.currentTimeMs;
 	const transcriptCount = (entry: string): number => {
 		let count = 0;
 		for (let index = 0; index < transcript.length; index += 1) {
@@ -84,8 +127,14 @@ async function main(): Promise<void> {
 				return;
 			}
 			currentTimeMs += runtime.timing.frameDurationMs;
-			runMachineHostFrame(
-				host,
+			runHostFrame(
+				session,
+				runtime,
+				presenter,
+				input,
+				audioOutput,
+				systemOutput,
+				logOutput,
 				presentation,
 				hostOverlayMenu,
 				currentTimeMs,
@@ -96,7 +145,7 @@ async function main(): Promise<void> {
 	};
 
 	runUntil('READY', 1);
-	const saved = await host.captureRuntimeSaveStateBytes();
+	const saved = await captureRuntimeSaveStateBytes(runtime, presenter);
 	const mailboxControl = CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET;
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 1);
@@ -110,7 +159,6 @@ async function main(): Promise<void> {
 	);
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 2);
-	host.stop();
 
 	process.stdout.write(`BMSX-CARTRIDGE-CONFORMANCE=${transcript.join('|')}\n`);
 }

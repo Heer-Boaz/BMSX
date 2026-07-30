@@ -1609,9 +1609,14 @@ void pushSoftwareVramUpload(
 		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 }
 
-void requireArgbPixel(const std::array<uint32_t, 256u * 256u>& pixels, uint32_t x, uint32_t y, uint32_t color, const char* message) {
+void requireArgbPixel(const uint32_t* pixels, uint32_t x, uint32_t y, uint32_t color, const char* message) {
 	const size_t pixelIndex = static_cast<size_t>(y) * 256u + x;
 	require(pixels[pixelIndex] == color, message);
+}
+
+template<size_t N>
+void requireFramebuffer(const uint32_t* pixels, const std::array<uint32_t, N>& expected, const char* message) {
+	require(std::equal(expected.begin(), expected.end(), pixels), message);
 }
 
 constexpr std::array<bmsx::u32, bmsx::GX_GPU_PCRTC_CONFIG_WORD_COUNT> kSoftwareTestPcrtcWords{
@@ -1629,17 +1634,17 @@ constexpr std::array<bmsx::u32, bmsx::GX_GPU_PCRTC_CONFIG_WORD_COUNT> kSoftwareT
 };
 
 struct SoftwareFrameHarness {
-	std::array<uint32_t, 256u * 256u> framebuffer{};
 	std::unique_ptr<std::array<bmsx::u8, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes>> vramSnapshot = std::make_unique<std::array<bmsx::u8, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes>>();
 	std::array<bmsx::u32, bmsx::GX_GPU_PCRTC_CONFIG_WORD_COUNT> pcrtcWords = kSoftwareTestPcrtcWords;
 	bmsx::GxGpuPcrtcTiming pcrtcTiming{};
 	bmsx::GxGpuPcrtcScanout pcrtcScanout{};
 	bmsx::SoftwareBackend backend;
+	uint32_t* framebuffer = nullptr;
 	bmsx::GxGpuPipelineState state;
 	bmsx::GxGpuDeviceOutput output;
 
 	SoftwareFrameHarness(const bmsx::GxGpuCommandBuffer& commandBuffer, bmsx::GxGpuReadbackPort& readback)
-		: backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes)
+		: backend(256, 256, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes)
 		, output(
 			commandBuffer,
 			readback,
@@ -1647,6 +1652,8 @@ struct SoftwareFrameHarness {
 			pcrtcTiming,
 			pcrtcScanout,
 			*vramSnapshot) {
+		backend.resizePresentationTarget(256, 256);
+		framebuffer = backend.framebuffer();
 		state.width = 256;
 		state.height = 256;
 		output.statusWord = 0u;
@@ -3091,8 +3098,8 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 }
 
 void testSoftwarePresentationCopiesRgbAsOpaquePixels() {
-	std::array<uint32_t, 8u> framebuffer{};
-	bmsx::SoftwareBackend backend(framebuffer.data(), 4, 2, 4 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::SoftwareBackend backend(4, 2, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(4, 2);
 	bmsx::TextureHandle texture = backend.createColorTexture(2, 1, nullptr);
 	auto* source = static_cast<bmsx::SoftwareTexture*>(texture);
 	source->data[0u] = 0x00112233u;
@@ -3104,14 +3111,18 @@ void testSoftwarePresentationCopiesRgbAsOpaquePixels() {
 		0xff112233u, 0xff112233u, 0xff445566u, 0xff445566u,
 		0xff112233u, 0xff112233u, 0xff445566u, 0xff445566u,
 	};
-	require(framebuffer == expected, "Software presentation copies RGB without compositing source alpha");
+	requireFramebuffer(
+		backend.framebuffer(),
+		expected,
+		"Software presentation copies RGB without compositing source alpha");
 	backend.destroyTexture(texture);
 }
 
 void testSoftwareScanoutUsesNativeOutputDimensions() {
-	std::array<uint32_t, 256u * 212u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 192, 256 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 256u * 212u);
+	bmsx::SoftwareBackend backend(256, 192, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(256, 192);
+	uint32_t* framebuffer = backend.framebuffer();
 	bmsx::GxGpuPipelineState state{};
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	bmsx::GxGpuPcrtcTiming pcrtcTiming{};
@@ -3133,8 +3144,9 @@ void testSoftwareScanoutUsesNativeOutputDimensions() {
 	require(framebuffer[255] == 0x0000ff00u, "GX-GPU native scanout wraps the programmed VRAM X origin");
 	require(framebuffer[191u * 256u] == 0x000000ffu, "GX-GPU native 192-line scanout reaches source row 191 without scaling");
 
-	backend.setFramebuffer(framebuffer.data(), 256, 212, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	framebuffer.fill(0u);
+	backend.resizePresentationTarget(256, 212);
+	framebuffer = backend.framebuffer();
+	std::fill_n(framebuffer, 256u * 212u, 0u);
 	state.height = 212;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023u | (211u << 12u);
 	pcrtcTiming.update(pcrtcWords);
@@ -3142,8 +3154,9 @@ void testSoftwareScanoutUsesNativeOutputDimensions() {
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 	require(framebuffer[211u * 256u] == 0x00ffffffu, "GX-GPU native 212-line scanout reaches source row 211 without scaling");
 
-	backend.setFramebuffer(framebuffer.data(), 256, 192, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	framebuffer.fill(0u);
+	backend.resizePresentationTarget(256, 192);
+	framebuffer = backend.framebuffer();
+	std::fill_n(framebuffer, 256u * 192u, 0u);
 	state.height = 192;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_HIGH] = 900u | (768u << 11u);
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023u | (191u << 12u);
@@ -3159,9 +3172,10 @@ void testSoftwareScanoutUsesNativeOutputDimensions() {
 }
 
 void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixels() {
-	std::array<uint32_t, 3u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 3, 1, 3 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 3u);
+	bmsx::SoftwareBackend backend(3, 1, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(3, 1);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN1 | bmsx::GX_GPU_PCRTC_PMODE_EN2;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_LOW] = 1u | (16u << 9u) | (bmsx::GX_GPU_PSMGX16 << 15u);
@@ -3189,7 +3203,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	software.vram[4098u] = 0xffffu;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00ff0000u,
 		0x80000000u,
 		0x80ffffffu,
@@ -3201,7 +3215,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00ff0000u,
 		0x00000000u,
 		0x80ffffffu,
@@ -3215,7 +3229,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00bf0000u,
 		0x0000bf00u,
 		0x804040ffu,
@@ -3227,7 +3241,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00ff0000u,
 		0x8000ff00u,
 		0x800000ffu,
@@ -3237,7 +3251,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00ff0000u,
 		0x0000ff00u,
 		0x800000ffu,
@@ -3247,7 +3261,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 3u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 3u>{
 		0x00000000u,
 		0x00000000u,
 		0x80ffffffu,
@@ -3255,9 +3269,10 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 }
 
 void testPcrtcProjectsDisplaySignalsAndSamplesMagnifiedSource() {
-	std::array<uint32_t, 4u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 2, 2, 2 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 4u);
+	bmsx::SoftwareBackend backend(2, 2, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(2, 2);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN1
 		| bmsx::GX_GPU_PCRTC_PMODE_MMOD
@@ -3286,16 +3301,17 @@ void testPcrtcProjectsDisplaySignalsAndSamplesMagnifiedSource() {
 	software.vram[bmsx::gxGpuLocalMemoryAddress16S(4096u, 1u, 2u, 1u)] = 0x001fu;
 	software.vram[bmsx::gxGpuLocalMemoryAddress16S(4096u, 1u, 4u, 1u)] = 0x7c00u;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u, 0x000000ffu,
 		0x00ff0000u, 0x000000ffu,
 	}, "GX-GPU PCRTC incrementally samples the source at circuit magnification");
 }
 
 void testPcrtcKeepsMixedMagnificationCircuitsOnOneSignalGrid() {
-	std::array<uint32_t, 9u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 3, 3, 3 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 9u);
+	bmsx::SoftwareBackend backend(3, 3, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(3, 3);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN1
 		| bmsx::GX_GPU_PCRTC_PMODE_EN2
@@ -3325,7 +3341,7 @@ void testPcrtcKeepsMixedMagnificationCircuitsOnOneSignalGrid() {
 	software.vram[bmsx::gxGpuLocalMemoryAddress16S(8192u, 1u, 0u, 1u)] = 0x7c00u;
 	software.vram[bmsx::gxGpuLocalMemoryAddress16S(8192u, 1u, 2u, 1u)] = 0x7fffu;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 9u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 9u>{
 		0x00000000u, 0x00000000u, 0x00000000u,
 		0x00000000u, 0x00ff0000u, 0x0000ff00u,
 		0x00000000u, 0x000000ffu, 0x00ffffffu,
@@ -3338,9 +3354,10 @@ void testPcrtcKeepsMixedMagnificationCircuitsOnOneSignalGrid() {
 }
 
 void testPcrtcKeepsCircuitSourcePhaseIndependentFromOtherCrop() {
-	std::array<uint32_t, 4u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 4, 1, 4 * static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 4u);
+	bmsx::SoftwareBackend backend(4, 1, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(4, 1);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	const bmsx::u32 circuitOnePmode = bmsx::GX_GPU_PCRTC_PMODE_EN1
 		| bmsx::GX_GPU_PCRTC_PMODE_MMOD
@@ -3367,28 +3384,29 @@ void testPcrtcKeepsCircuitSourcePhaseIndependentFromOtherCrop() {
 	software.vram[bmsx::gxGpuLocalMemoryAddress16S(4096u, 1u, 1u, 0u)] = 0x03e0u;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 	require(pcrtcScanout.circuits[0u].sourcePhaseX == 3u, "GX-GPU PCRTC retains circuit-one absolute source phase");
-	require(framebuffer == std::array<uint32_t, 4u>{ 0x00ff0000u, 0x0000ff00u, 0u, 0u },
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{ 0x00ff0000u, 0x0000ff00u, 0u, 0u },
 		"GX-GPU PCRTC samples circuit one before enabling circuit two");
 
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = circuitOnePmode | bmsx::GX_GPU_PCRTC_PMODE_EN2;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 	require(pcrtcScanout.circuits[0u].sourcePhaseX == 3u, "GX-GPU PCRTC circuit-two enable does not alter circuit-one source phase");
-	require(framebuffer == std::array<uint32_t, 4u>{ 0u, 0x00ff0000u, 0x0000ff00u, 0u },
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{ 0u, 0x00ff0000u, 0x0000ff00u, 0u },
 		"GX-GPU PCRTC circuit-two enable moves only circuit-one destination placement");
 
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY2_LOW] = 676u | (3u << 23u);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 	require(pcrtcScanout.circuits[0u].sourcePhaseX == 3u, "GX-GPU PCRTC circuit-two movement does not alter circuit-one source phase");
-	require(framebuffer == std::array<uint32_t, 4u>{ 0u, 0u, 0x00ff0000u, 0x0000ff00u },
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{ 0u, 0u, 0x00ff0000u, 0x0000ff00u },
 		"GX-GPU PCRTC circuit-two movement preserves circuit-one sampled source words");
 }
 
 void testPcrtcReadsSupportedDispFbStorageAndRejectsGpu24OnCircuitTwo() {
-	std::array<uint32_t, 1u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 1, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 1u);
+	bmsx::SoftwareBackend backend(1, 1, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 1);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN2 | bmsx::GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB2_LOW] = 1u | (1u << 9u);
@@ -3520,9 +3538,10 @@ void testGxGpuLocalMemoryUsesGsPageBlockColumnAndGpu24WordLayouts() {
 }
 
 void testPcrtcExecutesMmodAndAmodAgainstFullCircuitAlpha() {
-	std::array<uint32_t, 1u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 1, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 1u);
+	bmsx::SoftwareBackend backend(1, 1, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 1);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN1 | bmsx::GX_GPU_PCRTC_PMODE_EN2;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_LOW] = 1u | (1u << 9u) | (bmsx::GX_GPU_PSMCT32 << 15u);
@@ -3580,9 +3599,10 @@ void testPcrtcExecutesMmodAndAmodAgainstFullCircuitAlpha() {
 }
 
 void testPcrtcFollowsPmodeUnderlayAndOutputAlphaTruthTable() {
-	std::array<uint32_t, 1u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 1, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 1u);
+	bmsx::SoftwareBackend backend(1, 1, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 1);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_LOW] = 1u | (1u << 9u) | (bmsx::GX_GPU_PSMCT32 << 15u);
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_HIGH] = 0u;
@@ -3625,9 +3645,10 @@ void testPcrtcFollowsPmodeUnderlayAndOutputAlphaTruthTable() {
 }
 
 void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
-	std::array<uint32_t, 4u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 4, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 4u);
+	bmsx::SoftwareBackend backend(1, 4, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 4);
+	uint32_t* const framebuffer = backend.framebuffer();
 	bmsx::GxGpuPipelineState state{};
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	bmsx::GxGpuPcrtcTiming pcrtcTiming{};
@@ -3660,7 +3681,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 1023, 513)] = 0x7fffu;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, vramReplacementSerial);
 
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x00000000u,
 		0x000000ffu,
@@ -3680,7 +3701,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 		"GX-GPU PCRTC retains odd-field circuit display lines");
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, vramReplacementSerial);
 
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x00ffffffu,
 		0x000000ffu,
@@ -3689,7 +3710,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 
 	pcrtcScanout.setField(0u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, vramReplacementSerial);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ffffffu,
 		0x00ffffffu,
 		0x00ff0000u,
@@ -3702,7 +3723,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 1023, 513)] = 0x7c00u;
 	pcrtcScanout.setField(1u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, vramReplacementSerial);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ffffffu,
 		0x000000ffu,
 		0x00ff0000u,
@@ -3711,7 +3732,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 
 	vramReplacementSerial = 2u;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, vramReplacementSerial);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00000000u,
 		0x000000ffu,
 		0x00000000u,
@@ -3720,9 +3741,10 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 }
 
 void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
-	std::array<uint32_t, 4u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 4, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 4u);
+	bmsx::SoftwareBackend backend(1, 4, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 4);
+	uint32_t* const framebuffer = backend.framebuffer();
 	bmsx::GxGpuPipelineState state{};
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	bmsx::GxGpuPcrtcTiming pcrtcTiming{};
@@ -3742,7 +3764,7 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 1023, 512)] = 0x7c00u;
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 1023, 513)] = 0x7fffu;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x00000000u,
 		0x000000ffu,
@@ -3751,7 +3773,7 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 
 	pcrtcScanout.setField(1u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x0000ff00u,
 		0x000000ffu,
@@ -3761,7 +3783,7 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_LOW] |= 1u << 12u;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x00ff0000u,
 		0x000000ffu,
@@ -3770,7 +3792,7 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 
 	pcrtcScanout.setField(0u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x0000ff00u,
 		0x00ff0000u,
 		0x00ffffffu,
@@ -3783,7 +3805,7 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
 	pcrtcScanout.setField(1u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 4u>{
+	requireFramebuffer(framebuffer, std::array<uint32_t, 4u>{
 		0x00ff0000u,
 		0x00ff0000u,
 		0x0000ff00u,
@@ -3792,9 +3814,10 @@ void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
 }
 
 void testSoftwareScanoutRetainsFinalEvenLineAtOddInterlacedHeight() {
-	std::array<uint32_t, 5u> framebuffer{};
-	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, framebuffer.size());
-	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 5, static_cast<int32_t>(sizeof(uint32_t)), bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 5u);
+	bmsx::SoftwareBackend backend(1, 5, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.resizePresentationTarget(1, 5);
+	uint32_t* const framebuffer = backend.framebuffer();
 	auto pcrtcWords = kSoftwareTestPcrtcWords;
 	bmsx::GxGpuPcrtcTiming pcrtcTiming{};
 	bmsx::GxGpuPcrtcScanout pcrtcScanout{};
@@ -3813,14 +3836,14 @@ void testSoftwareScanoutRetainsFinalEvenLineAtOddInterlacedHeight() {
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 0, 1)] = 0x03e0u;
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 0, 2)] = 0x7c00u;
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 5u>{ 0x00ff0000u, 0u, 0x0000ff00u, 0u, 0x000000ffu },
+	requireFramebuffer(framebuffer, std::array<uint32_t, 5u>{ 0x00ff0000u, 0u, 0x0000ff00u, 0u, 0x000000ffu },
 		"GX-GPU interlaced even field retains its third row at odd output height");
 
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 0, 0)] = 0x7fffu;
 	software.vram[bmsx::gxGpuSoftwareVramIndex(software, 0, 1)] = 0x001fu;
 	pcrtcScanout.setField(1u);
 	bmsx::scanoutGxGpuSoftwareVram(software, backend, state, pcrtcScanout, 0u);
-	require(framebuffer == std::array<uint32_t, 5u>{ 0x00ff0000u, 0x00ffffffu, 0x0000ff00u, 0x00ff0000u, 0x000000ffu },
+	requireFramebuffer(framebuffer, std::array<uint32_t, 5u>{ 0x00ff0000u, 0x00ffffffu, 0x0000ff00u, 0x00ff0000u, 0x000000ffu },
 		"GX-GPU interlaced odd field preserves the final retained even line across a snapshot change");
 }
 

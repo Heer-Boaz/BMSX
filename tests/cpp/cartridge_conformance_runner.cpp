@@ -3,7 +3,8 @@
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime.h"
 #include "spec/bmsx/model.h"
-#include "platform.h"
+#include "host.h"
+#include "support/libretro_software_product.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -52,12 +53,12 @@ size_t transcriptCount(std::string_view entry) {
 	return count;
 }
 
-void runUntil(bmsx::LibretroPlatform& platform, std::string_view entry, size_t count) {
+void runUntil(bmsx::LibretroHost& host, std::string_view entry, size_t count) {
 	for (bmsx::u32 frame = 0; frame < 240u; ++frame) {
 		if (transcriptCount(entry) >= count) {
 			return;
 		}
-		platform.runFrame();
+		host.runFrame();
 	}
 	throw std::runtime_error("Guest conformance transcript did not complete.");
 }
@@ -70,39 +71,36 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::Software,
-		avInfo,
+	bmsx::test::LibretroSoftwareProduct product(
 		supervisorRequestLineLow,
-		false);
-	platform.setLogCallback(captureLog);
-	platform.setInputPollCallback(discardInputPoll);
-	platform.setInputStateCallback(discardInputState);
-	platform.setSystemDirectory(std::filesystem::path(argv[1]).parent_path().string());
-	if (!platform.loadCartridgeSlotsFromPaths({ argv[2], argv[3] })) {
+		nullptr,
+		captureLog,
+		std::filesystem::path(argv[1]).parent_path().string());
+	bmsx::LibretroHost& host = product.host;
+	product.input.setInputPollCallback(discardInputPoll);
+	product.input.setInputStateCallback(discardInputState);
+	if (!host.loadCartridgeSlotsFromPaths({ argv[2], argv[3] })) {
 		throw std::runtime_error("Cartridge media did not load.");
 	}
 
-	runUntil(platform, "READY", 1u);
-	std::vector<bmsx::u8> saved(platform.getStateSize());
-	if (!platform.saveState(saved.data(), saved.size())) {
+	runUntil(host, "READY", 1u);
+	std::vector<bmsx::u8> saved(host.getStateSize());
+	if (!host.saveState(saved.data(), saved.size())) {
 		throw std::runtime_error("Save-state capture failed.");
 	}
 	const bmsx::u32 mailboxControl =
 		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET;
-	platform.runtime().machine.memory.writeMappedU32LE(
+	host.loadedRuntime().machine.memory.writeMappedU32LE(
 		mailboxControl,
 		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil(platform, "STEP1", 1u);
-	if (!platform.loadState(saved.data(), saved.size())) {
+	runUntil(host, "STEP1", 1u);
+	if (!host.loadState(saved.data(), saved.size())) {
 		throw std::runtime_error("Save-state restore failed.");
 	}
-	platform.runtime().machine.memory.writeMappedU32LE(
+	host.loadedRuntime().machine.memory.writeMappedU32LE(
 		mailboxControl,
 		bmsx::CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil(platform, "STEP1", 2u);
+	runUntil(host, "STEP1", 2u);
 
 	std::cout << "BMSX-CARTRIDGE-CONFORMANCE=";
 	for (size_t index = 0; index < transcript.size(); ++index) {

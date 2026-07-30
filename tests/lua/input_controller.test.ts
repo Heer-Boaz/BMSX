@@ -77,7 +77,7 @@ function createHarness(): {
 	let sampleCount = 0;
 	let supervisorRequestLineHigh = false;
 	const input: InputControllerInputSource = {
-		sampleInputControllerSnapshot(_currentTimeMs: number, snapshot: InputControllerSnapshot) {
+		sampleInputControllerSnapshot(snapshot: InputControllerSnapshot) {
 			sampleCount += 1;
 			writeSample(snapshot, keyWords);
 		},
@@ -87,7 +87,6 @@ function createHarness(): {
 		applyInputControllerVibrationEffect(padIndex, durationMs, intensity) {
 			vibrations.push({ padIndex, durationMs, intensity });
 		},
-		setRuntimeInputFrameDurationMs() { },
 	};
 	const machine = new Machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices();
@@ -113,7 +112,7 @@ test('input controller latches one raw MMIO snapshot on armed VBlank', () => {
 	const live = createHarness();
 	live.setKey(HID_KEY_F2, true);
 	live.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
-	live.controller.onVblankEdge(1000 / 60, 77);
+	live.controller.onVblankEdge(77);
 
 	assert.equal(live.samples(), 1);
 	assert.equal(live.memory.readIoU32(IO_INP_STATUS), 1);
@@ -132,7 +131,7 @@ test('input controller latches one raw MMIO snapshot on armed VBlank', () => {
 test('input controller save-state restores raw latch registers', () => {
 	const live = createHarness();
 	live.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
-	live.controller.onVblankEdge(1000 / 60, 77);
+	live.controller.onVblankEdge(77);
 	live.memory.writeMappedWord(IO_INP_OUTPUT_PORT, 2);
 	live.memory.writeMappedWord(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
 	live.memory.writeMappedWord(IO_INP_OUTPUT_DURATION_MS, 120);
@@ -175,20 +174,20 @@ test('input controller raises one supervisor request edge and the device fence v
 	restoredState.supervisorRequestLineHigh = true;
 	harness.controller.restoreState(restoredState);
 	harness.setSupervisorRequestLine(true);
-	harness.controller.onVblankEdge(1, 1);
+	harness.controller.onVblankEdge(1);
 
 	assert.equal(harness.samples(), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE), 0);
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_RESET);
-	harness.controller.onVblankEdge(2, 2);
+	harness.controller.onVblankEdge(2);
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 
 	harness.setSupervisorRequestLine(false);
-	harness.controller.onVblankEdge(3, 3);
+	harness.controller.onVblankEdge(3);
 	harness.setSupervisorRequestLine(true);
-	harness.controller.onVblankEdge(4, 4);
+	harness.controller.onVblankEdge(4);
 
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 	harness.machine.systemController.onService();

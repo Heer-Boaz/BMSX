@@ -46,7 +46,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
-import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
+import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
@@ -58,13 +58,7 @@ import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
 
-class TimingInputSource implements RuntimeInputSource {
-	public frameDurationMs = 0;
-
-	public setRuntimeInputFrameDurationMs(frameDurationMs: number): void {
-		this.frameDurationMs = frameDurationMs;
-	}
-
+class TimingInputSource implements InputControllerInputSource {
 	public sampleInputControllerSnapshot(): void {
 	}
 

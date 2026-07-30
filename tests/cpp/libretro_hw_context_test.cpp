@@ -1,6 +1,6 @@
-#include "spec/bmsx/model.h"
-#include "platform.h"
+#include "bmsx_libretro.h"
 #include "render/backend/gles2/backend.h"
+#include "spec/bmsx/model.h"
 
 #include <cstdint>
 #include <stdexcept>
@@ -18,23 +18,16 @@ uintptr_t RETRO_CALLCONV frontendGetCurrentFramebuffer() {
 	return 7u;
 }
 
-bool RETRO_CALLCONV supervisorRequestLineLow() {
-	return false;
-}
-
 } // namespace
 
 int main() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(
-		bmsx::PSX_MACHINE_SPEC,
-		bmsx::BackendType::OpenGLES2,
-		avInfo,
-		supervisorRequestLineLow,
-		false);
-	platform.setHwRenderCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
-	auto* backend = &static_cast<bmsx::OpenGLES2Backend&>(platform.videoPresenter().backend());
-	if (backend->resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {
+	bmsx::OpenGLES2Backend backend(
+		256,
+		240,
+		false,
+		bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.setContextCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
+	if (backend.resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {
 		throw std::runtime_error("libretro hardware context should own GL procedure resolution");
 	}
 	return 0;

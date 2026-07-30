@@ -72,12 +72,9 @@ struct AudioHarness {
 	}
 };
 
-class SilentInputSource final : public bmsx::RuntimeInputSource {
+class SilentInputSource final : public bmsx::InputControllerInputSource {
 public:
-	void setRuntimeInputFrameDurationMs(bmsx::f64) override {
-	}
-
-	void sampleInputControllerSnapshot(bmsx::f64, bmsx::InputControllerSnapshot&) override {
+	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&) override {
 	}
 
 	auto supervisorRequestLineHigh() const -> bool override {

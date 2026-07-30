@@ -212,7 +212,7 @@ function createRealAudioHarness(
 }
 
 const SILENT_INPUT_SOURCE: InputControllerInputSource = {
-	sampleInputControllerSnapshot(_currentTimeMs: number, _snapshot: InputControllerSnapshot): void {},
+	sampleInputControllerSnapshot(_snapshot: InputControllerSnapshot): void {},
 	supervisorRequestLineHigh(): boolean { return false; },
 	applyInputControllerVibrationEffect(_padIndex: number, _durationMs: number, _intensity: number): void {},
 };

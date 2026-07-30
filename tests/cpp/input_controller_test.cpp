@@ -18,7 +18,7 @@ void require(bool condition, const char* message) {
 
 class TestInput final : public bmsx::InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::f64, bmsx::InputControllerSnapshot& snapshot) override {
+	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot& snapshot) override {
 		fullSampleCount += 1;
 		snapshot.keyWords = keyWords;
 	}
@@ -67,20 +67,20 @@ void testSystemNmiEdgeDoesNotPublishAnUnarmedSnapshot() {
 	restored.supervisorRequestLineHigh = true;
 	controller.restoreState(restored);
 	harness.input.supervisorRequestLine = true;
-	controller.onVblankEdge(1.0, 1u);
+	controller.onVblankEdge(1u);
 
 	require(harness.input.fullSampleCount == 0, "unarmed VBlank does not sample the full input frame");
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "unarmed VBlank leaves the sample sequence unchanged");
 	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "a restored high request line is not a new edge");
 
 	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_RESET);
-	controller.onVblankEdge(2.0, 2u);
+	controller.onVblankEdge(2u);
 	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "guest ICU reset cannot synthesize a physical edge");
 
 	harness.input.supervisorRequestLine = false;
-	controller.onVblankEdge(3.0, 3u);
+	controller.onVblankEdge(3u);
 	harness.input.supervisorRequestLine = true;
-	controller.onVblankEdge(4.0, 4u);
+	controller.onVblankEdge(4u);
 	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "the ICU edge waits for the common device fence");
 	harness.machine.systemController.onService();
 	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::NonMaskable, "the completed fence requests NMI");
@@ -92,7 +92,7 @@ void testArmedVblankPublishesTheFullSnapshot() {
 	InputControllerHarness harness;
 	harness.input.setKey(f2Usage, true);
 	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
-	harness.machine.inputController.onVblankEdge(1.0, 7u);
+	harness.machine.inputController.onVblankEdge(7u);
 
 	require(harness.input.fullSampleCount == 1, "armed VBlank samples one full input frame");
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "armed VBlank advances the sample sequence");

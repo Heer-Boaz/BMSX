@@ -36,7 +36,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
+import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
@@ -49,10 +49,7 @@ import {
 	type TestBlua32Source,
 } from '../helpers/blua32';
 
-class SystemResetInputSource implements RuntimeInputSource {
-	public setRuntimeInputFrameDurationMs(): void {
-	}
-
+class SystemResetInputSource implements InputControllerInputSource {
 	public sampleInputControllerSnapshot(): void {
 	}
 

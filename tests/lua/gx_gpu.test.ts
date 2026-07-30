@@ -259,7 +259,7 @@ import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/so
 import { GxGpuSoftwareState } from '../../machine/ts/render/backend/software/gx_gpu_state';
 import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../machine/ts/render/headless/video_output';
+import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
 import {
 	gxGpuSoftwareBlendRgb555,
 	gxGpuSoftwareTextureModulationChannel5,
@@ -267,9 +267,9 @@ import {
 	gxGpuSoftwareVramIndex,
 } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
-const headlessVideoOutput = new HeadlessVideoOutput({ x: 256, y: 212 });
 const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
 const gxGpuSoftwareVram = gxGpuSoftware.vram;
+const headlessVideoOutput = new HeadlessVideoOutput(256, 212);
 
 test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', () => {
 	const { gpu } = createGpu();
@@ -291,7 +291,12 @@ test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', ()
 	completeGpuCommands(gpu);
 	const output = gpu.readDeviceOutput();
 	assert.equal(output.commandBuffer.presentCommandCount, 0);
-	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	).executeGxGpuReadback(gpu);
 
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, GX_GPU_STATUS_READY_TO_SEND_VRAM);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST, GX_GPU_STATUS_DMA_DATA_REQUEST);
@@ -327,7 +332,12 @@ test('GX-GPU GPUREAD preserves row-major order across X and Y wrap', () => {
 	gpu.writeGp0(positionWord);
 	gpu.writeGp0(sizeWord);
 	completeGpuCommands(gpu);
-	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	).executeGxGpuReadback(gpu);
 	assert.equal(gpu.readGp0(), 0x22221111);
 	assert.equal(gpu.readGp0(), 0x44443333);
 });
@@ -351,7 +361,12 @@ test('GX-GPU open Y gate exposes installed upper VRAM storage', () => {
 	gpu.writeGp0(513 << 16);
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
-	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const backend = new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
 	backend.executeGxGpuReadback(gpu);
 	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 0)], 0x1234);
 	assert.equal(backend.gxGpuSoftware.vram[gxGpuSoftwareVramIndex(backend.gxGpuSoftware, 0, 512)], 0xabcd);
@@ -473,7 +488,12 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 
 test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () => {
 	const { gpu } = createGpu();
-	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const backend = new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
 	const powerOnWord16 = gpu.readVramSnapshotBytes()[32]! | (gpu.readVramSnapshotBytes()[33]! << 8);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
@@ -569,7 +589,12 @@ test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained req
 	readback.completeReadback(staleToken);
 	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
 	assert.equal(commandBuffer.presentCommandCount, 0);
-	new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(gpu);
+	new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	).executeGxGpuReadback(gpu);
 	assert.equal(gpu.readGp0(), 0x00001234);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
@@ -2147,7 +2172,12 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
 	const output = gpu.readDeviceOutput();
-	const backend = new HeadlessGPUBackend(headlessVideoOutput, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const backend = new HeadlessGPUBackend(
+		headlessVideoOutput,
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
 	backend.captureGxGpuVramSnapshot(gpu);
 	assert.equal(output.commandBuffer.commandCount, 0);
 	assert.equal(output.commandBuffer.presentCommandCount, 0);

@@ -83,7 +83,7 @@ const IMGDEC_INPUT_DMA_CONTROL = 0x00003d41;
 const IMGDEC_OUTPUT_DMA_CONTROL = 0x00003c58;
 
 const INPUT_SOURCE: InputControllerInputSource = {
-	sampleInputControllerSnapshot(_currentTimeMs: number, _snapshot: InputControllerSnapshot): void {},
+	sampleInputControllerSnapshot(_snapshot: InputControllerSnapshot): void {},
 	supervisorRequestLineHigh(): boolean { return false; },
 	applyInputControllerVibrationEffect(_padIndex: number, _durationMs: number, _intensity: number): void {},
 };

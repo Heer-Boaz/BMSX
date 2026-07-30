@@ -10,7 +10,7 @@
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/model.h"
-#include "machine/runtime/input.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
@@ -42,10 +42,9 @@ void require(bool condition, const char* message) {
 	}
 }
 
-class SystemResetInputSource final : public bmsx::RuntimeInputSource {
+class SystemResetInputSource final : public bmsx::InputControllerInputSource {
 public:
-	void setRuntimeInputFrameDurationMs(bmsx::f64) override {}
-	void sampleInputControllerSnapshot(bmsx::f64, bmsx::InputControllerSnapshot&) override {}
+	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&) override {}
 	auto supervisorRequestLineHigh() const -> bool override { return false; }
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
 };

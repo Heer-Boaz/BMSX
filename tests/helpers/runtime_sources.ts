@@ -12,7 +12,7 @@ import {
 } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
+import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
@@ -28,10 +28,7 @@ import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { cartridgeSlots } from './cartridge';
 
-class TestRuntimeInputSource implements RuntimeInputSource {
-	public setRuntimeInputFrameDurationMs(): void {
-	}
-
+class TestInputSource implements InputControllerInputSource {
 	public sampleInputControllerSnapshot(): void {
 	}
 
@@ -51,7 +48,7 @@ export function createTestRuntime(systemRom: Uint8Array): Runtime {
 			...PSX_MACHINE_SPEC,
 			cpuFreqHz: 5_000_000,
 		},
-	}, new TestRuntimeInputSource());
+	}, new TestInputSource());
 }
 
 function toolingPackage(projectRootPath: string): RomToolingPackage {

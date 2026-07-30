@@ -49,7 +49,6 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import { Machine } from '../../machine/ts/machine/machine';
-import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -237,11 +236,6 @@ function makeFrameState(): FrameState {
 		activeCpuUsedCycles: 0,
 	};
 }
-
-const INLINE_MICROTASKS: MicrotaskQueue = {
-	queueMicrotask: task => task(),
-	flush: () => {},
-};
 
 function makeMachine(
 	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),

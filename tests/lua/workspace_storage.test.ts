@@ -6,7 +6,8 @@ import {
 	type ResourceDomain,
 	type RuntimeResource,
 } from '../../ide/common/resource';
-import type { StorageService, TimerHandle } from '../../machine/ts/platform/platform';
+import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
+import type { TimerHandle } from '../../hosts/common/clock';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { getTextSnapshot } from '../../ide/editor/text/source_text';
 import {
@@ -49,6 +50,7 @@ import {
 import {
 	cancelWorkspaceAutosave,
 	initializeWorkspaceStorage,
+	persistWorkspaceSessionLocally,
 	requestWorkspaceAutosave,
 	restoreWorkspaceStorageSession,
 	runWorkspaceAutosaveTick,
@@ -89,7 +91,7 @@ import {
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
-class MockStorage implements StorageService {
+class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
 	public failWriteKey: string = null;
 	public failWritePrefix: string = null;
@@ -126,7 +128,6 @@ class MockClock {
 	public constructor(private readonly fixedDate = false) {}
 
 	now(): number { return 0; }
-	perfNow(): number { return 0; }
 	dateNow(): number {
 		const timestamp = this.timestamp;
 		if (!this.fixedDate) {
@@ -153,37 +154,14 @@ class MockClock {
 	}
 }
 
-class MockLifecycle {
-	private callback: (() => void) | null = null;
-
-	onWillExit(callback: () => void) {
-		this.callback = callback;
-		let active = true;
-		return {
-			id: 1,
-			get active() { return active; },
-			unsubscribe(): void {
-				active = false;
-			},
-		};
-	}
-
-	fireWillExit(): void {
-		this.callback!();
-	}
-}
-
-function createPlatformStub(
+function createWorkspaceEnvironment(
 	storage: MockStorage,
 	clock = new MockClock(),
-	lifecycle = new MockLifecycle(),
 ) {
 	return {
 		storage,
-		lifecycle,
 		clock: {
 			now: () => clock.now(),
-			perf_now: () => clock.perfNow(),
 			dateNow: () => clock.dateNow(),
 			scheduleOnce: (delayMs: number, callback: (timestampMs: number) => void) => clock.scheduleOnce(delayMs, callback),
 		},
@@ -273,10 +251,10 @@ class MockWorkspaceServer {
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const TEST_DOMAIN = 0;
-let workspacePlatform = createPlatformStub(new MockStorage());
+let workspaceEnvironment = createWorkspaceEnvironment(new MockStorage());
 
 function installOfflineWorkspace(t: TestContext, storage: MockStorage, clock = new MockClock()): MockClock {
-	workspacePlatform = createPlatformStub(storage, clock);
+	workspaceEnvironment = createWorkspaceEnvironment(storage, clock);
 	globalThis.fetch = async () => { throw new Error('offline'); };
 	t.after(() => resetEnvironment(storage));
 	return clock;
@@ -286,13 +264,12 @@ function installWorkspaceServer(
 	t: TestContext,
 	storage: MockStorage,
 	clock = new MockClock(),
-): { clock: MockClock; lifecycle: MockLifecycle; server: MockWorkspaceServer } {
+): { clock: MockClock; server: MockWorkspaceServer } {
 	const server = new MockWorkspaceServer();
-	const lifecycle = new MockLifecycle();
-	workspacePlatform = createPlatformStub(storage, clock, lifecycle);
+	workspaceEnvironment = createWorkspaceEnvironment(storage, clock);
 	globalThis.fetch = (input, init) => server.fetch(input, init);
 	t.after(() => resetEnvironment(storage));
-	return { clock, lifecycle, server };
+	return { clock, server };
 }
 
 async function resetEnvironment(storage: MockStorage): Promise<void> {
@@ -309,7 +286,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 }
 
 function installWorkspaceRestoreView(): void {
-	configureFontVariant(workspacePlatform.clock, DEFAULT_FONT_VARIANT, null);
+	configureFontVariant(workspaceEnvironment.clock, DEFAULT_FONT_VARIANT, null);
 }
 
 function testResource(
@@ -436,7 +413,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 		[sourceRegistry('-- cart source', root), null],
 		TEST_DOMAIN,
 	);
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, root, sources);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, root, sources);
 	await restoreWorkspaceStorageSession(
 		editorStub() as any,
 		sources,
@@ -503,9 +480,9 @@ test('canonical source cache keys identical resource paths by physical project p
 		globalThis.fetch = ORIGINAL_FETCH;
 		clearWorkspaceSourceCaches();
 	});
-	workspacePlatform = createPlatformStub(new MockStorage());
+	workspaceEnvironment = createWorkspaceEnvironment(new MockStorage());
 
-	assert.equal(await loadWorkspaceSourceFile(workspacePlatform.storage, 'entry.lua', 'cart1'), 'return "slot 1"');
+	assert.equal(await loadWorkspaceSourceFile(workspaceEnvironment.storage, 'entry.lua', 'cart1'), 'return "slot 1"');
 	assert.deepEqual(requestedPaths, ['cart1/entry.lua']);
 });
 
@@ -517,7 +494,7 @@ test('remote record transport serializes operations for one resource', async (t)
 		[sourceRegistry('-- cart source'), null],
 		TEST_DOMAIN,
 	);
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
 	const path = 'offline-cart/src/foo.lua';
 	let releaseWrite: () => void;
 	const blocked = new Promise<void>(resolve => { releaseWrite = resolve; });
@@ -554,7 +531,7 @@ test('remote read convergence cannot overwrite a newer local write', async (t) =
 		[sourceRegistry('-- cart source'), null],
 		TEST_DOMAIN,
 	);
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
 	const path = 'offline-cart/src/foo.lua';
 	writeLocalWorkspaceRecord(
 		storage,
@@ -601,7 +578,7 @@ test('reconnect drains a pending record replaced during its active PUT', async (
 	let releaseWrite: () => void;
 	const blocked = new Promise<void>(resolve => { releaseWrite = resolve; });
 	server.blockWrite(path, blocked);
-	const reconnect = reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	const reconnect = reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	while (!server.requests.some(request => request.method === 'PUT' && request.path === path)) {
 		await Promise.resolve();
 	}
@@ -634,7 +611,7 @@ test('reconnect keeps a newer remote record over stale pending local work', asyn
 	);
 	server.files.set(path, { contents: '-- newer remote', updatedAt: 1001 });
 
-	await reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 
 	assert.equal(workspaceRecordState.connected, true);
 	assert.deepEqual(
@@ -659,7 +636,7 @@ test('required local workspace storage remains authoritative while remote is off
 		TEST_DOMAIN,
 	);
 
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
 	assert.deepEqual(restored, session);
 	const markerPath = joinWorkspacePaths('offline-cart', WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', markerPath)!.contents, '');
@@ -688,7 +665,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 		TEST_DOMAIN,
 	);
 
-	assert.deepEqual(await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources), localPayload);
+	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources), localPayload);
 	assert.equal(workspaceState.remoteRevision, -1);
 	await shutdownWorkspaceStorage();
 
@@ -696,7 +673,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 	const remotePayload = payload();
 	remotePayload.fontVariant = 'msx';
 	server.files.set(statePath, { contents: JSON.stringify(remotePayload), updatedAt: 40 });
-	assert.deepEqual(await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources), remotePayload);
+	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources), remotePayload);
 	assert.deepEqual(
 		JSON.parse(readLocalWorkspaceRecord(storage, 'offline-cart', statePath)!.contents),
 		remotePayload,
@@ -738,7 +715,7 @@ test('remote manifest adoption publishes after referenced records and releases t
 	);
 
 	await assert.rejects(
-		() => initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources),
+		() => initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources),
 		/Persisted dirty file .* does not match the workspace session/,
 	);
 	assert.deepEqual(
@@ -757,7 +734,7 @@ test('remote manifest adoption publishes after referenced records and releases t
 	const remoteDirtyPath = buildWorkspaceDirtyRecordPath(dirtyPath, 30);
 	server.files.set(remoteDirtyPath, { contents: '-- remote dirty', updatedAt: 30 });
 	assert.deepEqual(
-		await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources),
+		await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources),
 		remotePayload,
 	);
 	assert.equal(
@@ -793,7 +770,7 @@ test('raw session JSON under a workspace record key rejects without legacy inter
 		[sourceRegistry('-- cart source'), null],
 		TEST_DOMAIN,
 	);
-	await assert.rejects(() => initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources));
+	await assert.rejects(() => initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources));
 	assert.notEqual(storage.getItem(key), null);
 });
 
@@ -826,8 +803,8 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		TEST_DOMAIN,
 	);
 
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
-	const rejected = await applyAllWorkspaceSourceOverrides(workspacePlatform.storage, sources, workspaceDirtyRecords);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
+	const rejected = await applyAllWorkspaceSourceOverrides(workspaceEnvironment.storage, sources, workspaceDirtyRecords);
 	assert.equal(registry.records[0].src, '-- dirty edit');
 	assert.equal(rejected.size, 0);
 
@@ -868,7 +845,7 @@ test('manifest dirty timestamp rejects an uncommitted record generation', async 
 	);
 
 	await assert.rejects(
-		() => initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources),
+		() => initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources),
 		/Persisted dirty file .* does not match the workspace session/,
 	);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', uncommittedPath)!.updatedAt, 81);
@@ -900,8 +877,8 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	writeRecord(storage, 'offline-cart', dirtyRecordPath, '-- stale dirty edit', 50);
 	writeRecord(storage, 'offline-cart', workspaceStatePath('offline-cart'), JSON.stringify(session), 60);
 
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
-	const rejected = await applyAllWorkspaceSourceOverrides(workspacePlatform.storage, sources, workspaceDirtyRecords);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
+	const rejected = await applyAllWorkspaceSourceOverrides(workspaceEnvironment.storage, sources, workspaceDirtyRecords);
 	assert.deepEqual([...rejected], [dirtyPath]);
 	installWorkspaceRestoreView();
 	await restoreWorkspaceStorageSession(
@@ -957,7 +934,7 @@ test('dirty records follow the physical project root owned by each resource doma
 	}
 	writeRecord(storage, slot0Root, workspaceStatePath(slot0Root), JSON.stringify(session), 90);
 
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, slot0Root, sources);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, slot0Root, sources);
 	assert.equal(workspaceDirtyRecords.size, 3);
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -1125,7 +1102,7 @@ test('failed dirty PUT retains the local generation and converges after reconnec
 	assert.equal(server.files.has(statePath), false);
 	assert.equal(workspaceRecordState.connected, false);
 
-	await reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	await runWorkspaceAutosaveTick();
 	assert.equal(server.files.get(dirtyRecordPath)!.contents, '-- dirty edit');
 	assert.deepEqual(JSON.parse(server.files.get(statePath)!.contents).dirtyFiles, [{
@@ -1166,7 +1143,7 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 	assert.equal(server.files.get(previousRecordPath)!.contents, '-- dirty A');
 	assert.strictEqual(server.files.get(statePath), previousStateRecord);
 
-	await reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	await runWorkspaceAutosaveTick();
 	const remotePayload = JSON.parse(server.files.get(statePath)!.contents) as WorkspaceAutosavePayload;
 	assert.equal(remotePayload.dirtyFiles[0].updatedAt, dirtyRecord.updatedAt);
@@ -1175,7 +1152,7 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 
 test('remote sync publishes the exact dirty records retained with its state generation', async (t) => {
 	const storage = new MockStorage();
-	const { lifecycle, server } = installWorkspaceServer(t, storage);
+	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
 	installCodeContext('src/a.lua', '-- A1');
 	const contextB = installCodeContext('src/b.lua', '-- B1');
@@ -1197,7 +1174,7 @@ test('remote sync publishes the exact dirty records retained with its state gene
 
 	contextB.buffer.replace(0, contextB.buffer.length, '-- B2');
 	contextB.textVersion = contextB.buffer.version;
-	lifecycle.fireWillExit();
+	persistWorkspaceSessionLocally();
 	const secondGenerationB = workspaceState.localGeneration!.payload.dirtyFiles.find(
 		entry => entry.path === 'src/b.lua',
 	)!;
@@ -1239,7 +1216,7 @@ test('failed dirty DELETE retries after reconnect and stale orphan cannot resurr
 	assert.deepEqual(JSON.parse(server.files.get(statePath)!.contents).dirtyFiles, []);
 	assert.equal(server.files.has(dirtyRecordPath), true);
 
-	await reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	await runWorkspaceAutosaveTick();
 	assert.equal(server.files.has(dirtyRecordPath), false);
 
@@ -1256,8 +1233,8 @@ test('failed dirty DELETE retries after reconnect and stale orphan cannot resurr
 		[rebootedRegistry, null],
 		TEST_DOMAIN,
 	);
-	const restored = await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', rebootedSources);
-	await applyAllWorkspaceSourceOverrides(workspacePlatform.storage, rebootedSources, workspaceDirtyRecords);
+	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', rebootedSources);
+	await applyAllWorkspaceSourceOverrides(workspaceEnvironment.storage, rebootedSources, workspaceDirtyRecords);
 	assert.equal(rebootedRegistry.records[0].src, '-- rom source');
 	assert.equal(workspaceDirtyRecords.size, 0);
 	void sources;
@@ -1277,7 +1254,7 @@ test('workspace reconfiguration waits for the active autosave task', async (t) =
 	const autosave = runWorkspaceAutosaveTick() as Promise<void>;
 	await Promise.resolve();
 	let reconfigured = false;
-	const reconfiguration = initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'root-b', sources).then(() => { reconfigured = true; });
+	const reconfiguration = initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'root-b', sources).then(() => { reconfigured = true; });
 	await Promise.resolve();
 	assert.equal(reconfigured, false);
 	releaseWrite!();
@@ -1304,7 +1281,7 @@ test('workspace reconfiguration is not blocked by an old remote replica failure'
 		[sourceRegistry('-- cart source', 'root-b'), null],
 		TEST_DOMAIN,
 	);
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'root-b', rootBSources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'root-b', rootBSources);
 	assert.equal(workspaceState.projectRootPath, 'root-b');
 });
 
@@ -1316,7 +1293,7 @@ test('workspace reconfiguration commits a pending debounced edit locally', async
 	const dirtyPath = buildWorkspaceDirtyEntryPath('root-a', TEST_DOMAIN, 'src/foo.lua');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'root-b', sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'root-b', sources);
 	const sessionRecord = readLocalWorkspaceRecord(storage, 'root-a', workspaceStatePath('root-a'))!;
 	const sessionPayload = JSON.parse(sessionRecord.contents) as WorkspaceAutosavePayload;
 	const dirtyRecord = readLocalWorkspaceRecord(
@@ -1336,7 +1313,7 @@ test('dirty restore consumes retained snapshot content without a second transpor
 		[sourceRegistry('-- cart source'), null],
 		TEST_DOMAIN,
 	);
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
 	const context = installCodeContext('src/foo.lua', '-- clean source');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored dirty edit', updatedAt: 1 });
@@ -1369,7 +1346,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored edit', updatedAt: 1 });
 	installWorkspaceRestoreView();
 	await applyWorkspaceAutosavePayload(
-		workspacePlatform.storage,
+		workspaceEnvironment.storage,
 		editorStub() as any,
 		sources,
 		{ breakpoints: new Map() },
@@ -1528,8 +1505,8 @@ test('offline canonical save remains local and replicates on reconnect', async (
 		TEST_DOMAIN,
 	);
 	await saveLuaResourceSource(
-		workspacePlatform.storage,
-		workspacePlatform.clock,
+		workspaceEnvironment.storage,
+		workspaceEnvironment.clock,
 		sources,
 		{ domain: TEST_DOMAIN, path: 'src/foo.lua' },
 		'-- saved offline',
@@ -1543,7 +1520,7 @@ test('offline canonical save remains local and replicates on reconnect', async (
 
 	const server = new MockWorkspaceServer();
 	globalThis.fetch = (input, init) => server.fetch(input, init);
-	await reconnectWorkspaceRecords(workspacePlatform.clock, 'offline-cart');
+	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	assert.equal(server.files.get(canonicalPath)!.contents, '-- saved offline');
 });
 
@@ -1556,9 +1533,9 @@ test('explicit Lua save promotes one exact canonical record without deleting man
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	const dirtyRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, 2);
 	writeRecord(storage, 'offline-cart', dirtyRecordPath, '-- dirty source', 2);
-	await initializeWorkspaceStorage(workspacePlatform.storage, workspacePlatform.clock, workspacePlatform.lifecycle, 'offline-cart', sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources);
 
-	await saveLuaResourceSource(workspacePlatform.storage, workspacePlatform.clock, sources, { domain: TEST_DOMAIN, path: 'src/foo.lua' }, '-- saved source');
+	await saveLuaResourceSource(workspaceEnvironment.storage, workspaceEnvironment.clock, sources, { domain: TEST_DOMAIN, path: 'src/foo.lua' }, '-- saved source');
 	const canonicalPath = resolveWorkspacePath('src/foo.lua', 'offline-cart');
 	assert.equal(registry.records[0].src, '-- saved source');
 	assert.equal(registry.records[0].base_src, '-- saved source');
