@@ -1492,10 +1492,13 @@ whole line through its flush instead of replacing already completed output. The
 guest-visible hardware history keeps its normal circular overwrite behavior.
 Host transport cursors and bytes are presentation state and are not serialized.
 
-On supervisor entry the BIOS drains this hardware history into the retained
-firmware terminal before producing monitor command output. The host log sink
-receives the same completed lines independently; the browser host therefore
-emits them through its normal developer console.
+At reset the boot firmware uses the same path for its banner and cartridge
+state: it writes through `print()`, drains the retained glyph history into the
+firmware terminal, and presents that terminal through GX. On supervisor entry
+the BIOS drains the accumulated cart history into that same retained terminal
+before producing monitor command output. The host log sink receives the same
+completed lines independently; the browser host therefore emits them through
+its normal developer console.
 Neither host path owns terminal cells, GX state, or a second guest-visible
 output ABI.
 
@@ -1774,14 +1777,14 @@ overlap requires it; it does not allocate or retain a second transfer image.
 Full-VRAM snapshots and backend storage instead use the exact installed capacity
 selected by the machine model.
 
-The standard machine layout reserves the bottom-right 256x256 page at
-x=768..1023, y=768..1023. Its top 256x64 words hold the packed system texture;
-the lower 256x192 words hold the terminal surface at `(768,832)`. This is a
-128 KiB convention inside the shared 2 MiB VRAM, not protected or additional
-memory. The rompacker rejects overlap for ordinary cart layouts. Bare-metal
-cart code can still address those words and accepts that doing so may corrupt
-firmware rendering; hardware does not hide, restore or redirect the region.
-Every other installed VRAM word is an ordinary cart resource.
+The standard machine layout reserves a 320x304 rectangle at x=704..1023,
+y=720..1023. Its upper 320x240 words hold the terminal surface at `(704,720)`;
+its bottom-right 256x64 words hold the packed system texture at `(768,960)`.
+This is a 190 KiB convention inside the shared 2 MiB VRAM, not protected or
+additional memory. The rompacker rejects overlap for ordinary cart layouts.
+Bare-metal cart code can still address those words and accepts that doing so
+may corrupt firmware rendering; hardware does not hide, restore or redirect
+the region. Every other installed VRAM word is an ordinary cart resource.
 
 #### GX PCRTC dual read-output circuits
 
@@ -1884,9 +1887,12 @@ external request and a synchronous fault program terminal presentation over the
 same retained cart composition. No path copies the cart framebuffer or
 allocates terminal-only memory.
 
-The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
-history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
-4x6 tiny-font codepoint one-to-one to its physical system-texture coordinates.
+The BIOS keeps an 80x40 cell screen, fixed 128-line scrollback, two-word dirty
+row bitset, dirty column ranges, line editor, history and GP0 command list in
+ordinary `.bss`. The boot path and supervisor circuit explicitly select the
+standard 320x240 firmware mode; the old 64x32/256x192 terminal geometry is not
+a model-derived PSX mode. A packed ROM table maps each 4x6 tiny-font codepoint
+one-to-one to its physical system-texture coordinates.
 The monitor's HID-to-console-ASCII producer emits uppercase alphabetic bytes;
 the ROM packer and glyph renderer do not reinterpret text. A zero retained cell
 leaves its 4x6 terminal area transparent. Every nonzero cell, including an

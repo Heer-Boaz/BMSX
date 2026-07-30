@@ -267,16 +267,16 @@ function gx_gpu.reset_640x512i()
 	program_display(horizontal_resolution_640, display_mode_vertical_resolution | display_mode_50hz | display_mode_vertical_interlace, vertical_display_range_50hz_start, 640, 512, 256, pcrtc_syncv_50hz_interlaced_low, pcrtc_smode2_interlaced)
 end
 
-function gx_gpu.prepare_supervisor_256x192(origin_word)
+function gx_gpu.prepare_supervisor_320x240(origin_word)
 	local smode1_word<const> = *pcrtc_smode1_low
 	local display2_word<const> = *pcrtc_display2_low
 	local signal_step_x<const> = (smode1_word >> 21) & 0x0000000f
 	*gp1 = gp1_vram_y_address_extension
-	current_display_size_word = 256 | (192 << 16)
+	current_display_size_word = 320 | (240 << 16)
 	gx_gpu.display_origin(origin_word)
-	program_pcrtc_circuit1(display2_word & 0x00000fff, (display2_word >> 12) & 0x000007ff, signal_step_x, 256, 192)
+	program_pcrtc_circuit1(display2_word & 0x00000fff, (display2_word >> 12) & 0x000007ff, signal_step_x, 320, 240)
 	*gp1 = gp1_horizontal_display_range
-	*gp1 = gp1_vertical_display_range | vertical_display_range_50hz_start | ((vertical_display_range_50hz_start + 192) << 10)
+	*gp1 = gp1_vertical_display_range | vertical_display_range_50hz_start | ((vertical_display_range_50hz_start + 240) << 10)
 	*gp1 = gp1_dma_direction_cpu_to_gp0
 	current_draw_mode = draw_mode_blend_half
 	*gp0 = gp0_draw_mode | current_draw_mode

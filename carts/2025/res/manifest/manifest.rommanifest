@@ -2,7 +2,7 @@ title: Pietsona 2025
 gx_texture_layout:
     reserved:
         framebuffer: { x: 0, y: 0, width: 320, height: 240 }
-        system: { x: 768, y: 768, width: 256, height: 256 }
+        system: { x: 704, y: 720, width: 320, height: 304 }
     slots:
         background_left:
             texture: { x: 0, y: 256, width: 384, height: 256 }

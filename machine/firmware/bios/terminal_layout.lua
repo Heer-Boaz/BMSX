@@ -1,11 +1,11 @@
 module<const>
 
-local columns<const> = 64
-local rows<const> = 32
+local columns<const> = 80
+local rows<const> = 40
 local scrollback_rows<const> = 128
 local history_capacity<const> = 16
-local vram_x<const> = 768
-local vram_y<const> = 832
+local vram_x<const> = 704
+local vram_y<const> = 720
 
 return {
 	columns = columns,

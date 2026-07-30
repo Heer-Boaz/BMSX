@@ -13,8 +13,6 @@ local monitor<const> = {}
 local irq_mask<const>: *word = 0x08000008
 local input_control<const>: *word = 0x08000064
 local input_keys<const>: *word[8] = 0x0800006c
-local system_print_data<const>: *word = 0x0801022c
-local system_print_count<const>: *word = 0x08010230
 local system_control<const>: *word = 0x08010348
 local system_status<const>: *word = 0x0801034c
 
@@ -424,13 +422,11 @@ function monitor.enter(error_value)
 		saved_lua_fault_reason,
 		saved_irq_mask,
 		error_value)
-	gx_gpu.prepare_supervisor_256x192(layout.vram_origin) -- HUH?! Why hardcoded to 256x192? Should be layout.columns x layout.rows, but that is 80x25. Maybe this is a temporary hack for the monitor to work with the GPU in a specific mode.
+	gx_gpu.prepare_supervisor_320x240(layout.vram_origin)
 	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
 	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
-	while *system_print_count ~= 0 do
-		terminal.write_code(*system_print_data, palette_text)
-	end
+	terminal.drain_print_output(palette_text)
 	monitor_commands.start_fault()
 	pump_output(terminal.page_rows)
 	terminal.flush()

@@ -43,7 +43,7 @@ else
 	local display2_low<const>: *word = 0x08010370
 	*smode1_low = 0x40200504
 	*display2_low = 420 | (40 << 12)
-	gx_gpu.prepare_supervisor_256x192(0)
+	gx_gpu.prepare_supervisor_320x240(0)
 end
 return gx_gpu.display_size()
 `;
@@ -114,7 +114,7 @@ test('GX firmware programs native PSX widths and PS2 SD interlaced outputs', () 
 
 test('GX firmware aligns the supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = runFirmwareMode(FIRMWARE_MODES.length);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [256, 192]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [320, 240]);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
-	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 255 | (191 << 12));
+	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 319 | (239 << 12));
 });

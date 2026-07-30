@@ -17,9 +17,12 @@ local terminal_width<const> = terminal_columns * glyph_width
 local terminal_height<const> = terminal_rows * glyph_height
 local terminal_vram_x<const> = layout.vram_x
 local terminal_vram_y<const> = layout.vram_y
+local system_print_data<const>: *word = 0x0801022c
+local system_print_count<const>: *word = 0x08010230
 local ascii_newline<const> = 10
 local terminal_background_word<const> = 0x00000000
-local all_rows_dirty<const> = 0xffffffff
+local full_dirty_rows_low<const> = 0xffffffff
+local full_dirty_rows_high<const> = (1 << (terminal_rows - 32)) - 1
 
 terminal.columns = terminal_columns
 terminal.rows = terminal_rows
@@ -34,7 +37,7 @@ bss terminal_status_cells: word[terminal_columns]
 bss terminal_palette: word[5]
 bss terminal_dirty_first_columns: word[terminal_rows]
 bss terminal_dirty_last_columns: word[terminal_rows]
-bss terminal_dirty_rows: word
+bss terminal_dirty_rows: word[2]
 bss terminal_first_buffer_row: word
 bss terminal_line_count: word
 bss terminal_cursor_line: word
@@ -70,11 +73,13 @@ local screen_row_for_line<const> = function(line)
 end
 
 local mark_cell_range_dirty<const> = function(row, first_column, last_column)
-	local row_bit<const> = 1 << row
+	local dirty_rows<const>: *word = terminal_dirty_rows
+	local dirty_word_index<const> = row >> 5
+	local row_bit<const> = 1 << (row & 31)
 	local first_columns<const>: *word = terminal_dirty_first_columns
 	local last_columns<const>: *word = terminal_dirty_last_columns
-	if (*terminal_dirty_rows & row_bit) == 0 then
-		*terminal_dirty_rows = *terminal_dirty_rows | row_bit
+	if (dirty_rows[dirty_word_index] & row_bit) == 0 then
+		dirty_rows[dirty_word_index] = dirty_rows[dirty_word_index] | row_bit
 		first_columns[row] = first_column
 		last_columns[row] = last_column
 		return
@@ -95,9 +100,11 @@ local mark_line_range_dirty<const> = function(line, first_column, last_column)
 end
 
 local mark_screen_dirty<const> = function()
+	local dirty_rows<const>: *word = terminal_dirty_rows
 	local first_columns<const>: *word = terminal_dirty_first_columns
 	local last_columns<const>: *word = terminal_dirty_last_columns
-	*terminal_dirty_rows = all_rows_dirty
+	dirty_rows[0] = full_dirty_rows_low
+	dirty_rows[1] = full_dirty_rows_high
 	*terminal_scroll_rows = 0
 	for row = 0, terminal_rows - 1 do
 		first_columns[row] = 0
@@ -124,12 +131,14 @@ local clear_line<const> = function(line)
 end
 
 local shift_dirty_rows_up<const> = function()
-	if *terminal_dirty_rows == all_rows_dirty then
+	local dirty_rows<const>: *word = terminal_dirty_rows
+	if dirty_rows[0] == full_dirty_rows_low and dirty_rows[1] == full_dirty_rows_high then
 		return
 	end
 	local first_columns<const>: *word = terminal_dirty_first_columns
 	local last_columns<const>: *word = terminal_dirty_last_columns
-	*terminal_dirty_rows = *terminal_dirty_rows >> 1
+	dirty_rows[0] = (dirty_rows[0] >> 1) | (dirty_rows[1] << 31)
+	dirty_rows[1] = dirty_rows[1] >> 1
 	for row = 0, terminal_rows - 2 do
 		first_columns[row] = first_columns[row + 1]
 		last_columns[row] = last_columns[row + 1]
@@ -182,10 +191,12 @@ end
 
 local reset_screen<const> = function()
 	local cells<const>: *word = terminal_cells
+	local dirty_rows<const>: *word = terminal_dirty_rows
 	for index = 0, terminal_columns * terminal_rows - 1 do
 		cells[index] = 0
 	end
-	*terminal_dirty_rows = 0
+	dirty_rows[0] = 0
+	dirty_rows[1] = 0
 	*terminal_first_buffer_row = 0
 	*terminal_line_count = terminal_rows
 	*terminal_cursor_line = 0
@@ -242,6 +253,12 @@ end
 function terminal.write(text, palette)
 	for index = 1, #text do
 		terminal.write_code(byte(text, index), palette)
+	end
+end
+
+function terminal.drain_print_output(palette)
+	while *system_print_count ~= 0 do
+		terminal.write_code(*system_print_data, palette)
 	end
 end
 
@@ -312,6 +329,17 @@ function terminal.show_status(text, palette)
 	mark_cell_range_dirty(terminal_rows - 1, 0, terminal_columns)
 end
 
+function terminal.put_status(column, code, palette)
+	local status<const>: *word = terminal_status_cells
+	local cell<const> = code | (palette << 8)
+	if *terminal_status_visible ~= 0 and status[column] == cell then
+		return
+	end
+	status[column] = cell
+	*terminal_status_visible = 1
+	mark_cell_range_dirty(terminal_rows - 1, column, column + 1)
+end
+
 function terminal.show_status_row(row)
 	local source<const>: *word = row
 	local status<const>: *word = terminal_status_cells
@@ -367,10 +395,11 @@ function terminal.hide_cursor()
 end
 
 function terminal.flush()
-	local dirty_rows<const> = *terminal_dirty_rows
-	if dirty_rows == 0 then
+	local dirty_rows<const>: *word = terminal_dirty_rows
+	if (dirty_rows[0] | dirty_rows[1]) == 0 then
 		return
 	end
+	local full_redraw<const> = dirty_rows[0] == full_dirty_rows_low and dirty_rows[1] == full_dirty_rows_high
 	local cells<const>: *word = terminal_cells
 	local status<const>: *word = terminal_status_cells
 	local palette<const>: *word = terminal_palette
@@ -379,7 +408,7 @@ function terminal.flush()
 	local command_words<const>: *word = terminal_command_words
 	local command_word_count = 0
 	command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 0)
-	if dirty_rows == all_rows_dirty then
+	if full_redraw then
 		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, terminal_vram_x, terminal_vram_y, terminal_width, terminal_height, terminal_background_word)
 	elseif *terminal_scroll_rows ~= 0 then
 		local scroll_pixels<const> = *terminal_scroll_rows * glyph_height
@@ -391,18 +420,18 @@ function terminal.flush()
 		cursor_row = screen_row_for_line(*terminal_cursor_line)
 	end
 	for row = 0, terminal_rows - 1 do
-		if (dirty_rows & (1 << row)) ~= 0 then
+		if (dirty_rows[row >> 5] & (1 << (row & 31))) ~= 0 then
 			local first_column<const> = first_columns[row]
 			local last_column<const> = last_columns[row]
 			local target_y<const> = row * glyph_height
-			if dirty_rows ~= all_rows_dirty then
+			if not full_redraw then
 				command_word_count = gx_gpu.encode_rectangle(command_words, command_word_count, first_column * glyph_width, target_y, (last_column - first_column) * glyph_width, glyph_height, terminal_background_word)
 			end
 		end
 	end
 	command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 1)
 	for row = 0, terminal_rows - 1 do
-		if (dirty_rows & (1 << row)) ~= 0 then
+		if (dirty_rows[row >> 5] & (1 << (row & 31))) ~= 0 then
 			local first_column<const> = first_columns[row]
 			local last_column<const> = last_columns[row]
 			local target_y<const> = row * glyph_height
@@ -441,7 +470,7 @@ function terminal.flush()
 	end
 	command_word_count = gx_gpu.encode_direct16_texture_page(command_words, command_word_count, terminal_glyphs[0x20] & 0xffff, terminal_glyphs[0x20] >> 16)
 	for row = 0, terminal_rows - 1 do
-		if (dirty_rows & (1 << row)) ~= 0 then
+		if (dirty_rows[row >> 5] & (1 << (row & 31))) ~= 0 then
 			local first_column<const> = first_columns[row]
 			local last_column<const> = last_columns[row]
 			local target_y<const> = row * glyph_height
@@ -478,7 +507,8 @@ function terminal.flush()
 	-- The fixed list is not rebuilt until this call returns: DMA has consumed
 	-- every RAM word and the final GP0 IRQ proves the GPU reached the list end.
 	gx_command_list.submit(command_words, command_word_count)
-	*terminal_dirty_rows = 0
+	dirty_rows[0] = 0
+	dirty_rows[1] = 0
 	*terminal_scroll_rows = 0
 end
 

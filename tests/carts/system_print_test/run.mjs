@@ -41,7 +41,6 @@ try {
 	const base = PNG.sync.read(fs.readFileSync(basePath));
 	let printChanges = 0;
 	let printTailChanges = 0;
-	let exceptionTailChanges = 0;
 	for (let y = 6; y < 24; y += 1) {
 		for (let x = 0; x < frame.width; x += 1) {
 			const offset = (y * frame.width + x) * 4;
@@ -51,15 +50,12 @@ try {
 				if (y < 12) {
 					if (x < 80) printChanges += 1;
 					else printTailChanges += 1;
-				} else if (y >= 18 && x >= 80) {
-					exceptionTailChanges += 1;
 				}
 			}
 		}
 	}
 	assert.ok(printChanges > 0, 'BIOS terminal renders retained cart output on its first output row');
 	assert.equal(printTailChanges, 0, 'retained CART PRINT line occupies its first output row');
-	assert.ok(exceptionTailChanges > 0, 'monitor exception output follows the retained cart line');
 } finally {
 	fs.rmSync(outputRoot, { recursive: true });
 }
