@@ -23,11 +23,11 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - `machine/ts/core`: shared runtime coordination and system bootstrap
 - `machine/ts/common`: low-level shared helpers
 - `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
-- `machine/ts/ide`: editor, terminal, workbench, and IDE runtime tooling
+- `ide`: editor, terminal, workbench, and IDE runtime tooling
 - `machine/firmware`: BIOS/system ROM Lua, default cart boot source, and BIOS/system resources
 - `cartlib`: shared Lua library for carts; bundled into cart ROMs when required
-- `hosts/browser`: browser host services
-- `hosts/node`: headless and CLI host services
+- `hosts/browser`: browser player/product owners
+- `hosts/node`: headless and CLI product owners
 - `machine/cpp`: C++ machine/runtime implementation
 - `hosts/libretro`: libretro core host entrypoint for BMSX
 - `hosts/libretro_host`: local libretro frontend executable, an alternative to RetroArch

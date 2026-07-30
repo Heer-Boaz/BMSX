@@ -354,7 +354,7 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
   capture, CLI, headless, or test-runner behavior; it is not a separate machine.
 - `Studio` is an authoring product above a host. It may compose IDE and compiler
-  tooling, but the player composition and platform services never import it.
+  tooling, but player hosts never import it.
 
 Current artifact roles:
 
@@ -363,7 +363,7 @@ Current artifact roles:
   contracts directly; it does not own browser, Node, SDL, ALSA, EGL, IDE, ROM
   admission, ROM authoring records, or libretro host services.
 - `dist/engine.js` / `.debug.js`: browser player/bootstrap artifact. It wires
-  browser video, audio, input, view-host construction, runtime preparation, and
+  browser video, audio, input, runtime preparation, and
   the frame loop through static composition. Its bundle contains no IDE,
   compiler, or ROM authoring/source-tooling code. The browser boot host may
   inspect the raw TOC for its ROM-label presentation.
@@ -382,9 +382,9 @@ Current artifact roles:
   disassembly, or formatted fault presentation. Its CMake target depends only on
   the binary codec, never on ROM admission or either tooling target. Build trees
   never share this target-specific archive.
-- `bmsx_host_support`: native host/platform support above `libbmsx.a`. It owns
-  host input mapping, output resampling, presentation, overlays, software/GLES2
-  render backends, file mapping, and their platform dependencies. Libretro
+- `bmsx_host_support`: native presentation support above `libbmsx.a`. It owns
+  output resampling, presentation, overlays, software/GLES2 render backends,
+  file mapping, and their external-library dependencies. Libretro
   composes this target with `bmsx_core`; none of these objects or link
   dependencies enter the core archive.
 - `bmsx_rom_tooling` in native diagnostics/tests builds: ROM TOC records and
@@ -410,8 +410,8 @@ browser and Node player entrypoints import that lifecycle directly. Studio owns
 its separate composition in `ide/workbench/`; only Studio and IDE-test
 entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
-provider, or runtime feature switch. Browser `MachineHost` and libretro
-`LibretroPlatform` own their monotonic presentation clocks; machine
+provider, or runtime feature switch. Browser and native libretro product roots
+own their monotonic presentation clocks; machine
 `FrameLoopState` retains only in-flight emulation execution state.
 
 The product host admits the outer physical ROM/header and translates cartridge
@@ -1458,7 +1458,7 @@ save/load.
 The independent host-output transport is also a fixed 8192-byte ring. MMIO
 writes therefore allocate nothing and cannot grow host memory. The host drains
 only newline-complete bytes and performs UTF-8-to-host-string conversion at the
-platform boundary. Complete pending lines retain FIFO priority. If the current
+host boundary. Complete pending lines retain FIFO priority. If the current
 uncommitted line exceeds the remaining capacity, the controller discards that
 whole line through its flush instead of replacing already completed output. The
 guest-visible hardware history keeps its normal circular overwrite behavior.
@@ -1466,8 +1466,8 @@ Host transport cursors and bytes are presentation state and are not serialized.
 
 On supervisor entry the BIOS drains this hardware history into the retained
 firmware terminal before producing monitor command output. The host log sink
-receives the same completed lines independently through the platform log sink;
-the browser platform therefore emits them through its normal developer console.
+receives the same completed lines independently; the browser host therefore
+emits them through its normal developer console.
 Neither host path owns terminal cells, GX state, or a second guest-visible
 output ABI.
 
@@ -1611,7 +1611,7 @@ out-of-memory fault need not leave a working monitor. That is an explicit
 property of the first hardware model, not a condition for host-side repair or
 a hidden fallback VM.
 
-Platform input owners drive one dedicated supervisor-request line rather than
+Host input owners drive one dedicated supervisor-request line rather than
 injecting a synthetic keyboard event into the ICU. Browser, headless and native
 libretro keyboard paths map physical `F2` to that line while still publishing
 the ordinary F2 HID bit. Ordinary libretro frontends leave all RetroPad buttons
@@ -3062,16 +3062,19 @@ or a high-level event FIFO.
 
 ICU device code consumes only `machine/devices/input/contracts` source ports.
 The host input layer implements those ports and remains outside the device.
-Platform input adapters publish the supervisor-request line as a separate
+Host input adapters publish the supervisor-request line as a separate
 retained input signal without turning it into a guest key. The browser runtime
-keeps its richer IDE, shortcut, onscreen-gamepad, device-assignment, and
-buffered PlayerInput state under `machine/ts/input`. Native frontends normalize
-their external input ABI once into BMSX-owned numeric source/device/control
-records; `machine/cpp/input` retains fixed keyboard, pad, and pointer state, and
-the native quick menu owns its own fixed edge/repeat records. Those host
-implementations are intentionally target-specific. Only the raw ICU snapshot,
-supervisor line, and runtime input source contracts are mirrored machine
-semantics.
+keeps its shortcut, device-assignment, and PlayerInput state under
+`hosts/common/input`. Browser DOM, hit testing, control styling, and control
+layout remain in `hosts/browser`; the retained onscreen controller enters common
+input as an ordinary `GamepadDevice`, not as a DOM proxy contract. Native
+frontends normalize their external input ABI once into BMSX-owned numeric
+source/device/control records; `hosts/libretro/input` retains fixed keyboard,
+pad, and pointer state, and the native quick menu owns its own fixed edge/repeat
+records. Those host implementations are intentionally target-specific. Only the
+raw ICU source-port contract—snapshot input, supervisor line and vibration
+output—is mirrored machine semantics. Host repeat timing never flows back
+through `Runtime` or a machine input interface.
 
 Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
@@ -3149,7 +3152,7 @@ inclusion, or missing-glyph fallback into the removed set.
 IDE/editor/workspace code is host tooling. It may compile source, inspect debug
 symbols, retain workspace operations, and patch ROM/workspace inputs at host
 edges. It must not be imported by machine devices or become the cart-visible
-source of truth. Runtime and tooling diagnostics use the platform logging and
+source of truth. Runtime and tooling diagnostics use host logging and
 IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
 

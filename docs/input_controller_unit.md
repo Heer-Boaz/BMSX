@@ -72,7 +72,7 @@ mirrors the latched registerfile. Reads for the remainder of the frame return
 those stable raw words. There are no computed-on-read action queries.
 
 Independently of the cart-visible sample latch, every VBlank samples the
-retained supervisor-request line. Platform adapters aggregate their physical
+retained supervisor-request line. Host adapters aggregate their physical
 supervisor controls before that line reaches the ICU; the device never
 decodes HID usages or controller chords. A low-to-high transition requests the
 CPU's non-maskable system interrupt. An unarmed VBlank does not request a raw
@@ -83,13 +83,15 @@ latch, not that physical edge history.
 
 ## High-level input owners
 
-Browser/IDE UI keeps its buffered PlayerInput implementation in
-`machine/ts/input`. Native platform adapters normalize frontend-specific IDs to
-BMSX numeric input records, while `machine/cpp/input` retains fixed raw device
-state and the native quick-menu owner retains only its own edge/repeat state.
-These target-specific host facilities are not a file-for-file parity surface;
-the shared machine contract starts at the raw ICU snapshot and supervisor
-request line.
+Browser/IDE UI keeps its PlayerInput implementation in `hosts/common/input`.
+The browser owns onscreen-controller DOM, hit testing, CSS, and layout and
+publishes its retained state through the ordinary `GamepadDevice` input route.
+Native host adapters normalize frontend-specific IDs to BMSX numeric input
+records, while `hosts/libretro/input` retains fixed raw device state and the
+native quick-menu owner retains only its own edge/repeat state. These
+target-specific host facilities are not a file-for-file parity surface; the
+shared machine contract starts at the raw ICU snapshot and supervisor request
+line.
 
 Gameplay carts use `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and
