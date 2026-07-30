@@ -4,7 +4,7 @@ local monitor_editor<const> = require('bios/monitor_editor')
 local monitor_commands<const> = require('bios/monitor_commands')
 local vblank<const> = require('bios/vblank')
 local dma_transfer<const> = require('bios/dma_transfer')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local assets<const> = require('bmsx/system_assets')
 
 local byte<const> = __bmsx_string_byte

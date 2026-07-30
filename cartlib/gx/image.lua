@@ -1,5 +1,5 @@
 local romdir<const> = require('cartlib/romdir')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
 
 local gx_image<const> = {}

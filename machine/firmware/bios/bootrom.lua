@@ -10,10 +10,10 @@ os = require('bios/os')
 math = require('bios/math')
 
 local dma_transfer<const> = require('bios/dma_transfer')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local assets<const> = require('bmsx/system_assets')
+local interrupts<const> = require('bios/interrupts')
 local monitor<const> = require('bios/monitor')
-local system<const> = require('bios/system')
 local terminal<const> = require('bios/terminal')
 local terminal_layout<const> = require('bios/terminal_layout')
 local vblank<const> = require('bios/vblank')
@@ -44,7 +44,7 @@ bss boot_frame: word
 bss boot_cursor_visible: word
 
 function irq(flags)
-	system.irq(flags)
+	interrupts.dispatch(flags)
 end
 
 function exception(error_value)

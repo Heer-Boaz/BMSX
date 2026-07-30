@@ -32,7 +32,7 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 
 local ecs<const> = require('cartlib/ecs/index')
 local registry<const> = require('cartlib/registry')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local cart_input<const> = require('cartlib/input/player')
 local subsystem_systems<const> = require('cartlib/subsystem/systems')
 

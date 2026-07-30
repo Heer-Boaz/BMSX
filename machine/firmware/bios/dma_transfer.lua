@@ -1,12 +1,12 @@
-local system<const> = require('bios/system')
-local dma<const> = require('system/dma')
+local interrupts<const> = require('bios/interrupts')
+local dma<const> = require('bios/dma')
 
 local dma_transfer<const> = {}
 local irq_dma_done<const> = 0x0001
 
 bss bios_dma_completion_sequence: word
 
-system.on_irq(irq_dma_done, function()
+interrupts.on(irq_dma_done, function()
 	*bios_dma_completion_sequence = *bios_dma_completion_sequence + 1
 end)
 

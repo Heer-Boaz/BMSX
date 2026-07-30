@@ -1,5 +1,5 @@
 module<entry>
-local dma<const> = require('system/dma')
+local dma<const> = require('bios/dma')
 
 local irq_mask_register<const>: *word = 0x08000008
 local irq_ack_register<const>: *word = 0x08000004

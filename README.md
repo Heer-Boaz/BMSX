@@ -39,8 +39,8 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Build Model
 
-- BIOS/system assets live in `machine/firmware/res`
-- BIOS/system Lua lives in `machine/firmware/bios` and `machine/firmware/system`
+- BIOS assets live in `machine/firmware/res`
+- BIOS Lua lives in `machine/firmware/bios`
 - shared cart Lua lives in `cartlib`
 - current carts live in `carts/<cart-folder>`
 - current cart resources live in `carts/<cart-folder>/res`

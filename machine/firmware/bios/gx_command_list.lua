@@ -1,13 +1,13 @@
 local dma_transfer<const> = require('bios/dma_transfer')
-local system<const> = require('bios/system')
-local gx_gpu<const> = require('system/gx_gpu')
+local interrupts<const> = require('bios/interrupts')
+local gx_gpu<const> = require('bios/gx_gpu')
 
 local gx_command_list<const> = {}
 local irq_gpu<const> = 0x0040
 
 bss bios_gx_completion_sequence: word
 
-system.on_irq(irq_gpu, function()
+interrupts.on(irq_gpu, function()
 	gx_gpu.ack_irq()
 	*bios_gx_completion_sequence = *bios_gx_completion_sequence + 1
 end)

@@ -20,7 +20,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
 const ENTRY_SOURCE = `
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
 if *mode_selector == 0 then
 	gx_gpu.reset_256x240()
@@ -53,7 +53,7 @@ const MODULE_FILES = [
 	['bios/util/sincos_turn32', 'machine/firmware/bios/util/sincos_turn32.lua'],
 	['bios/math', 'machine/firmware/bios/math.lua'],
 	['bios/util/round_to_nearest', 'machine/firmware/bios/util/round_to_nearest.lua'],
-	['system/gx_gpu', 'machine/firmware/system/gx_gpu.lua'],
+	['bios/gx_gpu', 'machine/firmware/bios/gx_gpu.lua'],
 ] as const;
 
 const modules = MODULE_FILES.map(([path, file]) => {

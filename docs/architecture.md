@@ -2237,7 +2237,7 @@ one timed sample-RAM batch. A short final block carries its actual word count.
 GX CPU-to-GP0 command-sync producers must keep each polygon or line packet
 wholly inside one block; longer polylines or unaligned command streams select
 FIFO or forced request mode. Packet alignment is command-list ownership, not a
-hidden repair in `system/dma.lua`.
+hidden repair in `bios/dma.lua`.
 
 GX-read DREQ is the readback port's ready-to-send line, not a polled GPUSTAT
 copy. Backend completion raises that line and schedules a waiting channel at the
@@ -3130,11 +3130,12 @@ is restored with the registerfile but is not gameplay state.
 
 ## Firmware and Lua layer
 
-`machine/firmware/bios` is the firmware-ROM entry layer: `bootrom.lua`,
-`system.lua`, and shared common/util helpers. Device-facing firmware Lua
-helpers that are also useful to cart libraries live in `machine/firmware/system`
-instead of pretending to be BIOS entry points. They remain firmware code: helpers emit RAM/MMIO words and do not own
-host renderer/audio state.
+`machine/firmware/bios` is the single source root for the firmware package in
+`SYSTEM_ROM`. It contains the reset entry, exception and monitor code, Lua
+libraries, and device-facing firmware routines. All of those modules execute in
+the same system domain and use the `bios/` module namespace; there is no second
+`machine/firmware/system` source layer. Device-facing helpers remain firmware
+code: they emit RAM/MMIO words and do not own host renderer/audio state.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

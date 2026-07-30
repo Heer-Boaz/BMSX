@@ -8,7 +8,7 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -341,7 +341,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 	} else {
 		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, BIOSResPath, {
-			extraLuaPaths: [biosLuaPath, systemLuaPath],
+			extraLuaPaths: [biosLuaPath],
 			debug,
 			romFilePath: BIOSRomPath,
 		});
@@ -366,10 +366,10 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		return result;
 	};
-	const systemRomLuaRoots = [normalizePathKey(biosLuaPath), normalizePathKey(systemLuaPath)];
-	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: systemRomLuaRoots, profile: 'bios' }));
+	const biosLuaRoots = [normalizePathKey(biosLuaPath)];
+	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: biosLuaRoots, profile: 'bios' }));
 
-	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, biosLuaPath, systemLuaPath], BIOSRomName, {
+	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, biosLuaPath], BIOSRomName, {
 		extraLuaPaths: [],
 		virtualRoot: BIOSVirtualRoot,
 	}));
@@ -429,30 +429,25 @@ async function main() {
 		}
 
 		progress = ui.createProgress(taskList);
-		const isBIOSMode = false; // We keep this flag around for some options that still apply to the cart build (e.g. resource roots) and to avoid accidentally skipping code that should run in both modes. We know we are not in BIOS mode if we are in this branch, but we keep the flag for clarity.
 		const romPackDebug = debug;
 		const projectRootPath = normalizePathKey(join(respath, '..')).replace(/^\.\//, '');
 		const virtualRoot = projectRootPath;
 		luaErrorVirtualRoots = [virtualRoot];
 
-		const resourceRoots = isBIOSMode
-			? [respath || commonResPath, biosLuaPath, systemLuaPath]
-			: [respath || commonResPath, commonResPath];
+		const resourceRoots = [respath || commonResPath, commonResPath];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
 		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
 
-		if (!rom_name && !isBIOSMode) {
+		if (!rom_name) {
 			throw new Error('Missing required argument: --romname or ROM_NAME environment variable.');
 		}
 
-		if (rom_name) {
-			if (rom_name.includes('.')) {
-				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'pietious'.`);
-			}
-			rom_name = rom_name.toLowerCase();
+		if (rom_name.includes('.')) {
+			throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'pietious'.`);
 		}
+		rom_name = rom_name.toLowerCase();
 
-		if (!title && !isBIOSMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		const { gx_texture_layout, ...runtimeRomManifest } = romManifest;
@@ -463,9 +458,7 @@ async function main() {
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
 		logBullet('Title', pc.white(title));
 		logBullet('Mode', pc.magenta(mode));
-		logBullet('Resources', resourceRoots.length === 1
-			? pc.white(resourceRoots[0])
-			: `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
+		logBullet('Resources', `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
 
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
@@ -475,13 +468,11 @@ async function main() {
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		const systemRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
 		const systemSymbolsPath = `${systemRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
-		if (!isBIOSMode) {
-			if (!existsSync(systemRomPath)) {
-				throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
-			}
-			if (!existsSync(systemSymbolsPath)) {
-				throw new Error(`BIOS BLua32 symbols not found at "${systemSymbolsPath}". Build the bios ROM first.`);
-			}
+		if (!existsSync(systemRomPath)) {
+			throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
+		}
+		if (!existsSync(systemSymbolsPath)) {
+			throw new Error(`BIOS BLua32 symbols not found at "${systemSymbolsPath}". Build the bios ROM first.`);
 		}
 
 		let rebuildRequired = true;
@@ -501,7 +492,7 @@ async function main() {
 				romFilePath: romOutputPath,
 				biosRomFilePath: join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`),
 			}));
-			if (!rebuildRequired && resourceRoots.length > 1) {
+			if (!rebuildRequired) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
@@ -561,7 +552,7 @@ async function main() {
 					update_timestamp: 0,
 				});
 			}
-			const biosBluaSourceContextAssets = await buildBluaSourceContextAssets([biosLuaPath, systemLuaPath], '');
+			const biosBluaSourceContextAssets = await buildBluaSourceContextAssets([biosLuaPath], '');
 			const systemRom = new Uint8Array(readFileSync(systemRomPath));
 			const systemIndex = await loadRomAssetList(systemRom, 'system');
 			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
@@ -586,17 +577,15 @@ async function main() {
 			});
 			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);
 			await progress.taskCompleted();
-			if (!isBIOSMode) {
-				const cartLuaRoots = Array.from(extraLuaPathSet);
-				const cartlibLuaRoots = Array.from(libraryLuaPathSet);
-				const systemRomLuaRoots = [normalizePathKey(biosLuaPath), normalizePathKey(systemLuaPath)];
-				await progress.runWithDetail('Lint cart + cartlib + firmware Lua', async () => {
-					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
-					await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
-					await lintCartSources({ roots: systemRomLuaRoots, profile: 'bios' });
-				});
-				await progress.taskCompleted();
-			}
+			const cartLuaRoots = Array.from(extraLuaPathSet);
+			const cartlibLuaRoots = Array.from(libraryLuaPathSet);
+			const biosLuaRoots = [normalizePathKey(biosLuaPath)];
+			await progress.runWithDetail('Lint cart + cartlib + firmware Lua', async () => {
+				await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
+				await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
+				await lintCartSources({ roots: biosLuaRoots, profile: 'bios' });
+			});
+			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(rom_name, {
 				projectRootPath,

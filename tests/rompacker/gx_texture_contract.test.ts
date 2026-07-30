@@ -337,7 +337,7 @@ return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
-			['system/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
+			['bios/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
 			['cartlib/gx/imgdec', `
 local imgdec<const> = {}
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0

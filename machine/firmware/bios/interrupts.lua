@@ -1,10 +1,10 @@
-local system<const> = {}
-local irq_handlers<const> = {}
+local interrupts<const> = {}
+local handlers<const> = {}
 local irq_ack_addr<const> = 0x08000004
 
-function system.irq(flags)
+function interrupts.dispatch(flags)
 	local ack = 0
-	for mask, handler in pairs(irq_handlers) do
+	for mask, handler in pairs(handlers) do
 		if (flags & mask) ~= 0 then
 			handler(flags & mask, flags)
 			ack = ack | (flags & mask)
@@ -16,8 +16,8 @@ function system.irq(flags)
 	return ack
 end
 
-function system.on_irq(mask, handler)
-	irq_handlers[mask] = handler
+function interrupts.on(mask, handler)
+	handlers[mask] = handler
 end
 
-return system
+return interrupts

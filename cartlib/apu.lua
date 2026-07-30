@@ -3,7 +3,7 @@
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
-local dma<const> = require("system/dma")
+local dma<const> = require("bios/dma")
 
 struct apu_command_registers
 	source_addr: word

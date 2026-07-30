@@ -1,5 +1,5 @@
 local assets<const> = require('bmsx/system_assets')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local gx_command_list<const> = require('bios/gx_command_list')
 local layout<const> = require('bios/terminal_layout')
 

@@ -1,5 +1,5 @@
 local components<const> = require('cartlib/components')
-local gx_gpu<const> = require('system/gx_gpu')
+local gx_gpu<const> = require('bios/gx_gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local worldobject<const> = require('cartlib/world/object')
 local world<const> = require('cartlib/world/index').instance
