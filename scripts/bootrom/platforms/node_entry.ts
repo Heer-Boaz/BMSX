@@ -21,7 +21,7 @@ import { runGate } from '../../../machine/ts/common/taskgate';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { FrameLoop } from '../../../hosts/common/frame_loop';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
-import { SilentAudioSink } from '../../../hosts/node/common/silent_audio';
+import { DiscardingAudioSink } from '../../../hosts/node/common/discarding_audio';
 import {
 	RealtimeHeadlessClock,
 	VirtualHeadlessClock,
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
 		),
 	);
 	const audioOutput = new HostAudioOutput(
-		new SilentAudioSink(),
+		new DiscardingAudioSink(),
 		runtime.machine.audioController,
 		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,

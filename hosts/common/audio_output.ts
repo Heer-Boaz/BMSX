@@ -11,10 +11,9 @@ export type AudioOutputPuller = (
 
 export interface HostAudioSink {
 	setRuntimeAudioPuller(puller: AudioOutputPuller | null): void;
-	clearRuntimeAudioTransport(): void;
 	pumpRuntimeAudio(): void;
-	resume(): Promise<void>;
-	suspend(): Promise<void>;
+	resume(): void | Promise<void>;
+	suspend(): void | Promise<void>;
 	setEmulationFrameTimeSec(seconds: number): void;
 }
 
@@ -110,13 +109,11 @@ export class HostAudioOutput {
 	private start(): void {
 		this.outputResampler.reset();
 		this.outputRing.clear();
-		this.audio.clearRuntimeAudioTransport();
 		this.audio.setRuntimeAudioPuller(this.pullRuntimeAudio);
 	}
 
 	private stop(): void {
 		this.audio.setRuntimeAudioPuller(null);
-		this.audio.clearRuntimeAudioTransport();
 		this.outputResampler.reset();
 		this.outputRing.clear();
 	}

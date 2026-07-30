@@ -12,7 +12,7 @@ import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend'
 import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
 import { Input } from '../../../hosts/common/input/manager';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
-import { SilentAudioSink } from '../../../hosts/node/common/silent_audio';
+import { DiscardingAudioSink } from '../../../hosts/node/common/discarding_audio';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
 		videoBackend,
 	);
 	const audioOutput = new HostAudioOutput(
-		new SilentAudioSink(),
+		new DiscardingAudioSink(),
 		runtime.machine.audioController,
 		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,

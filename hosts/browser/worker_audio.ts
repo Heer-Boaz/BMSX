@@ -489,13 +489,14 @@ export class WorkerStreamingAudioSink implements HostAudioSink {
 	}
 
 	public setRuntimeAudioPuller(puller: AudioOutputPuller | null): void {
+		this.clearRuntimeAudioTransport();
 		this.runtimeAudioPuller = puller;
 		if (puller === null) {
 			this.runtimeAudioPumping = false;
 		}
 	}
 
-	public clearRuntimeAudioTransport(): void {
+	private clearRuntimeAudioTransport(): void {
 		const readPtr = Atomics.load(this.coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
 		const seqBegin = (Atomics.add(this.coreStreamControl, CORE_CTRL_SEQ, 1) + 1) | 0;
 		Atomics.store(this.coreStreamControl, CORE_CTRL_WRITE_PTR, readPtr | 0);

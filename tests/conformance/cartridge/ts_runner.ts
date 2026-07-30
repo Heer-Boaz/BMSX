@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 		{ HeadlessGPUBackend },
 		{ HeadlessVideoOutput },
 		{ Input },
-		{ SilentAudioSink },
+		{ DiscardingAudioSink },
 		{ VirtualHeadlessClock },
 		{ HeadlessInputHub },
 		{ decodeRuntimeSaveState },
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
 		import('../../../machine/ts/render/headless/backend'),
 		import('../../../hosts/node/headless/video_output'),
 		import('../../../hosts/common/input/manager'),
-		import('../../../hosts/node/common/silent_audio'),
+		import('../../../hosts/node/common/discarding_audio'),
 		import('../../../hosts/node/headless/clock'),
 		import('../../../hosts/node/headless/input'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
 		),
 	);
 	const audioOutput = new HostAudioOutput(
-		new SilentAudioSink(),
+		new DiscardingAudioSink(),
 		runtime.machine.audioController,
 		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,
