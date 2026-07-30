@@ -20,16 +20,36 @@ import {
 	type RuntimeSourceState,
 } from './sources';
 import {
+	applyBlua32LinkValues,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
-import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
+import {
+	buildBlua32Tail,
+	layoutBlua32PublicAssets,
+	type Blua32AemEdit,
+} from '../../toolchain/ts/rompack/blua32_tail';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
-import type { ResourceIdentity } from '../common/resource';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDomain,
+	type ResourceIdentity,
+} from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeLuaTooling } from './lua_tooling';
 import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import {
+	buildRomAssetLinkValuesFromSymbols,
+	buildRomAssetSymbolModuleSourceFromSymbols,
+	collectRomAssetSymbols,
+	type RomAssetSymbol,
+} from '../../toolchain/ts/rompack/asset_symbols';
+import {
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+} from '../../toolchain/ts/rompack/generated_modules';
 
 export type RebuiltBlua32Image = {
 	linked: LinkedBlua32Image;
@@ -43,12 +63,18 @@ type ProgramSourceModule = {
 	sourcePath: string;
 	chunk: LuaChunk;
 	source: string;
+	linkValues?: ReadonlyMap<string, number>;
 };
 
 export type RebuiltBlua32Media = {
 	system: RebuiltBlua32Image | null;
 	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
 };
+
+export type RuntimeAemRevision = readonly [
+	domain: ResourceDomain,
+	edit: Blua32AemEdit,
+];
 
 function createFreshLuaInterpreter(
 	bridge: RuntimeLuaTooling,
@@ -140,6 +166,11 @@ export function listSymbols(sources: RuntimeSourceState, runtime: Runtime): Runt
 function buildProgramSources(
 	registries: LuaSourceRegistry[],
 	interpreter: LuaInterpreter,
+	generatedSourceRevision?: readonly [
+		modulePath: string,
+		source: string,
+		linkValues: ReadonlyMap<string, number>,
+	],
 ): {
 	entry: ProgramSourceModule;
 	modules: ProgramSourceModule[];
@@ -153,14 +184,23 @@ function buildProgramSources(
 				continue;
 			}
 			seen.add(key);
-			const source = readWorkspaceLuaSourceText(registry, asset);
+			const generated = generatedSourceRevision && key === generatedSourceRevision[0]
+				? generatedSourceRevision
+				: undefined;
+			const source = generated
+				? generated[1]
+				: readWorkspaceLuaSourceText(registry, asset);
 			const chunk = interpreter.compileChunk(source, key);
-			modules.push({
+			const module: ProgramSourceModule = {
 				path: key,
 				sourcePath: asset.source_path,
 				chunk,
 				source,
-			});
+			};
+			if (generated) {
+				module.linkValues = generated[2];
+			}
+			modules.push(module);
 		}
 	}
 	const entryIndex = resolveLuaEntryModuleIndex(modules);
@@ -177,14 +217,30 @@ function compileRegistryProgramObject(
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
 	programDomain: ProgramCompileDomain,
-	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }>,
+	externalModules: ReadonlyArray<ProgramSourceModule>,
+	assetModule?: readonly [
+		source: string,
+		linkValues: ReadonlyMap<string, number>,
+	],
 ): {
 	object: ProgramObjectImage;
 	metadata: ProgramMetadata;
-	modules: Array<{ path: string; chunk: LuaChunk; source: string }>;
-	sources: ReadonlyMap<string, string>;
+	modules: ProgramSourceModule[];
+	sources: Map<string, string>;
 } {
-	const programSources = buildProgramSources([registry], interpreter);
+	const programSources = buildProgramSources(
+		[registry],
+		interpreter,
+		assetModule
+			? [
+				programDomain === 'system'
+					? SYSTEM_ASSET_SYMBOL_MODULE_PATH
+					: ROM_ASSET_SYMBOL_MODULE_PATH,
+				assetModule[0],
+				assetModule[1],
+			]
+			: undefined,
+	);
 	const entryPath = programSources.entry.path;
 	const entrySource = programSources.entry.source;
 	const modules = programSources.modules;
@@ -208,12 +264,86 @@ function compileRegistryProgramObject(
 	};
 }
 
+function buildAssetModule(
+	entries: ReadonlyArray<RomAsset>,
+	domain: RomSourceLayer['id'],
+	imageOffset: number,
+	aemEdit?: Blua32AemEdit,
+): readonly [source: string, linkValues: ReadonlyMap<string, number>] {
+	const symbols = collectRomAssetSymbols(entries, domain);
+	const linkSymbols: RomAssetSymbol[] = [];
+	for (let index = 0; index < symbols.length; index += 1) {
+		const symbol = symbols[index];
+		if (symbol.assetType === 'aem'
+			&& (symbol.offset >= imageOffset
+				|| (aemEdit && symbol.assetId === aemEdit[0]))) {
+			linkSymbols.push(symbol);
+		}
+	}
+	return [
+		buildRomAssetSymbolModuleSourceFromSymbols(symbols),
+		buildRomAssetLinkValuesFromSymbols(linkSymbols),
+	];
+}
+
+function applyLinkedAssetModule(
+	compiled: {
+		object: ProgramObjectImage;
+		modules: ProgramSourceModule[];
+		sources: Map<string, string>;
+	},
+	linked: LinkedBlua32Image,
+	modulePath: string,
+	assetModule: readonly [
+		source: string,
+		linkValues: ReadonlyMap<string, number>,
+	],
+): void {
+	applyBlua32LinkValues(
+		linked,
+		compiled.object.link.constValueRelocs,
+		modulePath,
+		assetModule[1],
+	);
+	compiled.sources.set(modulePath, assetModule[0]);
+	let moduleIndex = 0;
+	while (compiled.modules[moduleIndex].path !== modulePath) {
+		moduleIndex += 1;
+	}
+	compiled.modules[moduleIndex].source = assetModule[0];
+	compiled.modules[moduleIndex].linkValues = assetModule[1];
+}
+
+function commitInstalledBlua32Sources(
+	registry: LuaSourceRegistry,
+	installedSources: ReadonlyMap<string, string>,
+): void {
+	let changed = false;
+	for (let index = 0; index < registry.records.length; index += 1) {
+		const record = registry.records[index];
+		if (!record.generated) {
+			continue;
+		}
+		const source = installedSources.get(record.module_path)!;
+		if (record.src === source) {
+			continue;
+		}
+		record.src = source;
+		record.base_src = source;
+		changed = true;
+	}
+	if (changed) {
+		registry.revision += 1;
+	}
+}
+
 export function buildBlua32Media(
 	sources: RuntimeSourceState,
 	interpreter: LuaInterpreter,
 	ramByteCount: number,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
+	aemRevision?: RuntimeAemRevision,
 ): RebuiltBlua32Media {
 	const systemRegistry = sources.systemLuaSources;
 	const cartridgeImageOffsets: [number, number] = [0, 0];
@@ -230,15 +360,47 @@ export function buildBlua32Media(
 	let systemImage = installedSystem.layout;
 	let systemSymbols = installedSystem.symbols;
 	let rebuiltSystem: RebuiltBlua32Image | null = null;
-	let systemModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [];
+	let systemModules: ReadonlyArray<ProgramSourceModule> = [];
 	if (rebuildSystem) {
-		const compiledSystem = compileRegistryProgramObject(sources, systemRegistry, interpreter, 'system', []);
+		const imageOffset = sources.systemRom.header.blua32ImageOffset;
+		const imageAddress = SYSTEM_ROM_BASE + imageOffset;
+		const systemAemEdit = aemRevision && aemRevision[0] === SYSTEM_RESOURCE_DOMAIN
+			? aemRevision[1]
+			: undefined;
+		const compiledSystem = compileRegistryProgramObject(
+			sources,
+			systemRegistry,
+			interpreter,
+			'system',
+			[],
+			buildAssetModule(
+				sources.systemRom.index.entries,
+				sources.systemRom.id,
+				imageOffset,
+				systemAemEdit,
+			),
+		);
 		const linked = linkSystemBlua32Image(
 			compiledSystem.object,
 			compiledSystem.metadata,
-			SYSTEM_ROM_BASE + sources.systemRom.header.blua32ImageOffset,
+			imageAddress,
 			ramByteCount,
 			{ image: installedSystem.layout, symbols: installedSystem.symbols! },
+		);
+		const [entries] = layoutBlua32PublicAssets(
+			sources.systemRom,
+			linked.bytes.byteLength,
+			systemAemEdit,
+		);
+		applyLinkedAssetModule(
+			compiledSystem,
+			linked,
+			SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+			buildAssetModule(
+				entries,
+				sources.systemRom.id,
+				imageOffset,
+			),
 		);
 		systemImage = linked.layout;
 		systemSymbols = linked.symbols;
@@ -263,12 +425,21 @@ export function buildBlua32Media(
 			continue;
 		}
 		const cartridge = sources.cartridgeSlots[slot]!;
+		const cartridgeAemEdit = aemRevision && aemRevision[0] === slot
+			? aemRevision[1]
+			: undefined;
 		const compiled = compileRegistryProgramObject(
 			sources,
 			cartridge.luaSources,
 			interpreter,
 			'cart',
 			systemModules,
+			buildAssetModule(
+				cartridge.rom.index.entries,
+				cartridge.rom.id,
+				imageOffset,
+				cartridgeAemEdit,
+			),
 		);
 		const imageAddress = CART_ROM_BASE + imageOffset;
 		const installed = sources.currentBlua32Media.cartridgeSlots[slot]!;
@@ -280,6 +451,21 @@ export function buildBlua32Media(
 			imageAddress,
 			ramByteCount,
 			{ image: installed.layout, symbols: installed.symbols! },
+		);
+		const [entries] = layoutBlua32PublicAssets(
+			cartridge.rom,
+			linked.bytes.byteLength,
+			cartridgeAemEdit,
+		);
+		applyLinkedAssetModule(
+			compiled,
+			linked,
+			ROM_ASSET_SYMBOL_MODULE_PATH,
+			buildAssetModule(
+				entries,
+				cartridge.rom.id,
+				imageOffset,
+			),
 		);
 		rebuiltCartridgeSlots[slot] = {
 			linked,
@@ -298,16 +484,29 @@ export function installBlua32Media(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
 	rebuilt: RebuiltBlua32Media,
+	aemRevision?: RuntimeAemRevision,
 ): void {
 	let systemLayer: RomSourceLayer | null = null;
 	const cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null] = [null, null];
 	if (rebuilt.system !== null) {
-		systemLayer = buildBlua32Tail(sources.systemRom, rebuilt.system.linked);
+		systemLayer = buildBlua32Tail(
+			sources.systemRom,
+			rebuilt.system.linked,
+			aemRevision && aemRevision[0] === SYSTEM_RESOURCE_DOMAIN
+				? aemRevision[1]
+				: undefined,
+		);
 	}
 	for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
 		const image = rebuilt.cartridgeSlots[slot];
 		if (image !== null) {
-			cartridgeLayers[slot] = buildBlua32Tail(sources.cartridgeSlots[slot]!.rom, image.linked);
+			cartridgeLayers[slot] = buildBlua32Tail(
+				sources.cartridgeSlots[slot]!.rom,
+				image.linked,
+				aemRevision && aemRevision[0] === slot
+					? aemRevision[1]
+					: undefined,
+			);
 		}
 	}
 	installRuntimeRomLayers(sources, systemLayer, cartridgeLayers);
@@ -319,6 +518,7 @@ export function installBlua32Media(
 	];
 	if (systemLayer !== null) {
 		runtime.machine.memory.installSystemRom(systemLayer.bytes);
+		commitInstalledBlua32Sources(sources.systemLuaSources, rebuilt.system!.sources);
 		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
 		sources.systemBlua32MediaDirty = false;
 		systemImage = {
@@ -332,6 +532,10 @@ export function installBlua32Media(
 			continue;
 		}
 		runtime.machine.cartridgeController.installRom(slot, layer.bytes);
+		commitInstalledBlua32Sources(
+			sources.cartridgeSlots[slot]!.luaSources,
+			rebuilt.cartridgeSlots[slot]!.sources,
+		);
 		sources.cartridgeSlots[slot]!.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
 		sources.cartridgeBlua32MediaDirty[slot] = false;
 		cartridgeImages[slot] = {

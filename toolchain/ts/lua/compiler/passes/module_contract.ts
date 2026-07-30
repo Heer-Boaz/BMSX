@@ -32,6 +32,7 @@ export type ProgramModule = {
 	path: string;
 	chunk: LuaChunk;
 	source?: string;
+	linkValues?: ReadonlyMap<string, number>;
 };
 
 export type ModuleCompileInfo = {
@@ -138,13 +139,14 @@ const collectModuleDependencies = (
 };
 
 const buildModuleCompileInfo = (
-	modulePath: string,
-	chunk: LuaChunk,
+	module: ProgramModule,
 	external: boolean,
 	constModule: boolean,
 	staticStorage: boolean,
 	semantics: LuaSemanticFrontendFile,
 ): ModuleCompileInfo | null => {
+	const modulePath = module.path;
+	const chunk = module.chunk;
 	if (chunk.body.length === 0) {
 		return null;
 	}
@@ -184,6 +186,16 @@ const buildModuleCompileInfo = (
 	const exportConstValueByPathKey = compileTimeModule
 		? buildConstModuleExportValues(chunk, returnExpression, moduleOwnsStaticStorage, semantics)
 		: new Map<string, ConstExportValue>();
+	if (module.linkValues) {
+		for (const [exportPath, value] of module.linkValues) {
+			exportConstValueByPathKey.set(exportPath, {
+				kind: 'link_value',
+				modulePath,
+				exportPath,
+				value,
+			});
+		}
+	}
 	if (exportRoot) {
 		assertConstModuleExportsAreStatic(modulePath, exportRoot, exportConstValueByPathKey, staticFunctionExportByPathKey);
 	}
@@ -223,7 +235,13 @@ export const buildModuleCompileContext = (
 		const module = modules[index];
 		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
 		const constModule = module.chunk.constModule;
-		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, frontend.getFile(module.path));
+		const info = buildModuleCompileInfo(
+			module,
+			constModule,
+			constModule,
+			constModule,
+			frontend.getFile(module.path),
+		);
 		if (info) {
 			modulesByPath.set(module.path, info);
 			continue;
@@ -235,7 +253,13 @@ export const buildModuleCompileContext = (
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
-		const info = buildModuleCompileInfo(module.path, module.chunk, true, module.chunk.constModule, false, frontend.getFile(module.path));
+		const info = buildModuleCompileInfo(
+			module,
+			true,
+			module.chunk.constModule,
+			false,
+			frontend.getFile(module.path),
+		);
 		if (info) {
 			modulesByPath.set(module.path, info);
 			continue;

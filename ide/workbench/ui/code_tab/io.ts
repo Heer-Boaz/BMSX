@@ -13,6 +13,7 @@ import { applyAemSourceToRuntime } from '../../../runtime/aem';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
 import {
@@ -114,6 +115,7 @@ export async function save(
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
+	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 ): Promise<void> {
 	const context = getActiveCodeTabContext();
@@ -156,7 +158,14 @@ export async function save(
 				return;
 			case 'aem':
 				try {
-					applyAemSourceToRuntime(sources, runtime, context.resource, source);
+					applyAemSourceToRuntime(
+						sources,
+						luaTooling,
+						editor,
+						runtime,
+						context.resource,
+						source,
+					);
 					setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
 					setContextRuntimeSyncState(context, 'synced', null);
 					showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);

@@ -405,6 +405,7 @@ class ProgramBuilder {
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
+	private readonly linkValueRelocSlotByKey = new Map<string, number>();
 	private bssByteCount = 0;
 	private dataByteCount = 0;
 	private dataBytes = new Uint8Array(0);
@@ -449,7 +450,11 @@ class ProgramBuilder {
 		return index;
 	}
 
-	public constValueRelocIndex(kind: ProgramConstValueReloc['kind'], symbol: string, addend: number): number {
+	public constValueRelocIndex(
+		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value'>,
+		symbol: string,
+		addend: number,
+	): number {
 		const index = this.constPool.length;
 		this.constPool.push(0);
 		this.relocatedConstIndices.add(index);
@@ -458,6 +463,30 @@ class ProgramBuilder {
 			kind,
 			symbol,
 			addend,
+		});
+		return index;
+	}
+
+	public linkValueRelocIndex(
+		modulePath: string,
+		exportPath: string,
+		value: number,
+	): number {
+		const key = `${modulePath}\0${exportPath}`;
+		const slot = this.linkValueRelocSlotByKey.get(key);
+		if (slot) {
+			return slot - 1;
+		}
+		const index = this.constPool.length;
+		this.constPool.push(0);
+		this.relocatedConstIndices.add(index);
+		this.linkValueRelocSlotByKey.set(key, index + 1);
+		this.constValueRelocs.push({
+			constIndex: index,
+			kind: 'link_value',
+			modulePath,
+			exportPath,
+			value,
 		});
 		return index;
 	}
@@ -2367,6 +2396,15 @@ class FunctionBuilder {
 				}
 				throw new Error(`Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
 			}
+			case 'link_value': {
+				const index = this.program.linkValueRelocIndex(
+					value.modulePath,
+					value.exportPath,
+					value.value,
+				);
+				this.emitABx(OpCode.LOADK, target, index);
+				return;
+			}
 		}
 	}
 
@@ -2929,6 +2967,7 @@ class FunctionBuilder {
 			case 'bss_addr':
 			case 'data_addr':
 			case 'rodata_addr':
+			case 'link_value':
 				return false;
 		}
 	}
@@ -5149,6 +5188,9 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 		};
 		if (module.source !== undefined) {
 			canonicalModule.source = module.source;
+		}
+		if (module.linkValues) {
+			canonicalModule.linkValues = module.linkValues;
 		}
 		canonicalModules.push(canonicalModule);
 	}

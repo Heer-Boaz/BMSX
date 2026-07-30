@@ -702,6 +702,11 @@ local reload<const> = function()
 	return events
 end
 
+local reload_from_rom<const> = function()
+	romdir.reload_cartridge_directory()
+	return reload()
+end
+
 local on_apu_irq<const> = function()
 	local kind<const> = mem[0x0800017c]
 	local slot<const> = mem[0x08000180]
@@ -747,5 +752,6 @@ end
 
 return {
 	reload = reload,
+	reload_from_rom = reload_from_rom,
 	on_apu_irq = on_apu_irq,
 }

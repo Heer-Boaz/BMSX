@@ -7,6 +7,7 @@ export type RomAssetSymbol = {
 	assetId: string;
 	assetType: string;
 	payloadId: RomImageDomain;
+	offset: number;
 	address: number;
 	byteLength: number;
 };
@@ -59,6 +60,7 @@ export function collectRomAssetSymbols(
 			assetId: asset.resid,
 			assetType: asset.type,
 			payloadId,
+			offset: asset.start,
 			address: romBaseByPayloadId[payloadId] + asset.start,
 			byteLength: asset.end - asset.start,
 		});
@@ -86,6 +88,18 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 	return lines.join('\n');
 }
 
+export function buildRomAssetLinkValuesFromSymbols(
+	symbols: ReadonlyArray<RomAssetSymbol>,
+): ReadonlyMap<string, number> {
+	const values = new Map<string, number>();
+	for (let index = 0; index < symbols.length; index += 1) {
+		const symbol = symbols[index];
+		values.set(`${symbol.name}_addr`, symbol.address);
+		values.set(`${symbol.name}_len`, symbol.byteLength);
+	}
+	return values;
+}
+
 /*
 	ROM asset-symbol module (the `bmsx/assets` const module ABI)
 
@@ -94,9 +108,10 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 	- The emitted BLua source declares `module<const>`, then top-level `local <const>`
 		declarations and one `return` table that exports them by name.
 	- The compiler therefore treats `bmsx/assets` as a const module: the
-		return table is a compile-time export descriptor, never a runtime table. Every
-		`assets.<symbol>` read is inlined to the constant value at its use site, so the module
-		emits no proto, no global slots, no `require` call and no runtime table construction.
+		return table is a compile-time export descriptor, never a runtime table. Stable
+		prefix values are folded normally; Studio marks only mutable-tail AEM values for
+		link relocation. The module emits no proto, global slots, `require` call or runtime
+		table construction.
 */
 export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>): string {
 	const symbols = collectRomAssetSymbols(assetList, 'cart');

@@ -30,7 +30,13 @@ export type ConstExportValue =
 	| { kind: 'string'; value: string }
 	| { kind: 'bss_addr'; symbolHandle: string }
 	| { kind: 'data_addr'; symbolHandle: string }
-	| { kind: 'rodata_addr'; symbolHandle: string };
+	| { kind: 'rodata_addr'; symbolHandle: string }
+	| {
+		kind: 'link_value';
+		modulePath: string;
+		exportPath: string;
+		value: number;
+	};
 
 const evaluateModuleConstLiteral = (
 	expression: LuaExpression,

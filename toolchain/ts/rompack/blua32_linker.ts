@@ -219,6 +219,8 @@ function resolveConstValueRelocation(
 			return resolveStorageSymbolAddress(bssSymbols, bssAddress, reloc.symbol, reloc.addend);
 		case 'rodata_addr':
 			return resolveStorageSymbolAddress(rodataSymbols, rodataAddress, reloc.symbol, reloc.addend);
+		case 'link_value':
+			return reloc.value;
 	}
 }
 
@@ -828,4 +830,33 @@ export function linkCartBlua32Image(
 		externalSymbols: systemSymbols,
 		previous,
 	});
+}
+
+export function applyBlua32LinkValues(
+	linked: LinkedBlua32Image,
+	relocs: ReadonlyArray<ProgramConstValueReloc>,
+	modulePath: string,
+	values: ReadonlyMap<string, number>,
+): void {
+	const constantTableOffset = linked.layout.header.constantTableAddress - linked.layout.address;
+	const view = new DataView(
+		linked.bytes.buffer,
+		linked.bytes.byteOffset,
+		linked.bytes.byteLength,
+	);
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		if (reloc.kind !== 'link_value' || reloc.modulePath !== modulePath) {
+			continue;
+		}
+		const value = values.get(reloc.exportPath)!;
+		view.setFloat64(
+			constantTableOffset
+				+ reloc.constIndex * BLUA32_CONSTANT_RECORD_SIZE
+				+ BLUA32_CONSTANT_PAYLOAD_OFFSET,
+			value,
+			true,
+		);
+		linked.layout.constants[reloc.constIndex] = value;
+	}
 }

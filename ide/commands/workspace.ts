@@ -50,6 +50,7 @@ export function executeEditorWorkspaceCommand(
 					clock,
 					editor,
 					sources,
+					luaTooling,
 					runtime,
 				);
 			}

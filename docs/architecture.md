@@ -771,11 +771,17 @@ or an explicit tooling inspection reads them.
 
 `__blua32__` begins the deliberately mutable executable tail after that prefix.
 It is one ordinary TOC payload containing a fixed binary image; it has no
-generic serializer descriptor and no parallel compiled range.
-`__blua32_symbols__`, when present, follows it and contains tooling metadata
-only. The movable TOC follows the executable tail. Hot Resume therefore
-replaces only the ROM header, executable bytes, symbols, and TOC; asset,
-metadata, and manifest addresses remain unchanged.
+generic serializer descriptor and no parallel compiled range. A Studio AEM
+save is also a physical-media revision: the edited AEM payload moves from the
+immutable pack prefix into the mutable tail immediately after `__blua32__`.
+Later source or AEM revisions retain every AEM payload already owned by that
+tail and compact them against the new executable end. All other asset,
+metadata, and manifest spans remain in the immutable prefix.
+`__blua32_symbols__`, when present, follows those authoring AEM payloads and
+contains tooling metadata only. The movable TOC follows the complete mutable
+tail. Hot Resume replaces the ROM header, executable bytes, authoring AEM
+payloads, symbols, and TOC; it does not maintain a parallel host-only AEM
+override.
 
 The outer ROM header exposes the executable without a TOC lookup:
 
@@ -899,11 +905,15 @@ cartridges do not carry a duplicate of the firmware symbols.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
-recognises that module as compile-time only and inlines exported constants at
-each use site. The module never produces a runtime Lua table, module function,
-global slot, or `require` call in executable cart code. Using the module root as
-a value is a compile-time error; cart code must read concrete exports such as
-`assets.data_transition_config_addr` and `assets.data_transition_config_len`.
+recognises that module as compile-time only. Stable immutable-prefix exports
+remain ordinary foldable compile-time constants. Studio marks only mutable-tail
+AEM exports as deduplicated constant-pool relocations, and the linker resolves
+those loads to their final physical address or length. The module never
+produces a runtime Lua table, module function, global slot, or `require` call in
+executable cart code. Using the module root as a value is a compile-time error;
+cart code must read concrete exports such as
+`assets.data_transition_config_addr` and
+`assets.data_transition_config_len`.
 Do not add a `rom_asset("name")`-style API, even as a compile-time builtin: the
 cart-visible contract is plain address/length/bank symbols, not a string lookup,
 registry object, or `{ addr, len }` value.
@@ -913,11 +923,13 @@ sanitising non-alphanumeric characters to underscores and prefixing a leading
 digit with an underscore. Public symbols are generated for ROM-backed asset
 records except Lua/code records and the ROM label. Address values are absolute
 CPU-visible ROM addresses: `SYSTEM_ROM_BASE` or `CART_ROM_BASE` plus the record
-offset in the corresponding ROM payload. The pack layout produces the final
-TOC records before BLua32 compilation; `bmsx/assets` consumes those same
-records, and the TOC encoder later serializes them without recomputing offsets.
-There is no parallel writer-owned layout or duplicate verification pass. Length
-values are byte counts.
+offset in the corresponding ROM payload. An ordinary pack layout produces the
+final TOC records before BLua32 compilation; `bmsx/assets` and the TOC encoder
+consume those same records. Studio compiles a revised object once with the
+generated exports kept as relocations, computes the physical mutable-tail
+layout from the fixed executable byte count, and resolves those relocations to
+that final layout. It never recompiles address guesses or maintains a parallel
+writer-owned layout. Length values are byte counts.
 `rominspector.ts
 --asset-symbols` prints the generated symbol table so the ROM address ABI can be
 checked without disassembling BLua32 code.
@@ -936,12 +948,12 @@ or asset record. Fixed layouts become a machine/tooling contract only when a
 concrete asset producer and hot/runtime consumer require that contract.
 
 BLua32 objects exist only between compiler and ROM-building/Hot-Resume tooling.
-Symbolic module, static-function, section-address, constant, global-slot, and
-indexed-operand relocations are resolved before bytes are installed. They never
-become placeholder Lua values or mutable machine state. Cartridge objects link
-against the firmware image's published global-slot ABI and physical static
-function addresses; system and cartridge code, constants, and functions remain
-separate physical domains.
+Symbolic module, static-function, section-address, generated-module constant,
+global-slot, and indexed-operand relocations are resolved before bytes are
+installed. They never become placeholder Lua values or mutable machine state.
+Cartridge objects link against the firmware image's published global-slot ABI
+and physical static function addresses; system and cartridge code, constants,
+and functions remain separate physical domains.
 
 The compiler emits a startup function that performs section initialization,
 initializes statically required modules in dependency order, clears the
@@ -987,6 +999,12 @@ gains no authoring-time branch, source revision, linker baseline, lookup,
 parser, or allocation. No old executable image or development-tail buffer
 remains an execution owner. Save-state retains only the current raw machine
 state and restores it against the media inserted at restore time.
+
+Saving an AEM document follows the same physical revision path. Tooling
+validates and encodes the document, installs the rebuilt ROM, reconnects the
+resident execution image, and only then asks guest `cartlib` code to reread the
+cartridge directory and rebuild its event tables. The machine and APU never
+consume an IDE package record or host-side AEM override.
 
 The TypeScript and C++ memory and cartridge owners expose the same suspended
 raw-media replacement operations. Replacing media only changes the backing byte

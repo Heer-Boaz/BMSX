@@ -89,6 +89,7 @@ export class IdeCommandController {
 				this.clock,
 				this.editor,
 				this.sources,
+				this.luaTooling,
 				this.runtime,
 			);
 			if (editorDocumentState.dirty) {

@@ -59,12 +59,20 @@ export type ProgramConstReloc =
 	| { wordIndex: number; kind: ProgramIndexedConstRelocKind; constIndex: number }
 	| { wordIndex: number; kind: ProgramSymbolicConstRelocKind; symbol: string };
 
-export type ProgramConstValueReloc = {
-	constIndex: number;
-	kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr';
-	symbol: string;
-	addend: number;
-};
+export type ProgramConstValueReloc =
+	| {
+		constIndex: number;
+		kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr';
+		symbol: string;
+		addend: number;
+	}
+	| {
+		constIndex: number;
+		kind: 'link_value';
+		modulePath: string;
+		exportPath: string;
+		value: number;
+	};
 
 export type ProgramRodataConstReloc = {
 	byteOffset: number;
