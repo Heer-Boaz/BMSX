@@ -6,8 +6,6 @@ const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {
 	local: 90,
 	module: 80,
 	global: 70,
-	api_method: 60,
-	api_property: 60,
 	native_method: 50,
 	native_property: 50,
 	builtin: 40,
@@ -70,7 +68,7 @@ export function filterCompletionItems(items: readonly LuaCompletionItem[], prefi
 	const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
 	for (let i = 0; i < items.length; i += 1) {
 		const item = items[i];
-		const insertText = item.kind === 'api_method' || item.kind === 'native_method'
+		const insertText = item.kind === 'native_method'
 			? `${item.insertText}()`
 			: item.insertText;
 		if (replacementText.length > 0 && insertText === replacementText) {

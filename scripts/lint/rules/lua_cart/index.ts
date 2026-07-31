@@ -43,11 +43,8 @@ import { splitLocalTableInitPatternRule } from './split_local_table_init_pattern
 import { duplicateInitializerPatternRule } from './duplicate_initializer_pattern';
 import { handlerIdentityDispatchPatternRule } from './handler_identity_dispatch_pattern';
 import { ensureLocalAliasPatternRule } from './ensure_local_alias_pattern';
-import { serviceDefinitionSuffixPatternRule } from './service_definition_suffix_pattern';
 import { defineFactoryTickEnabledPatternRule } from './define_factory_tick_enabled_pattern';
 import { defineFactorySpaceIdPatternRule } from './define_factory_space_id_pattern';
-import { createServiceIdAddonPatternRule } from './create_service_id_addon_pattern';
-import { defineServiceIdPatternRule } from './define_service_id_pattern';
 import { fsmEnteringStateVisualSetupPatternRule } from './fsm_entering_state_visual_setup_pattern';
 import { fsmDirectStateHandlerShorthandPatternRule } from './fsm_direct_state_handler_shorthand_pattern';
 import { fsmEventReemitHandlerPatternRule } from './fsm_event_reemit_handler_pattern';
@@ -58,7 +55,6 @@ import { fsmLifecycleWrapperPatternRule } from './fsm_lifecycle_wrapper_pattern'
 import { fsmTickCounterTransitionPatternRule } from './fsm_tick_counter_transition_pattern';
 import { fsmIdLabelPatternRule } from './fsm_id_label_pattern';
 import { btIdLabelPatternRule } from './bt_id_label_pattern';
-import { injectedServiceIdPropertyPatternRule } from './injected_service_id_property_pattern';
 import { inlineStaticLookupTablePatternRule } from './inline_static_lookup_table_pattern';
 import { stagedExportLocalCallPatternRule } from './staged_export_local_call_pattern';
 import { stagedExportLocalTablePatternRule } from './staged_export_local_table_pattern';
@@ -112,11 +108,8 @@ export { splitLocalTableInitPatternRule };
 export { duplicateInitializerPatternRule };
 export { handlerIdentityDispatchPatternRule };
 export { ensureLocalAliasPatternRule };
-export { serviceDefinitionSuffixPatternRule };
 export { defineFactoryTickEnabledPatternRule };
 export { defineFactorySpaceIdPatternRule };
-export { createServiceIdAddonPatternRule };
-export { defineServiceIdPatternRule };
 export { fsmEnteringStateVisualSetupPatternRule };
 export { fsmDirectStateHandlerShorthandPatternRule };
 export { fsmEventReemitHandlerPatternRule };
@@ -127,7 +120,6 @@ export { fsmLifecycleWrapperPatternRule };
 export { fsmTickCounterTransitionPatternRule };
 export { fsmIdLabelPatternRule };
 export { btIdLabelPatternRule };
-export { injectedServiceIdPropertyPatternRule };
 export { inlineStaticLookupTablePatternRule };
 export { stagedExportLocalCallPatternRule };
 export { stagedExportLocalTablePatternRule };
@@ -182,11 +174,8 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	duplicateInitializerPatternRule,
 	handlerIdentityDispatchPatternRule,
 	ensureLocalAliasPatternRule,
-	serviceDefinitionSuffixPatternRule,
 	defineFactoryTickEnabledPatternRule,
 	defineFactorySpaceIdPatternRule,
-	createServiceIdAddonPatternRule,
-	defineServiceIdPatternRule,
 	fsmEnteringStateVisualSetupPatternRule,
 	fsmDirectStateHandlerShorthandPatternRule,
 	fsmEventReemitHandlerPatternRule,
@@ -197,7 +186,6 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	fsmTickCounterTransitionPatternRule,
 	fsmIdLabelPatternRule,
 	btIdLabelPatternRule,
-	injectedServiceIdPropertyPatternRule,
 	inlineStaticLookupTablePatternRule,
 	stagedExportLocalCallPatternRule,
 	stagedExportLocalTablePatternRule,

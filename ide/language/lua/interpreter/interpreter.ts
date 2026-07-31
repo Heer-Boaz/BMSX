@@ -2269,7 +2269,7 @@ export class LuaInterpreter {
 				: typeof key === 'string' || typeof key === 'number'
 					? String(key)
 						: '<unknown>';
-				return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}. Did you forget to define it as a 'default' or 'override' member (e.g. via 'define_prefab')?`;
+				return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}.`;
 			}
 			const property = this.getNativePropertyValue(target, key, range);
 			if (property.found) {

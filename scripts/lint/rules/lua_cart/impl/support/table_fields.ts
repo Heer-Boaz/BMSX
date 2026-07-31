@@ -2,11 +2,11 @@ import { type LuaExpression as Expression, type LuaFunctionExpression as CartFun
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';
-import { lintInjectedServiceIdPropertyTableField } from '../../injected_service_id_property_pattern';
 import { lintInlineStaticLookupTableExpression } from '../../inline_static_lookup_table_pattern';
 import { lintTickFlagPollingPattern } from '../../tick_flag_polling_pattern';
 import { lintTickInputCheckPattern } from '../../tick_input_check_pattern';
 import { isPrimitiveLiteralExpression } from './conditions';
+import type { CartModuleCallMap } from './types';
 
 export function getTableFieldKey(field: TableField): string {
 	if (field.kind === TableFieldKind.IdentifierKey) {
@@ -210,9 +210,13 @@ export function visitTableFieldsRecursively(
 	}
 }
 
-export function lintTableField(field: TableField, issues: CartLintIssue[], insideFunction = false): void {
+export function lintTableField(
+	field: TableField,
+	issues: CartLintIssue[],
+	moduleCalls: CartModuleCallMap,
+	insideFunction = false,
+): void {
 	lintCollectionLabelPatterns(field, issues);
-	lintInjectedServiceIdPropertyTableField(field, issues);
 	if (field.kind === TableFieldKind.IdentifierKey
 		&& field.name === 'tick'
 		&& field.value.kind === SyntaxKind.FunctionExpression) {
@@ -221,14 +225,14 @@ export function lintTableField(field: TableField, issues: CartLintIssue[], insid
 	}
 	switch (field.kind) {
 		case TableFieldKind.Array:
-			lintExpression(field.value, issues, false, insideFunction);
+			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
 			return;
 		case TableFieldKind.IdentifierKey:
-			lintExpression(field.value, issues, false, insideFunction);
+			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
 			return;
 		case TableFieldKind.ExpressionKey:
-			lintExpression(field.key, issues, false, insideFunction);
-			lintExpression(field.value, issues, false, insideFunction);
+			lintExpression(field.key, issues, moduleCalls, false, insideFunction);
+			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
 			return;
 		default:
 			return;

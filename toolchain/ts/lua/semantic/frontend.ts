@@ -14,8 +14,6 @@ import { toLuaModulePath } from '../module_path';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
-	getStaticLuaApiSignatureMap,
-	type LuaApiSignatureMetadata,
 	type LuaStaticDiagnostic,
 } from './diagnostics';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from './source_range';
@@ -34,7 +32,6 @@ export type LuaSemanticFrontendSource = {
 
 export type LuaSemanticFrontendOptions = {
 	builtinDescriptors?: readonly LuaBuiltinDescriptor[];
-	apiSignatures?: ReadonlyMap<string, LuaApiSignatureMetadata>;
 	extraGlobalNames?: readonly string[];
 	externalGlobalSymbols?: readonly LuaSymbolEntry[];
 };
@@ -117,7 +114,6 @@ export function buildLuaSemanticFrontend(
 	options: LuaSemanticFrontendOptions = {},
 ): LuaSemanticFrontend {
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
-	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources);
 	const preparedSources = snapshot.sources.map(source => ({
 		path: source.path,
@@ -133,7 +129,7 @@ export function buildLuaSemanticFrontend(
 	}
 	// Frontend queries must resolve against the prepared snapshot, not whatever the workspace becomes later.
 	const globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
-	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, apiSignatures, options.extraGlobalNames, false);
+	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, options.extraGlobalNames, false);
 	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources);
 	for (let index = 0; index < preparedSources.length; index += 1) {
 		const source = preparedSources[index];
@@ -142,7 +138,6 @@ export function buildLuaSemanticFrontend(
 			chunk: source.chunk,
 			globalSymbols,
 			builtinDescriptors,
-			apiSignatures,
 			extraGlobalNames: options.extraGlobalNames,
 		});
 		files.set(source.path, createBoundFile(source, diagnostics, knownGlobalNames, moduleTargetsByAlias, sourcesByPath, snapshot));

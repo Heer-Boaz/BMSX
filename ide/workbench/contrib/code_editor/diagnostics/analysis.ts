@@ -1,7 +1,6 @@
 import type { EditorDiagnostic } from '../../../../common/models';
 import {
 	computeLuaDiagnostics,
-	getApiCompletionData,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
 	listLuaSymbols,
@@ -29,7 +28,6 @@ export function computeAggregatedEditorDiagnostics(
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];
 	const builtinDescriptors = listLuaBuiltinFunctions();
-	const apiData = getApiCompletionData();
 
 	const aggregated: EditorDiagnostic[] = [];
 	for (let i = 0; i < contexts.length; i += 1) {
@@ -54,7 +52,6 @@ export function computeAggregatedEditorDiagnostics(
 			localSymbols,
 			globalSymbols,
 			builtinDescriptors,
-			apiSignatures: apiData.signatures,
 			version: ctx.version,
 			lines: baseLines,
 			parsed,

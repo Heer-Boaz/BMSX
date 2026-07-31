@@ -4,8 +4,8 @@ import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
 import { lintFsmRunChecksInputTransitionPatternInTable } from '../../fsm_run_checks_input_transition_pattern';
 import { lintFsmTickCounterTransitionPatternInTable } from '../../fsm_tick_counter_transition_pattern';
-import { isGlobalCall } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { getSelfAssignedPropertyNameFromTarget, isSelfPropertyReferenceByName } from './self_properties';
+import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallKind } from './types';
 
 export function hasTransitionReturnInStatements(statements: ReadonlyArray<Statement>): boolean {
 	for (const statement of statements) {
@@ -68,8 +68,12 @@ export const FORBIDDEN_FSM_LEGACY_FIELDS = new Set<string>([
 	'run_checks',
 ]);
 
-export function lintFsmForbiddenLegacyFieldsPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmForbiddenLegacyFieldsPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];
@@ -79,8 +83,12 @@ export function lintFsmForbiddenLegacyFieldsPattern(expression: CallExpression, 
 	lintFsmForbiddenLegacyFieldsInTable(definition, issues);
 }
 
-export function lintFsmProcessInputPollingTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmProcessInputPollingTransitionPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];
@@ -90,8 +98,12 @@ export function lintFsmProcessInputPollingTransitionPattern(expression: CallExpr
 	lintFsmProcessInputPollingTransitionPatternInTable(definition, issues);
 }
 
-export function lintFsmRunChecksInputTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmRunChecksInputTransitionPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];
@@ -194,8 +206,12 @@ export function findTickCounterMutationInStatements(statements: ReadonlyArray<St
 	return undefined;
 }
 
-export function lintFsmTickCounterTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmTickCounterTransitionPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];

@@ -26,11 +26,9 @@ import { lintBtIdLabelPattern } from '../lint/rules/lua_cart/bt_id_label_pattern
 import { lintBuiltinRecreationPattern } from '../lint/rules/lua_cart/builtin_recreation_pattern';
 import { lintComparisonWrapperGetterPattern } from '../lint/rules/lua_cart/comparison_wrapper_getter_pattern';
 import { lintContiguousMultiEmitPattern } from '../lint/rules/lua_cart/contiguous_multi_emit_pattern';
-import { lintCreateServiceIdAddonPattern } from '../lint/rules/lua_cart/create_service_id_addon_pattern';
 import { lintCrossFileLocalGlobalConstantPattern } from '../lint/rules/lua_cart/cross_file_local_global_constant_pattern';
 import { lintCrossObjectStateEventRelayPattern } from '../lint/rules/lua_cart/cross_object_state_event_relay_pattern';
 import { lintDefineFactoryTickEnabledAndSpaceIdPattern } from '../lint/rules/lua_cart/define_factory_tick_enabled_pattern';
-import { lintDefineServiceIdPattern } from '../lint/rules/lua_cart/define_service_id_pattern';
 import { lintDispatchFanoutLoopPattern } from '../lint/rules/lua_cart/dispatch_fanout_loop_pattern';
 import { lintEventHandlerDispatchPattern } from '../lint/rules/lua_cart/event_handler_dispatch_pattern';
 import { lintForbiddenDispatchPattern } from '../lint/rules/lua_cart/forbidden_dispatch_pattern';
@@ -43,12 +41,10 @@ import { lintFsmEnteringStateVisualSetupPattern } from '../lint/rules/lua_cart/f
 import { lintFsmIdLabelPattern } from '../lint/rules/lua_cart/fsm_id_label_pattern';
 import { lintFsmStateNameMirrorAssignmentPattern } from '../lint/rules/lua_cart/fsm_state_name_mirror_assignment_pattern';
 import { lintSpriteImgIdAssignmentPattern } from '../lint/rules/lua_cart/imgid_assignment_pattern';
-import { lintInjectedServiceIdPropertyAssignmentTarget } from '../lint/rules/lua_cart/injected_service_id_property_pattern';
 import { lintMultiHasTagPattern, lintSplitNestedIfHasTagPattern } from '../lint/rules/lua_cart/multi_has_tag_pattern';
 import { lintPureCopyFunctionPattern } from '../lint/rules/lua_cart/pure_copy_function_pattern';
 import { lintSelfImgIdAssignmentPattern } from '../lint/rules/lua_cart/self_imgid_assignment_pattern';
 import { lintLocalAssignment } from '../lint/rules/lua_cart/self_property_local_alias_pattern';
-import { lintServiceDefinitionSuffixPattern } from '../lint/rules/lua_cart/service_definition_suffix_pattern';
 import { lintSetSpaceRoundtripPattern } from '../lint/rules/lua_cart/set_space_roundtrip_pattern';
 import { lintSinglePropertyOptionsParameter } from '../lint/rules/common/single_property_options_parameter_pattern';
 import { lintSplitLocalTableInitPattern } from '../lint/rules/lua_cart/split_local_table_init_pattern';
@@ -70,12 +66,12 @@ import { lintFsmEventReemitHandlerPattern, lintFsmLifecycleWrapperPattern } from
 import { lintFsmForbiddenLegacyFieldsPattern, lintFsmProcessInputPollingTransitionPattern, lintFsmRunChecksInputTransitionPattern, lintFsmTickCounterTransitionPattern } from '../lint/rules/lua_cart/impl/support/fsm_transitions';
 import { getFunctionDisplayName, isMethodLikeFunctionDeclaration } from '../lint/rules/lua_cart/impl/support/functions';
 import { matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
-import { lintShadowedRequireAliasPattern } from '../lint/rules/lua_cart/impl/support/require_aliases';
+import { analyzeRequireAliases } from '../lint/rules/lua_cart/impl/support/require_aliases';
 import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/support/runtime_tag';
 import { lintSingleUseHasTagPattern } from '../lint/rules/lua_cart/impl/support/single_use_has_tag';
 import { lintSingleUseLocalPattern } from '../lint/rules/lua_cart/impl/support/single_use_local';
 import { lintInlineStaticLookupTablePattern, lintTableField } from '../lint/rules/lua_cart/impl/support/table_fields';
-import { CartLintOptions, CartLintProfile, CartLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
+import { type CartModuleCallMap, CartLintOptions, CartLintProfile, CartLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
 import { lintUnusedInitValuesInFunctionBody } from '../lint/rules/lua_cart/impl/support/unused_init';
 import { clearSuppressedLineRanges, pushIssue, pushIssueAt, setActiveLintRules, setSuppressedLineRanges } from '../lint/rules/lua_cart/impl/support/lint_context';
 
@@ -89,12 +85,10 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'consecutive_duplicate_statement_pattern',
 	'constant_copy_pattern',
 	'contiguous_multi_emit_pattern',
-	'create_service_id_addon_pattern',
 	'cross_file_local_global_constant_pattern',
 	'cross_object_state_event_relay_pattern',
 	'define_factory_space_id_pattern',
 	'define_factory_tick_enabled_pattern',
-	'define_service_id_pattern',
 	'dispatch_fanout_loop_pattern',
 	'duplicate_initializer_pattern',
 	'empty_catch_pattern',
@@ -131,7 +125,6 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'handler_identity_dispatch_pattern',
 	'imgid_assignment_pattern',
 	'imgid_fallback_pattern',
-	'injected_service_id_property_pattern',
 	'inline_static_lookup_table_pattern',
 	'local_const_pattern',
 	'local_function_const_pattern',
@@ -144,7 +137,6 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'runtime_tag_table_access_pattern',
 	'self_imgid_assignment_pattern',
 	'self_property_local_alias_pattern',
-	'service_definition_suffix_pattern',
 	'set_space_roundtrip_pattern',
 	'shadowed_require_alias_pattern',
 	'silent_catch_fallback_pattern',
@@ -207,7 +199,6 @@ export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'getter_setter_pattern',
 	'single_line_method_pattern',
 	'useless_assert_pattern',
-	'define_service_id_pattern',
 	'define_factory_tick_enabled_pattern',
 	'define_factory_space_id_pattern',
 	'fsm_entering_state_visual_setup_pattern',
@@ -219,7 +210,6 @@ export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'fsm_tick_counter_transition_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
-	'injected_service_id_property_pattern',
 ]);
 
 export function resolveEnabledRules(profile: CartLintProfile): ReadonlySet<LintRuleName> {
@@ -354,7 +344,13 @@ export function lintFunctionBody(
 	lintHandlerIdentityDispatchPattern(functionName, functionExpression, issues);
 }
 
-export function lintExpression(expression: Expression | null, issues: CartLintIssue[], topLevel = true, insideFunction = false): void {
+export function lintExpression(
+	expression: Expression | null,
+	issues: CartLintIssue[],
+	moduleCalls: CartModuleCallMap,
+	topLevel = true,
+	insideFunction = false,
+): void {
 	if (!expression) {
 		return;
 	}
@@ -370,6 +366,7 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 	}
 	switch (expression.kind) {
 		case SyntaxKind.CallExpression:
+			const moduleCallKind = moduleCalls.get(expression);
 			lintFunctionBodyRequireCall(expression, insideFunction, issues, pushIssue);
 			lintRequireCall(expression, issues, pushIssue);
 			lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
@@ -378,55 +375,57 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 			lintEventHandlerDispatchPattern(expression, issues);
 			lintCrossObjectStateEventRelayPattern(expression, issues);
 			lintSetSpaceRoundtripPattern(expression, issues);
-			lintServiceDefinitionSuffixPattern(expression, issues);
-			lintCreateServiceIdAddonPattern(expression, issues);
-			lintDefineServiceIdPattern(expression, issues);
-			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
+			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, moduleCallKind, issues);
 			lintCallNewlineNormalizationPattern(expression, issues, pushIssue);
-			lintFsmDirectStateHandlerShorthandPattern(expression, issues);
-			lintFsmEventReemitHandlerPattern(expression, issues);
-			lintFsmForbiddenLegacyFieldsPattern(expression, issues);
-			lintFsmProcessInputPollingTransitionPattern(expression, issues);
-			lintFsmRunChecksInputTransitionPattern(expression, issues);
-			lintFsmLifecycleWrapperPattern(expression, issues);
-			lintFsmTickCounterTransitionPattern(expression, issues);
-			lintFsmIdLabelPattern(expression, issues);
-			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
+			lintFsmDirectStateHandlerShorthandPattern(expression, moduleCallKind, issues);
+			lintFsmEventReemitHandlerPattern(expression, moduleCallKind, issues);
+			lintFsmForbiddenLegacyFieldsPattern(expression, moduleCallKind, issues);
+			lintFsmProcessInputPollingTransitionPattern(expression, moduleCallKind, issues);
+			lintFsmRunChecksInputTransitionPattern(expression, moduleCallKind, issues);
+			lintFsmLifecycleWrapperPattern(expression, moduleCallKind, issues);
+			lintFsmTickCounterTransitionPattern(expression, moduleCallKind, issues);
+			lintFsmIdLabelPattern(expression, moduleCallKind, issues);
+			lintFsmStateNameMirrorAssignmentPattern(expression, moduleCallKind, issues);
 			lintBtIdLabelPattern(expression, issues);
-			lintExpression(expression.callee, issues, false, insideFunction);
+			lintExpression(expression.callee, issues, moduleCalls, false, insideFunction);
 			for (const arg of expression.arguments) {
-				lintExpression(arg, issues, false, insideFunction);
+				lintExpression(arg, issues, moduleCalls, false, insideFunction);
 			}
 			return;
 		case SyntaxKind.MemberExpression:
-			lintExpression(expression.base, issues, false, insideFunction);
+			lintExpression(expression.base, issues, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.IndexExpression:
-			lintExpression(expression.base, issues, false, insideFunction);
-			lintExpression(expression.index, issues, false, insideFunction);
+			lintExpression(expression.base, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.index, issues, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.BinaryExpression:
-			lintExpression(expression.left, issues, false, insideFunction);
-			lintExpression(expression.right, issues, false, insideFunction);
+			lintExpression(expression.left, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.right, issues, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.UnaryExpression:
-			lintExpression(expression.operand, issues, false, insideFunction);
+			lintExpression(expression.operand, issues, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				lintTableField(field, issues, insideFunction);
+				lintTableField(field, issues, moduleCalls, insideFunction);
 			}
 			return;
 		case SyntaxKind.FunctionExpression:
 			lintFunctionBody('<anonymous>', expression, issues, false);
-			lintStatements(expression.body.body, issues, true);
+			lintStatements(expression.body.body, issues, moduleCalls, true);
 			return;
 		default:
 			return;
 	}
 }
 
-export function lintStatements(statements: ReadonlyArray<Statement>, issues: CartLintIssue[], insideFunction = false): void {
+export function lintStatements(
+	statements: ReadonlyArray<Statement>,
+	issues: CartLintIssue[],
+	moduleCalls: CartModuleCallMap,
+	insideFunction = false,
+): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
 	lintContiguousMultiEmitPattern(statements, issues);
 	for (const statement of statements) {
@@ -437,32 +436,31 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					const value = statement.values[index];
 					if (index < statement.names.length && value.kind === SyntaxKind.FunctionExpression) {
 						lintFunctionBody(statement.names[index].name, value, issues, false);
-						lintStatements(value.body.body, issues, true);
+						lintStatements(value.body.body, issues, moduleCalls, true);
 						continue;
 					}
-					lintExpression(value, issues, true, insideFunction);
+					lintExpression(value, issues, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
-					lintExpression(left, issues, true, insideFunction);
+					lintExpression(left, issues, moduleCalls, true, insideFunction);
 				}
 				for (let index = 0; index < statement.left.length; index += 1) {
 					const left = statement.left[index];
 					const right = statement.right[index];
 					lintSpriteImgIdAssignmentPattern(left, issues);
 					lintSelfImgIdAssignmentPattern(left, right, issues);
-					lintInjectedServiceIdPropertyAssignmentTarget(left, issues);
 				}
 				for (const right of statement.right) {
-					lintExpression(right, issues, true, insideFunction);
+					lintExpression(right, issues, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LocalFunctionStatement;
 				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
 				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, false);
-				lintStatements(localFunction.functionExpression.body.body, issues, true);
+				lintStatements(localFunction.functionExpression.body.body, issues, moduleCalls, true);
 				break;
 			}
 			case SyntaxKind.FunctionDeclarationStatement: {
@@ -473,12 +471,12 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					issues,
 					isMethodLikeFunctionDeclaration(declaration),
 				);
-				lintStatements(declaration.functionExpression.body.body, issues, true);
+				lintStatements(declaration.functionExpression.body.body, issues, moduleCalls, true);
 				break;
 			}
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					lintExpression(expression, issues, true, insideFunction);
+					lintExpression(expression, issues, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.IfStatement:
@@ -487,38 +485,38 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 				lintSplitNestedIfHasTagPattern(statement, issues);
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
-						lintExpression(clause.condition, issues, true, insideFunction);
+						lintExpression(clause.condition, issues, moduleCalls, true, insideFunction);
 					}
-					lintStatements(clause.block.body, issues, insideFunction);
+					lintStatements(clause.block.body, issues, moduleCalls, insideFunction);
 				}
 				break;
 			case SyntaxKind.WhileStatement:
-				lintExpression(statement.condition, issues, true, insideFunction);
-				lintStatements(statement.block.body, issues, insideFunction);
+				lintExpression(statement.condition, issues, moduleCalls, true, insideFunction);
+				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.RepeatStatement:
-				lintStatements(statement.block.body, issues, insideFunction);
-				lintExpression(statement.condition, issues, true, insideFunction);
+				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
+				lintExpression(statement.condition, issues, moduleCalls, true, insideFunction);
 				break;
 			case SyntaxKind.ForNumericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
-				lintExpression(statement.start, issues, true, insideFunction);
-				lintExpression(statement.limit, issues, true, insideFunction);
-				lintExpression(statement.step, issues, true, insideFunction);
-				lintStatements(statement.block.body, issues, insideFunction);
+				lintExpression(statement.start, issues, moduleCalls, true, insideFunction);
+				lintExpression(statement.limit, issues, moduleCalls, true, insideFunction);
+				lintExpression(statement.step, issues, moduleCalls, true, insideFunction);
+				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.ForGenericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
 				for (const iterator of statement.iterators) {
-					lintExpression(iterator, issues, true, insideFunction);
+					lintExpression(iterator, issues, moduleCalls, true, insideFunction);
 				}
-				lintStatements(statement.block.body, issues, insideFunction);
+				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.DoStatement:
-				lintStatements(statement.block.body, issues, insideFunction);
+				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.CallStatement:
-				lintExpression(statement.expression, issues, true, insideFunction);
+				lintExpression(statement.expression, issues, moduleCalls, true, insideFunction);
 				break;
 			case SyntaxKind.BreakStatement:
 			case SyntaxKind.GotoStatement:
@@ -581,6 +579,7 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 				continue;
 			}
 			const chunk = parsed.path;
+			const moduleCalls = analyzeRequireAliases(chunk.body, issues);
 			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 			lintForbiddenRuntimeCompilerReferences(chunk.body, issues, pushIssue);
 			lintSplitLocalTableInitPattern(chunk.body, issues);
@@ -590,11 +589,10 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintForeignObjectInternalMutationPattern(chunk.body, issues);
 			lintRuntimeTagTableAccessPattern(chunk.body, issues);
-			lintFsmEnteringStateVisualSetupPattern(chunk.body, issues);
+			lintFsmEnteringStateVisualSetupPattern(chunk.body, moduleCalls, issues);
 			lintConstLocalPattern(chunk.body, issues);
 			lintConstantCopyPattern(chunk.body, issues);
-			lintShadowedRequireAliasPattern(chunk.body, issues);
-			lintStatements(chunk.body, issues);
+			lintStatements(chunk.body, issues, moduleCalls);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 			lintSingleUseLocalPattern(chunk.body, issues);
 		}

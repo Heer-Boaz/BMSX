@@ -3,7 +3,6 @@ import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { editorDocumentState } from '../../../../editor/editing/document_state';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
-	getApiCompletionData,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
 	listLuaSymbols,
@@ -223,7 +222,7 @@ export class CompletionController {
 	}
 
 	public applyCompletionItem(context: CompletionContext, item: LuaCompletionItem): void {
-		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		const addParentheses = item.kind === 'native_method';
 		this.applyCompletionItemForContext(context, item, addParentheses);
 		this.closeSession();
 	}
@@ -247,7 +246,7 @@ export class CompletionController {
 		let index = session.selectionIndex;
 		if (index < 0 || index >= session.filteredItems.length) index = 0;
 		const item = session.filteredItems[index];
-		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		const addParentheses = item.kind === 'native_method';
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const prefix = session.context.prefix;
 		if (!insertion.startsWith(prefix)) {
@@ -563,9 +562,6 @@ export class CompletionController {
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		if (context.kind === 'member') {
-			if (context.objectName === 'api') {
-				return getApiCompletionData().items.slice();
-			}
 			const merged: LuaCompletionItem[] = [];
 			const appendItems = (items: LuaCompletionItem[]): void => {
 				if (!items || items.length === 0) {
@@ -675,8 +671,6 @@ export class CompletionController {
 		}
 		const entries = listGlobalLuaSymbols(this.bridge, domain);
 		const items = this.buildSymbolCompletionItems(entries, 'global');
-		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Runtime API root' };
-		items.push(apiItem);
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		this.cachedGlobalCompletionItems = items;
 		this.cachedGlobalCompletionVersion = version;
@@ -985,28 +979,6 @@ export class CompletionController {
 			this.builtinDescriptorMap.set(normalized, entry);
 		};
 		for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
-
-		// Also expose API methods as global built-ins if not already present,
-		// since the runtime registers them globally too.
-		for (const [name, meta] of getApiCompletionData().signatures) {
-			const key = name;
-			if (!this.builtinDescriptorMap.has(key)) {
-				const optionalParams = meta.optionalParams ?? [];
-				const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
-				const params = Array.isArray(meta.params)
-					? meta.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param))
-					: [];
-				const signature = meta.signature && meta.signature.length > 0 ? meta.signature : name;
-				this.builtinDescriptorMap.set(key, {
-					name,
-					params,
-					signature,
-					optionalParams,
-					parameterDescriptions: meta.parameterDescriptions ? meta.parameterDescriptions.slice() : undefined,
-					description: meta.description ,
-				});
-			}
-		}
 	}
 
 	private findBuiltinDescriptor(objectName: string, methodName: string): LuaBuiltinDescriptor {
@@ -1260,7 +1232,7 @@ export class CompletionController {
 		let index = session.selectionIndex;
 		if (index < 0 || index >= session.filteredItems.length) index = 0;
 		const item = session.filteredItems[index];
-		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		const addParentheses = item.kind === 'native_method';
 		const freshContext = this.analyzeCompletionContext();
 		const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext) ? freshContext : session.context;
 		this.applyCompletionItemForContext(effectiveContext, item, addParentheses);
@@ -1405,44 +1377,9 @@ export class CompletionController {
 			}
 		}
 
-		const isApiObject = objectName !== null && objectName === 'api';
-		const normalizedMethodName = methodName;
-		if (isApiObject) {
-			const apiMeta = getApiCompletionData().signatures.get(normalizedMethodName);
-			if (apiMeta) {
-				const optionalSet = apiMeta.optionalParams && apiMeta.optionalParams.length > 0 ? new Set(apiMeta.optionalParams) : null;
-				const params = apiMeta.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
-				const paramDescriptions = apiMeta.parameterDescriptions ? apiMeta.parameterDescriptions.slice() : undefined;
-				return {
-					methodName,
-					params,
-					signatureLabel: apiMeta.signature,
-					anchorRow: safeRow,
-					anchorColumn: lastOpen,
-					argumentIndex: clamp(argumentIndex, 0, params.length - 1),
-					paramDescriptions,
-					methodDescription: apiMeta.description ,
-					returnType: apiMeta.returnType,
-					returnDescription: apiMeta.returnDescription,
-				};
-			}
-		}
 		const builtin = this.findBuiltinDescriptor(objectName, methodName);
 		if (builtin) {
 			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
-			let paramDescriptions = Array.isArray(builtin.parameterDescriptions) ? builtin.parameterDescriptions.slice() : undefined;
-			let methodDescription = builtin.description ;
-			const apiMetaFallback = getApiCompletionData().signatures.get(normalizedMethodName);
-			if ((!paramDescriptions || paramDescriptions.length === 0) || !methodDescription) {
-				if (apiMetaFallback) {
-					if (!paramDescriptions || paramDescriptions.length === 0) {
-						paramDescriptions = apiMetaFallback.parameterDescriptions ? apiMetaFallback.parameterDescriptions.slice() : undefined;
-					}
-					if (!methodDescription && apiMetaFallback.description) {
-						methodDescription = apiMetaFallback.description;
-					}
-				}
-			}
 			return {
 				methodName: builtin.name,
 				params,
@@ -1450,31 +1387,11 @@ export class CompletionController {
 				anchorRow: safeRow,
 				anchorColumn: lastOpen,
 				argumentIndex: clamp(argumentIndex, 0, params.length - 1),
-				paramDescriptions,
-				methodDescription,
-				returnType: apiMetaFallback?.returnType,
-				returnDescription: apiMetaFallback?.returnDescription,
+				paramDescriptions: Array.isArray(builtin.parameterDescriptions)
+					? builtin.parameterDescriptions.slice()
+					: undefined,
+				methodDescription: builtin.description ,
 			};
-		}
-		if (!objectName || isApiObject) {
-			const apiMetaGlobal = getApiCompletionData().signatures.get(normalizedMethodName);
-			if (apiMetaGlobal) {
-				const optionalSet = apiMetaGlobal.optionalParams && apiMetaGlobal.optionalParams.length > 0 ? new Set(apiMetaGlobal.optionalParams) : null;
-				const params = apiMetaGlobal.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
-				const paramDescriptions = apiMetaGlobal.parameterDescriptions ? apiMetaGlobal.parameterDescriptions.slice() : undefined;
-				return {
-					methodName,
-					params,
-					signatureLabel: apiMetaGlobal.signature,
-					anchorRow: safeRow,
-					anchorColumn: lastOpen,
-					argumentIndex: clamp(argumentIndex, 0, params.length - 1),
-					paramDescriptions,
-					methodDescription: apiMetaGlobal.description ,
-					returnType: apiMetaGlobal.returnType,
-					returnDescription: apiMetaGlobal.returnDescription,
-				};
-			}
 		}
 		return null;
 	}

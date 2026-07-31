@@ -94,8 +94,6 @@ export type LuaCompletionKind =
 	| 'local'
 	| 'global'
 	| 'builtin'
-	| 'api_method'
-	| 'api_property'
 	| 'native_method'
 	| 'native_property'
 	| 'module';
@@ -192,17 +190,6 @@ export type EditorDiagnostic = {
 	contextId?: string;
 	sourceLabel?: string;
 	path?: string;
-};
-
-export type ApiCompletionMetadata = {
-	params: string[];
-	signature: string;
-	kind: 'method' | 'getter';
-	optionalParams?: readonly string[];
-	parameterDescriptions?: readonly (string)[];
-	description?: string;
-	returnType?: string;
-	returnDescription?: string;
 };
 
 export type VisualLineSegment = {

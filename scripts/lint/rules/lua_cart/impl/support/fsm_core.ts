@@ -1,10 +1,11 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmDirectStateHandlerMapValue } from '../../fsm_direct_state_handler_shorthand_pattern';
-import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../toolchain/ts/lua/syntax/calls';
+import { getCallMethodName, getCallReceiverExpression } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { getTableFieldKey } from './table_fields';
+import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallKind } from './types';
 
 export function isStateControllerExpression(expression: Expression): boolean {
 	if (expression.kind === SyntaxKind.IdentifierExpression) {
@@ -86,8 +87,12 @@ export function lintFsmDirectStateHandlerShorthandPatternInTable(
 	}
 }
 
-export function lintFsmDirectStateHandlerShorthandPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmDirectStateHandlerShorthandPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];

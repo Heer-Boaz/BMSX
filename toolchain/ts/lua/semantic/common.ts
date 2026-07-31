@@ -65,12 +65,10 @@ export function addLuaKnownName(names: Set<string>, value: string): void {
 export function buildLuaKnownNameSet(
 	globalSymbols: readonly LuaKnownSymbolName[],
 	builtinDescriptors: readonly LuaKnownBuiltinName[],
-	apiSignatures: ReadonlyMap<string, unknown>,
 	extraGlobalNames: readonly string[] | undefined,
 	includeSelf: boolean,
 ): Set<string> {
 	const names = new Set<string>();
-	addLuaKnownName(names, 'api');
 	for (const name of RESERVED_LUA_INTRINSIC_NAMES) {
 		addLuaKnownName(names, name);
 	}
@@ -89,9 +87,6 @@ export function buildLuaKnownNameSet(
 	}
 	for (let index = 0; index < builtinDescriptors.length; index += 1) {
 		addLuaKnownName(names, builtinDescriptors[index].name);
-	}
-	for (const [name] of apiSignatures) {
-		addLuaKnownName(names, name);
 	}
 	return names;
 }

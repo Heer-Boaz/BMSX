@@ -9,7 +9,6 @@ import type { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
-import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../toolchain/ts/lua/api_metadata';
 import { blua32FunctionIndexAtAddress } from '../../../../toolchain/ts/rompack/blua32_image';
 import {
 	SuspendedGuestValueKind,
@@ -58,7 +57,7 @@ import {
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
-import type { ApiCompletionMetadata, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
@@ -125,13 +124,6 @@ function isFunctionOwnMemberName(name: string): boolean {
 		default:
 			return false;
 	}
-}
-
-function formatApiReturnTypeSuffix(returnType: string | undefined): string {
-	if (returnType && returnType !== 'void') {
-		return ` -> ${returnType}`;
-	}
-	return '';
 }
 
 function formatHoverValueTypeSuffix(valueType: string): string {
@@ -227,64 +219,6 @@ export type LuaScopedSymbolOptions = {
 	path: string;
 };
 
-let cachedApiCompletionData: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } | null = null;
-export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
-	if (cachedApiCompletionData) {
-		return cachedApiCompletionData;
-	}
-	const items: LuaCompletionItem[] = [];
-	const signatures: Map<string, ApiCompletionMetadata> = new Map();
-	const entries: [string, ApiMethodMetadata][] = Object.entries(API_METHOD_METADATA);
-	for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-		const [name, metadata] = entries[entryIndex];
-		let params: string[] = [];
-		let optionalParams: string[] = [];
-		let parameterDescriptions: string[] | undefined;
-		if (metadata.parameters) {
-			params = metadata.parameters.map(parameter => parameter.name);
-			optionalParams = metadata.parameters.filter(parameter => parameter.optional).map(parameter => parameter.name);
-			parameterDescriptions = metadata.parameters.map(parameter => parameter.description);
-		}
-		const displayParams = params.slice();
-		if (optionalParams.length > 0) {
-			const optionalSet = new Set(optionalParams);
-			for (let index = 0; index < displayParams.length; index += 1) {
-				if (optionalSet.has(displayParams[index])) {
-					displayParams[index] = `${displayParams[index]}?`;
-				}
-			}
-		}
-		const isProperty = metadata.parameters === undefined;
-		const returnTypeSuffix = formatApiReturnTypeSuffix(metadata.returnType);
-		const baseDetail = isProperty
-			? `api.${name}${returnTypeSuffix}`
-			: `api.${name}(${displayParams.join(', ')})${returnTypeSuffix}`;
-		const detail = metadata.description && metadata.description.length > 0 ? `${baseDetail} • ${metadata.description}` : baseDetail;
-		items.push({
-			label: name,
-			insertText: name,
-			sortKey: `api:${name}`,
-			kind: isProperty ? 'api_property' : 'api_method',
-			detail,
-			parameters: displayParams,
-		});
-		const metadataEntry: ApiCompletionMetadata = {
-			params: params.slice(),
-			signature: baseDetail,
-			kind: isProperty ? 'getter' : 'method',
-			optionalParams,
-			parameterDescriptions,
-			description: metadata.description,
-			returnType: metadata.returnType,
-			returnDescription: metadata.returnDescription,
-		};
-		signatures.set(name, metadataEntry);
-	}
-	items.sort((a, b) => a.label.localeCompare(b.label));
-	cachedApiCompletionData = { items, signatures };
-	return cachedApiCompletionData;
-}
-
 function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
 	const source = Function.prototype.toString.call(fn);
 	const openIndex = source.indexOf('(');
@@ -367,7 +301,6 @@ export type LuaDiagnosticOptions = {
 	localSymbols: readonly LuaSymbolEntry[];
 	globalSymbols: readonly LuaSymbolEntry[];
 	builtinDescriptors: readonly LuaBuiltinDescriptor[];
-	apiSignatures: Map<string, ApiCompletionMetadata>;
 	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
 	version?: number;
@@ -516,7 +449,6 @@ export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDia
 		version: options.version,
 	}], {
 		builtinDescriptors: options.builtinDescriptors,
-		apiSignatures: options.apiSignatures,
 		extraGlobalNames,
 		externalGlobalSymbols: options.globalSymbols,
 	});

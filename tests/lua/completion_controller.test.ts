@@ -49,7 +49,7 @@ test('completion filtering removes no-op current identifiers without hiding meth
 	assert.deepEqual(filtered.map(item => item.label), ['sprite_direction']);
 
 	const methodFiltered = filterCompletionItems([
-		completionItem('draw_frame', 'api_method'),
+		completionItem('draw_frame', 'native_method'),
 	], 'draw_frame', 'draw_frame');
 	assert.deepEqual(methodFiltered.map(item => item.label), ['draw_frame']);
 });

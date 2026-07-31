@@ -2,10 +2,11 @@ import { type LuaCallExpression as CallExpression, type LuaExpression as Express
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmEventReemitHandlerPatternInMap } from '../../fsm_event_reemit_handler_pattern';
 import { lintFsmLifecycleWrapperPatternInTable } from '../../fsm_lifecycle_wrapper_pattern';
-import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../toolchain/ts/lua/syntax/calls';
+import { getCallMethodName, getCallReceiverExpression } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, getTableFieldKey } from './table_fields';
+import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallKind } from './types';
 
 export function isEventsContainerExpression(expression: Expression): boolean {
 	if (expression.kind === SyntaxKind.IdentifierExpression) {
@@ -94,8 +95,12 @@ export function lintFsmEventReemitHandlerPatternInTable(expression: Expression, 
 	}
 }
 
-export function lintFsmEventReemitHandlerPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmEventReemitHandlerPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];
@@ -147,8 +152,12 @@ export function getLifecycleWrapperCallExpression(functionExpression: CartFuncti
 	return expression;
 }
 
-export function lintFsmLifecycleWrapperPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmLifecycleWrapperPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];

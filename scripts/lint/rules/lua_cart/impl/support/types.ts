@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { ModuleAliasTarget } from '../../../../../../toolchain/ts/lua/semantic/module_aliases';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { type LintRuleName } from '../../../../rule';
 
@@ -86,6 +87,7 @@ export type ConstantCopyContext = {
 export type ShadowedRequireAliasBinding = {
 	readonly declaration: IdentifierExpression;
 	readonly requiredModulePath: string | undefined;
+	readonly moduleAlias: ModuleAliasTarget | undefined;
 };
 
 export type ShadowedRequireAliasScope = {
@@ -96,7 +98,22 @@ export type ShadowedRequireAliasContext = {
 	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, ShadowedRequireAliasBinding[]>;
 	readonly scopeStack: ShadowedRequireAliasScope[];
+	readonly moduleCalls: WeakMap<CallExpression, CartModuleCallKind>;
+	readonly pendingBindings: ShadowedRequireAliasBinding[];
+	readonly moduleAliasLookup: (name: string) => ModuleAliasTarget | undefined;
+	requireIsBuiltin: boolean;
 };
+
+export const CART_MODULE_CALL_FSM_REGISTER = 1;
+export const CART_MODULE_CALL_PREFAB_DEFINE = 2;
+export const CART_MODULE_CALL_PREFAB_SPAWN = 3;
+
+export type CartModuleCallKind =
+	| typeof CART_MODULE_CALL_FSM_REGISTER
+	| typeof CART_MODULE_CALL_PREFAB_DEFINE
+	| typeof CART_MODULE_CALL_PREFAB_SPAWN;
+
+export type CartModuleCallMap = Readonly<WeakMap<CallExpression, CartModuleCallKind>>;
 
 export type DuplicateInitializerBinding = {
 	readonly declaration: IdentifierExpression;

@@ -6,10 +6,6 @@ import { appendSuggestionMessage } from './general';
 import { getSelfAssignedPropertyNameFromTarget } from './self_properties';
 import { pushIssue } from './lint_context';
 
-export function containsServiceLabel(value: string): boolean {
-	return value.toLowerCase().includes('service');
-}
-
 export function containsLabel(value: string, label: string): boolean {
 	return value.toLowerCase().includes(label.toLowerCase());
 }
@@ -23,10 +19,6 @@ export function removeLabel(value: string, label: string): string | undefined {
 		return undefined;
 	}
 	return stripped;
-}
-
-export function removeServiceLabel(value: string): string | undefined {
-	return removeLabel(value, 'service');
 }
 
 export function normalizeStateNameToken(stateName: string): string {

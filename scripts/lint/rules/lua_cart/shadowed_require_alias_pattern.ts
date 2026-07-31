@@ -1,6 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIdentifierExpression as IdentifierExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { ShadowedRequireAliasContext } from './impl/support/types';
+import { ShadowedRequireAliasBinding, ShadowedRequireAliasContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
 import { declareBinding } from './impl/support/bindings';
 
@@ -8,9 +7,9 @@ export const shadowedRequireAliasPatternRule = defineLintRule('cart', 'shadowed_
 
 export function declareShadowedRequireAliasBinding(
 	context: ShadowedRequireAliasContext,
-	declaration: IdentifierExpression,
-	requiredModulePath: string | undefined,
+	binding: ShadowedRequireAliasBinding,
 ): void {
+	const declaration = binding.declaration;
 	const name = declaration.name;
 	if (name !== '_') {
 		const stack = context.bindingStacksByName.get(name);
@@ -29,8 +28,5 @@ export function declareShadowedRequireAliasBinding(
 			}
 		}
 	}
-	declareBinding(context, declaration, {
-		declaration,
-		requiredModulePath,
-	});
+	declareBinding(context, declaration, binding);
 }

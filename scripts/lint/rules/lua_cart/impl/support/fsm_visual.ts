@@ -1,9 +1,9 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from '../../../../../../toolchain/ts/lua/syntax/calls';
+import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, visitCallExpressionsInStatements } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { getFunctionLeafName } from './functions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, readBooleanFieldValueFromTable, readStringFieldValueFromTable } from './table_fields';
-import { FsmVisualPrefabDefaults } from './types';
+import { CART_MODULE_CALL_PREFAB_DEFINE, type CartModuleCallMap, type FsmVisualPrefabDefaults } from './types';
 
 export function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 	if (!functionName || functionName === '<anonymous>') {
@@ -55,10 +55,13 @@ export function stateTimelinesDriveSelfGfx(stateExpression: Expression): boolean
 	return false;
 }
 
-export function collectPrefabVisualDefaultsById(statements: ReadonlyArray<Statement>): ReadonlyMap<string, FsmVisualPrefabDefaults> {
+export function collectPrefabVisualDefaultsById(
+	statements: ReadonlyArray<Statement>,
+	moduleCalls: CartModuleCallMap,
+): ReadonlyMap<string, FsmVisualPrefabDefaults> {
 	const prefabs = new Map<string, FsmVisualPrefabDefaults>();
 	visitCallExpressionsInStatements(statements, (expression) => {
-		if (!isGlobalCall(expression, 'define_prefab')) {
+		if (moduleCalls.get(expression) !== CART_MODULE_CALL_PREFAB_DEFINE) {
 			return;
 		}
 		const definition = expression.arguments[0];

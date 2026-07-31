@@ -12,7 +12,6 @@ import {
 	type LuaStatement,
 	type LuaStringLiteralExpression,
 } from '../syntax/ast';
-import { API_METHOD_METADATA, type ApiMethodMetadata } from '../api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../builtin_descriptors';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import {
@@ -36,17 +35,11 @@ export type LuaStaticDiagnostic = {
 
 export type LuaStaticDiagnosticSeverity = 'error' | 'warning';
 
-export type LuaApiSignatureMetadata = {
-	params: readonly string[];
-	optionalParams?: readonly string[];
-};
-
 export type LuaAnalysisDiagnosticOptions = {
 	analysis: FileSemanticData;
 	chunk: LuaChunk;
 	globalSymbols: readonly LuaSymbolEntry[];
 	builtinDescriptors: readonly LuaBuiltinDescriptor[];
-	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>;
 	extraGlobalNames?: readonly string[];
 };
 
@@ -58,7 +51,6 @@ export type LuaProjectSource = {
 
 export type LuaProjectDiagnosticOptions = {
 	builtinDescriptors?: readonly LuaBuiltinDescriptor[];
-	apiSignatures?: ReadonlyMap<string, LuaApiSignatureMetadata>;
 	extraGlobalNames?: readonly string[];
 };
 
@@ -132,40 +124,16 @@ function walkLuaStatementChildren(statement: LuaStatement, visitStatement: (stat
 }
 
 const DEFAULT_LUA_BUILTIN_DESCRIPTORS = DEFAULT_LUA_BUILTIN_FUNCTIONS as readonly LuaBuiltinDescriptor[];
-const cachedStaticApiSignatureMap = new Map<string, LuaApiSignatureMetadata>();
 
 export function getDefaultLuaBuiltinDescriptors(): readonly LuaBuiltinDescriptor[] {
 	return DEFAULT_LUA_BUILTIN_DESCRIPTORS;
 }
 
-export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatureMetadata> {
-	if (cachedStaticApiSignatureMap.size > 0) {
-		return cachedStaticApiSignatureMap;
-	}
-	const metadataMap: Record<string, ApiMethodMetadata> = API_METHOD_METADATA;
-	const entries = Object.entries(metadataMap);
-	for (let index = 0; index < entries.length; index += 1) {
-		const [name, metadata] = entries[index];
-		const parameters = metadata.parameters ?? [];
-		const params = parameters.map(parameter => parameter.name);
-		const optionalParams = parameters.filter(parameter => parameter.optional).map(parameter => parameter.name);
-		const optionalList = optionalParams.length > 0 ? optionalParams : undefined;
-		const descriptor: LuaApiSignatureMetadata = {
-			params,
-			optionalParams: optionalList,
-		};
-		cachedStaticApiSignatureMap.set(name, descriptor);
-	}
-	return cachedStaticApiSignatureMap;
-}
-
 export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnosticOptions): LuaStaticDiagnostic[] {
 	const diagnostics: LuaStaticDiagnostic[] = [];
-	const apiRoot = 'api';
 	const globalKnownNames = buildLuaKnownNameSet(
 		options.globalSymbols,
 		options.builtinDescriptors,
-		options.apiSignatures,
 		options.extraGlobalNames,
 		true,
 	);
@@ -173,7 +141,7 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);
 	addConstLocalWriteDiagnosticsFromSemantic(diagnostics, options.analysis);
 	addConstLocalInitializerDiagnostics(diagnostics, options.chunk);
-	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.apiSignatures, apiRoot);
+	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup);
 	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk);
 	return diagnostics;
 }
@@ -187,7 +155,6 @@ export function computeLuaProjectDiagnostics(
 		return results;
 	}
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
-	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
 	const validSources: MutableProjectSource[] = [];
 	const snapshotInputs: LuaSemanticWorkspaceSnapshotInput[] = [];
 	for (let index = 0; index < sources.length; index += 1) {
@@ -230,7 +197,6 @@ export function computeLuaProjectDiagnostics(
 			chunk: source.chunk,
 			globalSymbols,
 			builtinDescriptors,
-			apiSignatures,
 			extraGlobalNames: options.extraGlobalNames,
 		}));
 	}
@@ -388,8 +354,6 @@ function addCallDiagnosticsFromSemantic(
 	diagnostics: LuaStaticDiagnostic[],
 	analysis: FileSemanticData,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
-	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	apiRoot: string,
 ): void {
 	const calls = analysis.callExpressions;
 	if (calls.length === 0) {
@@ -398,7 +362,7 @@ function addCallDiagnosticsFromSemantic(
 	const signatures = analysis.functionSignatures;
 	for (let index = 0; index < calls.length; index += 1) {
 		const call = calls[index];
-		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures, apiRoot);
+		const metadata = resolveCallSignature(call, builtinLookup);
 		if (metadata) {
 			validateCallArity(diagnostics, call, metadata);
 			continue;
@@ -415,38 +379,18 @@ function addCallDiagnosticsFromSemantic(
 function resolveCallSignature(
 	call: LuaCallExpression,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
-	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	apiRoot: string,
 ): CallSignatureMetadata | null {
 	if (call.methodName !== null) {
-		const qualified = resolveQualifiedName(call.callee);
-		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === apiRoot) {
-			const apiMeta = apiSignatures.get(call.methodName);
-			if (apiMeta) {
-				return createCallSignatureMetadata(`api.${call.methodName}`, apiMeta.params, apiMeta.optionalParams, 'method', 'function');
-			}
-		}
 		return null;
 	}
 	const qualified = resolveQualifiedName(call.callee);
 	if (!qualified) {
 		return null;
 	}
-	if (qualified.parts.length >= 2 && qualified.parts[0] === apiRoot) {
-		const method = qualified.parts[qualified.parts.length - 1];
-		const apiMeta = apiSignatures.get(method);
-		if (apiMeta) {
-			return createCallSignatureMetadata(`api.${method}`, apiMeta.params, apiMeta.optionalParams, 'function', 'function');
-		}
-	}
 	const key = qualified.parts.join('.');
 	const builtin = builtinLookup.get(key);
 	if (builtin) {
 		return createCallSignatureMetadata(builtin.name, builtin.params, builtin.optionalParams, 'function', 'function');
-	}
-	const apiMetaAsGlobal = apiSignatures.get(key);
-	if (apiMetaAsGlobal) {
-		return createCallSignatureMetadata(key, apiMetaAsGlobal.params, apiMetaAsGlobal.optionalParams, 'function', 'function');
 	}
 	return null;
 }

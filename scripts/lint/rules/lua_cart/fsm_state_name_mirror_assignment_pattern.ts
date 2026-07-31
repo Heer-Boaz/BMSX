@@ -1,15 +1,19 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { isGlobalCall } from '../../../../toolchain/ts/lua/syntax/calls';
 import { findStateNameMirrorAssignmentInExpression, getStateNameFromStateField, normalizeStateNameToken } from './impl/support/fsm_labels';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
+import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallKind } from './impl/support/types';
 
 export const fsmStateNameMirrorAssignmentPatternRule = defineLintRule('cart', 'fsm_state_name_mirror_assignment_pattern');
 
-export function lintFsmStateNameMirrorAssignmentPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	if (!isGlobalCall(expression, 'define_fsm')) {
+export function lintFsmStateNameMirrorAssignmentPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
 	}
 	const definition = expression.arguments[1];

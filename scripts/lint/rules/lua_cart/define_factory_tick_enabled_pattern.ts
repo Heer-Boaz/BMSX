@@ -2,20 +2,18 @@ import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { lintDefineFactorySpaceIdPattern } from './define_factory_space_id_pattern';
-import { isGlobalCall } from '../../../../toolchain/ts/lua/syntax/calls';
 import { getTableFieldKey, visitTableFieldsRecursively } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
+import { CART_MODULE_CALL_PREFAB_DEFINE, type CartModuleCallKind } from './impl/support/types';
 
 export const defineFactoryTickEnabledPatternRule = defineLintRule('cart', 'define_factory_tick_enabled_pattern');
 
-export function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: CallExpression, issues: CartLintIssue[]): void {
-	let factoryName: string | undefined;
-	if (isGlobalCall(expression, 'define_service')) {
-		factoryName = 'define_service';
-	} else if (isGlobalCall(expression, 'define_prefab')) {
-		factoryName = 'define_prefab';
-	}
-	if (!factoryName) {
+export function lintDefineFactoryTickEnabledAndSpaceIdPattern(
+	expression: CallExpression,
+	callKind: CartModuleCallKind | undefined,
+	issues: CartLintIssue[],
+): void {
+	if (callKind !== CART_MODULE_CALL_PREFAB_DEFINE) {
 		return;
 	}
 	const definition = expression.arguments[0];
@@ -26,10 +24,10 @@ export function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: CallEx
 				issues,
 				defineFactoryTickEnabledPatternRule.name,
 				field.value,
-				`${factoryName}: tick_enabled=true/false is forbidden. Remove it: true is redundant (default), and false is ineffective because ticking is enabled on activate.`,
+				'prefab.define: tick_enabled=true/false is forbidden. Remove it: true is redundant (default), and false is ineffective because ticking is enabled on activate.',
 			);
 			return;
 		}
-		lintDefineFactorySpaceIdPattern(factoryName, field, issues);
+		lintDefineFactorySpaceIdPattern('prefab.define', field, issues);
 	});
 }

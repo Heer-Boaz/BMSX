@@ -1,23 +1,25 @@
 import { defineLintRule } from '../../rule';
 import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { findCallExpressionInStatements, isGlobalCall, visitCallExpressionsInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
+import { findCallExpressionInStatements, visitCallExpressionsInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { getStateNameFromStateField } from './impl/support/fsm_labels';
 import { collectPrefabVisualDefaultsById, getSelfGfxStringLiteralArgument, isSelfGfxCallExpression, stateTimelinesDriveSelfGfx } from './impl/support/fsm_visual';
 import { findSelfBooleanPropertyAssignmentInStatements } from './impl/support/self_properties';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
+import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallMap } from './impl/support/types';
 
 export const fsmEnteringStateVisualSetupPatternRule = defineLintRule('cart', 'fsm_entering_state_visual_setup_pattern');
 
 export function lintFsmEnteringStateVisualSetupPattern(
 	statements: ReadonlyArray<Statement>,
+	moduleCalls: CartModuleCallMap,
 	issues: CartLintIssue[],
 ): void {
 	const ruleName = fsmEnteringStateVisualSetupPatternRule.name;
-	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements);
+	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements, moduleCalls);
 	visitCallExpressionsInStatements(statements, (expression) => {
-		if (!isGlobalCall(expression, 'define_fsm')) {
+		if (moduleCalls.get(expression) !== CART_MODULE_CALL_FSM_REGISTER) {
 			return;
 		}
 		const fsmIdArgument = expression.arguments[0];
@@ -60,7 +62,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 					issues,
 					ruleName,
 					gfxCall,
-					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when define_prefab already sets imgid='${gfxLiteral}'. Keep the default sprite in define_prefab defaults instead of reapplying it on state entry.`,
+					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when prefab.define already sets imgid='${gfxLiteral}'. Keep the default sprite in prefab defaults instead of reapplying it on state entry.`,
 				);
 				continue;
 			}
