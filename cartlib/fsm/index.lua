@@ -835,15 +835,15 @@ end
 
 function state:enter_child_state(child)
 	local child_def<const> = child.definition
-	self:with_critical_section(function()
-		child:activate_timelines()
-		local enter_child<const> = child_def.entering_state
-		local next_state
-		if enter_child then
-			next_state = enter_child(self.target, child)
-		end
-		child:transition_to_next_state_if_provided(next_state)
-	end)
+	self:enter_critical_section()
+	child:activate_timelines()
+	local enter_child<const> = child_def.entering_state
+	local next_state
+	if enter_child then
+		next_state = enter_child(self.target, child)
+	end
+	child:transition_to_next_state_if_provided(next_state)
+	self:leave_critical_section()
 end
 
 function state:start()
@@ -898,30 +898,25 @@ function state:leave_critical_section()
 	end
 end
 
-function state:with_critical_section(fn)
-	self:enter_critical_section()
-	local r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = fn()
-	self:leave_critical_section()
-	return r1, r2, r3, r4, r5, r6, r7, r8
-end
-
-local run_queued_transition_with_context<const> = function(self, path, snapshot)
-	local ctx<const> = self:hydrate_context(snapshot, 'queue-drain', 'queued-execution')
+function state:run_with_transition_context(context, fn, ...)
 	local stack = self._transition_context_stack
-	if stack == nil then
+	if not stack then
 		stack = {}
 		self._transition_context_stack = stack
 	end
 	local stack_index<const> = #stack + 1
-	stack[stack_index] = ctx
-	local ok<const>, err<const> = pcall(self.transition_to, self, path)
+	stack[stack_index] = context
+	local ok<const>, r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = pcall(fn, ...)
 	stack[stack_index] = nil
-	if stack_index == 1 then
-		self._transition_context_stack = nil
-	end
 	if not ok then
-		error(err)
+		error(r1)
 	end
+	return r1, r2, r3, r4, r5, r6, r7, r8
+end
+
+local run_queued_transition_with_context<const> = function(self, path, snapshot)
+	local context<const> = self:hydrate_context(snapshot, 'queue-drain', 'queued-execution')
+	self:run_with_transition_context(context, self.transition_to, self, path)
 end
 
 local drain_transition_queue<const> = function(self)
@@ -954,28 +949,6 @@ function state:process_transition_queue()
 	if not ok then
 		error(err)
 	end
-end
-
-function state:run_with_transition_context(factory, fn)
-	if not should_trace_transitions() then
-		return fn(nil)
-	end
-	local ctx<const> = factory()
-	local stack = self._transition_context_stack
-	if not stack then
-		stack = {}
-		self._transition_context_stack = stack
-	end
-	stack[#stack + 1] = ctx
-	local ok<const>, r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = pcall(fn, ctx)
-	stack[#stack] = nil
-	if #stack == 0 then
-		self._transition_context_stack = nil
-	end
-	if not ok then
-		error(r1)
-	end
-	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
 function state:transition_context()
@@ -1376,70 +1349,63 @@ function state:transition_to_state(state_id)
 		return
 	end
 
-	self:with_critical_section(function()
-		local prev_id<const> = self.current_id
-		local prev_instance<const> = self.current_state
-		local prev_def<const> = prev_instance.definition
+	self:enter_critical_section()
+	local prev_id<const> = self.current_id
+	local prev_instance<const> = self.current_state
+	local prev_def<const> = prev_instance.definition
 
-		local exit_handler<const> = prev_def.exiting_state
-		if type(exit_handler) == 'function' then
-			exit_handler(self.target, prev_instance)
-		end
-		prev_instance:deactivate_timelines()
-		self:push_history(prev_id)
-		prev_instance:remove_active_subtree_tags()
+	local exit_handler<const> = prev_def.exiting_state
+	if type(exit_handler) == 'function' then
+		exit_handler(self.target, prev_instance)
+	end
+	prev_instance:deactivate_timelines()
+	self:push_history(prev_id)
+	prev_instance:remove_active_subtree_tags()
 
-		self.current_id = state_id
-		local cur<const> = self.states[state_id]
-		if not cur then
-			error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
-		end
-		self.current_state = cur
-		local cur_def<const> = cur.definition
-		if cur_def.is_concurrent then
-			error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
-		end
-		cur:add_active_subtree_tags()
+	self.current_id = state_id
+	local cur<const> = self.states[state_id]
+	if not cur then
+		error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
+	end
+	self.current_state = cur
+	local cur_def<const> = cur.definition
+	if cur_def.is_concurrent then
+		error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
+	end
+	cur:add_active_subtree_tags()
 
-		cur:activate_timelines()
-		local enter_handler<const> = cur_def.entering_state
-		local next_state
-		if enter_handler then
-			if should_trace_transitions() then
-				next_state = self:run_with_transition_context(
-					function()
-						local ctx<const> = fsm_trace.create_enter_context(state_id)
-						ctx.handler_name = '<anonymous>'
-						return ctx
-					end,
-					function()
-						return enter_handler(self.target, cur)
-					end
-				)
-			else
-				next_state = enter_handler(self.target, cur)
-			end
+	cur:activate_timelines()
+	local enter_handler<const> = cur_def.entering_state
+	local next_state
+	if enter_handler then
+		if should_trace_transitions() then
+			local context<const> = fsm_trace.create_enter_context(state_id)
+			context.handler_name = '<anonymous>'
+			next_state = self:run_with_transition_context(context, enter_handler, self.target, cur)
+		else
+			next_state = enter_handler(self.target, cur)
 		end
-		cur:transition_to_next_state_if_provided(next_state)
+	end
+	cur:transition_to_next_state_if_provided(next_state)
 
-		if diag_enabled then
-			local outcome<const> = {
-				from = prev_id,
-				to = state_id,
-				execution = execution,
-				status = 'success',
-				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
-			}
-			self:record_transition_outcome_on_context(outcome)
-			self:emit_transition_trace({
-				outcome = 'success',
-				execution = execution,
-				from = prev_id,
-				to = state_id,
-				guard = guard_diagnostics,
-			})
-		end
-	end)
+	if diag_enabled then
+		local outcome<const> = {
+			from = prev_id,
+			to = state_id,
+			execution = execution,
+			status = 'success',
+			guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
+		}
+		self:record_transition_outcome_on_context(outcome)
+		self:emit_transition_trace({
+			outcome = 'success',
+			execution = execution,
+			from = prev_id,
+			to = state_id,
+			guard = guard_diagnostics,
+		})
+	end
+	self:leave_critical_section()
 
 	local entered<const> = self.states[state_id]
 	if entered.definition.initial then
@@ -2044,21 +2010,23 @@ function state:handle_event(event_name, emitter_id, detail, event)
 		return false
 	end
 	if should_trace_transitions() then
-		return self:with_critical_section(function()
-			return self:run_with_transition_context(
-				function()
-					return fsm_trace.create_event_context(event_name, emitter_id, detail)
-				end,
-				function(ctx)
-					ctx.handler_name = fsm_trace.describe_transition_handler(spec)
-					return self:handle_state_transition(spec, event)
-				end
-			)
-		end)
+		self:enter_critical_section()
+		local context<const> = fsm_trace.create_event_context(event_name, emitter_id, detail)
+		context.handler_name = fsm_trace.describe_transition_handler(spec)
+		local handled<const> = self:run_with_transition_context(
+			context,
+			self.handle_state_transition,
+			self,
+			spec,
+			event
+		)
+		self:leave_critical_section()
+		return handled
 	end
-	return self:with_critical_section(function()
-		return self:handle_state_transition(spec, event)
-	end)
+	self:enter_critical_section()
+	local handled<const> = self:handle_state_transition(spec, event)
+	self:leave_critical_section()
+	return handled
 end
 
 function state:handle_event_with_dispatch_context(event_name, emitter_id, detail, event)
@@ -2072,23 +2040,23 @@ function state:handle_event_with_dispatch_context(event_name, emitter_id, detail
 	end
 	local captured_context = nil
 	if should_trace_transitions() then
-		return self:with_critical_section(function()
-			local handled<const> = self:run_with_transition_context(
-				function()
-					return fsm_trace.create_event_context(event_name, emitter_id, detail)
-				end,
-				function(ctx)
-					captured_context = ctx
-					ctx.handler_name = fsm_trace.describe_transition_handler(spec)
-					return self:handle_state_transition(spec, event)
-				end
-			)
-			return handled
-		end), captured_context
+		self:enter_critical_section()
+		captured_context = fsm_trace.create_event_context(event_name, emitter_id, detail)
+		captured_context.handler_name = fsm_trace.describe_transition_handler(spec)
+		local handled<const> = self:run_with_transition_context(
+			captured_context,
+			self.handle_state_transition,
+			self,
+			spec,
+			event
+		)
+		self:leave_critical_section()
+		return handled, captured_context
 	end
-	return self:with_critical_section(function()
-		return self:handle_state_transition(spec, event)
-	end), nil
+	self:enter_critical_section()
+	local handled<const> = self:handle_state_transition(spec, event)
+	self:leave_critical_section()
+	return handled, nil
 end
 
 -- dispatch_event: delivers an event through the state hierarchy.
@@ -2213,14 +2181,13 @@ function state:update()
 			if cart_input.query(player_index, pattern) then
 				local handled
 				if trace_transitions then
+					local context<const> = fsm_trace.create_input_context(pattern, player_index)
+					context.handler_name = fsm_trace.describe_transition_handler(handler)
 					handled = self:run_with_transition_context(
-						function()
-							return fsm_trace.create_input_context(pattern, player_index)
-						end,
-						function(ctx)
-							ctx.handler_name = fsm_trace.describe_transition_handler(handler)
-							return self:handle_state_transition(handler)
-						end
+						context,
+						self.handle_state_transition,
+						self,
+						handler
 					)
 				else
 					handled = self:handle_state_transition(handler)
@@ -2236,13 +2203,13 @@ function state:update()
 	if update_handler ~= nil then
 		local next_state
 		if trace_transitions then
+			local context<const> = fsm_trace.create_update_context('<anonymous>')
 			next_state = self:run_with_transition_context(
-				function()
-					return fsm_trace.create_update_context('<anonymous>')
-				end,
-				function()
-					return update_handler(target, self, empty_game_event)
-				end
+				context,
+				update_handler,
+				target,
+				self,
+				empty_game_event
 			)
 		else
 			next_state = update_handler(target, self, empty_game_event)

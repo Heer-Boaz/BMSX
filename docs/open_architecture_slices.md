@@ -16,6 +16,16 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
+## Cart-side SDK
+
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `CARTLIB-OWNERS-01` | Splits de verplichte `application`/`world`-compositie op langs input-, simulatie-, presentatie- en subsystemowners. | Een cart linkt alleen gekozen faciliteiten; imports hebben geen verborgen hardware- of enginebeleid en er komt geen nieuwe facade voor terug. |
+| `CARTLIB-HOT-01` | Compileer FSM-, event- en action-effectwerk eenmaal en verwijder closures, padparsing en tijdelijke tables uit normale frame- en transitionpaden. | Bestaande semantics blijven behouden en normale dispatch/update/transition maakt geen guest-heapobjecten voor infrastructuur aan. |
+| `CARTLIB-GX-01` | Maak GX/GTE een compacte low-level SDK rond raw registers, opcodes, packets en DMA; verplaats camera-, scene- en renderbeleid naar carts of optionele libraries. | De hardwarelaag bevat alleen echte protocollen, hergebruikt retained packet/state en schrijft niet per primitive opnieuw ongewijzigde GPU-state. |
+| `CARTLIB-AUDIO-01` | Scheid directe AEM-playback van werkelijk queued bezit. | Direct afspelen schrijft zonder descriptorallocatie naar de APU; alleen behouden queue-items bezitten records. |
+| `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code en verplaats aantoonbaar cart-specifieke utilities naar hun cart nadat de live require-graaf dit bewijst. | Geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
+
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |
