@@ -17,29 +17,18 @@ function staffspawn.bt_tick(self, _blackboard)
 	return 'RUNNING'
 end
 
-function staffspawn.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return staffspawn.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function staffspawn.choose_drop_type(_self, _random_percent_hit)
 	return nil
 end
 
 enemy_base.extend(staffspawn, 'staffspawn')
 
-function staffspawn.register_enemy_definition()
+function staffspawn.register()
 	prefab.define({
 		def_id = 'enemy.staffspawn',
 		class = staffspawn,
 		type = 'sprite',
-		bts = { 'enemy_staffspawn' },
+		bts = { behaviourtree.action.new('enemy_staffspawn', staffspawn.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

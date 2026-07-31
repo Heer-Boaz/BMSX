@@ -30,29 +30,18 @@ function nootfoe.bt_tick(self, _blackboard)
 	return 'RUNNING'
 end
 
-function nootfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return nootfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function nootfoe.choose_drop_type(_self)
 	return nil
 end
 
 enemy_base.extend(nootfoe, 'nootfoe')
 
-function nootfoe.register_enemy_definition()
+function nootfoe.register()
 	prefab.define({
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		type = 'sprite',
-		bts = { 'enemy_nootfoe' },
+		bts = { behaviourtree.action.new('enemy_nootfoe', nootfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

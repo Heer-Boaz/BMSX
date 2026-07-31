@@ -27,10 +27,9 @@
 --      local result = player.actioneffects:trigger('sword_swing')
 --      -- result: 'ok' | 'blocked' | 'on_cooldown' | 'failed'
 --
--- 3. EFFECTS FIRE via emit_gameplay_fact(), NOT direct emits.
---    After a successful trigger, the effect automatically calls
---    owner:emit_gameplay_fact(event) if the definition specifies an event name.
---    Do not emit manually inside the handler.
+-- 3. EFFECTS FIRE through the owner's event port.
+--    After a successful trigger, the owner announces the configured event.
+--    Do not emit inside the handler.
 --
 -- 4. CONTEXT: handler receives { owner, target, payload, args }.
 --    target defaults to owner but can be overridden for targeted effects.
@@ -140,14 +139,14 @@ end
 local matches_state_path_requirements<const> = function(owner, required_paths, blocked_paths)
 	if required_paths then
 		for i = 1, #required_paths do
-			if not owner:matches_state_path(required_paths[i]) then
+			if not owner.state_machines:matches_state_path(required_paths[i]) then
 				return false
 			end
 		end
 	end
 	if blocked_paths then
 		for i = 1, #blocked_paths do
-			if owner:matches_state_path(blocked_paths[i]) then
+			if owner.state_machines:matches_state_path(blocked_paths[i]) then
 				return false
 			end
 		end
@@ -277,7 +276,7 @@ function actioneffectcomponent:trigger(id, payload, args)
 	if event_type ~= nil then
 		local event_payload<const> = (outcome and outcome.payload ~= nil) and outcome.payload or payload
 		local event<const> = create_owner_event(owner, event_type, event_payload)
-		owner:emit_gameplay_fact(event)
+		owner.events:emit_event(event)
 	end
 
 	if definition.cooldown_ms and definition.cooldown_ms > 0 then

@@ -43,12 +43,14 @@ world_class.__index = world_class
 
 local active_component_bucket_types<const> = {
 	component_types.action_effect,
+	component_types.behaviour_tree,
 	component_types.collider_2d,
 	component_types.custom_visual,
 	component_types.input_action_effect,
 	component_types.input_intent,
 	component_types.prohibit_leaving_screen,
 	component_types.screen_boundary,
+	component_types.state_machine,
 	component_types.sprite,
 	component_types.surface,
 	component_types.text,
@@ -132,40 +134,6 @@ local iter_live_objects_with_components<const> = function(state, _)
 	end
 	state.reg_key = nil
 	return nil
-end
-
-local iter_live_subsystems<const> = function(list, subsys)
-	local index = 1
-	if subsys ~= nil then
-		index = subsys._world_subsystem_index + 1
-	end
-	while true do
-		local subsys<const> = list[index]
-		if subsys == nil then
-			return nil
-		end
-		if not subsys.dispose_flag then
-			return subsys
-		end
-		index = index + 1
-	end
-end
-
-local iter_active_subsystems<const> = function(list, subsys)
-	local index = 1
-	if subsys ~= nil then
-		index = subsys._world_subsystem_index + 1
-	end
-	while true do
-		local subsys<const> = list[index]
-		if subsys == nil then
-			return nil
-		end
-		if subsys.active then
-			return subsys
-		end
-		index = index + 1
-	end
 end
 
 local iter_active_world_by_type<const> = function(state, _)
@@ -272,26 +240,6 @@ local remove_world_object<const> = function(world, obj)
 	end
 	objects[last_index] = nil
 	obj._world_object_index = nil
-end
-
-local add_subsystem<const> = function(world, subsys)
-	local subsystems<const> = world._subsystems
-	local index<const> = #subsystems + 1
-	subsystems[index] = subsys
-	subsys._world_subsystem_index = index
-end
-
-local remove_subsystem<const> = function(world, subsys)
-	local subsystems<const> = world._subsystems
-	local index<const> = subsys._world_subsystem_index
-	local last_index<const> = #subsystems
-	if index < last_index then
-		local moved<const> = subsystems[last_index]
-		subsystems[index] = moved
-		moved._world_subsystem_index = index
-	end
-	subsystems[last_index] = nil
-	subsys._world_subsystem_index = nil
 end
 
 local add_active_object<const> = function(obj, space)
@@ -410,13 +358,10 @@ function world_class.new()
 	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
 	self._by_id = {}
-	self._subsystems = {}
-	self._subsystems_by_id = {}
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}
 	self._pending_object_disposals = {}
-	self._pending_subsystem_disposals = {}
 	self._pending_active_objects = {}
 	self._pending_active_components = {}
 	self.active_space_id = 'main'
@@ -439,7 +384,7 @@ function world_class:next_id(type_name)
 	end
 
 	local result = baseid .. '_' .. tostring(uniquenumber)
-	while self._by_id[result] ~= nil or self._subsystems_by_id[result] ~= nil do
+	while self._by_id[result] ~= nil do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1
@@ -640,11 +585,6 @@ function world_class:queue_object_disposal(obj)
 	pending[#pending + 1] = obj
 end
 
-function world_class:queue_subsystem_disposal(subsys)
-	local pending<const> = self._pending_subsystem_disposals
-	pending[#pending + 1] = subsys
-end
-
 -- world:spawn(obj, pos?)
 --   Registers obj in the world (and in the active space unless obj.space_id is
 --   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
@@ -670,26 +610,6 @@ function world_class:spawn(obj, pos)
 	obj:activate()
 	obj.events:emit('spawn', { pos = pos })
 	return obj
-end
-
-function world_class:spawn_subsystem(subsys)
-	local existing<const> = self._subsystems_by_id[subsys.id]
-	if existing ~= nil and existing ~= subsys then
-		error('world.spawn_subsystem duplicate id "' .. subsys.id .. '".')
-	end
-	self._subsystems_by_id[subsys.id] = subsys
-	add_subsystem(self, subsys)
-	registry.instance:register(subsys)
-	local systems<const> = subsys.ecs_systems
-	for i = 1, #systems do
-		local system<const> = systems[i]
-		self.systems:register(system)
-		registry.instance:register(system)
-	end
-	subsys:onregister()
-	subsys:activate()
-	subsys.events:emit('spawn')
-	return subsys
 end
 
 -- world:despawn(id_or_obj)
@@ -727,10 +647,6 @@ function world_class:get(id)
 	return self._by_id[id]
 end
 
-function world_class:get_subsystem(id)
-	return self._subsystems_by_id[id]
-end
-
 -- world:objects()
 --   Iterator over active objects in the current active space.
 --   Do NOT spawn or despawn inside this loop.
@@ -743,14 +659,6 @@ end
 --   Use this for diagnostics, serialization, and leak checks, not gameplay hot loops.
 function world_class:all_objects()
 	return iter_live_objects, self._objects, nil
-end
-
-function world_class:subsystems()
-	return iter_active_subsystems, self._subsystems, nil
-end
-
-function world_class:all_subsystems()
-	return iter_live_subsystems, self._subsystems, nil
 end
 
 -- world:objects_with_components(type_name)
@@ -774,7 +682,7 @@ function world_class:all_objects_with_components(type_name)
 end
 
 -- World query iterators stay lazy and never materialize result arrays.
--- The common active-object/subsystem paths are allocation-free; the registry-
+-- The common active-object paths are allocation-free; the registry-
 -- backed type/tag queries still keep a tiny iterator state table.
 
 -- world:objects_by_type(type_name)
@@ -867,22 +775,6 @@ function world_class:update()
 		pending_objects[i] = nil
 	end
 
-	local pending_subsystems<const> = self._pending_subsystem_disposals
-	for i = 1, #pending_subsystems do
-		local subsys<const> = pending_subsystems[i]
-		if subsys.dispose_flag then
-			local systems<const> = subsys.ecs_systems
-			for system_index = 1, #systems do
-				local system<const> = systems[system_index]
-				self.systems:unregister(system)
-				registry.instance:deregister(system.id, true)
-			end
-			subsys:onderegister()
-			subsys:dispose()
-			remove_subsystem(self, subsys)
-		end
-		pending_subsystems[i] = nil
-	end
 end
 
 function world_class:draw()
@@ -899,21 +791,8 @@ function world_class:clear()
 		end
 		obj:dispose()
 	end
-	for i = #self._subsystems, 1, -1 do
-		local subsys<const> = self._subsystems[i]
-		local systems<const> = subsys.ecs_systems
-		for system_index = 1, #systems do
-			local system<const> = systems[system_index]
-			self.systems:unregister(system)
-			registry.instance:deregister(system.id, true)
-		end
-		subsys:onderegister()
-		subsys:dispose()
-	end
 	self._objects = {}
 	self._by_id = {}
-	self._subsystems = {}
-	self._subsystems_by_id = {}
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}

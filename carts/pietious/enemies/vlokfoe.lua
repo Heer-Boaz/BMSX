@@ -16,29 +16,18 @@ function vlokfoe.bt_tick(self, _blackboard)
 	return 'RUNNING'
 end
 
-function vlokfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return vlokfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function vlokfoe.choose_drop_type(_self)
 	return nil
 end
 
 enemy_base.extend(vlokfoe, 'vlokfoe')
 
-function vlokfoe.register_enemy_definition()
+function vlokfoe.register()
 	prefab.define({
 		def_id = 'enemy.vlokfoe',
 		class = vlokfoe,
 		type = 'sprite',
-		bts = { 'enemy_vlokfoe' },
+		bts = { behaviourtree.action.new('enemy_vlokfoe', vlokfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

@@ -33,7 +33,7 @@ function disappearingwall:ctor()
 	tile_layer.offset_y = 0
 end
 
-function disappearingwall.register_enemy_fsm()
+function disappearingwall.register()
 	fsmlibrary.register('disappearingwall', {
 		initial = 'active',
 		on = {
@@ -47,9 +47,6 @@ function disappearingwall.register_enemy_fsm()
 			active = {},
 		},
 	})
-end
-
-function disappearingwall.register_enemy_definition()
 	prefab.define({
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,

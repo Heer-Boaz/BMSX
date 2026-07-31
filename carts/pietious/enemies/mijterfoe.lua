@@ -176,17 +176,6 @@ function mijterfoe.bt_tick(self, blackboard)
 	return mijterfoe.bt_tick_flying(self, blackboard)
 end
 
-function mijterfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return mijterfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function mijterfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_mijter_drop_health_chance_pct then
 		return 'life'
@@ -199,12 +188,12 @@ end
 
 enemy_base.extend(mijterfoe, 'mijterfoe')
 
-function mijterfoe.register_enemy_definition()
+function mijterfoe.register()
 	prefab.define({
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		type = 'sprite',
-		bts = { 'enemy_mijterfoe' },
+		bts = { behaviourtree.action.new('enemy_mijterfoe', mijterfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

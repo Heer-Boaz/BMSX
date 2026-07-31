@@ -59,7 +59,7 @@ function breakablewall:ctor()
 	tile_layer.offset_y = 0
 end
 
-function breakablewall.register_enemy_fsm()
+function breakablewall.register()
 	fsmlibrary.register('breakablewall', {
 		initial = 'active',
 		on = {
@@ -76,9 +76,6 @@ function breakablewall.register_enemy_fsm()
 			active = {},
 		},
 	})
-end
-
-function breakablewall.register_enemy_definition()
 	prefab.define({
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,

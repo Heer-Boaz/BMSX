@@ -121,17 +121,6 @@ function crossfoe.bt_tick(self, blackboard)
 	return crossfoe.bt_tick_flying(self, blackboard)
 end
 
-function crossfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return crossfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function crossfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_cross_drop_health_chance_pct then
 		return 'life'
@@ -144,12 +133,12 @@ end
 
 enemy_base.extend(crossfoe, 'crossfoe')
 
-function crossfoe.register_enemy_definition()
+function crossfoe.register()
 	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		type = 'sprite',
-		bts = { 'enemy_crossfoe' },
+		bts = { behaviourtree.action.new('enemy_crossfoe', crossfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

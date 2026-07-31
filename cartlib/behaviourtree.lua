@@ -1,20 +1,7 @@
--- behaviour tree runtime + definition registry
+-- Behaviour tree nodes. Root nodes are immutable definitions shared by every
+-- component instance; per-object node state lives on the component blackboard.
 
 local behaviourtree<const> = {}
-
-local blackboard<const> = {}
-blackboard.__index = blackboard
-
-function blackboard.new(id)
-	local self<const> = setmetatable({}, blackboard)
-	self.id = id
-	self:clear_node_data()
-	return self
-end
-
-function blackboard:clear_node_data()
-	self.nodedata = {}
-end
 
 local btnode<const> = {}
 btnode.__index = btnode
@@ -306,103 +293,6 @@ function compositeaction:tick(target, blackboard)
 	return outcome or 'SUCCESS'
 end
 
-local behaviourtreedefinitions<const> = {}
-
-local build_node<const> = function(spec, id)
-	if type(spec) ~= 'table' then
-		error('behavior tree "' .. tostring(id) .. '" has invalid node spec: expected table.')
-	end
-	local node_type<const> = spec.type or spec.kind or spec.node
-	if node_type == nil then
-		error('behavior tree "' .. tostring(id) .. '" node is missing required type/kind/node.')
-	end
-	if node_type == 'SELECTOR' then
-		local children<const> = {}
-		for i = 1, #spec.children do
-			children[i] = build_node(spec.children[i], id)
-		end
-		return selector.new(id, children, spec.priority)
-	end
-	if node_type == 'SEQUENCE' then
-		local children<const> = {}
-		for i = 1, #spec.children do
-			children[i] = build_node(spec.children[i], id)
-		end
-		return sequence.new(id, children, spec.priority)
-	end
-	if node_type == 'PARALLEL' then
-		local children<const> = {}
-		for i = 1, #spec.children do
-			children[i] = build_node(spec.children[i], id)
-		end
-		return parallel.new(id, children, spec.successpolicy, spec.priority)
-	end
-	if node_type == 'DECORATOR' then
-		local child<const> = build_node(spec.child, id)
-		return decorator.new(id, child, spec.decorator, spec.priority)
-	end
-	if node_type == 'CONDITION' then
-		return condition.new(id, spec.condition, spec.modifier, spec.priority, spec.parameters)
-	end
-	if node_type == 'COMPOSITECONDITION' then
-		return compositecondition.new(id, spec.conditions, spec.modifier, spec.priority, spec.parameters)
-	end
-	if node_type == 'RANDOMSELECTOR' then
-		local children<const> = {}
-		for i = 1, #spec.children do
-			children[i] = build_node(spec.children[i], id)
-		end
-		return randomselector.new(id, children, spec.currentchild_propname, spec.priority)
-	end
-	if node_type == 'LIMIT' then
-		local child<const> = build_node(spec.child, id)
-		return limit.new(id, spec.limit, spec.count_propname, child, spec.priority)
-	end
-	if node_type == 'PRIORITYSELECTOR' then
-		local children<const> = {}
-		for i = 1, #spec.children do
-			children[i] = build_node(spec.children[i], id)
-		end
-		return priorityselector.new(id, children, spec.priority)
-	end
-	if node_type == 'WAIT' then
-		return wait.new(id, spec.wait_time, spec.wait_propname, spec.priority)
-	end
-	if node_type == 'ACTION' then
-		return action.new(id, spec.action, spec.priority, spec.parameters)
-	end
-	if node_type == 'COMPOSITEACTION' then
-		local actions<const> = {}
-		for i = 1, #spec.actions do
-			actions[i] = build_node(spec.actions[i], id)
-		end
-		return compositeaction.new(id, actions, spec.priority, spec.parameters)
-	end
-	error('behavior tree "' .. tostring(id) .. '" has unsupported node type "' .. tostring(node_type) .. '".')
-end
-
-function behaviourtree.register_definition(id, definition)
-	if type(id) ~= 'string' or #id == 0 then
-		error('behavior tree definition id must be a non-empty string.')
-	end
-	if type(definition) ~= 'table' then
-		error('behavior tree "' .. id .. '" definition must be a table.')
-	end
-	local root<const> = definition.root or definition
-	build_node(root, id)
-	behaviourtreedefinitions[id] = definition
-end
-
-function behaviourtree.instantiate(id)
-	local def<const> = behaviourtreedefinitions[id]
-	if def == nil then
-		error('behavior tree "' .. tostring(id) .. '" is not registered.')
-	end
-	local root<const> = def.root or def
-	return build_node(root, id)
-end
-
-behaviourtree.blackboard = blackboard
 behaviourtree.btnode = btnode
 behaviourtree.sequence = sequence
 behaviourtree.selector = selector

@@ -4,6 +4,7 @@
 local worldobject<const> = require('cartlib/world/object')
 local textcomponent<const> = require('cartlib/text/component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
+local statemachinecomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('cartlib/gx/gpu')
@@ -270,8 +271,11 @@ fsmlibrary.register(textobject_fsm_id, {
 function textobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textobject'
-	opts.fsm_id = opts.fsm_id or textobject_fsm_id
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
+	self:add_component(statemachinecomponent.new({
+		parent = self,
+		definition = fsmlibrary.get(textobject_fsm_id),
+	}))
 	self:add_component(timelinecomponent.new({ parent = self }))
 	self.is_textobject = true
 	self.text = { '' }
@@ -459,7 +463,7 @@ function textobject:set_text(text_or_lines, opts)
 	self:rebuild_text_layout()
 	if typed and not snap then
 		self:reset_typing_buffer()
-		self:dispatch_command(typing_command_start)
+		self.state_machines:dispatch(typing_command_start)
 		return
 	end
 	self:reveal_text()
@@ -515,7 +519,7 @@ function textobject:apply_full_text()
 end
 
 function textobject:reveal_text()
-	self:dispatch_command(typing_command_reveal)
+	self.state_machines:dispatch(typing_command_reveal)
 end
 
 function textobject:advance_typing()
@@ -549,7 +553,7 @@ function textobject:is_typing()
 end
 
 function textobject:type_next()
-	self:dispatch_command(typing_command_step)
+	self.state_machines:dispatch(typing_command_step)
 end
 
 function textobject:submit_text_background_lines(x, y)

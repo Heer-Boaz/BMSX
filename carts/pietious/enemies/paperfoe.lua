@@ -17,29 +17,18 @@ function paperfoe.bt_tick(self, _blackboard)
 	return 'RUNNING'
 end
 
-function paperfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return paperfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function paperfoe.choose_drop_type(_self, _random_percent_hit)
 	return nil
 end
 
 enemy_base.extend(paperfoe, 'paperfoe')
 
-function paperfoe.register_enemy_definition()
+function paperfoe.register()
 	prefab.define({
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
 		type = 'sprite',
-		bts = { 'enemy_paperfoe' },
+		bts = { behaviourtree.action.new('enemy_paperfoe', paperfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

@@ -108,12 +108,12 @@ action_effects.register_effect('halo', {
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			context.owner:begin_waiting_halo_banner()
-			context.owner:emit_gameplay_fact('halo_resolved_from_world')
+			context.owner.events:emit('halo_resolved_from_world')
 			return
 		end
 		local switch<const> = castle:halo_teleport_to_room_1(true)
 		context.owner:apply_halo_teleport_arrival(switch)
-		context.owner:emit_gameplay_fact('halo_resolved_in_castle')
+		context.owner.events:emit('halo_resolved_in_castle')
 	end,
 })
 

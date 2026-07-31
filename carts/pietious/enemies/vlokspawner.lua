@@ -39,29 +39,18 @@ function vlokspawner.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function vlokspawner.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return vlokspawner.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function vlokspawner.choose_drop_type(_self)
 	return nil
 end
 
 enemy_base.extend(vlokspawner, 'vlokspawner')
 
-function vlokspawner.register_enemy_definition()
+function vlokspawner.register()
 	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		type = 'sprite',
-		bts = { 'enemy_vlokspawner' },
+		bts = { behaviourtree.action.new('enemy_vlokspawner', vlokspawner.bt_tick) },
 		defaults = {
 			conditions = {},
 			damage = 0,

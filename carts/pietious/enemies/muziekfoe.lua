@@ -84,17 +84,6 @@ function muziekfoe.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function muziekfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return muziekfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function muziekfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_muziek_drop_health_chance_pct then
 		return 'life'
@@ -107,12 +96,12 @@ end
 
 enemy_base.extend(muziekfoe, 'muziekfoe')
 
-function muziekfoe.register_enemy_definition()
+function muziekfoe.register()
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		type = 'sprite',
-		bts = { 'enemy_muziekfoe' },
+		bts = { behaviourtree.action.new('enemy_muziekfoe', muziekfoe.bt_tick) },
 		defaults = {
 			conditions = {},
 			damage = 4,

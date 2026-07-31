@@ -2,10 +2,12 @@
 -- behaviortrees pipeline system.
 
 local ecs<const> = require('cartlib/ecs/index')
+local component_types<const> = require('cartlib/components/types')
 local world_instance<const> = require('cartlib/world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
+local behaviour_tree_component_type<const> = component_types.behaviour_tree
 
 local behaviortreesystem<const> = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -17,17 +19,10 @@ function behaviortreesystem.new(priority)
 end
 
 function behaviortreesystem:update()
-	local objects<const> = world_instance.active_space.active_objects
-	for i = 1, #objects do
-		local obj<const> = objects[i]
-		local ids<const> = obj.btree_ids
-		local contexts<const> = obj.btreecontexts
-		for j = 1, #ids do
-			local context<const> = contexts[ids[j]]
-			if context.running then
-				context.root:tick(obj, context.blackboard)
-			end
-		end
+	local components<const> = world_instance.active_space.active_components_by_type[behaviour_tree_component_type]
+	for i = 1, #components do
+		local component<const> = components[i]
+		component.root:tick(component.parent, component)
 	end
 end
 

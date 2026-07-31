@@ -128,7 +128,7 @@ local compile_predicate<const> = function(binding)
 			local entry<const> = mode_items[i]
 			local matches = true
 			if entry.path ~= nil then
-				matches = matches and env.owner:matches_state_path(entry.path)
+				matches = matches and env.owner.state_machines:matches_state_path(entry.path)
 			end
 			if entry.tag ~= nil then
 				matches = matches and env.owner:has_tag(entry.tag)

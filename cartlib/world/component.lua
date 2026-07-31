@@ -48,6 +48,9 @@ end
 function component:on_detach()
 end
 
+function component:on_activate()
+end
+
 function component:bind()
 end
 

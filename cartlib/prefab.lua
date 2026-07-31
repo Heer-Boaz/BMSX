@@ -1,4 +1,6 @@
 local action_effects<const> = require('cartlib/action_effects')
+local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local statemachinecomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
@@ -36,9 +38,14 @@ local attach_fsms<const> = function(instance, fsms)
 	if not fsms then
 		return
 	end
+	local state_machines = instance.state_machines
+	if not state_machines then
+		state_machines = statemachinecomponent.new({ parent = instance })
+		instance:add_component(state_machines)
+	end
 	for index = 1, #fsms do
 		local id<const> = fsms[index]
-		instance.sc:add_statemachine(id, fsmlibrary.get(id))
+		state_machines:add_statemachine(id, fsmlibrary.get(id))
 	end
 end
 
@@ -58,7 +65,12 @@ local attach_behaviour_trees<const> = function(instance, trees)
 		return
 	end
 	for index = 1, #trees do
-		instance:add_btree(trees[index])
+		local root<const> = trees[index]
+		instance:add_component(behaviourtreecomponent.new({
+			parent = instance,
+			root = root,
+			id_local = root.id,
+		}))
 	end
 end
 

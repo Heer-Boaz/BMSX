@@ -51,17 +51,6 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 	return 'RUNNING'
 end
 
-function marspeinenaardappel.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return marspeinenaardappel.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function marspeinenaardappel.choose_drop_type(_self)
 	if math.random(100) <= enemy_marspein_drop_health_chance_pct then
 		return 'life'
@@ -74,12 +63,12 @@ end
 
 enemy_base.extend(marspeinenaardappel, 'marspeinenaardappel')
 
-function marspeinenaardappel.register_enemy_definition()
+function marspeinenaardappel.register()
 	prefab.define({
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
 		type = 'sprite',
-		bts = { 'enemy_marspeinenaardappel' },
+		bts = { behaviourtree.action.new('enemy_marspeinenaardappel', marspeinenaardappel.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

@@ -89,17 +89,6 @@ function zakfoe.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function zakfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return zakfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function zakfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_zak_drop_health_chance_pct then
 		return 'life'
@@ -112,12 +101,12 @@ end
 
 enemy_base.extend(zakfoe, 'zakfoe')
 
-function zakfoe.register_enemy_definition()
+function zakfoe.register()
 	prefab.define({
 		def_id = 'enemy.zakfoe',
 		class = zakfoe,
 		type = 'sprite',
-		bts = { 'enemy_zakfoe' },
+		bts = { behaviourtree.action.new('enemy_zakfoe', zakfoe.bt_tick) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

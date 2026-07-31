@@ -119,29 +119,18 @@ function cloud.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function cloud.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return cloud.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function cloud.choose_drop_type(_self)
 	return nil
 end
 
 enemy_base.extend(cloud, 'cloud')
 
-function cloud.register_enemy_definition()
+function cloud.register()
 	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,
 		type = 'sprite',
-		bts = { 'enemy_cloud' },
+		bts = { behaviourtree.action.new('enemy_cloud', cloud.bt_tick) },
 		defaults = {
 			conditions = {},
 			damage = 2,

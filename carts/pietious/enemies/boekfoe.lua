@@ -69,17 +69,6 @@ function boekfoe.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function boekfoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return boekfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function boekfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_boek_drop_health_chance_pct then
 		return 'life'
@@ -92,12 +81,12 @@ end
 
 enemy_base.extend(boekfoe, 'boekfoe')
 
-function boekfoe.register_enemy_definition()
+function boekfoe.register()
 	prefab.define({
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
 		type = 'sprite',
-		bts = { 'enemy_boekfoe' },
+		bts = { behaviourtree.action.new('enemy_boekfoe', boekfoe.bt_tick) },
 		defaults = {
 			conditions = {},
 			damage = 4,

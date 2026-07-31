@@ -20,10 +20,9 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `CARTLIB-OWNERS-01` | Haal de resterende FSM- en behaviour-treeconstructie uit ieder `worldobject` en laat alleen objecten die deze features kiezen hun retained runtime-state bezitten. | Het world-objectbasistype alloceert alleen object-, component- en lifecycle-state; FSM en behaviour trees itereren hun eigen dichte ownercollecties zonder facade of legacy-alias. |
-| `CARTLIB-HOT-01` | Compileer FSM-, event- en action-effectwerk eenmaal; verwijder tijdelijke diagnostiekrecords, `*_or_throw`-runtimechecks en kunstmatige transition-ticklimieten. | Normale dispatch/update/transition alloceert niets voor infrastructuur en consumeert vooraf opgeloste definities en guards rechtstreeks. |
+| `CARTLIB-HOT-01` | Compileer FSM-statepaths, events en action-effectwerk eenmaal zoals de action-parser zijn AST cachet; verwijder tijdelijke diagnostiekrecords, `*_or_throw`-runtimechecks, kunstmatige transition-ticklimieten en de `pcall`/contextstack die guest-returnwaarden tot acht afkapt. | Normale dispatch/update/transition doet geen `string.match`, alloceert niets voor infrastructuur, behoudt alle Lua-returnwaarden en consumeert vooraf opgeloste paths, definities en guards rechtstreeks. |
 | `CARTLIB-GX-01` | Maak GX/GTE een compacte low-level SDK rond raw registers, opcodes, packets en DMA; verplaats camera-, scene- en renderbeleid naar carts of optionele libraries. | De hardwarelaag bevat alleen echte protocollen, hergebruikt retained packet/state en schrijft niet per primitive opnieuw ongewijzigde GPU-state. |
-| `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code en verplaats aantoonbaar cart-specifieke utilities naar hun cart nadat de live require-graaf dit bewijst. | Geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
+| `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code, verplaats aantoonbaar cart-specifieke utilities naar hun cart en vernietig centrale registries die modules hardcoded per implementatiefeature (`with_fsm`, `with_bt`, enz.) groeperen. | Iedere module-owner declareert zijn eigen compositie, geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 
 ## Vereist een interactieve backend of fysieke target
 

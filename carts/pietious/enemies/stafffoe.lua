@@ -72,29 +72,18 @@ function stafffoe.bt_tick(self, blackboard)
 	return 'RUNNING'
 end
 
-function stafffoe.register_behaviour_tree(bt_id)
-	behaviourtree.register_definition(bt_id, {
-		root = {
-			type = 'ACTION',
-			action = function(target, blackboard)
-				return stafffoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-end
-
 function stafffoe.choose_drop_type(_self)
 	return 'life'
 end
 
 enemy_base.extend(stafffoe, 'stafffoe')
 
-function stafffoe.register_enemy_definition()
+function stafffoe.register()
 	prefab.define({
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		type = 'sprite',
-		bts = { 'enemy_stafffoe' },
+		bts = { behaviourtree.action.new('enemy_stafffoe', stafffoe.bt_tick) },
 		defaults = {
 			conditions = {},
 			damage = 4,

@@ -84,13 +84,13 @@ function inputactioneffectsystem:process_input_action_programs()
 		local queued_commands<const> = env.queued_commands
 		for i = 1, #queued_commands do
 			local command<const> = queued_commands[i]
-			obj:dispatch_command(command.event, command.payload)
+			obj.state_machines:dispatch(command.event, command.payload)
 			queued_commands[i] = nil
 		end
 		local queued<const> = env.queued_events
 		for i = 1, #queued do
 			local evt<const> = queued[i]
-			obj:emit_gameplay_fact(evt)
+			obj.events:emit_event(evt)
 			queued[i] = nil
 		end
 		::continue::
