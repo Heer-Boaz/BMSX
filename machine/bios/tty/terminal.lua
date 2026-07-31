@@ -18,6 +18,7 @@ local terminal_width<const> = terminal_columns * glyph_width
 local terminal_height<const> = terminal_rows * glyph_height
 local terminal_vram_x<const> = layout.vram_x
 local terminal_vram_y<const> = layout.vram_y
+local terminal_palette_row_words<const> = terminal_columns >> 4
 local command_batch_rows<const> = 4
 -- Worst-case row capacity combines one clear, one continuous background and
 -- one textured rectangle per cell; eight words cover shared state/cursor/IRQ.
@@ -26,20 +27,33 @@ local system_print_data<const>: *word = 0x0801022c
 local system_print_count<const>: *word = 0x08010230
 local ascii_newline<const> = 10
 local terminal_background_word<const> = 0x00000000
+local palette_cell_lsb_mask<const> = 0x55555555
+local palette_text<const> = 0
+local palette_error<const> = 1
+local palette_accent<const> = 2
+local palette_ghost<const> = 3
 local full_dirty_rows_low<const> = 0xffffffff
 local full_dirty_rows_high<const> = (1 << (terminal_rows - 32)) - 1
 
 terminal.columns = terminal_columns
 terminal.rows = terminal_rows
 terminal.page_rows = terminal_rows - 1
-terminal.palette_text = 1
-terminal.palette_error = 2
-terminal.palette_accent = 3
-terminal.palette_ghost = 4
+terminal.palette_text = palette_text
+terminal.palette_error = palette_error
+terminal.palette_accent = palette_accent
+terminal.palette_ghost = palette_ghost
 
-bss terminal_cells: u16[scrollback_rows * terminal_columns]
-bss terminal_status_cells: u16[terminal_columns]
-bss terminal_palette: word[5]
+rodata terminal_palette_words: word[4] = {
+	0x00808080,
+	0x00303080,
+	0x00208080,
+	0x00404040,
+}
+
+bss terminal_cell_codes: u8[scrollback_rows * terminal_columns]
+bss terminal_cell_palettes: word[scrollback_rows * terminal_palette_row_words]
+bss terminal_status_codes: u8[terminal_columns]
+bss terminal_status_palettes: word[terminal_palette_row_words]
 bss terminal_dirty_first_columns: u8[terminal_rows]
 bss terminal_dirty_last_columns: u8[terminal_rows]
 bss terminal_dirty_rows: word[2]
@@ -117,20 +131,31 @@ local mark_screen_dirty<const> = function()
 	end
 end
 
-local set_cell<const> = function(line, column, word)
-	local cells<const>: *u16 = terminal_cells
+local set_cell<const> = function(line, column, code, palette)
+	local codes<const>: *u8 = terminal_cell_codes
+	local palettes<const>: *word = terminal_cell_palettes
 	local index<const> = buffer_row_for_line(line) * terminal_columns + column
-	if cells[index] ~= word then
-		cells[index] = word
+	local palette_index<const> = index >> 4
+	local palette_shift<const> = (index & 15) << 1
+	local palette_word<const> = palettes[palette_index]
+	if codes[index] ~= code or ((palette_word >> palette_shift) & 3) ~= palette then
+		codes[index] = code
+		palettes[palette_index] = (palette_word & ~(3 << palette_shift)) | (palette << palette_shift)
 		mark_line_range_dirty(line, column, column + 1)
 	end
 end
 
 local clear_line<const> = function(line)
-	local cells<const>: *u16 = terminal_cells
-	local offset<const> = buffer_row_for_line(line) * terminal_columns
+	local codes<const>: *u8 = terminal_cell_codes
+	local palettes<const>: *word = terminal_cell_palettes
+	local buffer_row<const> = buffer_row_for_line(line)
+	local offset<const> = buffer_row * terminal_columns
 	for column = 0, terminal_columns - 1 do
-		cells[offset + column] = 0
+		codes[offset + column] = 0
+	end
+	local palette_offset<const> = buffer_row * terminal_palette_row_words
+	for index = 0, terminal_palette_row_words - 1 do
+		palettes[palette_offset + index] = 0
 	end
 	mark_line_range_dirty(line, 0, terminal_columns)
 end
@@ -195,10 +220,14 @@ local line_feed<const> = function()
 end
 
 local reset_screen<const> = function()
-	local cells<const>: *u16 = terminal_cells
+	local codes<const>: *u8 = terminal_cell_codes
+	local palettes<const>: *word = terminal_cell_palettes
 	local dirty_rows<const>: *word = terminal_dirty_rows
 	for index = 0, terminal_columns * terminal_rows - 1 do
-		cells[index] = 0
+		codes[index] = 0
+	end
+	for index = 0, terminal_palette_row_words * terminal_rows - 1 do
+		palettes[index] = 0
 	end
 	dirty_rows[0] = 0
 	dirty_rows[1] = 0
@@ -216,12 +245,6 @@ end
 
 function terminal.open()
 	reset_screen()
-	local palette<const>: *word = terminal_palette
-	palette[0] = terminal_background_word
-	palette[1] = 0x00808080
-	palette[2] = 0x00303080
-	palette[3] = 0x00208080
-	palette[4] = 0x00404040
 	mark_screen_dirty()
 end
 
@@ -231,13 +254,13 @@ function terminal.clear()
 end
 
 function terminal.put(row, column, code, palette)
-	set_cell(visible_first_line() + row, column, code | (palette << 8))
+	set_cell(visible_first_line() + row, column, code, palette)
 end
 
 function terminal.write_at(row, column, text, palette)
 	local line<const> = visible_first_line() + row
 	for index = 1, #text do
-		set_cell(line, column + index - 1, byte(text, index) | (palette << 8))
+		set_cell(line, column + index - 1, byte(text, index), palette)
 	end
 end
 
@@ -250,7 +273,7 @@ function terminal.write_code(code, palette)
 		line_feed()
 	end
 	mark_cursor_dirty()
-	set_cell(*terminal_cursor_line, *terminal_cursor_column, code | (palette << 8))
+	set_cell(*terminal_cursor_line, *terminal_cursor_column, code, palette)
 	*terminal_cursor_column = *terminal_cursor_column + 1
 	mark_cursor_dirty()
 end
@@ -277,7 +300,7 @@ end
 function terminal.render_input(line, length, cursor, palette, completion, completion_start, completion_palette)
 	terminal.follow_output()
 	mark_cursor_dirty()
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	local completion_length<const> = #completion - completion_start
 	local rendered_length<const> = length + completion_length
 	local redraw_length = rendered_length
@@ -285,13 +308,16 @@ function terminal.render_input(line, length, cursor, palette, completion, comple
 		redraw_length = *terminal_input_rendered_length
 	end
 	for index = 0, redraw_length - 1 do
-		local cell = 0
+		local code = 0
+		local cell_palette = palette_text
 		if index < length then
-			cell = source[index] | (palette << 8)
+			code = source[index]
+			cell_palette = palette
 		elseif index < rendered_length then
-			cell = byte(completion, completion_start + index - length + 1) | (completion_palette << 8)
+			code = byte(completion, completion_start + index - length + 1)
+			cell_palette = completion_palette
 		end
-		set_cell(*terminal_input_line, *terminal_input_column + index, cell)
+		set_cell(*terminal_input_line, *terminal_input_column + index, code, cell_palette)
 	end
 	*terminal_input_length = length
 	*terminal_input_rendered_length = rendered_length
@@ -303,7 +329,7 @@ end
 function terminal.end_input()
 	mark_cursor_dirty()
 	for index = *terminal_input_length, *terminal_input_rendered_length - 1 do
-		set_cell(*terminal_input_line, *terminal_input_column + index, 0)
+		set_cell(*terminal_input_line, *terminal_input_column + index, 0, palette_text)
 	end
 	*terminal_input_rendered_length = *terminal_input_length
 	*terminal_cursor_line = *terminal_input_line
@@ -312,44 +338,73 @@ function terminal.end_input()
 end
 
 function terminal.append_row(row)
-	local source<const>: *word = row
-	local cells<const>: *u16 = terminal_cells
-	local offset<const> = buffer_row_for_line(*terminal_cursor_line) * terminal_columns
-	for column = 0, terminal_columns - 1 do
-		cells[offset + column] = source[column]
+	local source<const>: *u16 = row
+	local codes<const>: *u8 = terminal_cell_codes
+	local palettes<const>: *word = terminal_cell_palettes
+	local buffer_row<const> = buffer_row_for_line(*terminal_cursor_line)
+	local offset<const> = buffer_row * terminal_columns
+	local palette_offset<const> = buffer_row * terminal_palette_row_words
+	for index = 0, terminal_palette_row_words - 1 do
+		local column<const> = index << 4
+		local packed = 0
+		for cell = 0, 15 do
+			local value<const> = source[column + cell]
+			codes[offset + column + cell] = value
+			packed = packed | (((value >> 8) & 3) << (cell << 1))
+		end
+		palettes[palette_offset + index] = packed
 	end
 	mark_line_range_dirty(*terminal_cursor_line, 0, terminal_columns)
 	line_feed()
 end
 
 function terminal.show_status(text, palette)
-	local status<const>: *u16 = terminal_status_cells
+	local codes<const>: *u8 = terminal_status_codes
+	local palettes<const>: *word = terminal_status_palettes
 	for column = 0, terminal_columns - 1 do
-		status[column] = 0
+		codes[column] = 0
+	end
+	local palette_word<const> = palette * palette_cell_lsb_mask
+	for index = 0, terminal_palette_row_words - 1 do
+		palettes[index] = palette_word
 	end
 	for index = 1, #text do
-		status[index - 1] = byte(text, index) | (palette << 8)
+		codes[index - 1] = byte(text, index)
 	end
 	*terminal_status_visible = 1
 	mark_cell_range_dirty(terminal_rows - 1, 0, terminal_columns)
 end
 
 function terminal.put_status(column, code, palette)
-	local status<const>: *u16 = terminal_status_cells
-	local cell<const> = code | (palette << 8)
-	if *terminal_status_visible ~= 0 and status[column] == cell then
+	local codes<const>: *u8 = terminal_status_codes
+	local palettes<const>: *word = terminal_status_palettes
+	local palette_index<const> = column >> 4
+	local palette_shift<const> = (column & 15) << 1
+	local palette_word<const> = palettes[palette_index]
+	if *terminal_status_visible ~= 0
+		and codes[column] == code
+		and ((palette_word >> palette_shift) & 3) == palette then
 		return
 	end
-	status[column] = cell
+	codes[column] = code
+	palettes[palette_index] = (palette_word & ~(3 << palette_shift)) | (palette << palette_shift)
 	*terminal_status_visible = 1
 	mark_cell_range_dirty(terminal_rows - 1, column, column + 1)
 end
 
 function terminal.show_status_row(row)
-	local source<const>: *word = row
-	local status<const>: *u16 = terminal_status_cells
-	for column = 0, terminal_columns - 1 do
-		status[column] = source[column]
+	local source<const>: *u16 = row
+	local codes<const>: *u8 = terminal_status_codes
+	local palettes<const>: *word = terminal_status_palettes
+	for index = 0, terminal_palette_row_words - 1 do
+		local column<const> = index << 4
+		local packed = 0
+		for cell = 0, 15 do
+			local value<const> = source[column + cell]
+			codes[column + cell] = value
+			packed = packed | (((value >> 8) & 3) << (cell << 1))
+		end
+		palettes[index] = packed
 	end
 	*terminal_status_visible = 1
 	mark_cell_range_dirty(terminal_rows - 1, 0, terminal_columns)
@@ -405,9 +460,11 @@ function terminal.flush()
 		return
 	end
 	local full_redraw<const> = dirty_rows[0] == full_dirty_rows_low and dirty_rows[1] == full_dirty_rows_high
-	local cells<const>: *u16 = terminal_cells
-	local status<const>: *u16 = terminal_status_cells
-	local palette<const>: *word = terminal_palette
+	local codes<const>: *u8 = terminal_cell_codes
+	local palettes<const>: *word = terminal_cell_palettes
+	local status_codes<const>: *u8 = terminal_status_codes
+	local status_palettes<const>: *word = terminal_status_palettes
+	local palette_words<const>: *word = terminal_palette_words
 	local first_columns<const>: *u8 = terminal_dirty_first_columns
 	local last_columns<const>: *u8 = terminal_dirty_last_columns
 	local command_words<const>: *word = terminal_command_words
@@ -458,16 +515,17 @@ function terminal.flush()
 					local first_column<const> = first_columns[row]
 					local last_column<const> = last_columns[row]
 					local target_y<const> = row * glyph_height
-					local row_cells: *u16 = cells
+					local row_codes: *u8 = codes
+					local row_palettes: *word = palettes
 					local source = buffer_row_for_screen(row) * terminal_columns
 					if *terminal_status_visible ~= 0 and row == terminal_rows - 1 then
-						row_cells = status
+						row_codes = status_codes
+						row_palettes = status_palettes
 						source = 0
 					end
 					local background_first_column = -1
 					for column = first_column, last_column - 1 do
-						local cell<const> = row_cells[source + column]
-						if cell ~= 0 then
+						if row_codes[source + column] ~= 0 then
 							if background_first_column < 0 then
 								background_first_column = column
 							end
@@ -487,14 +545,21 @@ function terminal.flush()
 							target_y,
 							glyph_width,
 							glyph_height,
-							palette[terminal.palette_text])
+							palette_words[palette_text])
 					end
+					local palette_index = -1
+					local palette_word = 0
 					for column = first_column, last_column - 1 do
-						local cell<const> = row_cells[source + column]
-						local code<const> = cell & 0xff
+						local cell_index<const> = source + column
+						local code<const> = row_codes[cell_index]
 						if code ~= 0 and code ~= 0x20 then
 							local glyph<const> = terminal_glyphs[code]
-							local color = palette[(cell >> 8) & 0x07]
+							local cell_palette_index<const> = cell_index >> 4
+							if cell_palette_index ~= palette_index then
+								palette_index = cell_palette_index
+								palette_word = row_palettes[cell_palette_index]
+							end
+							local color = palette_words[(palette_word >> ((cell_index & 15) << 1)) & 3]
 							if row == cursor_row and column == *terminal_cursor_column then
 								color = terminal_background_word
 							end

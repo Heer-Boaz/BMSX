@@ -124,7 +124,7 @@ local uppercase<const> = function(code)
 end
 
 local skip_spaces<const> = function(line, index, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	while index < length and source[index] == ascii_space do
 		index = index + 1
 	end
@@ -132,7 +132,7 @@ local skip_spaces<const> = function(line, index, length)
 end
 
 local command_at<const> = function(line, start_index, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	for command = 0, #command_registry - 1 do
 		local name<const> = command_registry[command].name
 		if #name == length then
@@ -152,7 +152,7 @@ local command_at<const> = function(line, start_index, length)
 end
 
 local command_span<const> = function(line, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	local start_index<const> = skip_spaces(source, 0, length)
 	local end_index = start_index
 	while end_index < length and source[end_index] ~= ascii_space do
@@ -162,7 +162,7 @@ local command_span<const> = function(line, length)
 end
 
 local matches_prefix<const> = function(name, line, start_index, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	if #name < length then
 		return false
 	end
@@ -182,7 +182,7 @@ local completion_start<const> = function(line, length, cursor)
 	if cursor ~= length then
 		return -1
 	end
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	local start_index<const> = skip_spaces(source, 0, cursor)
 	for index = start_index, cursor - 1 do
 		if source[index] == ascii_space then
@@ -220,7 +220,7 @@ local hex_digit<const> = function(code)
 end
 
 local parse_hex<const> = function(line, index, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	index = skip_spaces(source, index, length)
 	if index + 1 < length and source[index] == ascii_digit_0 and uppercase(source[index + 1]) == 88 then
 		index = index + 2
@@ -240,7 +240,7 @@ local parse_hex<const> = function(line, index, length)
 end
 
 local parse_count<const> = function(line, index, length)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	index = skip_spaces(source, index, length)
 	local base = 10
 	if index + 1 < length and source[index] == ascii_digit_0 and uppercase(source[index + 1]) == 88 then
@@ -262,14 +262,14 @@ local parse_count<const> = function(line, index, length)
 end
 
 local clear_row<const> = function(row)
-	local target<const>: *word = row
+	local target<const>: *u16 = row
 	for column = 0, terminal_columns - 1 do
 		target[column] = 0
 	end
 end
 
 local write_text<const> = function(row, column, text, palette)
-	local target<const>: *word = row
+	local target<const>: *u16 = row
 	for index = 1, #text do
 		target[column] = byte(text, index) | (palette << 8)
 		column = column + 1
@@ -278,7 +278,7 @@ local write_text<const> = function(row, column, text, palette)
 end
 
 local write_text_slice<const> = function(row, column, text, offset, palette)
-	local target<const>: *word = row
+	local target<const>: *u16 = row
 	while column < terminal_columns and offset < #text do
 		target[column] = byte(text, offset + 1) | (palette << 8)
 		column = column + 1
@@ -288,7 +288,7 @@ local write_text_slice<const> = function(row, column, text, offset, palette)
 end
 
 local write_hex<const> = function(row, column, value, palette)
-	local target<const>: *word = row
+	local target<const>: *u16 = row
 	for shift = 28, 0, -4 do
 		local digit<const> = (value >> shift) & 0x0f
 		target[column] = (digit < 10 and ascii_digit_0 + digit or ascii_upper_a + digit - 10) | (palette << 8)
@@ -367,7 +367,7 @@ function monitor_commands.start_fault()
 end
 
 function monitor_commands.complete(line, length, cursor, capacity)
-	local source<const>: *word = line
+	local source<const>: *u8 = line
 	local matches<const>: *word = monitor_completion_commands
 	local start_index<const> = completion_start(source, length, cursor)
 	if start_index < 0 then
@@ -434,7 +434,7 @@ function monitor_commands.accept_inline_completion(line, length, cursor, capacit
 	if command == command_not_found then
 		return length, false
 	end
-	local target<const>: *word = line
+	local target<const>: *u8 = line
 	local name<const> = command_registry[command].name
 	for index = 1, #name do
 		target[start_index + index - 1] = byte(name, index)
@@ -462,7 +462,7 @@ function monitor_commands.fill_candidates(row, match_count, selected)
 end
 
 function monitor_commands.accept_candidate(line, capacity, selected)
-	local target<const>: *word = line
+	local target<const>: *u8 = line
 	local matches<const>: *word = monitor_completion_commands
 	local name<const> = command_registry[matches[selected]].name
 	local start_index<const> = *monitor_completion_start
@@ -517,7 +517,7 @@ function monitor_commands.start(line, length)
 			return action_output
 		end
 		local argument_end = index
-		local source<const>: *word = line
+		local source<const>: *u8 = line
 		while argument_end < length and source[argument_end] ~= ascii_space do
 			argument_end = argument_end + 1
 		end
@@ -548,7 +548,7 @@ function monitor_commands.start(line, length)
 			return action_output
 		end
 		local argument_end = index
-		local source<const>: *word = line
+		local source<const>: *u8 = line
 		while argument_end < length and source[argument_end] ~= ascii_space do
 			argument_end = argument_end + 1
 		end
@@ -655,7 +655,7 @@ function monitor_commands.next_row(row)
 					if text_offset == 0 then
 						column = write_text(row, 0, 'LUA     ', palette_accent)
 						column = write_hex(row, column, lua_fault_reason, palette_text)
-						local target<const>: *word = row
+						local target<const>: *u16 = row
 						target[column] = ascii_space | (palette_text << 8)
 						column = column + 1
 					end
@@ -725,7 +725,7 @@ function monitor_commands.next_row(row)
 	local address = *monitor_command_address
 	local remaining = *monitor_command_remaining
 	local column<const> = write_hex(row, 0, address, palette_accent)
-	local target<const>: *word = row
+	local target<const>: *u16 = row
 	target[column] = 58 | (palette_accent << 8)
 	local output_column = column + 1
 	local words = 4

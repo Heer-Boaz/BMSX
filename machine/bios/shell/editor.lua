@@ -10,18 +10,18 @@ local palette_text<const> = terminal.palette_text
 local palette_ghost<const> = terminal.palette_ghost
 local ascii_space<const> = 32
 
-bss monitor_editor_line: word[input_capacity]
+bss monitor_editor_line: u8[input_capacity]
 bss monitor_editor_length: word
 bss monitor_editor_cursor: word
-bss monitor_editor_history: word[history_capacity * input_capacity]
-bss monitor_editor_history_lengths: word[history_capacity]
+bss monitor_editor_history: u8[history_capacity * input_capacity]
+bss monitor_editor_history_lengths: u8[history_capacity]
 bss monitor_editor_history_head: word
 bss monitor_editor_history_count: word
 bss monitor_editor_history_offset: word
-bss monitor_editor_draft: word[input_capacity]
+bss monitor_editor_draft: u8[input_capacity]
 bss monitor_editor_draft_length: word
 bss monitor_editor_draft_cursor: word
-bss monitor_editor_candidate_row: word[layout.columns]
+bss monitor_editor_candidate_row: u16[layout.columns]
 
 local render<const> = function()
 	local completion<const>, prefix_length<const> = monitor_commands.inline_completion(
@@ -44,7 +44,7 @@ local reset_navigation<const> = function()
 end
 
 local erase_range<const> = function(first, last)
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	local count<const> = last - first
 	for index = first, *monitor_editor_length - count - 1 do
 		line[index] = line[index + count]
@@ -60,12 +60,12 @@ local latest_history_slot<const> = function(offset)
 end
 
 local history_equals_line<const> = function(slot)
-	local lengths<const>: *word = monitor_editor_history_lengths
+	local lengths<const>: *u8 = monitor_editor_history_lengths
 	if lengths[slot] ~= *monitor_editor_length then
 		return false
 	end
-	local history<const>: *word = monitor_editor_history
-	local line<const>: *word = monitor_editor_line
+	local history<const>: *u8 = monitor_editor_history
+	local line<const>: *u8 = monitor_editor_line
 	local base<const> = slot * input_capacity
 	for index = 0, *monitor_editor_length - 1 do
 		if history[base + index] ~= line[index] then
@@ -83,9 +83,9 @@ local remember_line<const> = function()
 		return
 	end
 	local slot<const> = *monitor_editor_history_head
-	local history<const>: *word = monitor_editor_history
-	local line<const>: *word = monitor_editor_line
-	local lengths<const>: *word = monitor_editor_history_lengths
+	local history<const>: *u8 = monitor_editor_history
+	local line<const>: *u8 = monitor_editor_line
+	local lengths<const>: *u8 = monitor_editor_history_lengths
 	local base<const> = slot * input_capacity
 	for index = 0, *monitor_editor_length - 1 do
 		history[base + index] = line[index]
@@ -98,8 +98,8 @@ local remember_line<const> = function()
 end
 
 local save_draft<const> = function()
-	local line<const>: *word = monitor_editor_line
-	local draft<const>: *word = monitor_editor_draft
+	local line<const>: *u8 = monitor_editor_line
+	local draft<const>: *u8 = monitor_editor_draft
 	for index = 0, *monitor_editor_length - 1 do
 		draft[index] = line[index]
 	end
@@ -107,9 +107,9 @@ local save_draft<const> = function()
 	*monitor_editor_draft_cursor = *monitor_editor_cursor
 end
 
-local load_words<const> = function(source, length, cursor)
-	local from<const>: *word = source
-	local line<const>: *word = monitor_editor_line
+local load_line<const> = function(source, length, cursor)
+	local from<const>: *u8 = source
+	local line<const>: *u8 = monitor_editor_line
 	for index = 0, length - 1 do
 		line[index] = from[index]
 	end
@@ -119,11 +119,11 @@ local load_words<const> = function(source, length, cursor)
 end
 
 local load_history<const> = function(offset)
-	local history<const>: *word = monitor_editor_history
-	local lengths<const>: *word = monitor_editor_history_lengths
+	local history<const>: *u8 = monitor_editor_history
+	local lengths<const>: *u8 = monitor_editor_history_lengths
 	local slot<const> = latest_history_slot(offset)
 	local length<const> = lengths[slot]
-	load_words(&history[slot * input_capacity], length, length)
+	load_line(&history[slot * input_capacity], length, length)
 end
 
 function monitor_editor.open()
@@ -132,7 +132,7 @@ function monitor_editor.open()
 	*monitor_editor_history_head = 0
 	*monitor_editor_history_count = 0
 	*monitor_editor_history_offset = 0
-	local lengths<const>: *word = monitor_editor_history_lengths
+	local lengths<const>: *u8 = monitor_editor_history_lengths
 	for index = 0, history_capacity - 1 do
 		lengths[index] = 0
 	end
@@ -159,7 +159,7 @@ function monitor_editor.insert(code)
 	if *monitor_editor_length == input_capacity then
 		return
 	end
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	for index = *monitor_editor_length, *monitor_editor_cursor + 1, -1 do
 		line[index] = line[index - 1]
 	end
@@ -226,7 +226,7 @@ function monitor_editor.move_end()
 end
 
 function monitor_editor.word_left()
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	local cursor = *monitor_editor_cursor
 	while cursor > 0 and line[cursor - 1] == ascii_space do
 		cursor = cursor - 1
@@ -241,7 +241,7 @@ function monitor_editor.word_left()
 end
 
 function monitor_editor.word_right()
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	local cursor = *monitor_editor_cursor
 	while cursor < *monitor_editor_length and line[cursor] ~= ascii_space do
 		cursor = cursor + 1
@@ -256,7 +256,7 @@ function monitor_editor.word_right()
 end
 
 function monitor_editor.backspace_word()
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	local first = *monitor_editor_cursor
 	while first > 0 and line[first - 1] == ascii_space do
 		first = first - 1
@@ -270,7 +270,7 @@ function monitor_editor.backspace_word()
 end
 
 function monitor_editor.delete_word()
-	local line<const>: *word = monitor_editor_line
+	local line<const>: *u8 = monitor_editor_line
 	local last = *monitor_editor_cursor
 	while last < *monitor_editor_length and line[last] ~= ascii_space do
 		last = last + 1
@@ -307,7 +307,7 @@ function monitor_editor.next()
 	end
 	*monitor_editor_history_offset = *monitor_editor_history_offset - 1
 	if *monitor_editor_history_offset == 0 then
-		load_words(monitor_editor_draft, *monitor_editor_draft_length, *monitor_editor_draft_cursor)
+		load_line(monitor_editor_draft, *monitor_editor_draft_length, *monitor_editor_draft_cursor)
 	else
 		load_history(*monitor_editor_history_offset)
 	end

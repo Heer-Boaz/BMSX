@@ -71,7 +71,7 @@ local repeat_interval_frames<const> = 4
 
 bss monitor_current_keys: word[8]
 bss monitor_previous_keys: word[8]
-bss monitor_output_row: word[layout.columns]
+bss monitor_output_row: u16[layout.columns]
 bss monitor_frame: word
 bss monitor_repeat_usage: word
 bss monitor_repeat_frame: word
