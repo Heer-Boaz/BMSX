@@ -425,37 +425,59 @@ local complete_slot_play<const> = function(slot, source_addr, drain_queue)
 	return true
 end
 
-local submit_prepared_play<const> = function(play, queued)
+local submit_play<const> = function(
+	source,
+	slot,
+	priority,
+	queued,
+	rate_step_q16,
+	gain_q12,
+	start_sample,
+	filter_control,
+	filter_b0_b1,
+	filter_b2_a1,
+	filter_a2
+)
 	if queued then
-		if slot_is_busy(play.slot) or has_queued_play(play.slot) then
-			enqueue_prepared_play(play)
+		if slot_is_busy(slot) or has_queued_play(slot) then
+			enqueue_prepared_play({
+				source = source,
+				slot = slot,
+				priority = priority,
+				rate_step_q16 = rate_step_q16,
+				gain_q12 = gain_q12,
+				start_sample = start_sample,
+				filter_control = filter_control,
+				filter_b0_b1 = filter_b0_b1,
+				filter_b2_a1 = filter_b2_a1,
+				filter_a2 = filter_a2,
+			})
 			return
 		end
 	else
-		if slot_is_busy(play.slot) and play.priority < slot_active_priority[play.slot] then
+		if slot_is_busy(slot) and priority < slot_active_priority[slot] then
 			return
 		end
-		clear_slot_queue(play.slot)
+		clear_slot_queue(slot)
 	end
-	run_prepared_play(play)
+	mark_slot_active(slot, source.source_addr, priority)
+	apu.play(
+		source,
+		slot,
+		rate_step_q16,
+		gain_q12,
+		start_sample,
+		filter_control,
+		filter_b0_b1,
+		filter_b2_a1,
+		filter_a2
+	)
 end
 
-local prepare_plain_play<const> = function(audio_record, slot)
-	return {
-		source = apu.source(audio_record),
-		slot = slot,
-		priority = audio_record.audiometa.priority,
-		rate_step_q16 = 0x00010000,
-		gain_q12 = 0x00001000,
-		start_sample = 0,
-		filter_control = 0x00000000,
-		filter_b0_b1 = apu.filter_coefficient_one,
-		filter_b2_a1 = 0x00000000,
-		filter_a2 = 0x00000000,
-	}
-end
-
-local prepare_action_play<const> = function(audio_record, slot, action)
+local dispatch_audio_play<const> = function(entry, audio_record, action, payload)
+	if not apply_cooldown(action, payload) then
+		return
+	end
 	local pitch_delta = action.__apu_pitch_delta
 	local pitch_range_span<const> = action.__apu_pitch_range_span
 	if pitch_range_span ~= 0 then
@@ -482,18 +504,19 @@ local prepare_action_play<const> = function(audio_record, slot, action)
 	end
 	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * 0x00010000
 
-	return {
-		source = apu.source(audio_record),
-		slot = slot,
-		priority = action.__aem_priority or audio_record.audiometa.priority,
-		rate_step_q16 = rate_step_q16,
-		gain_q12 = gain_q12,
-		start_sample = start_sample,
-		filter_control = action.__apu_filter_control,
-		filter_b0_b1 = action.__apu_filter_b0_b1,
-		filter_b2_a1 = action.__apu_filter_b2_a1,
-		filter_a2 = action.__apu_filter_a2,
-	}
+	submit_play(
+		apu.source(audio_record),
+		entry.__slot,
+		action.__aem_priority or audio_record.audiometa.priority,
+		entry.__queued,
+		rate_step_q16,
+		gain_q12,
+		start_sample,
+		action.__apu_filter_control,
+		action.__apu_filter_b0_b1,
+		action.__apu_filter_b2_a1,
+		action.__apu_filter_a2
+	)
 end
 
 local transition_start_sample<const> = function(audio_record, transition)
@@ -628,16 +651,22 @@ local dispatch_music_transition<const> = function(transition)
 	play_transition_apu(target_record, transition)
 end
 
-local dispatch_audio_play<const> = function(entry, audio_record, action, payload)
-	if not apply_cooldown(action, payload) then
-		return
-	end
-	submit_prepared_play(prepare_action_play(audio_record, entry.__slot, action), entry.__queued)
-end
-
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		submit_prepared_play(prepare_plain_play(romdir.audio(action), entry.__slot), entry.__queued)
+		local audio_record<const> = romdir.audio(action)
+		submit_play(
+			apu.source(audio_record),
+			entry.__slot,
+			audio_record.audiometa.priority,
+			entry.__queued,
+			0x00010000,
+			0x00001000,
+			0,
+			0x00000000,
+			apu.filter_coefficient_one,
+			0x00000000,
+			0x00000000
+		)
 		return
 	end
 	if action.stop_music then

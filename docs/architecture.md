@@ -1086,7 +1086,9 @@ dimension, not runtime length metadata.
 Cart library numeric latches that model machine words over time use section
 storage too: AEM keeps request/source/slot words and per-slot active
 source/priority arrays in `.bss`, while Lua tables remain only for actual
-event records and queued play objects.
+event records and plays retained behind an active slot. Immediate plays and
+queue-policy plays that can start immediately write the APU command without a
+transient play record.
 Scalar section symbols are pointers to one typed cell: firmware and cart code
 read/write them with `*symbol`. Indexing is for actual arrays and structs, not
 for pretending a scalar word is a one-element array.

@@ -23,7 +23,6 @@ horen niet in deze lijst.
 | `CARTLIB-OWNERS-01` | Splits de monolithische `ecs/builtin`- en `ecs/systems`-pack per werkelijke systemowner en laat iedere cart zijn pipeline expliciet samenstellen. | Een cart linkt alleen gekozen systems; met name niet-GEO-carts linken geen overlap/collision-owner, en er komt geen nieuwe application- of featurefacade voor terug. |
 | `CARTLIB-HOT-01` | Compileer FSM-, event- en action-effectwerk eenmaal en verwijder closures, padparsing en tijdelijke tables uit normale frame- en transitionpaden. | Bestaande semantics blijven behouden en normale dispatch/update/transition maakt geen guest-heapobjecten voor infrastructuur aan. |
 | `CARTLIB-GX-01` | Maak GX/GTE een compacte low-level SDK rond raw registers, opcodes, packets en DMA; verplaats camera-, scene- en renderbeleid naar carts of optionele libraries. | De hardwarelaag bevat alleen echte protocollen, hergebruikt retained packet/state en schrijft niet per primitive opnieuw ongewijzigde GPU-state. |
-| `CARTLIB-AUDIO-01` | Scheid directe AEM-playback van werkelijk queued bezit. | Direct afspelen schrijft zonder descriptorallocatie naar de APU; alleen behouden queue-items bezitten records. |
 | `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code en verplaats aantoonbaar cart-specifieke utilities naar hun cart nadat de live require-graaf dit bewijst. | Geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 
 ## Vereist een interactieve backend of fysieke target
