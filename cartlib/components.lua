@@ -2,6 +2,7 @@
 -- Base component primitives for the cart runtime.
 
 local eventemitter_module<const> = require('cartlib/eventemitter')
+local component_types<const> = require('cartlib/components/types')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local timeline_module<const> = require('cartlib/timeline/index')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
@@ -54,7 +55,7 @@ function component.new(opts)
 	local self<const> = setmetatable({}, component)
 	opts = opts or {}
 	self.parent = opts.parent
-	self.type_name = opts.type_name or 'component'
+	self.type_name = opts.type_name or component_types.base
 	self.id_local = opts.id_local
 	if opts.id then
 		self.id = opts.id
@@ -161,7 +162,7 @@ setmetatable(spritecomponent, { __index = visualcomponent })
 
 function spritecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'spritecomponent'
+	opts.type_name = component_types.sprite
 	local self<const> = setmetatable(visualcomponent.new(opts), spritecomponent)
 	self.flip = { flip_h = false, flip_v = false }
 	self.color = opts.color or 0xffffffff
@@ -214,7 +215,7 @@ setmetatable(surfacecomponent, { __index = visualcomponent })
 
 function surfacecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'surfacecomponent'
+	opts.type_name = component_types.surface
 	local self<const> = setmetatable(visualcomponent.new(opts), surfacecomponent)
 	self.color = opts.color or 0xffffffff
 	self:set_imgid(opts.imgid)
@@ -251,7 +252,7 @@ setmetatable(tilelayercomponent, { __index = visualcomponent })
 
 function tilelayercomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'tilelayercomponent'
+	opts.type_name = component_types.tile_layer
 	local self<const> = setmetatable(visualcomponent.new(opts), tilelayercomponent)
 	self.sources = opts.sources
 	self.tile_count = opts.tile_count or 0
@@ -436,7 +437,7 @@ end
 --   For polygon shapes, prefer the @cx/@cc image suffix over setting local_polys manually.
 function collider2dcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'collider2dcomponent'
+	opts.type_name = component_types.collider_2d
 	local self<const> = setmetatable(component.new(opts), collider2dcomponent)
 	self.hittable = true
 	if opts.hittable ~= nil then
@@ -591,7 +592,7 @@ end
 
 function timelinecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'timelinecomponent'
+	opts.type_name = component_types.timeline
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), timelinecomponent)
 	self.registry = {}
@@ -753,7 +754,7 @@ setmetatable(transformcomponent, { __index = component })
 
 function transformcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'transformcomponent'
+	opts.type_name = component_types.transform
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), transformcomponent)
 	local p<const> = self.parent
@@ -782,7 +783,7 @@ setmetatable(textcomponent, { __index = visualcomponent })
 
 function textcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'textcomponent'
+	opts.type_name = component_types.text
 	local self<const> = setmetatable(visualcomponent.new(opts), textcomponent)
 	self.font = opts.font or font_module.get('default')
 	bind_gx_font(self.font)
@@ -931,7 +932,7 @@ setmetatable(customvisualcomponent, { __index = visualcomponent })
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'customvisualcomponent'
+	opts.type_name = component_types.custom_visual
 	local self<const> = setmetatable(visualcomponent.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
@@ -948,7 +949,7 @@ setmetatable(inputintentcomponent, { __index = component })
 
 function inputintentcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'inputintentcomponent'
+	opts.type_name = component_types.input_intent
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), inputintentcomponent)
 	self.player_index = opts.player_index or 1
@@ -963,7 +964,7 @@ setmetatable(inputactioneffectcomponent, { __index = component })
 
 function inputactioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'inputactioneffectcomponent'
+	opts.type_name = component_types.input_action_effect
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), inputactioneffectcomponent)
 	self.program = opts.program
@@ -977,7 +978,7 @@ setmetatable(abilitiescomponent, { __index = component })
 
 function abilitiescomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'abilitiescomponent'
+	opts.type_name = component_types.abilities
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), abilitiescomponent)
 	self.registered = {}
@@ -1083,7 +1084,7 @@ end
 function positionupdateaxiscomponent.new(opts)
 	return init_positionupdateaxis_fields(new_typed_component_instance(
 		positionupdateaxiscomponent,
-		'positionupdateaxiscomponent',
+		component_types.position_update_axis,
 		opts
 	))
 end
@@ -1121,7 +1122,7 @@ local init_screenboundary_fields<const> = function(self, opts)
 end
 
 function screenboundarycomponent.new(opts)
-	local self<const> = new_typed_component_instance(screenboundarycomponent, 'screenboundarycomponent', opts, true)
+	local self<const> = new_typed_component_instance(screenboundarycomponent, component_types.screen_boundary, opts, true)
 	init_positionupdateaxis_fields(self)
 	return init_screenboundary_fields(self, opts)
 end
@@ -1134,7 +1135,7 @@ function tilecollisioncomponent.new(opts)
 	opts = opts or {}
 	local self<const> = init_positionupdateaxis_fields(new_typed_component_instance(
 		tilecollisioncomponent,
-		'tilecollisioncomponent',
+		component_types.tile_collision,
 		opts,
 		true
 	))
@@ -1155,7 +1156,7 @@ prohibitleavingscreencomponent.__index = prohibitleavingscreencomponent
 setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent })
 
 function prohibitleavingscreencomponent.new(opts)
-	local self<const> = new_typed_component_instance(prohibitleavingscreencomponent, 'prohibitleavingscreencomponent', opts, true)
+	local self<const> = new_typed_component_instance(prohibitleavingscreencomponent, component_types.prohibit_leaving_screen, opts, true)
 	init_positionupdateaxis_fields(self)
 	return init_screenboundary_fields(self, opts)
 end
@@ -1176,22 +1177,22 @@ function prohibitleavingscreencomponent:bind()
 end
 
 local componentregistry<const> = {
-	component = component,
-	spritecomponent = spritecomponent,
-	surfacecomponent = surfacecomponent,
-	tilelayercomponent = tilelayercomponent,
-	collider2dcomponent = collider2dcomponent,
-	timelinecomponent = timelinecomponent,
-	transformcomponent = transformcomponent,
-	textcomponent = textcomponent,
-	customvisualcomponent = customvisualcomponent,
-	inputintentcomponent = inputintentcomponent,
-	inputactioneffectcomponent = inputactioneffectcomponent,
-	abilitiescomponent = abilitiescomponent,
-	positionupdateaxiscomponent = positionupdateaxiscomponent,
-	screenboundarycomponent = screenboundarycomponent,
-	tilecollisioncomponent = tilecollisioncomponent,
-	prohibitleavingscreencomponent = prohibitleavingscreencomponent,
+	[component_types.base] = component,
+	[component_types.sprite] = spritecomponent,
+	[component_types.surface] = surfacecomponent,
+	[component_types.tile_layer] = tilelayercomponent,
+	[component_types.collider_2d] = collider2dcomponent,
+	[component_types.timeline] = timelinecomponent,
+	[component_types.transform] = transformcomponent,
+	[component_types.text] = textcomponent,
+	[component_types.custom_visual] = customvisualcomponent,
+	[component_types.input_intent] = inputintentcomponent,
+	[component_types.input_action_effect] = inputactioneffectcomponent,
+	[component_types.abilities] = abilitiescomponent,
+	[component_types.position_update_axis] = positionupdateaxiscomponent,
+	[component_types.screen_boundary] = screenboundarycomponent,
+	[component_types.tile_collision] = tilecollisioncomponent,
+	[component_types.prohibit_leaving_screen] = prohibitleavingscreencomponent,
 }
 
 local register_component<const> = function(type_name, ctor)

@@ -4,8 +4,10 @@ local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
-local ecs_builtin<const> = require('cartlib/ecs/builtin')
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
+local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
+local timeline_system<const> = require('cartlib/ecs/systems/timeline')
+local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
@@ -20,6 +22,17 @@ local input_control_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
 local vblank_count = 0
 
+local pipeline_descriptors<const> = {
+	object_fsm_system,
+	timeline_system,
+	visual_render_system,
+}
+local pipeline_spec<const> = {
+	{ ref = object_fsm_system.id },
+	{ ref = timeline_system.id },
+	{ ref = visual_render_system.id },
+}
+
 local wait_vblank<const> = function()
 	repeat
 		halt_until_irq
@@ -28,7 +41,7 @@ local wait_vblank<const> = function()
 end
 
 function init()
-	ecs_builtin.register_builtin_ecs()
+	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
@@ -45,7 +58,7 @@ end
 
 function new_game()
 	world:clear()
-	ecs_pipeline_registry:build(world, ecs_builtin.default_pipeline_spec)
+	ecs_pipeline_registry:build(world, pipeline_spec)
 	prefab.spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },

@@ -31,6 +31,7 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
 local ecs<const> = require('cartlib/ecs/index')
+local component_types<const> = require('cartlib/components/types')
 local registry<const> = require('cartlib/registry')
 
 local tickgroup<const> = ecs.tickgroup
@@ -41,20 +42,20 @@ local world_class<const> = {}
 world_class.__index = world_class
 
 local active_component_bucket_types<const> = {
-	'actioneffectcomponent',
-	'collider2dcomponent',
-	'customvisualcomponent',
-	'inputactioneffectcomponent',
-	'inputintentcomponent',
-	'positionupdateaxiscomponent',
-	'prohibitleavingscreencomponent',
-	'screenboundarycomponent',
-	'spritecomponent',
-	'surfacecomponent',
-	'textcomponent',
-	'tilelayercomponent',
-	'tilecollisioncomponent',
-	'timelinecomponent',
+	component_types.action_effect,
+	component_types.collider_2d,
+	component_types.custom_visual,
+	component_types.input_action_effect,
+	component_types.input_intent,
+	component_types.position_update_axis,
+	component_types.prohibit_leaving_screen,
+	component_types.screen_boundary,
+	component_types.sprite,
+	component_types.surface,
+	component_types.text,
+	component_types.tile_layer,
+	component_types.tile_collision,
+	component_types.timeline,
 }
 
 local active_component_buckets_mt<const> = {

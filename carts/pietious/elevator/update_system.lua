@@ -25,5 +25,8 @@ function elevator_update_system.new(priority)
 end
 
 return {
-	elevator_update_system = elevator_update_system,
+	id = 'eup',
+	group = tickgroup.moderesolution,
+	default_priority = 20,
+	create = elevator_update_system.new,
 }

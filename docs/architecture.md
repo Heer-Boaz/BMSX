@@ -3229,8 +3229,10 @@ composition root: it clears its world, selects an ECS pipeline, samples input
 in its frame loop, and registers only the device IRQ handlers it actually uses.
 AEM and GEO have no import-time application facade; carts with AEM data call
 `aem.reload()` and bind its APU handler, while carts that submit GEO work bind
-the collision handler. The built-in ECS schedule remains an explicit gameplay
-pack selected by world-based carts rather than a machine or BIOS dependency.
+the collision handler. Each ECS system module owns its compact pipeline
+descriptor; a cart registers only the descriptors in its retained pipeline
+specification. There is no universal built-in schedule or import-time system
+registration.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

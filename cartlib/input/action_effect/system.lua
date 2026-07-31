@@ -3,13 +3,14 @@
 
 local ecs<const> = require('cartlib/ecs/index')
 local action_effects<const> = require('cartlib/action_effects')
+local component_types<const> = require('cartlib/components/types')
 local compiler<const> = require('cartlib/input/action_effect/compiler')
 local cart_input<const> = require('cartlib/input/player')
 local scratchbatch<const> = require('cartlib/util/scratchbatch')
 local world_instance<const> = require('cartlib/world/index').instance
-local inputintentcomponent<const> = 'inputintentcomponent'
-local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
-local actioneffectcomponentid<const> = 'actioneffectcomponent'
+local input_intent_component_type<const> = component_types.input_intent
+local input_action_effect_component_type<const> = component_types.input_action_effect
+local action_effect_component_type<const> = component_types.action_effect
 local assigned_value_edges<const> = { ['hold'] = true, ['press'] = true }
 
 local run_effect<const> = function(effect, env)
@@ -32,7 +33,6 @@ function inputactioneffectsystem.new(priority)
 	self.custom_match_scratch = scratchbatch.new()
 	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
 	self.frame_serial = 0
-	self.__ecs_id = 'inputactioneffectsystem'
 	return self
 end
 
@@ -43,7 +43,7 @@ function inputactioneffectsystem:update()
 end
 
 function inputactioneffectsystem:process_input_intents()
-	local components<const> = world_instance.active_space.active_components_by_type[inputintentcomponent]
+	local components<const> = world_instance.active_space.active_components_by_type[input_intent_component_type]
 	for i = 1, #components do
 		local component<const> = components[i]
 		local obj<const> = component.parent
@@ -59,7 +59,7 @@ function inputactioneffectsystem:process_input_intents()
 end
 
 function inputactioneffectsystem:process_input_action_programs()
-	local components<const> = world_instance.active_space.active_components_by_type[inputactioneffectcomponent]
+	local components<const> = world_instance.active_space.active_components_by_type[input_action_effect_component_type]
 	for i = 1, #components do
 		local component<const> = components[i]
 		local obj<const> = component.parent
@@ -67,7 +67,7 @@ function inputactioneffectsystem:process_input_action_programs()
 		local program_key<const> = self:resolve_program_key(component, obj)
 
 		local player_index<const> = obj.player_index or 1
-		local effects<const> = obj:get_component(actioneffectcomponentid)
+		local effects<const> = obj:get_component(action_effect_component_type)
 		if (not effects) and program.uses_effect_triggers then
 			error('[inputactioneffectsystem] program "' .. program_key .. '" triggers effects but object "' .. obj.id .. '" has no actioneffectcomponent.')
 		end
@@ -350,5 +350,8 @@ function inputactioneffectsystem:parse_pattern(pattern)
 end
 
 return {
-	inputactioneffectsystem = inputactioneffectsystem,
+	id = 'inputactioneffects',
+	group = ecs.tickgroup.input,
+	default_priority = 10,
+	create = inputactioneffectsystem.new,
 }

@@ -37,6 +37,7 @@
 
 local eventemitter<const> = require('cartlib/eventemitter')
 local components<const> = require('cartlib/components')
+local component_types<const> = require('cartlib/components/types')
 local component<const> = components.component
 
 local actioneffects<const> = {}
@@ -209,7 +210,7 @@ setmetatable(actioneffectcomponent, { __index = component })
 --   The component is unique (only one per object allowed).
 function actioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = 'actioneffectcomponent'
+	opts.type_name = component_types.action_effect
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), actioneffectcomponent)
 	self.definitions = {}
@@ -294,6 +295,6 @@ function actioneffectcomponent:cooldown_remaining(id)
 end
 
 actioneffects.actioneffectcomponent = actioneffectcomponent
-components.register_component('actioneffectcomponent', actioneffectcomponent)
+components.register_component(component_types.action_effect, actioneffectcomponent)
 
 return actioneffects

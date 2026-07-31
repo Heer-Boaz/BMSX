@@ -59,6 +59,7 @@
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter<const> = require('cartlib/eventemitter')
+local component_types<const> = require('cartlib/components/types')
 local fsm<const> = require('cartlib/fsm/index')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local components<const> = require('cartlib/components')
@@ -71,8 +72,8 @@ worldobject.__index = worldobject
 
 local world_id_max<const> = 0x7fffffff
 local collision_linked_component_types<const> = {
-	spritecomponent = true,
-	collider2dcomponent = true,
+	[component_types.sprite] = true,
+	[component_types.collider_2d] = true,
 }
 
 local component_key<const> = function(type_or_name)
@@ -91,8 +92,8 @@ local component_key<const> = function(type_or_name)
 end
 
 local rebuild_collision_sprite_links<const> = function(self)
-	local sprite_bucket<const> = self.component_map.spritecomponent
-	local collider_bucket<const> = self.component_map.collider2dcomponent
+	local sprite_bucket<const> = self.component_map[component_types.sprite]
+	local collider_bucket<const> = self.component_map[component_types.collider_2d]
 	local primary_sprite = self.sprite_component
 	local primary_collider = self.collider
 	if primary_sprite == nil or primary_sprite.parent ~= self then
@@ -213,16 +214,16 @@ function worldobject:add_component(comp)
 	if self.active then
 		world_instance:activate_component(comp)
 	end
-	if comp.type_name == 'timelinecomponent' then
+	if comp.type_name == component_types.timeline then
 		self.timelines = comp
 	end
-	if comp.type_name == 'transformcomponent' then
+	if comp.type_name == component_types.transform then
 		self.transform_component = comp
 	end
-	if comp.type_name == 'actioneffectcomponent' then
+	if comp.type_name == component_types.action_effect then
 		self.actioneffects = comp
 	end
-	if comp.type_name == 'abilitiescomponent' then
+	if comp.type_name == component_types.abilities then
 		self.abilities = comp
 	end
 	if collision_linked_component_types[comp.type_name] then

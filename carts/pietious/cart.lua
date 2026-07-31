@@ -6,9 +6,16 @@ local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
-local ecs<const> = require('cartlib/ecs/index')
-local ecs_builtin<const> = require('cartlib/ecs/builtin')
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
+local behaviour_tree_system<const> = require('cartlib/ecs/systems/behaviour_tree')
+local boundary_system<const> = require('cartlib/ecs/systems/boundary')
+local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
+local overlap_2d_system<const> = require('cartlib/ecs/systems/overlap_2d')
+local previous_position_system<const> = require('cartlib/ecs/systems/previous_position')
+local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
+local timeline_system<const> = require('cartlib/ecs/systems/timeline')
+local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
+local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
@@ -43,25 +50,29 @@ local title_screen_module<const> = require('title_screen')
 local collision_profiles<const> = require('cartlib/collision_profiles')
 local castle_map<const> = require('castle/map')
 
-local elevator_pipeline_ref<const> = 'eup'
-local pietious_pipeline_spec<const> = {
-	{ ref = 'preposition' },
-	{ ref = 'behaviortrees' },
-	{ ref = 'inputactioneffects' },
-	{ ref = 'actioneffectruntime' },
-	{ ref = 'objectfsm' },
-	{ ref = 'boundary' },
-	{ ref = 'tilecollision' },
-	{ ref = 'timeline' },
-	{ ref = 'visualrender' },
-	{ ref = elevator_pipeline_ref },
-	{ ref = 'overlapevents' },
+local pipeline_descriptors<const> = {
+	previous_position_system,
+	behaviour_tree_system,
+	input_action_effect_system,
+	object_fsm_system,
+	boundary_system,
+	overlap_2d_system,
+	tile_collision_system,
+	timeline_system,
+	visual_render_system,
+	elevator_update_system_module,
 }
-local elevator_pipeline_descriptor<const> = {
-	id = elevator_pipeline_ref,
-	group = ecs.tickgroup.moderesolution,
-	default_priority = 20,
-	create = elevator_update_system_module.elevator_update_system.new,
+local pietious_pipeline_spec<const> = {
+	{ ref = previous_position_system.id },
+	{ ref = behaviour_tree_system.id },
+	{ ref = input_action_effect_system.id },
+	{ ref = object_fsm_system.id },
+	{ ref = elevator_update_system_module.id },
+	{ ref = boundary_system.id },
+	{ ref = overlap_2d_system.id },
+	{ ref = tile_collision_system.id },
+	{ ref = timeline_system.id },
+	{ ref = visual_render_system.id },
 }
 
 local init_epoch = 0
@@ -171,8 +182,7 @@ function new_game()
 end
 
 function init()
-	ecs_builtin.register_builtin_ecs()
-	ecs_pipeline_registry:register(elevator_pipeline_descriptor)
+	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	irq_module.register(irq_vblank, function()
