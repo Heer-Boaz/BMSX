@@ -8,6 +8,7 @@ horen niet in deze lijst.
 
 | ID | Controle | Groen wanneer |
 | --- | --- | --- |
+| `TOOLCHAIN-BULLSHIT-01` | Haal die domme synomiemfolders weg voor `tool`. Nu hebben we `toolchain`, `tooling`, en `tools`. | We geen domme synoniemfolders meer hebben voor `tool`. |
 | `PARITY-COVERAGE-01` | Laat de parity-audit de werkelijke machinegrens bewaken nadat host- en Studio-code hun juiste owner hebben. | Brede paduitzonderingen verbergen geen machinecode of afwijkende machinecontracten; iedere resterende uitsluiting is een echte taal-, host- of productgrens en een groene audit bewijst de geclaimde TS/C++-surface. |
 
 ## Doorlopende performance-audit
