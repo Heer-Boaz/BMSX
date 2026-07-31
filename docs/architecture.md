@@ -1938,21 +1938,22 @@ same retained cart composition. No path copies the cart framebuffer or
 allocates terminal-only memory.
 
 The BIOS keeps an 80x40 cell screen, fixed 128-line scrollback, two-word dirty
-row bitset, dirty column ranges, line editor, history and GP0 command list in
-ordinary `.bss`. The boot path and supervisor circuit explicitly select the
-standard 320x240 firmware mode; the old 64x32/256x192 terminal geometry is not
-a model-derived PSX mode. A packed ROM table maps each 4x6 tiny-font codepoint
-one-to-one to its physical system-texture coordinates.
+row bitset, byte-sized dirty column ranges, line editor, history and a fixed
+four-row GP0 scratch list in ordinary `.bss`. Retained terminal cells are packed
+16-bit glyph/palette words. The boot path and supervisor circuit explicitly
+select the standard 320x240 firmware mode; the old 64x32/256x192 terminal
+geometry is not a model-derived PSX mode. A packed ROM table maps each 4x6
+tiny-font codepoint one-to-one to its physical system-texture coordinates.
 The monitor's HID-to-console-ASCII producer emits uppercase alphabetic bytes;
 the ROM packer and glyph renderer do not reinterpret text. A zero retained cell
 leaves its 4x6 terminal area transparent. Every nonzero cell, including an
 explicit space, first draws an opaque black 4x6 background and then draws its
 glyph when it has one. Dirty spans and newly exposed scroll bands clear back to
 transparent before their live cells are redrawn, while ordinary VRAM-to-VRAM
-copy moves the existing cell coverage during scrolling. DMA consumes the
-retained command words before firmware may rebuild them, and the final GP0 IRQ
-fences GPU completion. No render-time Lua tables, strings or pixel buffers are
-allocated.
+copy moves the existing cell coverage during scrolling. DMA completion permits
+the firmware to reuse the scratch list between row batches; one final ordered
+GP0 IRQ fences the complete stream. No render-time Lua tables, strings or pixel
+buffers are allocated.
 
 The firmware line editor supports insertion, deletion, cursor/home/end and
 word motion/deletion, a fixed history ring and command-name completion with a
