@@ -3,7 +3,8 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_gpu.reset_320x240()
-local application<const> = require('cartlib/application')
+local ecs_builtin<const> = require('cartlib/ecs/builtin')
+local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/index').instance
@@ -46,7 +47,9 @@ irq_module.register(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 
-application.reset()
+ecs_builtin.register_builtin_ecs()
+world:clear()
+ecs_pipeline_registry:build(world, ecs_builtin.default_pipeline_spec)
 world:add_space('main')
 world:set_space('main')
 *irq_mask_register = irq_vblank

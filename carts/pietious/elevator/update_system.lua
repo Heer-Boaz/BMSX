@@ -1,16 +1,10 @@
 local ecs<const> = require('cartlib/ecs/index')
-local ecs_builtin<const> = require('cartlib/ecs/builtin')
-local ecs_pipeline<const> = require('cartlib/ecs/pipeline')
 local world_instance<const> = require('cartlib/world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
-local ecsystem<const> = ecs.ecsystem
 
 local elevator_update_system<const> = {}
 elevator_update_system.__index = elevator_update_system
-setmetatable(elevator_update_system, { __index = ecsystem })
-
-local pipeline_ref<const> = 'eup'
 
 function elevator_update_system:update()
 	local player<const> = world_instance:get('pietolon')
@@ -23,21 +17,13 @@ function elevator_update_system:update()
 	player.vertical_elevator_id = player.next_vertical_elevator_id
 end
 
-local apply_pipeline<const> = function()
-	ecs_pipeline.defaultecspipelineregistry:register({
-		id = pipeline_ref,
+function elevator_update_system.new(priority)
+	return setmetatable({
 		group = tickgroup.moderesolution,
-		default_priority = 20,
-		create = function(priority)
-			return setmetatable(ecsystem.new(tickgroup.moderesolution, priority), elevator_update_system)
-		end,
-	})
-	local nodes<const> = ecs_builtin.default_pipeline_spec()
-	nodes[#nodes + 1] = { ref = pipeline_ref }
-	nodes[#nodes + 1] = { ref = 'overlapevents' }
-	ecs_pipeline.defaultecspipelineregistry:build(world_instance, nodes)
+		priority = priority,
+	}, elevator_update_system)
 end
 
 return {
-	apply_pipeline = apply_pipeline,
+	elevator_update_system = elevator_update_system,
 }

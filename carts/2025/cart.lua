@@ -1,7 +1,9 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-local application<const> = require('cartlib/application')
+local aem<const> = require('cartlib/aem')
+local ecs_builtin<const> = require('cartlib/ecs/builtin')
+local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local cart_input<const> = require('cartlib/input/player')
@@ -293,10 +295,13 @@ local register_director<const> = function()
 end
 
 function init()
+	ecs_builtin.register_builtin_ecs()
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
+	irq_module.register(irq_apu, aem.on_apu_irq)
 	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
+	aem.reload()
 	*irq_mask_register = irq_imgdec | irq_vblank | irq_apu
 	gx_gpu.clear_color(0xff000000)
 	texture_residency.load_font('msx_6b_font_space')
@@ -307,7 +312,8 @@ function init()
 end
 
 function new_game()
-	application.reset()
+	world_instance:clear()
+	ecs_pipeline_registry:build(world_instance, ecs_builtin.default_pipeline_spec)
 	local w<const> = screen_width
 	local h<const> = screen_height
 	local line_height<const> = 16

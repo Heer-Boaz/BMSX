@@ -4,7 +4,11 @@ local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
-local application<const> = require('cartlib/application')
+local aem<const> = require('cartlib/aem')
+local collision2d<const> = require('cartlib/collision2d')
+local ecs<const> = require('cartlib/ecs/index')
+local ecs_builtin<const> = require('cartlib/ecs/builtin')
+local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
@@ -38,6 +42,27 @@ local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
 local collision_profiles<const> = require('cartlib/collision_profiles')
 local castle_map<const> = require('castle/map')
+
+local elevator_pipeline_ref<const> = 'eup'
+local pietious_pipeline_spec<const> = {
+	{ ref = 'preposition' },
+	{ ref = 'behaviortrees' },
+	{ ref = 'inputactioneffects' },
+	{ ref = 'actioneffectruntime' },
+	{ ref = 'objectfsm' },
+	{ ref = 'boundary' },
+	{ ref = 'tilecollision' },
+	{ ref = 'timeline' },
+	{ ref = 'visualrender' },
+	{ ref = elevator_pipeline_ref },
+	{ ref = 'overlapevents' },
+}
+local elevator_pipeline_descriptor<const> = {
+	id = elevator_pipeline_ref,
+	group = ecs.tickgroup.moderesolution,
+	default_priority = 20,
+	create = elevator_update_system_module.elevator_update_system.new,
+}
 
 local init_epoch = 0
 local pending_title_boot_epoch = -1
@@ -105,8 +130,8 @@ local grant_starting_loadout<const> = function()
 end
 
 local create_world<const> = function(director_boot_mode)
-	application.reset()
-	elevator_update_system_module.apply_pipeline()
+	world_instance:clear()
+	ecs_pipeline_registry:build(world_instance, pietious_pipeline_spec)
 	world_instance:add_space('main')
 	world_instance:add_space('title')
 	world_instance:add_space('transition')
@@ -146,6 +171,10 @@ function new_game()
 end
 
 function init()
+	ecs_builtin.register_builtin_ecs()
+	ecs_pipeline_registry:register(elevator_pipeline_descriptor)
+	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
+	irq_module.register(irq_apu, aem.on_apu_irq)
 	irq_module.register(irq_vblank, function()
 		vblank_sequence = vblank_sequence + 1
 	end)
@@ -153,6 +182,7 @@ function init()
 		gx_gpu.ack_irq()
 		gpu_completion_sequence = gpu_completion_sequence + 1
 	end)
+	aem.reload()
 	gx_gpu.draw_target(framebuffer_front)
 	gx_gpu.clear_color(0xff000000)
 	gx_gpu.draw_target(framebuffer_back)

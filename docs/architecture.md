@@ -3222,11 +3222,13 @@ to source files and supplies a module when that graph reaches it.
 `cartlib/prefab` owns prefab definitions and spawning; it selects and prepares
 each definition's base constructor and instance metatable once when the
 definition is registered rather than re-decoding its type or allocating a new
-metatable for every spawn. `cartlib/application` is the opt-in composition root
-for carts that use the complete world/ECS, collision, and AEM stack. It
-registers those persistent guest subsystems and owns the application reset
-operation. Bare and focused test carts import only their direct IRQ/GX/device
-owners and therefore do not link the application graph.
+metatable for every spawn. The cartridge entry module is the hardware-feature
+composition root: it clears its world, selects an ECS pipeline, samples input
+in its frame loop, and registers only the device IRQ handlers it actually uses.
+AEM and GEO have no import-time application facade; carts with AEM data call
+`aem.reload()` and bind its APU handler, while carts that submit GEO work bind
+the collision handler. The built-in ECS schedule remains an explicit gameplay
+pack selected by world-based carts rather than a machine or BIOS dependency.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

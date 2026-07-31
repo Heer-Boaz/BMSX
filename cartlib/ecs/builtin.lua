@@ -32,19 +32,17 @@ local register_builtin_ecs<const> = function()
 	*registered = 1
 end
 
-local default_pipeline_spec<const> = function()
-	return {
-		{ ref = 'preposition' },
-		{ ref = 'behaviortrees' },
-		{ ref = 'inputactioneffects' },
-		{ ref = 'actioneffectruntime' },
-		{ ref = 'objectfsm' },
-		{ ref = 'boundary' },
-		{ ref = 'tilecollision' },
-		{ ref = 'timeline' },
-		{ ref = 'visualrender' },
-	}
-end
+local default_pipeline_spec<const> = {
+	{ ref = 'preposition' },
+	{ ref = 'behaviortrees' },
+	{ ref = 'inputactioneffects' },
+	{ ref = 'actioneffectruntime' },
+	{ ref = 'objectfsm' },
+	{ ref = 'boundary' },
+	{ ref = 'tilecollision' },
+	{ ref = 'timeline' },
+	{ ref = 'visualrender' },
+}
 
 return {
 	register_builtin_ecs = register_builtin_ecs,
