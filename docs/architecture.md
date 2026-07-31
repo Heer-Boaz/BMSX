@@ -183,8 +183,8 @@ not compiler, CPU, interpreter, or device intrinsics.
 
 The guest Lua language deliberately includes its table and string value types
 and the normal base, table, string, math and OS libraries. The boot ROM installs
-`bios/lua/base.lua` as the core Lua global library, `lua/table` as `table`,
-`lua/string` as `string`, `lua/math` as `math`, and `lua/os` as `os`. Those modules execute
+`machine/bios/base.lua` as the core Lua global library, `table` as `table`,
+`string` as `string`, `math` as `math`, and `os` as `os`. Those modules execute
 as BLua using ordinary calls, ROM lookup tables, and integer/number
 instructions; carts are not expected to avoid normal Lua features. More
 generally, broadly useful language/runtime basics may be firmware-provided
@@ -240,7 +240,7 @@ transcendental precision. `math.tan` is the ratio of those Q16.16 sine/cosine
 results: exact turn singularities divide by zero and produce the normal Lua
 numeric infinity; near-singular radian inputs remain finite.
 
-The `os` library is also BIOS-owned. `bios/lua/os.lua`
+The `os` library is also BIOS-owned. `machine/bios/os.lua`
 implements `os.clock`, `os.time`, `os.date`, and `os.difftime` in BLua; elapsed
 time comes from the CPU-visible `sys_time_ms` word and civil-time conversion is
 deterministic BMSX UTC-equivalent logic, not host wall-clock, host timezone,

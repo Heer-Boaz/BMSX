@@ -1500,7 +1500,7 @@ test('offline canonical save remains local and replicates on reconnect', async (
 	installOfflineWorkspace(t, storage);
 	const registry = sourceRegistry('-- old source', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(
-		sourceRegistry('-- system source', 'bios'),
+		sourceRegistry('-- system source', 'machine/bios'),
 		[registry, null],
 		TEST_DOMAIN,
 	);

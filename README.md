@@ -24,7 +24,7 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - `machine/ts/common`: low-level shared helpers
 - `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
 - `ide`: editor, terminal, workbench, and IDE runtime tooling
-- `bios`: the standalone guest system-ROM program, with boot, kernel, GPU, TTY, shell, Lua-library, and resource owners
+- `machine/bios`: the guest system-ROM source, organized by BIOS responsibility
 - `cartlib`: the cart-side SDK, including direct device programming; bundled into cart ROMs when required
 - `hosts/browser`: browser player/product owners
 - `hosts/node`: headless and CLI product owners
@@ -39,9 +39,9 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Build Model
 
-- BIOS code lives in `bios`
-- BIOS assets live in `bios/res`
-- resident Lua libraries live in `bios/lua`
+- BIOS code lives in `machine/bios`
+- BIOS assets live in `machine/bios/res`
+- resident base, table, string, math, and OS modules live directly in `machine/bios`
 - shared cart Lua lives in `cartlib`
 - current carts live in `carts/<cart-folder>`
 - current cart resources live in `carts/<cart-folder>/res`

@@ -27,7 +27,7 @@ import {
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
 const SYSTEM_BOOT_SOURCE = `
-math = require('lua/math')
+math = require('math')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 const CART_ENTRY_SOURCE = `
@@ -62,14 +62,14 @@ bios_gpu.prepare_supervisor_320x240(0)
 return 320, 240
 `;
 const SYSTEM_MODULE_FILES = [
-	['lua/math', 'bios/lua/math.lua'],
-	['lua/math/sincos', 'bios/lua/math/sincos.lua'],
+	['math', 'machine/bios/math.lua'],
+	['math/sincos', 'machine/bios/math/sincos.lua'],
 ] as const;
 const CART_MODULE_FILES = [
 	['cartlib/gx/gpu', 'cartlib/gx/gpu.lua'],
 ] as const;
 const BIOS_MODULE_FILES = [
-	['gpu/gpu', 'bios/gpu/gpu.lua'],
+	['gpu/gpu', 'machine/bios/gpu/gpu.lua'],
 ] as const;
 
 function sourceModules(files: ReadonlyArray<readonly [string, string]>) {

@@ -1,4 +1,4 @@
-local sincos_turn32<const> = require('lua/math/sincos')
+local sincos_turn32<const> = require('math/sincos')
 
 local pi<const> = 3.141592653589793238462643383279502884
 local half_pi<const> = pi * 0.5

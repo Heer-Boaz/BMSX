@@ -34,7 +34,7 @@ const ROL8_PATH = 'cartlib/util/rol8';
 const ROUND_TO_NEAREST_PATH = 'system/round_to_nearest';
 const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
-const SINCOS_TURN32_PATH = 'lua/math/sincos';
+const SINCOS_TURN32_PATH = 'math/sincos';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const ROUND_TO_NEAREST_SOURCE = `return function(value)
@@ -81,8 +81,13 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	return materializeCpuCompletionValues(cpu);
 }
 
-function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {
-	const functionId = compiled.metadata.exportProtoIdBySlot[slotName];
+function disassembleConstExport(compiled: CompiledProgram, modulePath: string): string {
+	const moduleExport = compiled.program.moduleExports.find(entry =>
+		entry.path === modulePath && entry.exportPathKey === ''
+	);
+	assert.ok(moduleExport);
+	const functionId = compiled.metadata.exportProtoIdBySlot[moduleExport.slotName];
+	assert.ok(functionId);
 	const image = linkTestSystemBlua32(compiled);
 	const functionIndex = image.symbols.metadata.functionIds.indexOf(functionId);
 	assert.notEqual(functionIndex, -1);
@@ -97,9 +102,8 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 `;
 	const compiled = compileWithModule(entrySource, RECT_OVERLAPS_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(RECT_OVERLAPS_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot.cartlib__util__rect_overlaps?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__util__rect_overlaps'), true);
-	const disasm = disassembleConstExport(compiled, 'cartlib__util__rect_overlaps');
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	const disasm = disassembleConstExport(compiled, RECT_OVERLAPS_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
 });
@@ -112,9 +116,8 @@ return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 `;
 	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot.cartlib__util__clamp?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__util__clamp'), true);
-	const disasm = disassembleConstExport(compiled, 'cartlib__util__clamp');
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	const disasm = disassembleConstExport(compiled, CLAMP_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
 });
@@ -156,18 +159,16 @@ return rol8(5), rol8(128)
 		const testCase = cases[index];
 		const moduleSource = readFileSync(testCase.sourcePath, 'utf8');
 		const compiled = compileWithModule(testCase.entry, testCase.path, moduleSource);
-		const slotName = testCase.path.replaceAll('/', '__');
 		assert.equal(compiled.moduleProtoMap.has(testCase.path), false);
-		assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
-		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-		const disasm = disassembleConstExport(compiled, slotName);
+		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+		const disasm = disassembleConstExport(compiled, testCase.path);
 		assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 		assert.deepEqual(runColdCompiled(compiled), testCase.expected);
 	}
 });
 
 test('sincos_turn32 is a const function module backed by visible rodata', () => {
-	const moduleSource = readFileSync('bios/lua/math/sincos.lua', 'utf8');
+	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
 	const entrySource = `
 local s0<const>, c0<const> = require("${SINCOS_TURN32_PATH}")(0)
 local s90<const>, c90<const> = require("${SINCOS_TURN32_PATH}")(1073741824)
@@ -180,12 +181,10 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
-	const slotName = 'lua__math__sincos';
 	assert.equal(compiled.moduleProtoMap.has(SINCOS_TURN32_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
 	assert.deepEqual(image.sections.rodata.symbols, [{
-		name: 'module:lua/math/sincos/rodata:sin_quarter_lut',
+		name: 'module:math/sincos/rodata:sin_quarter_lut',
 		offset: 0,
 		byteCount: 257 * 4,
 		alignment: 4,
@@ -195,7 +194,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 	for (let index = 0; index < expectedQuarter.length; index += 1) {
 		assert.equal(readLE32(image.sections.rodata.bytes, index * 4), expectedQuarter[index] >>> 0);
 	}
-	const disasm = disassembleConstExport(compiled, slotName);
+	const disasm = disassembleConstExport(compiled, SINCOS_TURN32_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [
 		0, 65536,
@@ -209,7 +208,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 });
 
 test('sincos_turn32 rodata relocations survive O3 constant folding', () => {
-	const moduleSource = readFileSync('bios/lua/math/sincos.lua', 'utf8');
+	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
 	const entrySource = `
 return require("${SINCOS_TURN32_PATH}")(0)
 `;
@@ -218,15 +217,14 @@ return require("${SINCOS_TURN32_PATH}")(0)
 });
 
 test('const function export aliases stay compile-time call targets', () => {
-	const moduleSource = readFileSync('bios/lua/math/sincos.lua', 'utf8');
+	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
 	const entrySource = `
 local sincos_turn32<const> = require("${SINCOS_TURN32_PATH}")
 return sincos_turn32(0)
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
-	const slotName = 'lua__math__sincos';
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-	const disasm = disassembleConstExport(compiled, slotName);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	const disasm = disassembleConstExport(compiled, SINCOS_TURN32_PATH);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
 	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
 });

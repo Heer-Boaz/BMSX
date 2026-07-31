@@ -317,15 +317,15 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	try {
 		const cartPrefix = layoutRomPrefix(assets, true, null);
 		const systemEntrySource = `module<entry>
-require('lua/base')
-table = require('lua/table')
-string = require('lua/string/base')
+require('base')
+table = require('table')
+string = require('string/base')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 		const systemModuleSources = [
-			['lua/base', readFileSync('bios/lua/base.lua', 'utf8')],
-			['lua/table', readFileSync('bios/lua/table.lua', 'utf8')],
-			['lua/string/base', readFileSync('bios/lua/string/base.lua', 'utf8')],
+			['base', readFileSync('machine/bios/base.lua', 'utf8')],
+			['table', readFileSync('machine/bios/table.lua', 'utf8')],
+			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
 		] as const;
 		const systemExecutableSources: RomAsset[] = [{
 			type: 'lua',

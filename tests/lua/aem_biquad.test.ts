@@ -7,8 +7,8 @@ import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
 const MODULE_FILES = [
-	['lua/math/sincos', 'bios/lua/math/sincos.lua'],
-	['lua/math', 'bios/lua/math.lua'],
+	['math/sincos', 'machine/bios/math/sincos.lua'],
+	['math', 'machine/bios/math.lua'],
 	['cartlib/memory', 'cartlib/memory.lua'],
 	['cartlib/dma', 'cartlib/dma.lua'],
 	['cartlib/apu', 'cartlib/apu.lua'],
@@ -17,7 +17,7 @@ const MODULE_FILES = [
 
 test('AEM biquad design emits the exact packed Q14 APU register words', () => {
 	const entrySource = `
-math = require('lua/math')
+math = require('math')
 local biquad<const> = require('cartlib/aem_biquad')
 local control<const>, b0_b1<const>, b2_a1<const>, a2<const> = biquad.design({
 	type = 'lowpass',

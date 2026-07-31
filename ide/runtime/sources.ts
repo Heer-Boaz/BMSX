@@ -26,7 +26,7 @@ import {
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
-const SYSTEM_PROJECT_ROOT_PATH = 'bios';
+const SYSTEM_PROJECT_ROOT_PATH = 'machine/bios';
 
 export const enum Blua32GlobalRegisterFile {
 	Global = 1,

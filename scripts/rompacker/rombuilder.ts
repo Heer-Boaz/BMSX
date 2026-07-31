@@ -151,7 +151,7 @@ export function normalizeWorkspacePath(input: string): string {
 }
 
 const CART_ROOT_SEGMENT = 'carts/';
-const BIOS_RES_SEGMENT = 'bios/res';
+const BIOS_RES_SEGMENT = 'machine/bios/res';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -1662,14 +1662,7 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 		resNeedsRebuild;
 }
 
-export const biosResPath = './bios/res';
+export const biosResPath = './machine/bios/res';
 const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [biosResPath];
-export const biosSourcePaths = [
-	'./bios/boot',
-	'./bios/kernel',
-	'./bios/gpu',
-	'./bios/tty',
-	'./bios/shell',
-	'./bios/lua',
-];
+export const biosSourcePath = './machine/bios';
 export const cartlibLuaPath = './cartlib';

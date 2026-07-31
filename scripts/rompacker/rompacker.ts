@@ -8,7 +8,7 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { biosSourcePaths, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -341,7 +341,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 	} else {
 		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, BIOSResPath, {
-			extraLuaPaths: biosSourcePaths,
+			extraLuaPaths: [biosSourcePath],
 			debug,
 			romFilePath: BIOSRomPath,
 		});
@@ -366,11 +366,13 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		return result;
 	};
-	const biosLuaRoots = biosSourcePaths.map(normalizePathKey);
-	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: biosLuaRoots, profile: 'bios' }));
+	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({
+		roots: [normalizePathKey(biosSourcePath)],
+		profile: 'bios',
+	}));
 
-	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, ...biosSourcePaths], BIOSRomName, {
-		extraLuaPaths: [],
+	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
+		extraLuaPaths: [biosSourcePath],
 		virtualRoot: BIOSVirtualRoot,
 	}));
 	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));

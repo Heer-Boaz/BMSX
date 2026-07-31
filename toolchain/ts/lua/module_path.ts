@@ -7,8 +7,8 @@ export function stripLuaExtension(candidate: string): string {
 }
 
 const CART_SOURCE_PREFIX = 'carts/';
-const BIOS_RESOURCE_SOURCE_PREFIX = 'bios/res/';
-const BIOS_SOURCE_PREFIX = 'bios/';
+const BIOS_RESOURCE_SOURCE_PREFIX = 'machine/bios/res/';
+const BIOS_SOURCE_PREFIX = 'machine/bios/';
 const RESOURCE_SOURCE_PREFIX = 'res/';
 const MODULE_PATH_SOURCE_PREFIXES = [
 	BIOS_RESOURCE_SOURCE_PREFIX,
