@@ -3214,12 +3214,15 @@ game-facing geometry such as thick-line construction also belongs to
 
 Cart code imports the focused owner it uses; `cartlib` has no prelude or
 all-purpose system facade and does not inject SDK aliases into the guest global
-registerfile. `cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge
-write. `cartlib/prefab` owns prefab definitions and spawning; it selects and
-prepares each definition's base constructor and instance metatable once when
-the definition is registered rather than re-decoding its type or allocating a
-new metatable for every spawn. `cartlib/application` is the opt-in composition
-root for carts that use the complete world/ECS, collision, and AEM stack. It
+registerfile. The Lua compiler owns the exact literal-`require` dependency graph
+and reachable-module traversal; ROM authoring only maps canonical module paths
+to source files and supplies a module when that graph reaches it.
+`cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge write.
+`cartlib/prefab` owns prefab definitions and spawning; it selects and prepares
+each definition's base constructor and instance metatable once when the
+definition is registered rather than re-decoding its type or allocating a new
+metatable for every spawn. `cartlib/application` is the opt-in composition root
+for carts that use the complete world/ECS, collision, and AEM stack. It
 registers those persistent guest subsystems and owns the application reset
 operation. Bare and focused test carts import only their direct IRQ/GX/device
 owners and therefore do not link the application graph.

@@ -1,13 +1,9 @@
 import {
 	LuaSyntaxKind,
-	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
-	type LuaIdentifierExpression,
 	type LuaReturnStatement,
-	type LuaStringLiteralExpression,
 } from '../../syntax/ast';
-import { visitCallExpressionsInStatements } from '../../syntax/calls';
 import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../../semantic/frontend';
 import {
 	assertConstModuleExportsAreStatic,
@@ -25,6 +21,7 @@ import {
 	buildTopLevelLocalModuleShapes,
 	type ModuleExportShape,
 } from './module_shape';
+import { collectLuaModuleDependencies } from '../module_graph';
 
 export type { ConstExportValue } from './const_module_exports';
 
@@ -96,32 +93,6 @@ const buildStaticFunctionExportPathBySymbolHandle = (
 		}
 	}
 	return out;
-};
-
-const collectModuleDependencies = (
-	chunk: LuaChunk,
-	knownModulePaths: ReadonlySet<string>,
-): string[] => {
-	const dependencies: string[] = [];
-	const seen = new Set<string>();
-	visitCallExpressionsInStatements(chunk.body, (call: LuaCallExpression) => {
-		if (call.methodName !== null || call.arguments.length !== 1 || call.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return;
-		}
-		if ((call.callee as LuaIdentifierExpression).name !== 'require') {
-			return;
-		}
-		if (call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
-			return;
-		}
-		const modulePath = (call.arguments[0] as LuaStringLiteralExpression).value;
-		if (!knownModulePaths.has(modulePath) || seen.has(modulePath)) {
-			return;
-		}
-		seen.add(modulePath);
-		dependencies.push(modulePath);
-	});
-	return dependencies;
 };
 
 const buildModuleCompileInfo = (
@@ -208,7 +179,7 @@ export const buildModuleCompileContext = (
 	const moduleDependenciesByPath = new Map<string, ReadonlyArray<string>>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
+		moduleDependenciesByPath.set(module.path, collectLuaModuleDependencies(module.chunk, modulePaths));
 		const constModule = module.chunk.constModule;
 		const info = buildModuleCompileInfo(
 			module,

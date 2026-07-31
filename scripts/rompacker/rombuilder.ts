@@ -12,6 +12,7 @@ import type {
 	RomAsset,
 	TextureMeta,
 } from '../../toolchain/ts/rompack/assets';
+import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import type { GLTFMesh } from '../../toolchain/ts/rompack/gltf';
 import { parseCartManifest, type RomManifest } from '../../toolchain/ts/rompack/manifest';
 import {
@@ -94,6 +95,8 @@ const { LuaLexer } = require('../../toolchain/ts/lua/syntax/lexer');
 const { LuaParser } = require('../../toolchain/ts/lua/syntax/parser');
 // @ts-ignore
 const { splitText } = require('../../machine/ts/common/text_lines');
+// @ts-ignore
+const { collectLuaModuleDependencyClosure } = require('../../toolchain/ts/lua/compiler/module_graph');
 // @ts-ignore
 const { isLuaCompileError } = require('../../toolchain/ts/lua/compiler');
 // @ts-ignore
@@ -677,42 +680,6 @@ function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
 }
 
-function collectLiteralLuaRequires(source: string, path: string): string[] {
-	const lexer = new LuaLexer(source, path);
-	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, splitText(source));
-	const chunk = parser.parseChunk();
-	const requires: string[] = [];
-	const visited = new WeakSet<object>();
-	const visit = (node: unknown): void => {
-		if (node === null || typeof node !== 'object') {
-			return;
-		}
-		if (visited.has(node)) {
-			return;
-		}
-		visited.add(node);
-		if (Array.isArray(node)) {
-			for (let index = 0; index < node.length; index += 1) {
-				visit(node[index]);
-			}
-			return;
-		}
-		const record = node as Record<string, unknown>;
-		const callee = record.callee as Record<string, unknown> | undefined;
-		const args = record.arguments as ReadonlyArray<Record<string, unknown>> | undefined;
-		if (callee?.name === 'require' && args && args.length > 0 && typeof args[0].value === 'string') {
-			requires.push(args[0].value);
-		}
-		const values = Object.values(record);
-		for (let index = 0; index < values.length; index += 1) {
-			visit(values[index]);
-		}
-	};
-	visit(chunk);
-	return requires;
-}
-
 function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: readonly string[], virtualRoot: string): string[] {
 	const moduleFileByPath = new Map<string, string>();
 	for (const root of libraryRoots) {
@@ -724,31 +691,31 @@ function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: re
 			moduleFileByPath.set(toLuaModulePath(sourcePath), file);
 		}
 	}
-	const includedFiles: string[] = [];
-	const queuedModules: string[] = [];
-	const seenModules = new Set<string>();
-	const scanRequires = (file: string): void => {
-		const source = readFileSync(file, 'utf8');
-		const modules = collectLiteralLuaRequires(source, file);
-		for (let index = 0; index < modules.length; index += 1) {
-			const modulePath = modules[index];
-			if (!moduleFileByPath.has(modulePath) || seenModules.has(modulePath)) {
-				continue;
-			}
-			seenModules.add(modulePath);
-			queuedModules.push(modulePath);
-		}
-	};
+	const rootChunks = new Array<LuaChunk>(seedFiles.length);
 	for (let index = 0; index < seedFiles.length; index += 1) {
-		scanRequires(seedFiles[index]);
+		const file = seedFiles[index];
+		const source = readFileSync(file, 'utf8');
+		const lexer = new LuaLexer(source, file);
+		const tokens = lexer.scanTokens();
+		rootChunks[index] = new LuaParser(tokens, file, splitText(source)).parseChunk();
 	}
-	let queueIndex = 0;
-	while (queueIndex < queuedModules.length) {
-		const modulePath = queuedModules[queueIndex];
-		queueIndex += 1;
+	const modulePaths = new Set(moduleFileByPath.keys());
+	const includedModulePaths = collectLuaModuleDependencyClosure(
+		rootChunks,
+		modulePaths,
+		(modulePath: string): LuaChunk => {
+			const file = moduleFileByPath.get(modulePath)!;
+			const source = readFileSync(file, 'utf8');
+			const lexer = new LuaLexer(source, file);
+			const tokens = lexer.scanTokens();
+			return new LuaParser(tokens, file, splitText(source)).parseChunk();
+		},
+	);
+	const includedFiles = new Array<string>(includedModulePaths.length);
+	for (let index = 0; index < includedModulePaths.length; index += 1) {
+		const modulePath = includedModulePaths[index];
 		const file = moduleFileByPath.get(modulePath)!;
-		includedFiles.push(file);
-		scanRequires(file);
+		includedFiles[index] = file;
 	}
 	return includedFiles.sort((a, b) => a.localeCompare(b));
 }
