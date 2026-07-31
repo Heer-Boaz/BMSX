@@ -5,11 +5,8 @@ local char<const> = string.char
 local sub<const> = string.sub
 local concat<const> = table.concat
 local unpack<const> = table.unpack
-local float_bits<const> = require('string/float')
-local f32_to_u32<const> = float_bits.f32_to_u32
-local f64_to_u32s<const> = float_bits.f64_to_u32s
-local u32_to_f32<const> = float_bits.u32_to_f32
-local u32s_to_f64<const> = float_bits.u32s_to_f64
+local decode_float<const> = require('string/float/decode')
+local encode_float<const> = require('string/float/encode')
 
 local max_safe_integer<const> = 9007199254740991
 local default_int_size<const> = 4
@@ -23,8 +20,6 @@ local pack_fixed_int_size<const> = { b = 1, ['B'] = 1, h = 2, ['H'] = 2, l = def
 local pack_sized_int_token<const> = { i = true, ['I'] = true }
 local pack_signed_int_token<const> = { b = true, h = true, l = true, j = true, i = true }
 local pack_float_size<const> = { f = 4, d = 8, n = 8 }
-local pack_float_mantissa_bits<const> = { f = 23, d = 52, n = 52 }
-local pack_float_exponent_bits<const> = { f = 8, d = 11, n = 11 }
 local pack_control_kind<const> = { endian = true, align_set = true }
 local pack_skip_align_kind<const> = { pad = true, align_next = true }
 local pack_variable_size_kind<const> = { z = true, len = true }
@@ -148,12 +143,12 @@ local pack_read_int<const> = function(source, offset, size, signed, little_endia
 	return value
 end
 
-local pack_write_float_bits<const> = function(out, value, mantissa_bits, little_endian)
-	if mantissa_bits == 23 then
-		pack_write_uint(out, f32_to_u32(value), 4, little_endian)
+local pack_write_float_bits<const> = function(out, value, byte_count, little_endian)
+	if byte_count == 4 then
+		pack_write_uint(out, encode_float(value, byte_count), byte_count, little_endian)
 		return
 	end
-	local high<const>, low<const> = f64_to_u32s(value)
+	local high<const>, low<const> = encode_float(value, byte_count)
 	if little_endian then
 		pack_write_uint(out, low, 4, true)
 		pack_write_uint(out, high, 4, true)
@@ -163,10 +158,10 @@ local pack_write_float_bits<const> = function(out, value, mantissa_bits, little_
 	end
 end
 
-local pack_read_float_bits<const> = function(source, offset, mantissa_bits, little_endian)
-	if mantissa_bits == 23 then
+local pack_read_float_bits<const> = function(source, offset, byte_count, little_endian)
+	if byte_count == 4 then
 		local bits<const> = pack_read_uint(source, offset, 4, little_endian)
-		return u32_to_f32(bits)
+		return decode_float(bits, 0, byte_count)
 	end
 	local high
 	local low
@@ -177,7 +172,7 @@ local pack_read_float_bits<const> = function(source, offset, mantissa_bits, litt
 		high = pack_read_uint(source, offset, 4, false)
 		low = pack_read_uint(source, offset + 4, 4, false)
 	end
-	return u32s_to_f64(high, low)
+	return decode_float(high, low, byte_count)
 end
 
 local pack_token<const> = function(format, index, little_endian, max_align)
@@ -228,7 +223,7 @@ local pack_token<const> = function(format, index, little_endian, max_align)
 	end
 	local float_size<const> = pack_float_size[token]
 	if float_size ~= nil then
-		return 'float', index + 1, little_endian, max_align, float_size, pack_float_mantissa_bits[token], pack_float_exponent_bits[token], max_align < float_size and max_align or float_size
+		return 'float', index + 1, little_endian, max_align, float_size, max_align < float_size and max_align or float_size
 	end
 	if token == 'c' then
 		local size<const>, next_index<const>, found<const> = pack_read_number(format, index + 1)
@@ -254,7 +249,7 @@ end
 
 local pack_next_align<const> = function(format, index, little_endian, max_align)
 	while true do
-		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const>, d<const> = pack_token(format, index, little_endian, max_align)
+		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const> = pack_token(format, index, little_endian, max_align)
 		if kind == nil then
 			return 1
 		end
@@ -263,7 +258,7 @@ local pack_next_align<const> = function(format, index, little_endian, max_align)
 			little_endian = next_little
 			max_align = next_max_align
 		elseif not pack_skip_align_kind[kind] then
-			return d or c or b or a or 1
+			return c or b or a or 1
 		else
 			index = next_index
 		end
@@ -287,7 +282,7 @@ local pack<const> = function(format, ...)
 	local max_align = default_pack_align
 	local arg_index = 1
 	while true do
-		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const>, d<const> = pack_token(format, index, little_endian, max_align)
+		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const> = pack_token(format, index, little_endian, max_align)
 		if kind == nil then
 			break
 		end
@@ -305,8 +300,8 @@ local pack<const> = function(format, ...)
 			arg_index = arg_index + 1
 			offset = offset + a
 		elseif kind == 'float' then
-			offset = pack_emit_padding(out, offset, d)
-			pack_write_float_bits(out, (select(arg_index, ...)), b, little_endian)
+			offset = pack_emit_padding(out, offset, b)
+			pack_write_float_bits(out, (select(arg_index, ...)), a, little_endian)
 			arg_index = arg_index + 1
 			offset = offset + a
 		elseif kind == 'fixed' then
@@ -348,7 +343,7 @@ local packsize<const> = function(format)
 	local little_endian = pack_little_endian
 	local max_align = default_pack_align
 	while true do
-		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, _b<const>, c<const>, d<const> = pack_token(format, index, little_endian, max_align)
+		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const> = pack_token(format, index, little_endian, max_align)
 		if kind == nil then
 			return offset
 		end
@@ -362,7 +357,7 @@ local packsize<const> = function(format)
 		elseif kind == 'int' then
 			offset = offset + pack_align_padding(offset, c) + a
 		elseif kind == 'float' then
-			offset = offset + pack_align_padding(offset, d) + a
+			offset = offset + pack_align_padding(offset, b) + a
 		elseif kind == 'fixed' then
 			offset = offset + a
 		elseif pack_variable_size_kind[kind] then
@@ -382,7 +377,7 @@ local unpack_string<const> = function(format, source, start_arg)
 	local max_align = default_pack_align
 	local out<const> = {}
 	while true do
-		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const>, d<const> = pack_token(format, index, little_endian, max_align)
+		local kind<const>, next_index<const>, next_little<const>, next_max_align<const>, a<const>, b<const>, c<const> = pack_token(format, index, little_endian, max_align)
 		if kind == nil then
 			out[#out + 1] = offset + 1
 			return unpack(out, 1, #out)
@@ -410,12 +405,12 @@ local unpack_string<const> = function(format, source, start_arg)
 			out[#out + 1] = pack_read_int(source, offset, a, b, little_endian)
 			offset = offset + a
 		elseif kind == 'float' then
-			local padding<const> = pack_align_padding(offset, d)
+			local padding<const> = pack_align_padding(offset, b)
 			if offset + padding + a > #source then
 				error('string.unpack string is too short.')
 			end
 			offset = offset + padding
-			out[#out + 1] = pack_read_float_bits(source, offset, b, little_endian)
+			out[#out + 1] = pack_read_float_bits(source, offset, a, little_endian)
 			offset = offset + a
 		elseif kind == 'fixed' then
 			if offset + a > #source then

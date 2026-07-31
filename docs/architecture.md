@@ -928,13 +928,14 @@ import library or firmware symbols; a debug cartridge may carry its own private
 symbols.
 
 The ordered BIOS export declaration pins each public module function to the
-matching leading system function record. The initial public entry is
-`math/sincos`, the same public module path exposed by BIOS source tooling.
-Cartridge compilation treats that path as an installed function import rather
-than linking the BIOS source into the cartridge; Studio can still navigate to
-the public firmware implementation. That exact module path is BIOS-owned and a
-cartridge may not redefine it. The linker resolves only the public import
-library and never searches system debug symbols or BIOS source modules.
+matching leading system function record. Public entries are bare BIOS routines
+such as `math/sincos` and `string/float/decode`, using the same module paths
+exposed by BIOS source tooling. Cartridge compilation treats those paths as
+installed function imports rather than linking BIOS source into the cartridge;
+Studio can still navigate to the public firmware implementation. Those exact
+module paths are BIOS-owned and a cartridge may not redefine them. The linker
+resolves only the public import library and never searches system debug symbols
+or BIOS source modules.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler

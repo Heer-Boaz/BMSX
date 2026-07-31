@@ -1,5 +1,6 @@
 local bin<const> = {}
 local read_u32le<const> = require('cartlib/memory').read_u32le
+local decode_float<const> = require('string/float/decode')
 local string_lib<const> = string
 local table_lib<const> = table
 
@@ -152,7 +153,7 @@ read_value = function(reader)
 		value = false
 	elseif tag == tag_f64 then
 		need(reader, 8, 'float64')
-		value = memf64le[reader.pos]
+		value = decode_float(read_u32le(reader.pos + 4), read_u32le(reader.pos), 8)
 		reader.pos = reader.pos + 8
 	elseif tag == tag_str then
 		value = read_string(reader, 'string')
@@ -168,7 +169,7 @@ read_value = function(reader)
 		value = read_varint(reader, 'int')
 	elseif tag == tag_f32 then
 		need(reader, 4, 'float32')
-		value = memf32le[reader.pos]
+		value = decode_float(read_u32le(reader.pos), 0, 4)
 		reader.pos = reader.pos + 4
 	elseif tag == tag_set then
 		value = read_array(reader)
