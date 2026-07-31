@@ -704,49 +704,91 @@ local define_player_fsm<const> = function()
 						self:update_runtime()
 					end,
 					input_event_handlers = {
-					['left[jp]'] = function(self)
-						self.left_held = true
-					end,
-					['left[jr]'] = function(self)
-						self.left_held = false
-					end,
-					['right[jp]'] = function(self)
-						self.right_held = true
-					end,
-					['right[jr]'] = function(self)
-						self.right_held = false
-					end,
-					['up[jp]'] = function(self)
-						self.up_held = true
-					end,
-					['up[jr]'] = function(self)
-						self.up_held = false
-					end,
-					['down[jp]'] = function(self)
-						self.down_held = true
-					end,
-					['down[jr]'] = function(self)
-						self.down_held = false
-					end,
-					['x[jp]'] = function(self)
-						self:on_fire_input_pressed()
-					end,
-					['x[jr]'] = function(self)
-						self:on_fire_input_released()
-					end,
-					['a[jp]'] = function(self)
-						self:on_fire_input_pressed()
-					end,
-					['a[jr]'] = function(self)
-						self:on_fire_input_released()
-					end,
-					['b[jp]'] = function(self)
-						self:on_fire_input_pressed()
-					end,
-					['b[jr]'] = function(self)
-						self:on_fire_input_released()
-					end,
-				},
+					{
+						pattern = 'left[jp]',
+						go = function(self)
+							self.left_held = true
+						end,
+					},
+					{
+						pattern = 'left[jr]',
+						go = function(self)
+							self.left_held = false
+						end,
+					},
+					{
+						pattern = 'right[jp]',
+						go = function(self)
+							self.right_held = true
+						end,
+					},
+					{
+						pattern = 'right[jr]',
+						go = function(self)
+							self.right_held = false
+						end,
+					},
+					{
+						pattern = 'up[jp]',
+						go = function(self)
+							self.up_held = true
+						end,
+					},
+					{
+						pattern = 'up[jr]',
+						go = function(self)
+							self.up_held = false
+						end,
+					},
+					{
+						pattern = 'down[jp]',
+						go = function(self)
+							self.down_held = true
+						end,
+					},
+					{
+						pattern = 'down[jr]',
+						go = function(self)
+							self.down_held = false
+						end,
+					},
+					{
+						pattern = 'x[jp]',
+						go = function(self)
+							self:on_fire_input_pressed()
+						end,
+					},
+					{
+						pattern = 'x[jr]',
+						go = function(self)
+							self:on_fire_input_released()
+						end,
+					},
+					{
+						pattern = 'a[jp]',
+						go = function(self)
+							self:on_fire_input_pressed()
+						end,
+					},
+					{
+						pattern = 'a[jr]',
+						go = function(self)
+							self:on_fire_input_released()
+						end,
+					},
+					{
+						pattern = 'b[jp]',
+						go = function(self)
+							self:on_fire_input_pressed()
+						end,
+					},
+					{
+						pattern = 'b[jr]',
+						go = function(self)
+							self:on_fire_input_released()
+						end,
+					},
+					},
 				timelines = {
 					[option_animation_timeline_id] = {
 						def = {

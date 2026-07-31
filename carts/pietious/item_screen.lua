@@ -217,12 +217,18 @@ local define_item_screen_fsm<const> = function()
 				},
 				on = open_on,
 				input_event_handlers = {
-					['right[jp]'] = function(self)
-						self:shift_secondary_weapon_selection(1)
-					end,
-					['left[jp]'] = function(self)
-						self:shift_secondary_weapon_selection(-1)
-					end,
+					{
+						pattern = 'right[jp]',
+						go = function(self)
+							self:shift_secondary_weapon_selection(1)
+						end,
+					},
+					{
+						pattern = 'left[jp]',
+						go = function(self)
+							self:shift_secondary_weapon_selection(-1)
+						end,
+					},
 				},
 			},
 		},
@@ -236,6 +242,7 @@ local register_item_screen_definition<const> = function()
 		fsms = { 'item_screen' },
 		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
+			player_index = 1,
 			secondary_weapon_selection_index = 0,
 			selector_hidden = false,
 			map_highlight = true,

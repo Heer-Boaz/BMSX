@@ -76,12 +76,12 @@ end
 
 local apply_definition<const> = function(instance, definition, addons, skipped)
 	apply_values(instance, definition.defaults, skipped)
+	apply_values(instance, addons, skipped)
 	setmetatable(instance, definition.instance_metatable)
 	attach_components(instance, definition.components)
 	attach_fsms(instance, definition.fsms)
 	attach_effects(instance, definition.effects)
 	attach_behaviour_trees(instance, definition.bts)
-	apply_values(instance, addons, skipped)
 	local ctor<const> = definition.ctor
 	if ctor then
 		ctor(instance, addons, definition.def_id)

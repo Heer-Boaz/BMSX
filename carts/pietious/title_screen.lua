@@ -179,11 +179,14 @@ local define_title_screen_fsm<const> = function()
 					},
 				},
 				input_event_handlers = {
-					['start[jp] || a[jp]'] = function(self)
-						self.sparkle_sprite:set_enabled(false)
-						self.events:emit('title_start')
-						return '/starting'
-					end,
+					{
+						pattern = 'start[jp] || a[jp]',
+						go = function(self)
+							self.sparkle_sprite:set_enabled(false)
+							self.events:emit('title_start')
+							return '/starting'
+						end,
+					},
 				},
 			},
 			starting = {
@@ -220,6 +223,7 @@ local register_title_screen_definition<const> = function()
 		type = 'sprite',
 		fsms = { 'title_screen' },
 		components = { timelinecomponent.new },
+		defaults = { player_index = 1 },
 	})
 end
 

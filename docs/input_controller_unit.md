@@ -95,10 +95,27 @@ line.
 
 Gameplay carts use `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and
-owns mapping contexts, action expression parsing, retained per-player action
-state, consume state, guarded presses, repeat presses, parser cache, and scratch
-buffers. Bare-metal carts may intentionally read the raw MMIO layout directly.
-BIOS code stays low-level and does not own a gameplay PlayerInput framework.
+owns explicitly configured players, mapping contexts, retained action/button
+state and MMIO sampling plans, consume state, guarded/repeat state, cached parser
+ASTs, and per-player bindings from AST action indices directly to action records.
+Expression evaluation is reentrant and has no module-global scratch state.
+
+The Lua public surface is action-owned. `get_action_value(player, action)`
+returns the retained raw s16.16 scalar word, while `get_vector(player, action)`
+returns the retained raw s16.16 X and Y words as two Lua return values. Neither
+API allocates a result table or hides a consumed value; consumption filters the
+boolean `is_action_*` surface and action expressions unless they explicitly
+match consumed state. Digital bindings do not synthesize a scalar `1.0`. For
+each source/action pair, the highest-priority enabled context defining that
+action wins, with the latest pushed context
+winning equal priorities; bindings inside the winning context aggregate. The
+engine default mappings are construction state, not exported mutable mapping
+tables, and cartlib does not expose mutable raw button-state records or source
+indices. Code that needs the hardware-level values reads the documented ICU
+MMIO words directly.
+
+Bare-metal carts may intentionally read the raw MMIO layout directly. BIOS code
+stays low-level and does not own a gameplay PlayerInput framework.
 
 ## Output latch
 
@@ -112,5 +129,5 @@ boundary and calls the host output hardware for the selected pad.
 The ICU save state contains the sample latch state, the previous system-NMI
 line level, and the raw registerfile: control, keyboard words, pointer words,
 pad words, output port, output latch words, and output support mirror. It does
-not serialize host PlayerInput state, Lua action contexts, parser caches,
-consume state, or runtime scratch buffers.
+not serialize host PlayerInput state, Lua action contexts, action state, parsed
+AST/bound-expression caches, or retained sampling plans.

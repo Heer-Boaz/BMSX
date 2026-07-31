@@ -8,7 +8,8 @@ local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecsp
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
+input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world').instance
@@ -81,7 +82,7 @@ new_game()
 wait_vblank()
 
 while true do
-	cart_input.update()
+	input.update()
 	world:update()
 	*input_control_register = 0x00000001
 	wait_vblank()

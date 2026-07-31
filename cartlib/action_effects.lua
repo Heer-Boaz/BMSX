@@ -1,46 +1,10 @@
--- action_effects.lua
--- action effect registry + runtime component
---
--- DESIGN PRINCIPLES — action effects
---
--- 1. WHAT IS AN ACTION EFFECT?
---    An action effect is a named, reusable behaviour that can be granted to an
---    object at runtime (think: abilities, power-ups, attacks).  An object can
---    only trigger an effect if that effect has been granted to it.  Cooldown,
---    tag/condition gating, and event emission after execution are all built in.
---
--- 2. TWO-STEP FLOW: register globally, then grant to objects.
---
---    STEP 1 — register the effect definition once at load time:
---      actioneffects.register_effect({
---          id = 'sword_swing',
---          cooldown_ms = 400,
---          handler = function(ctx)
---              ctx.owner.timelines:play('swing')
---          end,
---      })
---
---    STEP 2 — grant the effect to an object's actioneffectcomponent:
---      player.actioneffects:grant_effect('sword_swing')
---
---    STEP 3 — trigger the effect from any input/event handler:
---      local result = player.actioneffects:trigger('sword_swing')
---      -- result: 'ok' | 'blocked' | 'on_cooldown' | 'failed'
---
--- 3. EFFECTS FIRE through the owner's event port.
---    After a successful trigger, the owner announces the configured event.
---    Do not emit inside the handler.
---
--- 4. CONTEXT: handler receives { owner, target, payload, args }.
---    target defaults to owner but can be overridden for targeted effects.
-
-local eventemitter<const> = require('cartlib/eventemitter')
-local component_types<const> = require('cartlib/components/types')
 local component<const> = require('cartlib/world/component')
+local component_types<const> = require('cartlib/components/types')
 
-local actioneffects<const> = {}
+local action_effects<const> = {}
+local definitions<const> = {}
 
-actioneffects.effecttype = {
+action_effects.effecttype = {
 	spawn = 'spawn',
 	despawn = 'despawn',
 	damage = 'damage',
@@ -51,165 +15,77 @@ actioneffects.effecttype = {
 	emit_event = 'emit_event',
 }
 
-local registry<const> = {
-	definitions = {},
-	schemas = {},
-	validators = {},
-}
-
--- actioneffects.register_effect(definition_or_id, opts?)
---   Registers a named effect definition.  Two call forms:
---     register_effect({ id='name', handler=fn, cooldown_ms=N, event='name', … })
---     register_effect('name', fn)   -- shorthand: handler only, no opts
---   opts (optional second arg) may include:
---     schema   — validate payload before execution
---     validate — extra validation function
-function actioneffects.register_effect(definition, opts)
-	if type(definition) == 'string' then
-		local id<const> = definition
-		if type(opts) == 'table' then
-			definition = opts
-			definition.id = definition.id or id
-		else
-			definition = { id = id, handler = opts }
-		end
-		opts = nil
-	end
-	registry.definitions[definition.id] = definition
-	if opts then
-		if opts.schema then
-			registry.schemas[definition.id] = opts.schema
-		end
-		if opts.validate then
-			registry.validators[definition.id] = opts.validate
-		end
-	end
-	return definition
+function action_effects.register_effect(id, definition)
+	definitions[id] = definition
 end
 
-function actioneffects.get(id)
-	return registry.definitions[id]
-end
+action_effects.register_effect(action_effects.effecttype.move, {
+	handler = function(owner, _payload, dx, dy)
+		owner.x = owner.x + dx
+		owner.y = owner.y + dy
+	end,
+})
 
-function actioneffects.has(id)
-	return registry.definitions[id] ~= nil
-end
+action_effects.register_effect(action_effects.effecttype.play_animation, {
+	handler = function(owner, _payload, animation_id, options)
+		owner.timelines:play(animation_id, options)
+	end,
+})
 
-function actioneffects.validate(id, payload)
-	local schema<const> = registry.schemas[id]
-	if schema and not schema.validate(payload) then
-		error('actioneffect payload failed schema for '' .. id .. ''')
-	end
-	local validator<const> = registry.validators[id]
-	if validator then
-		validator(payload)
-	end
-end
-
--- actioneffects.execute(id, context, ...): runs the effect handler directly,
---   bypassing cooldown / tag / grant checks.  Rarely needed in cart code;
---   prefer actioneffectcomponent:trigger() for normal gameplay use.
-function actioneffects.execute(id, context, ...)
-	local def<const> = registry.definitions[id]
-	return def.handler(context, ...)
-end
-
-local create_context<const> = function(owner, payload, args)
-	return { owner = owner, target = owner, payload = payload, args = args }
-end
-
-local matches_tag_requirements<const> = function(owner, required_tags, blocked_tags)
-	if required_tags then
-		for i = 1, #required_tags do
-			if not owner:has_tag(required_tags[i]) then
-				return false
-			end
-		end
-	end
-	if blocked_tags then
-		for i = 1, #blocked_tags do
-			if owner:has_tag(blocked_tags[i]) then
-				return false
-			end
-		end
-	end
-	return true
-end
-
-local matches_state_path_requirements<const> = function(owner, required_paths, blocked_paths)
-	if required_paths then
-		for i = 1, #required_paths do
-			if not owner.state_machines:matches_state_path(required_paths[i]) then
-				return false
-			end
-		end
-	end
-	if blocked_paths then
-		for i = 1, #blocked_paths do
-			if owner.state_machines:matches_state_path(blocked_paths[i]) then
-				return false
-			end
-		end
-	end
-	return true
-end
-
-local can_trigger<const> = function(definition, context, args)
-	if not matches_tag_requirements(context.owner, definition.required_tags, definition.blocked_tags) then
-		return false
-	end
-	if not matches_state_path_requirements(context.owner, definition.required_state_paths, definition.blocked_state_paths) then
-		return false
-	end
-	local trigger_gate<const> = definition.can_trigger
-	if trigger_gate then
-		return (trigger_gate(context, table.unpack((args or {}))))
-	end
-	return true
-end
-
-local invoke_handler<const> = function(definition, context, args)
-	if not definition.handler then
+local bind_state_paths<const> = function(owner, paths)
+	if not paths then
 		return nil
 	end
-	return definition.handler(context, table.unpack(args or {}))
+	local bound<const> = {}
+	for i = 1, #paths do
+		bound[i] = owner.state_machines:bind_state_path(paths[i])
+	end
+	return bound
 end
 
-local create_owner_event<const> = function(owner, event_type, payload)
-	return eventemitter.eventemitter.instance:create_gameevent({
-		type = event_type,
-		emitter = owner,
-		payload = payload,
-	})
+local tags_allow<const> = function(owner, required, blocked)
+	if required then
+		for i = 1, #required do
+			if not owner:has_tag(required[i]) then
+				return false
+			end
+		end
+	end
+	if blocked then
+		for i = 1, #blocked do
+			if owner:has_tag(blocked[i]) then
+				return false
+			end
+		end
+	end
+	return true
 end
 
-actioneffects.register_effect(actioneffects.effecttype.move, {
-	id = actioneffects.effecttype.move,
-	handler = function(context, dx, dy)
-		local target<const> = context.target
-		target.x = target.x + dx
-		target.y = target.y + dy
-	end,
-})
-
-actioneffects.register_effect(actioneffects.effecttype.play_animation, {
-	id = actioneffects.effecttype.play_animation,
-	handler = function(context, anim_id, opts)
-		context.target.timelines:play(anim_id, opts)
-	end,
-})
+local states_allow<const> = function(owner, required, blocked)
+	if required then
+		for i = 1, #required do
+			if not owner.state_machines:matches_state(required[i]) then
+				return false
+			end
+		end
+	end
+	if blocked then
+		for i = 1, #blocked do
+			if owner.state_machines:matches_state(blocked[i]) then
+				return false
+			end
+		end
+	end
+	return true
+end
 
 local actioneffectcomponent<const> = {}
 actioneffectcomponent.__index = actioneffectcomponent
 setmetatable(actioneffectcomponent, { __index = component })
 
--- actioneffectcomponent.new(opts): creates the abilities/effects component.
---   Attach once per object; it manages a set of granted effects + their cooldowns.
---   The component is unique (only one per object allowed).
 function actioneffectcomponent.new(opts)
 	local self<const> = setmetatable(component.new(opts, component_types.action_effect, true), actioneffectcomponent)
-	self.definitions = {}
-	self.cooldown_until = {}
+	self.effects = {}
 	self.time_ms = 0
 	return self
 end
@@ -219,86 +95,79 @@ function actioneffectcomponent:on_attach()
 end
 
 function actioneffectcomponent:on_detach()
-	if self.parent.actioneffects == self then
-		self.parent.actioneffects = nil
-	end
+	self.parent.actioneffects = nil
 end
 
--- actioneffectcomponent:grant_effect(id): gives the object access to the
---   named registered effect.  Call when an ability is unlocked or equipped.
 function actioneffectcomponent:grant_effect(id)
-	local definition<const> = registry.definitions[id]
-	self.definitions[definition.id] = definition
+	local owner<const> = self.parent
+	local definition<const> = definitions[id]
+	self.effects[id] = {
+		definition = definition,
+		required_states = bind_state_paths(owner, definition.required_state_paths),
+		blocked_states = bind_state_paths(owner, definition.blocked_state_paths),
+		cooldown_until = 0,
+	}
 end
 
--- actioneffectcomponent:revoke_effect(id): removes the effect and its cooldown.
---   Call when an ability is lost or unequipped.
 function actioneffectcomponent:revoke_effect(id)
-	self.definitions[id] = nil
-	self.cooldown_until[id] = nil
+	self.effects[id] = nil
 end
 
 function actioneffectcomponent:has_effect(id)
-	return self.definitions[id] ~= nil
+	return self.effects[id] ~= nil
 end
 
--- actioneffectcomponent:trigger(id, payload?, args?)
---   Attempts to activate the named effect on this object.
---   payload — passed to the effect handler as context.payload
---   args    — array of extra arguments forwarded to the handler
---   Returns a string result:
---     'ok'          — effect executed successfully
---     'on_cooldown' — effect is cooling down; try again later
---     'blocked'     — effect conditions / tag requirements not met
---     'failed'      — effect id is not granted to this component
-function actioneffectcomponent:trigger(id, payload, args)
-	local definition<const> = self.definitions[id]
-	if not definition then
+function actioneffectcomponent:trigger(id, payload, ...)
+	local effect<const> = self.effects[id]
+	if not effect then
 		return 'failed'
 	end
-	args = args or {}
-	actioneffects.validate(id, payload)
-
-	local now<const> = self.time_ms
-	local until_time<const> = self.cooldown_until[id]
-	if until_time ~= nil and now < until_time then
+	if self.time_ms < effect.cooldown_until then
 		return 'on_cooldown'
 	end
-
+	local definition<const> = effect.definition
 	local owner<const> = self.parent
-	local context<const> = create_context(owner, payload, args)
-	if not can_trigger(definition, context, args) then
+	if not tags_allow(owner, definition.required_tags, definition.blocked_tags)
+		or not states_allow(owner, effect.required_states, effect.blocked_states) then
 		return 'blocked'
 	end
-
-	local outcome<const> = invoke_handler(definition, context, args)
-	local event_type<const> = (outcome and outcome.event) or definition.event
-	if event_type ~= nil then
-		local event_payload<const> = (outcome and outcome.payload ~= nil) and outcome.payload or payload
-		local event<const> = create_owner_event(owner, event_type, event_payload)
-		owner.events:emit_event(event)
+	local gate<const> = definition.can_trigger
+	if gate and not gate(owner, payload, ...) then
+		return 'blocked'
 	end
-
-	if definition.cooldown_ms and definition.cooldown_ms > 0 then
-		self.cooldown_until[id] = now + definition.cooldown_ms
+	local outcome<const> = definition.handler and definition.handler(owner, payload, ...)
+	local event_type = definition.event
+	local event_payload = payload
+	if outcome then
+		if outcome.event ~= nil then
+			event_type = outcome.event
+		end
+		if outcome.payload ~= nil then
+			event_payload = outcome.payload
+		end
+	end
+	if event_type then
+		owner.events:emit(event_type, event_payload)
+	end
+	local cooldown<const> = definition.cooldown_ms
+	if cooldown and cooldown > 0 then
+		effect.cooldown_until = self.time_ms + cooldown
 	end
 	return 'ok'
 end
 
--- actioneffectcomponent:cooldown_remaining(id)
---   Returns remaining cooldown in ms, or nil if the effect is ready.
 function actioneffectcomponent:cooldown_remaining(id)
-	local until_time<const> = self.cooldown_until[id]
-	if until_time == nil then
+	local effect<const> = self.effects[id]
+	if not effect then
 		return nil
 	end
-	local remaining<const> = until_time - self.time_ms
-	if remaining <= 0 then
-		return nil
+	local remaining<const> = effect.cooldown_until - self.time_ms
+	if remaining > 0 then
+		return remaining
 	end
-	return remaining
+	return nil
 end
 
-actioneffects.actioneffectcomponent = actioneffectcomponent
+action_effects.actioneffectcomponent = actioneffectcomponent
 
-return actioneffects
+return action_effects

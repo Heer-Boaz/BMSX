@@ -3169,12 +3169,14 @@ through `Runtime` or a machine input interface.
 
 Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
-owns per-player mapping contexts, action state, consume state, guarded/repeat
-evaluation, parser caches, and scratch buffers. Normal carts use this Lua engine
-layer. Bare-metal carts may intentionally read the raw keyboard/pointer/pad MMIO
-words directly and must not route through cartlib for ICU access. BIOS code may
-use raw ICU reads for boot UI, but it must not grow a gameplay PlayerInput
-framework.
+owns the explicitly configured players, mapping contexts, retained action and
+button state, MMIO sampling plans, consume state, guarded/repeat evaluation,
+cached parser ASTs, and per-player expression bindings from AST action indices
+directly to retained action records. Expression evaluation is reentrant and has
+no module-global scratch state. Normal carts use this Lua engine layer.
+Bare-metal carts may intentionally read the raw keyboard/pointer/pad MMIO words
+directly and must not route through cartlib for ICU access. BIOS code may use raw
+ICU reads for boot UI, but it must not grow a gameplay PlayerInput framework.
 
 `sys_inp_ctrl` writes enter the control port. The control port latches the raw
 command word through the registerfile, then arms the VBlank sample latch or

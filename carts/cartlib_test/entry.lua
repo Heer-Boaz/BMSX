@@ -5,7 +5,7 @@ local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_gpu.reset_320x240()
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
@@ -61,7 +61,7 @@ wait_vblank()
 cartlib_test_ready = true
 
 while true do
-	cart_input.update()
+	input.update()
 	world:update()
 	wait_vblank()
 	gx_gpu.clear_color(0xff000000)

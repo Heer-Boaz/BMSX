@@ -24,9 +24,9 @@ function actioneffectruntimesystem:update(dt_ms)
 	for i = 1, #components do
 		local component<const> = components[i]
 		component.time_ms = component.time_ms + dt_ms
-		for id, until_time in pairs(component.cooldown_until) do
-			if component.time_ms >= until_time then
-				component.cooldown_until[id] = nil
+		for _, effect in pairs(component.effects) do
+			if effect.cooldown_until > 0 and component.time_ms >= effect.cooldown_until then
+				effect.cooldown_until = 0
 			end
 		end
 	end

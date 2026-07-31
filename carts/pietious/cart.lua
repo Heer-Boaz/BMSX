@@ -16,7 +16,8 @@ local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
+input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
@@ -266,7 +267,7 @@ mem[0x08000064] = 0x00000001
 wait_vblank_after(vblank_sequence)
 
 while true do
-	cart_input.update()
+	input.update()
 	world_instance:update()
 
 	wait_vblank_after(vblank_sequence)

@@ -8,7 +8,8 @@ local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
+input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
@@ -221,6 +222,7 @@ local register_director<const> = function()
 		fsms = { director_fsm_id },
 		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
+			player_index = 1,
 			node_id = start_node,
 			page_index = 1,
 			choice_index = 1,
@@ -427,7 +429,7 @@ new_game()
 while true do
 	wait_vblank()
 
-	cart_input.update()
+	input.update()
 	world_instance:update()
 	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
 	gx_gpu.clear_color(0xff000000)

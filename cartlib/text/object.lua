@@ -272,11 +272,11 @@ function textobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textobject'
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
+	self:add_component(timelinecomponent.new({ parent = self }))
 	self:add_component(statemachinecomponent.new({
 		parent = self,
 		definition = fsmlibrary.get(textobject_fsm_id),
 	}))
-	self:add_component(timelinecomponent.new({ parent = self }))
 	self.is_textobject = true
 	self.text = { '' }
 	self.full_text_lines = { '' }

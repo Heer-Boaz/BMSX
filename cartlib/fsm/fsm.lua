@@ -133,11 +133,9 @@
 --     entries provides per-handler emitter filtering, so a handler can
 --     restrict to events from a specific source object.
 
-local fsm_trace<const> = require('cartlib/fsm/trace')
 local clear_map<const> = require('cartlib/util/clear_map')
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local cart_input<const> = require('cartlib/input/player')
-local clock<const> = require('cartlib/clock')
+local input<const> = require('cartlib/input/player')
 
 local statedefinition<const> = {}
 statedefinition.__index = statedefinition
@@ -146,13 +144,13 @@ local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
 local no_op_aliases<const> = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
 local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
 local input_eval_modes<const> = { ['first'] = true, ['all'] = true }
-local build_input_event_handler_list<const> = function(handlers)
-	local list<const> = {}
-	for pattern, handler in pairs(handlers) do
-		list[#list + 1] = { pattern = pattern, handler = handler }
-	end
-	return list
-end
+local default_event_filter<const> = {}
+local unfiltered_event_filter<const> = {}
+local transition_no_op<const> = 0
+local transition_path<const> = 1
+local transition_callback<const> = 2
+local compile_definition_transitions
+local transition_cached_path
 
 local make_def_id<const> = function(id, parent)
 	if not parent then
@@ -162,19 +160,38 @@ local make_def_id<const> = function(id, parent)
 	return parent.def_id .. separator .. id
 end
 
-local collect_event_list<const> = function(def, list, seen)
-	for name, action in pairs(def.on or {}) do
-		local emitter = nil
+local compile_event_handlers<const> = function(actions)
+	for name, action in pairs(actions) do
+		local emitter
+		local unfiltered
 		if type(action) == 'table' and action.emitter ~= nil then
-			emitter = action.emitter
-			if type(emitter) == 'table' and emitter.id ~= nil then
-				emitter = emitter.id
+			if action.emitter then
+				emitter = action.emitter
+				if type(emitter) == 'table' and emitter.id ~= nil then
+					emitter = emitter.id
+				end
+			else
+				unfiltered = true
 			end
 		end
-		local key<const> = name .. ':' .. tostring(emitter)
-		if not seen[key] then
-			list[#list + 1] = { name = name, emitter = emitter }
-			seen[key] = true
+		actions[name] = { source = action, emitter = emitter, unfiltered = unfiltered }
+	end
+	return actions
+end
+
+local collect_event_list<const> = function(def, list, seen)
+	for name, handler in pairs(def.on) do
+		local emitter<const> = handler.emitter
+		local unfiltered<const> = handler.unfiltered
+		local filters = seen[name]
+		if not filters then
+			filters = {}
+			seen[name] = filters
+		end
+		local key<const> = unfiltered and unfiltered_event_filter or emitter or default_event_filter
+		if not filters[key] then
+			list[#list + 1] = { name = name, emitter = emitter, unfiltered = unfiltered }
+			filters[key] = true
 		end
 	end
 	for _, child in pairs(def.states or {}) do
@@ -309,7 +326,11 @@ local validate_transition_spec<const> = function(def_id, field_name, spec)
 	end
 	local go<const> = spec.go
 	if go == nil then
-		return
+		error(
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '.go" is required.'
+		)
 	end
 	local go_kind<const> = type(go)
 	if go_kind == 'string' then
@@ -387,33 +408,46 @@ function statedefinition.new(id, def, root, parent)
 	self.update = def and def.update
 	self.entering_state = def and def.entering_state
 	self.exiting_state = def and (def.exiting_state or def.leaving_state)
-	self.input_event_handlers = def and def.input_event_handlers or {}
+	local input_event_handlers<const> = def and def.input_event_handlers or {}
 	self.is_concurrent = def and def.is_concurrent or false
-	self.input_eval = def and def.input_eval
-	if self.input_eval ~= nil and not input_eval_modes[self.input_eval] then
+	local input_eval<const> = def and def.input_eval
+	if input_eval ~= nil and not input_eval_modes[input_eval] then
 		error(
 			'state definition "' .. tostring(self.def_id)
-				.. '" has invalid input_eval "' .. tostring(self.input_eval)
-				.. '". expected "first" or "all", but got ' .. type(self.input_eval) .. '.'
+				.. '" has invalid input_eval "' .. tostring(input_eval)
+				.. '". expected "first" or "all", but got ' .. type(input_eval) .. '.'
 		)
 	end
-	if self.input_eval ~= nil then
-		self.effective_input_eval = self.input_eval
+	if input_eval ~= nil then
+		self.input_eval_first = input_eval == 'first'
 	elseif parent then
-		self.effective_input_eval = parent.effective_input_eval
+		self.input_eval_first = parent.input_eval_first
 	else
-		self.effective_input_eval = 'all'
+		self.input_eval_first = false
 	end
 	validate_optional_state_function(self.def_id, 'update', self.update)
 	validate_optional_state_function(self.def_id, 'entering_state', self.entering_state)
 	validate_optional_state_function(self.def_id, 'exiting_state', self.exiting_state)
 	validate_transition_spec_map(self.def_id, 'on', self.on)
-	validate_transition_spec_map(self.def_id, 'input_event_handlers', self.input_event_handlers)
-	self.input_event_handler_list = build_input_event_handler_list(self.input_event_handlers)
+	for i = 1, #input_event_handlers do
+		validate_transition_spec(self.def_id, 'input_event_handlers[' .. i .. ']', input_event_handlers[i])
+	end
+	self.on = compile_event_handlers(self.on)
+	self.input_event_handlers = input_event_handlers
+	self.input_handler_count = #input_event_handlers
+	self.input_patterns = nil
+	self.input_transition_kinds = nil
+	self.input_transitions = nil
 	self.event_list = def and def.event_list
 	self.timelines = def and def.timelines
-	self.transition_guards = def and def.transition_guards
+	local transition_guards<const> = def and def.transition_guards
+	self.can_enter = transition_guards and transition_guards.can_enter
+	self.can_exit = transition_guards and transition_guards.can_exit
+	validate_optional_state_function(self.def_id, 'transition_guards.can_enter', self.can_enter)
+	validate_optional_state_function(self.def_id, 'transition_guards.can_exit', self.can_exit)
 	self.tags = def and def.tags
+	self.path_plans = nil
+	self.direct_child_plans = nil
 	self.tag_derivations = nil
 	if self.root == self then
 		local raw_tag_derivations<const> = def and (def.tag_derivations or def.derived_tags or def.tag_groups)
@@ -436,7 +470,7 @@ function statedefinition.new(id, def, root, parent)
 			break
 		end
 	end
-	self.has_local_frame_work = self.update ~= nil or #self.input_event_handler_list ~= 0
+	self.has_local_frame_work = self.update ~= nil or #self.input_event_handlers ~= 0
 	self.has_subtree_frame_work = self.has_local_frame_work
 	if not self.has_subtree_frame_work then
 		for _, child in pairs(self.states) do
@@ -447,10 +481,7 @@ function statedefinition.new(id, def, root, parent)
 		end
 	end
 	if self.root == self then
-		self._resolved_path_cache = {}
-		self._resolved_path_cache_count = 0
-		self._event_handler_chain_cache = {}
-		self._event_handler_chain_cache_count = 0
+		compile_definition_transitions(self)
 		local list<const> = {}
 		local seen<const> = {}
 		collect_event_list(self, list, seen)
@@ -462,19 +493,7 @@ end
 local state<const> = {}
 state.__index = state
 
-state.trace_map = {}
-state.path_config = { cache_size = 256 }
-state._path_cache_count = 0
-state.event_handler_chain_cache_size = 256
-state.diagnostics = {
-	trace_transitions = false,
-	trace_dispatch = false,
-	mirror_to_vm = false,
-	max_entries_per_machine = 512,
-}
-
 local bst_max_history<const> = 10
-local max_transitions_per_update<const> = 1000
 local empty_game_event<const> = { type = '__fsm.synthetic__', emitter = nil, timestamp = 0 }
 local target_state_tag_refs<const> = setmetatable({}, { __mode = 'k' })
 
@@ -519,56 +538,15 @@ local decrement_target_state_tag_ref<const> = function(target, tag)
 	refs[tag] = count - 1
 end
 
-local clone_defaults<const> = function(source)
-	local out<const> = {}
-	for k, v in pairs(source) do
-		out[k] = v
+local reset_state_data<const> = function(data, defaults)
+	for key in pairs(data) do
+		data[key] = nil
 	end
-	return out
-end
-
-local should_trace_transitions<const> = function()
-	local diag<const> = state.diagnostics
-	return diag and (diag.trace_transitions)
-end
-
-local should_trace_dispatch<const> = function()
-	local diag<const> = state.diagnostics
-	return diag and (diag.trace_dispatch)
-end
-
-local append_trace_entry<const> = function(id, message)
-	local diag<const> = state.diagnostics
-	if not diag then
-		return
-	end
-	local list = state.trace_map[id]
-	if not list then
-		list = {}
-		state.trace_map[id] = list
-	end
-	list[#list + 1] = message
-	local limit<const> = diag.max_entries_per_machine or 0
-	if limit > 0 and #list > limit then
-		local overflow<const> = #list - limit
-		for i = 1, overflow do
-			table.remove(list, 1)
+	if defaults then
+		for key, value in pairs(defaults) do
+			data[key] = value
 		end
 	end
-end
-
-local resolve_emitter_id<const> = function(event, default_emitter_id)
-	if not event or event.emitter == nil then
-		return default_emitter_id
-	end
-	if not event.emitter then
-		return false
-	end
-	local emitter<const> = event.emitter
-	if type(emitter) == 'table' and emitter.id ~= nil then
-		return emitter.id
-	end
-	return emitter
 end
 
 local is_no_op_string<const> = function(value)
@@ -594,24 +572,6 @@ local resolve_state_key<const> = function(definition, state_id)
 	return nil
 end
 
-local resolve_state_instance<const> = function(parent, state_id)
-	local child = parent.states[state_id]
-	if child then
-		return child, state_id
-	end
-	local underscore<const> = '_' .. state_id
-	child = parent.states[underscore]
-	if child then
-		return child, underscore
-	end
-	local hash<const> = '#' .. state_id
-	child = parent.states[hash]
-	if child then
-		return child, hash
-	end
-	return nil, nil
-end
-
 local build_state_tag_lookup<const> = function(tags)
 	if not tags then
 		return nil
@@ -621,6 +581,33 @@ local build_state_tag_lookup<const> = function(tags)
 		lookup[tags[i]] = true
 	end
 	return lookup
+end
+
+local build_timeline_bindings<const> = function(owner, definitions)
+	if not definitions then
+		return nil
+	end
+	local bindings<const> = {}
+	for key, config in pairs(definitions) do
+		if config.def ~= nil and type(config.def) ~= 'table' then
+			error('timeline "' .. tostring(key) .. '" field "def" must be a table.')
+		end
+		local id<const> = config.id or key
+		local definition<const> = config.def
+		if definition then
+			if definition.id == nil then
+				definition.id = id
+			end
+			owner.timelines:define(timeline_module.new(definition))
+		end
+		bindings[#bindings + 1] = {
+			id = id,
+			autoplay = config.autoplay == nil or config.autoplay,
+			stop_on_exit = config.stop_on_exit == nil or config.stop_on_exit,
+			play_options = config.play_options,
+		}
+	end
+	return bindings
 end
 
 function state.new(definition, target, parent)
@@ -633,7 +620,8 @@ function state.new(definition, target, parent)
 	self.parent = parent
 	self.root = parent and parent.root or self
 	self.id = self:make_id()
-	self.data = clone_defaults(definition.data or {})
+	self.data = {}
+	reset_state_data(self.data, definition.data)
 	self.states = {}
 	self.state_ids = {}
 	self.concurrent_states = {}
@@ -643,22 +631,19 @@ function state.new(definition, target, parent)
 	-- Current child state is cached directly so the frame hot path does not keep
 	-- reloading states[self.current_id] from the state map on every recursive step.
 	self.current_state = nil
-	self.timeline_bindings = nil
-	-- Queued transitions are stored as compact parallel arrays instead of
-	-- per-entry tables. That keeps the deferred-transition path closer to a
-	-- scheduler request queue and avoids record allocation in a hot framework path.
-	self.transition_queue_paths = {}
-	self.transition_queue_diags = {}
-	self.transition_queue_count = 0
-	self.critical_section_counter = 0
-	self.is_processing_queue = false
-	self._transition_context_stack = nil
+	self.timeline_bindings = build_timeline_bindings(target, definition.timelines)
+	if self.root == self then
+		-- The machine root owns whole compiled transition requests. Queuing a
+		-- path plan rather than individual state ids keeps hierarchical paths
+		-- atomic across nested handlers without allocating in the frame path.
+		self.transition_queue_origins = { false }
+		self.transition_queue_plans = { false }
+		self.transition_queue_count = 0
+		self.critical_section_counter = 0
+	end
 	self._hist = {}
 	self._hist_head = 0
 	self._hist_size = 0
-	self.in_update = false
-	self._transitions_this_update = 0
-	self.paused = false
 	-- active_frame_work tracks whether the currently active subtree can do any
 	-- per-frame FSM work. That lets the hot path skip dormant/event-only
 	-- machines instead of re-entering them every frame.
@@ -670,6 +655,15 @@ function state.new(definition, target, parent)
 	self._tag_remove_scratch = nil
 	self._active_state_tag_refs = nil
 	self._active_state_tags = nil
+	local input_patterns<const> = definition.input_patterns
+	if input_patterns then
+		local player_index<const> = target.player_index
+		local bindings<const> = {}
+		for i = 1, #input_patterns do
+			bindings[i] = input.bind(player_index, input_patterns[i])
+		end
+		self.input_bindings = bindings
+	end
 	self:populate_states()
 	self:reset(true)
 	return self
@@ -701,55 +695,6 @@ function state:make_id()
 	return self.parent.id .. separator .. self.localdef_id
 end
 
-function state:definition_or_throw()
-	local def<const> = self.definition
-	if not def then
-		error('state "' .. tostring(self.localdef_id) .. '" missing definition.')
-	end
-	return def
-end
-
-function state:child_definition_or_throw(child_id)
-	local def<const> = self:definition_or_throw()
-	if not def.states then
-		error('definition "' .. tostring(def.def_id) .. '" has no substates while resolving "' .. child_id .. '".')
-	end
-	local key<const> = resolve_state_key(def, child_id)
-	if not key then
-		error('definition "' .. tostring(def.def_id) .. '" is missing child "' .. child_id .. '".')
-	end
-	return def.states[key], key
-end
-
-function state:states_or_throw(ctx)
-	local container<const> = ctx or self
-	if container.state_count == 0 then
-		error('state "' .. tostring(container.id) .. '" does not define substates.')
-	end
-	return container.states
-end
-
-function state:find_child(ctx, seg)
-	local child<const>, key<const> = resolve_state_instance(ctx, seg)
-	return child, key
-end
-
-function state:ensure_child(ctx, seg)
-	local child<const>, key<const> = self:find_child(ctx, seg)
-	if not child then
-		if ctx.state_count == 0 then
-			error('state "' .. tostring(ctx.id) .. '" does not define substates.')
-		end
-		local children<const> = {}
-		local child_ids<const> = ctx.state_ids
-		for i = 1, ctx.state_count do
-			children[i] = child_ids[i]
-		end
-		error('no state "' .. seg .. '" under "' .. tostring(ctx.id) .. '". children: ' .. table.concat(children, ', '))
-	end
-	return child, key
-end
-
 function state:timeline(id)
 	local timeline<const> = self.target.timelines:get(id)
 	if not timeline then
@@ -758,60 +703,11 @@ function state:timeline(id)
 	return timeline
 end
 
-function state:create_timeline_binding(key, config)
-	if config.def ~= nil and type(config.def) ~= 'table' then
-		error('timeline "' .. tostring(key) .. '" field "def" must be a table.')
-	end
-	local autoplay
-	if config.autoplay ~= nil then
-		autoplay = config.autoplay
-	else
-		autoplay = true
-	end
-	local stop_on_exit
-	if config.stop_on_exit ~= nil then
-		stop_on_exit = config.stop_on_exit
-	else
-		stop_on_exit = true
-	end
-	return {
-		id = config.id or key,
-		def = config.def,
-		autoplay = autoplay,
-		stop_on_exit = stop_on_exit,
-		play_options = config.play_options,
-		defined = false,
-	}
-end
-
-function state:ensure_timeline_definitions()
-	if not self.timeline_bindings then
-		local defs<const> = self.definition.timelines or {}
-		local bindings<const> = {}
-		for key, config in pairs(defs) do
-			bindings[#bindings + 1] = self:create_timeline_binding(key, config)
-		end
-		self.timeline_bindings = bindings
-	end
-	local bindings<const> = self.timeline_bindings
-	for i = 1, #bindings do
-		local binding<const> = bindings[i]
-		if not binding.defined then
-			if binding.def then
-				local def<const> = binding.def
-				if def.id == nil then
-					def.id = binding.id
-				end
-				self.target.timelines:define(timeline_module.new(def))
-			end
-			binding.defined = true
-		end
-	end
-	return bindings
-end
-
 function state:activate_timelines()
-	local bindings<const> = self:ensure_timeline_definitions()
+	local bindings<const> = self.timeline_bindings
+	if not bindings then
+		return
+	end
 	for i = 1, #bindings do
 		local binding<const> = bindings[i]
 		if binding.autoplay then
@@ -835,7 +731,6 @@ end
 
 function state:enter_child_state(child)
 	local child_def<const> = child.definition
-	self:enter_critical_section()
 	child:activate_timelines()
 	local enter_child<const> = child_def.entering_state
 	local next_state
@@ -843,13 +738,17 @@ function state:enter_child_state(child)
 		next_state = enter_child(self.target, child)
 	end
 	child:transition_to_next_state_if_provided(next_state)
-	self:leave_critical_section()
 end
 
 function state:start()
+	self:enter_critical_section()
 	self:activate_timelines()
 	self:enter_initial_substate_chain()
-	self.root:refresh_active_frame_work()
+	local queue_published<const> = self:leave_critical_section()
+	if not queue_published then
+		self.root:refresh_active_frame_work()
+		self.root:sync_target_state_tags()
+	end
 end
 
 -- enter_initial_substate_chain: recursively enters the active child tree
@@ -857,7 +756,7 @@ end
 -- transition_to_state() (on transition into a state that has substates).
 -- The current main child is entered first, followed by concurrent siblings.
 -- After each active child is entered, the runtime descends into that child's
--- own active substate tree.  Finally syncs target state tags.
+-- own active substate tree.
 function state:enter_initial_substate_chain()
 	if not self:is_active() then
 		return
@@ -880,216 +779,21 @@ function state:enter_initial_substate_chain()
 		self:enter_child_state(child)
 		child:enter_initial_substate_chain()
 	end
-	self.root:sync_target_state_tags()
 end
 
 function state:enter_critical_section()
-	self.critical_section_counter = self.critical_section_counter + 1
+	local root<const> = self.root
+	root.critical_section_counter = root.critical_section_counter + 1
 end
 
 function state:leave_critical_section()
-	self.critical_section_counter = self.critical_section_counter - 1
-	if self.critical_section_counter == 0 then
-		if self.transition_queue_count ~= 0 and not self.is_processing_queue then
-			self:process_transition_queue()
+	local root<const> = self.root
+	root.critical_section_counter = root.critical_section_counter - 1
+	if root.critical_section_counter == 0 then
+		if root.transition_queue_count ~= 0 then
+			return root:process_transition_queue()
 		end
-	elseif self.critical_section_counter < 0 then
-		error('critical section counter was lower than 0, which is a bug. state: "' .. tostring(self.id) .. '".')
 	end
-end
-
-function state:run_with_transition_context(context, fn, ...)
-	local stack = self._transition_context_stack
-	if not stack then
-		stack = {}
-		self._transition_context_stack = stack
-	end
-	local stack_index<const> = #stack + 1
-	stack[stack_index] = context
-	local ok<const>, r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = pcall(fn, ...)
-	stack[stack_index] = nil
-	if not ok then
-		error(r1)
-	end
-	return r1, r2, r3, r4, r5, r6, r7, r8
-end
-
-local run_queued_transition_with_context<const> = function(self, path, snapshot)
-	local context<const> = self:hydrate_context(snapshot, 'queue-drain', 'queued-execution')
-	self:run_with_transition_context(context, self.transition_to, self, path)
-end
-
-local drain_transition_queue<const> = function(self)
-	local queued_paths<const> = self.transition_queue_paths
-	local queued_diags<const> = self.transition_queue_diags
-	local trace_transitions<const> = should_trace_transitions()
-	local i = 1
-	while i <= self.transition_queue_count do
-		local path<const> = queued_paths[i]
-		local diag<const> = queued_diags[i]
-		queued_paths[i] = nil
-		queued_diags[i] = nil
-		if trace_transitions then
-			run_queued_transition_with_context(self, path, diag)
-		else
-			self:transition_to(path)
-		end
-		i = i + 1
-	end
-	self.transition_queue_count = 0
-end
-
-function state:process_transition_queue()
-	if self.is_processing_queue or self.transition_queue_count == 0 then
-		return
-	end
-	self.is_processing_queue = true
-	local ok<const>, err<const> = pcall(drain_transition_queue, self)
-	self.is_processing_queue = false
-	if not ok then
-		error(err)
-	end
-end
-
-function state:transition_context()
-	local stack<const> = self._transition_context_stack
-	if not stack or #stack == 0 then
-		return nil
-	end
-	return stack[#stack]
-end
-
-function state:append_action_evaluation(detail)
-	if not should_trace_transitions() then
-		return
-	end
-	local ctx<const> = self:transition_context()
-	if not ctx then
-		return
-	end
-	if not ctx.action_evaluations then
-		ctx.action_evaluations = {}
-	end
-	ctx.action_evaluations[#ctx.action_evaluations + 1] = detail
-end
-
-function state:append_guard_evaluation(detail)
-	if not should_trace_transitions() then
-		return
-	end
-	local ctx<const> = self:transition_context()
-	if not ctx then
-		return
-	end
-	if not ctx.guard_evaluations then
-		ctx.guard_evaluations = {}
-	end
-	ctx.guard_evaluations[#ctx.guard_evaluations + 1] = detail
-end
-
-function state:record_transition_outcome_on_context(outcome)
-	if not should_trace_transitions() then
-		return
-	end
-	local ctx<const> = self:transition_context()
-	if not ctx then
-		return
-	end
-	ctx.last_transition = outcome
-	if not ctx.transitions then
-		ctx.transitions = {}
-	end
-	ctx.transitions[#ctx.transitions + 1] = outcome
-end
-
-function state:resolve_context_snapshot(provided)
-	if provided then
-		return provided
-	end
-	return self:transition_context()
-end
-
-function state:emit_transition_trace(entry)
-	if not should_trace_transitions() then
-		return
-	end
-	local context<const> = self:resolve_context_snapshot(entry.context)
-	local message<const> = fsm_trace.compose_transition_trace_message({
-		outcome = entry.outcome,
-		execution = entry.execution,
-		from = entry.from,
-		to = entry.to,
-		context = context,
-		guard = entry.guard,
-		queue_size = entry.queue_size,
-		reason = entry.reason,
-	})
-	append_trace_entry(self.id, message)
-end
-
-function state:hydrate_context(snapshot, trigger, description)
-	if snapshot then
-		local action_evaluations
-		if snapshot.action_evaluations then
-			action_evaluations = {}
-			for i = 1, #snapshot.action_evaluations do
-				action_evaluations[i] = snapshot.action_evaluations[i]
-			end
-		else
-			action_evaluations = nil
-		end
-		local guard_evaluations
-		if snapshot.guard_evaluations then
-			guard_evaluations = {}
-			for i = 1, #snapshot.guard_evaluations do
-				guard_evaluations[i] = snapshot.guard_evaluations[i]
-			end
-		else
-			guard_evaluations = nil
-		end
-		return {
-			trigger = snapshot.trigger,
-			description = snapshot.description or description,
-			event_name = snapshot.event_name,
-			emitter = snapshot.emitter,
-			handler_name = snapshot.handler_name,
-			payload_summary = snapshot.payload_summary,
-			timestamp = snapshot.timestamp,
-			bubbled = snapshot.bubbled,
-			action_evaluations = action_evaluations,
-			guard_evaluations = guard_evaluations,
-				last_transition = snapshot.last_transition and {
-					from = snapshot.last_transition.from,
-					to = snapshot.last_transition.to,
-					execution = snapshot.last_transition.execution,
-					status = snapshot.last_transition.status,
-					guard_summary = snapshot.last_transition.guard_summary,
-					reason = snapshot.last_transition.reason,
-				},
-		}
-	end
-	return {
-		trigger = trigger,
-		description = description,
-		timestamp = clock.milliseconds(),
-	}
-end
-
-function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, bubbled, depth, context)
-	if not should_trace_dispatch() then
-		return
-	end
-	local message<const> = fsm_trace.compose_event_dispatch_trace_message({
-		event_name = event_name,
-		emitter = emitter,
-		detail = detail,
-		handled = handled,
-		bubbled = bubbled,
-		depth = depth,
-		context = context,
-		current_id = self.current_id,
-	})
-	append_trace_entry(self.id, message)
 end
 
 function state:transition_to_next_state_if_provided(next_state)
@@ -1099,322 +803,88 @@ function state:transition_to_next_state_if_provided(next_state)
 	self:transition_to(next_state)
 end
 
-function state:handle_state_transition(action, event)
-	if not action then
-		return false
-	end
-	local t<const> = type(action)
-	if t == 'string' then
-		if is_no_op_string(action) then
-			return true
+function state:execute_transition(kind, transition, event)
+	if kind == transition_path then
+		transition_cached_path(self, transition)
+	elseif kind == transition_callback then
+		local handler_event = event
+		if handler_event == nil then
+			handler_event = empty_game_event
 		end
-		self:transition_to(action)
-		return true
+		self:transition_to_next_state_if_provided(transition(self.target, self, handler_event))
 	end
-	if t == 'function' then
-		local handler_event<const> = event or empty_game_event
-		local next_state<const> = action(self.target, self, handler_event)
-		local detail = 'do:<anonymous>'
-		if next_state then
-			detail = detail .. '->' .. tostring(next_state)
-		end
-		self:append_action_evaluation(detail)
-		if next_state and not is_no_op_string(next_state) then
-			self:transition_to(next_state)
-		end
-		return true
-	end
-	if t ~= 'table' then
-		return false
-	end
-	-- Optional emitter filter: { emitter = 'some_id', go = handler_or_path }
-	-- When set, the handler only fires when the event came from an emitter
-	-- whose ID matches action.emitter.  Any other emitter leaves the event
-	-- unhandled (returns false), allowing it to bubble normally.
-	if action.emitter then
-		if resolve_emitter_id(event, nil) ~= action.emitter then
-			return false
-		end
-	end
-	local do_handler<const> = action.go
-	if not do_handler then
-		return false
-	end
-	local dt<const> = type(do_handler)
-	if dt == 'string' then
-		if is_no_op_string(do_handler) then
-			return true
-		end
-		self:append_action_evaluation('do:string=' .. do_handler)
-		self:transition_to(do_handler)
-		return true
-	end
-	if dt == 'function' then
-		local handler_event<const> = event or empty_game_event
-		local next_state<const> = do_handler(self.target, self, handler_event)
-		local detail = 'do:<anonymous>'
-		if next_state then
-			detail = detail .. '->' .. tostring(next_state)
-		end
-		self:append_action_evaluation(detail)
-		if next_state and not is_no_op_string(next_state) then
-			self:transition_to(next_state)
-		end
-		return true
-	end
-	return false
+	return true
 end
 
-function state:check_state_guard_conditions(target_state_id)
-	local allowed
-	local evaluations<const> = {}
-
-	local cur_def<const> = self.current_state.definition
-	local exit_guard_def<const> = cur_def.transition_guards
-	local exit_guard<const> = exit_guard_def and exit_guard_def.can_exit
-	if type(exit_guard) == 'function' then
-		local passed<const> = exit_guard(self.target, self)
-		local evaluation<const> = {
-			side = 'exit',
-			descriptor = '<anonymous>',
-			passed = passed,
-			defined = true,
-			type = 'function',
-			reason = passed and nil or 'exit guard returned false',
-		}
-		self:append_guard_evaluation(evaluation)
-		evaluations[#evaluations + 1] = evaluation
-		allowed = passed
-	else
-		local evaluation
-		if exit_guard == nil then
-			evaluation = { side = 'exit', descriptor = '<none>', passed = true, defined = false, type = 'missing' }
-		else
-			evaluation = {
-				side = 'exit',
-				descriptor = tostring(exit_guard),
-				passed = true,
-				defined = true,
-				type = type(exit_guard) == 'string' and 'string' or 'other',
-				reason = 'non-callable guard ignored',
-			}
-		end
-		self:append_guard_evaluation(evaluation)
-		evaluations[#evaluations + 1] = evaluation
-		allowed = true
+function state:check_state_guard_conditions(target_state)
+	local exit_guard<const> = self.current_state.definition.can_exit
+	if exit_guard and not exit_guard(self.target, self) then
+		return false
 	end
-
-	if not allowed then
-		local evaluation<const> = {
-			side = 'enter',
-			descriptor = '<not-evaluated>',
-			passed = false,
-			defined = false,
-			type = 'missing',
-			reason = 'enter guard skipped due to exit guard failure',
-		}
-		self:append_guard_evaluation(evaluation)
-		evaluations[#evaluations + 1] = evaluation
-		return { allowed = allowed, evaluations = evaluations }
-	end
-
-	local states<const> = self:states_or_throw()
-	local tgt<const> = states[target_state_id]
-	if not tgt then
-		error('target state "' .. tostring(target_state_id) .. '" not found under "' .. tostring(self.id) .. '".')
-	end
-	local enter_guard_def<const> = self:child_definition_or_throw(target_state_id).transition_guards
-	local enter_guard<const> = enter_guard_def and enter_guard_def.can_enter
-	if type(enter_guard) == 'function' then
-		local passed<const> = enter_guard(self.target, tgt)
-		local evaluation<const> = {
-			side = 'enter',
-			descriptor = '<anonymous>',
-			passed = passed,
-			defined = true,
-			type = 'function',
-			reason = passed and nil or 'enter guard returned false',
-		}
-		self:append_guard_evaluation(evaluation)
-		evaluations[#evaluations + 1] = evaluation
-		if not passed then
-			allowed = false
-		end
-	else
-		local evaluation
-		if enter_guard == nil then
-			evaluation = { side = 'enter', descriptor = '<none>', passed = true, defined = false, type = 'missing' }
-		else
-			evaluation = {
-				side = 'enter',
-				descriptor = tostring(enter_guard),
-				passed = true,
-				defined = true,
-				type = type(enter_guard) == 'string' and 'string' or 'other',
-				reason = 'non-callable guard ignored',
-			}
-		end
-		self:append_guard_evaluation(evaluation)
-		evaluations[#evaluations + 1] = evaluation
-	end
-
-	return { allowed = allowed, evaluations = evaluations }
+	local enter_guard<const> = target_state.definition.can_enter
+	return not enter_guard or enter_guard(self.target, target_state)
 end
 
 -- transition_to_state: the core state transition operation.
--- If in a critical section, the transition is queued (see CRITICAL SECTIONS
--- in the header).  Guards are evaluated before transitioning.
+-- Compiled path requests are queued at the root before reaching this method;
+-- guards are evaluated here before changing the active child.
 -- Sequence: exit current state → deactivate timelines → push history →
 -- set new current_id → activate timelines → call entering_state →
 -- if entered state has substates, reset_submachine + enter_initial_substate_chain.
 function state:transition_to_state(state_id)
-	if self.in_update then
-		self._transitions_this_update = self._transitions_this_update + 1
-		if self._transitions_this_update > max_transitions_per_update then
-			error('transition limit exceeded in one tick for "' .. tostring(self.id) .. '".')
-		end
-	end
-
-	local diag_enabled<const> = should_trace_transitions()
-	local execution<const> = self.is_processing_queue and 'deferred' or 'manual'
-
-	if self.critical_section_counter > 0 then
-		local queue_index<const> = self.transition_queue_count + 1
-		self.transition_queue_count = queue_index
-		self.transition_queue_paths[queue_index] = state_id
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil)
-			self.transition_queue_diags[queue_index] = context
-			local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
-			self:record_transition_outcome_on_context(outcome)
-			self:emit_transition_trace({
-				outcome = 'queued',
-				execution = 'queued',
-				from = self.current_id,
-				to = state_id,
-				context = context,
-				queue_size = queue_index,
-				reason = 'critical-section',
-			})
-		else
-			self.transition_queue_diags[queue_index] = nil
-		end
-		return
-	end
-
 	if self.current_id == state_id then
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil)
-			self:record_transition_outcome_on_context({
-				from = self.current_id,
-				to = state_id,
-				execution = execution,
-				status = 'noop',
-				reason = 'already-current',
-			})
-			self:emit_transition_trace({
-				outcome = 'noop',
-				execution = execution,
-				from = self.current_id,
-				to = state_id,
-				context = context,
-				reason = 'already-current',
-			})
-		end
-		return
+		return true
 	end
 
-	local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
-	if not guard_diagnostics.allowed then
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil)
-			local outcome<const> = {
-				from = self.current_id,
-				to = state_id,
-				execution = execution,
-				status = 'blocked',
-				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
-			}
-			self:record_transition_outcome_on_context(outcome)
-			self:emit_transition_trace({
-				outcome = 'blocked',
-				execution = execution,
-				from = self.current_id,
-				to = state_id,
-				context = context,
-				guard = guard_diagnostics,
-				reason = 'guard',
-			})
-		end
-		return
+	local cur<const> = self.states[state_id]
+	if not self:check_state_guard_conditions(cur) then
+		return false
 	end
 
 	self:enter_critical_section()
 	local prev_id<const> = self.current_id
 	local prev_instance<const> = self.current_state
-	local prev_def<const> = prev_instance.definition
-
-	local exit_handler<const> = prev_def.exiting_state
-	if type(exit_handler) == 'function' then
-		exit_handler(self.target, prev_instance)
-	end
-	prev_instance:deactivate_timelines()
+	prev_instance:exit_active_subtree()
 	self:push_history(prev_id)
 	prev_instance:remove_active_subtree_tags()
 
 	self.current_id = state_id
-	local cur<const> = self.states[state_id]
-	if not cur then
-		error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
-	end
 	self.current_state = cur
 	local cur_def<const> = cur.definition
-	if cur_def.is_concurrent then
-		error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
-	end
 	cur:add_active_subtree_tags()
 
 	cur:activate_timelines()
 	local enter_handler<const> = cur_def.entering_state
 	local next_state
 	if enter_handler then
-		if should_trace_transitions() then
-			local context<const> = fsm_trace.create_enter_context(state_id)
-			context.handler_name = '<anonymous>'
-			next_state = self:run_with_transition_context(context, enter_handler, self.target, cur)
-		else
-			next_state = enter_handler(self.target, cur)
-		end
+		next_state = enter_handler(self.target, cur)
 	end
 	cur:transition_to_next_state_if_provided(next_state)
 
-	if diag_enabled then
-		local outcome<const> = {
-			from = prev_id,
-			to = state_id,
-			execution = execution,
-			status = 'success',
-			guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
-		}
-		self:record_transition_outcome_on_context(outcome)
-		self:emit_transition_trace({
-			outcome = 'success',
-			execution = execution,
-			from = prev_id,
-			to = state_id,
-			guard = guard_diagnostics,
-		})
+	if cur_def.initial then
+		cur:remove_active_subtree_tags()
+		cur:reset_submachine(true)
+		cur:add_active_subtree_tags()
+		cur:enter_initial_substate_chain()
 	end
 	self:leave_critical_section()
+	return true
+end
 
-	local entered<const> = self.states[state_id]
-	if entered.definition.initial then
-		entered:remove_active_subtree_tags()
-		entered:reset_submachine(true)
-		entered:add_active_subtree_tags()
-		entered:enter_initial_substate_chain()
+function state:exit_active_subtree()
+	local concurrent_states<const> = self.concurrent_states
+	for i = self.concurrent_state_count, 1, -1 do
+		concurrent_states[i]:exit_active_subtree()
 	end
-	self.root:refresh_active_frame_work()
+	local current<const> = self.current_state
+	if current ~= nil then
+		current:exit_active_subtree()
+	end
+	local exit_handler<const> = self.definition.exiting_state
+	if exit_handler then
+		exit_handler(self.target, self)
+	end
+	self:deactivate_timelines()
 end
 
 function state:push_history(to_push)
@@ -1444,7 +914,7 @@ function state:pop_and_transition()
 	local popped_state_id<const> = self._hist[tail_index + 1]
 	self._hist_size = self._hist_size - 1
 	if popped_state_id then
-		self:transition_to(popped_state_id)
+		transition_cached_path(self, self.definition.direct_child_plans[popped_state_id])
 	end
 end
 
@@ -1456,68 +926,125 @@ function state:get_history_snapshot()
 	return out
 end
 
-local compile_definition_path_plan<const> = function(origin_definition, path)
-	local spec<const> = state.parse_fs_path(path)
-	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
-		error('empty path is invalid.')
+local append_definition_path_segment<const> = function(plan, ctx, segment, path)
+	if ignored_relative_segments[segment] then
+		return ctx
 	end
-	local ctx = spec.abs and origin_definition.root or origin_definition
-	for i = 1, spec.up do
+	if segment == '..' then
+		local count<const> = plan.count
+		if count > 0 then
+			plan[count * 2 - 1] = nil
+			plan[count * 2] = nil
+			plan.count = count - 1
+			return ctx.parent
+		end
 		if not ctx.parent then
 			error('path "' .. path .. '" attempts to go above root.')
 		end
-		ctx = ctx.parent
+		plan.up = plan.up + 1
+		return ctx.parent
 	end
-	local count<const> = #spec.segs
-	local keys<const> = {}
-	local concurrent<const> = {}
-	for i = 1, count do
-		local seg<const> = spec.segs[i]
-		local key<const> = resolve_state_key(ctx, seg)
-		if not key then
-			local states<const> = ctx.states
-			if not states then
-				error('state "' .. tostring(ctx.id) .. '" does not define substates.')
-			end
-			local children<const> = {}
-			for child_id in pairs(states) do
-				children[#children + 1] = child_id
-			end
-			error('no state "' .. seg .. '" under "' .. tostring(ctx.def_id) .. '". children: ' .. table.concat(children, ', '))
+	local key<const> = resolve_state_key(ctx, segment)
+	if not key then
+		local states<const> = ctx.states
+		if not states then
+			error('state "' .. tostring(ctx.id) .. '" does not define substates.')
 		end
-		local child<const> = ctx.states[key]
-		keys[i] = key
-		concurrent[i] = child.is_concurrent
-		ctx = child
+		local children<const> = {}
+		for child_id in pairs(states) do
+			children[#children + 1] = child_id
+		end
+		error('no state "' .. segment .. '" under "' .. tostring(ctx.def_id) .. '". children: ' .. table.concat(children, ', '))
 	end
-	return {
-		abs = spec.abs,
-		up = spec.up,
-		count = count,
-		keys = keys,
-		concurrent = concurrent,
-	}
+	local child<const> = ctx.states[key]
+	local count<const> = plan.count + 1
+	plan.count = count
+	plan[count * 2 - 1] = key
+	plan[count * 2] = child.is_concurrent
+	return child
 end
 
-local get_cached_definition_path_plan<const> = function(origin_definition, path)
-	local root<const> = origin_definition.root
-	local cache_key<const> = origin_definition.def_id .. '\n' .. path
-	local cache<const> = root._resolved_path_cache
-	local cached<const> = cache[cache_key]
-	if cached then
-		return cached
+local compile_definition_path_plan<const> = function(origin_definition, path)
+	local len<const> = #path
+	if len == 0 then
+		error('empty path is invalid.')
 	end
-	local cache_size<const> = state.path_config.cache_size
-	if root._resolved_path_cache_count >= cache_size then
-		for key in pairs(cache) do
-			cache[key] = nil
-			root._resolved_path_cache_count = root._resolved_path_cache_count - 1
-			break
+	local i = 1
+	local absolute<const> = string.byte(path, 1) == 47
+	local plan<const> = { abs = absolute, up = 0, count = 0 }
+	local ctx = absolute and origin_definition.root or origin_definition
+	if absolute then
+		i = 2
+	elseif string.byte(path, 1) == 46 and string.byte(path, 2) == 47 then
+		i = 3
+	else
+		while string.byte(path, i) == 46 and string.byte(path, i + 1) == 46 and string.byte(path, i + 2) == 47 do
+			if not ctx.parent then
+				error('path "' .. path .. '" attempts to go above root.')
+			end
+			plan.up = plan.up + 1
+			ctx = ctx.parent
+			i = i + 3
 		end
 	end
+	while i <= len do
+		local byte<const> = string.byte(path, i)
+		if byte == 47 then
+			i = i + 1
+		elseif byte == 91 and string.byte(path, i + 1) == 39 then
+			i = i + 2
+			local segment = ''
+			local closed
+			while i <= len do
+				local character<const> = string.byte(path, i)
+				i = i + 1
+				if character == 92 then
+					if i <= len then
+						segment = segment .. string.char(string.byte(path, i))
+						i = i + 1
+					end
+				elseif character == 39 then
+					if string.byte(path, i) ~= 93 then
+						error('unterminated quoted segment in path "' .. path .. '".')
+					end
+					i = i + 1
+					closed = true
+					break
+				else
+					segment = segment .. string.char(character)
+				end
+			end
+			if not closed then
+				error('unterminated quoted segment in path "' .. path .. '".')
+			end
+			ctx = append_definition_path_segment(plan, ctx, segment, path)
+		else
+			local start<const> = i
+			while i <= len and string.byte(path, i) ~= 47 do
+				i = i + 1
+			end
+			ctx = append_definition_path_segment(plan, ctx, string.sub(path, start, i - 1), path)
+		end
+	end
+	if not absolute and plan.up == 0 and plan.count == 0 then
+		error('empty path is invalid.')
+	end
+	return plan
+end
+
+local get_definition_path_plan<const> = function(origin_definition, path)
+	local cache = origin_definition.path_plans
+	if cache then
+		local cached<const> = cache[path]
+		if cached then
+			return cached
+		end
+	else
+		cache = {}
+		origin_definition.path_plans = cache
+	end
 	local plan<const> = compile_definition_path_plan(origin_definition, path)
-	cache[cache_key] = plan
-	root._resolved_path_cache_count = root._resolved_path_cache_count + 1
+	cache[path] = plan
 	return plan
 end
 
@@ -1526,16 +1053,49 @@ local apply_cached_path_plan<const> = function(start_state, plan)
 	for i = 1, plan.up do
 		ctx = ctx.parent
 	end
-	local keys<const> = plan.keys
-	local concurrent<const> = plan.concurrent
 	for i = 1, plan.count do
-		local key<const> = keys[i]
+		local key<const> = plan[i * 2 - 1]
 		local child<const> = ctx.states[key]
-		if not concurrent[i] and ctx.current_id ~= key then
-			ctx:transition_to_state(key)
+		if not plan[i * 2] and ctx.current_id ~= key then
+			if not ctx:transition_to_state(key) then
+				return false
+			end
 		end
 		ctx = child
 	end
+	return true
+end
+
+transition_cached_path = function(start_state, plan)
+	local root<const> = start_state.root
+	local index<const> = root.transition_queue_count + 1
+	root.transition_queue_count = index
+	root.transition_queue_origins[index] = start_state
+	root.transition_queue_plans[index] = plan
+	if root.critical_section_counter == 0 then
+		root:process_transition_queue()
+	end
+end
+
+function state:process_transition_queue()
+	local root<const> = self.root
+	root.critical_section_counter = root.critical_section_counter + 1
+	local origins<const> = root.transition_queue_origins
+	local plans<const> = root.transition_queue_plans
+	local i = 1
+	while i <= root.transition_queue_count do
+		local origin<const> = origins[i]
+		local plan<const> = plans[i]
+		origins[i] = false
+		plans[i] = false
+		apply_cached_path_plan(origin, plan)
+		i = i + 1
+	end
+	root.transition_queue_count = 0
+	root.critical_section_counter = root.critical_section_counter - 1
+	root:refresh_active_frame_work()
+	root:sync_target_state_tags()
+	return true
 end
 
 local matches_cached_path_plan<const> = function(start_state, plan)
@@ -1546,11 +1106,9 @@ local matches_cached_path_plan<const> = function(start_state, plan)
 	for i = 1, plan.up do
 		ctx = ctx.parent
 	end
-	local keys<const> = plan.keys
-	local concurrent<const> = plan.concurrent
 	for i = 1, plan.count do
-		local key<const> = keys[i]
-		if not concurrent[i] and ctx.current_id ~= key then
+		local key<const> = plan[i * 2 - 1]
+		if not plan[i * 2] and ctx.current_id ~= key then
 			return false
 		end
 		ctx = ctx.states[key]
@@ -1558,66 +1116,8 @@ local matches_cached_path_plan<const> = function(start_state, plan)
 	return true
 end
 
-local compile_definition_event_handler_chain<const> = function(origin_definition, event_name)
-	local depths<const> = {}
-	local count = 0
-	local definition = origin_definition
-	local depth = 0
-	while definition do
-		if definition.on[event_name] ~= nil then
-			count = count + 1
-			depths[count] = depth
-		end
-		definition = definition.parent
-		depth = depth + 1
-	end
-	return { count = count, depths = depths }
-end
-
-local get_cached_definition_event_handler_chain<const> = function(origin_definition, event_name)
-	local root<const> = origin_definition.root
-	local cache_key<const> = origin_definition.def_id .. '\n' .. event_name
-	local cache<const> = root._event_handler_chain_cache
-	local cached<const> = cache[cache_key]
-	if cached then
-		return cached
-	end
-	local cache_size<const> = state.event_handler_chain_cache_size
-	if root._event_handler_chain_cache_count >= cache_size then
-		for key in pairs(cache) do
-			cache[key] = nil
-			root._event_handler_chain_cache_count = root._event_handler_chain_cache_count - 1
-			break
-		end
-	end
-	local chain<const> = compile_definition_event_handler_chain(origin_definition, event_name)
-	cache[cache_key] = chain
-	root._event_handler_chain_cache_count = root._event_handler_chain_cache_count + 1
-	return chain
-end
-
-function state:transition_to_path(path)
-	if type(path) == 'table' then
-		if #path == 0 then
-			error('empty path is invalid.')
-		end
-		local ctx = self
-		for i = 1, #path do
-			local seg<const> = path[i]
-			local child<const>, key<const> = self:ensure_child(ctx, seg)
-			if not child.definition.is_concurrent and ctx.current_id ~= key then
-				ctx:transition_to_state(key)
-			end
-			ctx = child
-		end
-		return
-	end
-	apply_cached_path_plan(self, get_cached_definition_path_plan(self.definition, path))
-end
-
 function state:transition_to(state_id)
-	self:transition_to_path(state_id)
-	self.root:sync_target_state_tags()
+	transition_cached_path(self, get_definition_path_plan(self.definition, state_id))
 end
 
 function state:path()
@@ -1637,140 +1137,58 @@ function state:path()
 	return '/' .. table.concat(path, '/')
 end
 
-state._path_cache = {}
-
-function state.parse_fs_path(input)
-	local cached<const> = state._path_cache[input]
-	if cached then
-		return cached
+local compile_transition<const> = function(definition, spec)
+	local action = spec
+	if type(action) == 'table' then
+		action = action.go
 	end
-	local len<const> = #input
-	local i = 1
-	local abs
-	local up = 0
-	local segs<const> = {}
-	if len == 0 then
-		return { abs = false, up = 0, segs = {} }
-	end
-	if string.sub(input, i, i) == '/' then
-		abs = true
-		i = i + 1
-	end
-	if not abs then
-		if string.sub(input, i, i + 1) == './' then
-			i = i + 2
-		else
-			while string.sub(input, i, i + 2) == '../' do
-				up = up + 1
-				i = i + 3
-			end
+	if type(action) == 'string' then
+		if is_no_op_string(action) then
+			return transition_no_op
 		end
+		return transition_path, get_definition_path_plan(definition, action)
 	end
-
-	local push_seg<const> = function(seg)
-		if ignored_relative_segments[seg] then
-			return
-		end
-		if seg == '..' then
-			if #segs > 0 then
-				table.remove(segs)
-			else
-				up = up + 1
-			end
-			return
-		end
-		segs[#segs + 1] = seg
-	end
-
-	while i <= len do
-		local c<const> = string.sub(input, i, i)
-		if c == '/' then
-			i = i + 1
-		elseif c == '[' and string.sub(input, i + 1, i + 1) == '\'' then
-			i = i + 2
-			local seg = ''
-			local closed
-			while i <= len do
-				local ch<const> = string.sub(input, i, i)
-				i = i + 1
-				if ch == '\\' then
-					if i <= len then
-						local esc<const> = string.sub(input, i, i)
-						i = i + 1
-						if esc == '\'' then
-							seg = seg .. '\''
-						elseif esc == '/' then
-							seg = seg .. '/'
-						else
-							seg = seg .. esc
-						end
-					end
-				elseif ch == '\'' then
-					if string.sub(input, i, i) == ']' then
-						i = i + 1
-						closed = true
-						break
-					else
-						error('unterminated quoted segment in path "' .. input .. '".')
-					end
-				else
-					seg = seg .. ch
-				end
-			end
-			if not closed then
-				error('unterminated quoted segment in path "' .. input .. '".')
-			end
-			push_seg(seg)
-		else
-			local start<const> = i
-			while i <= len and string.sub(input, i, i) ~= '/' do
-				i = i + 1
-			end
-			push_seg(string.sub(input, start, i - 1))
-		end
-	end
-
-	local cache_size<const> = state.path_config.cache_size
-	if state._path_cache_count >= cache_size then
-		for key in pairs(state._path_cache) do
-			state._path_cache[key] = nil
-			state._path_cache_count = state._path_cache_count - 1
-			break
-		end
-	end
-	local rec<const> = { abs = abs, up = up, segs = segs }
-	state._path_cache[input] = rec
-	state._path_cache_count = state._path_cache_count + 1
-	return rec
+	return transition_callback, action
 end
 
-function state:matches_state_path(path)
-	local match_segments<const> = function(start, segments)
-		if #segments == 0 then
-			return false
-		end
-		local ctx = start
-		for i = 1, #segments do
-			local seg<const> = segments[i]
-			local child<const>, key<const> = resolve_state_instance(ctx, seg)
-			if not child then
-				return false
-			end
-			if not child.definition.is_concurrent and ctx.current_id ~= key then
-				return false
-			end
-			if i == #segments then
-				return true
-			end
-			ctx = child
-		end
-		return false
+compile_definition_transitions = function(definition)
+	for _, handler in pairs(definition.on) do
+		handler.kind, handler.transition = compile_transition(definition, handler.source)
+		handler.source = nil
 	end
-
-	if type(path) == 'table' then
-		return match_segments(self, path)
+	local input_handlers<const> = definition.input_event_handlers
+	local input_count<const> = definition.input_handler_count
+	if input_count ~= 0 then
+		local patterns<const> = {}
+		local kinds<const> = {}
+		local transitions<const> = {}
+		for i = 1, input_count do
+			local entry<const> = input_handlers[i]
+			patterns[i] = entry.pattern
+			kinds[i], transitions[i] = compile_transition(definition, entry)
+		end
+		definition.input_patterns = patterns
+		definition.input_transition_kinds = kinds
+		definition.input_transitions = transitions
 	end
-	return matches_cached_path_plan(self, get_cached_definition_path_plan(self.definition, path))
+	definition.input_event_handlers = nil
+	local direct_child_plans
+	for state_id in pairs(definition.states) do
+		if direct_child_plans == nil then
+			direct_child_plans = {}
+		end
+		direct_child_plans[state_id] = {
+			abs = false,
+			up = 0,
+			count = 1,
+			state_id,
+			definition.states[state_id].is_concurrent,
+		}
+	end
+	definition.direct_child_plans = direct_child_plans
+	for _, child in pairs(definition.states) do
+		compile_definition_transitions(child)
+	end
 end
 
 function state:matches_state_tag(tag)
@@ -2000,160 +1418,58 @@ function state:sync_target_state_tags()
 	end
 end
 
-function state:handle_event(event_name, emitter_id, detail, event)
-	if self.paused then
+function state:handle_event(event_name, event, emitter_id)
+	local handler<const> = self.definition.on[event_name]
+	if not handler then
 		return false
 	end
-	local handlers<const> = self.definition.on
-	local spec<const> = handlers[event_name]
-	if not spec then
-		return false
-	end
-	if should_trace_transitions() then
-		self:enter_critical_section()
-		local context<const> = fsm_trace.create_event_context(event_name, emitter_id, detail)
-		context.handler_name = fsm_trace.describe_transition_handler(spec)
-		local handled<const> = self:run_with_transition_context(
-			context,
-			self.handle_state_transition,
-			self,
-			spec,
-			event
-		)
-		self:leave_critical_section()
-		return handled
+	if not handler.unfiltered then
+		local emitter<const> = handler.emitter or self.target_id
+		if emitter_id ~= emitter then
+			return false
+		end
 	end
 	self:enter_critical_section()
-	local handled<const> = self:handle_state_transition(spec, event)
+	local handled<const> = self:execute_transition(handler.kind, handler.transition, event)
 	self:leave_critical_section()
 	return handled
 end
 
-function state:handle_event_with_dispatch_context(event_name, emitter_id, detail, event)
-	if self.paused then
-		return false, nil
+local dispatch_resolved_event
+
+dispatch_resolved_event = function(self, event_name, data, emitter_id)
+	local handled
+	local child<const> = self.current_state
+	if child ~= nil then
+		handled = dispatch_resolved_event(child, event_name, data, emitter_id)
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			if dispatch_resolved_event(concurrent_states[i], event_name, data, emitter_id) then
+				handled = true
+			end
+		end
+		if handled then
+			return true
+		end
 	end
-	local handlers<const> = self.definition.on
-	local spec<const> = handlers[event_name]
-	if not spec then
-		return false, nil
-	end
-	local captured_context = nil
-	if should_trace_transitions() then
-		self:enter_critical_section()
-		captured_context = fsm_trace.create_event_context(event_name, emitter_id, detail)
-		captured_context.handler_name = fsm_trace.describe_transition_handler(spec)
-		local handled<const> = self:run_with_transition_context(
-			captured_context,
-			self.handle_state_transition,
-			self,
-			spec,
-			event
-		)
-		self:leave_critical_section()
-		return handled, captured_context
-	end
-	self:enter_critical_section()
-	local handled<const> = self:handle_state_transition(spec, event)
-	self:leave_critical_section()
-	return handled, nil
+	return self:handle_event(event_name, data, emitter_id)
 end
 
 -- dispatch_event: delivers an event through the state hierarchy.
 -- Dispatch order: current child (depth-first) → concurrent siblings →
 -- if unhandled, bubble to parent → grandparent → root.  Root-level `on`
 -- handlers are the catch-all.  Returns true if any handler consumed the event.
-function state:dispatch_event(event_or_name, payload)
-	if self.paused then
-		return false
-	end
-	local event_name
-	local data
-	if type(event_or_name) == 'table' then
-		event_name = event_or_name.type
-		data = event_or_name
-	else
-		event_name = event_or_name
-		data = payload
-	end
-	local trace_dispatch<const> = should_trace_dispatch()
-	local trace_transitions<const> = trace_dispatch or should_trace_transitions()
-	local emitter_id
-	local detail
-	local dispatch_context
-	if trace_dispatch or trace_transitions then
-		emitter_id = resolve_emitter_id(data, self.target_id)
-		if type(event_or_name) == 'table' then
-			detail = data.payload
-		else
-			detail = data
-		end
-		if trace_dispatch then
-			dispatch_context = fsm_trace.create_event_context(event_name, emitter_id, detail)
-		end
-	else
-		detail = nil
-	end
-
-	local child<const> = self.current_state
-	if child ~= nil then
-		local handled = child:dispatch_event(event_name, data)
-		local concurrent_states<const> = self.concurrent_states
-		for i = 1, self.concurrent_state_count do
-			handled = concurrent_states[i]:dispatch_event(event_name, data) or handled
-		end
-		if handled then
-			return true
-		end
-	end
-
-	if not trace_dispatch then
-		local chain<const> = get_cached_definition_event_handler_chain(self.definition, event_name)
-		if chain.count == 0 then
-			return false
-		end
-		local current = self
-		local depth = 0
-		local depths<const> = chain.depths
-		for i = 1, chain.count do
-			local target_depth<const> = depths[i]
-			while depth < target_depth do
-				current = current.parent
-				depth = depth + 1
-			end
-			if current:handle_event(event_name, emitter_id, detail, data) then
-				return true
-			end
-		end
-		return false
-	end
-
-	local current = self
-	local depth = 0
-	while current do
-		local handled<const>, context<const> = current:handle_event_with_dispatch_context(event_name, emitter_id, detail, data)
-		local bubbled<const> = depth > 0 or (not handled and current.parent ~= nil)
-		current:emit_event_dispatch_trace(event_name, emitter_id, detail, handled, bubbled, depth, context or dispatch_context)
-		if handled then
-			return true
-		end
-		current = current.parent
-		depth = depth + 1
-	end
-	return false
+function state:dispatch_event(event_name, payload, emitter_id)
+	return dispatch_resolved_event(self, event_name, payload, emitter_id)
 end
 
 function state:update()
-	if self.paused then
-		return
-	end
-	self._transitions_this_update = 0
 	-- update() runs on every active machine every frame, so the whole frame path
 	-- stays open-coded. Keeping child updates, input scanning and current-state
 	-- execution in one direct loop cuts method-call churn and repeated definition
 	-- lookups that do not help gameplay work on a low-end machine.
-	self.critical_section_counter = self.critical_section_counter + 1
-	self.in_update = true
+	local root<const> = self.root
+	root.critical_section_counter = root.critical_section_counter + 1
 	local current<const> = self.current_state
 	if current ~= nil and current.active_frame_work then
 		current:update()
@@ -2168,31 +1484,15 @@ function state:update()
 
 	local definition<const> = self.definition
 	local target<const> = self.target
-	local diagnostics<const> = state.diagnostics
-	local trace_transitions<const> = diagnostics and diagnostics.trace_transitions
-	local handlers<const> = definition.input_event_handler_list
-	if #handlers ~= 0 then
-		local player_index<const> = target.player_index or 1 -- TODO: Should happen at "FSM compile" time and not be looked up every frame
-		local eval_mode<const> = definition.effective_input_eval
-		for i = 1, #handlers do
-			local entry<const> = handlers[i]
-			local pattern<const> = entry.pattern
-			local handler<const> = entry.handler
-			if cart_input.query(player_index, pattern) then
-				local handled
-				if trace_transitions then
-					local context<const> = fsm_trace.create_input_context(pattern, player_index)
-					context.handler_name = fsm_trace.describe_transition_handler(handler)
-					handled = self:run_with_transition_context(
-						context,
-						self.handle_state_transition,
-						self,
-						handler
-					)
-				else
-					handled = self:handle_state_transition(handler)
-				end
-				if handled and eval_mode == 'first' then
+	local transitions<const> = definition.input_transitions
+	if transitions then
+		local stop_after_match<const> = definition.input_eval_first
+		local bindings<const> = self.input_bindings
+		local kinds<const> = definition.input_transition_kinds
+		for i = 1, definition.input_handler_count do
+			if input.is_active(bindings[i]) then
+				local handled<const> = self:execute_transition(kinds[i], transitions[i])
+				if handled and stop_after_match then
 					break
 				end
 			end
@@ -2201,31 +1501,16 @@ function state:update()
 
 	local update_handler<const> = definition.update
 	if update_handler ~= nil then
-		local next_state
-		if trace_transitions then
-			local context<const> = fsm_trace.create_update_context('<anonymous>')
-			next_state = self:run_with_transition_context(
-				context,
-				update_handler,
-				target,
-				self,
-				empty_game_event
-			)
-		else
-			next_state = update_handler(target, self, empty_game_event)
-		end
+		local next_state<const> = update_handler(target, self, empty_game_event)
 		if next_state and not is_no_op_string(next_state) then
 			self:transition_to(next_state)
 		end
 	end
-	self.in_update = false
-	self.critical_section_counter = self.critical_section_counter - 1
-	if self.critical_section_counter == 0 then
-		if self.transition_queue_count ~= 0 and not self.is_processing_queue then
-			self:process_transition_queue()
+	root.critical_section_counter = root.critical_section_counter - 1
+	if root.critical_section_counter == 0 then
+		if root.transition_queue_count ~= 0 then
+			root:process_transition_queue()
 		end
-	elseif self.critical_section_counter < 0 then
-		error('critical section counter was lower than 0, which is a bug. state: "' .. tostring(self.id) .. '".')
 	end
 end
 
@@ -2302,14 +1587,14 @@ function state:populate_states()
 end
 
 function state:reset(reset_tree)
-	local def<const> = self.definition
-	self.data = def.data and clone_defaults(def.data) or {}
 	local should_reset = reset_tree
 	if should_reset == nil then
 		should_reset = true
 	end
 	if should_reset then
 		self:reset_submachine(true)
+	else
+		reset_state_data(self.data, self.definition.data)
 	end
 end
 
@@ -2323,16 +1608,16 @@ function state:reset_submachine(reset_tree)
 	end
 	self._hist_head = 0
 	self._hist_size = 0
-	local queued_paths<const> = self.transition_queue_paths
-	local queued_diags<const> = self.transition_queue_diags
-	for i = 1, self.transition_queue_count do
-		queued_paths[i] = nil
-		queued_diags[i] = nil
+	if self:is_root() then
+		local origins<const> = self.transition_queue_origins
+		local plans<const> = self.transition_queue_plans
+		for i = 1, self.transition_queue_count do
+			origins[i] = false
+			plans[i] = false
+		end
+		self.transition_queue_count = 0
 	end
-	self.transition_queue_count = 0
-	self.is_processing_queue = false
-	self.paused = false
-	self.data = def.data and clone_defaults(def.data) or {}
+	reset_state_data(self.data, def.data)
 	if reset_tree == nil or reset_tree then
 		local states<const> = self.states
 		local state_ids<const> = self.state_ids
@@ -2349,40 +1634,25 @@ end
 
 function state:dispose()
 	self:deactivate_timelines()
-		if self:is_root() then
-			local applied<const> = self._applied_state_tags
-			if applied then
-				for tag in pairs(applied) do
-					decrement_target_state_tag_ref(self.target, tag)
-				end
+	if self:is_root() then
+		local applied<const> = self._applied_state_tags
+		if applied then
+			for tag in pairs(applied) do
+				decrement_target_state_tag_ref(self.target, tag)
 			end
-			self._applied_state_tags = nil
-			self._tag_sync_scratch = nil
-			self._tag_remove_scratch = nil
-			self._active_state_tag_refs = nil
-			self._active_state_tags = nil
-		end
-	if self.states then
-		local states<const> = self.states
-		local state_ids<const> = self.state_ids
-		for i = 1, self.state_count do
-			states[state_ids[i]]:dispose()
 		end
 	end
-	self.states = {} -- TODO: WTF?!
-	self.state_ids = {} -- TODO: WTF?!
-	self.concurrent_states = {} -- TODO: WTF?!
-	self.state_count = 0 -- TODO: WTF?!
-	self.concurrent_state_count = 0 -- TODO: WTF?!
-	self.current_id = nil -- TODO: WTF?!
-	self.current_state = nil -- TODO: WTF?!
-	self.active_frame_work = false -- TODO: WTF?!
-	self.transition_queue_paths = {} -- TODO: WTF?!
-	self.transition_queue_diags = {} -- TODO: WTF?!
-	self.transition_queue_count = 0 -- TODO: WTF?!
+	local states<const> = self.states
+	local state_ids<const> = self.state_ids
+	for i = 1, self.state_count do
+		states[state_ids[i]]:dispose()
+	end
 end
 
 return {
+	bind_state_path = get_definition_path_plan,
+	matches_state_path = matches_cached_path_plan,
 	statedefinition = statedefinition,
 	state = state,
+	transition_state_path = transition_cached_path,
 }

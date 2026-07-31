@@ -11,7 +11,7 @@ local timeline_builders<const> = require('timeline_builders')
 local world_instance<const> = require('cartlib/world/world').instance
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
@@ -251,7 +251,7 @@ end
 function combat_director:skip_typing()
 	if world_instance:get(text_main_id):is_typing() then
 		world_instance:get(text_main_id):reveal_text()
-		cart_input.consume(1, 'b')
+		input.consume(1, 'b')
 		return true
 	end
 	return false
@@ -405,7 +405,7 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = '/combat_init'
+			{ pattern = 'b[jp]', go = '/combat_init' },
 		},
 		leaving_state = function(self)
 			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
@@ -439,7 +439,7 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = '/combat_done'
+			{ pattern = 'b[jp]', go = '/combat_done' },
 		},
 	}
 
@@ -559,7 +559,7 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = '/combat_round',
+			{ pattern = 'b[jp]', go = '/combat_round' },
 		},
 		leaving_state = function(self)
 			local monster<const> = world_instance:get(combat_monster_id)
@@ -628,7 +628,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['up[jp]'] = {
+			{
+				pattern = 'up[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
@@ -637,7 +638,8 @@ function combat.define_fsm()
 					end
 				end,
 			},
-			['down[jp]'] = {
+			{
+				pattern = 'down[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					local node<const> = story[self.node_id]
@@ -648,7 +650,8 @@ function combat.define_fsm()
 					end
 				end,
 			},
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
@@ -657,7 +660,8 @@ function combat.define_fsm()
 					end
 				end,
 			},
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if world_instance:get(text_main_id):is_typing() then return end
@@ -721,7 +725,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_hit(self)
 				end,
@@ -765,7 +770,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_dodge(self)
 				end,
@@ -848,7 +854,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_exchange(self)
 				end,
@@ -948,7 +955,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_exchange(self)
 				end,
@@ -1032,7 +1040,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					if self:skip_typing() then
 						world_instance:get(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
@@ -1040,7 +1049,8 @@ function combat.define_fsm()
 					end
 				end
 			},
-				['a[jp]'] = {
+				{
+					pattern = 'a[jp]',
 					go = function(self)
 						if world_instance:get(text_main_id):is_typing() then return end
 						return '/combat_all_out'
@@ -1119,7 +1129,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = '/combat_focus',
 			},
 		},
@@ -1162,7 +1173,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = '/combat_results_setup',
 			},
 		},
@@ -1274,7 +1286,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_results_fade_in(self)
 				end,
@@ -1285,7 +1298,8 @@ function combat.define_fsm()
 	states.combat_results = {
 		input_eval = 'first',
 		input_event_handlers = {
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 				go = function(self)
 					local node<const> = story[self.node_id]
 					self.node_id = node.next
@@ -1321,7 +1335,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_results_fade_out(self)
 				end,
@@ -1348,7 +1363,8 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_combat_exit_fade_in(self)
 				end,
@@ -1519,6 +1535,7 @@ function combat.register_director()
 		fsms = { combat_director_fsm_id },
 		components = { timelinecomponent.new },
 		defaults = {
+			player_index = 1,
 			node_id = nil,
 			choice_index = 1,
 			combat_round_index = 1,

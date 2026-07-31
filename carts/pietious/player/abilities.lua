@@ -32,10 +32,8 @@ function player_abilities.activate_sword(owner)
 end
 
 action_effects.register_effect('pepernoot', {
-	id = 'pepernoot',
 	blocked_tags = { 'g.dl' },
-	can_trigger = function(context)
-		local owner<const> = context.owner
+	can_trigger = function(owner)
 		if not owner:has_tag(player_abilities.tags.stairs_action_allowed) then
 			return false
 		end
@@ -53,8 +51,7 @@ action_effects.register_effect('pepernoot', {
 		end
 		return true
 	end,
-	handler = function(context)
-		local owner<const> = context.owner
+	handler = function(owner)
 		local room<const> = world_instance:get('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
@@ -76,25 +73,23 @@ action_effects.register_effect('pepernoot', {
 })
 
 action_effects.register_effect('spyglass', {
-	id = 'spyglass',
 	blocked_tags = { 'g.dl' },
-	can_trigger = function(context)
-		return world_instance:get('room'):find_near_lithograph(context.owner) ~= nil
+	can_trigger = function(owner)
+		return world_instance:get('room'):find_near_lithograph(owner) ~= nil
 	end,
-	handler = function(context)
-		local lithograph<const> = world_instance:get('room'):find_near_lithograph(context.owner)
-		context.owner.events:emit('lithograph.request', {
+	handler = function(owner)
+		local lithograph<const> = world_instance:get('room'):find_near_lithograph(owner)
+		owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
 	end,
 })
 
 action_effects.register_effect('halo', {
-	id = 'halo',
 	blocked_tags = { 'g.tr' },
-	can_trigger = function(context)
+	can_trigger = function(owner)
 		local castle<const> = world_instance:get('c')
-		if not context.owner.inventory_items.halo then
+		if not owner.inventory_items.halo then
 			return false
 		end
 		if castle:is_current_room_boss_encounter_active() then
@@ -102,18 +97,18 @@ action_effects.register_effect('halo', {
 		end
 		return true
 	end,
-	handler = function(context)
+	handler = function(owner)
 		local castle<const> = world_instance:get('c')
 		local from_world<const> = (world_instance:get('room').world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
-			context.owner:begin_waiting_halo_banner()
-			context.owner.events:emit('halo_resolved_from_world')
+			owner:begin_waiting_halo_banner()
+			owner.events:emit('halo_resolved_from_world')
 			return
 		end
 		local switch<const> = castle:halo_teleport_to_room_1(true)
-		context.owner:apply_halo_teleport_arrival(switch)
-		context.owner.events:emit('halo_resolved_in_castle')
+		owner:apply_halo_teleport_arrival(switch)
+		owner.events:emit('halo_resolved_in_castle')
 	end,
 })
 

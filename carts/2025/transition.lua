@@ -269,7 +269,8 @@ function transition.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_transition(self)
 				end,
@@ -320,7 +321,8 @@ function transition.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_transition_fade_in(self)
 				end,
@@ -395,7 +397,8 @@ function transition.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					return finish_fade(self)
 				end,

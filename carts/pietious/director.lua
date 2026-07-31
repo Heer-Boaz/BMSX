@@ -327,6 +327,13 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
+			[room_switch_wait_timeline_id] = {
+				def = {
+					frames = timeline.range(flow_room_switch_wait_frames),
+					playback_mode = 'once',
+				},
+				autoplay = false,
+			},
 			[daemon_timeline_id] = {
 				def = {
 					frames = timeline.range(126),
@@ -410,19 +417,18 @@ local define_director_fsm<const> = function()
 					},
 				},
 				input_event_handlers = {
-					['lb[jp] || rb[jp]'] = function(self)
-						self.events:emit('f1')
-						return '/item_screen'
-					end,
+					{
+						pattern = 'lb[jp] || rb[jp]',
+						go = function(self)
+							self.events:emit('f1')
+							return '/item_screen'
+						end,
+					},
 				},
 			},
 			room_switch_wait = {
 				timelines = {
 					[room_switch_wait_timeline_id] = {
-						def = {
-							frames = timeline.range(flow_room_switch_wait_frames),
-							playback_mode = 'once',
-						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -437,10 +443,6 @@ local define_director_fsm<const> = function()
 			room_switch_wait_visible = {
 				timelines = {
 					[room_switch_wait_timeline_id] = {
-						def = {
-							frames = timeline.range(flow_room_switch_wait_frames),
-							playback_mode = 'once',
-						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -509,7 +511,7 @@ local define_director_fsm<const> = function()
 								self.events:emit('shrine', { lines = lines })
 							end,
 							input_event_handlers = {
-								['down[jp]'] = '/shrine/exiting',
+								{ pattern = 'down[jp]', go = '/shrine/exiting' },
 							},
 						},
 						exiting = {
@@ -639,8 +641,8 @@ local define_director_fsm<const> = function()
 							self.events:emit('item')
 						end,
 						input_event_handlers = {
-							['start[jp]'] = '/item_screen/halo',
-							['lb[jp] || rb[jp]'] = '/item_screen/closing',
+							{ pattern = 'start[jp]', go = '/item_screen/halo' },
+							{ pattern = 'lb[jp] || rb[jp]', go = '/item_screen/closing' },
 						},
 						},
 						halo = {
@@ -851,7 +853,7 @@ local define_director_fsm<const> = function()
 					},
 					viewing = {
 						input_event_handlers = {
-							['b[jp] || x[jp]'] = '/lithograph/closing',
+							{ pattern = 'b[jp] || x[jp]', go = '/lithograph/closing' },
 						},
 					},
 					closing = {
@@ -947,6 +949,7 @@ local register_director_definition<const> = function()
 		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
 			id = 'd',
+			player_index = 1,
 		},
 	})
 end

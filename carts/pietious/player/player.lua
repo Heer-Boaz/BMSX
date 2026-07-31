@@ -91,7 +91,7 @@ local timelinecomponent<const> = require('cartlib/timeline/component')
 local collision2d<const> = require('cartlib/collision2d')
 local player_abilities<const> = require('player/abilities')
 
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
 
 local player<const> = {}
 player.__index = player
@@ -220,14 +220,13 @@ function player:clear_input_state()
 	self.up_input_sources = 0
 end
 
-function player:sync_input_state_from_runtime()
-	local player_index<const> = self.player_index
-	self.left_held = cart_input.query(player_index, 'left[p]')
-	self.right_held = cart_input.query(player_index, 'right[p]')
-	self.down_held = cart_input.query(player_index, 'down[p]')
-	self.attack_held = cart_input.query(player_index, 'x[p]')
-	local up_primary_held<const> = cart_input.query(player_index, 'up[p]')
-	local up_alt_held<const> = cart_input.query(player_index, 'a[p]')
+function player:sync_input_state()
+	self.left_held = input.is_action_pressed(self.player_index, 'left')
+	self.right_held = input.is_action_pressed(self.player_index, 'right')
+	self.down_held = input.is_action_pressed(self.player_index, 'down')
+	self.attack_held = input.is_action_pressed(self.player_index, 'x')
+	local up_primary_held<const> = input.is_action_pressed(self.player_index, 'up')
+	local up_alt_held<const> = input.is_action_pressed(self.player_index, 'a')
 	local up_sources = 0
 	if up_primary_held then
 		up_sources = up_sources + 1
@@ -403,7 +402,7 @@ function player:ctor()
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self:clear_input_state()
-	self:sync_input_state_from_runtime()
+	self:sync_input_state()
 
 	self.sprite_component.scale_x = 1
 	self.sprite_component.scale_y = 1
@@ -968,7 +967,7 @@ function player:try_open_world_entrance_with_key()
 end
 
 function player:try_start_world_or_shrine_interaction_from_down()
-	if not cart_input.query(self.player_index, 'down[jp]') then
+	if not input.is_action_just_pressed(self.player_index, 'down') then
 		return false
 	end
 
@@ -1819,7 +1818,7 @@ function player:advance_walk_animation(distance_px)
 end
 
 function player:runcheck_quiet_controls()
-	if cart_input.query(self.player_index, 'up[jp] || a[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1829,7 +1828,7 @@ function player:runcheck_quiet_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if cart_input.query(self.player_index, 'down[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1837,7 +1836,7 @@ function player:runcheck_quiet_controls()
 		end
 	end
 
-	if cart_input.query(self.player_index, 'up[jp] || a[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
 		local inertia
 		if self.left_held and not self.right_held then
 			inertia = -1
@@ -1875,7 +1874,7 @@ function player:runcheck_walking_right_controls()
 		self.walk_state = 0
 	end
 
-	if cart_input.query(self.player_index, 'up[jp] || a[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1888,7 +1887,7 @@ function player:runcheck_walking_right_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if cart_input.query(self.player_index, 'down[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1916,7 +1915,7 @@ function player:runcheck_walking_left_controls()
 		self.walk_state = 1
 	end
 
-	if cart_input.query(self.player_index, 'up[jp] || a[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1929,7 +1928,7 @@ function player:runcheck_walking_left_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if cart_input.query(self.player_index, 'down[jp]') then
+	if input.is_action_just_pressed(self.player_index, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -2596,42 +2595,78 @@ end
 
 local define_player_fsm<const> = function()
 	local input_event_handlers<const> = {
-		['left[jp]'] = function(self)
-			self.left_held = true
-		end,
-		['left[jr]'] = function(self)
-			self.left_held = false
-		end,
-		['right[jp]'] = function(self)
-			self.right_held = true
-		end,
-		['right[jr]'] = function(self)
-			self.right_held = false
-		end,
-		['down[jp]'] = function(self)
-			self.down_held = true
-		end,
-		['down[jr]'] = function(self)
-			self.down_held = false
-		end,
-		['up[jp]'] = function(self)
-			self:on_up_input_pressed()
-		end,
-		['up[jr]'] = function(self)
-			self:on_up_input_released()
-		end,
-		['a[jp]'] = function(self)
-			self:on_up_input_pressed()
-		end,
-		['a[jr]'] = function(self)
-			self:on_up_input_released()
-		end,
-		['?(x[jp])'] = function(self)
-			self.attack_held = true
-		end,
-		['?(x[jr])'] = function(self)
-			self.attack_held = false
-		end,
+		{
+			pattern = 'left[jp]',
+			go = function(self)
+				self.left_held = true
+			end,
+		},
+		{
+			pattern = 'left[jr]',
+			go = function(self)
+				self.left_held = false
+			end,
+		},
+		{
+			pattern = 'right[jp]',
+			go = function(self)
+				self.right_held = true
+			end,
+		},
+		{
+			pattern = 'right[jr]',
+			go = function(self)
+				self.right_held = false
+			end,
+		},
+		{
+			pattern = 'down[jp]',
+			go = function(self)
+				self.down_held = true
+			end,
+		},
+		{
+			pattern = 'down[jr]',
+			go = function(self)
+				self.down_held = false
+			end,
+		},
+		{
+			pattern = 'up[jp]',
+			go = function(self)
+				self:on_up_input_pressed()
+			end,
+		},
+		{
+			pattern = 'up[jr]',
+			go = function(self)
+				self:on_up_input_released()
+			end,
+		},
+		{
+			pattern = 'a[jp]',
+			go = function(self)
+				self:on_up_input_pressed()
+			end,
+		},
+		{
+			pattern = 'a[jr]',
+			go = function(self)
+				self:on_up_input_released()
+			end,
+		},
+		{
+			pattern = '?(x[jp])',
+			go = function(self)
+				self.attack_held = true
+			end,
+		},
+		{
+			pattern = '?(x[jr])',
+			go = function(self)
+				self.attack_held = false
+			end,
+		},
 	}
 	-- wrap_state_update: wraps every state's update handler with common per-frame
 	-- logic (collision state, room switching, presentation,
@@ -2642,7 +2677,7 @@ local define_player_fsm<const> = function()
 		return function(self, state, event)
 			-- Held-state must follow authoritative runtime [p] state every frame.
 			-- That keeps movement stable even if a jp/jr edge is missed once.
-			self:sync_input_state_from_runtime()
+			self:sync_input_state()
 			self:update_collision_state()
 			self:sync_water_state()
 			if not self:has_tag(state_tags.group.movement_jump) then

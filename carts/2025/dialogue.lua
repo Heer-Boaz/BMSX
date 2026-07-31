@@ -3,7 +3,7 @@ require('globals')
 local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
-local cart_input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player')
 local world_instance<const> = require('cartlib/world/world').instance
 local immediate_text_opts<const> = { typed = false, snap = true }
 
@@ -50,7 +50,7 @@ function dialogue.register_methods(director)
 	function director:skip_typing()
 		if world_instance:get(text_main_id):is_typing() then
 			world_instance:get(text_main_id):reveal_text()
-			cart_input.consume(1, 'b')
+			input.consume(1, 'b')
 			return true
 		end
 		return false
@@ -92,7 +92,8 @@ function dialogue.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 				go = function(self)
 					local node<const> = story[self.node_id]
 					self.node_id = node.next
@@ -139,7 +140,8 @@ function dialogue.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
@@ -147,7 +149,8 @@ function dialogue.register_states(states)
 					end
 				end
 			},
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 					go = function(self)
 						if self.stagger_blocked then return end
 						if world_instance:get(text_main_id):is_typing() then return end
@@ -232,7 +235,8 @@ function dialogue.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
@@ -240,7 +244,8 @@ function dialogue.register_states(states)
 					end
 				end
 			},
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 					go = function(self)
 						if self.stagger_blocked then return end
 						if world_instance:get(text_main_id):is_typing() then return end
@@ -284,7 +289,8 @@ function dialogue.register_states(states)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['up[jp]'] = {
+			{
+				pattern = 'up[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
@@ -293,7 +299,8 @@ function dialogue.register_states(states)
 					end
 				end,
 			},
-			['down[jp]'] = {
+			{
+				pattern = 'down[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					local node<const> = story[self.node_id]
@@ -303,7 +310,8 @@ function dialogue.register_states(states)
 					end
 				end,
 			},
-			['b[jp]'] = {
+			{
+				pattern = 'b[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
@@ -312,7 +320,8 @@ function dialogue.register_states(states)
 					end
 				end
 			},
-			['a[jp]'] = {
+			{
+				pattern = 'a[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if world_instance:get(text_main_id):is_typing() then return end

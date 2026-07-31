@@ -8,7 +8,6 @@ return {
 	collider_2d = 'collider2dcomponent',
 	custom_visual = 'customvisualcomponent',
 	input_action_effect = 'inputactioneffectcomponent',
-	input_intent = 'inputintentcomponent',
 	prohibit_leaving_screen = 'prohibitleavingscreencomponent',
 	screen_boundary = 'screenboundarycomponent',
 	state_machine = 'statemachinecomponent',

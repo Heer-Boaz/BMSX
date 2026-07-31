@@ -21,7 +21,7 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `CARTLIB-HOT-01` | Compileer FSM-statepaths, events en action-effectwerk eenmaal zoals de action-parser zijn AST cachet; verwijder tijdelijke diagnostiekrecords, `*_or_throw`-runtimechecks, kunstmatige transition-ticklimieten en de `pcall`/contextstack die guest-returnwaarden tot acht afkapt. | Normale dispatch/update/transition doet geen `string.match`, alloceert niets voor infrastructuur, behoudt alle Lua-returnwaarden en consumeert vooraf opgeloste paths, definities en guards rechtstreeks. |
+| `CARTLIB-HOT-01` | Vervang de allocerende event-envelope/metatable-ABI door reentrante stack-value-dispatch. | Eventdispatch behoudt nil, false en table-payloads zonder infrastructuurallocatie, depthlimiet of compatibilitywrapper. |
 | `CARTLIB-GX-01` | Maak GX/GTE een compacte low-level SDK rond raw registers, opcodes, packets en DMA; verplaats camera-, scene- en renderbeleid naar carts of optionele libraries. | De hardwarelaag bevat alleen echte protocollen, hergebruikt retained packet/state en schrijft niet per primitive opnieuw ongewijzigde GPU-state. |
 | `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code, verplaats aantoonbaar cart-specifieke utilities naar hun cart en vernietig centrale registries die modules hardcoded per implementatiefeature (`with_fsm`, `with_bt`, enz.) groeperen. | Iedere module-owner declareert zijn eigen compositie, geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 

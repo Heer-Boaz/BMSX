@@ -48,15 +48,74 @@ local mod_kind_wp<const> = 11
 local mod_kind_wr<const> = 12
 local mod_kind_t<const> = 13
 local mod_kind_rc<const> = 14
-local mod_kind_pr<const> = 15
+
+local node_kind_action<const> = 1
+local node_kind_not<const> = 2
+local node_kind_and<const> = 3
+local node_kind_or<const> = 4
+local node_kind_function<const> = 5
+
+local function_kind_all<const> = 1
+local function_kind_any<const> = 2
+local function_kind_any_jp<const> = 3
+local function_kind_all_jp<const> = 4
+local function_kind_any_jr<const> = 5
+local function_kind_all_jr<const> = 6
+local function_kind_any_gp<const> = 7
+local function_kind_all_gp<const> = 8
+local function_kind_any_rp<const> = 9
+local function_kind_all_rp<const> = 10
+local function_kind_any_wp<const> = 11
+local function_kind_all_wp<const> = 12
+local function_kind_any_wr<const> = 13
+local function_kind_all_wr<const> = 14
+
+local function_kinds<const> = {
+	['&'] = function_kind_all,
+	['?'] = function_kind_any,
+	['?jp'] = function_kind_any_jp,
+	['&jp'] = function_kind_all_jp,
+	['?jr'] = function_kind_any_jr,
+	['&jr'] = function_kind_all_jr,
+	['?gp'] = function_kind_any_gp,
+	['&gp'] = function_kind_all_gp,
+	['?rp'] = function_kind_any_rp,
+	['&rp'] = function_kind_all_rp,
+	['?wp'] = function_kind_any_wp,
+	['&wp'] = function_kind_all_wp,
+	['?wr'] = function_kind_any_wr,
+	['&wr'] = function_kind_all_wr,
+}
+
+local compare_lt<const> = 1
+local compare_gt<const> = 2
+local compare_lte<const> = 3
+local compare_gte<const> = 4
+local compare_eq<const> = 5
+local compare_ne<const> = 6
+
+local edge_jp<const> = 0x01
+local edge_jr<const> = 0x02
+local edge_wp<const> = 0x04
+local edge_wr<const> = 0x08
+local edge_gp<const> = 0x10
+local edge_rp<const> = 0x20
+
+local edge_state_jp<const> = 1
+local edge_state_jr<const> = 2
+local edge_state_gp<const> = 3
+local edge_state_rp<const> = 4
+local edge_state_wp<const> = 5
+local edge_state_wr<const> = 6
 
 local compare_number<const> = function(op, left, right)
-	if op == '<' then return left < right end
-	if op == '>' then return left > right end
-	if op == '<=' then return left <= right end
-	if op == '>=' then return left >= right end
-	if op == '==' then return left == right end
-	return left ~= right
+	if op == compare_lt then return left < right end
+	if op == compare_gt then return left > right end
+	if op == compare_lte then return left <= right end
+	if op == compare_gte then return left >= right end
+	if op == compare_eq then return left == right end
+	if op == compare_ne then return left ~= right end
+	error('invalid compiled action comparator')
 end
 
 local is_space<const> = function(byte)
@@ -124,21 +183,21 @@ end
 -- then a decimal, with spaces allowed around both.
 local parse_comparator<const> = function(mod, i, last)
 	i = skip_spaces(mod, i, last)
-	local op = '>='
+	local op = compare_gte
 	local byte<const> = string.byte(mod, i)
 	if byte == 60 or byte == 62 then -- '<' '>'
 		if string.byte(mod, i + 1) == 61 then -- '='
-			op = byte == 60 and '<=' or '>='
+			op = byte == 60 and compare_lte or compare_gte
 			i = i + 2
 		else
-			op = byte == 60 and '<' or '>'
+			op = byte == 60 and compare_lt or compare_gt
 			i = i + 1
 		end
 	elseif byte == 33 or byte == 61 then -- '!' '='
 		if string.byte(mod, i + 1) ~= 61 then
 			return nil, nil
 		end
-		op = byte == 33 and '!=' or '=='
+		op = byte == 33 and compare_ne or compare_eq
 		i = i + 2
 	end
 	local value<const>, next_i<const> = parse_decimal(mod, skip_spaces(mod, i, last), last)
@@ -166,7 +225,6 @@ local braced_mod_kinds<const> = {
 	['wr'] = mod_kind_wr,
 	['t'] = mod_kind_t,
 	['rc'] = mod_kind_rc,
-	['pr'] = mod_kind_pr,
 }
 
 local compile_modifier<const> = function(mod)
@@ -199,11 +257,6 @@ local compile_modifier<const> = function(mod)
 		local op<const>, value<const> = parse_comparator(mod, body_start, body_last)
 		if op ~= nil then
 			return { kind = kind, neg = neg, op = op, value = value }
-		end
-	elseif kind == mod_kind_pr then
-		local value<const>, next_i<const> = parse_uint(mod, body_start, body_last)
-		if value ~= nil and next_i > body_last then
-			return { kind = kind, neg = neg }
 		end
 	end
 	error('[cartlib/input/action_parser] Unknown action modifier "' .. mod .. '".')
@@ -245,6 +298,9 @@ local lex<const> = function(src)
 			end
 			if i <= len and string.sub(src, i, i) == '{' then
 				i = i + 1
+				if i <= len and string.sub(src, i, i) == '}' then
+					error('[cartlib/input/action_parser] Empty function window in "' .. src .. '".')
+				end
 				while i <= len and is_digit(string.byte(src, i)) do
 					i = i + 1
 				end
@@ -314,8 +370,8 @@ end
 local annotate_action
 local parse_expr
 
-local make_op<const> = function(op, left, right)
-	return { kind = 'op', op = op, left = left, right = right }
+local make_op<const> = function(kind, left, right)
+	return { kind = kind, left = left, right = right }
 end
 
 local parse_modifiers<const> = function(self)
@@ -339,7 +395,7 @@ local apply_modifiers<const> = function(node, mods)
 	if #mods == 0 then
 		return
 	end
-	if node.kind == 'action' then
+	if node.kind == node_kind_action then
 		local node_mods<const> = node.mods
 		for i = 1, #mods do
 			node_mods[#node_mods + 1] = mods[i]
@@ -347,14 +403,14 @@ local apply_modifiers<const> = function(node, mods)
 		annotate_action(node)
 		return
 	end
-	if node.kind == 'op' then
+	if node.kind == node_kind_not or node.kind == node_kind_and or node.kind == node_kind_or then
 		apply_modifiers(node.left, mods)
 		if node.right then
 			apply_modifiers(node.right, mods)
 		end
 		return
 	end
-	if node.kind == 'fun' then
+	if node.kind == node_kind_function then
 		local args<const> = node.args
 		for i = 1, #args do
 			apply_modifiers(args[i], mods)
@@ -364,17 +420,19 @@ end
 
 local parse_action<const> = function(self)
 	local name<const> = take(self, tk_ident).value
+	local action_index = self.action_name_indices[name]
+	if not action_index then
+		action_index = #self.action_names + 1
+		self.action_name_indices[name] = action_index
+		self.action_names[action_index] = name
+	end
 	local mods<const> = current(self) and current(self).value == '[' and parse_modifiers(self) or {}
 	local node<const> = {
-		kind = 'action',
+		kind = node_kind_action,
 		name = name,
+		action_index = action_index,
 		mods = mods,
-		edge_for_jp = false,
-		edge_for_jr = false,
-		edge_for_wp = false,
-		edge_for_wr = false,
-		edge_for_gp = false,
-		edge_for_rp = false,
+		edge_mask = 0,
 	}
 	annotate_action(node)
 	return node
@@ -405,7 +463,11 @@ local parse_function<const> = function(self)
 		end
 	end
 	take(self, tk_sym, ')')
-	return { kind = 'fun', fname = fname, args = args, window = window }
+	local function_kind<const> = function_kinds[fname]
+	if not function_kind then
+		error('[cartlib/input/action_parser] Unknown function helper "' .. fname .. '" in "' .. self.source .. '".')
+	end
+	return { kind = node_kind_function, function_kind = function_kind, args = args, window = window }
 end
 
 local parse_factor<const> = function(self)
@@ -415,7 +477,7 @@ local parse_factor<const> = function(self)
 	end
 	if c.value == '!' then
 		eat(self)
-		return make_op('not', parse_factor(self))
+		return make_op(node_kind_not, parse_factor(self))
 	end
 	if c.value == '(' then
 		eat(self)
@@ -442,11 +504,11 @@ local parse_binary<const> = function(self, operand, op_name, op_a, op_b)
 end
 
 local parse_term<const> = function(self)
-	return parse_binary(self, parse_factor, 'and', '&&', false)
+	return parse_binary(self, parse_factor, node_kind_and, '&&', false)
 end
 
 parse_expr = function(self)
-	return parse_binary(self, parse_term, 'or', '||', '|')
+	return parse_binary(self, parse_term, node_kind_or, '||', '|')
 end
 
 annotate_action = function(node)
@@ -455,12 +517,7 @@ annotate_action = function(node)
 	node.mod_specs = specs
 	node.has_consume_mod = false
 	if #mods == 0 then
-		node.edge_for_jp = true
-		node.edge_for_wp = true
-		node.edge_for_gp = true
-		node.edge_for_rp = true
-		node.edge_for_jr = false
-		node.edge_for_wr = false
+		node.edge_mask = edge_jp | edge_wp | edge_gp | edge_rp
 		return
 	end
 	local press_pos = false
@@ -492,29 +549,37 @@ annotate_action = function(node)
 	end
 	if not guard_explicit then guard_pos = press_pos end
 	if not repeat_explicit then repeat_pos = press_pos end
-	node.edge_for_jp = press_pos
-	node.edge_for_wp = press_pos
-	node.edge_for_jr = release_pos
-	node.edge_for_wr = release_pos
-	node.edge_for_gp = guard_pos
-	node.edge_for_rp = repeat_pos
+	local edge_mask = 0
+	if press_pos then
+		edge_mask = edge_mask | edge_jp | edge_wp
+	end
+	if release_pos then
+		edge_mask = edge_mask | edge_jr | edge_wr
+	end
+	if guard_pos then
+		edge_mask = edge_mask | edge_gp
+	end
+	if repeat_pos then
+		edge_mask = edge_mask | edge_rp
+	end
+	node.edge_mask = edge_mask
 end
 
 local enforce_root_modifiers<const> = function(node, in_function)
-	if node.kind == 'action' then
+	if node.kind == node_kind_action then
 		if not in_function and #node.mods == 0 then
 			error('[cartlib/input/action_parser] Root-level action "' .. node.name .. '" must specify a modifier like [p].')
 		end
 		return
 	end
-	if node.kind == 'op' then
+	if node.kind == node_kind_not or node.kind == node_kind_and or node.kind == node_kind_or then
 		enforce_root_modifiers(node.left, in_function)
 		if node.right then
 			enforce_root_modifiers(node.right, in_function)
 		end
 		return
 	end
-	if node.kind == 'fun' then
+	if node.kind == node_kind_function then
 		local args<const> = node.args
 		for i = 1, #args do
 			enforce_root_modifiers(args[i], true)
@@ -522,226 +587,255 @@ local enforce_root_modifiers<const> = function(node, in_function)
 	end
 end
 
-local parse<const> = function(src)
+function action_parser.compile(src)
 	local cached<const> = cache[src]
 	if cached then
 		return cached
 	end
-	local self<const> = setmetatable({ tokens = lex(src), index = 1, source = src }, parser_state)
+	local self<const> = setmetatable({
+		tokens = lex(src),
+		index = 1,
+		source = src,
+		action_names = {},
+		action_name_indices = {},
+	}, parser_state)
 	local ast<const> = parse_expr(self)
 	if current(self) then
 		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
+	ast.action_names = self.action_names
 	cache[src] = ast
 	return ast
 end
 
-local mod_matches<const> = function(get_state, name, spec, win)
+local mod_matches<const> = function(state, spec)
 	local kind<const> = spec.kind
-	local state
 	local result
 	if kind == mod_kind_p then
-		result = get_state(name, win).pressed
+		result = state.pressed
 	elseif kind == mod_kind_r then
-		result = not get_state(name, win).pressed
+		result = not state.pressed
 	elseif kind == mod_kind_jp then
-		result = get_state(name, win).justpressed
+		result = state.justpressed
 	elseif kind == mod_kind_all_jp then
-		result = get_state(name, win).alljustpressed
+		result = state.alljustpressed
 	elseif kind == mod_kind_jr then
-		result = get_state(name, win).justreleased
+		result = state.justreleased
 	elseif kind == mod_kind_all_jr then
-		result = get_state(name, win).alljustreleased
+		result = state.alljustreleased
 	elseif kind == mod_kind_gp then
-		result = get_state(name, win).guardedjustpressed
+		result = state.guardedjustpressed
 	elseif kind == mod_kind_rp then
-		result = get_state(name, win).repeatpressed
+		result = state.repeatpressed
 	elseif kind == mod_kind_c then
-		result = get_state(name, win).consumed
+		result = state.consumed
 	elseif kind == mod_kind_h then
-		state = get_state(name, win)
 		result = state.presstime >= 1
 	elseif kind == mod_kind_wp then
-		result = get_state(name, spec.window).waspressed
+		result = state.min_press_delta < spec.window
 	elseif kind == mod_kind_wr then
-		result = get_state(name, spec.window).wasreleased
+		result = state.min_release_delta < spec.window
 	elseif kind == mod_kind_t then
-		result = compare_number(spec.op, get_state(name, win).presstime, spec.value)
+		result = compare_number(spec.op, state.presstime, spec.value)
 	elseif kind == mod_kind_rc then
-		result = compare_number(spec.op, get_state(name, win).repeatcount, spec.value)
+		result = compare_number(spec.op, state.repeatcount, spec.value)
 	else
-		result = true
+		error('invalid compiled action modifier')
 	end
-	return spec.neg and not result or result
+	if spec.neg then
+		return not result
+	end
+	return result
 end
 
-local action_eval<const> = function(node, get_state, win)
+local action_eval<const> = function(node, get_state, context, bare_requires_pressed)
+	local state<const> = get_state(context, node.action_index)
 	local specs<const> = node.mod_specs
+	if #specs == 0 and bare_requires_pressed and not state.pressed then
+		return false, state
+	end
 	for i = 1, #specs do
-		if not mod_matches(get_state, node.name, specs[i], win) then
-			return false
+		if not mod_matches(state, specs[i]) then
+			return false, state
 		end
 	end
-	if not node.has_consume_mod and get_state(node.name, win).consumed then
-		return false
+	if not node.has_consume_mod and state.consumed then
+		return false, state
 	end
-	return true
+	return true, state
 end
 
 local eval_node
-local eval_collect
+local collect_edge_state
 
-local collect_function<const> = function(node, get_state, win, scratch, count)
+local edge_state_matches<const> = function(state, kind, win)
+	if kind == edge_state_jp then return state.justpressed end
+	if kind == edge_state_jr then return state.justreleased end
+	if kind == edge_state_gp then return state.guardedjustpressed end
+	if kind == edge_state_rp then return state.repeatpressed end
+	if kind == edge_state_wp then return state.min_press_delta < win end
+	if kind == edge_state_wr then return state.min_release_delta < win end
+	error('invalid compiled action edge state')
+end
+
+local collect_function_edge_state<const> = function(node, get_state, context, win, edge_bit, edge_state_kind)
 	local args<const> = node.args
-	if node.fname == '&' then
-		local next_count = count
+	if node.function_kind == function_kind_all then
+		local eligible_count = 0
+		local any_matched = false
+		local all_matched = true
 		for i = 1, #args do
-			local ok<const>, collected_count<const> = eval_collect(args[i], get_state, win, scratch, next_count)
+			local ok<const>, eligible<const>, any_edge<const>, all_edges<const> = collect_edge_state(
+				args[i], get_state, context, win, edge_bit, edge_state_kind
+			)
 			if not ok then
-				return false, count
+				return false, 0, false, true
 			end
-			next_count = collected_count
+			eligible_count = eligible_count + eligible
+			any_matched = any_matched or any_edge
+			all_matched = all_matched and all_edges
 		end
-		return true, next_count
+		return true, eligible_count, any_matched, all_matched
 	end
-	if node.fname == '?' then
+	if node.function_kind == function_kind_any then
 		for i = 1, #args do
-			local ok<const>, next_count<const> = eval_collect(args[i], get_state, win, scratch, count)
+			local ok<const>, eligible<const>, any_matched<const>, all_matched<const> = collect_edge_state(
+				args[i], get_state, context, win, edge_bit, edge_state_kind
+			)
 			if ok then
-				return true, next_count
+				return true, eligible, any_matched, all_matched
 			end
 		end
-		return false, count
+		return false, 0, false, true
 	end
-	return eval_node(node, get_state, win), count
+	return eval_node(node, get_state, context, win), 0, false, true
 end
 
-eval_collect = function(node, get_state, win, scratch, count)
-	if node.kind == 'action' then
-		if action_eval(node, get_state, win) then
-			local next_count<const> = count + 1
-			scratch[next_count] = node
-			return true, next_count
+collect_edge_state = function(node, get_state, context, win, edge_bit, edge_state_kind)
+	if node.kind == node_kind_action then
+		local ok<const>, state<const> = action_eval(node, get_state, context, false)
+		if not ok then
+			return false, 0, false, true
 		end
-		return false, count
+		if (node.edge_mask & edge_bit) == 0 then
+			return true, 0, false, true
+		end
+		local matched<const> = edge_state_matches(state, edge_state_kind, win)
+		return true, 1, matched, matched
 	end
-	if node.kind == 'op' then
-		if node.op == 'not' then
-			return not eval_node(node.left, get_state, win), count
+	if node.kind == node_kind_not or node.kind == node_kind_and or node.kind == node_kind_or then
+		if node.kind == node_kind_not then
+			return not eval_node(node.left, get_state, context, win), 0, false, true
 		end
-		if node.op == 'and' then
-			local ok<const>, next_count<const> = eval_collect(node.left, get_state, win, scratch, count)
-			if not ok then
-				return false, count
+		if node.kind == node_kind_and then
+			local left_ok<const>, left_eligible<const>, left_any<const>, left_all<const> = collect_edge_state(
+				node.left, get_state, context, win, edge_bit, edge_state_kind
+			)
+			if not left_ok then
+				return false, 0, false, true
 			end
-			return eval_collect(node.right, get_state, win, scratch, next_count)
+			local right_ok<const>, right_eligible<const>, right_any<const>, right_all<const> = collect_edge_state(
+				node.right, get_state, context, win, edge_bit, edge_state_kind
+			)
+			if not right_ok then
+				return false, 0, false, true
+			end
+			return true,
+				left_eligible + right_eligible,
+				left_any or right_any,
+				left_all and right_all
 		end
-		local ok<const>, next_count<const> = eval_collect(node.left, get_state, win, scratch, count)
+		local ok<const>, eligible<const>, any_matched<const>, all_matched<const> = collect_edge_state(
+			node.left, get_state, context, win, edge_bit, edge_state_kind
+		)
 		if ok then
-			return true, next_count
+			return true, eligible, any_matched, all_matched
 		end
-		return eval_collect(node.right, get_state, win, scratch, count)
+		return collect_edge_state(node.right, get_state, context, win, edge_bit, edge_state_kind)
 	end
-	return collect_function(node, get_state, win, scratch, count)
+	return collect_function_edge_state(node, get_state, context, win, edge_bit, edge_state_kind)
 end
 
-local edge_any<const> = function(args, get_state, win, scratch, edge_field, state_field)
+local edge_any<const> = function(args, get_state, context, win, edge_bit, edge_state_kind)
 	for i = 1, #args do
-		local ok<const>, count<const> = eval_collect(args[i], get_state, win, scratch, 0)
-		if ok then
-			for j = 1, count do
-				local action<const> = scratch[j]
-				if action[edge_field] and get_state(action.name, win)[state_field] then
-					return true
-				end
-				scratch[j] = nil
-			end
-		else
-			for j = 1, count do
-				scratch[j] = nil
-			end
+		local ok<const>, _<const>, matched<const> = collect_edge_state(
+			args[i], get_state, context, win, edge_bit, edge_state_kind
+		)
+		if ok and matched then
+			return true
 		end
 	end
 	return false
 end
 
-local edge_all<const> = function(args, get_state, win, scratch, edge_field, state_field)
+local edge_all<const> = function(args, get_state, context, win, edge_bit, edge_state_kind)
 	for i = 1, #args do
-		local ok<const>, count<const> = eval_collect(args[i], get_state, win, scratch, 0)
-		if not ok then
-			return false
-		end
-		local eligible = false
-		for j = 1, count do
-			local action<const> = scratch[j]
-			if action[edge_field] then
-				eligible = true
-				if not get_state(action.name, win)[state_field] then
-					return false
-				end
-			end
-			scratch[j] = nil
-		end
-		if not eligible then
+		local ok<const>, eligible<const>, _<const>, matched<const> = collect_edge_state(
+			args[i], get_state, context, win, edge_bit, edge_state_kind
+		)
+		if not ok or eligible == 0 or not matched then
 			return false
 		end
 	end
 	return true
 end
 
-local eval_function<const> = function(node, get_state, win)
-	local fname<const> = node.fname
+local eval_function<const> = function(node, get_state, context, win)
+	local function_kind<const> = node.function_kind
 	local args<const> = node.args
-	local scratch<const> = action_parser.scratch
 	local fn_window<const> = node.window or win
-	if fname == '&' then
+	if function_kind == function_kind_all then
 		for i = 1, #args do
-			if not eval_node(args[i], get_state, fn_window) then
+			if not eval_node(args[i], get_state, context, fn_window) then
 				return false
 			end
 		end
 		return true
 	end
-	if fname == '?' then
+	if function_kind == function_kind_any then
 		for i = 1, #args do
-			if eval_node(args[i], get_state, fn_window) then
+			if eval_node(args[i], get_state, context, fn_window) then
 				return true
 			end
 		end
 		return false
 	end
-	if fname == '?jp' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_jp', 'justpressed') end
-	if fname == '&jp' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_jp', 'justpressed') end
-	if fname == '?jr' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_jr', 'justreleased') end
-	if fname == '&jr' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_jr', 'justreleased') end
-	if fname == '?gp' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_gp', 'guardedjustpressed') end
-	if fname == '&gp' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_gp', 'guardedjustpressed') end
-	if fname == '?rp' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_rp', 'repeatpressed') end
-	if fname == '&rp' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_rp', 'repeatpressed') end
-	if fname == '?wp' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_wp', 'waspressed') end
-	if fname == '&wp' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_wp', 'waspressed') end
-	if fname == '?wr' then return edge_any(args, get_state, fn_window, scratch, 'edge_for_wr', 'wasreleased') end
-	if fname == '&wr' then return edge_all(args, get_state, fn_window, scratch, 'edge_for_wr', 'wasreleased') end
-	error('[cartlib/input/action_parser] Unknown function helper "' .. fname .. '".')
+	if function_kind == function_kind_any_jp then return edge_any(args, get_state, context, fn_window, edge_jp, edge_state_jp) end
+	if function_kind == function_kind_all_jp then return edge_all(args, get_state, context, fn_window, edge_jp, edge_state_jp) end
+	if function_kind == function_kind_any_jr then return edge_any(args, get_state, context, fn_window, edge_jr, edge_state_jr) end
+	if function_kind == function_kind_all_jr then return edge_all(args, get_state, context, fn_window, edge_jr, edge_state_jr) end
+	if function_kind == function_kind_any_gp then return edge_any(args, get_state, context, fn_window, edge_gp, edge_state_gp) end
+	if function_kind == function_kind_all_gp then return edge_all(args, get_state, context, fn_window, edge_gp, edge_state_gp) end
+	if function_kind == function_kind_any_rp then return edge_any(args, get_state, context, fn_window, edge_rp, edge_state_rp) end
+	if function_kind == function_kind_all_rp then return edge_all(args, get_state, context, fn_window, edge_rp, edge_state_rp) end
+	if function_kind == function_kind_any_wp then return edge_any(args, get_state, context, fn_window, edge_wp, edge_state_wp) end
+	if function_kind == function_kind_all_wp then return edge_all(args, get_state, context, fn_window, edge_wp, edge_state_wp) end
+	if function_kind == function_kind_any_wr then return edge_any(args, get_state, context, fn_window, edge_wr, edge_state_wr) end
+	if function_kind == function_kind_all_wr then return edge_all(args, get_state, context, fn_window, edge_wr, edge_state_wr) end
+	error('invalid compiled action function')
 end
 
-eval_node = function(node, get_state, win)
-	if node.kind == 'action' then
-		return action_eval(node, get_state, win)
+eval_node = function(node, get_state, context, win)
+	if node.kind == node_kind_action then
+		local result<const> = action_eval(node, get_state, context, true)
+		return result
 	end
-	if node.kind == 'op' then
-		if node.op == 'not' then return not eval_node(node.left, get_state, win) end
-		if node.op == 'and' then return eval_node(node.left, get_state, win) and eval_node(node.right, get_state, win) end
-		return eval_node(node.left, get_state, win) or eval_node(node.right, get_state, win)
+	if node.kind == node_kind_not then
+		return not eval_node(node.left, get_state, context, win)
 	end
-	return eval_function(node, get_state, win)
+	if node.kind == node_kind_and then
+		return eval_node(node.left, get_state, context, win) and eval_node(node.right, get_state, context, win)
+	end
+	if node.kind == node_kind_or then
+		return eval_node(node.left, get_state, context, win) or eval_node(node.right, get_state, context, win)
+	end
+	if node.kind == node_kind_function then
+		return eval_function(node, get_state, context, win)
+	end
+	error('invalid compiled action node')
 end
 
-action_parser.scratch = {}
-
-action_parser.check = function(def, get_state)
-	return eval_node(parse(def), get_state)
-end
+action_parser.evaluate = eval_node
 
 return action_parser

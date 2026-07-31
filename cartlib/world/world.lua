@@ -47,7 +47,6 @@ local active_component_bucket_types<const> = {
 	component_types.collider_2d,
 	component_types.custom_visual,
 	component_types.input_action_effect,
-	component_types.input_intent,
 	component_types.prohibit_leaving_screen,
 	component_types.screen_boundary,
 	component_types.state_machine,

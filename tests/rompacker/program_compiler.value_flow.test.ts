@@ -40,7 +40,7 @@ test('ProgramCompiler -O3 folds a conditional increment after reusing the regist
 	// immediate const load but failed to refresh dst's tracked constant, so a
 	// register reused (here r holding the call argument string 'a', then the
 	// counter) kept a stale string constant. The conditional `s = s + 1` then
-	// folded `'a' + 1` to NaN. This mirrors pietious' sync_input_state_from_runtime.
+	// folded `'a' + 1` to NaN. This mirrors Pietious' input-update register reuse.
 	const source = [
 		"local function q(pi, pat) if pat == 'up' then return true end return false end",
 		'local t = {}',

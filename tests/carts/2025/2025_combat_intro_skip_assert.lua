@@ -12,6 +12,10 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = world_instance:get(director_instance_id)
 	local combat_director<const> = world_instance:get(combat_director_instance_id)
+	local test<const> = __bmsx_host_test
+	test.combat_round = combat_director.state_machines:bind_state_path('/combat_round')
+	test.combat_idle = combat_director.state_machines:bind_state_path('/idle')
+	test.director_combat_wait = director.state_machines:bind_state_path('/combat_wait')
 	director.node_id = 'combat_wekker'
 	director.state_machines:transition_to('p3.director.fsm:/combat_wait')
 	combat_director:start_combat('combat_wekker', true)
@@ -25,11 +29,11 @@ function __bmsx_host_test.update()
 	test.frames = test.frames + 1
 	assert(test.frames < 8, 'combat intro skip did not enter first round')
 
-	if combat_director.state_machines:matches_state_path('/combat_round') then
-		assert(director.state_machines:matches_state_path('/combat_wait'), 'director left combat wait after intro skip')
+	if combat_director.state_machines:matches_state(test.combat_round) then
+		assert(director.state_machines:matches_state(test.director_combat_wait), 'director left combat wait after intro skip')
 		assert(director.node_id == 'combat_wekker', 'director changed story node during intro skip')
 		return true
 	end
 
-	assert(not combat_director.state_machines:matches_state_path('/idle'), 'intro skip ended combat instead of entering first round')
+	assert(not combat_director.state_machines:matches_state(test.combat_idle), 'intro skip ended combat instead of entering first round')
 end
