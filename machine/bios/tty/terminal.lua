@@ -13,7 +13,7 @@ local glyph_width<const> = 4
 local glyph_height<const> = 6
 local terminal_columns<const> = layout.columns
 local terminal_rows<const> = layout.rows
-local scrollback_rows<const> = layout.scrollback_rows
+local terminal_buffer_rows<const> = layout.buffer_rows
 local terminal_width<const> = terminal_columns * glyph_width
 local terminal_height<const> = terminal_rows * glyph_height
 local terminal_vram_x<const> = layout.vram_x
@@ -50,8 +50,8 @@ rodata terminal_palette_words: word[4] = {
 	0x00404040,
 }
 
-bss terminal_cell_codes: u8[scrollback_rows * terminal_columns]
-bss terminal_cell_palettes: word[scrollback_rows * terminal_palette_row_words]
+bss terminal_cell_codes: u8[terminal_buffer_rows * terminal_columns]
+bss terminal_cell_palettes: word[terminal_buffer_rows * terminal_palette_row_words]
 bss terminal_status_codes: u8[terminal_columns]
 bss terminal_status_palettes: word[terminal_palette_row_words]
 bss terminal_dirty_first_columns: u8[terminal_rows]
@@ -76,7 +76,7 @@ local visible_first_line<const> = function()
 end
 
 local buffer_row_for_line<const> = function(line)
-	return (*terminal_first_buffer_row + line) % scrollback_rows
+	return (*terminal_first_buffer_row + line) % terminal_buffer_rows
 end
 
 local buffer_row_for_screen<const> = function(row)
@@ -195,11 +195,11 @@ local line_feed<const> = function()
 		return
 	end
 
-	if *terminal_line_count < scrollback_rows then
+	if *terminal_line_count < terminal_buffer_rows then
 		*terminal_cursor_line = *terminal_cursor_line + 1
 		*terminal_line_count = *terminal_line_count + 1
 	else
-		*terminal_first_buffer_row = (*terminal_first_buffer_row + 1) % scrollback_rows
+		*terminal_first_buffer_row = (*terminal_first_buffer_row + 1) % terminal_buffer_rows
 	end
 
 	if *terminal_view_offset == 0 then
