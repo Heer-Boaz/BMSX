@@ -117,7 +117,7 @@ local update_boot_screen<const> = function()
 	terminal.flush()
 end
 
-function init()
+local init<const> = function()
 	*irq_mask = irq_dma_done | irq_gpu
 	gx_gpu.reset_320x240()
 	gx_gpu.display_origin(terminal_layout.vram_origin)

@@ -215,10 +215,11 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	const compiled = compileLuaChunkToProgram(
 		parseLuaChunk(entryRecord.src, entryRecord.source_path),
 		modules,
-		{
-			entrySource: entryRecord.src,
-			optLevel: 3,
-		},
+			{
+				entrySource: entryRecord.src,
+				optLevel: 3,
+				programDomain: 'system',
+			},
 	);
 	const image = linkTestSystemBlua32(compiled);
 	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) }, PSX_MACHINE_SPEC.ramBytes);

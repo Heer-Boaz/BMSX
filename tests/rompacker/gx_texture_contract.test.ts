@@ -16,9 +16,9 @@ import {
 	decodeBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
-	BLUA32_SYMBOLS_IMAGE_ID,
-	decodeBlua32SymbolsImage,
-} from '../../toolchain/ts/rompack/blua32_symbols';
+	BLUA32_BIOS_IMPORTS_IMAGE_ID,
+	decodeBlua32BiosImports,
+} from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -55,6 +55,7 @@ import {
 	GX_SYSTEM_VRAM_X,
 	GX_SYSTEM_VRAM_Y,
 } from '../../scripts/rompacker/system_texture';
+import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
@@ -346,13 +347,13 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		}
 		const systemPrefix = layoutRomPrefix([], false, null);
 		const systemBlua32 = buildRomBlua32Tail(systemExecutableSources, {
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
 			optLevel: 3,
-			imageOffset: systemPrefix.blua32Offset,
+			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
 			domain: 'system',
 			ramByteCount: 0x00400000,
+			biosExports: [],
 		});
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
@@ -365,9 +366,9 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));
 		const systemIndex = await loadRomAssetList(systemRom, 'system');
 		const systemImageEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_IMAGE_ID)!;
-		const systemSymbolsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
-		const systemSymbols = decodeBlua32SymbolsImage(
-			systemRom.subarray(systemSymbolsEntry.start, systemSymbolsEntry.end),
+		const systemImportsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
+		const biosImports = decodeBlua32BiosImports(
+			systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
 		);
 		const systemImage = decodeBlua32Image(
 			systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
@@ -425,15 +426,14 @@ return imgdec
 			});
 		}
 		const cartBlua32 = buildRomBlua32Tail(cartExecutableSources, {
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
 			optLevel: 3,
-			imageOffset: cartPrefix.blua32Offset,
+			imageOffset: cartPrefix.nextOffset,
 			domain: 'cart',
 			ramByteCount: 0x00400000,
 			systemImage,
-			systemSymbols,
+			biosImports,
 		});
 		await finalizeRompack('texture-contract', {
 			debug: false,

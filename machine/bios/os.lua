@@ -286,10 +286,6 @@ local format_civil_time<const> = function(format, year, month, day, hour, min, s
 	return output
 end
 
-function clock_now()
-	return *time_ms
-end
-
 os.clock = function()
 	return *time_ms / 1000
 end

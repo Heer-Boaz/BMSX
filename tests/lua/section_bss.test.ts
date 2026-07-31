@@ -11,8 +11,8 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
 import {
 	disassembleTestBlua32Functions,
@@ -28,7 +28,10 @@ function parseSource(source: string, path: string) {
 }
 
 function compileSource(source: string, path = 'section_bss.lua') {
-	return compileLuaChunkToProgram(parseSource(source, path), [], { entrySource: source });
+	return compileLuaChunkToProgram(parseSource(source, path), [], {
+		entrySource: source,
+		programDomain: 'system',
+	});
 }
 
 function constModule(path: string, source: string) {
@@ -36,21 +39,21 @@ function constModule(path: string, source: string) {
 	return { path, chunk: parseSource(declaredSource, `${path}.lua`), source: declaredSource };
 }
 
-function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): CompiledProgram {
+function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): CompiledSystemProgram {
 	return compileLuaChunkToProgram(
 		parseSource(entrySource, 'entry.lua'),
 		[constModule(modulePath, moduleSource)],
-		{ entrySource },
+		{ entrySource, programDomain: 'system' },
 	);
 }
 
 
-function disassembleEntryFunction(compiled: CompiledProgram): string {
+function disassembleEntryFunction(compiled: CompiledSystemProgram): string {
 	const image = linkTestSystemBlua32(compiled);
 	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }
 
-function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
+function runColdCompiled(compiled: CompiledSystemProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
@@ -157,7 +160,11 @@ return state.read()
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
-	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
+	assert.equal(image.link.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'state'
+			&& reloc.exportPathKey === 'read',
+	), true);
 
 	const result = runColdCompiled(compiled);
 	assert.deepEqual(result.values, [41]);
@@ -174,7 +181,11 @@ return { read = read }
 	const compiled = compileWithConstModule('local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()', 'state', moduleSource);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'state'
+			&& reloc.exportPathKey === 'read',
+	), true);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
 	assert.deepEqual(runColdCompiled(compiled).values, [1]);
 });
@@ -235,7 +246,11 @@ return state.read_next()
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
-	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__increment'), true);
+	assert.equal(image.link.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'state'
+			&& reloc.exportPathKey === 'increment',
+	), true);
 	assert.deepEqual(runColdCompiled(compiled).values, [41]);
 });
 
@@ -374,17 +389,18 @@ return { count = count }
 	);
 });
 
-test('external const-module function exports remain pack-time link targets', () => {
+test('const-module function exports remain pack-time link targets', () => {
 	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
 	const compiled = compileLuaChunkToProgram(
 		parseSource('return require("state").read()', 'entry.lua'),
-		[],
-		{
-			entrySource: 'return require("state").read()',
-			externalModules: [constModule('state', moduleSource)],
-		},
+		[constModule('state', moduleSource)],
+		{ entrySource: 'return require("state").read()', programDomain: 'system' },
 	);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'state'
+			&& reloc.exportPathKey === 'read',
+	), true);
 });
 
 test('multiple const modules reserve distinct .bss storage symbols in one program', () => {
@@ -403,7 +419,7 @@ return *ap, *bp, a.counter, b.counter
 			constModule('state_a', 'bss counter: word\nreturn { counter = counter }'),
 			constModule('state_b', 'bss counter: word\nreturn { counter = counter }'),
 		],
-		{ entrySource },
+		{ entrySource, programDomain: 'system' },
 	);
 	const image = encodeCompiledProgramObject(compiled);
 	assert.deepEqual(image.sections.bss.symbols, [
@@ -445,23 +461,6 @@ test('linked system and cart const-module .bss symbols resolve against their own
 		constant => constant === DYNAMIC_RAM_BASE + 4,
 	), true);
 });
-
-test('external const modules cannot declare .bss storage', () => {
-	const moduleSource = 'bss counter: word\nreturn { counter = counter }';
-	assert.throws(
-		() => compileLuaChunkToProgram(
-			parseSource('return require("state").counter', 'entry.lua'),
-			[],
-			{
-				entrySource: 'return require("state").counter',
-				externalModules: [constModule('state', moduleSource)],
-			},
-		),
-		/Const module 'state' declares \.bss storage but is not compiled as a source module/,
-	);
-});
-
-
 
 test('BLua .data declarations emit initialized RAM symbols and cold startup copies them as code', () => {
 	const source = `
@@ -585,21 +584,6 @@ test('linked system and cart const-module .data symbols resolve VMA and LMA rang
 	), true);
 });
 
-test('external const modules cannot declare .data storage', () => {
-	const moduleSource = 'data counter: word = 1\nreturn { counter = counter }';
-	assert.throws(
-		() => compileLuaChunkToProgram(
-			parseSource('return require("state").counter', 'entry.lua'),
-			[],
-			{
-				entrySource: 'return require("state").counter',
-				externalModules: [constModule('state', moduleSource)],
-			},
-		),
-		/Const module 'state' declares \.data storage but is not compiled as a source module/,
-	);
-});
-
 test('BLua .rodata declarations emit CPU-readable ROM section symbols', () => {
 	const source = `
 rodata values: word[3] = { 11, 22, 33 }
@@ -688,15 +672,25 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 });
 
 test('cart linking remaps const references stored in physical cart .rodata', () => {
-	const compileRecord = (text: string, path: string): CompiledProgram => compileSource(`
+	const recordSource = (text: string) => `
 struct label
 	text: string
 end
 rodata labels: label[] = { { text = '${text}' } }
 return labels[0].text
-`, path);
-	const system = compileRecord('SYSTEM', 'system_rodata_record.lua');
-	const cart = compileRecord('CART', 'cart_rodata_record.lua');
+`;
+	const systemSource = recordSource('SYSTEM');
+	const system = compileLuaChunkToProgram(
+		parseSource(systemSource, 'system_rodata_record.lua'),
+		[],
+		{ entrySource: systemSource, programDomain: 'system' },
+	);
+	const cartSource = recordSource('CART');
+	const cart = compileLuaChunkToProgram(
+		parseSource(cartSource, 'cart_rodata_record.lua'),
+		[],
+		{ entrySource: cartSource, programDomain: 'cart' },
+	);
 	const finalized = linkTestBlua32Pair(system, cart);
 	const systemConstIndex = readLE32(finalized.systemImage.rodataBytes, 0);
 	const systemConstant = finalized.systemImage.constants[systemConstIndex];
@@ -764,21 +758,6 @@ test('linked system and cart const-module .rodata symbols resolve against their 
 	assert.equal(finalized.cartImage.constants.some(
 		constant => constant === cartRodataAddr,
 	), true);
-});
-
-test('external const modules cannot declare .rodata storage', () => {
-	const moduleSource = 'rodata values: word[1] = { 1 }\nreturn { values = values }';
-	assert.throws(
-		() => compileLuaChunkToProgram(
-			parseSource('return require("data").values', 'entry.lua'),
-			[],
-			{
-				entrySource: 'return require("data").values',
-				externalModules: [constModule('data', moduleSource)],
-			},
-		),
-		/Const module 'data' declares \.rodata storage but is not compiled as a source module/,
-	);
 });
 
 test('BLua .rodata storage rejects writes at compile time', () => {

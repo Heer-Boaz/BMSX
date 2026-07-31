@@ -2,7 +2,11 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
+import {
+	BIOS_FUNCTION_EXPORTS,
+	SYSTEM_ROM_ASSET_OFFSET,
+	SYSTEM_ROM_NAME,
+} from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
@@ -27,11 +31,15 @@ import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_image';
-import { decodeBlua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
+import {
+	BLUA32_BIOS_IMPORTS_IMAGE_ID,
+	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
+	decodeBlua32BiosImports,
+} from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 
 type ParsedOptions = RomPackerOptions;
 const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
@@ -108,6 +116,22 @@ const biosBuildTasks: TaskName[] = [
 	TASK.DONE,
 ];
 const biosPipelineTasks: TaskName[] = biosBuildTasks.slice(1, -1);
+const BIOS_BUILD_SOURCE_DIRECTORIES = [
+	'./machine/ts/common',
+	'./machine/ts/rompack',
+	'./machine/ts/spec',
+	'./scripts/lint',
+	'./scripts/rompacker',
+	'./scripts/tooling',
+	'./toolchain/ts',
+] as const;
+const BIOS_BUILD_SOURCE_FILES = [
+	'./package.json',
+	'./package-lock.json',
+	'./scripts/tsconfig.json',
+	'./tsconfig.base.json',
+	'./tsconfig.json',
+] as const;
 
 // const webTasks: TaskName[] = [
 // 	'Platform-artifacts bouwen',
@@ -321,6 +345,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	const BIOSRomName = SYSTEM_ROM_NAME;
 	const BIOSRomPath = join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`);
 	const BIOSSymbolsPath = `${BIOSRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
+	const BIOSImportsPath = `${BIOSRomPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`;
 
 	const BIOSProjectRoot = normalizePathKey(join(BIOSResPath, '..'));
 	const BIOSVirtualRoot = BIOSProjectRoot.replace(/^\.\//, '');
@@ -340,11 +365,25 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 			await progress.taskCompleted();
 		}
 	} else {
-		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, BIOSResPath, {
-			extraLuaPaths: [biosSourcePath],
-			debug,
-			romFilePath: BIOSRomPath,
-		});
+		const checkBuild = async () => {
+			if (!existsSync(BIOSRomPath)
+				|| !existsSync(BIOSSymbolsPath)
+				|| !existsSync(BIOSImportsPath)) {
+				return true;
+			}
+			const romMtimeMs = statSync(BIOSRomPath).mtimeMs;
+			if (statSync(BIOSSymbolsPath).mtimeMs > romMtimeMs
+				|| statSync(BIOSImportsPath).mtimeMs > romMtimeMs) {
+				return true;
+			}
+			return isRebuildRequired(BIOSRomName, BIOSResPath, {
+				extraLuaPaths: [biosSourcePath],
+				buildSourceDirectories: BIOS_BUILD_SOURCE_DIRECTORIES,
+				buildSourceFiles: BIOS_BUILD_SOURCE_FILES,
+				debug,
+				romFilePath: BIOSRomPath,
+			});
+		};
 		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
 		if (progress) {
 			await progress.taskCompleted();
@@ -379,19 +418,24 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	const BIOSLayout = layoutRomPrefix(BIOSRomAssets, debug, null);
+	const BIOSLayout = layoutRomPrefix(
+		BIOSRomAssets,
+		debug,
+		null,
+		SYSTEM_ROM_ASSET_OFFSET,
+	);
 	const BIOSAssetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(
 		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
 	);
 	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, {
-		externalLuaAssets: [],
 		generatedLuaModules: [{
 			path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 			source: BIOSAssetSymbolModuleSource,
 		}],
 		includeSymbols: debug,
 		optLevel,
-		imageOffset: BIOSLayout.blua32Offset,
+		systemAssetEndOffset: BIOSLayout.nextOffset,
+		biosExports: BIOS_FUNCTION_EXPORTS,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		domain: 'system',
 	});
@@ -469,12 +513,8 @@ async function main() {
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		const systemRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
-		const systemSymbolsPath = `${systemRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
 		if (!existsSync(systemRomPath)) {
 			throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
-		}
-		if (!existsSync(systemSymbolsPath)) {
-			throw new Error(`BIOS BLua32 symbols not found at "${systemSymbolsPath}". Build the bios ROM first.`);
 		}
 
 		let rebuildRequired = true;
@@ -557,23 +597,27 @@ async function main() {
 			const systemRom = new Uint8Array(readFileSync(systemRomPath));
 			const systemIndex = await loadRomAssetList(systemRom, 'system');
 			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
+			const systemImportsEntry = systemIndex.entries.find(
+				entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID,
+			)!;
 			const systemImage = decodeBlua32Image(
 				systemRom.subarray(systemBlua32Entry.start, systemBlua32Entry.end),
 				SYSTEM_ROM_BASE + systemBlua32Entry.start,
 			);
-			const systemSymbols = decodeBlua32SymbolsImage(readFileSync(systemSymbolsPath));
+			const biosImports = decodeBlua32BiosImports(
+				systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
+			);
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);
 			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 			const blua32 = buildRomBlua32Tail(romAssets, {
 				includeSymbols: romPackDebug,
 				optLevel,
-				imageOffset: romLayout.blua32Offset,
+				imageOffset: romLayout.nextOffset,
 				ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 				domain: 'cart',
 				systemImage,
-				systemSymbols,
-				externalLuaAssets: [],
+				biosImports,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
 			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);

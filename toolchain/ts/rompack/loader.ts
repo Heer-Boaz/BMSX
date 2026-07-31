@@ -332,8 +332,8 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingP
 	}
 }
 
-export type RomToolingLayer = RomImage & {
-	id: RomImageDomain;
+export type RomToolingLayer<TDomain extends RomImageDomain = RomImageDomain> = RomImage & {
+	id: TDomain;
 	index: CartridgeIndex;
 	package: RomToolingPackage;
 };
@@ -354,14 +354,14 @@ async function loadRomToolingPackageFromSource(source: RawRomSource, index: Cart
 	return romPackage;
 }
 
-export async function buildCartridgeToolingLayer(image: RomImage): Promise<RomToolingLayer> {
+export async function buildCartridgeToolingLayer(image: RomImage): Promise<RomToolingLayer<'cart'>> {
 	const index = await parseCartridgeIndexFromHeader(image.bytes, image.header);
 	const source = new RomSourceStack([{ id: 'cart', index, bytes: image.bytes }]);
 	const toolingPackage = await loadRomToolingPackageFromSource(source, index);
 	return { ...image, id: 'cart', index, package: toolingPackage };
 }
 
-export async function buildSystemToolingLayer(image: RomImage): Promise<RomToolingLayer> {
+export async function buildSystemToolingLayer(image: RomImage): Promise<RomToolingLayer<'system'>> {
 	const { entries } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
 	const index: CartridgeIndex = {
 		entries,

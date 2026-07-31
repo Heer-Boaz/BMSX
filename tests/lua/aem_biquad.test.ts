@@ -31,7 +31,11 @@ return control, b0_b1, b2_a1, a2
 		const source = readFileSync(file, 'utf8');
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
 	});
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, { entrySource, optLevel: 3 });
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, {
+		entrySource,
+		optLevel: 3,
+		programDomain: 'system',
+	});
 	const cpu = runCompiledTestSystem(compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
 		0x00000001,

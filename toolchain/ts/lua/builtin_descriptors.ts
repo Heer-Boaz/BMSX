@@ -9,7 +9,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
 	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
-	{ name: 'clock_now', params: [], signature: 'clock_now()', description: 'Returns elapsed BMSX machine time in milliseconds.' },
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
 	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },

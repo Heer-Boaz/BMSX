@@ -1,10 +1,16 @@
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
 
-import { encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import {
+	encodeCompiledProgramObject,
+	type CompiledCartProgram,
+	type CompiledProgram,
+	type CompiledSystemProgram,
+} from '../../toolchain/ts/lua/compiler';
 import type {
-	ProgramConstReloc,
-	ProgramObjectImage,
+	ProgramCartObjectImage,
+	ProgramImageConstReloc,
+	ProgramSystemObjectImage,
 } from '../../toolchain/ts/lua/compiler/program_object';
 import type {
 	Blua32ImageLayout,
@@ -15,8 +21,9 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	type Blua32SymbolsImage,
-	type SourceRange,
 } from '../../toolchain/ts/rompack/blua32_symbols';
+import type { Blua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import {
 	CPU,
 	RunResult,
@@ -35,6 +42,7 @@ import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
+	type LinkedSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
 import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
 import { cartridgeSlots } from './cartridge';
@@ -60,6 +68,7 @@ type TestBlua32Vectors = {
 export type TestBlua32Image = {
 	image: Blua32ImageLayout;
 	symbols: Blua32SymbolsImage;
+	biosImports: Blua32BiosImports;
 	vectors: TestBlua32Vectors;
 	staticModulePaths: ReadonlyArray<string>;
 	romBytes: Uint8Array;
@@ -68,6 +77,7 @@ export type TestBlua32Image = {
 export type TestBlua32ImagePair = {
 	systemImage: Blua32ImageLayout;
 	systemSymbols: Blua32SymbolsImage;
+	systemBiosImports: Blua32BiosImports;
 	systemVectors: TestBlua32Vectors;
 	systemStaticModulePaths: ReadonlyArray<string>;
 	cartImage: Blua32ImageLayout;
@@ -94,7 +104,7 @@ export type TestBlua32Source = {
 	constants?: ReadonlyArray<null | boolean | number | string>;
 	globalNames?: ReadonlyArray<string>;
 	systemGlobalNames?: ReadonlyArray<string>;
-	constRelocs?: ReadonlyArray<ProgramConstReloc>;
+	constRelocs?: ReadonlyArray<ProgramImageConstReloc>;
 	debugRanges?: ReadonlyArray<SourceRange | null>;
 	functionIds?: ReadonlyArray<string>;
 	startupFunctionIndex?: number;
@@ -102,12 +112,17 @@ export type TestBlua32Source = {
 	exceptionFunctionIndex?: number;
 };
 
-type RawTestBlua32Object = {
-	object: ProgramObjectImage;
+type RawTestSystemBlua32Object = {
+	object: ProgramSystemObjectImage;
 	metadata: ProgramMetadata;
 };
 
-function writeTestRom(id: 'system' | 'cart', linked: LinkedBlua32Image): Uint8Array {
+type RawTestCartBlua32Object = {
+	object: ProgramCartObjectImage;
+	metadata: ProgramMetadata;
+};
+
+function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 	const rom = new Uint8Array(TEST_EXECUTABLE_OFFSET + linked.bytes.byteLength);
 	rom.set(linked.bytes, TEST_EXECUTABLE_OFFSET);
 	writeCartRomHeader(rom, {
@@ -130,15 +145,14 @@ function writeTestRom(id: 'system' | 'cart', linked: LinkedBlua32Image): Uint8Ar
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	});
-	return buildBlua32Tail({
-		id,
-		index: {
-			entries: [],
-			projectRootPath: '',
-			cart_manifest: null,
-		},
-		bytes: rom,
-	}, linked).bytes;
+	const index = {
+		entries: [],
+		projectRootPath: '',
+		cart_manifest: null,
+	};
+	return linked.domain === 'system'
+		? buildBlua32Tail({ id: 'system', index, bytes: rom }, linked).bytes
+		: buildBlua32Tail({ id: 'cart', index, bytes: rom }, linked).bytes;
 }
 
 function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): TestBlua32Vectors {
@@ -152,17 +166,29 @@ function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): Test
 	};
 }
 
-function testImage(linked: LinkedBlua32Image, vectors: TestBlua32Vectors): TestBlua32Image {
+function testImage(linked: LinkedSystemBlua32Image, vectors: TestBlua32Vectors): TestBlua32Image {
 	return {
 		image: linked.layout,
 		symbols: linked.symbols,
+		biosImports: linked.biosImports,
 		vectors,
 		staticModulePaths: [],
-		romBytes: writeTestRom('system', linked),
+		romBytes: writeTestRom(linked),
 	};
 }
 
-function createRawTestBlua32Object(source: TestBlua32Source): RawTestBlua32Object {
+function createRawTestBlua32Object(
+	source: TestBlua32Source,
+	domain: 'system',
+): RawTestSystemBlua32Object;
+function createRawTestBlua32Object(
+	source: TestBlua32Source,
+	domain: 'cart',
+): RawTestCartBlua32Object;
+function createRawTestBlua32Object(
+	source: TestBlua32Source,
+	domain: 'system' | 'cart',
+): RawTestSystemBlua32Object | RawTestCartBlua32Object {
 	const functions = new Array<Proto>(source.functions.length);
 	for (let index = 0; index < source.functions.length; index += 1) {
 		const functionSource = source.functions[index];
@@ -196,7 +222,7 @@ function createRawTestBlua32Object(source: TestBlua32Source): RawTestBlua32Objec
 		localSlotsByProto: functions.map(() => []),
 		upvalueNamesByProto: functions.map(() => []),
 	};
-	const object: ProgramObjectImage = {
+	const objectBase = {
 		vectors: {
 			resetProtoIndex: source.startupFunctionIndex ?? 0,
 			sectionInitProtoIndex: source.startupFunctionIndex ?? 0,
@@ -225,11 +251,27 @@ function createRawTestBlua32Object(source: TestBlua32Source): RawTestBlua32Objec
 				symbols: [],
 			},
 		},
+	};
+	const link = {
+		constRelocs: source.constRelocs ? Array.from(source.constRelocs) : [],
+		constValueRelocs: [],
+		rodataConstRelocs: [],
+		symbols: metadata,
+	};
+	if (domain === 'system') {
+		const object: ProgramSystemObjectImage = {
+			domain,
+			...objectBase,
+			link,
+		};
+		return { object, metadata };
+	}
+	const object: ProgramCartObjectImage = {
+		domain,
+		...objectBase,
 		link: {
-			constRelocs: source.constRelocs ? Array.from(source.constRelocs) : [],
-			constValueRelocs: [],
-			rodataConstRelocs: [],
-			symbols: metadata,
+			...link,
+			biosFunctionConstRelocs: [],
 		},
 	};
 	return { object, metadata };
@@ -247,12 +289,13 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 }
 
 export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Image {
-	const raw = createRawTestBlua32Object(source);
+	const raw = createRawTestBlua32Object(source, 'system');
 	const linked = linkSystemBlua32Image(
 		raw.object,
 		raw.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
+		[],
 	);
 	return testImage(linked, rawTestVectors(source, linked));
 }
@@ -261,17 +304,18 @@ export function linkRawTestBlua32Pair(
 	systemSource: TestBlua32Source,
 	cartSource: TestBlua32Source,
 ): TestBlua32ImagePair {
-	const systemRaw = createRawTestBlua32Object(systemSource);
+	const systemRaw = createRawTestBlua32Object(systemSource, 'system');
 	const system = linkSystemBlua32Image(
 		systemRaw.object,
 		systemRaw.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
+		[],
 	);
-	const cartRaw = createRawTestBlua32Object(cartSource);
+	const cartRaw = createRawTestBlua32Object(cartSource, 'cart');
 	const cart = linkCartBlua32Image(
 		system.layout,
-		system.symbols,
+		system.biosImports,
 		cartRaw.object,
 		cartRaw.metadata,
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
@@ -280,32 +324,35 @@ export function linkRawTestBlua32Pair(
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,
+		systemBiosImports: system.biosImports,
 		systemVectors: rawTestVectors(systemSource, system),
 		systemStaticModulePaths: [],
 		cartImage: cart.layout,
 		cartSymbols: cart.symbols,
 		cartVectors: rawTestVectors(cartSource, cart),
 		cartStaticModulePaths: [],
-		systemRomBytes: writeTestRom('system', system),
-		cartRomBytes: writeTestRom('cart', cart),
+		systemRomBytes: writeTestRom(system),
+		cartRomBytes: writeTestRom(cart),
 	};
 }
 
 export function linkTestSystemBlua32(
-	compiled: CompiledProgram,
+	compiled: CompiledSystemProgram,
 ): TestBlua32Image {
 	const linked = linkSystemBlua32Image(
 		encodeCompiledProgramObject(compiled),
 		compiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
+		[],
 	);
 	return {
 		image: linked.layout,
 		symbols: linked.symbols,
+		biosImports: linked.biosImports,
 		vectors: testVectors(compiled, linked),
 		staticModulePaths: compiled.staticModulePaths,
-		romBytes: writeTestRom('system', linked),
+		romBytes: writeTestRom(linked),
 	};
 }
 
@@ -346,18 +393,19 @@ export function disassembleTestBlua32Functions(
 }
 
 export function linkTestBlua32Pair(
-	systemCompiled: CompiledProgram,
-	cartCompiled: CompiledProgram,
+	systemCompiled: CompiledSystemProgram,
+	cartCompiled: CompiledCartProgram,
 ): TestBlua32ImagePair {
 	const system = linkSystemBlua32Image(
 		encodeCompiledProgramObject(systemCompiled),
 		systemCompiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
+		[],
 	);
 	const cart = linkCartBlua32Image(
 		system.layout,
-		system.symbols,
+		system.biosImports,
 		encodeCompiledProgramObject(cartCompiled),
 		cartCompiled.metadata,
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
@@ -366,14 +414,15 @@ export function linkTestBlua32Pair(
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,
+		systemBiosImports: system.biosImports,
 		systemVectors: testVectors(systemCompiled, system),
 		systemStaticModulePaths: systemCompiled.staticModulePaths,
 		cartImage: cart.layout,
 		cartSymbols: cart.symbols,
 		cartVectors: testVectors(cartCompiled, cart),
 		cartStaticModulePaths: cartCompiled.staticModulePaths,
-		systemRomBytes: writeTestRom('system', system),
-		cartRomBytes: writeTestRom('cart', cart),
+		systemRomBytes: writeTestRom(system),
+		cartRomBytes: writeTestRom(cart),
 	};
 }
 
@@ -402,7 +451,7 @@ export function createTestBlua32PairCpu(
 	return { cpu, memory, irqController, executionAddressSpace };
 }
 
-export function runCompiledTestSystem(compiled: CompiledProgram, cycleBudget: number): CPU {
+export function runCompiledTestSystem(compiled: CompiledSystemProgram, cycleBudget: number): CPU {
 	const finalized = linkTestSystemBlua32(compiled);
 	const cpu = createTestSystemCpu(finalized).cpu;
 	assert.equal(cpu.runUntilDepth(0, cycleBudget), RunResult.Halted);

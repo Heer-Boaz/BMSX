@@ -14,6 +14,7 @@ import {
 import { type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'rompacker-bin-scan-test');
@@ -90,8 +91,8 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'image', resid: 'sprite', collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 			{ type: 'romlabel', resid: 'label', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
 		];
-		const layout = layoutRomPrefix(assets, true, null);
-		const ranges = layout.assetRanges;
+		const layout = layoutRomPrefix(assets, true, null, SYSTEM_ROM_ASSET_OFFSET);
+		const ranges = layout.ranges;
 		const entrySource = 'module<entry>\nreturn 0';
 		const blua32 = buildRomBlua32Tail([{
 			type: 'lua',
@@ -100,13 +101,13 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
 			source_path: 'entry.lua',
 		}], {
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: false,
 			optLevel: 3,
-			imageOffset: layout.blua32Offset,
+			systemAssetEndOffset: layout.nextOffset,
 			domain: 'system',
 			ramByteCount: 0x00400000,
+			biosExports: [],
 		});
 		await finalizeRompack('aligned', {
 			debug: false,

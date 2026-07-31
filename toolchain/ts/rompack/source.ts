@@ -2,8 +2,8 @@ import type { CartridgeIndex, RomAsset } from './assets';
 import type { RomImageDomain } from '../../../machine/ts/rompack/image';
 import type { AssetId, AssetType } from '../../../machine/ts/rompack/toc';
 
-export type RomSourceLayer = {
-	id: RomImageDomain;
+export type RomSourceLayer<TDomain extends RomImageDomain = RomImageDomain> = {
+	id: TDomain;
 	index: CartridgeIndex;
 	bytes: Uint8Array;
 };

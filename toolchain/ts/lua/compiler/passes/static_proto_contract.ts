@@ -42,9 +42,6 @@ const instructionLoadKReason = (instruction: Instruction, constPool: ReadonlyArr
 	if (instruction.op !== OpCode.LOADK) {
 		return null;
 	}
-	if (instruction.symbolicReloc?.kind === 'module') {
-		return 'runtime module slot';
-	}
 	if (instruction.symbolicReloc !== undefined) {
 		return null;
 	}

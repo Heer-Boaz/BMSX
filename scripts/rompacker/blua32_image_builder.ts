@@ -6,12 +6,17 @@ import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module'
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
-import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
+import type {
+	Blua32BiosFunctionExport,
+	Blua32BiosImports,
+} from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
+	type LinkedCartBlua32Image,
 	type LinkedBlua32Image,
+	type LinkedSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
 
 export type GeneratedLuaModule = {
@@ -19,22 +24,31 @@ export type GeneratedLuaModule = {
 	source: string;
 };
 
-type Blua32ImageBuildOptions = {
+type Blua32ImageBuildOptionsBase = {
 	luaAssets: ReadonlyArray<RomAsset>;
-	externalLuaAssets: ReadonlyArray<RomAsset>;
 	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
 	loadAddress: number;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
-} & (
-	| { domain: 'system' }
-	| {
-		domain: 'cart';
-		systemImage: Blua32ImageLayout;
-		systemSymbols: Blua32SymbolsImage;
-	}
-);
+};
 
+type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
+	domain: 'system';
+	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
+};
+
+type CartBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
+	domain: 'cart';
+	systemImage: Blua32ImageLayout;
+	biosImports: Blua32BiosImports;
+};
+
+type Blua32ImageBuildOptions =
+	| SystemBlua32ImageBuildOptions
+	| CartBlua32ImageBuildOptions;
+
+export function buildBlua32Image(options: SystemBlua32ImageBuildOptions): LinkedSystemBlua32Image;
+export function buildBlua32Image(options: CartBlua32ImageBuildOptions): LinkedCartBlua32Image;
 export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32Image {
 	const modulePaths = new Set<string>();
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
@@ -70,40 +84,32 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 		modules.push({ path: generated.path, chunk, source: generated.source });
 	}
 
-	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
-	for (let index = 0; index < options.externalLuaAssets.length; index += 1) {
-		const asset = options.externalLuaAssets[index];
-		const modulePath = toLuaModulePath(asset.source_path);
-		if (modulePaths.has(modulePath)) {
-			continue;
-		}
-		externalModules.push({
-			path: modulePath,
-			chunk: decodeBinary(asset.compiled_buffer!) as LuaChunk,
-			source: asset.buffer!.toString('utf8'),
+	if (options.domain === 'cart') {
+		const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
+			optLevel: options.optLevel,
+			entrySource: entry.source,
+			biosFunctions: options.biosImports.functions,
+			programDomain: 'cart',
 		});
-	}
-
-	const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
-		optLevel: options.optLevel,
-		entrySource: entry.source,
-		externalModules,
-		programDomain: options.domain,
-	});
-	const object = encodeCompiledProgramObject(compiled);
-	return options.domain === 'cart'
-		? linkCartBlua32Image(
+		return linkCartBlua32Image(
 			options.systemImage,
-			options.systemSymbols,
-			object,
-			compiled.metadata,
-			options.loadAddress,
-			options.ramByteCount,
-		)
-		: linkSystemBlua32Image(
-			object,
+			options.biosImports,
+			encodeCompiledProgramObject(compiled),
 			compiled.metadata,
 			options.loadAddress,
 			options.ramByteCount,
 		);
+	}
+	const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
+		optLevel: options.optLevel,
+		entrySource: entry.source,
+		programDomain: 'system',
+	});
+	return linkSystemBlua32Image(
+		encodeCompiledProgramObject(compiled),
+		compiled.metadata,
+		options.loadAddress,
+		options.ramByteCount,
+		options.biosExports,
+	);
 }

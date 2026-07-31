@@ -6,10 +6,10 @@ import {
 import { parseRomImage } from '../../../machine/ts/rompack/image';
 
 export type RomToolingMedia = {
-	system: RomToolingLayer;
+	system: RomToolingLayer<'system'>;
 	cartridgeSlots: readonly [
-		RomToolingLayer | null,
-		RomToolingLayer | null,
+		RomToolingLayer<'cart'> | null,
+		RomToolingLayer<'cart'> | null,
 	];
 };
 

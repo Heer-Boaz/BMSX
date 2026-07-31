@@ -3,18 +3,34 @@ import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,
 } from './blua32_symbols';
-import type { LinkedBlua32Image } from './blua32_linker';
+import {
+	BLUA32_BIOS_IMPORTS_IMAGE_ID,
+	encodeBlua32BiosImports,
+} from './blua32_bios_imports';
+import type {
+	LinkedBlua32Image,
+	LinkedCartBlua32Image,
+	LinkedSystemBlua32Image,
+} from './blua32_linker';
 import { CART_ROM_HEADER_SIZE } from '../../../machine/ts/spec/bmsx/rom_package';
 import {
 	parseCartHeader,
 } from '../../../machine/ts/rompack/format';
 import type { RomAsset } from './assets';
 import type { AssetId, AssetType } from '../../../machine/ts/rompack/toc';
-import { alignRomAssetOffset } from './asset_layout';
+import {
+	alignRomAssetOffset,
+	layoutRomAssetPayloads,
+	type RomAssetPayloadLayout,
+} from './asset_layout';
 import type { RomSourceLayer } from './source';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
+import {
+	assertSystemBlua32ImageFits,
+	SYSTEM_ROM_ASSET_OFFSET,
+} from './system';
 
 export type RomAssetEdit = readonly [
 	type: AssetType,
@@ -26,41 +42,110 @@ export function layoutBlua32PublicAssets(
 	layer: RomSourceLayer,
 	imageByteCount: number,
 	assetEdit?: RomAssetEdit,
-): readonly [entries: RomAsset[], tailOffset: number] {
+): RomAssetPayloadLayout {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
 	const entries: RomAsset[] = [];
-	let tailOffset = alignRomAssetOffset(imageOffset + imageByteCount);
+	const relocatedSources: RomAsset[] = [];
+	const relocatedEntryIndices: number[] = [];
+	const tailOffset = layer.id === 'system'
+		? SYSTEM_ROM_ASSET_OFFSET
+		: alignRomAssetOffset(imageOffset + imageByteCount);
 	let edited = false;
 	for (let index = 0; index < layer.index.entries.length; index += 1) {
 		const entry = layer.index.entries[index];
-		if (entry.resid === BLUA32_IMAGE_ID || entry.resid === BLUA32_SYMBOLS_IMAGE_ID) {
+		if (entry.resid === BLUA32_IMAGE_ID
+			|| entry.resid === BLUA32_SYMBOLS_IMAGE_ID
+			|| entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID) {
 			continue;
 		}
 		const isEdited = assetEdit
 			&& entry.type === assetEdit[0]
 			&& entry.resid === assetEdit[1];
-		if (!isEdited && (entry.start == null || entry.start < imageOffset)) {
+		const movePayloads = layer.id === 'system'
+			|| isEdited
+			|| (entry.start != null && entry.start >= imageOffset)
+			|| (entry.compiled_start != null && entry.compiled_start >= imageOffset)
+			|| (entry.model_texture_start != null && entry.model_texture_start >= imageOffset)
+			|| (entry.collision_bin_start != null && entry.collision_bin_start >= imageOffset);
+		if (!movePayloads) {
 			entries.push(entry);
 			continue;
 		}
-		const byteLength = isEdited ? assetEdit[2].byteLength : entry.end! - entry.start!;
-		entries.push({
+		const source: RomAsset = {
 			...entry,
-			start: tailOffset,
-			end: tailOffset + byteLength,
-		});
-		tailOffset = alignRomAssetOffset(tailOffset + byteLength);
+			buffer: entry.start == null
+				? undefined
+				: Buffer.from(
+					layer.bytes.buffer,
+					layer.bytes.byteOffset + entry.start,
+					entry.end! - entry.start,
+				),
+			compiled_buffer: entry.compiled_start == null
+				? undefined
+				: Buffer.from(
+					layer.bytes.buffer,
+					layer.bytes.byteOffset + entry.compiled_start,
+					entry.compiled_end! - entry.compiled_start,
+				),
+			model_texture_buffer: entry.model_texture_start == null
+				? undefined
+				: Buffer.from(
+					layer.bytes.buffer,
+					layer.bytes.byteOffset + entry.model_texture_start,
+					entry.model_texture_end! - entry.model_texture_start,
+				),
+			collision_bin_buffer: entry.collision_bin_start == null
+				? undefined
+				: Buffer.from(
+					layer.bytes.buffer,
+					layer.bytes.byteOffset + entry.collision_bin_start,
+					entry.collision_bin_end! - entry.collision_bin_start,
+				),
+		};
 		if (isEdited) {
+			source.buffer = Buffer.from(
+				assetEdit[2].buffer,
+				assetEdit[2].byteOffset,
+				assetEdit[2].byteLength,
+			);
 			edited = true;
 		}
+		relocatedEntryIndices.push(entries.length);
+		relocatedSources.push(source);
+		entries.push(entry);
+	}
+	const layout = layoutRomAssetPayloads(relocatedSources, true, tailOffset);
+	for (let index = 0; index < layout.entries.length; index += 1) {
+		const entryIndex = relocatedEntryIndices[index];
+		const relocated = layout.entries[index];
+		if (layer.id !== 'system') {
+			relocated.metabuffer_start = entries[entryIndex].metabuffer_start;
+			relocated.metabuffer_end = entries[entryIndex].metabuffer_end;
+		}
+		entries[entryIndex] = relocated;
 	}
 	if (assetEdit && !edited) {
 		throw new Error(`${assetEdit[0]} asset '${assetEdit[1]}' is not present in the ROM.`);
 	}
-	return [entries, tailOffset];
+	return {
+		entries,
+		ranges: layout.ranges,
+		payloadEnd: layout.payloadEnd,
+		nextOffset: layout.nextOffset,
+	};
 }
 
+export function buildBlua32Tail(
+	layer: RomSourceLayer<'system'>,
+	linked: LinkedSystemBlua32Image,
+	assetEdit?: RomAssetEdit,
+): RomSourceLayer<'system'>;
+export function buildBlua32Tail(
+	layer: RomSourceLayer<'cart'>,
+	linked: LinkedCartBlua32Image,
+	assetEdit?: RomAssetEdit,
+): RomSourceLayer<'cart'>;
 export function buildBlua32Tail(
 	layer: RomSourceLayer,
 	linked: LinkedBlua32Image,
@@ -69,14 +154,72 @@ export function buildBlua32Tail(
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
 	const imageEnd = imageOffset + linked.bytes.byteLength;
-	const [entries, symbolsOffset] = layoutBlua32PublicAssets(
+	if (layer.id === 'system') {
+		assertSystemBlua32ImageFits(imageEnd);
+	}
+	const publicAssets = layoutBlua32PublicAssets(
 		layer,
 		linked.bytes.byteLength,
 		assetEdit,
 	);
-	const symbols = encodeBlua32SymbolsImage(linked.symbols);
-	const symbolsEnd = symbolsOffset + symbols.byteLength;
-	const publicEntryCount = entries.length;
+	const entries = publicAssets.entries;
+	let metadataOffset = header.metadataOffset;
+	let manifestOffset = header.manifestOffset;
+	let toolingOffset = publicAssets.nextOffset;
+	if (linked.domain === 'system') {
+		if (header.metadataLength !== 0) {
+			metadataOffset = toolingOffset;
+			const metadataDelta = metadataOffset - header.metadataOffset;
+			let installedIndex = 0;
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				while (layer.index.entries[installedIndex].type !== entry.type
+					|| layer.index.entries[installedIndex].resid !== entry.resid) {
+					installedIndex += 1;
+				}
+				const installed = layer.index.entries[installedIndex];
+				installedIndex += 1;
+				if (installed.metabuffer_start != null) {
+					entry.metabuffer_start = installed.metabuffer_start + metadataDelta;
+					entry.metabuffer_end = installed.metabuffer_end! + metadataDelta;
+				}
+			}
+			toolingOffset = alignRomAssetOffset(metadataOffset + header.metadataLength);
+		} else {
+			metadataOffset = 0;
+		}
+		if (header.manifestLength !== 0) {
+			manifestOffset = toolingOffset;
+			toolingOffset = alignRomAssetOffset(manifestOffset + header.manifestLength);
+		} else {
+			manifestOffset = 0;
+		}
+	}
+	const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
+	const toolingAssets: RomAsset[] = [{
+		resid: BLUA32_SYMBOLS_IMAGE_ID,
+		type: 'code',
+		buffer: Buffer.from(
+			symbolsPayload.buffer,
+			symbolsPayload.byteOffset,
+			symbolsPayload.byteLength,
+		),
+		source_path: BLUA32_SYMBOLS_IMAGE_ID,
+	}];
+	if (linked.domain === 'system') {
+		const biosImportsPayload = encodeBlua32BiosImports(linked.biosImports);
+		toolingAssets.push({
+			resid: BLUA32_BIOS_IMPORTS_IMAGE_ID,
+			type: 'code',
+			buffer: Buffer.from(
+				biosImportsPayload.buffer,
+				biosImportsPayload.byteOffset,
+				biosImportsPayload.byteLength,
+			),
+			source_path: BLUA32_BIOS_IMPORTS_IMAGE_ID,
+		});
+	}
+	const toolingLayout = layoutRomAssetPayloads(toolingAssets, true, toolingOffset);
 	entries.push({
 		resid: BLUA32_IMAGE_ID,
 		type: 'code',
@@ -84,19 +227,13 @@ export function buildBlua32Tail(
 		end: imageEnd,
 		source_path: BLUA32_IMAGE_ID,
 	});
-	entries.push({
-		resid: BLUA32_SYMBOLS_IMAGE_ID,
-		type: 'code',
-		start: symbolsOffset,
-		end: symbolsEnd,
-		source_path: BLUA32_SYMBOLS_IMAGE_ID,
-	});
+	entries.push(...toolingLayout.entries);
 
 	const toc = encodeRomToc({
 		entries,
 		projectRootPath: layer.index.projectRootPath,
 	});
-	const tocOffset = alignRomAssetOffset(symbolsEnd);
+	const tocOffset = toolingLayout.nextOffset;
 	const payloadByteCount = tocOffset + toc.byteLength;
 	const romCapacity = layer.id === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
 	if (payloadByteCount > romCapacity) {
@@ -106,33 +243,43 @@ export function buildBlua32Tail(
 	const payload = new Uint8Array(payloadByteCount);
 	payload.set(layer.bytes.subarray(0, imageOffset));
 	payload.set(linked.bytes, imageOffset);
-	for (let index = 0; index < publicEntryCount; index += 1) {
-		const entry = entries[index];
-		if (entry.start == null || entry.start < imageEnd) {
-			continue;
-		}
-		if (assetEdit
-			&& entry.type === assetEdit[0]
-			&& entry.resid === assetEdit[1]) {
-			payload.set(assetEdit[2], entry.start);
-			continue;
-		}
-		let sourceIndex = 0;
-		while (layer.index.entries[sourceIndex].resid !== entry.resid
-			|| layer.index.entries[sourceIndex].type !== entry.type) {
-			sourceIndex += 1;
-		}
-		const source = layer.index.entries[sourceIndex];
-		payload.set(layer.bytes.subarray(source.start!, source.end!), entry.start);
+	for (let index = 0; index < publicAssets.ranges.length; index += 1) {
+		const range = publicAssets.ranges[index];
+		payload.set(range.buffer, range.start);
 	}
-	payload.set(symbols, symbolsOffset);
+	if (linked.domain === 'system') {
+		if (header.metadataLength !== 0) {
+			payload.set(
+				layer.bytes.subarray(
+					header.metadataOffset,
+					header.metadataOffset + header.metadataLength,
+				),
+				metadataOffset,
+			);
+		}
+		if (header.manifestLength !== 0) {
+			payload.set(
+				layer.bytes.subarray(
+					header.manifestOffset,
+					header.manifestOffset + header.manifestLength,
+				),
+				manifestOffset,
+			);
+		}
+	}
+	for (let index = 0; index < toolingLayout.ranges.length; index += 1) {
+		const range = toolingLayout.ranges[index];
+		payload.set(range.buffer, range.start);
+	}
 	payload.set(toc, tocOffset);
 	writeCartRomHeader(payload, {
 		...header,
 		headerSize: CART_ROM_HEADER_SIZE,
+		metadataOffset,
+		manifestOffset,
 		tocOffset,
 		tocLength: toc.byteLength,
-		dataLength: symbolsEnd - header.dataOffset,
+		dataLength: toolingLayout.payloadEnd - header.dataOffset,
 		blua32ImageByteCount: linked.bytes.byteLength,
 		blua32StartupFunctionAddress: linked.startupFunctionAddress,
 		blua32IrqFunctionAddress: linked.irqFunctionAddress,

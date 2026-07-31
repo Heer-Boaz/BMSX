@@ -18,12 +18,13 @@ import {
 	resourceIdentityKey,
 	resourceIdentityKeyFromParts,
 } from '../common/resource';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	loadBlua32ToolingImage,
+	type Blua32SystemToolingImage,
 	type Blua32ToolingImage,
 } from '../../toolchain/ts/rompack/blua32_media';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
 const SYSTEM_PROJECT_ROOT_PATH = 'machine/bios';
@@ -33,12 +34,15 @@ export const enum Blua32GlobalRegisterFile {
 	System = 2,
 }
 
-export type Blua32SourceImage = Blua32ToolingImage & {
+type Blua32SourceIndex = {
 	readonly globalRegisterFileByName: ReadonlyMap<string, Blua32GlobalRegisterFile>;
 };
 
+export type Blua32SourceImage = Blua32ToolingImage & Blua32SourceIndex;
+export type Blua32SystemSourceImage = Blua32SystemToolingImage & Blua32SourceIndex;
+
 export type Blua32SourceMedia = {
-	readonly system: Blua32SourceImage | null;
+	readonly system: Blua32SystemSourceImage | null;
 	readonly cartridgeSlots: readonly [
 		Blua32SourceImage | null,
 		Blua32SourceImage | null,
@@ -47,7 +51,7 @@ export type Blua32SourceMedia = {
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
-	rom: RomToolingLayer;
+	rom: RomToolingLayer<'cart'>;
 	package: RomToolingPackage;
 	luaSources: LuaSourceRegistry;
 	romSource: RawRomSource;
@@ -57,14 +61,12 @@ export type RuntimeCartridgeSourceState = {
 };
 
 export type RuntimeSourceState = {
-	systemRom: RomToolingLayer;
+	systemRom: RomToolingLayer<'system'>;
 	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
 	systemPackage: RomToolingPackage;
 	activePackage: RomToolingPackage;
 	systemLuaSources: LuaSourceRegistry;
 	activeLuaSources: LuaSourceRegistry;
-	luaSourceRegistries: LuaSourceRegistry[];
-	moduleCompileLuaSources: LuaSourceRegistry[];
 	systemRomSource: RawRomSource;
 	activeRomSource: RawRomSource;
 	resourceByIdentity: Map<string, RuntimeResource>;
@@ -93,10 +95,9 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 	return sourceByPath;
 }
 
-export function createBlua32SourceImage(
-	layout: Blua32ImageLayout,
+function indexBlua32GlobalRegisterFiles(
 	symbols: Blua32SymbolsImage | null,
-): Blua32SourceImage {
+): ReadonlyMap<string, Blua32GlobalRegisterFile> {
 	const globalRegisterFileByName = new Map<string, Blua32GlobalRegisterFile>();
 	if (symbols) {
 		const metadata = symbols.metadata;
@@ -113,21 +114,39 @@ export function createBlua32SourceImage(
 			);
 		}
 	}
+	return globalRegisterFileByName;
+}
+
+export function createBlua32SourceImage(
+	layout: Blua32ImageLayout,
+	symbols: Blua32SymbolsImage | null,
+): Blua32SourceImage {
 	return {
 		layout,
 		symbols,
-		globalRegisterFileByName,
+		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
+	};
+}
+
+export function createBlua32SystemSourceImage(
+	layout: Blua32ImageLayout,
+	symbols: Blua32SymbolsImage | null,
+	biosImports: Blua32BiosImports,
+): Blua32SystemSourceImage {
+	return {
+		layout,
+		symbols,
+		biosImports,
+		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
 	};
 }
 
 export function createRuntimeSourceState(
-	systemLayer: RomToolingLayer,
-	cartridgeLayers: readonly [RomToolingLayer | null, RomToolingLayer | null],
+	systemLayer: RomToolingLayer<'system'>,
+	cartridgeLayers: readonly [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system');
-	const luaSourceRegistries: LuaSourceRegistry[] = [];
-	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	const systemProjectRootPath = systemLuaSources.projectRootPath || SYSTEM_PROJECT_ROOT_PATH;
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
 	const cartridgeToolingImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
@@ -153,15 +172,12 @@ export function createRuntimeSourceState(
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 			aemResources: [],
 		};
-		const image = loadBlua32ToolingImage(
-			cartLayer,
-			CART_ROM_BASE,
-		);
+		const image = loadBlua32ToolingImage(cartLayer);
 		cartridgeToolingImages[slot] = image
 			? createBlua32SourceImage(image.layout, image.symbols)
 			: null;
 	}
-	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
+	const systemImage = loadBlua32ToolingImage(systemLayer);
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
 		cartridgeSlots,
@@ -169,8 +185,6 @@ export function createRuntimeSourceState(
 		activePackage: systemLayer.package,
 		systemLuaSources,
 		activeLuaSources: systemLuaSources,
-		luaSourceRegistries,
-		moduleCompileLuaSources,
 		systemRomSource: systemSource,
 		activeRomSource: systemSource,
 		resourceByIdentity: new Map(),
@@ -185,7 +199,11 @@ export function createRuntimeSourceState(
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
 		currentBlua32Media: {
 			system: systemImage
-				? createBlua32SourceImage(systemImage.layout, systemImage.symbols)
+				? createBlua32SystemSourceImage(
+					systemImage.layout,
+					systemImage.symbols,
+					systemImage.biosImports,
+				)
 				: null,
 			cartridgeSlots: cartridgeToolingImages,
 		},
@@ -201,7 +219,6 @@ export function enterSystemSources(state: RuntimeSourceState): void {
 	state.activeLuaSources = state.systemLuaSources;
 	state.activeRomSource = state.systemRomSource;
 	refreshActiveResources(state, state.systemAemResources);
-	rebuildLuaSourceOrders(state);
 }
 
 export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): void {
@@ -211,7 +228,6 @@ export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): v
 	state.activeLuaSources = cartridge.luaSources;
 	state.activeRomSource = cartridge.romSource;
 	refreshActiveResources(state, cartridge.aemResources);
-	rebuildLuaSourceOrders(state);
 }
 
 export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartridgeSlot: ResourceDomain): void {
@@ -250,8 +266,8 @@ export function runtimeSourcesSupportIde(state: RuntimeSourceState): boolean {
 
 export function installRuntimeRomLayers(
 	state: RuntimeSourceState,
-	systemLayer: RomSourceLayer | null,
-	cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null],
+	systemLayer: RomSourceLayer<'system'> | null,
+	cartridgeLayers: [RomSourceLayer<'cart'> | null, RomSourceLayer<'cart'> | null],
 ): void {
 	if (systemLayer !== null) {
 		state.systemRom.index = systemLayer.index;
@@ -519,21 +535,4 @@ function refreshActiveResources(state: RuntimeSourceState, aemResources: readonl
 
 function sortRuntimeResources(resources: RuntimeResource[]): void {
 	resources.sort((left, right) => left.path.localeCompare(right.path) || left.domain - right.domain);
-}
-
-function rebuildLuaSourceOrders(state: RuntimeSourceState): void {
-	state.luaSourceRegistries.length = 0;
-	for (let slot = 0; slot < state.cartridgeSlots.length; slot += 1) {
-		const cartridge = state.cartridgeSlots[slot];
-		if (cartridge !== null) {
-			state.luaSourceRegistries.push(cartridge.luaSources);
-		}
-	}
-	state.luaSourceRegistries.push(state.systemLuaSources);
-
-	state.moduleCompileLuaSources.length = 0;
-	state.moduleCompileLuaSources.push(state.activeLuaSources);
-	if (state.systemLuaSources !== state.activeLuaSources) {
-		state.moduleCompileLuaSources.push(state.systemLuaSources);
-	}
 }

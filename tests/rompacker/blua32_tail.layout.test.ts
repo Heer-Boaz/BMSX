@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -13,8 +14,16 @@ import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
+import {
+	BLUA32_BIOS_IMPORTS_IMAGE_ID,
+	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
+} from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import {
+	BIOS_FUNCTION_EXPORTS,
+	SYSTEM_ROM_ASSET_OFFSET,
+} from '../../toolchain/ts/rompack/system';
 import {
 	BLUA32_SYMBOLS_SIDECAR_SUFFIX,
 	buildRomBlua32Tail,
@@ -26,6 +35,8 @@ import { buildBlua32Image } from '../../scripts/rompacker/blua32_image_builder';
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const RELEASE_ROOT = join(process.cwd(), 'tmp', 'blua32-tail-release-test');
 const ENTRY_PATH = 'entry.lua';
+const SINCOS_PATH = 'math/sincos.lua';
+const SINCOS_SOURCE = readFileSync('machine/bios/math/sincos.lua', 'utf8');
 const LINK_RAM_BYTES = 0x00400000;
 const MANIFEST: RomManifest = {};
 
@@ -40,20 +51,30 @@ function luaAsset(source: string): RomAsset {
 	};
 }
 
-test('release system ROM keeps BLua32 symbols in the linker sidecar only', async () => {
+function sincosAsset(): RomAsset {
+	return {
+		resid: 'math/sincos',
+		type: 'lua',
+		buffer: Buffer.from(SINCOS_SOURCE),
+		compiled_buffer: compileLuaChunkBuffer(SINCOS_SOURCE, SINCOS_PATH),
+		source_path: SINCOS_PATH,
+	};
+}
+
+test('release system ROM embeds public BIOS imports and keeps linker sidecars', async () => {
 	await rm(RELEASE_ROOT, { recursive: true, force: true });
 	try {
 		await mkdir(RELEASE_ROOT, { recursive: true });
-		const assets = [luaAsset('return 1')];
-		const layout = layoutRomPrefix(assets, false, MANIFEST);
+		const assets = [luaAsset('return 1'), sincosAsset()];
+		const layout = layoutRomPrefix(assets, false, MANIFEST, SYSTEM_ROM_ASSET_OFFSET);
 		const blua32 = buildRomBlua32Tail(assets, {
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: false,
 			optLevel: 0,
-			imageOffset: layout.blua32Offset,
+			systemAssetEndOffset: layout.nextOffset,
 			domain: 'system',
 			ramByteCount: LINK_RAM_BYTES,
+			biosExports: BIOS_FUNCTION_EXPORTS,
 		});
 		await finalizeRompack('release-tail', {
 			debug: false,
@@ -69,14 +90,27 @@ test('release system ROM keeps BLua32 symbols in the linker sidecar only', async
 		const index = await parseCartridgeIndex(payload);
 		assert.equal(index.entries.some(entry => entry.resid === BLUA32_IMAGE_ID), true);
 		assert.equal(index.entries.some(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID), false);
+		const importsEntry = index.entries.find(entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
 
-		const sidecar = await readFile(`${romPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
-		const expected = Buffer.from(
+		assert.equal(blua32.domain, 'system');
+		const symbolsSidecar = await readFile(`${romPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
+		const expectedSymbols = Buffer.from(
 			blua32.symbolsPayload.buffer,
 			blua32.symbolsPayload.byteOffset,
 			blua32.symbolsPayload.byteLength,
 		);
-		assert.equal(sidecar.equals(expected), true);
+		assert.equal(symbolsSidecar.equals(expectedSymbols), true);
+		const importsSidecar = await readFile(`${romPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`);
+		const expectedImports = Buffer.from(
+			blua32.biosImportsPayload.buffer,
+			blua32.biosImportsPayload.byteOffset,
+			blua32.biosImportsPayload.byteLength,
+		);
+		assert.equal(
+			Buffer.from(payload.subarray(importsEntry.start!, importsEntry.end!)).equals(expectedImports),
+			true,
+		);
+		assert.equal(importsSidecar.equals(expectedImports), true);
 	} finally {
 		await rm(RELEASE_ROOT, { recursive: true, force: true });
 	}
@@ -102,15 +136,15 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 				},
 			},
 		];
-		const layout = layoutRomPrefix(assets, true, MANIFEST);
+		const layout = layoutRomPrefix(assets, true, MANIFEST, SYSTEM_ROM_ASSET_OFFSET);
 		const blua32 = buildRomBlua32Tail(assets, {
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
 			optLevel: 0,
-			imageOffset: layout.blua32Offset,
+			systemAssetEndOffset: layout.nextOffset,
 			domain: 'system',
 			ramByteCount: LINK_RAM_BYTES,
+			biosExports: [],
 		});
 		await finalizeRompack('tail', {
 			debug: true,
@@ -138,12 +172,12 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const changedSource = `local value = 0\n${'value = value + 1\n'.repeat(128)}return value`;
 		const changed = buildBlua32Image({
 			luaAssets: [luaAsset(changedSource)],
-			externalLuaAssets: [],
 			generatedLuaModules: [],
 			loadAddress: SYSTEM_ROM_BASE + imageStart,
 			optLevel: 0,
 			domain: 'system',
 			ramByteCount: LINK_RAM_BYTES,
+			biosExports: [],
 		});
 		const rebuilt = buildBlua32Tail(
 			{ id: 'system', index, bytes: initialPayload },

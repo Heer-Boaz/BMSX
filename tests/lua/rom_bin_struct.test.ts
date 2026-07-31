@@ -18,7 +18,10 @@ const BIN_ADDR = RAM_BASE + 0x21000;
 function runStructRead(packedWords: number[], snippet: string): Value[] {
 	const lexer = new LuaLexer(snippet, 'bin_struct.lua');
 	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', splitText(snippet));
-	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: snippet });
+	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], {
+		entrySource: snippet,
+		programDomain: 'system',
+	});
 	const image = linkTestSystemBlua32(compiled);
 	const { cpu, memory } = createTestSystemCpu(image);
 	for (let index = 0; index < packedWords.length; index += 1) {

@@ -24,7 +24,7 @@ import {
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest';
 import {
-	createBlua32SourceImage,
+	createBlua32SystemSourceImage,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
 import {
@@ -139,6 +139,7 @@ function createIntellisenseRuntime(source: string) {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), [], {
 		entrySource: source,
 		optLevel: 0,
+		programDomain: 'system',
 	});
 	const image = linkTestSystemBlua32(compiled);
 	const runtime = createTestRuntime(image.romBytes);
@@ -165,7 +166,7 @@ function createIntellisenseRuntime(source: string) {
 	registerLuaSourceRecord(systemLuaSources, record);
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
 	sources.currentBlua32Media = {
-		system: createBlua32SourceImage(image.image, image.symbols),
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports),
 		cartridgeSlots: [null, null],
 	};
 	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));

@@ -12,9 +12,9 @@ import {
 	decodeBlua32Image,
 } from '../../../../toolchain/ts/rompack/blua32_image';
 import {
-	BLUA32_SYMBOLS_IMAGE_ID,
-	decodeBlua32SymbolsImage,
-} from '../../../../toolchain/ts/rompack/blua32_symbols';
+	BLUA32_BIOS_IMPORTS_IMAGE_ID,
+	decodeBlua32BiosImports,
+} from '../../../../toolchain/ts/rompack/blua32_bios_imports';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../../machine/ts/spec/bmsx/model';
 import { buildBlua32Tail } from '../../../../toolchain/ts/rompack/blua32_tail';
@@ -48,14 +48,14 @@ export async function buildHostTestCartridge(
 	const systemIndex = await loadRomAssetList(systemRom, 'system');
 	const cartIndex = await parseCartridgeIndex(cartridge);
 	const systemImageEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
-	const systemSymbolsEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
+	const systemImportsEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
 	const cartImageEntry = cartIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 	const systemImage = decodeBlua32Image(
 		systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
 		SYSTEM_ROM_BASE + systemImageEntry.start!,
 	);
-	const systemSymbols = decodeBlua32SymbolsImage(
-		systemRom.subarray(systemSymbolsEntry.start, systemSymbolsEntry.end),
+	const biosImports = decodeBlua32BiosImports(
+		systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
 	);
 	const cartridgeLuaAssets = collectLuaAssets(cartridge, cartIndex.entries);
 	const entryCandidates = new Array<{ asset: RomAsset; chunk: LuaChunk }>(cartridgeLuaAssets.length);
@@ -74,7 +74,6 @@ export async function buildHostTestCartridge(
 	entryAsset.compiled_buffer = Buffer.from(encodeBinary(parsed));
 	const linked = buildBlua32Image({
 		luaAssets: cartridgeLuaAssets,
-		externalLuaAssets: collectLuaAssets(systemRom, systemIndex.entries),
 		generatedLuaModules: [
 			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: buildRomAssetSymbolModuleSource(cartIndex.entries) },
 			{
@@ -87,7 +86,7 @@ export async function buildHostTestCartridge(
 		optLevel: 3,
 		domain: 'cart',
 		systemImage,
-		systemSymbols,
+		biosImports,
 	});
 	return buildBlua32Tail({ id: 'cart', index: cartIndex, bytes: cartridge }, linked).bytes;
 }

@@ -1,6 +1,6 @@
 import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
-import type { ProgramConstant, Proto, UpvalueDesc } from '../program';
+import type { ProgramConstant, ProgramFunctionSymbol, Proto, UpvalueDesc } from '../program';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
@@ -32,7 +32,10 @@ export type Instruction = {
 	rkMask: number;
 	target: number | null;
 	callProtoIndex?: number | null;
-	symbolicReloc?: { kind: 'module' | 'export_proto' | 'module_init'; symbol: string };
+	symbolicReloc?:
+		| { kind: 'module_init'; symbol: string }
+		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
+		| { kind: 'bios_function'; importIndex: number };
 	resumeRange?: SourceRange;
 };
 

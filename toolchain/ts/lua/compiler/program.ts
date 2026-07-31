@@ -53,6 +53,15 @@ export type ProgramModuleExport = {
 	slotName: string;
 };
 
+export type ProgramFunctionSymbol = {
+	path: string;
+	exportPathKey: string;
+};
+
+export function programModuleExportKey(path: string, exportPathKey: string): string {
+	return `${path}\0${exportPathKey}`;
+}
+
 export type Proto = {
 	entryPC: number;
 	codeLen: number;

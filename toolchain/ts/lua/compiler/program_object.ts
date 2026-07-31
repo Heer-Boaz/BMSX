@@ -53,11 +53,23 @@ export type ProgramObjectSections = {
 };
 
 export type ProgramIndexedConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
-export type ProgramSymbolicConstRelocKind = 'module' | 'export_proto' | 'module_init';
+export type ProgramNamedConstRelocKind = 'module_init';
+export type ProgramFunctionConstRelocKind = 'export_proto';
 
-export type ProgramConstReloc =
+export type ProgramImageConstReloc =
 	| { wordIndex: number; kind: ProgramIndexedConstRelocKind; constIndex: number }
-	| { wordIndex: number; kind: ProgramSymbolicConstRelocKind; symbol: string };
+	| { wordIndex: number; kind: ProgramNamedConstRelocKind; symbol: string }
+	| {
+		wordIndex: number;
+		kind: ProgramFunctionConstRelocKind;
+		path: string;
+		exportPathKey: string;
+	};
+
+export type ProgramBiosFunctionConstReloc = {
+	wordIndex: number;
+	importIndex: number;
+};
 
 export type ProgramConstValueReloc =
 	| {
@@ -79,16 +91,33 @@ export type ProgramRodataConstReloc = {
 	constIndex: number;
 };
 
-export type ProgramObjectImage = {
+type ProgramObjectImageBase = {
 	vectors: ProgramObjectVectorTable;
 	sections: ProgramObjectSections;
-	link: {
-		constRelocs: ProgramConstReloc[];
-		constValueRelocs: ProgramConstValueReloc[];
-		rodataConstRelocs: ProgramRodataConstReloc[];
-		symbols: ProgramRuntimeSymbols;
+};
+
+type ProgramObjectLink = {
+	constRelocs: ProgramImageConstReloc[];
+	constValueRelocs: ProgramConstValueReloc[];
+	rodataConstRelocs: ProgramRodataConstReloc[];
+	symbols: ProgramRuntimeSymbols;
+};
+
+export type ProgramSystemObjectImage = ProgramObjectImageBase & {
+	domain: 'system';
+	link: ProgramObjectLink;
+};
+
+export type ProgramCartObjectImage = ProgramObjectImageBase & {
+	domain: 'cart';
+	link: ProgramObjectLink & {
+		biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
 	};
 };
+
+export type ProgramObjectImage =
+	| ProgramSystemObjectImage
+	| ProgramCartObjectImage;
 
 export function encodeProgramObjectSections(
 	program: Program,

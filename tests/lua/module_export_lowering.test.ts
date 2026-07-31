@@ -6,8 +6,8 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
-import type { ProgramConstReloc } from '../../toolchain/ts/lua/compiler/program_object';
-import { compileLuaChunkToProgram, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import type { ProgramImageConstReloc } from '../../toolchain/ts/lua/compiler/program_object';
+import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,
@@ -22,7 +22,7 @@ function parseSource(source: string, path: string) {
 }
 
 
-function disassembleCompiledFunctions(compiled: CompiledProgram): string {
+function disassembleCompiledFunctions(compiled: CompiledSystemProgram): string {
 	const image = linkTestSystemBlua32(compiled);
 	const functionAddresses: number[] = [];
 	for (let functionIndex = 0; functionIndex < image.symbols.functionAddresses.length; functionIndex += 1) {
@@ -42,7 +42,7 @@ function compileWithModule(
 	moduleSource: string,
 	extraModules: ReadonlyArray<{ path: string; source: string }> = [],
 	optLevel: OptimizationLevel = 0,
-): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
+): { compiled: CompiledSystemProgram; disasm: string; constRelocs: ProgramImageConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
@@ -55,7 +55,7 @@ function compileWithModule(
 				source: module.source,
 			})),
 		],
-		{ entrySource, optLevel },
+		{ entrySource, optLevel, programDomain: 'system' },
 	);
 	return {
 		compiled,
@@ -64,14 +64,14 @@ function compileWithModule(
 	};
 }
 
-function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string } {
+function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledSystemProgram; disasm: string } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const declaredModuleSource = `module<const>\n${moduleSource}`;
 	const moduleChunk = parseSource(declaredModuleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
 		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource }],
-		{ entrySource },
+		{ entrySource, programDomain: 'system' },
 	);
 	return {
 		compiled,
@@ -94,8 +94,11 @@ test('dynamic module calls observe replaced direct and method fields at every op
 	].join('\n');
 	for (const optLevel of [0, 3] as const) {
 		const { compiled, constRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
-		assert.equal(constRelocs.some(reloc => reloc.kind === 'export_proto' && (reloc.symbol === 'foo__read' || reloc.symbol === 'foo__method')), false);
-		assert.equal(constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol.startsWith('foo__')), false);
+		assert.equal(constRelocs.some(
+			reloc => reloc.kind === 'export_proto'
+				&& reloc.path === 'foo'
+				&& (reloc.exportPathKey === 'read' || reloc.exportPathKey === 'method'),
+		), false);
 		assert.match(disasm, /\bGETFIELD\b/);
 		assert.match(disasm, /\bSELF\b/);
 		assert.deepEqual(compiled.program.moduleExports, [{ path: 'foo', exportPathKey: '', slotName: 'foo' }]);
@@ -116,8 +119,16 @@ test('explicit const-module functions call sibling exports through link symbols'
 	const compiled = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
 	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__linear?.includes('/static:'), true);
 	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__linear'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'linear',
+	), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'twice',
+	), true);
 	assert.doesNotMatch(compiled.disasm, /\bNEWT\b/, 'const-module exports do not materialize a runtime table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [6]);
@@ -131,7 +142,11 @@ test('cartlib easing calls through its live runtime table', () => {
 		moduleSource,
 		[{ path: 'cartlib/util/clamp', source: readFileSync('cartlib/util/clamp.lua', 'utf8') }],
 	);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__easing__arc01'), false);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'cartlib/easing'
+			&& reloc.exportPathKey === 'arc01',
+	), false);
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
@@ -149,8 +164,7 @@ test('dynamic module data reads observe table mutations at every optimization le
 		'return api',
 	].join('\n');
 	for (const optLevel of [0, 3] as const) {
-		const { compiled, constRelocs, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
-		assert.equal(constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__value'), false, 'mutable fields must not read stale initialization-time export slots');
+		const { compiled, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
 		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
 		const cpu = runCompiledTestSystem(compiled, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 1]);
@@ -164,8 +178,11 @@ test('dynamic module function value reads use the live table, not export-proto r
 		'return api',
 	].join('\n');
 	const compiled = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__read'), false, 'function value read must not emit an export-proto relocation');
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__read'), false, 'function value read must not target an initialization-time export slot');
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'read',
+	), false, 'function value read must not emit an export-proto relocation');
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
@@ -218,15 +235,7 @@ test('dynamic root-function modules remain runtime values', () => {
 	const { compiled, disasm } = compileWithModule('local inc<const> = require("foo")\nreturn inc(4)', 'foo', moduleSource);
 	assert.equal(compiled.moduleProtoMap.has('foo'), true, 'dynamic root-function module must keep its initializer proto');
 	assert.match(disasm, /\bSET(GL|SYS)\b.*foo\b/, 'module initializer must publish the root function value');
-	let hasRootModuleReloc = false;
-	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
-		const reloc = compiled.constRelocs[index];
-		if (reloc.kind === 'module' && reloc.symbol === 'foo') {
-			hasRootModuleReloc = true;
-			break;
-		}
-	}
-	assert.equal(hasRootModuleReloc, true, 'const local require must read the root function value from the export slot');
+	assert.match(disasm, /\bGET(GL|SYS)\b.*foo\b/, 'const local require must read the root function value from the export slot');
 	const cpu = runCompiledTestSystem(compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [5]);
 });

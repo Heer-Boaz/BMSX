@@ -18,7 +18,7 @@ import {
 	collectStaticFunctionExportSymbolsByPathKey,
 	type StaticFunctionExportSymbol,
 } from './static_functions';
-import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './static_storage';
+import { collectStaticStorageDeclarations } from './static_storage';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
 import {
 	buildModuleShapeFromExpression,
@@ -37,19 +37,17 @@ export type ProgramModule = {
 
 export type ModuleCompileInfo = {
 	path: string;
-	external: boolean;
 	constModule: boolean;
 	returnExpression: LuaExpression;
 	exportSlotsByPathKey: Map<string, string>;
 	exportConstValueByPathKey: Map<string, ConstExportValue>;
 	staticFunctionExportByPathKey: Map<string, StaticFunctionExportSymbol>;
-	staticFunctionExportSlotBySymbolHandle: Map<string, string>;
+	staticFunctionExportPathBySymbolHandle: Map<string, string>;
 	staticStorage: boolean;
 };
 
 export type ModuleCompileContext = {
 	modulePaths: ReadonlySet<string>;
-	externalModulePaths: ReadonlySet<string>;
 	moduleDependenciesByPath: ReadonlyMap<string, ReadonlyArray<string>>;
 	modulesByPath: Map<string, ModuleCompileInfo>;
 };
@@ -80,18 +78,6 @@ const buildModuleExportSlots = (
 	return exportSlotsByPathKey;
 };
 
-const assertExternalConstModuleDeclaresNoStaticStorage = (
-	modulePath: string,
-	declarations: ReadonlyArray<StaticStorageDeclaration>,
-): void => {
-	for (let index = 0; index < declarations.length; index += 1) {
-		const declaration = declarations[index];
-		if (declaration.kind !== 'struct') {
-			throw new Error(`Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
-		}
-	}
-};
-
 const buildConstModuleExportValues = (
 	chunk: LuaChunk,
 	returnExpression: LuaExpression,
@@ -100,13 +86,13 @@ const buildConstModuleExportValues = (
 ): Map<string, ConstExportValue> =>
 	collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);
 
-const buildStaticFunctionExportSlotBySymbolHandle = (
+const buildStaticFunctionExportPathBySymbolHandle = (
 	staticFunctionExportByPathKey: ReadonlyMap<string, StaticFunctionExportSymbol>,
 ): Map<string, string> => {
 	const out = new Map<string, string>();
-	for (const value of staticFunctionExportByPathKey.values()) {
+	for (const [path, value] of staticFunctionExportByPathKey) {
 		if (!out.has(value.symbolHandle)) {
-			out.set(value.symbolHandle, value.slotName);
+			out.set(value.symbolHandle, path);
 		}
 	}
 	return out;
@@ -140,7 +126,6 @@ const collectModuleDependencies = (
 
 const buildModuleCompileInfo = (
 	module: ProgramModule,
-	external: boolean,
 	constModule: boolean,
 	staticStorage: boolean,
 	semantics: LuaSemanticFrontendFile,
@@ -167,7 +152,7 @@ const buildModuleCompileInfo = (
 			break;
 		}
 	}
-	const moduleOwnsStaticStorage = staticStorage || (!external && hasStaticStorageDeclaration);
+	const moduleOwnsStaticStorage = staticStorage || hasStaticStorageDeclaration;
 	const staticFunctionExportByPathKey = constModule || returnExpression.kind === LuaSyntaxKind.FunctionExpression
 		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule)
 		: new Map<string, StaticFunctionExportSymbol>();
@@ -179,9 +164,6 @@ const buildModuleCompileInfo = (
 		if (!rootStaticFunctionExport && exportRoot.size === 0) {
 			return null;
 		}
-	}
-	if (constModule && !staticStorage) {
-		assertExternalConstModuleDeclaresNoStaticStorage(modulePath, staticStorageDeclarations);
 	}
 	const exportConstValueByPathKey = compileTimeModule
 		? buildConstModuleExportValues(chunk, returnExpression, moduleOwnsStaticStorage, semantics)
@@ -204,31 +186,24 @@ const buildModuleCompileInfo = (
 		: new Map<string, string>([['', buildModuleExportSlotName(modulePath, [])]]);
 	return {
 		path: modulePath,
-		external,
 		constModule: compileTimeModule,
 		returnExpression,
 		exportSlotsByPathKey,
 		exportConstValueByPathKey,
 		staticFunctionExportByPathKey,
-		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
+		staticFunctionExportPathBySymbolHandle: buildStaticFunctionExportPathBySymbolHandle(staticFunctionExportByPathKey),
 		staticStorage: moduleOwnsStaticStorage,
 	};
 };
 
 export const buildModuleCompileContext = (
 	modules: ReadonlyArray<ProgramModule>,
-	externalModules: ReadonlyArray<ProgramModule>,
 	frontend: LuaSemanticFrontend,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	const modulePaths = new Set<string>();
-	const externalModulePaths = new Set<string>();
 	for (let index = 0; index < modules.length; index += 1) {
 		modulePaths.add(modules[index].path);
-	}
-	for (let index = 0; index < externalModules.length; index += 1) {
-		modulePaths.add(externalModules[index].path);
-		externalModulePaths.add(externalModules[index].path);
 	}
 	const moduleDependenciesByPath = new Map<string, ReadonlyArray<string>>();
 	for (let index = 0; index < modules.length; index += 1) {
@@ -239,7 +214,6 @@ export const buildModuleCompileContext = (
 			module,
 			constModule,
 			constModule,
-			constModule,
 			frontend.getFile(module.path),
 		);
 		if (info) {
@@ -247,23 +221,5 @@ export const buildModuleCompileContext = (
 			continue;
 		}
 	}
-	for (let index = 0; index < externalModules.length; index += 1) {
-		const module = externalModules[index];
-		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
-		if (modulesByPath.has(module.path)) {
-			continue;
-		}
-		const info = buildModuleCompileInfo(
-			module,
-			true,
-			module.chunk.constModule,
-			false,
-			frontend.getFile(module.path),
-		);
-		if (info) {
-			modulesByPath.set(module.path, info);
-			continue;
-		}
-	}
-	return { modulePaths, externalModulePaths, moduleDependenciesByPath, modulesByPath };
+	return { modulePaths, moduleDependenciesByPath, modulesByPath };
 };

@@ -9,7 +9,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	createTestSystemCpu,
 	disassembleTestBlua32Functions,
@@ -26,11 +26,14 @@ function parseSource(source: string, path = 'struct_addressing.lua') {
 	return parser.parseChunk();
 }
 
-function compileSource(source: string): ReturnType<typeof compileLuaChunkToProgram> {
-	return compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
+function compileSource(source: string): CompiledSystemProgram {
+	return compileLuaChunkToProgram(parseSource(source), [], {
+		entrySource: source,
+		programDomain: 'system',
+	});
 }
 
-function disassembleEntryFunction(compiled: CompiledProgram): string {
+function disassembleEntryFunction(compiled: CompiledSystemProgram): string {
 	const image = linkTestSystemBlua32(compiled);
 	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }

@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-30.
+Last checked: 2026-07-31.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -565,9 +565,10 @@ Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
 
-The exception is the BIOS program that ships as the default system ROM. Its
-guest code and assets live in the standalone `bios` source tree. That tree is
-not part of the emulator implementation and is not a general cart collection.
+The BIOS program that ships as the default system ROM lives in
+`machine/bios`. That directory contains guest source and resources for the
+machine family; it is not linked into either emulator implementation and is not
+a general cart collection.
 
 ## Machine specification owner
 
@@ -836,13 +837,23 @@ bytes. Each global-name record is eight bytes with the same absolute string
 address and byte count. Global names are part of the Lua slot ABI; source paths,
 debug function ids, lexical ranges, local names, and workspace state are not.
 
-The image is laid out as header, `.rodata`, `.data` load bytes, function table,
-upvalue words, constant table, global-name tables, shared strings, and text,
-with the declared alignments. Keeping the static sections directly after the
-fixed header makes their physical addresses depend only on the static layout,
-not on edits that add functions, constants, global names, or text. Text
-contains the existing BLua32 instruction words unchanged. `.bss` owns no ROM
-payload.
+Cartridge images are laid out as header, `.rodata`, `.data` load bytes,
+function table, upvalue words, constant table, global-name tables, shared
+strings, and text, with the declared alignments. Keeping cartridge static
+sections directly after the fixed header makes their physical addresses depend
+only on the static layout, not on edits that add functions, constants, global
+names, or text.
+
+The system image starts at system-ROM offset `0x00000100`. Its function table
+starts immediately after the header at offset `0x00000160` and owns one fixed
+4096-record physical region; `.rodata` and `.data` follow that region. The
+header publishes only the actual function count. Unused reserved records are
+zero ROM bytes and are not activated as functions. This fixed system layout
+keeps resident BIOS static data stable when private functions change and makes
+the first records a physical public-call vector. System-ROM asset payloads
+start at offset `0x00400000`; the linker rejects a system image that crosses
+that partition. Text in both domains contains the existing BLua32 instruction
+words unchanged. `.bss` owns no ROM payload.
 
 `Memory` owns the installed system ROM and both cartridge ROMs and binds direct
 read-only views into those regions. `Machine` owns one
@@ -900,11 +911,30 @@ names, and Hot-Resume maps; it does not change physical executable bytes,
 vectors, global slots, boot, or restore behavior.
 
 Release ROMs omit `__blua32_symbols__`. The system build publishes the encoded
-system symbols beside its ROM as `<system-rom>.blua32-symbols`; the cartridge
-linker consumes that build artifact while resolving the system global-slot ABI. Debug ROMs
-also embed the symbols asset for the debugger and Hot Resume. The sidecar is
-never mounted, mapped, copied or decoded by the emulated machine, and
-cartridges do not carry a duplicate of the firmware symbols.
+private/debug symbols beside its ROM as `<system-rom>.blua32-symbols`; debug
+ROMs also embed that asset for the debugger and Hot Resume. Cartridge linking
+does not consume it.
+
+The public BIOS link library is the separate `__blua32_bios_imports__` asset
+and `<system-rom>.blua32-imports` sidecar. It contains only author-facing module
+paths, export paths, and their physical public-vector addresses. It is embedded
+in release and debug system ROMs; Studio and the offline cartridge linker
+consume it from the same installed system-ROM image whose physical addresses it
+describes. The identical sidecar is emitted beside both ROM variants as the
+standalone SDK import library. It contains no source paths, private function identities, global-slot
+tables, lexical metadata, or compatibility version branches. Neither sidecar
+is mounted or decoded by the emulated machine. Cartridges never carry the BIOS
+import library or firmware symbols; a debug cartridge may carry its own private
+symbols.
+
+The ordered BIOS export declaration pins each public module function to the
+matching leading system function record. The initial public entry is
+`math/sincos`, the same public module path exposed by BIOS source tooling.
+Cartridge compilation treats that path as an installed function import rather
+than linking the BIOS source into the cartridge; Studio can still navigate to
+the public firmware implementation. That exact module path is BIOS-owned and a
+cartridge may not redefine it. The linker resolves only the public import
+library and never searches system debug symbols or BIOS source modules.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
@@ -951,12 +981,23 @@ or asset record. Fixed layouts become a machine/tooling contract only when a
 concrete asset producer and hot/runtime consumer require that contract.
 
 BLua32 objects exist only between compiler and ROM-building/Hot-Resume tooling.
-Symbolic module, static-function, section-address, generated-module constant,
-global-slot, and indexed-operand relocations are resolved before bytes are
-installed. They never become placeholder Lua values or mutable machine state.
-Cartridge objects link against the BIOS image's published global-slot ABI
-and physical static function addresses; system and cartridge code, constants,
-and functions remain separate physical domains.
+Symbolic module, static-function, BIOS-function, section-address,
+generated-module constant, global-slot, and indexed-operand relocations are
+resolved before bytes are installed. They never become placeholder Lua values
+or mutable machine state. Cartridge objects resolve local static calls against
+their own object and BIOS calls only against the public import library.
+System and cartridge code, constants, functions, and source modules remain
+separate physical domains.
+
+Ordinary Lua globals are not merged by the linker. Each physical image carries
+the names used by its own instructions, and CPU activation maps those names to
+the retained guest global registerfile by guest string identity. BIOS module
+exports themselves live in the system registerfile so private kernel, terminal,
+and monitor state survives cartridge execution. System startup deliberately
+copies only the normal public Lua libraries (`table`, `string`, `math`, and
+`os`) into ordinary globals. A cart therefore sees those normal language
+facilities without receiving private BIOS module slots, source, or debug
+symbols.
 
 The compiler emits a startup function that performs section initialization,
 initializes statically required modules in dependency order, clears the
@@ -3139,22 +3180,25 @@ is restored with the registerfile but is not gameplay state.
 
 ## BIOS and Lua layer
 
-`bios` is the BMSX firmware: one standalone guest program linked into
-`SYSTEM_ROM`, not a distinct layer below another firmware abstraction and not a
-subsystem of either emulator implementation. Its source tree follows the
-program's actual owners:
+`machine/bios` is the BMSX firmware: one standalone guest program linked into
+`SYSTEM_ROM`, not a distinct layer below another firmware abstraction and not
+emulator runtime code. Its source tree follows the program's actual owners:
 
-- `boot` owns the reset entry and cartridge handoff;
+- root `main.lua` owns reset, boot presentation, and cartridge handoff;
 - `kernel` owns interrupt, VBlank, and BIOS DMA control;
 - `gpu` owns only the private command path used by BIOS presentation;
 - `tty` owns terminal state and raster submission;
 - `shell` owns the resumable supervisor monitor;
-- `lua` contains the resident base, table, string, math, and OS implementations.
+- root `base.lua`, `table.lua`, `string.lua`, `math.lua`, and `os.lua`, with
+  their `string/` and `math/` implementation modules, own the resident Lua
+  libraries.
 
-There is no parallel `firmware`, `system`, or `stdlib` source root. Cart builds
-do not receive BIOS source modules as a linker context. Normal Lua facilities
-are installed as globals before cartridge initialization; cart-side hardware
-and gameplay libraries are linked from `cartlib`.
+There is no parallel `firmware`, `system`, `stdlib`, language-name wrapper, or
+machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
+source modules as a linker context. Normal Lua facilities are installed as
+ordinary globals before cartridge initialization; explicitly callable BIOS
+services use the fixed public vector described above. Cart-side hardware and
+gameplay libraries are compiled and linked into the cartridge from `cartlib`.
 
 `cartlib` owns the cart-side SDK. Its GX and DMA modules program the same
 guest-visible registers and command ports that bare carts can program directly;

@@ -14,7 +14,11 @@ export function parseLuaChunk(source: string, path = 'test.lua') {
 }
 
 export function compileLuaSource(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0) {
-	return compileLuaChunkToProgram(parseLuaChunk(source, path), [], { entrySource: source, optLevel });
+	return compileLuaChunkToProgram(parseLuaChunk(source, path), [], {
+		entrySource: source,
+		optLevel,
+		programDomain: 'system',
+	});
 }
 
 export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {

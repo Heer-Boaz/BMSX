@@ -137,6 +137,7 @@ local fsm_trace<const> = require('cartlib/fsm/trace')
 local clear_map<const> = require('cartlib/util/clear_map')
 local timeline_module<const> = require('cartlib/timeline/index')
 local cart_input<const> = require('cartlib/input/player')
+local clock<const> = require('cartlib/clock')
 
 local statedefinition<const> = {}
 statedefinition.__index = statedefinition
@@ -1097,7 +1098,7 @@ function state:hydrate_context(snapshot, trigger, description)
 	return {
 		trigger = trigger,
 		description = description,
-		timestamp = clock_now(),
+		timestamp = clock.milliseconds(),
 	}
 end
 

@@ -7,12 +7,13 @@ import { type RomAsset } from './assets';
 export type RomAssetPayloadRange = {
 	start: number;
 	end: number;
-	buffer: Buffer;
+	buffer: Uint8Array;
 };
 
 export type RomAssetPayloadLayout = {
 	entries: RomAsset[];
 	ranges: RomAssetPayloadRange[];
+	payloadEnd: number;
 	nextOffset: number;
 };
 
@@ -32,10 +33,12 @@ export function layoutRomAssetPayloads(
 	const entries: RomAsset[] = [];
 	const ranges: RomAssetPayloadRange[] = [];
 	let offset = initialOffset;
+	let payloadEnd = 0;
 	const appendPayload = (buffer: Buffer): RomAssetPayloadRange => {
 		offset = alignRomAssetOffset(offset);
 		const range = { start: offset, end: offset + buffer.length, buffer };
 		offset = range.end;
+		payloadEnd = range.end;
 		ranges.push(range);
 		return range;
 	};
@@ -80,6 +83,7 @@ export function layoutRomAssetPayloads(
 	return {
 		entries,
 		ranges,
+		payloadEnd,
 		nextOffset: alignRomAssetOffset(offset),
 	};
 }

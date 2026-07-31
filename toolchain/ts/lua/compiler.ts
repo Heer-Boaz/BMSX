@@ -45,6 +45,7 @@ import type {
 	LocalSlotDebug,
 	Program,
 	ProgramConstant,
+	ProgramFunctionSymbol,
 	ProgramMetadata,
 	ProgramModuleExport,
 	ProgramModuleProto,
@@ -52,6 +53,7 @@ import type {
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
+import { programModuleExportKey } from './compiler/program';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import {
@@ -69,7 +71,7 @@ import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } f
 import { toLuaModulePath } from './module_path';
 import {
 	encodeProgramObjectSections,
-	type ProgramConstReloc,
+	type ProgramBiosFunctionConstReloc,
 	type ProgramConstValueReloc,
 	type ProgramRodataConstReloc,
 	type ProgramObjectDataSection,
@@ -77,7 +79,10 @@ import {
 	type ProgramObjectBssSection,
 	type ProgramBssSymbol,
 	type ProgramRodataSymbol,
+	type ProgramCartObjectImage,
 	type ProgramObjectImage,
+	type ProgramImageConstReloc,
+	type ProgramSystemObjectImage,
 } from './compiler/program_object';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
@@ -105,7 +110,17 @@ import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
 import { buildProgramResumePoints } from './compiler/resume_points';
 
-export type CompiledProgram = {
+export type ProgramCompileDomain = 'cart' | 'system';
+
+type ProgramCompilerConstReloc =
+	| ProgramImageConstReloc
+	| {
+		wordIndex: number;
+		kind: 'bios_function';
+		importIndex: number;
+	};
+
+type CompiledProgramBase = {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
@@ -115,7 +130,6 @@ export type CompiledProgram = {
 	exceptionProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	staticModulePaths: string[];
-	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
 	rodataConstRelocs: ProgramRodataConstReloc[];
 	data: ProgramObjectDataSection;
@@ -124,24 +138,63 @@ export type CompiledProgram = {
 	rodataSymbols: ProgramRodataSymbol[];
 };
 
+export type CompiledSystemProgram = CompiledProgramBase & {
+	domain: 'system';
+	constRelocs: ProgramImageConstReloc[];
+};
+
+export type CompiledCartProgram = CompiledProgramBase & {
+	domain: 'cart';
+	constRelocs: ProgramImageConstReloc[];
+	biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
+};
+
+export type CompiledProgram =
+	| CompiledSystemProgram
+	| CompiledCartProgram;
+
+export function encodeCompiledProgramObject(compiled: CompiledSystemProgram): ProgramSystemObjectImage;
+export function encodeCompiledProgramObject(compiled: CompiledCartProgram): ProgramCartObjectImage;
 export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramObjectImage {
+	const vectors = {
+		resetProtoIndex: compiled.startupProtoIndex,
+		sectionInitProtoIndex: compiled.sectionInitProtoIndex,
+		irqProtoIndex: compiled.irqProtoIndex,
+		exceptionProtoIndex: compiled.exceptionProtoIndex,
+	};
+	const sections = encodeProgramObjectSections(
+		compiled.program,
+		compiled.staticModulePaths,
+		compiled.data,
+		compiled.bss,
+		compiled.rodataBytes,
+		compiled.rodataSymbols,
+	);
+	if (compiled.domain === 'system') {
+		return {
+			domain: 'system',
+			vectors,
+			sections,
+			link: {
+				constRelocs: compiled.constRelocs,
+				constValueRelocs: compiled.constValueRelocs,
+				rodataConstRelocs: compiled.rodataConstRelocs,
+				symbols: {
+					protoIds: compiled.metadata.protoIds,
+					globalNames: compiled.metadata.globalNames,
+					systemGlobalNames: compiled.metadata.systemGlobalNames,
+					exportProtoIdBySlot: compiled.metadata.exportProtoIdBySlot,
+				},
+			},
+		};
+	}
 	return {
-		vectors: {
-			resetProtoIndex: compiled.startupProtoIndex,
-			sectionInitProtoIndex: compiled.sectionInitProtoIndex,
-			irqProtoIndex: compiled.irqProtoIndex,
-			exceptionProtoIndex: compiled.exceptionProtoIndex,
-		},
-		sections: encodeProgramObjectSections(
-			compiled.program,
-			compiled.staticModulePaths,
-			compiled.data,
-			compiled.bss,
-			compiled.rodataBytes,
-			compiled.rodataSymbols,
-		),
+		domain: 'cart',
+		vectors,
+		sections,
 		link: {
 			constRelocs: compiled.constRelocs,
+			biosFunctionConstRelocs: compiled.biosFunctionConstRelocs,
 			constValueRelocs: compiled.constValueRelocs,
 			rodataConstRelocs: compiled.rodataConstRelocs,
 			symbols: {
@@ -170,14 +223,24 @@ type CompileError = {
 export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 	value instanceof LuaSyntaxError;
 
-export type ProgramCompileDomain = 'cart' | 'system';
-
-type CompileOptions = {
+type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
-	externalModules?: ReadonlyArray<ProgramModule>;
-	programDomain?: ProgramCompileDomain;
 };
+
+type SystemCompileOptions = CompileOptionsBase & {
+	programDomain: 'system';
+	biosFunctions?: never;
+};
+
+type CartCompileOptions = CompileOptionsBase & {
+	programDomain?: 'cart';
+	biosFunctions?: ReadonlyArray<ProgramFunctionSymbol>;
+};
+
+type CompileOptions =
+	| SystemCompileOptions
+	| CartCompileOptions;
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
 
@@ -228,8 +291,11 @@ type ModuleBinding = SourceModuleBinding | InstalledModuleBinding;
 type RequireModuleBinding = ModuleBinding | {
 	kind: 'unshaped';
 	modulePath: string;
-	external: boolean;
 };
+
+type ModuleFunctionTarget =
+	| (ProgramFunctionSymbol & { kind: 'export_proto' })
+	| { kind: 'bios_function'; importIndex: number };
 
 type StructScalarAccess =
 	| { kind: 'memory'; memoryKind: MemoryAccessKind }
@@ -388,13 +454,14 @@ class ProgramBuilder {
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
-	public readonly protoConstRelocs: ReadonlyArray<ProgramConstReloc>[] = [];
+	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
 	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
 	public readonly protoIds: string[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
+	private readonly biosFunctionImportIndexBySymbol = new Map<string, number>();
 	private readonly structDeclarationMap = new Map<string, LuaStructDeclarationStatement>();
 	private readonly structLayoutMap = new Map<string, StructLayout>();
 	public readonly structDeclarations: ReadonlyMap<string, LuaStructDeclarationStatement> = this.structDeclarationMap;
@@ -416,7 +483,6 @@ class ProgramBuilder {
 	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
 	private readonly moduleExportEntries: ProgramModuleExport[] = [];
 	private readonly moduleExportEntrySlotByKey = new Map<string, number>();
-	private readonly moduleExportSlotByKey = new Map<string, string>();
 	private readonly moduleExportPathContractByKey = new Set<string>();
 	private readonly modulePathSet = new Set<string>();
 	public readonly staticModulePaths: string[] = [];
@@ -472,7 +538,7 @@ class ProgramBuilder {
 		exportPath: string,
 		value: number,
 	): number {
-		const key = `${modulePath}\0${exportPath}`;
+		const key = programModuleExportKey(modulePath, exportPath);
 		const slot = this.linkValueRelocSlotByKey.get(key);
 		if (slot) {
 			return slot - 1;
@@ -501,14 +567,16 @@ class ProgramBuilder {
 				? { system: true, slot: this.resolveSystemGlobalSlot(name) }
 				: { system: false, slot: this.resolveGlobalSlot(name) };
 		}
-		const systemSlot = this.systemGlobalSlotByName.get(name);
-		if (systemSlot) {
-			return { system: true, slot: systemSlot - 1 };
-		}
 		if (this.systemGlobalNameSet.has(name)) {
 			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
 		return { system: false, slot: this.resolveGlobalSlot(name) };
+	}
+
+	public resolveModuleExportAccess(slotName: string): { system: boolean; slot: number } {
+		return this.programDomain === 'system'
+			? { system: true, slot: this.resolveSystemGlobalSlot(slotName) }
+			: { system: false, slot: this.resolveGlobalSlot(slotName) };
 	}
 
 	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType): BssBinding {
@@ -691,7 +759,7 @@ class ProgramBuilder {
 		proto: Proto,
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
-		constRelocs: ReadonlyArray<ProgramConstReloc>,
+		constRelocs: ReadonlyArray<ProgramCompilerConstReloc>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
 		localSlots: ReadonlyArray<LocalSlotDebug>,
 		upvalueNames: ReadonlyArray<string>,
@@ -740,53 +808,35 @@ class ProgramBuilder {
 		return slot === undefined ? undefined : this.moduleProtoEntries[slot - 1].protoIndex;
 	}
 
-	private makeModuleExportKey(path: string, exportPathKey: string): string {
-		return `${path}\0${exportPathKey}`;
-	}
-
 	public recordModuleExport(path: string, exportPathKey: string, slotName: string): void {
 		this.modulePathSet.add(path);
 		this.recordModuleExportPathContract(path, exportPathKey);
-		const key = this.makeModuleExportKey(path, exportPathKey);
+		const key = programModuleExportKey(path, exportPathKey);
 		const existingSlot = this.moduleExportEntrySlotByKey.get(key);
 		if (existingSlot) {
 			const existing = existingSlot - 1;
 			this.moduleExportEntries[existing] = { path, exportPathKey, slotName };
-			this.moduleExportSlotByKey.set(key, slotName);
 			return;
 		}
 		this.moduleExportEntrySlotByKey.set(key, this.moduleExportEntries.length + 1);
-		this.moduleExportSlotByKey.set(key, slotName);
 		this.moduleExportEntries.push({ path, exportPathKey, slotName });
 	}
 
 	private recordModuleExportPathContract(path: string, exportPathKey: string): void {
-		this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, ''));
-		this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, exportPathKey));
+		this.moduleExportPathContractByKey.add(programModuleExportKey(path, ''));
+		this.moduleExportPathContractByKey.add(programModuleExportKey(path, exportPathKey));
 		for (let index = exportPathKey.indexOf('.'); index >= 0; index = exportPathKey.indexOf('.', index + 1)) {
-			this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, exportPathKey.substring(0, index)));
+			this.moduleExportPathContractByKey.add(programModuleExportKey(path, exportPathKey.substring(0, index)));
 		}
 	}
 
-	public recordModuleExportSlot(path: string, exportPathKey: string, slotName: string, system: boolean): void {
+	public recordModuleExportSlot(path: string, exportPathKey: string, slotName: string): void {
 		this.recordModuleExport(path, exportPathKey, slotName);
-		if (system) {
-			this.resolveSystemGlobalSlot(slotName);
-			return;
-		}
-		this.resolveGlobalSlot(slotName);
-	}
-
-	public hasModuleExportSlot(path: string, exportPathKey: string): boolean {
-		return this.moduleExportSlotByKey.has(this.makeModuleExportKey(path, exportPathKey));
+		this.resolveModuleExportAccess(slotName);
 	}
 
 	public hasModuleExportPathContract(path: string, exportPathKey: string): boolean {
-		return this.moduleExportPathContractByKey.has(this.makeModuleExportKey(path, exportPathKey));
-	}
-
-	public resolveModuleExportSlot(path: string, exportPathKey: string): string | undefined {
-		return this.moduleExportSlotByKey.get(this.makeModuleExportKey(path, exportPathKey));
+		return this.moduleExportPathContractByKey.has(programModuleExportKey(path, exportPathKey));
 	}
 
 	public hasStaticModulePath(path: string): boolean {
@@ -828,11 +878,20 @@ class ProgramBuilder {
 		this.exportProtoIdBySlot[slotName] = protoId;
 	}
 
-	public hasExportProto(slotName: string): boolean {
-		return slotName in this.exportProtoIdBySlot;
+	public recordBiosFunctionImport(path: string, exportPathKey: string, importIndex: number): void {
+		this.biosFunctionImportIndexBySymbol.set(
+			programModuleExportKey(path, exportPathKey),
+			importIndex,
+		);
+		this.modulePathSet.add(path);
+		this.recordModuleExportPathContract(path, exportPathKey);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+	public biosFunctionImportIndex(path: string, exportPathKey: string): number | undefined {
+		return this.biosFunctionImportIndexBySymbol.get(programModuleExportKey(path, exportPathKey));
+	}
+
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			totalBytes += this.protos[i].codeLen;
@@ -844,7 +903,8 @@ class ProgramBuilder {
 		const fullCode = new Uint8Array(totalBytes);
 		const protos: Proto[] = new Array(this.protos.length);
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords).fill(null);
-		const fullConstRelocs: ProgramConstReloc[] = [];
+		const imageConstRelocs: ProgramImageConstReloc[] = [];
+		const biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[] = [];
 		let appendOffsetBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
@@ -875,17 +935,29 @@ class ProgramBuilder {
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
 				switch (reloc.kind) {
-					case 'module':
-					case 'export_proto':
 					case 'module_init':
-						fullConstRelocs.push({
+						imageConstRelocs.push({
 							wordIndex: targetOffsetWords + reloc.wordIndex,
 							kind: reloc.kind,
 							symbol: reloc.symbol,
 						});
 						continue;
+					case 'export_proto':
+						imageConstRelocs.push({
+							wordIndex: targetOffsetWords + reloc.wordIndex,
+							kind: reloc.kind,
+							path: reloc.path,
+							exportPathKey: reloc.exportPathKey,
+						});
+						continue;
+					case 'bios_function':
+						biosFunctionConstRelocs.push({
+							wordIndex: targetOffsetWords + reloc.wordIndex,
+							importIndex: reloc.importIndex,
+						});
+						continue;
 					default:
-						fullConstRelocs.push({
+						imageConstRelocs.push({
 							wordIndex: targetOffsetWords + reloc.wordIndex,
 							kind: reloc.kind,
 							constIndex: reloc.constIndex,
@@ -920,7 +992,8 @@ class ProgramBuilder {
 				moduleProtoMap,
 			},
 			metadata,
-			constRelocs: fullConstRelocs,
+			imageConstRelocs,
+			biosFunctionConstRelocs,
 			constValueRelocs: this.constValueRelocs.slice(),
 			rodataConstRelocs: this.rodataConstRelocs.slice(),
 			data: this.buildDataSection(),
@@ -933,16 +1006,23 @@ class ProgramBuilder {
 
 }
 
-function recordModuleExportContracts(programBuilder: ProgramBuilder, moduleCompileContext: ModuleCompileContext): void {
+function recordModuleExportContracts(
+	programBuilder: ProgramBuilder,
+	moduleCompileContext: ModuleCompileContext,
+): void {
 	for (const [, info] of moduleCompileContext.modulesByPath) {
 		for (const [exportPathKey, slotName] of info.exportSlotsByPathKey) {
 			if (info.constModule) {
 				if (info.staticFunctionExportByPathKey.has(exportPathKey)) {
-					programBuilder.recordModuleExportSlot(info.path, exportPathKey, slotName, info.external);
+					programBuilder.recordModuleExport(info.path, exportPathKey, slotName);
 				}
 				continue;
 			}
-			programBuilder.recordModuleExportSlot(info.path, exportPathKey, slotName, info.external);
+			programBuilder.recordModuleExportSlot(
+				info.path,
+				exportPathKey,
+				slotName,
+			);
 		}
 	}
 }
@@ -1037,7 +1117,7 @@ class FunctionBuilder {
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
-	private finalizedConstRelocs: ProgramConstReloc[] | null = null;
+	private finalizedConstRelocs: ProgramCompilerConstReloc[] | null = null;
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
 	private readonly localBindings = new Map<string, LocalBinding>();
 	// Nested closures, including IRQ handlers, alias their owner's open-upvalue registers.
@@ -1557,7 +1637,7 @@ class FunctionBuilder {
 		return this.finalizedRanges!;
 	}
 
-	public getConstRelocs(): ReadonlyArray<ProgramConstReloc> {
+	public getConstRelocs(): ReadonlyArray<ProgramCompilerConstReloc> {
 		this.finalizeCode();
 		return this.finalizedConstRelocs!;
 	}
@@ -1717,7 +1797,7 @@ class FunctionBuilder {
 
 		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
 		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
-		const constRelocs: ProgramConstReloc[] = [];
+		const constRelocs: ProgramCompilerConstReloc[] = [];
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
@@ -1785,10 +1865,33 @@ class FunctionBuilder {
 				}
 				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 				finalRanges[cursor] = range;
-					cursor += 1;
-					if (isConstBxOp(instr.op)) {
-						if (instr.symbolicReloc) {
-							constRelocs.push({ wordIndex: instrWordIndex[index], kind: instr.symbolicReloc.kind, symbol: instr.symbolicReloc.symbol });
+				cursor += 1;
+				if (isConstBxOp(instr.op)) {
+					if (instr.symbolicReloc) {
+						switch (instr.symbolicReloc.kind) {
+							case 'module_init':
+								constRelocs.push({
+									wordIndex: instrWordIndex[index],
+									kind: instr.symbolicReloc.kind,
+									symbol: instr.symbolicReloc.symbol,
+								});
+								break;
+							case 'export_proto':
+								constRelocs.push({
+									wordIndex: instrWordIndex[index],
+									kind: instr.symbolicReloc.kind,
+									path: instr.symbolicReloc.path,
+									exportPathKey: instr.symbolicReloc.exportPathKey,
+								});
+								break;
+							case 'bios_function':
+								constRelocs.push({
+									wordIndex: instrWordIndex[index],
+									kind: instr.symbolicReloc.kind,
+									importIndex: instr.symbolicReloc.importIndex,
+								});
+								break;
+						}
 					} else {
 						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
 					}
@@ -2127,9 +2230,6 @@ class FunctionBuilder {
 			throw new Error(`Compile-time require cycle includes module '${path}'.`);
 		}
 		const context = this.moduleCompileContext as ModuleCompileContext;
-		if (context.externalModulePaths.has(path)) {
-			return;
-		}
 		const moduleInfo = context.modulesByPath.get(path);
 		if (moduleInfo && moduleInfo.constModule) {
 			return;
@@ -2202,7 +2302,6 @@ class FunctionBuilder {
 				return {
 					kind: 'unshaped',
 					modulePath,
-					external: context.externalModulePaths.has(modulePath),
 				};
 			}
 		}
@@ -2215,15 +2314,15 @@ class FunctionBuilder {
 	}
 
 	private resolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | undefined {
-			/*
-				BLua32 uses flat machine instructions. Live Lua module tables are not
-				part of that ABI. Compile-time system-ROM modules contribute initializer
-				paths to the object image; unresolved exports become link relocations
-				that are rewritten before the image enters ROM.
+		/*
+			BLua32 uses flat machine instructions. Live Lua module tables are not
+			part of that ABI. Compile-time system-ROM modules contribute initializer
+			paths to the object image; unresolved exports become link relocations
+			that are rewritten before the image enters ROM.
 
-				This resolves shaped source modules and installed compiler modules.
-				Plain unshaped modules are handled by require lowering.
-			 */
+			This resolves shaped source modules and installed compiler modules.
+			Plain unshaped modules are handled by require lowering.
+		 */
 		if (allowRequireRoot) {
 			const requireBinding = this.resolveRequireModuleBinding(expression);
 			if (requireBinding && (requireBinding.kind === 'source' || requireBinding.kind === 'installed')) {
@@ -2305,44 +2404,42 @@ class FunctionBuilder {
 		}
 	}
 
-	private resolveModuleExportSlot(binding: ModuleBinding, exportPathKey: string = binding.exportPathKey): string | undefined {
-		switch (binding.kind) {
-			case 'source':
-				return binding.moduleInfo.exportSlotsByPathKey.get(exportPathKey);
-			case 'installed':
-				return this.program.resolveModuleExportSlot(binding.modulePath, exportPathKey);
-		}
-	}
-
 	private isStaticFunctionModuleBinding(binding: ModuleBinding): boolean {
 		return binding.kind === 'source' && binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey);
 	}
 
-	private resolveStaticFunctionExportCallSlot(binding: ModuleBinding): string | undefined {
-		const slotName = this.resolveModuleExportSlot(binding);
-		if (!slotName) {
-			return;
-		}
+	private resolveStaticFunctionExportCallTarget(binding: ModuleBinding): ModuleFunctionTarget | undefined {
 		switch (binding.kind) {
 			case 'source':
 				if (binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
-					return slotName;
+					return {
+						kind: 'export_proto',
+						path: binding.modulePath,
+						exportPathKey: binding.exportPathKey,
+					};
 				}
 				return;
-			case 'installed':
-				if (!this.program.hasModuleProto(binding.modulePath) && this.program.hasExportProto(slotName)) {
-					return slotName;
+			case 'installed': {
+				const importIndex = this.program.biosFunctionImportIndex(
+					binding.modulePath,
+					binding.exportPathKey,
+				);
+				if (importIndex === undefined) {
+					return;
 				}
-				return;
+				return {
+					kind: 'bios_function',
+					importIndex,
+				};
+			}
 		}
 	}
 
 	private moduleBindingOwnsCompileTimeLocal(binding: ModuleBinding): boolean {
-		if (this.resolveStaticFunctionExportCallSlot(binding)) {
+		if (this.resolveStaticFunctionExportCallTarget(binding)) {
 			return true;
 		}
 		return binding.exportDepth === 0 && (binding.kind === 'installed'
-			|| binding.moduleInfo.external
 			|| binding.moduleInfo.constModule
 			|| binding.moduleInfo.staticFunctionExportByPathKey.has(''));
 	}
@@ -2410,7 +2507,7 @@ class FunctionBuilder {
 
 	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding && this.resolveStaticFunctionExportCallSlot(binding)) {
+		if (binding && this.resolveStaticFunctionExportCallTarget(binding)) {
 			return binding;
 		}
 	}
@@ -2418,7 +2515,7 @@ class FunctionBuilder {
 	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (binding) {
-			if (binding.exportDepth === 0 || this.resolveStaticFunctionExportCallSlot(binding)) {
+			if (binding.exportDepth === 0 || this.resolveStaticFunctionExportCallTarget(binding)) {
 				return binding;
 			}
 		}
@@ -2432,12 +2529,12 @@ class FunctionBuilder {
 		throw new Error(`Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
 	}
 
-	private resolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
+	private resolveModuleExportCallTarget(expression: LuaExpression): ModuleFunctionTarget | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		return binding ? this.resolveStaticFunctionExportCallSlot(binding) : undefined;
+		return binding ? this.resolveStaticFunctionExportCallTarget(binding) : undefined;
 	}
 
-	private resolveOwnStaticFunctionExportCallSlot(expression: LuaExpression): string | undefined {
+	private resolveOwnStaticFunctionExportCallTarget(expression: LuaExpression): ModuleFunctionTarget | undefined {
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression || this.moduleCompileInfo === undefined) {
 			return undefined;
 		}
@@ -2446,7 +2543,15 @@ class FunctionBuilder {
 		if (!symbolHandle) {
 			return undefined;
 		}
-		return this.moduleCompileInfo.staticFunctionExportSlotBySymbolHandle.get(symbolHandle);
+		const exportPathKey = this.moduleCompileInfo.staticFunctionExportPathBySymbolHandle.get(symbolHandle);
+		if (exportPathKey === undefined) {
+			return undefined;
+		}
+		return {
+			kind: 'export_proto',
+			path: this.moduleCompileInfo.path,
+			exportPathKey,
+		};
 	}
 
 	private failCompileTimeModuleRootRuntimeUse(modulePath: string): never {
@@ -2459,12 +2564,11 @@ class FunctionBuilder {
 		if (binding && binding.moduleBinding) {
 			const compileTimeModuleRoot = binding.moduleBinding;
 			if (this.moduleBindingOwnsCompileTimeLocal(compileTimeModuleRoot)) {
-				const staticSlot = this.resolveStaticFunctionExportCallSlot(compileTimeModuleRoot);
-				if (staticSlot) {
-					this.failStaticFunctionExportRuntimeValue(staticSlot);
-				}
-				if (this.emitDynamicModuleRootValue(compileTimeModuleRoot, target)) {
-					return;
+				const functionTarget = this.resolveStaticFunctionExportCallTarget(compileTimeModuleRoot);
+				if (functionTarget) {
+					this.failStaticFunctionExportRuntimeValue(
+						`${compileTimeModuleRoot.modulePath}:${compileTimeModuleRoot.exportPathKey}`,
+					);
 				}
 				this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 			}
@@ -2490,9 +2594,11 @@ class FunctionBuilder {
 			return;
 		}
 		if (binding && binding.moduleBinding) {
-			const staticSlot = this.resolveStaticFunctionExportCallSlot(binding.moduleBinding);
-			if (staticSlot) {
-				this.failStaticFunctionExportRuntimeValue(staticSlot);
+			const functionTarget = this.resolveStaticFunctionExportCallTarget(binding.moduleBinding);
+			if (functionTarget) {
+				this.failStaticFunctionExportRuntimeValue(
+					`${binding.moduleBinding.modulePath}:${binding.moduleBinding.exportPathKey}`,
+				);
 			}
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -2520,53 +2626,19 @@ class FunctionBuilder {
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
-	private emitInstalledModuleRootValue(modulePath: string, target: number): void {
-		const rootSlot = this.program.resolveModuleExportSlot(modulePath, '');
-		if (rootSlot) {
-			if (!this.program.hasModuleProto(modulePath) && this.program.hasExportProto(rootSlot)) {
-				this.failStaticFunctionExportRuntimeValue(rootSlot);
-			}
-			this.emitModuleSlotRelocLoad(rootSlot, target);
-		} else {
-			if (!this.program.hasModuleProto(modulePath)) {
-				this.failCompileTimeModuleRootRuntimeUse(modulePath);
-			}
-			this.emitLoadBool(target, true);
-		}
-	}
-
-	private emitDynamicModuleRootValue(binding: ModuleBinding, target: number): boolean {
-		switch (binding.kind) {
-			case 'installed':
-				this.emitInstalledModuleRootValue(binding.modulePath, target);
-				return true;
-			case 'source': {
-				if (binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
-					const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
-					if (rootSlot) {
-						this.emitModuleSlotRelocLoad(rootSlot, target);
-					} else {
-						this.emitLoadBool(target, true);
-					}
-					return true;
-				}
-				return false;
-			}
-		}
-	}
-
-	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
+	private emitModuleFunctionTargetLoad(symbol: ModuleFunctionTarget, target: number): void {
 		// Compile-time function exports use a link-time symbol path that the linker
 		// rewrites to CLOSURE(proto). Dynamic calls load their live table field instead.
-		this.emitABx(OpCode.LOADK, target, 0, { kind: 'export_proto', symbol: slotName });
+		this.emitABx(OpCode.LOADK, target, 0, symbol);
 	}
 
 	private emitModuleSlotRelocLoad(slotName: string, target: number): void {
-		this.emitABx(OpCode.LOADK, target, 0, { kind: 'module', symbol: slotName });
+		const access = this.program.resolveModuleExportAccess(slotName);
+		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
 	private emitModuleExportStore(slotName: string, valueReg: number): void {
-		const access = this.program.resolveGlobalAccess(slotName);
+		const access = this.program.resolveModuleExportAccess(slotName);
 		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
 	}
 
@@ -2669,9 +2741,6 @@ class FunctionBuilder {
 		if (op !== OpCode.LOADK) {
 			return null;
 		}
-			if (symbolicReloc && symbolicReloc.kind === 'module') {
-				return 'runtime module slot';
-			}
 		if (symbolicReloc) {
 			return null;
 		}
@@ -4920,13 +4989,10 @@ class FunctionBuilder {
 			case 'installed':
 				return;
 			case 'unshaped':
-				if (binding.external) {
-					return;
-				}
 				this.markStaticModulePath(binding.modulePath);
 				return;
 			case 'source':
-				if (binding.moduleInfo.constModule || binding.moduleInfo.external) {
+				if (binding.moduleInfo.constModule) {
 					return;
 				}
 				this.markStaticModulePath(binding.modulePath);
@@ -4937,15 +5003,12 @@ class FunctionBuilder {
 	private compileRequireExpression(binding: RequireModuleBinding, target: number, resultCount: number): void {
 		switch (binding.kind) {
 			case 'installed':
-				this.emitInstalledModuleRootValue(binding.modulePath, target);
-				if (resultCount > 1) {
-					this.emitLoadNil(target + 1, resultCount - 1);
+				if (this.program.biosFunctionImportIndex(binding.modulePath, '') !== undefined) {
+					this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:`);
 				}
-				return;
+				this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
 			case 'unshaped':
-				if (!binding.external) {
-					this.markStaticModulePath(binding.modulePath);
-				}
+				this.markStaticModulePath(binding.modulePath);
 				this.emitLoadBool(target, true);
 				if (resultCount > 1) {
 					this.emitLoadNil(target + 1, resultCount - 1);
@@ -4958,9 +5021,7 @@ class FunctionBuilder {
 				if (binding.moduleInfo.constModule) {
 					this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
 				}
-				if (!binding.moduleInfo.external) {
-					this.markStaticModulePath(binding.modulePath);
-				}
+				this.markStaticModulePath(binding.modulePath);
 				const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
 				if (rootSlot) {
 					this.emitModuleSlotRelocLoad(rootSlot, target);
@@ -4983,15 +5044,15 @@ class FunctionBuilder {
 		}
 		const methodName = expression.methodName;
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
-		const moduleCallSlot = methodName ? undefined : this.resolveModuleExportCallTargetSlot(expression.callee);
-		const ownStaticFunctionExportSlot = methodName ? undefined : this.resolveOwnStaticFunctionExportCallSlot(expression.callee);
+		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
+		const ownStaticFunctionExportTarget = methodName ? undefined : this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
 		const constClosureBinding = !methodName && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
 			: null;
 		if (constModuleValueCallee) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
 		}
-		if (this.staticCallTargetScope && moduleCallSlot === undefined && ownStaticFunctionExportSlot === undefined) {
+		if (this.staticCallTargetScope && moduleCallTarget === undefined && ownStaticFunctionExportTarget === undefined) {
 			throw new Error(`Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
 		}
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
@@ -5013,10 +5074,10 @@ class FunctionBuilder {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 			const methodKey = this.program.constIndex(methodName);
 			this.emitSelf(callBase, callBase, methodKey);
-		} else if (moduleCallSlot !== undefined) {
-			this.emitModuleExportCallTargetLoad(moduleCallSlot, callBase);
-		} else if (ownStaticFunctionExportSlot !== undefined) {
-			this.emitModuleExportCallTargetLoad(ownStaticFunctionExportSlot, callBase);
+		} else if (moduleCallTarget !== undefined) {
+			this.emitModuleFunctionTargetLoad(moduleCallTarget, callBase);
+		} else if (ownStaticFunctionExportTarget !== undefined) {
+			this.emitModuleFunctionTargetLoad(ownStaticFunctionExportTarget, callBase);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
@@ -5204,27 +5265,14 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 function buildCompilerSemanticFrontend(
 	entryChunk: LuaChunk,
 	modules: ReadonlyArray<ProgramModule>,
-	externalModules: ReadonlyArray<ProgramModule>,
 	options: CompileOptions,
 ): LuaSemanticFrontend {
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
 	}];
-	const sourcePathSet = new Set<string>([entryChunk.range.path]);
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		sources.push({
-			path: module.path,
-			source: requireModuleSource(module),
-		});
-		sourcePathSet.add(module.path);
-	}
-	for (let index = 0; index < externalModules.length; index += 1) {
-		const module = externalModules[index];
-		if (sourcePathSet.has(module.path)) {
-			continue;
-		}
 		sources.push({
 			path: module.path,
 			source: requireModuleSource(module),
@@ -5394,18 +5442,47 @@ function compileExceptionProto(
 	return protoIndex;
 }
 
-export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = EMPTY_PROGRAM_MODULES, options: CompileOptions = {}): CompiledProgram {
+export function compileLuaChunkToProgram(
+	chunk: LuaChunk,
+	modules: ReadonlyArray<ProgramModule>,
+	options: SystemCompileOptions,
+): CompiledSystemProgram;
+export function compileLuaChunkToProgram(
+	chunk: LuaChunk,
+	modules?: ReadonlyArray<ProgramModule>,
+	options?: CartCompileOptions,
+): CompiledCartProgram;
+export function compileLuaChunkToProgram(
+	chunk: LuaChunk,
+	modules: ReadonlyArray<ProgramModule> = EMPTY_PROGRAM_MODULES,
+	options: CompileOptions = {},
+): CompiledProgram {
 	const optLevel = options.optLevel ?? 0;
+	const programDomain: ProgramCompileDomain = options.programDomain === 'system'
+		? 'system'
+		: 'cart';
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
-	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
-	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, frontend);
+	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
 	const compileErrors: CompileError[] = [];
-	const programBuilder = new ProgramBuilder(optLevel, options.programDomain ?? 'cart');
+	const programBuilder = new ProgramBuilder(optLevel, programDomain);
+	if (programDomain === 'cart') {
+		const biosFunctions = options.biosFunctions;
+		if (biosFunctions) {
+			for (let index = 0; index < biosFunctions.length; index += 1) {
+				const symbol = biosFunctions[index];
+				if (moduleCompileContext.modulePaths.has(symbol.path)) {
+					throw new Error(`BIOS import module '${symbol.path}' conflicts with a source module.`);
+				}
+				programBuilder.recordBiosFunctionImport(symbol.path, symbol.exportPathKey, index);
+			}
+		}
+	}
+	recordModuleExportContracts(programBuilder, moduleCompileContext);
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
 		const info = moduleCompileContext.modulesByPath.get(module.path);
@@ -5562,8 +5639,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
-	recordModuleExportContracts(programBuilder, moduleCompileContext);
-	if ((options.programDomain ?? 'cart') === 'system') {
+	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
 			entryBuilder.markStaticModulePath(canonicalModules[index].path);
 		}
@@ -5576,10 +5652,44 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		frontend,
 		sectionInitProtoIndex,
 		entryProtoIndex,
-		(options.programDomain ?? 'cart') === 'system',
+		programDomain === 'system',
 	);
-	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
+	const {
+		program,
+		metadata,
+		imageConstRelocs,
+		biosFunctionConstRelocs,
+		constValueRelocs,
+		rodataConstRelocs,
+		data,
+		bss,
+		rodataBytes,
+		rodataSymbols,
+		staticModulePaths,
+	} = programBuilder.buildProgram();
+	if (programDomain === 'system') {
+		return {
+			domain: 'system',
+			program,
+			metadata,
+			entryProtoIndex,
+			startupProtoIndex,
+			sectionInitProtoIndex,
+			irqProtoIndex,
+			exceptionProtoIndex,
+			moduleProtoMap: program.moduleProtoMap,
+			staticModulePaths,
+			constRelocs: imageConstRelocs,
+			constValueRelocs,
+			rodataConstRelocs,
+			data,
+			bss,
+			rodataBytes,
+			rodataSymbols,
+		};
+	}
 	return {
+		domain: 'cart',
 		program,
 		metadata,
 		entryProtoIndex,
@@ -5589,7 +5699,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		exceptionProtoIndex,
 		moduleProtoMap: program.moduleProtoMap,
 		staticModulePaths,
-		constRelocs,
+		constRelocs: imageConstRelocs,
+		biosFunctionConstRelocs,
 		constValueRelocs,
 		rodataConstRelocs,
 		data,

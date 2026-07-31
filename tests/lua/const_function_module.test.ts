@@ -1,5 +1,3 @@
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -8,21 +6,10 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import {
-	CPU,
-	RunResult,
-} from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import type { ProgramMetadata } from '../../toolchain/ts/lua/compiler/program';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	disassembleTestBlua32Functions,
-	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 	runCompiledTestSystem,
 } from '../helpers/blua32';
@@ -36,7 +23,6 @@ const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'math/sincos';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
-const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const ROUND_TO_NEAREST_SOURCE = `return function(value)
 	if value >= 0 then
 		return (value + 0.5) // 1
@@ -58,30 +44,20 @@ function parseSource(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function compileWithModule(entrySource: string, modulePath: string, moduleSource: string, optLevel: OptimizationLevel = 0): CompiledProgram {
+function compileWithModule(entrySource: string, modulePath: string, moduleSource: string, optLevel: OptimizationLevel = 0): CompiledSystemProgram {
 	return compileLuaChunkToProgram(
 		parseSource(entrySource, 'entry.lua'),
 		[{ path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource }],
-		{ entrySource, optLevel },
+		{ entrySource, optLevel, programDomain: 'system' },
 	);
 }
 
-function runColdCompiled(compiled: CompiledProgram) {
+function runColdCompiled(compiled: CompiledSystemProgram) {
 	const cpu = runCompiledTestSystem(compiled, 100000);
 	return materializeCpuCompletionValues(cpu);
 }
 
-function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
-	const finalized = linkTestBlua32Pair(systemCompiled, cartCompiled);
-	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	return materializeCpuCompletionValues(cpu);
-}
-
-function disassembleConstExport(compiled: CompiledProgram, modulePath: string): string {
+function disassembleConstExport(compiled: CompiledSystemProgram, modulePath: string): string {
 	const moduleExport = compiled.program.moduleExports.find(entry =>
 		entry.path === modulePath && entry.exportPathKey === ''
 	);
@@ -260,44 +236,19 @@ return easing.clamp(1.2, 0, 1)
 	);
 });
 
-test('cart const-function calls link to system export protos', () => {
+test('const-function modules stay call targets without Lua value materialization', () => {
 	const moduleSource = ROUND_TO_NEAREST_SOURCE;
 	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
-	const systemCompiled = compileLuaChunkToProgram(
-		parseSource(CART_BOOT_SOURCE, 'system.lua'),
-		[module],
-		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
-	);
-	const cartSource = `
-local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
-return round_to_nearest(1.6)
-`;
-	const cartCompiled = compileLuaChunkToProgram(
-		parseSource(cartSource, 'cart.lua'),
-		[],
-		{ entrySource: cartSource, externalModules: [module] },
-	);
-	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [2]);
-});
-
-test('installed const-function modules stay call targets without Lua value materialization', () => {
-	const moduleSource = ROUND_TO_NEAREST_SOURCE;
-	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
-	const systemCompiled = compileLuaChunkToProgram(
-		parseSource(CART_BOOT_SOURCE, 'system.lua'),
-		[module],
-		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
-	);
 	const source = `
 local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
 return round_to_nearest(1.6)
 `;
-	const cartCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(source, 'cart.lua'),
-		[],
-		{ entrySource: source, externalModules: [module], programDomain: 'cart' },
+		[module],
+		{ entrySource: source, programDomain: 'system' },
 	);
-	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [2]);
+	assert.deepEqual(runColdCompiled(systemCompiled), [2]);
 	const dynamicSource = `
 local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
 local dynamic = round_to_nearest
@@ -306,14 +257,14 @@ return dynamic(1.6)
 	assert.throws(
 		() => compileLuaChunkToProgram(
 			parseSource(dynamicSource, 'cart.lua'),
-			[],
-			{ entrySource: dynamicSource, externalModules: [module], programDomain: 'cart' },
+			[module],
+			{ entrySource: dynamicSource, programDomain: 'system' },
 		),
 		/call target, not a Lua runtime value/,
 	);
 });
 
-test('installed nested const-function modules reject root runtime values', () => {
+test('nested const-function modules reject root runtime values', () => {
 	const modulePath = 'system/nested_clamp';
 	const moduleSource = `
 module<const>
@@ -325,27 +276,22 @@ end
 return { math = { clamp = clamp } }
 `;
 	const module = { path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource };
-	const systemCompiled = compileLuaChunkToProgram(
-		parseSource(CART_BOOT_SOURCE, 'system.lua'),
-		[module],
-		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
-	);
 	const callSource = `
 local api<const> = require("${modulePath}")
 return api.math.clamp(12, 0, 10)
 `;
-	const cartCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(callSource, 'cart.lua'),
-		[],
-		{ entrySource: callSource, externalModules: [module], programDomain: 'cart' },
+		[module],
+		{ entrySource: callSource, programDomain: 'system' },
 	);
-	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [10]);
+	assert.deepEqual(runColdCompiled(systemCompiled), [10]);
 	const rootSource = `return require("${modulePath}")`;
 	assert.throws(
 		() => compileLuaChunkToProgram(
 			parseSource(rootSource, 'cart.lua'),
-			[],
-			{ entrySource: rootSource, externalModules: [module], programDomain: 'cart' },
+			[module],
+			{ entrySource: rootSource, programDomain: 'system' },
 		),
 		/Module 'system\/nested_clamp' root is compile-time only/,
 	);
@@ -357,8 +303,8 @@ return dynamic
 	assert.throws(
 		() => compileLuaChunkToProgram(
 			parseSource(aliasSource, 'cart.lua'),
-			[],
-			{ entrySource: aliasSource, externalModules: [module], programDomain: 'cart' },
+			[module],
+			{ entrySource: aliasSource, programDomain: 'system' },
 		),
 		/Module 'system\/nested_clamp' root is compile-time only/,
 	);

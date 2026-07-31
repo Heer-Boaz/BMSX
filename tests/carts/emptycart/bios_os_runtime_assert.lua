@@ -36,7 +36,6 @@ function __bmsx_host_test.setup()
 
 	__bmsx_host_test.before_ms = time_ms[0]
 	__bmsx_host_test.before_clock = os.clock()
-	__bmsx_host_test.before_clock_now = clock_now()
 end
 
 function __bmsx_host_test.update(frame)
@@ -47,7 +46,6 @@ function __bmsx_host_test.update(frame)
 	local ms_delta<const> = after_ms - __bmsx_host_test.before_ms
 	assert(ms_delta >= 7, 'machine time did not advance')
 	assert_close(os.clock() - __bmsx_host_test.before_clock, ms_delta / 1000, 'os.clock delta mismatch')
-	assert_close(clock_now() - __bmsx_host_test.before_clock_now, ms_delta, 'clock_now delta mismatch')
 	local seconds<const> = os.time()
 	assert(seconds * 1000 <= after_ms and after_ms < (seconds + 1) * 1000, 'os.time machine-time mismatch')
 	return true
