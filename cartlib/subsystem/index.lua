@@ -2,6 +2,8 @@ local eventemitter<const> = require('cartlib/eventemitter')
 local fsm<const> = require('cartlib/fsm/index')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local ecs<const> = require('cartlib/ecs/index')
+local registry<const> = require('cartlib/registry')
+local subsystem_systems<const> = require('cartlib/subsystem/systems')
 local subsystem_timeline_module<const> = require('cartlib/subsystem/timelines')
 local world_instance<const> = require('cartlib/world/index').instance
 
@@ -29,6 +31,10 @@ function subsystem.new(opts)
 	self.update_group = opts.update_group or tickgroup.moderesolution
 	self.update_priority = opts.update_priority
 	self.animation_priority = opts.animation_priority
+	self.ecs_systems = {
+		subsystem_systems.create_update_system(self),
+		subsystem_systems.create_animation_system(self),
+	}
 	return self
 end
 
@@ -146,10 +152,6 @@ function subsystem:advance_timeline(id)
 	return self.timelines:advance(id)
 end
 
-local subsystem_systems<const> = require('cartlib/subsystem/systems')
-
 return {
 	subsystem = subsystem,
-	create_update_system = subsystem_systems.create_update_system,
-	create_animation_system = subsystem_systems.create_animation_system,
 }

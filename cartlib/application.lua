@@ -21,17 +21,13 @@ local register_singleton<const> = function(value, id, type_name)
 	registry_instance:register(value)
 end
 
-local apply_default_pipeline<const> = function()
+function application.reset()
+	world_instance:clear()
 	ecs_builtin.register_builtin_ecs()
 	ecs_pipeline.defaultecspipelineregistry:build(
 		world_instance,
 		ecs_builtin.default_pipeline_spec()
 	)
-end
-
-function application.reset()
-	world_instance:clear()
-	apply_default_pipeline()
 end
 
 irq.register(irq_geo_done_error, collision2d.on_geo_irq)
@@ -47,7 +43,5 @@ register_singleton(fsmlibrary, 'fsmlibrary', 'fsmlibrary')
 register_singleton(progression, 'progression', 'progression')
 register_singleton(aem, 'aem', 'aem')
 register_singleton(action_effects, 'actioneffects', 'actioneffects')
-
-apply_default_pipeline()
 
 return application

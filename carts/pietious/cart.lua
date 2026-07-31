@@ -5,6 +5,7 @@ local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
 local application<const> = require('cartlib/application')
+local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
@@ -218,6 +219,7 @@ mem[0x08000064] = 0x00000001
 wait_vblank_after(vblank_sequence)
 
 while true do
+	cart_input.update()
 	world_instance:update()
 
 	wait_vblank_after(vblank_sequence)

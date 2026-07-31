@@ -4,6 +4,7 @@ gx_gpu.reset_320x240()
 local application<const> = require('cartlib/application')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local world_instance<const> = require('cartlib/world/index').instance
@@ -404,6 +405,7 @@ new_game()
 while true do
 	wait_vblank()
 
+	cart_input.update()
 	world_instance:update()
 	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
 	gx_gpu.clear_color(0xff000000)

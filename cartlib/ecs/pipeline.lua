@@ -71,16 +71,20 @@ function ecspipelineregistry:build(world_instance, nodes)
 		local d<const> = self._descs[r.ref]
 		local sys<const> = d.create(r.create_priority)
 		sys.__ecs_id = r.ref
+		sys.__ecs_pipeline_owner = self
 		sys.id = 'ecs:' .. r.ref
 		sys.type_name = 'ecsystem'
 		systems[#systems + 1] = sys
 	end
 
-	-- Deregister previous ECS system instances from the registry.
-	for i = 1, #world_instance.systems.systems do
-		local old<const> = world_instance.systems.systems[i]
-		if old.id then
-			registry.instance:deregister(old.id, true)
+	local retained<const> = {}
+	local active_systems<const> = world_instance.systems.systems
+	for i = 1, #active_systems do
+		local active<const> = active_systems[i]
+		if active.__ecs_pipeline_owner == self then
+			registry.instance:deregister(active.id, true)
+		else
+			retained[#retained + 1] = active
 		end
 	end
 
@@ -89,7 +93,9 @@ function ecspipelineregistry:build(world_instance, nodes)
 		world_instance.systems:register(systems[i])
 		registry.instance:register(systems[i])
 	end
-	world_instance:rebind_subsystem_systems_all()
+	for i = 1, #retained do
+		world_instance.systems:register(retained[i])
+	end
 end
 
 return {

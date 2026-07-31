@@ -32,9 +32,6 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 
 local ecs<const> = require('cartlib/ecs/index')
 local registry<const> = require('cartlib/registry')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local cart_input<const> = require('cartlib/input/player')
-local subsystem_systems<const> = require('cartlib/subsystem/systems')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -482,9 +479,6 @@ end
 --   Objects subsequently spawned without an explicit .space_id go here.
 --   Affects the default world query helpers (objects(), objects_with_components()).
 function world_class:set_space(space_id)
-	if self.active_space_id ~= space_id then
-		gx_gpu.clear_color(0xff000000)
-	end
 	self.active_space_id = space_id
 	self.active_space = self._spaces[space_id]
 	return self.active_space_id
@@ -659,48 +653,6 @@ function world_class:queue_subsystem_disposal(subsys)
 	pending[#pending + 1] = subsys
 end
 
-function world_class:_remove_subsystem_systems(subsys)
-	local systems<const> = subsys.__subsystem_systems
-	if systems == nil then
-		return
-	end
-	for i = 1, #systems do
-		local sys<const> = systems[i]
-		self.systems:unregister(sys)
-		if sys.id then
-			registry.instance:deregister(sys.id, true)
-		end
-	end
-	subsys.__subsystem_systems = nil
-end
-
-function world_class:rebind_subsystem_systems(subsys)
-	self:_remove_subsystem_systems(subsys)
-	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
-		return
-	end
-	local systems<const> = {
-		subsystem_systems.create_update_system(subsys),
-		subsystem_systems.create_animation_system(subsys),
-	}
-	local registered<const> = {}
-	for i = 1, #systems do
-		local sys<const> = systems[i]
-		if sys ~= nil then
-			self.systems:register(sys)
-			registry.instance:register(sys)
-			registered[#registered + 1] = sys
-		end
-	end
-	subsys.__subsystem_systems = registered
-end
-
-function world_class:rebind_subsystem_systems_all()
-	for i = 1, #self._subsystems do
-		self:rebind_subsystem_systems(self._subsystems[i])
-	end
-end
-
 -- world:spawn(obj, pos?)
 --   Registers obj in the world (and in the active space unless obj.space_id is
 --   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
@@ -735,7 +687,12 @@ function world_class:spawn_subsystem(subsys)
 	self._subsystems_by_id[subsys.id] = subsys
 	add_subsystem(self, subsys)
 	registry.instance:register(subsys)
-	self:rebind_subsystem_systems(subsys)
+	local systems<const> = subsys.ecs_systems
+	for i = 1, #systems do
+		local system<const> = systems[i]
+		self.systems:register(system)
+		registry.instance:register(system)
+	end
 	subsys:onregister()
 	subsys:activate()
 	subsys.events:emit('spawn')
@@ -896,7 +853,6 @@ end
 
 function world_class:update()
 	local dt_ms<const> = frame_delta_ms
-	cart_input.update()
 	run_phase(self, tickgroup.input, dt_ms)
 	run_phase(self, tickgroup.actioneffect, dt_ms)
 	run_phase(self, tickgroup.moderesolution, dt_ms)
@@ -922,7 +878,12 @@ function world_class:update()
 	for i = 1, #pending_subsystems do
 		local subsys<const> = pending_subsystems[i]
 		if subsys.dispose_flag then
-			self:_remove_subsystem_systems(subsys)
+			local systems<const> = subsys.ecs_systems
+			for system_index = 1, #systems do
+				local system<const> = systems[system_index]
+				self.systems:unregister(system)
+				registry.instance:deregister(system.id, true)
+			end
 			subsys:onderegister()
 			subsys:dispose()
 			remove_subsystem(self, subsys)
@@ -947,8 +908,12 @@ function world_class:clear()
 	end
 	for i = #self._subsystems, 1, -1 do
 		local subsys<const> = self._subsystems[i]
-		self:_remove_subsystem_systems(subsys)
-		registry.instance:deregister(subsys.id, true)
+		local systems<const> = subsys.ecs_systems
+		for system_index = 1, #systems do
+			local system<const> = systems[system_index]
+			self.systems:unregister(system)
+			registry.instance:deregister(system.id, true)
+		end
 		subsys:onderegister()
 		subsys:dispose()
 	end

@@ -4,6 +4,7 @@ local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_gpu.reset_320x240()
 local application<const> = require('cartlib/application')
+local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/index').instance
 irq = irq_module.dispatch
@@ -54,6 +55,7 @@ wait_vblank()
 cartlib_test_ready = true
 
 while true do
+	cart_input.update()
 	world:update()
 	wait_vblank()
 	gx_gpu.clear_color(0xff000000)
