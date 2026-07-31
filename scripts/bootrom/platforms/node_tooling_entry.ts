@@ -44,6 +44,7 @@ import {
 	type Blua32ToolingImage,
 } from '../../../toolchain/ts/rompack/blua32_media';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { runCpuProfileHostFrame } from './cpu_profile_frame';
 import {
@@ -158,10 +159,10 @@ async function main(): Promise<void> {
 			if (!cartridgeLayer) {
 				continue;
 			}
-			cartridgeImages[slot] = loadBlua32ToolingImage(cartridgeLayer);
+			cartridgeImages[slot] = loadBlua32ToolingImage(cartridgeLayer, CART_ROM_BASE);
 		}
 		profile = new CpuProfilerSession({
-			system: loadBlua32ToolingImage(systemLayer),
+			system: loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE),
 			cartridgeSlots: cartridgeImages,
 		});
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');

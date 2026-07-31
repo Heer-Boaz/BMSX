@@ -1,4 +1,5 @@
 import { parseCartHeader } from '../../machine/ts/rompack/format';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { RomToolingPackage } from '../../toolchain/ts/rompack/assets';
 import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
@@ -20,11 +21,13 @@ import {
 } from '../common/resource';
 import {
 	loadBlua32ToolingImage,
-	type Blua32SystemToolingImage,
 	type Blua32ToolingImage,
 } from '../../toolchain/ts/rompack/blua32_media';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
-import type { Blua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import {
+	loadBlua32BiosImports,
+	type Blua32BiosImports,
+} from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
 const SYSTEM_PROJECT_ROOT_PATH = 'machine/bios';
@@ -39,7 +42,9 @@ type Blua32SourceIndex = {
 };
 
 export type Blua32SourceImage = Blua32ToolingImage & Blua32SourceIndex;
-export type Blua32SystemSourceImage = Blua32SystemToolingImage & Blua32SourceIndex;
+export type Blua32SystemSourceImage = Blua32SourceImage & {
+	readonly biosImports: Blua32BiosImports;
+};
 
 export type Blua32SourceMedia = {
 	readonly system: Blua32SystemSourceImage | null;
@@ -172,12 +177,12 @@ export function createRuntimeSourceState(
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 			aemResources: [],
 		};
-		const image = loadBlua32ToolingImage(cartLayer);
+		const image = loadBlua32ToolingImage(cartLayer, CART_ROM_BASE);
 		cartridgeToolingImages[slot] = image
 			? createBlua32SourceImage(image.layout, image.symbols)
 			: null;
 	}
-	const systemImage = loadBlua32ToolingImage(systemLayer);
+	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
 		cartridgeSlots,
@@ -202,7 +207,7 @@ export function createRuntimeSourceState(
 				? createBlua32SystemSourceImage(
 					systemImage.layout,
 					systemImage.symbols,
-					systemImage.biosImports,
+					loadBlua32BiosImports(systemLayer),
 				)
 				: null,
 			cartridgeSlots: cartridgeToolingImages,
