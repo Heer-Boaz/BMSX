@@ -1,6 +1,5 @@
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import {
@@ -69,6 +68,7 @@ export class HostTestRunner {
 	private guestCallPending = false;
 	private newGamePending = false;
 	private tickTimestampMs = 0;
+	private supervisorFaultSequence = 0;
 	private nextInputPressId = 1;
 	private readonly activeInputPressIds = new Map<string, number>();
 	private stopped = false;
@@ -91,6 +91,7 @@ export class HostTestRunner {
 	}
 
 	public run(): Promise<void> {
+		this.supervisorFaultSequence = this.options.runtime.machine.systemController.readSupervisorFaultSequence();
 		this.options.logger(`test:${this.label} waiting for cart`);
 		this.options.clock.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
 		this.deadline = this.options.clock.scheduleOnce(this.options.ttlMs, () => {
@@ -111,6 +112,9 @@ export class HostTestRunner {
 	}
 
 	private tickUnsafe(timestampMs: number): void {
+		if (this.options.runtime.machine.systemController.readSupervisorFaultSequence() !== this.supervisorFaultSequence) {
+			throw new Error(`Host test '${this.label}' entered the machine fault supervisor.`);
+		}
 		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive()) {
 			return;
 		}
@@ -367,7 +371,7 @@ export class HostTestRunner {
 		}
 		this.stopped = true;
 		this.deadline.cancel();
-		this.capture(`test_fail:${this.label}: ${extractErrorMessage(error)}`);
+		this.capture(`test_fail:${this.label}: ${error instanceof Error ? error.message : String(error)}`);
 		this.rejectCompletion(error);
 	}
 

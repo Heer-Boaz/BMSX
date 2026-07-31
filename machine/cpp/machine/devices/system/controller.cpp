@@ -257,6 +257,7 @@ void SystemController::activateSupervisorContext() {
 }
 
 void SystemController::enterSupervisorFault() {
+	m_supervisorFaultSequence += 1u;
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 		m_supervisorExitRequested = false;
 		writeStatusIo();
@@ -275,6 +276,7 @@ void SystemController::enterSupervisorFault() {
 	m_supervisorExitRequested = false;
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
+	m_cpu.requestYield();
 }
 
 void SystemController::beginSupervisorLeave() {
@@ -289,6 +291,7 @@ void SystemController::beginSupervisorLeave() {
 	m_dma.beginSupervisorQuiesce();
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
+	m_cpu.requestYield();
 }
 
 bool SystemController::takeResetRequest() {

@@ -55,6 +55,7 @@ export class SystemController {
 	private supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
+	private supervisorFaultSequence = 0;
 	private readonly printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 	private printReadIndex = 0;
 	private printByteCount = 0;
@@ -316,6 +317,7 @@ export class SystemController {
 	}
 
 	private enterSupervisorFault(): void {
+		this.supervisorFaultSequence = (this.supervisorFaultSequence + 1) >>> 0;
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 			this.supervisorExitRequested = false;
 			this.writeStatusIo();
@@ -334,6 +336,7 @@ export class SystemController {
 		this.supervisorExitRequested = false;
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
+		this.cpu.requestYield();
 	}
 
 	private beginSupervisorLeave(): void {
@@ -348,12 +351,17 @@ export class SystemController {
 		this.dma.beginSupervisorQuiesce();
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
+		this.cpu.requestYield();
 	}
 
 	public cpuHeld(): boolean {
 		return this.supervisorTransitionTarget !== SYSTEM_SUPERVISOR_TARGET_SUPERVISOR
 			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
 				|| this.supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
+	}
+
+	public readSupervisorFaultSequence(): number {
+		return this.supervisorFaultSequence;
 	}
 
 	public takeResetRequest(): boolean {

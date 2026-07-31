@@ -60,6 +60,7 @@ public:
 				|| m_supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 	bool takeResetRequest();
+	u32 readSupervisorFaultSequence() const { return m_supervisorFaultSequence; }
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
 	void postLoad();
@@ -99,6 +100,7 @@ private:
 	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
+	u32 m_supervisorFaultSequence = 0u;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_printBuffer{};
 	u32 m_printReadIndex = 0u;
 	u32 m_printByteCount = 0u;
