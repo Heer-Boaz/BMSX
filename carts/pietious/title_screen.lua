@@ -66,10 +66,8 @@ local build_title_sparkle_frames<const> = function()
 				sparkle_sprite = {
 					enabled = true,
 					imgid = sprite_id,
-					offset = {
-						x = x,
-						y = y,
-					},
+					offset_x = x,
+					offset_y = y,
 				},
 			},
 			hold = hold,
@@ -97,8 +95,8 @@ local apply_title_sparkle_frame<const> = function(self, frame)
 	sprite:set_enabled(sprite_frame.enabled)
 	if sprite_frame.enabled then
 		sprite:set_imgid(sprite_frame.imgid)
-		sprite.offset.x = sprite_frame.offset.x
-		sprite.offset.y = sprite_frame.offset.y
+		sprite.offset_x = sprite_frame.offset_x
+		sprite.offset_y = sprite_frame.offset_y
 	end
 end
 
@@ -131,7 +129,7 @@ function title_screen:ctor()
 	self.z = 350
 	self.sparkle_sprite = components.spritecomponent.new({
 		id_local = 'sparkle',
-		offset = { x = 0, y = 0, z = 1 },
+		offset_z = 1,
 	})
 	self:add_component(self.sparkle_sprite)
 	self.sparkle_sprite:set_enabled(false)

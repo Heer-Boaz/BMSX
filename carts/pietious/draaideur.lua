@@ -132,31 +132,31 @@ function draaideur:sync_sprite()
 	local sprite_set<const> = sprite_id_by_kind[self.kind]
 	if self.state >= 0 then
 		self:gfx(sprite_set.closed)
-		self.sprite_component.offset.x = closed_offset_x
+		self.sprite_component.offset_x = closed_offset_x
 		return
 	end
 
 	if self.state < -16 then
 		local sprite_id<const> = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
 		self:gfx(sprite_id)
-		self.sprite_component.offset.x = -room_tile_half
+		self.sprite_component.offset_x = -room_tile_half
 		return
 	end
 
 	if self.state < -8 then
 		self:gfx(sprite_set.open_2)
-		self.sprite_component.offset.x = -room_tile_size
+		self.sprite_component.offset_x = -room_tile_size
 		return
 	end
 
 	if not self.player_was_right then
 		self:gfx(sprite_set.open_3)
-		self.sprite_component.offset.x = -room_tile_half
+		self.sprite_component.offset_x = -room_tile_half
 		return
 	end
 
 	self:gfx(sprite_set.open_1)
-	self.sprite_component.offset.x = -room_tile_half
+	self.sprite_component.offset_x = -room_tile_half
 end
 
 function draaideur:ctor()

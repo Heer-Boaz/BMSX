@@ -149,9 +149,9 @@ function transition.register_states(states)
 			world_instance:get(text_transition_id):set_text({ node.label }, { typed = false, snap = true })
 			reset_text_colors()
 			local transition_text<const> = world_instance:get(text_transition_id)
-			self.transition_center_x = transition_text.text_component.offset.x
+			self.transition_center_x = transition_text.text_component.offset_x
 			self.transition_target_bg = story[node.next].bg
-			transition_text.text_component.offset.x = screen_width
+			transition_text.text_component.offset_x = screen_width
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
 			if not self.skip_transition_fade and self.transition_target_bg ~= nil then

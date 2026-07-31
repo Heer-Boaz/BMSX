@@ -342,8 +342,8 @@ local remove_active_object<const> = function(obj, space)
 end
 
 local visual_depth_less<const> = function(a, b)
-	local a_depth<const> = a.parent.z + a.offset.z + a.draw_offset.z
-	local b_depth<const> = b.parent.z + b.offset.z + b.draw_offset.z
+	local a_depth<const> = a.parent.z + a.offset_z + a.draw_offset_z
+	local b_depth<const> = b.parent.z + b.offset_z + b.draw_offset_z
 	if a_depth ~= b_depth then
 		return a_depth < b_depth
 	end

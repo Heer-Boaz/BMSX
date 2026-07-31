@@ -123,7 +123,7 @@ end
 
 function director:ctor()
 	local transition_rc<const> = self:get_component('customvisualcomponent')
-	transition_rc.offset.z = director_visual_z
+	transition_rc.offset_z = director_visual_z
 	transition_rc.producer = draw_director_visual
 end
 

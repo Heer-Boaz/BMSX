@@ -18,9 +18,9 @@ function shrine:ctor()
 	local text<const> = self:get_component('textcomponent')
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
-	text.offset.x = shrine_text_x
-	text.offset.y = shrine_text_y
-	text.offset.z = 1
+	text.offset_x = shrine_text_x
+	text.offset_y = shrine_text_y
+	text.offset_z = 1
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_shrine_visual
 end

@@ -380,7 +380,7 @@ function player:ctor()
 	self.sword_sprite = components.spritecomponent.new({
 		id_local = 'sword',
 		imgid = 'sword_r',
-		offset = { x = 0, y = 0, z = 111 },
+		offset_z = 111,
 		collider_local_id = 'sword',
 	})
 	self:add_component(self.sword_sprite)
@@ -401,10 +401,10 @@ function player:ctor()
 	self:clear_input_state()
 	self:sync_input_state_from_runtime()
 
-	self.sprite_component.scale.x = 1
-	self.sprite_component.scale.y = 1
-	self.sprite_component.offset.x = 0
-	self.sprite_component.offset.z = 110
+	self.sprite_component.scale_x = 1
+	self.sprite_component.scale_y = 1
+	self.sprite_component.offset_x = 0
+	self.sprite_component.offset_z = 110
 
 end
 
@@ -454,8 +454,8 @@ function player:apply_presentation_state()
 		end
 		self.sword_sprite:set_enabled(false)
 		self:gfx(imgid)
-		self.sprite_component.flip.flip_h = self.facing < 0
-		self.sprite_component.offset.y = self.to_enter_cut
+		self.sprite_component.flip_h = self.facing < 0
+		self.sprite_component.offset_y = self.to_enter_cut
 		self.visible = true
 		return
 	end
@@ -465,8 +465,8 @@ function player:apply_presentation_state()
 		self:apply_color(0xffffffff)
 	end
 	self.visible = true
-	self.sprite_component.scale.x = 1
-	self.sprite_component.scale.y = 1
+	self.sprite_component.scale_x = 1
+	self.sprite_component.scale_y = 1
 
 	local damage_sprite_id<const> = self:get_damage_state_imgid()
 
@@ -507,44 +507,44 @@ function player:apply_presentation_state()
 	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
 		if flip_h then
-			self.sprite_component.offset.x = sword_jump_body_offset_left
-			self.sword_sprite.offset.x = sword_jump_offset_left
+			self.sprite_component.offset_x = sword_jump_body_offset_left
+			self.sword_sprite.offset_x = sword_jump_offset_left
 		else
-			self.sprite_component.offset.x = sword_jump_body_offset_right
-			self.sword_sprite.offset.x = sword_jump_offset_right
+			self.sprite_component.offset_x = sword_jump_body_offset_right
+			self.sword_sprite.offset_x = sword_jump_offset_right
 		end
-		self.sword_sprite.offset.y = sword_jump_offset_y
+		self.sword_sprite.offset_y = sword_jump_offset_y
 	elseif self:has_tag(state_tags.visual.ground_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			self.sprite_component.offset.x = sword_ground_body_offset_left
-			self.sword_sprite.offset.x = sword_ground_offset_left
+			self.sprite_component.offset_x = sword_ground_body_offset_left
+			self.sword_sprite.offset_x = sword_ground_offset_left
 		else
-			self.sprite_component.offset.x = sword_ground_body_offset_right
-			self.sword_sprite.offset.x = sword_ground_offset_right
+			self.sprite_component.offset_x = sword_ground_body_offset_right
+			self.sword_sprite.offset_x = sword_ground_offset_right
 		end
-		self.sword_sprite.offset.y = sword_ground_offset_y
+		self.sword_sprite.offset_y = sword_ground_offset_y
 	elseif self:has_tag(state_tags.visual.stairs_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			self.sprite_component.offset.x = sword_stairs_body_offset_left
-			self.sword_sprite.offset.x = sword_stairs_offset_left
+			self.sprite_component.offset_x = sword_stairs_body_offset_left
+			self.sword_sprite.offset_x = sword_stairs_offset_left
 		else
-			self.sprite_component.offset.x = sword_stairs_body_offset_right
-			self.sword_sprite.offset.x = sword_stairs_offset_right
+			self.sprite_component.offset_x = sword_stairs_body_offset_right
+			self.sword_sprite.offset_x = sword_stairs_offset_right
 		end
-		self.sword_sprite.offset.y = sword_stairs_offset_y
+		self.sword_sprite.offset_y = sword_stairs_offset_y
 	elseif self:has_tag(state_tags.group.player_stairs) then
 		flip_h = false
-		self.sprite_component.offset.x = 0
+		self.sprite_component.offset_x = 0
 	else
-		self.sprite_component.offset.x = 0
+		self.sprite_component.offset_x = 0
 	end
 
 	self:gfx(imgid)
-	self.sprite_component.flip.flip_h = flip_h
+	self.sprite_component.flip_h = flip_h
 	self.sword_sprite:set_enabled(self:has_tag(state_tags.group.sword))
-	self.sword_sprite.flip.flip_h = flip_h
+	self.sword_sprite.flip_h = flip_h
 end
 
 function player:respawn()
@@ -816,7 +816,7 @@ function player:reset_enter_leave_animation()
 	self.transition_step = 0
 	self.enter_leave_anim_frame = 0
 	self.to_enter_cut = 0
-	self.sprite_component.offset.y = 0
+	self.sprite_component.offset_y = 0
 end
 
 function player:update_enter_leave_anim_frame()

@@ -52,7 +52,7 @@ local build_all_out_prompt_portrait_frames<const> = function(params)
 		frames[#frames + 1] = {
 			x = x,
 			y = y,
-			sprite_component = { scale = { x = scale, y = scale } },
+			sprite_component = { scale_x = scale, scale_y = scale },
 		}
 	end
 	for i = 0, settle_frames - 1 do
@@ -63,7 +63,7 @@ local build_all_out_prompt_portrait_frames<const> = function(params)
 		frames[#frames + 1] = {
 			x = params.to_x,
 			y = params.to_y + bob,
-			sprite_component = { scale = { x = scale, y = scale } },
+			sprite_component = { scale_x = scale, scale_y = scale },
 		}
 	end
 	return frames
@@ -118,7 +118,7 @@ function combat_director:ctor()
 	self:add_component(components.customvisualcomponent.new({
 		parent = self,
 		id_local = 'slash',
-		offset = { x = 0, y = 0, z = combat_hit_slash_z },
+		offset_z = combat_hit_slash_z,
 		producer = draw_combat_slash,
 	}))
 end
@@ -132,12 +132,10 @@ end
 
 local apply_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
 	local sc<const> = obj.sprite_component
-	local draw_offset<const> = sc.draw_offset
-	local draw_scale<const> = sc.draw_scale
 	local parallax_scale<const> = combat_parallax_scale(weight)
-	draw_offset.y = offset_base_y * weight
-	draw_scale.x = parallax_scale
-	draw_scale.y = parallax_scale
+	sc.draw_offset_y = offset_base_y * weight
+	sc.draw_scale_x = parallax_scale
+	sc.draw_scale_y = parallax_scale
 end
 
 local apply_combat_parallax<const> = function(self)
@@ -224,12 +222,12 @@ function combat_director:clear_combat_parallax_transform()
 	self.combat_parallax_transform_active = false
 	local monster<const> = world_instance:get(combat_monster_id)
 	local maya_a<const> = world_instance:get(combat_maya_a_id)
-	monster.sprite_component.draw_offset.y = 0
-	monster.sprite_component.draw_scale.x = 1
-	monster.sprite_component.draw_scale.y = 1
-	maya_a.sprite_component.draw_offset.y = 0
-	maya_a.sprite_component.draw_scale.x = 1
-	maya_a.sprite_component.draw_scale.y = 1
+	monster.sprite_component.draw_offset_y = 0
+	monster.sprite_component.draw_scale_x = 1
+	monster.sprite_component.draw_scale_y = 1
+	maya_a.sprite_component.draw_offset_y = 0
+	maya_a.sprite_component.draw_scale_x = 1
+	maya_a.sprite_component.draw_scale_y = 1
 	monster.visible = true
 	maya_a.visible = true
 end
@@ -317,7 +315,8 @@ function combat.define_fsm()
 		monster.sprite_component.color = p3_white_color
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
-		monster.sprite_component.scale = { x = 1, y = 1 }
+		monster.sprite_component.scale_x = 1
+		monster.sprite_component.scale_y = 1
 		return '/combat_exchange_miss'
 	end
 
@@ -325,7 +324,8 @@ function combat.define_fsm()
 		local monster<const> = world_instance:get(combat_monster_id)
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
-		monster.sprite_component.scale = { x = 1, y = 1 }
+		monster.sprite_component.scale_x = 1
+		monster.sprite_component.scale_y = 1
 		return '/combat_exchange_hit'
 	end
 
@@ -344,7 +344,7 @@ function combat.define_fsm()
 		maya_b.x = self.combat_results_maya_target_x
 		local results<const> = world_instance:get(text_results_id)
 		results.text_component.color = p3_white_color
-		results.text_component.offset.x = self.combat_results_text_target_x
+		results.text_component.offset_x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
@@ -462,7 +462,8 @@ function combat.define_fsm()
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
 			monster.z = 200
-			monster.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
 
 			monster.x = (screen_width * 0.65) - (monster.sx / 2)
 			monster.y = (screen_height * 0.25) - (monster.sy / 3)
@@ -561,19 +562,22 @@ function combat.define_fsm()
 		},
 		leaving_state = function(self)
 			local monster<const> = world_instance:get(combat_monster_id)
-			monster.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.visible = true
 
 			local maya_a<const> = world_instance:get(combat_maya_a_id)
-			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			maya_a.sprite_component.scale_x = 1
+			maya_a.sprite_component.scale_y = 1
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
 			maya_a.visible = true
 
 			local maya_b<const> = world_instance:get(combat_maya_b_id)
-			maya_b.sprite_component.scale = { x = 1, y = 1 }
+			maya_b.sprite_component.scale_x = 1
+			maya_b.sprite_component.scale_y = 1
 			maya_b.visible = false
 			maya_b.x = self.combat_maya_b_start_x
 			maya_b.y = self.combat_maya_b_base_y
@@ -695,7 +699,8 @@ function combat.define_fsm()
 			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
-			monster.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
 			local targets<const> = {
 				monster = monster,
 				slash_frame = self.combat_hit_slash_frame,
@@ -743,7 +748,8 @@ function combat.define_fsm()
 				world_instance:get(text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
 				local monster<const> = world_instance:get(combat_monster_id)
 				local maya_a<const> = world_instance:get(combat_maya_a_id)
-				monster.sprite_component.scale = { x = 1, y = 1 }
+				monster.sprite_component.scale_x = 1
+				monster.sprite_component.scale_y = 1
 				self.combat_dodge_dir = -self.combat_dodge_dir
 				self:play_timeline(combat_dodge_timeline_id, {
 					rewind = true,
@@ -790,8 +796,10 @@ function combat.define_fsm()
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale = { x = 1, y = 1 }
-			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
+			maya_a.sprite_component.scale_x = 1
+			maya_a.sprite_component.scale_y = 1
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = true
@@ -853,8 +861,10 @@ function combat.define_fsm()
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale = { x = 1, y = 1 }
-			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
+			maya_a.sprite_component.scale_x = 1
+			maya_a.sprite_component.scale_y = 1
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = false
@@ -886,8 +896,10 @@ function combat.define_fsm()
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale = { x = 1, y = 1 }
-			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
+			maya_a.sprite_component.scale_x = 1
+			maya_a.sprite_component.scale_y = 1
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = true
@@ -949,8 +961,10 @@ function combat.define_fsm()
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale = { x = 1, y = 1 }
-			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.scale_x = 1
+			monster.sprite_component.scale_y = 1
+			maya_a.sprite_component.scale_x = 1
+			maya_a.sprite_component.scale_y = 1
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = false
@@ -972,7 +986,8 @@ function combat.define_fsm()
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
-			portrait.sprite_component.scale = { x = 1, y = 1 }
+			portrait.sprite_component.scale_x = 1
+			portrait.sprite_component.scale_y = 1
 			local target_x<const> = (screen_width * 0.08) // 1
 			local target_y<const> = (screen_height - portrait.sy) // 1
 			self:play_timeline(combat_all_out_prompt_timeline_id, {
@@ -1037,7 +1052,8 @@ function combat.define_fsm()
 			self:clear_combat_parallax_transform()
 			local portrait<const> = world_instance:get(combat_all_out_portrait_id)
 			portrait.visible = false
-			portrait.sprite_component.scale = { x = 1, y = 1 }
+			portrait.sprite_component.scale_x = 1
+			portrait.sprite_component.scale_y = 1
 			world_instance:get(text_choice_id).highlight_jitter_enabled = false
 		end,
 	}
@@ -1210,9 +1226,9 @@ function combat.define_fsm()
 			world_instance:get(text_results_id):set_text(lines, { typed = false, snap = true })
 			local results<const> = world_instance:get(text_results_id)
 			results.text_component.color = p3_black_color
-			self.combat_results_text_target_x = results.text_component.offset.x / 2
+			self.combat_results_text_target_x = results.text_component.offset_x / 2
 			self.combat_results_text_start_x = -screen_width
-			results.text_component.offset.x = self.combat_results_text_start_x
+			results.text_component.offset_x = self.combat_results_text_start_x
 			return '/combat_results_fade_in'
 		end,
 	}

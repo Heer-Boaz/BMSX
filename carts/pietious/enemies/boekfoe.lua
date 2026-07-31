@@ -10,7 +10,7 @@ boekfoe.__index = boekfoe
 function boekfoe:ctor()
 	self.boek_state = 'closed'
 	self:gfx('boekfoe_closed')
-	self.sprite_component.flip.flip_h = self.direction == 'left'
+	self.sprite_component.flip_h = self.direction == 'left'
 end
 
 function boekfoe.bt_tick(self, blackboard)
@@ -24,7 +24,7 @@ function boekfoe.bt_tick(self, blackboard)
 		end
 		self.boek_state = 'open'
 		self:gfx('boekfoe_open')
-		self.sprite_component.flip.flip_h = self.direction == 'left'
+		self.sprite_component.flip_h = self.direction == 'left'
 		node.boek_state_ticks = enemy_boek_wait_close_steps
 		node.boek_spawn_ticks = enemy_boek_spawn_paper_steps
 		return 'RUNNING'
@@ -58,7 +58,7 @@ function boekfoe.bt_tick(self, blackboard)
 	if open_ticks <= 0 then
 		self.boek_state = 'closed'
 		self:gfx('boekfoe_closed')
-		self.sprite_component.flip.flip_h = self.direction == 'left'
+		self.sprite_component.flip_h = self.direction == 'left'
 		node.boek_state_ticks = enemy_boek_wait_open_steps
 		node.boek_spawn_ticks = nil
 		return 'RUNNING'

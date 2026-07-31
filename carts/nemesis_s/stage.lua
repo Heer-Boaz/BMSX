@@ -377,7 +377,7 @@ end
 function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
-	self.stage_visual.offset.z = stage_data.draw_z
+	self.stage_visual.offset_z = stage_data.draw_z
 	self.scroll_mode_pause = stage_data.scroll_mode_pause
 	self.scroll_mode_forced = stage_data.scroll_mode_forced
 	self.scroll_mode_gated = stage_data.scroll_mode_gated

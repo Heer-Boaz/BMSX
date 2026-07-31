@@ -149,8 +149,12 @@ setmetatable(visualcomponent, { __index = component })
 
 function visualcomponent.new(opts)
 	local self<const> = setmetatable(component.new(opts), visualcomponent)
-	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.draw_offset = opts.draw_offset or { x = 0, y = 0, z = 0 }
+	self.offset_x = opts.offset_x or 0
+	self.offset_y = opts.offset_y or 0
+	self.offset_z = opts.offset_z or 0
+	self.draw_offset_x = opts.draw_offset_x or 0
+	self.draw_offset_y = opts.draw_offset_y or 0
+	self.draw_offset_z = opts.draw_offset_z or 0
 	self.visible = opts.visible == nil or opts.visible
 	return self
 end
@@ -164,10 +168,13 @@ function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = component_types.sprite
 	local self<const> = setmetatable(visualcomponent.new(opts), spritecomponent)
-	self.flip = { flip_h = false, flip_v = false }
+	self.flip_h = false
+	self.flip_v = false
 	self.color = opts.color or 0xffffffff
-	self.scale = opts.scale or { x = 1, y = 1 }
-	self.draw_scale = opts.draw_scale or { x = 1, y = 1 }
+	self.scale_x = opts.scale_x or 1
+	self.scale_y = opts.scale_y or 1
+	self.draw_scale_x = opts.draw_scale_x or 1
+	self.draw_scale_y = opts.draw_scale_y or 1
 	self.collider_local_id = opts.collider_local_id
 	self:set_imgid(opts.imgid)
 	return self
@@ -188,20 +195,17 @@ function spritecomponent:draw()
 		return
 	end
 	local obj<const> = self.parent
-	local offset<const> = self.offset
-	local draw_offset<const> = self.draw_offset
-	local x<const> = obj.x + offset.x + draw_offset.x
-	local y<const> = obj.y + offset.y + draw_offset.y
+	local x<const> = obj.x + self.offset_x + self.draw_offset_x
+	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local flip_flags = 0
-	if self.flip.flip_h then
+	if self.flip_h then
 		flip_flags = flip_flags | 1
 	end
-	if self.flip.flip_v then
+	if self.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	local draw_scale<const> = self.draw_scale
-	local scale_x<const> = self.scale.x * draw_scale.x
-	local scale_y<const> = self.scale.y * draw_scale.y
+	local scale_x<const> = self.scale_x * self.draw_scale_x
+	local scale_y<const> = self.scale_y * self.draw_scale_y
 	if scale_x == 1 and scale_y == 1 then
 		gx_image.blit_rect_color(rect, x, y, self.color, flip_flags)
 		return
@@ -237,8 +241,8 @@ function surfacecomponent:draw()
 		return
 	end
 	local parent<const> = self.parent
-	local x<const> = parent.x + self.offset.x + self.draw_offset.x
-	local y<const> = parent.y + self.offset.y + self.draw_offset.y
+	local x<const> = parent.x + self.offset_x + self.draw_offset_x
+	local y<const> = parent.y + self.offset_y + self.draw_offset_y
 	local tiles<const> = image.tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
@@ -268,8 +272,8 @@ function tilelayercomponent:draw()
 		self.tile_count,
 		self.columns,
 		self.tile_size,
-		parent.x + self.offset.x + self.draw_offset.x,
-		parent.y + self.offset.y + self.draw_offset.y)
+		parent.x + self.offset_x + self.draw_offset_x,
+		parent.y + self.offset_y + self.draw_offset_y)
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -332,8 +336,8 @@ local get_sprite_collision_geometry<const> = function(sprite)
 	if id == nil then
 		return nil, nil, nil
 	end
-	local flip_h<const> = sprite.flip.flip_h
-	local flip_v<const> = sprite.flip.flip_v
+	local flip_h<const> = sprite.flip_h
+	local flip_v<const> = sprite.flip_v
 	if sprite._collision_geometry_imgid == id and sprite._collision_geometry_flip_h == flip_h and sprite._collision_geometry_flip_v == flip_v then
 		return sprite._collision_geometry_area, sprite._collision_geometry_polys, sprite._collision_geometry_shape_ref
 	end
@@ -398,8 +402,8 @@ local prepare_overlap_cache<const> = function(collider)
 		local_area = sprite_area
 		local_polys = sprite_polys
 		geo_shape_ref = sprite_shape_ref
-		shape_offset_x = sprite.offset.x
-		shape_offset_y = sprite.offset.y
+		shape_offset_x = sprite.offset_x
+		shape_offset_y = sprite.offset_y
 	end
 	geo_tx = parent.x + shape_offset_x
 	geo_ty = parent.y + shape_offset_y
@@ -853,9 +857,7 @@ end
 
 function textcomponent:draw()
 	local obj<const> = self.parent
-	local offset<const> = self.offset
-	local draw_offset<const> = self.draw_offset
-	self:render(obj.x + offset.x + draw_offset.x, obj.y + offset.y + draw_offset.y)
+	self:render(obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
 end
 
 function textcomponent:render_glyphs(x, y)

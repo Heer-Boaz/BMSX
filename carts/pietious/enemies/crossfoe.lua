@@ -29,8 +29,8 @@ local apply_spin_visual<const> = function(self)
 		flip_v = false
 	end
 	self:gfx(imgid)
-	self.sprite_component.flip.flip_h = flip_h
-	self.sprite_component.flip.flip_v = flip_v
+	self.sprite_component.flip_h = flip_h
+	self.sprite_component.flip_v = flip_v
 end
 
 function crossfoe:ctor()

@@ -45,15 +45,15 @@ end
 function pepernoot_projectile:onspawn(pos)
 	local room<const> = world_instance:get('room')
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
-	self.sprite_component.offset.x = snapped_x - self.x
-	self.sprite_component.offset.y = snapped_y - self.y
+	self.sprite_component.offset_x = snapped_x - self.x
+	self.sprite_component.offset_y = snapped_y - self.y
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
 	local room<const> = world_instance:get('room')
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
-	self.sprite_component.offset.x = snapped_x - self.x
-	self.sprite_component.offset.y = snapped_y - self.y
+	self.sprite_component.offset_x = snapped_x - self.x
+	self.sprite_component.offset_y = snapped_y - self.y
 end
 
 function pepernoot_projectile:update_motion()

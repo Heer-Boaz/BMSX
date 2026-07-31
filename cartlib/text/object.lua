@@ -312,7 +312,8 @@ function textobject.new(opts)
 		line_offsets = self.wrapped_line_y_offsets,
 		color = opts.text_color or 0xffffffff,
 		background_color = opts.normal_bg_color or 0xff000000,
-		offset = { x = 0, y = self.dimensions.top, z = 1 },
+		offset_y = self.dimensions.top,
+		offset_z = 1,
 	})
 	self.display_glyph_lines = self.text_component.glyph_lines
 	self.displayed_line_widths = self.text_component.layout_line_widths
@@ -347,8 +348,8 @@ function textobject:position_text_component()
 		end
 	end
 	local dimensions<const> = self.dimensions
-	self.text_component.offset.x = ((dimensions.right - dimensions.left) - longest) / 2 + dimensions.left - self.x
-	self.text_component.offset.y = dimensions.top - self.y
+	self.text_component.offset_x = ((dimensions.right - dimensions.left) - longest) / 2 + dimensions.left - self.x
+	self.text_component.offset_y = dimensions.top - self.y
 end
 
 function textobject:rebuild_text_layout()

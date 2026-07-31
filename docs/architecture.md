@@ -2412,13 +2412,17 @@ uncompressed raw GP0 uploads.
 
 Cartlib submits painter-ordered 2D work through one retained visual-component
 list per world space. Sprite, surface, tile, text and custom visual components share the
-same effective depth `parent.z + offset.z + draw_offset.z`; lower depths submit
+same effective depth `parent.z + offset_z + draw_offset_z`; lower depths submit
 first and higher depths submit last. Activation sequence is the stable equal-z
 tie-break. Add/remove updates that same list and its indices, while one in-place
 BIOS sort accounts for runtime depth changes before the visual system draws the
 components polymorphically. Cart-authored depth alone establishes occlusion;
 there are no kind-priority stages, subsystem draw
 escape paths, per-frame display-list records or backend-facing visual DTOs.
+Visual offset, draw-offset, sprite flip and scale state is retained as direct
+scalar component fields. The draw, depth-sort and collision paths consume those
+fields directly; component construction and combat transitions do not allocate
+coordinate or scale subtables.
 
 Text layout is retained component state. Text, font, wrap or textobject-dimension
 mutation rebuilds wrapped lines, glyph references and widths. Typewriter state

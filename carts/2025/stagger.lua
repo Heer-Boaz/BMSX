@@ -79,9 +79,8 @@ end
 local pose_apply<const> = function(entry, scale, nudge)
 	local obj<const> = entry.obj
 	local sc<const> = obj.sprite_component
-	local target<const> = sc.scale
-	target.x = entry.base_scale_x * scale
-	target.y = entry.base_scale_y * scale
+	sc.scale_x = entry.base_scale_x * scale
+	sc.scale_y = entry.base_scale_y * scale
 	obj.y = entry.base_y + nudge
 end
 
@@ -167,11 +166,10 @@ local build_pose_targets<const> = function(pose_targets)
 	local entries<const> = {}
 	for i = 1, #pose_targets do
 		local obj<const> = pose_targets[i]
-		local scale<const> = obj.sprite_component.scale
 		entries[#entries + 1] = {
 			obj = obj,
-			base_scale_x = scale.x,
-			base_scale_y = scale.y,
+			base_scale_x = obj.sprite_component.scale_x,
+			base_scale_y = obj.sprite_component.scale_y,
 			base_y = obj.y,
 		}
 	end

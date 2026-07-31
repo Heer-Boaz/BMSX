@@ -168,7 +168,8 @@ function builders.build_combat_focus_frames(params)
 			y = y,
 			sprite_component = {
 				color = p3_white_color,
-				scale = { x = s, y = s },
+				scale_x = s,
+				scale_y = s,
 			},
 		}
 	end
@@ -192,7 +193,8 @@ function builders.build_combat_focus_frames(params)
 			y = y,
 			sprite_component = {
 				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
-				scale = { x = sx, y = sy },
+				scale_x = sx,
+				scale_y = sy,
 			},
 		}
 	end
@@ -251,19 +253,19 @@ end
 				visible = false,
 				x = monster_hidden_x,
 				y = monster_hidden_y,
-				sprite_component = { scale = { x = monster_start_scale, y = monster_start_scale } },
+				sprite_component = { scale_x = monster_start_scale, scale_y = monster_start_scale },
 			},
 			maya_a = {
 				visible = false,
 				x = maya_a_start_x,
 				y = maya_a_hidden_y,
-				sprite_component = { scale = { x = maya_a_start_scale, y = maya_a_start_scale } },
+				sprite_component = { scale_x = maya_a_start_scale, scale_y = maya_a_start_scale },
 			},
 			maya_b = {
 				visible = true,
 				x = x,
 				y = y,
-				sprite_component = { scale = { x = s, y = s } },
+				sprite_component = { scale_x = s, scale_y = s },
 			},
 		}
 		end
@@ -290,19 +292,19 @@ end
 				visible = true,
 				x = monster_x,
 				y = monster_y,
-				sprite_component = { scale = { x = monster_scale, y = monster_scale } },
+				sprite_component = { scale_x = monster_scale, scale_y = monster_scale },
 			},
 			maya_a = {
 				visible = true,
 				x = maya_a_x,
 				y = maya_a_y,
-				sprite_component = { scale = { x = maya_a_scale, y = maya_a_scale } },
+				sprite_component = { scale_x = maya_a_scale, scale_y = maya_a_scale },
 			},
 			maya_b = {
 				visible = false,
 				x = maya_b_base_x,
 				y = maya_b_base_y,
-				sprite_component = { scale = { x = 1, y = 1 } },
+				sprite_component = { scale_x = 1, scale_y = 1 },
 			},
 		}
 	end
@@ -347,7 +349,7 @@ function builders.build_combat_dodge_frames(params)
 		end
 		frames[#frames + 1] = {
 			x = base_x + offset,
-			sprite_component = { scale = { x = scale_x, y = scale_y } },
+			sprite_component = { scale_x = scale_x, scale_y = scale_y },
 		}
 	end
 
@@ -439,7 +441,8 @@ function builders.build_combat_exchange_frames(params)
 
 		local maya_x = maya_base_x
 		local maya_y = maya_base_y
-		local maya_scale = { x = 1, y = 1 }
+		local maya_scale_x = 1
+		local maya_scale_y = 1
 		local maya_flash = false
 		local overlay_strength = 0
 		local bob = 0
@@ -447,20 +450,16 @@ function builders.build_combat_exchange_frames(params)
 			if maya_u > 0 then
 				maya_x = maya_x + (params.maya_offset_x * maya_u)
 				maya_y = maya_y + (params.maya_offset_y * maya_u)
-				maya_scale = {
-					x = 1 + (maya_react_scale_x * maya_u),
-					y = 1 + (maya_react_scale_y * maya_u),
-				}
+				maya_scale_x = 1 + (maya_react_scale_x * maya_u)
+				maya_scale_y = 1 + (maya_react_scale_y * maya_u)
 				local bob_u<const> = smoothstep(pingpong01((i - impact_start) / maya_bob_period_frames))
 				bob = (bob_u - 0.5) * 2 * maya_bob_amp
 			end
 
 		if impact_u > 0 then
 			if params.squash then
-				maya_scale = {
-					x = maya_scale.x + (maya_impact_scale_x * impact_u),
-					y = maya_scale.y + (maya_impact_scale_y * impact_u),
-				}
+				maya_scale_x = maya_scale_x + (maya_impact_scale_x * impact_u)
+				maya_scale_y = maya_scale_y + (maya_impact_scale_y * impact_u)
 			end
 			if params.flash then
 				local flash_index<const> = i - impact_start
@@ -490,7 +489,8 @@ function builders.build_combat_exchange_frames(params)
 				y = monster_y,
 				sprite_component = {
 					color = p3_white_color,
-					scale = { x = s, y = s },
+					scale_x = s,
+					scale_y = s,
 				},
 			},
 			maya_a = {
@@ -498,7 +498,8 @@ function builders.build_combat_exchange_frames(params)
 				y = maya_y,
 				sprite_component = {
 					color = maya_flash and params.flash_color or p3_white_color,
-					scale = maya_scale,
+					scale_x = maya_scale_x,
+					scale_y = maya_scale_y,
 				},
 			},
 			overlay = { color = 0, blend_color = overlay_blend_color },
@@ -532,7 +533,7 @@ function builders.build_combat_all_out_frames(params)
 		frames[#frames + 1] = {
 			x = origin_x + dx - ox,
 			y = origin_y + dy - oy,
-			sprite_component = { scale = { x = sx, y = sy } },
+			sprite_component = { scale_x = sx, scale_y = sy },
 		}
 	end
 
@@ -580,10 +581,8 @@ function builders.build_combat_hit_frames(params)
 
 		local monster_x<const> = base_x + dx
 		local monster_y<const> = base_y + dy
-		local monster_scale<const> = {
-			x = 1 + (combat_hit_scale_x * kick),
-			y = 1 + (combat_hit_scale_y * kick),
-		}
+		local monster_scale_x<const> = 1 + (combat_hit_scale_x * kick)
+		local monster_scale_y<const> = 1 + (combat_hit_scale_y * kick)
 
 		local monster_flash = false
 		if frame_index >= combat_hit_stop_frames and frame_index < recover_start then
@@ -619,7 +618,8 @@ function builders.build_combat_hit_frames(params)
 				y = monster_y,
 				sprite_component = {
 					color = monster_flash and 0xffff3333 or p3_white_color,
-					scale = monster_scale,
+					scale_x = monster_scale_x,
+					scale_y = monster_scale_y,
 				},
 			},
 			slash_frame = {
@@ -657,7 +657,7 @@ function builders.build_combat_results_fade_in_frames(params)
 			results = {
 				text_component = {
 					color = brightness,
-					offset = { x = text_start_x + (text_target_x - text_start_x) * a },
+					offset_x = text_start_x + (text_target_x - text_start_x) * a,
 				},
 			},
 		}
@@ -775,7 +775,7 @@ function builders.apply_transition_frame(target, frame_index, params)
 		local u<const> = out_index / (transition_text_out_frames - 1)
 		text_x = center_x + (end_x - center_x) * smoothstep(u)
 	end
-	target.text.text_component.offset.x = text_x
+	target.text.text_component.offset_x = text_x
 end
 
 function builders.build_transition_fade_in_frames()

@@ -880,7 +880,8 @@ function room_object:ctor()
 		tile_count = 0,
 		columns = 1,
 		tile_size = room_tile_size,
-		offset = { x = room_tile_origin_x, y = room_tile_origin_y, z = 0 },
+		offset_x = room_tile_origin_x,
+		offset_y = room_tile_origin_y,
 		visible = false,
 	})
 	self:add_component(self.room_tile_layer)
@@ -890,13 +891,14 @@ function room_object:ctor()
 		tile_count = 0,
 		columns = 1,
 		tile_size = room_tile_size,
-		offset = { x = room_tile_origin_x, y = room_tile_origin_y, z = 0 },
+		offset_x = room_tile_origin_x,
+		offset_y = room_tile_origin_y,
 		visible = false,
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
 	local room_effect<const> = self:get_component('customvisualcomponent')
-	room_effect.offset.z = draw_z_room_effect
+	room_effect.offset_z = draw_z_room_effect
 	room_effect.producer = room_object.render_room
 end
 
@@ -1012,7 +1014,7 @@ function room_object:rebuild_room_tiles()
 	self.last_water_surface_frame = 1
 	self.water_tile_layer.tile_count = water_tile_count
 	self.water_tile_layer.columns = self.tile_columns
-	self.water_tile_layer.offset.y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
+	self.water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true
 	end
