@@ -3,6 +3,8 @@ local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -604,7 +606,7 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		fsms = { ids_stage_fsm },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 	})
 end
 

@@ -1,5 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local worldobject<const> = require('cartlib/world/object')
 
@@ -84,7 +85,7 @@ local define_enemy_explosion_fsm<const> = function()
 		states = {
 			animating = {
 				entering_state = function(self)
-					self:play_timeline(explosion_timeline_id, { rewind = true, snap_to_start = true })
+					self.timelines:play(explosion_timeline_id, { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -97,6 +98,7 @@ local register_enemy_explosion_definition<const> = function()
 		class = enemy_explosion,
 		type = 'sprite',
 		fsms = { 'enemy_explosion' },
+		components = { timelinecomponent.new },
 		defaults = {
 			loot_type = nil,
 		},

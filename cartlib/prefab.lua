@@ -1,5 +1,4 @@
 local action_effects<const> = require('cartlib/action_effects')
-local components<const> = require('cartlib/components')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
@@ -29,13 +28,7 @@ local attach_components<const> = function(instance, list)
 		return
 	end
 	for index = 1, #list do
-		local entry<const> = list[index]
-		if type(entry) == 'string' then
-			instance:add_component(components.new_component(entry, { parent = instance }))
-		else
-			entry.parent = instance
-			instance:add_component(entry)
-		end
+		instance:add_component(list[index]({ parent = instance }))
 	end
 end
 
@@ -58,7 +51,6 @@ local attach_effects<const> = function(instance, effects)
 	for index = 1, #effects do
 		component:grant_effect(effects[index])
 	end
-	instance.actioneffects = component
 end
 
 local attach_behaviour_trees<const> = function(instance, trees)

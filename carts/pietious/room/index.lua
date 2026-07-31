@@ -7,7 +7,9 @@ local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/index')
-local components<const> = require('cartlib/components')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -874,7 +876,7 @@ function room_object:ctor()
 		self.water_surface_sources[i] = gx_image.rect(water_surface_frame_imgids[i])
 	end
 	self.water_body_source = gx_image.rect('water_body_msx')
-	self.room_tile_layer = components.tilelayercomponent.new({
+	self.room_tile_layer = tilelayercomponent.new({
 		id_local = 'room',
 		sources = self.room_tile_sources,
 		tile_count = 0,
@@ -885,7 +887,7 @@ function room_object:ctor()
 		visible = false,
 	})
 	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = components.tilelayercomponent.new({
+	self.water_tile_layer = tilelayercomponent.new({
 		id_local = 'water',
 		sources = self.water_tile_sources,
 		tile_count = 0,
@@ -1172,7 +1174,7 @@ local define_room_fsm<const> = function()
 								},
 								autoplay = true,
 								on_frame = function(self)
-									self:sync_water_surface_frame(self:get_timeline(water_surface_timeline_id):value())
+									self:sync_water_surface_frame(self.timelines:get(water_surface_timeline_id):value())
 								end,
 							},
 						},
@@ -1201,7 +1203,7 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		fsms = { 'room' },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
 		},
 	})

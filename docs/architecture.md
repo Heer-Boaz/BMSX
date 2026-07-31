@@ -3228,7 +3228,30 @@ to source files and supplies a module when that graph reaches it.
 `cartlib/prefab` owns prefab definitions and spawning; it selects and prepares
 each definition's base constructor and instance metatable once when the
 definition is registered rather than re-decoding its type or allocating a new
-metatable for every spawn. The cartridge entry module is the hardware-feature
+metatable for every spawn. Prefab component lists contain direct constructor
+references; there is no string component registry, universal component module,
+prebuilt-instance branch, or compatibility lookup. The world component base
+owns only attachment state, activation reconciliation, event unbinding, IDs,
+and enabled state. Rendering, text, timeline, collision, boundary, and input-effect
+components live at their focused owners and are linked only when a cart
+selects them. Timelines are an explicit component capability rather than an
+allocation on every world object, and callers operate on that retained
+component directly.
+
+Carts remain the extension owner: a cart may derive a component directly from
+`cartlib/world/component`, use its own component key, and register its own
+system descriptor in the cart-selected ECS pipeline. Neither extension path
+requires modifying a cartlib registry.
+
+Sprite collision association is explicit: a collider owns the selected
+image/flip raw GEO shape reference, while the sprite only holds render state.
+Carts program raw collider layer and mask words; there is no named profile
+registry. Font definition owns the retained GX glyph image; text
+components never lazily mutate shared font descriptors. Screen-boundary
+components receive explicit flat world bounds and do not query the current GX
+display mode during construction.
+
+The cartridge entry module is the hardware-feature
 composition root: it clears its world, selects an ECS pipeline, samples input
 in its frame loop, and registers only the device IRQ handlers it actually uses.
 AEM and GEO have no import-time application facade; carts with AEM data call

@@ -4,6 +4,8 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local textcomponent<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -61,7 +63,7 @@ local register_shrine_definition<const> = function()
 		def_id = 'shrine',
 		class = shrine,
 		fsms = { 'shrine' },
-		components = { 'customvisualcomponent', 'textcomponent' },
+		components = { customvisualcomponent.new, textcomponent.new },
 		defaults = {
 			id = 'shrine',
 		},

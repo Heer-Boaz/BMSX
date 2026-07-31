@@ -59,74 +59,15 @@
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter<const> = require('cartlib/eventemitter')
-local component_types<const> = require('cartlib/components/types')
+local component<const> = require('cartlib/world/component')
 local fsm<const> = require('cartlib/fsm/index')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local components<const> = require('cartlib/components')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local world_instance<const> = require('cartlib/world/index').instance
 local registry_instance<const> = require('cartlib/registry').instance
 
 local worldobject<const> = {}
 worldobject.__index = worldobject
-
-local world_id_max<const> = 0x7fffffff
-local collision_linked_component_types<const> = {
-	[component_types.sprite] = true,
-	[component_types.collider_2d] = true,
-}
-
-local component_key<const> = function(type_or_name)
-	local t<const> = type(type_or_name)
-	if t == 'string' then
-		return string.lower(type_or_name)
-	end
-	if t == 'table' then
-		local name<const> = type_or_name.type_name or type_or_name.typename or type_or_name.name
-		if name == nil then
-			error('worldobject component key table is missing type name')
-		end
-		return string.lower(name)
-	end
-	return string.lower(tostring(type_or_name))
-end
-
-local rebuild_collision_sprite_links<const> = function(self)
-	local sprite_bucket<const> = self.component_map[component_types.sprite]
-	local collider_bucket<const> = self.component_map[component_types.collider_2d]
-	local primary_sprite = self.sprite_component
-	local primary_collider = self.collider
-	if primary_sprite == nil or primary_sprite.parent ~= self then
-		if sprite_bucket ~= nil then
-			primary_sprite = sprite_bucket[1]
-		else
-			primary_sprite = nil
-		end
-	end
-	if primary_collider == nil or primary_collider.parent ~= self then
-		if collider_bucket ~= nil then
-			primary_collider = collider_bucket[1]
-		else
-			primary_collider = nil
-		end
-	end
-	self._collision_primary_sprite = primary_sprite
-	self._collision_primary_collider = primary_collider
-	local map<const> = self._collision_driving_sprites
-	for key in pairs(map) do
-		map[key] = nil
-	end
-	if sprite_bucket == nil then
-		return
-	end
-	for i = 1, #sprite_bucket do
-		local sprite<const> = sprite_bucket[i]
-		local collider_local_id<const> = sprite.collider_local_id
-		if collider_local_id ~= nil then
-			map[collider_local_id] = sprite
-		end
-	end
-end
 
 function worldobject.new(opts)
 	opts = opts or {}
@@ -137,7 +78,7 @@ function worldobject.new(opts)
 	self.sx = opts.sx or 0
 	self.sy = opts.sy or 0
 	self.sz = opts.sz or 0
-	self.visible = opts.visible or true
+	self.visible = opts.visible == nil or opts.visible
 	self.active = false
 	self.tick_order = opts.tick_order or 'normal'
 	self.fsm_dispatch_enabled = false
@@ -152,13 +93,6 @@ function worldobject.new(opts)
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
 	self.btree_ids = {}
-	self.transform_component = nil
-	self._collision_primary_sprite = nil
-	self._collision_primary_collider = nil
-	self._collision_driving_sprites = {}
-
-	self.timelines = components.timelinecomponent.new({})
-	self:add_component(self.timelines)
 	return self
 end
 
@@ -194,9 +128,9 @@ end
 function worldobject:add_component(comp)
 	comp.parent = self
 	if not comp.id then
-		comp.id = components.component.generate_id(comp)
+		comp.id = component.generate_id(comp)
 	end
-	local key<const> = component_key(comp.type_name or comp)
+	local key<const> = comp.type_name
 	local bucket = self.component_map[key]
 	if not bucket then
 		bucket = {}
@@ -212,52 +146,34 @@ function worldobject:add_component(comp)
 	comp:on_attach()
 	registry_instance:register(comp)
 	if self.active then
-		world_instance:activate_component(comp)
-	end
-	if comp.type_name == component_types.timeline then
-		self.timelines = comp
-	end
-	if comp.type_name == component_types.transform then
-		self.transform_component = comp
-	end
-	if comp.type_name == component_types.action_effect then
-		self.actioneffects = comp
-	end
-	if comp.type_name == component_types.abilities then
-		self.abilities = comp
-	end
-	if collision_linked_component_types[comp.type_name] then
-		rebuild_collision_sprite_links(self)
+		self.world:reconcile_component(comp)
 	end
 
 	return comp
 end
 
 function worldobject:get_component(type_name)
-	local key<const> = component_key(type_name)
-	local list<const> = self.component_map[key]
+	local list<const> = self.component_map[type_name]
 	return list and list[1]
 end
 
 function worldobject:get_components(type_name)
-	local key<const> = component_key(type_name)
-	return self.component_map[key] or {}
+	return self.component_map[type_name]
 end
 
 function worldobject:get_unique_component(type_name)
-	local list<const> = self.component_map[component_key(type_name)]
+	local list<const> = self.component_map[type_name]
 	if not list or #list == 0 then
 		return nil
 	end
 	if #list > 1 then
-		error('multiple "' .. component_key(type_name) .. '" components attached to "' .. self.id .. '"')
+		error('multiple "' .. type_name .. '" components attached to "' .. self.id .. '"')
 	end
 	return list[1]
 end
 
 function worldobject:has_component(type_name)
-	local key<const> = component_key(type_name)
-	local list<const> = self.component_map[key]
+	local list<const> = self.component_map[type_name]
 	return list and #list > 0
 end
 
@@ -272,7 +188,7 @@ end
 
 function worldobject:get_component_by_local_id(type_name, id_local)
 	for _, c in ipairs(self.components) do
-		if c.id_local == id_local and component_key(c.type_name) == component_key(type_name) then
+		if c.id_local == id_local and c.type_name == type_name then
 			return c
 		end
 	end
@@ -280,12 +196,15 @@ function worldobject:get_component_by_local_id(type_name, id_local)
 end
 
 function worldobject:get_component_at(type_name, index)
-	local list<const> = self.component_map[component_key(type_name)]
+	local list<const> = self.component_map[type_name]
 	return list and list[index + 1]
 end
 
 function worldobject:find_component(predicate, type_name)
 	local list<const> = type_name and self:get_components(type_name) or self.components
+	if not list then
+		return nil
+	end
 	for i = 1, #list do
 		local c<const> = list[i]
 		if predicate(c, i) then
@@ -298,6 +217,9 @@ end
 function worldobject:find_components(predicate, type_name)
 	local list<const> = type_name and self:get_components(type_name) or self.components
 	local out<const> = {}
+	if not list then
+		return out
+	end
 	for i = 1, #list do
 		local c<const> = list[i]
 		if predicate(c, i) then
@@ -308,8 +230,7 @@ function worldobject:find_components(predicate, type_name)
 end
 
 function worldobject:remove_components(type_name)
-	local key<const> = component_key(type_name)
-	local list<const> = self.component_map[key]
+	local list<const> = self.component_map[type_name]
 	if not list then
 		return
 	end
@@ -320,7 +241,7 @@ end
 
 function worldobject:remove_component_instance(comp)
 	comp._attached = false
-	local key<const> = component_key(comp.type_name or comp)
+	local key<const> = comp.type_name
 	local list<const> = self.component_map[key]
 	if list then
 		for i = #list, 1, -1 do
@@ -342,21 +263,9 @@ function worldobject:remove_component_instance(comp)
 	comp:on_detach()
 	comp:unbind()
 	if self.active then
-		world_instance:deactivate_component(comp)
+		self.world:reconcile_component(comp)
 	end
 	registry_instance:deregister(comp, true)
-	if comp == self.sprite_component then
-		self.sprite_component = nil
-	end
-	if comp == self.collider then
-		self.collider = nil
-	end
-	if comp == self.transform_component then
-		self.transform_component = nil
-	end
-	if collision_linked_component_types[comp.type_name] then
-		rebuild_collision_sprite_links(self)
-	end
 end
 
 function worldobject:remove_all_components()
@@ -504,46 +413,6 @@ function worldobject:dispose()
 	self:remove_all_components()
 	self:unbind()
 	registry_instance:deregister(self, true)
-end
-
--- define_timeline(def): register a pre-built timeline object on this object.
--- Prefer declaring timelines inside the FSM state's `timelines` block using a
--- plain `def` table — the FSM calls define_timeline() automatically.  Only
--- call this manually for timelines that exist outside any FSM state.
-function worldobject:define_timeline(def)
-	self.timelines:define(def)
-end
-
--- play_timeline(id, opts): start playback of a previously defined timeline.
--- Prefer setting `autoplay = true` in the FSM timeline binding rather than
--- calling this manually.  Use it directly only when play options are computed
--- at runtime (e.g. a dynamic target index).
--- opts fields: rewind (bool), snap_to_start (bool).
-function worldobject:play_timeline(id, opts)
-	self.timelines:play(id, opts)
-end
-
--- stop_timeline(id): halt a playing timeline.  Prefer setting
--- `stop_on_exit = true` in the FSM binding.  Call directly only for
--- imperative early-stop logic outside an FSM state transition.
-function worldobject:stop_timeline(id)
-	self.timelines:stop(id)
-end
-
-function worldobject:get_timeline(id)
-	return self.timelines:get(id)
-end
-
-function worldobject:seek_timeline(id, frame)
-	return self.timelines:seek(id, frame)
-end
-
-function worldobject:force_seek_timeline(id, frame)
-	return self.timelines:force_seek(id, frame)
-end
-
-function worldobject:advance_timeline(id)
-	return self.timelines:advance(id)
 end
 
 function worldobject:add_btree(bt_id)

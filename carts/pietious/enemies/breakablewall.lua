@@ -1,6 +1,8 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -37,7 +39,9 @@ function breakablewall:process_damage_result(result)
 end
 
 function breakablewall:ctor()
-	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
+	local collider<const> = self:get_component('collider2dcomponent')
+	collider.layer = collision_enemy_layer
+	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
 	self.sy = self.height_tiles * room_tile_size
 	local tile_layer<const> = self:get_component('tilelayercomponent')
@@ -79,7 +83,7 @@ function breakablewall.register_enemy_definition()
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
 		fsms = { 'breakablewall' },
-		components = { 'collider2dcomponent', 'tilelayercomponent' },
+		components = { collider2dcomponent.new, tilelayercomponent.new },
 		defaults = {
 			trigger = nil,
 			conditions = {},

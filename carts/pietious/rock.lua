@@ -1,6 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -10,8 +11,8 @@ rock.__index = rock
 local rock_break_timeline_id<const> = 'rock.tl.break'
 
 function rock:ctor()
-	self.collider:apply_collision_profile('enemy')
-	self.collider.spaceevents = 'current'
+	self.collider.layer = collision_enemy_layer
+	self.collider.mask = collision_enemy_mask
 	self:gfx('stone')
 end
 
@@ -127,6 +128,7 @@ local register_rock_definition<const> = function()
 				class = rock,
 				type = 'sprite',
 				fsms = { 'rock' },
+				components = { timelinecomponent.new },
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,

@@ -11,7 +11,6 @@ function elevator:ctor()
 	self.collider:set_enabled(true)
 	self.collider.layer = collision_world_layer
 	self.collider.mask = collision_player_layer
-	self.collider.spaceevents = 'current'
 end
 
 local move_vertical<const> = function(self, target, vertical)

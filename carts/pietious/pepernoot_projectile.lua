@@ -14,7 +14,7 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
-local components<const> = require('cartlib/components')
+local tilecollisioncomponent<const> = require('cartlib/collision/tile_collision_component')
 local worldobject<const> = require('cartlib/world/object')
 
 local pepernoot_projectile<const> = {}
@@ -25,8 +25,9 @@ local state_tags<const> = {
 }
 
 function pepernoot_projectile:ctor()
-	self.collider:apply_collision_profile('projectile')
-	self:add_component(components.tilecollisioncomponent.new({
+	self.collider.layer = collision_projectile_layer
+	self.collider.mask = collision_projectile_mask
+	self:add_component(tilecollisioncomponent.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
 			local collision_flags<const> = world_instance:get('room'):collision_flags_at_world(owner.x, owner.y)

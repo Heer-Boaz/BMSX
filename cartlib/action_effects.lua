@@ -16,15 +16,15 @@
 --          id = 'sword_swing',
 --          cooldown_ms = 400,
 --          handler = function(ctx)
---              ctx.owner:play_timeline('swing')
+--              ctx.owner.timelines:play('swing')
 --          end,
 --      })
 --
 --    STEP 2 — grant the effect to an object's actioneffectcomponent:
---      player.abilities:grant_effect('sword_swing')
+--      player.actioneffects:grant_effect('sword_swing')
 --
 --    STEP 3 — trigger the effect from any input/event handler:
---      local result = player.abilities:trigger('sword_swing')
+--      local result = player.actioneffects:trigger('sword_swing')
 --      -- result: 'ok' | 'blocked' | 'on_cooldown' | 'failed'
 --
 -- 3. EFFECTS FIRE via emit_gameplay_fact(), NOT direct emits.
@@ -36,9 +36,8 @@
 --    target defaults to owner but can be overridden for targeted effects.
 
 local eventemitter<const> = require('cartlib/eventemitter')
-local components<const> = require('cartlib/components')
 local component_types<const> = require('cartlib/components/types')
-local component<const> = components.component
+local component<const> = require('cartlib/world/component')
 
 local actioneffects<const> = {}
 
@@ -197,7 +196,7 @@ actioneffects.register_effect(actioneffects.effecttype.move, {
 actioneffects.register_effect(actioneffects.effecttype.play_animation, {
 	id = actioneffects.effecttype.play_animation,
 	handler = function(context, anim_id, opts)
-		context.target:play_timeline(anim_id, opts)
+		context.target.timelines:play(anim_id, opts)
 	end,
 })
 
@@ -209,14 +208,21 @@ setmetatable(actioneffectcomponent, { __index = component })
 --   Attach once per object; it manages a set of granted effects + their cooldowns.
 --   The component is unique (only one per object allowed).
 function actioneffectcomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = component_types.action_effect
-	opts.unique = true
-	local self<const> = setmetatable(component.new(opts), actioneffectcomponent)
+	local self<const> = setmetatable(component.new(opts, component_types.action_effect, true), actioneffectcomponent)
 	self.definitions = {}
 	self.cooldown_until = {}
 	self.time_ms = 0
 	return self
+end
+
+function actioneffectcomponent:on_attach()
+	self.parent.actioneffects = self
+end
+
+function actioneffectcomponent:on_detach()
+	if self.parent.actioneffects == self then
+		self.parent.actioneffects = nil
+	end
 end
 
 -- actioneffectcomponent:grant_effect(id): gives the object access to the
@@ -295,6 +301,5 @@ function actioneffectcomponent:cooldown_remaining(id)
 end
 
 actioneffects.actioneffectcomponent = actioneffectcomponent
-components.register_component(component_types.action_effect, actioneffectcomponent)
 
 return actioneffects

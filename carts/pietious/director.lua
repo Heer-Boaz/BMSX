@@ -29,7 +29,6 @@
 --    "command" events that are thinly disguised method calls targeting a single
 --    object.  If a subsystem needs to act on a mode change, it subscribes to
 --    the mode broadcast in its own bind().
---
 -- 4. FSM STATE SUB-VARIANTS INSTEAD OF CROSS-STATE FLAGS.
 --    When two states differ only by a boolean context value (e.g. after_death
 --    in daemon_appearance), two distinct FSM states exist and the decision
@@ -51,10 +50,12 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 
@@ -943,7 +944,7 @@ local register_director_definition<const> = function()
 		def_id = 'director',
 		class = director,
 		fsms = { 'director' },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
 			id = 'd',
 		},

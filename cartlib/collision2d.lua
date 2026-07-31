@@ -108,18 +108,15 @@ local raise_geo_fault<const> = function(label)
 end
 
 local stage_geo_aabb_shape<const> = function(collider, shape_addr)
-	local area<const> = collider._world_area_cache
-	local tx<const> = collider._overlap_geo_tx
-	local ty<const> = collider._overlap_geo_ty
 	local shape<const>: *geo_overlap_aabb_shape = shape_addr
 	shape->kind = 0x00000001
 	shape->data_count = 0x00000004
 	shape->data_offset = 0x00000010
 	shape->bounds_offset = 0x00000010
-	shape->bounds[0] = area.left - tx
-	shape->bounds[1] = area.top - ty
-	shape->bounds[2] = area.right - tx
-	shape->bounds[3] = area.bottom - ty
+	shape->bounds[0] = collider._overlap_local_left
+	shape->bounds[1] = collider._overlap_local_top
+	shape->bounds[2] = collider._overlap_local_right
+	shape->bounds[3] = collider._overlap_local_bottom
 	return shape_addr
 end
 
@@ -267,7 +264,7 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	local instance_base<const> = shape_base + collider_count * 0x00000020
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
-		collider:get_world_area()
+		collider:prepare_overlap()
 		collider._geo_overlap_instance_token = batch_token
 		collider._geo_overlap_instance_index = i - 1
 		stage_geo_overlap_instance(collider, batch_token, instance_base, shape_base + (i - 1) * 0x00000020)
@@ -286,7 +283,6 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
 		collider._overlap_cache_valid = false
-		collider._world_polys_cache_valid = false
 	end
 	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
 end
@@ -298,8 +294,8 @@ function collision2d.collides(a, b)
 	if a == b then
 		error('self overlap query is invalid: ' .. tostring(a.id))
 	end
-	a:get_world_area()
-	b:get_world_area()
+	a:prepare_overlap()
+	b:prepare_overlap()
 	local batch_token<const> = next_geo_batch_token()
 	a._geo_overlap_instance_token = batch_token
 	a._geo_overlap_instance_index = 0
@@ -320,9 +316,7 @@ function collision2d.collides(a, b)
 		1
 	)
 	a._overlap_cache_valid = false
-	a._world_polys_cache_valid = false
 	b._overlap_cache_valid = false
-	b._world_polys_cache_valid = false
 	local direct_summary<const>: *geo_overlap_summary = geo_direct_summary_base
 	if direct_summary.result_count == 0 then
 		return nil

@@ -3,7 +3,7 @@ local world_instance<const> = require('cartlib/world/index').instance
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
-local components<const> = require('cartlib/components')
+local screenboundarycomponent<const> = require('cartlib/physics/screen_boundary_component')
 
 local enemy_base<const> = {}
 local damaging_contact_kinds<const> = {
@@ -12,9 +12,8 @@ local damaging_contact_kinds<const> = {
 }
 
 function enemy_base.ctor(self)
-	self.collider:apply_collision_profile('enemy')
-	self.collider.spaceevents = 'current'
-	self.collider:set_shape_offset(0, 0)
+	self.collider.layer = collision_enemy_layer
+	self.collider.mask = collision_enemy_mask
 	self.sprite_component.offset_z = 110
 end
 
@@ -22,13 +21,11 @@ end
 -- screen.leave so the projectile auto-disposes when it exits the room.
 -- Call from the ctor of projectile-type enemies only (vlokfoe, nootfoe, etc.).
 function enemy_base.setup_projectile_boundary(self)
-	self:add_component(components.screenboundarycomponent.new({
-		bounds = {
-			left = 0,
-			top = room_hud_height,
-			right = room_width,
-			bottom = room_height,
-		},
+	self:add_component(screenboundarycomponent.new({
+		left = 0,
+		top = room_hud_height,
+		right = room_width,
+		bottom = room_height,
 	}))
 	self.events:on({
 		event = 'screen.leave',

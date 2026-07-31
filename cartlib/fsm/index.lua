@@ -751,7 +751,7 @@ function state:ensure_child(ctx, seg)
 end
 
 function state:timeline(id)
-	local timeline<const> = self.target:get_timeline(id)
+	local timeline<const> = self.target.timelines:get(id)
 	if not timeline then
 		error('timeline "' .. tostring(id) .. '" not found for target "' .. tostring(self.target_id) .. '".')
 	end
@@ -802,7 +802,7 @@ function state:ensure_timeline_definitions()
 				if def.id == nil then
 					def.id = binding.id
 				end
-				self.target:define_timeline(timeline_module.new(def))
+				self.target.timelines:define(timeline_module.new(def))
 			end
 			binding.defined = true
 		end
@@ -815,7 +815,7 @@ function state:activate_timelines()
 	for i = 1, #bindings do
 		local binding<const> = bindings[i]
 		if binding.autoplay then
-			self.target:play_timeline(binding.id, binding.play_options)
+			self.target.timelines:play(binding.id, binding.play_options)
 		end
 	end
 end
@@ -828,7 +828,7 @@ function state:deactivate_timelines()
 	for i = 1, #bindings do
 		local binding<const> = bindings[i]
 		if binding.stop_on_exit then
-			self.target:stop_timeline(binding.id)
+			self.target.timelines:stop(binding.id)
 		end
 	end
 end

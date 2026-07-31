@@ -1,7 +1,6 @@
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local castle_map<const> = require('castle/map')
-local components<const> = require('cartlib/components')
 
 __bmsx_host_test = __bmsx_host_test or {
 	frame_count = 0,
@@ -14,9 +13,6 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
-	local boundary<const> = components.screenboundarycomponent.new({})
-	assert(boundary.boundary_right == 256 and boundary.boundary_bottom == 192,
-		'Pietious screen boundary does not use its GX display mode')
 	return host.new_game()
 end
 

@@ -1,6 +1,8 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
 require('constants')
 
 local disappearingwall<const> = {}
@@ -12,7 +14,9 @@ function disappearingwall:update_wall_size()
 end
 
 function disappearingwall:ctor()
-	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
+	local collider<const> = self:get_component('collider2dcomponent')
+	collider.layer = collision_enemy_layer
+	collider.mask = collision_enemy_mask
 	self:update_wall_size()
 	local tile_layer<const> = self:get_component('tilelayercomponent')
 	local tile_count<const> = self.width_tiles * self.height_tiles
@@ -50,7 +54,7 @@ function disappearingwall.register_enemy_definition()
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		fsms = { 'disappearingwall' },
-		components = { 'collider2dcomponent', 'tilelayercomponent' },
+		components = { collider2dcomponent.new, tilelayercomponent.new },
 		defaults = {
 			trigger = nil,
 			conditions = {},

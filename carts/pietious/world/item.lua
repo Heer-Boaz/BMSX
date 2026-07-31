@@ -8,7 +8,8 @@ local world_item<const> = {}
 world_item.__index = world_item
 
 function world_item:ctor()
-	self.collider:apply_collision_profile('pickup')
+	self.collider.layer = collision_pickup_layer
+	self.collider.mask = collision_pickup_mask
 	self:gfx(world_item_sprite[self.item_type])
 end
 

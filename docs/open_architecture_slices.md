@@ -20,8 +20,8 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `CARTLIB-OWNERS-01` | Splits de resterende monolithische component-, prefab- en world-objectowners zodat optionele behaviour-, action-effect-, timeline-, collision- en visualfeatures niet via basistypes binnenkomen. | Elke feature bezit zijn componentconstructie; object/prefab-core linkt alleen gekozen features en er komt geen universele facade of legacy-alias voor terug. |
-| `CARTLIB-HOT-01` | Compileer FSM-, event- en action-effectwerk eenmaal en verwijder closures, padparsing en tijdelijke tables uit normale frame- en transitionpaden. | Bestaande semantics blijven behouden en normale dispatch/update/transition maakt geen guest-heapobjecten voor infrastructuur aan. |
+| `CARTLIB-OWNERS-01` | Haal de resterende FSM- en behaviour-treeconstructie uit ieder `worldobject` en laat alleen objecten die deze features kiezen hun retained runtime-state bezitten. | Het world-objectbasistype alloceert alleen object-, component- en lifecycle-state; FSM en behaviour trees itereren hun eigen dichte ownercollecties zonder facade of legacy-alias. |
+| `CARTLIB-HOT-01` | Compileer FSM-, event- en action-effectwerk eenmaal; verwijder tijdelijke diagnostiekrecords, `*_or_throw`-runtimechecks en kunstmatige transition-ticklimieten. | Normale dispatch/update/transition alloceert niets voor infrastructuur en consumeert vooraf opgeloste definities en guards rechtstreeks. |
 | `CARTLIB-GX-01` | Maak GX/GTE een compacte low-level SDK rond raw registers, opcodes, packets en DMA; verplaats camera-, scene- en renderbeleid naar carts of optionele libraries. | De hardwarelaag bevat alleen echte protocollen, hergebruikt retained packet/state en schrijft niet per primitive opnieuw ongewijzigde GPU-state. |
 | `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code en verplaats aantoonbaar cart-specifieke utilities naar hun cart nadat de live require-graaf dit bewijst. | Geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 

@@ -47,7 +47,6 @@ local active_component_bucket_types<const> = {
 	component_types.custom_visual,
 	component_types.input_action_effect,
 	component_types.input_intent,
-	component_types.position_update_axis,
 	component_types.prohibit_leaving_screen,
 	component_types.screen_boundary,
 	component_types.sprite,
@@ -550,7 +549,7 @@ end
 function world_class:activate_object(obj)
 	local components<const> = obj.components
 	for i = 1, #components do
-		self:activate_component(components[i])
+		self:reconcile_component(components[i])
 	end
 	if self.current_phase ~= nil then
 		queue_active_object(self, obj)
@@ -562,7 +561,7 @@ end
 function world_class:deactivate_object(obj)
 	local components<const> = obj.components
 	for i = 1, #components do
-		self:deactivate_component(components[i])
+		self:reconcile_component(components[i])
 	end
 	if self.current_phase ~= nil then
 		queue_active_object(self, obj)
@@ -597,15 +596,7 @@ local reconcile_active_component<const> = function(world, comp)
 	end
 end
 
-function world_class:activate_component(comp)
-	if self.current_phase ~= nil then
-		queue_active_component(self, comp)
-	else
-		reconcile_active_component(self, comp)
-	end
-end
-
-function world_class:deactivate_component(comp)
+function world_class:reconcile_component(comp)
 	if self.current_phase ~= nil then
 		queue_active_component(self, comp)
 	else
@@ -665,6 +656,7 @@ function world_class:spawn(obj, pos)
 		error('world.spawn duplicate id "' .. obj.id .. '".')
 	end
 	local space_id<const> = obj.space_id or self.active_space_id
+	obj.world = self
 	self._by_id[obj.id] = obj
 	add_world_object(self, obj)
 	self:set_object_space(obj, space_id)

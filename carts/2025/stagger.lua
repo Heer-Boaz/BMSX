@@ -143,11 +143,11 @@ end
 
 local ensure_timeline<const> = function(owner, preset_id, cfg)
 	local timeline_id<const> = stagger_timeline_prefix .. preset_id
-	if owner:get_timeline(timeline_id) then
+	if owner.timelines:get(timeline_id) then
 		return timeline_id
 	end
 	local total<const> = cfg.text_start + cfg.text_duration
-	owner:define_timeline(timeline.new({
+	owner.timelines:define(timeline.new({
 		id = timeline_id,
 		continuous = true,
 		playback_mode = 'once',
@@ -234,8 +234,8 @@ function stagger.play(owner, preset_id, opts)
 	end
 
 	owner.stagger_blocked = timeline_cfg.text_start > 0
-	owner:stop_timeline(timeline_id)
-	owner:play_timeline(timeline_id, {
+	owner.timelines:stop(timeline_id)
+	owner.timelines:play(timeline_id, {
 		rewind = true,
 		snap_to_start = true,
 		params = {

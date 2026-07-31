@@ -83,7 +83,11 @@ local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
-local components<const> = require('cartlib/components')
+local action_effects<const> = require('cartlib/action_effects')
+local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local inputactioneffectcomponent<const> = require('cartlib/input/action_effect/component')
+local spritecomponent<const> = require('cartlib/render/sprite_component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local collision2d<const> = require('cartlib/collision2d')
 local player_abilities<const> = require('player/abilities')
 
@@ -299,7 +303,7 @@ function player:apply_color(color)
 end
 
 function player:define_runtime_timelines()
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.tl.d',
 		frames = timeline.build_frame_sequence({
 			{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
@@ -310,43 +314,43 @@ function player:define_runtime_timelines()
 		}),
 		playback_mode = 'once',
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.tl.hf',
 		frames = player_hit_fall_frames,
 		playback_mode = 'once',
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.tl.hr',
 		frames = timeline.build_frame_sequence({
 			{ value = { imgid = 'pietolon_recover_r' }, hold = damage_hit_recovery_frames },
 		}),
 		playback_mode = 'once',
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.seq.s',
 		frames = timeline.range(sword_duration_frames + 1),
 		playback_mode = 'once',
 		autotick = false,
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.seq.hi',
 		frames = timeline.range(damage_hit_invulnerability_frames),
 		playback_mode = 'once',
 		autotick = false,
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.seq.hb',
 		frames = timeline.range(damage_hit_blink_switch_frames),
 		playback_mode = 'loop',
 		autotick = false,
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'p.seq.f',
 		frames = timeline.range(12),
 		playback_mode = 'once',
 		autotick = false,
 	}))
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = player_shrine_exit_timeline_id,
 		frames = build_shrine_exit_transition_frames(),
 		playback_mode = 'once',
@@ -355,35 +359,35 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(components.new_component('actioneffectcomponent', {}))
+	self:add_component(action_effects.actioneffectcomponent.new({}))
 	self.actioneffects:grant_effect('halo')
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
-	self:add_component(components.inputactioneffectcomponent.new({
+	self:add_component(inputactioneffectcomponent.new({
 		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
 	self.width = player_width
 	self.height = player_height
 	self.collider.id_local = 'body'
-	self.collider.spaceevents = 'current'
-	self.collider:apply_collision_profile('player')
+	self.collider.layer = collision_player_layer
+	self.collider.mask = collision_player_mask
 
-	self.sword_collider = components.collider2dcomponent.new({
+	self.sword_collider = collider2dcomponent.new({
 		id_local = 'sword',
-		spaceevents = 'current',
+		layer = collision_projectile_layer,
+		mask = collision_projectile_mask,
 	})
-	self.sword_collider:apply_collision_profile('projectile')
 	self.sword_collider:set_enabled(false)
 	self:add_component(self.sword_collider)
 
-	self.sword_sprite = components.spritecomponent.new({
+	self.sword_sprite = spritecomponent.new({
 		id_local = 'sword',
 		imgid = 'sword_r',
 		offset_z = 111,
-		collider_local_id = 'sword',
 	})
 	self:add_component(self.sword_sprite)
+	self.sword_collider:set_sprite(self.sword_sprite)
 	self.sword_sprite:set_enabled(false)
 	self:define_runtime_timelines()
 	self.inventory_items = {}
@@ -395,7 +399,7 @@ function player:ctor()
 	self.left_wall_collision_secondary = false
 	self.left_wall_collision = false
 	self.right_wall_collision = false
-	self:force_seek_timeline('p.seq.s', 0)
+	self.timelines:seek('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self:clear_input_state()
@@ -411,18 +415,18 @@ end
 function player:get_damage_state_imgid()
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
-			local dying_timeline<const> = self:get_timeline('p.tl.d')
+			local dying_timeline<const> = self.timelines:get('p.tl.d')
 			dying_timeline:force_seek(self.death_timer)
 			return dying_timeline:value().imgid
 		end
 
 		if self:has_tag(state_tags.variant.hit_recovery) then
-			local hit_recovery_timeline<const> = self:get_timeline('p.tl.hr')
+			local hit_recovery_timeline<const> = self.timelines:get('p.tl.hr')
 			hit_recovery_timeline:force_seek(self.hit_recovery_timer)
 			return hit_recovery_timeline:value().imgid
 		end
 
-		local hit_fall_timeline<const> = self:get_timeline('p.tl.hf')
+		local hit_fall_timeline<const> = self.timelines:get('p.tl.hf')
 		hit_fall_timeline:force_seek(self.hit_substate)
 		return hit_fall_timeline:value().imgid
 	end
@@ -566,18 +570,18 @@ function player:update_facing_from_horizontal_input()
 end
 
 function player:cancel_sword()
-	self:force_seek_timeline('p.seq.s', 0)
+	self.timelines:seek('p.seq.s', 0)
 	self.events:emit('sword_cancel')
 end
 
 function player:advance_sword_sequence()
-	local sword_sequence<const> = self:get_timeline('p.seq.s')
+	local sword_sequence<const> = self.timelines:get('p.seq.s')
 	if sword_sequence:value() >= sword_duration_frames then
 		self.sword_cooldown = 1
 		self.events:emit(player_sword_end_event)
 		return
 	end
-	self:advance_timeline('p.seq.s')
+	self.timelines:advance('p.seq.s')
 end
 
 function player:is_hittable()
@@ -592,11 +596,11 @@ function player:update_hit_invulnerability()
 		return
 	end
 
-	local hit_invulnerability_sequence<const> = self:get_timeline('p.seq.hi')
+	local hit_invulnerability_sequence<const> = self.timelines:get('p.seq.hi')
 	hit_invulnerability_sequence:advance()
 	self.hit_invulnerability_timer = damage_hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
 
-	local hit_blink_sequence<const> = self:get_timeline('p.seq.hb')
+	local hit_blink_sequence<const> = self.timelines:get('p.seq.hb')
 	hit_blink_sequence:advance()
 	local hit_blink_event<const> = hit_blink_sequence.step_events[hit_blink_sequence.step_event_count]
 	if hit_blink_event ~= nil and hit_blink_event.kind == 'end' then
@@ -610,15 +614,15 @@ end
 function player:reset_hit_invulnerability_sequence()
 	self.hit_invulnerability_timer = 0
 	self.hit_blink_on = false
-	self:get_timeline('p.seq.hi'):rewind()
-	self:get_timeline('p.seq.hb'):rewind()
+	self.timelines:get('p.seq.hi'):rewind()
+	self.timelines:get('p.seq.hb'):rewind()
 end
 
 function player:start_hit_invulnerability_sequence()
 	self.hit_invulnerability_timer = damage_hit_invulnerability_frames
 	self.hit_blink_on = true
-	self:get_timeline('p.seq.hi'):rewind()
-	self:get_timeline('p.seq.hb'):force_seek(0)
+	self.timelines:get('p.seq.hi'):rewind()
+	self.timelines:get('p.seq.hb'):force_seek(0)
 end
 
 function player:get_hit_direction_from_source(source_x)
@@ -1748,11 +1752,11 @@ end
 function player:reset_fall_substate_sequence()
 	self.fall_substate = 0
 	self.water_controlled_fall_dx_accum = 0
-	self:get_timeline('p.seq.f'):force_seek(0)
+	self.timelines:get('p.seq.f'):force_seek(0)
 end
 
 function player:advance_fall_substate_sequence()
-	local fall_substate_sequence<const> = self:get_timeline('p.seq.f')
+	local fall_substate_sequence<const> = self.timelines:get('p.seq.f')
 	fall_substate_sequence:advance()
 	self.fall_substate = fall_substate_sequence:value()
 end
@@ -3145,6 +3149,7 @@ local register_player_definition<const> = function()
 		class = player,
 		type = 'sprite',
 		fsms = { 'player' },
+		components = { timelinecomponent.new },
 		defaults = {
 			imgid = 'pietolon_stand_r',
 			player_index = 1,

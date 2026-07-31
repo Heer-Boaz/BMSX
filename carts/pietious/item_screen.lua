@@ -1,7 +1,9 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -232,7 +234,7 @@ local register_item_screen_definition<const> = function()
 		def_id = 'item_screen',
 		class = item_screen,
 		fsms = { 'item_screen' },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
 			secondary_weapon_selection_index = 0,
 			selector_hidden = false,

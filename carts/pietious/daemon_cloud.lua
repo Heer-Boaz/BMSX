@@ -1,6 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 
 local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud
@@ -19,11 +20,11 @@ function daemon_cloud:play_once_at(x, y)
 	self.visible = true
 	self:gfx('daemon_smoke_small')
 	self.collider:set_enabled(true)
-	self:play_timeline(anim_timeline_id, { rewind = true, snap_to_start = true })
+	self.timelines:play(anim_timeline_id, { rewind = true, snap_to_start = true })
 end
 
 function daemon_cloud:stop_and_hide()
-	self:stop_timeline(anim_timeline_id)
+	self.timelines:stop(anim_timeline_id)
 	self.visible = false
 	self.collider:set_enabled(false)
 end
@@ -47,7 +48,7 @@ local define_daemon_cloud_fsm<const> = function()
 						autoplay = false,
 						stop_on_exit = true,
 						on_frame = function(self)
-							self:gfx(self:get_timeline(anim_timeline_id):value())
+							self:gfx(self.timelines:get(anim_timeline_id):value())
 						end,
 						on_end = function(self)
 							self.visible = false
@@ -66,6 +67,7 @@ local register_daemon_cloud_definition<const> = function()
 		class = daemon_cloud,
 		type = 'sprite',
 		fsms = { 'daemon_cloud' },
+		components = { timelinecomponent.new },
 		defaults = {
 			daemon_cloud_fx = true,
 		},

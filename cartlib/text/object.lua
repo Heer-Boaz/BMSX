@@ -2,7 +2,8 @@
 -- Text object with typewriter effect for carts.
 
 local worldobject<const> = require('cartlib/world/object')
-local components<const> = require('cartlib/components')
+local textcomponent<const> = require('cartlib/text/component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('cartlib/gx/gpu')
@@ -15,10 +16,10 @@ setmetatable(textobject, { __index = worldobject })
 
 local textobjectcomponent<const> = {}
 textobjectcomponent.__index = textobjectcomponent
-setmetatable(textobjectcomponent, { __index = components.textcomponent })
+setmetatable(textobjectcomponent, { __index = textcomponent })
 
 function textobjectcomponent.new(opts)
-	return setmetatable(components.textcomponent.new(opts), textobjectcomponent)
+	return setmetatable(textcomponent.new(opts), textobjectcomponent)
 end
 
 function textobjectcomponent:render(x, y)
@@ -27,7 +28,7 @@ function textobjectcomponent:render(x, y)
 	if self.background_color ~= nil then
 		owner:submit_text_background_lines(x, y)
 	end
-	components.textcomponent.render_glyphs(self, x, y)
+	textcomponent.render_glyphs(self, x, y)
 end
 
 local highlight_move_timeline_id<const> = 'hmove'
@@ -271,6 +272,7 @@ function textobject.new(opts)
 	opts.type_name = 'textobject'
 	opts.fsm_id = opts.fsm_id or textobject_fsm_id
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
+	self:add_component(timelinecomponent.new({ parent = self }))
 	self.is_textobject = true
 	self.text = { '' }
 	self.full_text_lines = { '' }
@@ -407,7 +409,7 @@ function textobject:update_highlight_animation()
 		return
 	end
 	if not self.highlight_move_enabled then
-		self:stop_timeline(highlight_move_timeline_id)
+		self.timelines:stop(highlight_move_timeline_id)
 		self.highlight_anim_y = target_y
 		self.highlight_anim_h = target_h
 		self.highlight_target_y = target_y
@@ -423,7 +425,7 @@ function textobject:update_highlight_animation()
 		self.highlight_target_y = target_y
 		self.highlight_target_h = target_h
 		self.highlight_last_line_index = self.highlighted_line_index
-		self:play_timeline(highlight_move_timeline_id, {
+		self.timelines:play(highlight_move_timeline_id, {
 			rewind = true,
 			snap_to_start = true,
 			params = {

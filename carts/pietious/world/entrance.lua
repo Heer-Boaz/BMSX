@@ -1,6 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 
@@ -99,6 +100,7 @@ local register_world_entrance_definition<const> = function()
 		class = world_entrance,
 		type = 'sprite',
 		fsms = { 'world_entrance' },
+		components = { timelinecomponent.new },
 		defaults = {
 			target = nil,
 			entrance_state = 'closed',

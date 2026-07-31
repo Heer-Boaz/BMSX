@@ -17,7 +17,10 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local textcomponent<const> = require('cartlib/text/component')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -47,7 +50,7 @@ function transition:ctor()
 	text.center_block_width = screen_width
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_transition_visual
-	self:define_timeline(timeline.new({
+	self.timelines:define(timeline.new({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
 		playback_mode = 'once',
@@ -61,7 +64,7 @@ local define_transition_fsm<const> = function()
 			go = function(self, _state, event)
 				self.text_component:set_text(event.lines)
 				self.text_component.visible = true
-				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
+				self.timelines:play('transition.timeline', { rewind = true, snap_to_start = true })
 			end,
 		},
 		['room'] = {
@@ -79,7 +82,7 @@ local define_transition_fsm<const> = function()
 			go = function(self)
 				self.text_component:set_text(nil)
 				self.text_component.visible = false
-				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
+				self.timelines:play('transition.timeline', { rewind = true, snap_to_start = true })
 			end,
 		}
 	end
@@ -97,7 +100,7 @@ local register_transition_definition<const> = function()
 		def_id = 'transition',
 		class = transition,
 		fsms = { 'transition' },
-		components = { 'customvisualcomponent', 'textcomponent' },
+		components = { customvisualcomponent.new, textcomponent.new, timelinecomponent.new },
 		defaults = {
 			id = 'transition',
 		},

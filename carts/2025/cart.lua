@@ -11,6 +11,9 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local surfacecomponent<const> = require('cartlib/render/surface_component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/index').instance
 irq = irq_module.dispatch
 local pietsona_font<const> = require('pietsona_font')
@@ -216,7 +219,7 @@ local register_director<const> = function()
 		class = director,
 		type = 'object',
 		fsms = { director_fsm_id },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 		defaults = {
 			node_id = start_node,
 			page_index = 1,
@@ -253,7 +256,7 @@ local register_director<const> = function()
 	prefab.define({
 		def_id = 'p3.bg',
 		class = surface_object_class,
-		components = { 'surfacecomponent' },
+		components = { surfacecomponent.new },
 	})
 	prefab.define({
 		def_id = 'p3.text.main',
@@ -298,7 +301,7 @@ local register_director<const> = function()
 	prefab.define({
 		def_id = 'p3.combat.all_out',
 		class = surface_object_class,
-		components = { 'surfacecomponent' },
+		components = { surfacecomponent.new },
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out_portrait',

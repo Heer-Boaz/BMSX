@@ -1,5 +1,5 @@
 local string_lib<const> = string
-local romdir<const> = require('cartlib/romdir')
+local gx_image<const> = require('cartlib/gx/image')
 local byte<const> = string_lib.byte
 
 local font<const> = {}
@@ -7,37 +7,36 @@ local font<const> = {}
 local definitions<const> = {}
 local descriptors<const> = {}
 
-local default_glyphs<const> = {
-}
-
-for codepoint = 0x20, 0x7e do
-	local c<const> = string_lib.char(codepoint)
-	default_glyphs[c] = string_lib.format('tiny_3b_font_code_0x%02x', codepoint)
+local build_default_definition<const> = function()
+	local glyphs<const> = {}
+	for codepoint = 0x20, 0x7e do
+		glyphs[string_lib.char(codepoint)] = string_lib.format('tiny_3b_font_code_0x%02x', codepoint)
+	end
+	return {
+		glyphs = glyphs,
+		line_height = 6,
+	}
 end
 
 local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
-		local image_meta<const> = romdir.image(imgid).imgmeta
+		local image<const> = gx_image.rect(imgid)
 		items[byte(glyph)] = {
-			imgid = imgid,
-			width = image_meta.width,
-			height = image_meta.height,
-			advance = image_meta.width + advance_padding,
-			gx_source_x = image_meta.gx_source_x,
-			gx_source_y = image_meta.gx_source_y,
+			image = image,
+			width = image.w,
+			height = image.h,
+			advance = image.w + advance_padding,
 		}
 	end
 	local space<const> = items[0x20]
 	if space and not items[0x09] then
 		items[0x09] = {
-			imgid = space.imgid,
+			image = space.image,
 			width = space.width,
 			height = space.height,
 			advance = space.advance * 4,
-			gx_source_x = space.gx_source_x,
-			gx_source_y = space.gx_source_y,
 		}
 	end
 	local line_glyph<const> = items[0x41] or items[0x61] or items[0x3f]
@@ -50,15 +49,25 @@ end
 
 function font.define(id, definition)
 	definitions[id] = definition
-	descriptors[id] = build_descriptor(definition)
+	descriptors[id] = nil
 end
 
 function font.definition(id)
-	return definitions[id]
+	local definition = definitions[id]
+	if not definition and id == 'default' then
+		definition = build_default_definition()
+		definitions[id] = definition
+	end
+	return definition
 end
 
 function font.get(id)
-	return descriptors[id]
+	local descriptor = descriptors[id]
+	if not descriptor then
+		descriptor = build_descriptor(font.definition(id))
+		descriptors[id] = descriptor
+	end
+	return descriptor
 end
 
 
@@ -98,10 +107,5 @@ function font.measure_line_width(id_or_descriptor, line)
 	end
 	return width
 end
-
-font.define('default', {
-	glyphs = default_glyphs,
-	line_height = 6,
-})
 
 return font

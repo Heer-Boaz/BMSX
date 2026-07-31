@@ -27,12 +27,14 @@
 --    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object before gfx() is called.
 --
--- 3. COLLISION PROFILES: after gfx(), call apply_collision_profile().
+-- 3. COLLISION LAYERS: carts program the collider's raw layer and mask words.
 --      self:gfx('enemy')
---      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
+--      self.collider.layer = collision_enemy_layer
+--      self.collider.mask = collision_enemy_mask
 
 local worldobject<const> = require('cartlib/world/object')
-local components<const> = require('cartlib/components')
+local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local spritecomponent<const> = require('cartlib/render/sprite_component')
 local romdir<const> = require('cartlib/romdir')
 
 local spriteobject<const> = {}
@@ -60,14 +62,15 @@ function spriteobject.new(opts)
 	self.flip_v = false
 	self.imgid = nil
 
-	self.sprite_component = components.spritecomponent.new({
+	self.sprite_component = spritecomponent.new({
 		imgid = self.imgid,
 		id_local = spriteobject.base_sprite_id,
 	})
-	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
+	self.collider = collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
+	self.collider:set_sprite(self.sprite_component)
 
 	return self
 end

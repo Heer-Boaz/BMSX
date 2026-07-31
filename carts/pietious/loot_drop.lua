@@ -19,7 +19,8 @@ local sprite_for_loot_type<const> = function(loot_type)
 end
 
 function loot_drop:ctor()
-	self.collider:apply_collision_profile('pickup')
+	self.collider.layer = collision_pickup_layer
+	self.collider.mask = collision_pickup_mask
 	self:gfx(sprite_for_loot_type(self.loot_type))
 end
 

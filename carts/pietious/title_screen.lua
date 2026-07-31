@@ -1,8 +1,9 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
-local components<const> = require('cartlib/components')
+local spritecomponent<const> = require('cartlib/render/sprite_component')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
@@ -127,7 +128,7 @@ function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:gfx('title_screen')
 	self.z = 350
-	self.sparkle_sprite = components.spritecomponent.new({
+	self.sparkle_sprite = spritecomponent.new({
 		id_local = 'sparkle',
 		offset_z = 1,
 	})
@@ -199,7 +200,7 @@ local define_title_screen_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_frame = function(self)
-							self:gfx(self:get_timeline(start_timeline_id):value().sprite_id)
+							self:gfx(self.timelines:get(start_timeline_id):value().sprite_id)
 						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')
@@ -218,6 +219,7 @@ local register_title_screen_definition<const> = function()
 		class = title_screen,
 		type = 'sprite',
 		fsms = { 'title_screen' },
+		components = { timelinecomponent.new },
 	})
 end
 

@@ -20,27 +20,33 @@ function boundarysystem.new(priority)
 	return self
 end
 
-local emit_boundary_events<const> = function(obj, component)
-	local left<const> = component.boundary_left
-	local top<const> = component.boundary_top
-	local right<const> = component.boundary_right
-	local bottom<const> = component.boundary_bottom
-	local oldx<const> = component.old_pos.x
-	local oldy<const> = component.old_pos.y
+local emit_boundary_events<const> = function(obj, component, prohibit_leaving)
+	local left<const> = component.left
+	local top<const> = component.top
+	local right<const> = component.right
+	local bottom<const> = component.bottom
+	local oldx<const> = component.old_x
+	local oldy<const> = component.old_y
 	local newx<const> = obj.x
 	local newy<const> = obj.y
-	local sx<const> = obj.sx or 0
-	local sy<const> = obj.sy or 0
+	local sx<const> = obj.sx
+	local sy<const> = obj.sy
 	if newx < oldx then
 		if newx + sx < left then
 			obj.events:emit('screen.leave', { d = 'left', old_x_or_y = oldx })
 		elseif newx < left then
+			if prohibit_leaving then
+				obj.x = component.stick_to_edge and left or oldx
+			end
 			obj.events:emit('screen.leaving', { d = 'left', old_x_or_y = oldx })
 		end
 	elseif newx > oldx then
 		if newx >= right then
 			obj.events:emit('screen.leave', { d = 'right', old_x_or_y = oldx })
 		elseif newx + sx > right then
+			if prohibit_leaving then
+				obj.x = component.stick_to_edge and (right - sx) or oldx
+			end
 			obj.events:emit('screen.leaving', { d = 'right', old_x_or_y = oldx })
 		end
 	end
@@ -48,12 +54,18 @@ local emit_boundary_events<const> = function(obj, component)
 		if newy + sy < top then
 			obj.events:emit('screen.leave', { d = 'up', old_x_or_y = oldy })
 		elseif newy < top then
+			if prohibit_leaving then
+				obj.y = component.stick_to_edge and top or oldy
+			end
 			obj.events:emit('screen.leaving', { d = 'up', old_x_or_y = oldy })
 		end
 	elseif newy > oldy then
 		if newy >= bottom then
 			obj.events:emit('screen.leave', { d = 'down', old_x_or_y = oldy })
 		elseif newy + sy > bottom then
+			if prohibit_leaving then
+				obj.y = component.stick_to_edge and (bottom - sy) or oldy
+			end
 			obj.events:emit('screen.leaving', { d = 'down', old_x_or_y = oldy })
 		end
 	end
@@ -64,13 +76,13 @@ function boundarysystem:update()
 	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent
-		emit_boundary_events(obj, component)
+		emit_boundary_events(obj, component, false)
 	end
 	local prohibit_leave_components<const> = world_instance.active_space.active_components_by_type[prohibit_leaving_component_type]
 	for i = #prohibit_leave_components, 1, -1 do
 		local component<const> = prohibit_leave_components[i]
 		local obj<const> = component.parent
-		emit_boundary_events(obj, component)
+		emit_boundary_events(obj, component, true)
 	end
 end
 

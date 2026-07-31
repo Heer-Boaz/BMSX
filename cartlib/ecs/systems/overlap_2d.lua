@@ -54,8 +54,7 @@
 -- 3. LAYER / MASK FILTERING
 --    A pair is only tested when (a.layer & b.mask) != 0 OR (b.layer & a.mask) != 0.
 --    Both colliders must also have hittable=true.
---    Use collision_profiles to assign named layer+mask presets rather than
---    setting layer/mask directly.
+--    Carts program these raw bitmasks when constructing each collider.
 
 local ecs<const> = require('cartlib/ecs/index')
 local component_types<const> = require('cartlib/components/types')

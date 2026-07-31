@@ -47,7 +47,6 @@ local world_entrance_module<const> = require('world/entrance')
 local daemon_cloud_module<const> = require('daemon_cloud')
 local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
-local collision_profiles<const> = require('cartlib/collision_profiles')
 local castle_map<const> = require('castle/map')
 
 local pipeline_descriptors<const> = {
@@ -89,25 +88,6 @@ local vblank_sequence = 0
 local gpu_completion_sequence = 0
 local front_framebuffer = framebuffer_front
 local back_framebuffer = framebuffer_back
-
-local register_collision_profiles<const> = function()
-	collision_profiles.define('player', {
-		layer = collision_player_layer,
-		mask = collision_player_mask,
-	})
-	collision_profiles.define('enemy', {
-		layer = collision_enemy_layer,
-		mask = collision_enemy_mask,
-	})
-	collision_profiles.define('projectile', {
-		layer = collision_projectile_layer,
-		mask = collision_projectile_mask,
-	})
-	collision_profiles.define('pickup', {
-		layer = collision_pickup_layer,
-		mask = collision_pickup_mask,
-	})
-end
 
 local wait_vblank_after<const> = function(sequence)
 	while vblank_sequence == sequence do
@@ -241,7 +221,6 @@ function init()
 	daemon_cloud_module.register_daemon_cloud_definition()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
-	register_collision_profiles()
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
 end

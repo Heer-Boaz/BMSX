@@ -3,6 +3,8 @@ local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
+local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/index').instance
 require('constants')
@@ -775,7 +777,7 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		fsms = { ids_player_fsm },
-		components = { 'customvisualcomponent' },
+		components = { customvisualcomponent.new, timelinecomponent.new },
 		effects = { player_abilities.effect_ids.fire_salvo },
 		defaults = {
 			player_index = 1,

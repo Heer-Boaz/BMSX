@@ -122,7 +122,6 @@ local register_director_definition<const> = function()
 		def_id = ids_director_def,
 		class = director,
 		fsms = { ids_director_fsm },
-		components = {},
 		defaults = {
 			frame = 0,
 		},
