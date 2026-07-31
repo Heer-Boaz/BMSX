@@ -62,7 +62,7 @@ test('debug rebuild triggers when debug ROM is missing', async () => {
 
 		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: true,
-			biosRomFilePath: fixture.biosDebugPath,
+			biosImportsFilePath: fixture.biosDebugPath,
 		});
 		assert.equal(needsRebuild, true);
 	});
@@ -79,13 +79,13 @@ test('non-debug rebuild skips when output is newer than inputs', async () => {
 
 		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
-			biosRomFilePath: fixture.biosPath,
+			biosImportsFilePath: fixture.biosPath,
 		});
 		assert.equal(needsRebuild, false);
 	});
 });
 
-test('cart rebuild triggers when BIOS ROM is newer than game ROM', async () => {
+test('cart rebuild triggers when the BIOS import library is newer than the game ROM', async () => {
 	await withRebuildFixture('__rompacker_test_bios_newer__', async fixture => {
 		await writeBaseCartOutput(fixture);
 
@@ -96,7 +96,7 @@ test('cart rebuild triggers when BIOS ROM is newer than game ROM', async () => {
 
 		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
-			biosRomFilePath: fixture.biosPath,
+			biosImportsFilePath: fixture.biosPath,
 		});
 		assert.equal(needsRebuild, true);
 	});
@@ -117,7 +117,7 @@ test('cart rebuild triggers when cart-root file is newer than game ROM', async (
 		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			extraLuaPaths: [fixture.cartRoot],
-			biosRomFilePath: fixture.biosPath,
+			biosImportsFilePath: fixture.biosPath,
 		});
 		assert.equal(needsRebuild, true);
 	});
@@ -139,7 +139,7 @@ test('cart rebuild ignores newer files under _ignore', async () => {
 		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			extraLuaPaths: [fixture.cartRoot],
-			biosRomFilePath: fixture.biosPath,
+			biosImportsFilePath: fixture.biosPath,
 		});
 		assert.equal(needsRebuild, false);
 	});

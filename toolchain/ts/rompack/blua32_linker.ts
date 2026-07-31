@@ -832,6 +832,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			layout,
 			symbols,
 			biosImports: {
+				cartridgeStaticRamBase: input.bssAddress + bss.byteCount,
 				functions: input.biosExports.map((entry, index) => ({
 					path: entry.path,
 					exportPathKey: entry.exportPathKey,
@@ -884,7 +885,6 @@ export function linkSystemBlua32Image(
 }
 
 export function linkCartBlua32Image(
-	systemImage: Blua32ImageLayout,
 	biosImports: Blua32BiosImports,
 	object: ProgramCartObjectImage,
 	metadata: ProgramMetadata,
@@ -892,7 +892,7 @@ export function linkCartBlua32Image(
 	ramByteCount: number,
 	previous?: Blua32LinkBaseline,
 ): LinkedCartBlua32Image {
-	const dataAddress = systemImage.header.bssAddress + systemImage.header.bssByteCount;
+	const dataAddress = biosImports.cartridgeStaticRamBase;
 	const bssAddress = dataAddress + object.sections.data.bytes.byteLength;
 	assertStaticRamFits(
 		DYNAMIC_RAM_BASE,

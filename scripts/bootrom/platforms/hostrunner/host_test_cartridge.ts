@@ -9,13 +9,12 @@ import { resolveLuaEntryModuleIndex } from '../../../../toolchain/ts/lua/entry_m
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 import {
 	BLUA32_IMAGE_ID,
-	decodeBlua32Image,
 } from '../../../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_BIOS_IMPORTS_IMAGE_ID,
 	decodeBlua32BiosImports,
 } from '../../../../toolchain/ts/rompack/blua32_bios_imports';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../../machine/ts/spec/bmsx/model';
 import { buildBlua32Tail } from '../../../../toolchain/ts/rompack/blua32_tail';
 import { buildBlua32Image } from '../../../rompacker/blua32_image_builder';
@@ -47,13 +46,8 @@ export async function buildHostTestCartridge(
 ): Promise<Uint8Array> {
 	const systemIndex = await loadRomAssetList(systemRom, 'system');
 	const cartIndex = await parseCartridgeIndex(cartridge);
-	const systemImageEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 	const systemImportsEntry = systemIndex.entries.find(entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
 	const cartImageEntry = cartIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
-	const systemImage = decodeBlua32Image(
-		systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
-		SYSTEM_ROM_BASE + systemImageEntry.start!,
-	);
 	const biosImports = decodeBlua32BiosImports(
 		systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
 	);
@@ -85,7 +79,6 @@ export async function buildHostTestCartridge(
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
 		domain: 'cart',
-		systemImage,
 		biosImports,
 	});
 	return buildBlua32Tail({ id: 'cart', index: cartIndex, bytes: cartridge }, linked).bytes;

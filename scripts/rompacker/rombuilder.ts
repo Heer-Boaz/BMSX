@@ -72,7 +72,6 @@ import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '
 import {
 	BLUA32_IMAGE_ID,
 	type Blua32BootHeader,
-	type Blua32ImageLayout,
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
@@ -668,10 +667,10 @@ export type RebuildOptions = {
 	 */
 	romFilePath?: string;
 	/**
-	 * Optional override for the system ROM path used by cart rebuild checks.
-	 * Defaults to `dist/bmsx-bios[.debug].rom` (based on `debug`).
+	 * Optional override for the BIOS import-library path used by cart rebuild checks.
+	 * Defaults to `dist/bmsx-bios[.debug].rom.blua32-imports` (based on `debug`).
 	 */
-	biosRomFilePath?: string;
+	biosImportsFilePath?: string;
 };
 
 function isWorkspaceStateDirectory(name: string): boolean {
@@ -1227,7 +1226,6 @@ type BuildRomBlua32TailOptions = {
 	| {
 		domain: 'cart';
 		imageOffset: number;
-		systemImage: Blua32ImageLayout;
 		biosImports: Blua32BiosImports;
 	}
 );
@@ -1333,7 +1331,6 @@ export function buildRomBlua32Tail(
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
 		domain: 'cart',
-		systemImage: options.systemImage,
 		biosImports: options.biosImports,
 	});
 	const executableAssets: RomAsset[] = [{
@@ -1679,12 +1676,12 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 	if (romFilePath === undefined) {
 		romFilePath = `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
 	}
-	let biosRomFilePath = options.biosRomFilePath;
-	if (biosRomFilePath === undefined) {
-		biosRomFilePath = `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
+	let biosImportsFilePath = options.biosImportsFilePath;
+	if (biosImportsFilePath === undefined) {
+		biosImportsFilePath = `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom.blua32-imports`;
 	}
 	const extraLuaRoots = options.extraLuaPaths;
-	const cartProject = isCartPath(resPath) || !!options.biosRomFilePath;
+	const cartProject = isCartPath(resPath) || !!options.biosImportsFilePath;
 
 	async function checkPaths() {
 		try {
@@ -1711,13 +1708,13 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 		}
 	}
 	if (cartProject) {
-		let biosStats: Stats;
+		let biosImportsStats: Stats;
 		try {
-			biosStats = await stat(biosRomFilePath);
+			biosImportsStats = await stat(biosImportsFilePath);
 		} catch {
 			return true;
 		}
-		if (biosStats.mtimeMs > romMtimeMs) {
+		if (biosImportsStats.mtimeMs > romMtimeMs) {
 			return true;
 		}
 	}

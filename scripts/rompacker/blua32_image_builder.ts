@@ -5,7 +5,6 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../too
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type {
 	Blua32BiosFunctionExport,
 	Blua32BiosImports,
@@ -39,7 +38,6 @@ type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 
 type CartBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	domain: 'cart';
-	systemImage: Blua32ImageLayout;
 	biosImports: Blua32BiosImports;
 };
 
@@ -92,7 +90,6 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 			programDomain: 'cart',
 		});
 		return linkCartBlua32Image(
-			options.systemImage,
 			options.biosImports,
 			encodeCompiledProgramObject(compiled),
 			compiled.metadata,

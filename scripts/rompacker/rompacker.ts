@@ -25,18 +25,11 @@ import {
 } from '../../toolchain/ts/rompack/generated_modules';
 import { resolveCartridgeHeaderWords } from '../../toolchain/ts/rompack/manifest';
 import { LuaError } from '../../toolchain/ts/lua/errors';
-import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
-	BLUA32_IMAGE_ID,
-	decodeBlua32Image,
-} from '../../toolchain/ts/rompack/blua32_image';
-import {
-	BLUA32_BIOS_IMPORTS_IMAGE_ID,
 	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
 	decodeBlua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -512,9 +505,12 @@ async function main() {
 		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
-		const systemRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
-		if (!existsSync(systemRomPath)) {
-			throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
+		const biosImportsPath = join(
+			outputDirectory,
+			`${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`,
+		);
+		if (!existsSync(biosImportsPath)) {
+			throw new Error(`BIOS import library not found at "${biosImportsPath}". Build the BIOS ROM first.`);
 		}
 
 		let rebuildRequired = true;
@@ -532,7 +528,7 @@ async function main() {
 				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
 				debug,
 				romFilePath: romOutputPath,
-				biosRomFilePath: join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`),
+				biosImportsFilePath: biosImportsPath,
 			}));
 			if (!rebuildRequired) {
 				for (let i = 1; i < resourceRoots.length; i++) {
@@ -542,7 +538,7 @@ async function main() {
 						extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
 						debug,
 						romFilePath: romOutputPath,
-						biosRomFilePath: join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`),
+						biosImportsFilePath: biosImportsPath,
 					}));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
@@ -594,19 +590,7 @@ async function main() {
 					update_timestamp: 0,
 				});
 			}
-			const systemRom = new Uint8Array(readFileSync(systemRomPath));
-			const systemIndex = await loadRomAssetList(systemRom, 'system');
-			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
-			const systemImportsEntry = systemIndex.entries.find(
-				entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID,
-			)!;
-			const systemImage = decodeBlua32Image(
-				systemRom.subarray(systemBlua32Entry.start, systemBlua32Entry.end),
-				SYSTEM_ROM_BASE + systemBlua32Entry.start,
-			);
-			const biosImports = decodeBlua32BiosImports(
-				systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
-			);
+			const biosImports = decodeBlua32BiosImports(readFileSync(biosImportsPath));
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);
 			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
@@ -616,7 +600,6 @@ async function main() {
 				imageOffset: romLayout.nextOffset,
 				ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 				domain: 'cart',
-				systemImage,
 				biosImports,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});

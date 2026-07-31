@@ -916,16 +916,16 @@ ROMs also embed that asset for the debugger and Hot Resume. Cartridge linking
 does not consume it.
 
 The public BIOS link library is the separate `__blua32_bios_imports__` asset
-and `<system-rom>.blua32-imports` sidecar. It contains only author-facing module
-paths, export paths, and their physical public-vector addresses. It is embedded
-in release and debug system ROMs; Studio and the offline cartridge linker
-consume it from the same installed system-ROM image whose physical addresses it
-describes. The identical sidecar is emitted beside both ROM variants as the
-standalone SDK import library. It contains no source paths, private function identities, global-slot
-tables, lexical metadata, or compatibility version branches. Neither sidecar
-is mounted or decoded by the emulated machine. Cartridges never carry the BIOS
-import library or firmware symbols; a debug cartridge may carry its own private
-symbols.
+and `<system-rom>.blua32-imports` sidecar. It contains the cartridge static-RAM
+base plus author-facing module paths, export paths, and their physical
+public-vector addresses. It is embedded in release and debug system ROMs for
+Studio and host-test tooling. The identical sidecar is the offline cartridge
+linker's complete BIOS input; that linker never decodes the private system
+image. The library contains no source paths, private function identities,
+global-slot tables, lexical metadata, or compatibility version branches.
+Neither representation is mounted or decoded by the emulated machine.
+Cartridges never carry the BIOS import library or firmware symbols; a debug
+cartridge may carry its own private symbols.
 
 The ordered BIOS export declaration pins each public module function to the
 matching leading system function record. Public entries are bare BIOS routines

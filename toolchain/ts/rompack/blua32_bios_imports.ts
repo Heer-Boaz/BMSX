@@ -16,6 +16,7 @@ export type Blua32BiosFunctionImport = {
 };
 
 export type Blua32BiosImports = {
+	readonly cartridgeStaticRamBase: number;
 	readonly functions: ReadonlyArray<Blua32BiosFunctionImport>;
 };
 

@@ -13,7 +13,6 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
 	BLUA32_IMAGE_ID,
-	decodeBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_BIOS_IMPORTS_IMAGE_ID,
@@ -21,7 +20,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
@@ -365,14 +364,9 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		});
 		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));
 		const systemIndex = await loadRomAssetList(systemRom, 'system');
-		const systemImageEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_IMAGE_ID)!;
 		const systemImportsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
 		const biosImports = decodeBlua32BiosImports(
 			systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
-		);
-		const systemImage = decodeBlua32Image(
-			systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
-			SYSTEM_ROM_BASE + systemImageEntry.start!,
 		);
 
 		const cartEntrySource = `module<entry>
@@ -432,7 +426,6 @@ return imgdec
 			imageOffset: cartPrefix.nextOffset,
 			domain: 'cart',
 			ramByteCount: 0x00400000,
-			systemImage,
 			biosImports,
 		});
 		await finalizeRompack('texture-contract', {

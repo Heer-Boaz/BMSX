@@ -390,7 +390,6 @@ test('BLua32 linker rewrites local and explicit BIOS-import closure operands to 
 		importIndex: 0,
 	}]);
 	const linkedCart = linkCartBlua32Image(
-		linkedSystem.layout,
 		linkedSystem.biosImports,
 		cart.object,
 		cart.metadata,
@@ -432,7 +431,6 @@ test('cartridge global operands keep cartridge-owned slot tables', () => {
 	cart.object.link.symbols = runtimeSymbols(['cart'], ['cart_only', 'shared'], ['cart_boot']);
 	cart.metadata = makeMetadata(['cart'], 5, ['cart_only', 'shared'], ['cart_boot']);
 	const linkedCart = linkCartBlua32Image(
-		linkedSystem.layout,
 		linkedSystem.biosImports,
 		cart.object,
 		cart.metadata,
@@ -488,7 +486,6 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		{ constIndex: 2, kind: 'bss_addr', symbol: 'cart_counter', addend: 4 },
 	];
 	const linkedCart = linkCartBlua32Image(
-		linkedSystem.layout,
 		linkedSystem.biosImports,
 		cart.object,
 		cart.metadata,

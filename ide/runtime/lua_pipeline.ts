@@ -261,7 +261,6 @@ export function buildBlua32Media(
 		}
 	}
 	const installedSystem = sources.currentBlua32Media.system!;
-	let systemImage = installedSystem.layout;
 	let biosImports = installedSystem.biosImports;
 	let rebuiltSystem: RebuiltBlua32Image<LinkedSystemBlua32Image> | null = null;
 	if (rebuildSystem) {
@@ -316,7 +315,6 @@ export function buildBlua32Media(
 				imageOffset,
 			),
 		);
-		systemImage = linked.layout;
 		biosImports = linked.biosImports;
 		rebuiltSystem = {
 			linked,
@@ -364,7 +362,6 @@ export function buildBlua32Media(
 		const imageAddress = CART_ROM_BASE + imageOffset;
 		const installed = sources.currentBlua32Media.cartridgeSlots[slot]!;
 		const linked = linkCartBlua32Image(
-			systemImage,
 			biosImports,
 			cartObject,
 			compiled.metadata,

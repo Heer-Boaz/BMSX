@@ -314,7 +314,6 @@ export function linkRawTestBlua32Pair(
 	);
 	const cartRaw = createRawTestBlua32Object(cartSource, 'cart');
 	const cart = linkCartBlua32Image(
-		system.layout,
 		system.biosImports,
 		cartRaw.object,
 		cartRaw.metadata,
@@ -404,7 +403,6 @@ export function linkTestBlua32Pair(
 		[],
 	);
 	const cart = linkCartBlua32Image(
-		system.layout,
 		system.biosImports,
 		encodeCompiledProgramObject(cartCompiled),
 		cartCompiled.metadata,
