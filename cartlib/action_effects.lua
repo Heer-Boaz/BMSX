@@ -135,15 +135,16 @@ function actioneffectcomponent:trigger(id, payload, ...)
 	if gate and not gate(owner, payload, ...) then
 		return 'blocked'
 	end
-	local outcome<const> = definition.handler and definition.handler(owner, payload, ...)
 	local event_type = definition.event
 	local event_payload = payload
-	if outcome then
-		if outcome.event ~= nil then
-			event_type = outcome.event
+	local handler<const> = definition.handler
+	if handler then
+		local handler_event<const>, handler_payload<const> = handler(owner, payload, ...)
+		if handler_event ~= nil then
+			event_type = handler_event
 		end
-		if outcome.payload ~= nil then
-			event_payload = outcome.payload
+		if handler_payload ~= nil then
+			event_payload = handler_payload
 		end
 	end
 	if event_type then

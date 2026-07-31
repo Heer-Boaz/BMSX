@@ -90,8 +90,8 @@ local bind_machines<const> = function(self)
 			self.parent.events:on({
 				event = event_name,
 				emitter = false,
-				handler = function(event)
-					self:auto_dispatch(event)
+				handler = function(dispatched_type, emitter, payload, emitter_id)
+					self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
 				end,
 				subscriber = self,
 			})
@@ -104,8 +104,8 @@ local bind_machines<const> = function(self)
 				self.parent.events:on({
 					event = event_name,
 					emitter = event_emitter,
-					handler = function(event)
-						self:auto_dispatch(event)
+					handler = function(dispatched_type, emitter, payload, emitter_id)
+						self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
 					end,
 					subscriber = self,
 				})
@@ -114,12 +114,12 @@ local bind_machines<const> = function(self)
 	end
 end
 
-function statemachinecomponent:auto_dispatch(event)
+function statemachinecomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
 	local parent<const> = self.parent
 	if not self.enabled or not parent.active then
 		return
 	end
-	self:dispatch(event)
+	self:dispatch(event_type, payload, emitter, emitter_id)
 end
 
 -- statemachinecomponent:start(): start all managed FSMs from their initial
@@ -149,33 +149,20 @@ function statemachinecomponent:update()
 	end
 end
 
--- statemachinecomponent:dispatch(event_or_name, payload): deliver an event
+-- statemachinecomponent:dispatch(event_name, payload): deliver an event
 -- to all FSMs managed by this controller.  The active state's `on` table and
 -- `input_event_handlers` are consulted.  Returns true if any state handled it.
 -- In cart code, call self.state_machines:dispatch() or use the FSM `on` table
 -- instead of raw dispatch where possible.
-function statemachinecomponent:dispatch(event_or_name, payload)
-	local event_name
-	local data
-	local emitter_id
-	if type(event_or_name) == 'table' then
-		event_name = event_or_name.type
-		data = event_or_name
-		local emitter<const> = event_or_name.emitter
-		if type(emitter) == 'table' then
-			emitter_id = emitter.id
-		else
-			emitter_id = emitter
-		end
-	else
-		event_name = event_or_name
-		data = payload
+function statemachinecomponent:dispatch(event_name, payload, emitter, emitter_id)
+	if emitter_id == nil then
+		emitter = self.parent
 		emitter_id = self.parent.id
 	end
 	local handled
 	local list<const> = self.statemachine_list
 	for i = 1, self.statemachine_count do
-		if list[i]:dispatch_event(event_name, data, emitter_id) then
+		if list[i]:dispatch_event(event_name, payload, emitter, emitter_id) then
 			handled = true
 		end
 	end

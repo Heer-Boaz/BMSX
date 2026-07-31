@@ -16,16 +16,12 @@ local tilecollisionsystem<const> = {}
 tilecollisionsystem.__index = tilecollisionsystem
 setmetatable(tilecollisionsystem, { __index = ecsystem })
 
-local emit_tilecollision_event<const> = function(owner, component, suffix, phase, collision_key, payload)
-	local event<const> = component._event
-	event.type = component.event_base .. '.' .. suffix
-	event.emitter = owner
-	event.phase = phase
-	event.component_id = component.id
-	event.component_local_id = component.id_local
-	event.collision_key = collision_key
-	event.payload = payload
-	owner.events:emit_event(event)
+local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
+	payload.phase = phase
+	payload.component_id = component.id
+	payload.component_local_id = component.id_local
+	payload.collision_key = collision_key
+	owner.events:emit(event_type, payload)
 end
 
 function tilecollisionsystem.new(priority)
@@ -45,17 +41,17 @@ function tilecollisionsystem:update()
 		local previous_key<const> = component.previous_collision_key
 		if current_key == nil then
 			if previous_key ~= nil then
-				emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
+				emit_tilecollision_event(obj, component, component.end_event_type, 'end', previous_key, previous_payload)
 				component.previous_collision_key = nil
 			end
 		else
 			if previous_key == nil then
-				emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+				emit_tilecollision_event(obj, component, component.begin_event_type, 'begin', current_key, current_payload)
 			elseif previous_key ~= current_key then
-				emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
-				emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+				emit_tilecollision_event(obj, component, component.end_event_type, 'end', previous_key, previous_payload)
+				emit_tilecollision_event(obj, component, component.begin_event_type, 'begin', current_key, current_payload)
 			else
-				emit_tilecollision_event(obj, component, 'stay', 'stay', current_key, current_payload)
+				emit_tilecollision_event(obj, component, component.stay_event_type, 'stay', current_key, current_payload)
 			end
 			component.previous_payload = current_payload
 			component.current_payload = previous_payload

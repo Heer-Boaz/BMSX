@@ -30,7 +30,7 @@ function enemy_base.setup_projectile_boundary(self)
 	self.events:on({
 		event = 'screen.leave',
 		subscriber = self,
-		handler = function(_event)
+		handler = function()
 			self:mark_for_disposal()
 		end,
 	})
@@ -48,11 +48,11 @@ function enemy_base.bind(self)
 	self.events:on({
 		event = 'overlap.begin',
 		subscriber = self,
-		handler = function(event)
-			self:on_overlap(event)
+		handler = function(_event_type, _emitter, payload)
+			self:on_overlap(payload)
 		end,
 	})
-	
+
 	self.events:on({
 		event = 'shrine_transition_enter',
 		subscriber = self,

@@ -494,7 +494,6 @@ local state<const> = {}
 state.__index = state
 
 local bst_max_history<const> = 10
-local empty_game_event<const> = { type = '__fsm.synthetic__', emitter = nil, timestamp = 0 }
 local target_state_tag_refs<const> = setmetatable({}, { __mode = 'k' })
 
 local get_target_state_tag_refs<const> = function(target)
@@ -803,15 +802,11 @@ function state:transition_to_next_state_if_provided(next_state)
 	self:transition_to(next_state)
 end
 
-function state:execute_transition(kind, transition, event)
+function state:execute_transition(kind, transition, payload, emitter, event_type)
 	if kind == transition_path then
 		transition_cached_path(self, transition)
 	elseif kind == transition_callback then
-		local handler_event = event
-		if handler_event == nil then
-			handler_event = empty_game_event
-		end
-		self:transition_to_next_state_if_provided(transition(self.target, self, handler_event))
+		self:transition_to_next_state_if_provided(transition(self.target, self, payload, emitter, event_type))
 	end
 	return true
 end
@@ -1418,33 +1413,33 @@ function state:sync_target_state_tags()
 	end
 end
 
-function state:handle_event(event_name, event, emitter_id)
+function state:handle_event(event_name, payload, emitter, emitter_id)
 	local handler<const> = self.definition.on[event_name]
 	if not handler then
 		return false
 	end
 	if not handler.unfiltered then
-		local emitter<const> = handler.emitter or self.target_id
-		if emitter_id ~= emitter then
+		local expected_emitter<const> = handler.emitter or self.target_id
+		if emitter_id ~= expected_emitter then
 			return false
 		end
 	end
 	self:enter_critical_section()
-	local handled<const> = self:execute_transition(handler.kind, handler.transition, event)
+	local handled<const> = self:execute_transition(handler.kind, handler.transition, payload, emitter, event_name)
 	self:leave_critical_section()
 	return handled
 end
 
 local dispatch_resolved_event
 
-dispatch_resolved_event = function(self, event_name, data, emitter_id)
+dispatch_resolved_event = function(self, event_name, payload, emitter, emitter_id)
 	local handled
 	local child<const> = self.current_state
 	if child ~= nil then
-		handled = dispatch_resolved_event(child, event_name, data, emitter_id)
+		handled = dispatch_resolved_event(child, event_name, payload, emitter, emitter_id)
 		local concurrent_states<const> = self.concurrent_states
 		for i = 1, self.concurrent_state_count do
-			if dispatch_resolved_event(concurrent_states[i], event_name, data, emitter_id) then
+			if dispatch_resolved_event(concurrent_states[i], event_name, payload, emitter, emitter_id) then
 				handled = true
 			end
 		end
@@ -1452,15 +1447,15 @@ dispatch_resolved_event = function(self, event_name, data, emitter_id)
 			return true
 		end
 	end
-	return self:handle_event(event_name, data, emitter_id)
+	return self:handle_event(event_name, payload, emitter, emitter_id)
 end
 
 -- dispatch_event: delivers an event through the state hierarchy.
 -- Dispatch order: current child (depth-first) → concurrent siblings →
 -- if unhandled, bubble to parent → grandparent → root.  Root-level `on`
 -- handlers are the catch-all.  Returns true if any handler consumed the event.
-function state:dispatch_event(event_name, payload, emitter_id)
-	return dispatch_resolved_event(self, event_name, payload, emitter_id)
+function state:dispatch_event(event_name, payload, emitter, emitter_id)
+	return dispatch_resolved_event(self, event_name, payload, emitter, emitter_id)
 end
 
 function state:update()
@@ -1501,7 +1496,7 @@ function state:update()
 
 	local update_handler<const> = definition.update
 	if update_handler ~= nil then
-		local next_state<const> = update_handler(target, self, empty_game_event)
+		local next_state<const> = update_handler(target, self)
 		if next_state and not is_no_op_string(next_state) then
 			self:transition_to(next_state)
 		end

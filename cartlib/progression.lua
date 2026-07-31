@@ -54,10 +54,6 @@ local event_matcher<const> = require('cartlib/event_matcher')
 local progression<const> = {
 	_runtime_by_ctx = setmetatable({}, { __mode = 'k' }),
 	_runtimes_by_event = {},
-	_event_queue = {},
-	_event_head = 1,
-	_event_tail = 0,
-	_is_dispatching = false,
 }
 
 local progression_state<const> = {}
@@ -233,6 +229,7 @@ function progression_state.new(program)
 	return setmetatable({
 		program = program or new_state_program(),
 		values = {},
+		revision = 0,
 		filter_cache = setmetatable({}, { __mode = 'k' }),
 	}, progression_state)
 end
@@ -246,6 +243,7 @@ function progression_state:set(key, value)
 		return false
 	end
 	self.values[key_idx] = value
+	self.revision = self.revision + 1
 	return true
 end
 
@@ -357,53 +355,59 @@ function progression.compile_program(program_spec)
 end
 
 local apply_set_actions<const> = function(rt, actions)
-	local changed
 	local state<const> = rt.state
 	for i = 1, #actions do
 		local action<const> = actions[i]
-		if state:set(action.key, action.value) then
-			changed = true
-		end
+		state:set(action.key, action.value)
 	end
-	return changed
 end
 
-local apply_commands<const> = function(rt, commands, event)
+local apply_commands<const> = function(rt, commands, payload, emitter, event_type)
 	local handlers<const> = rt.program.handlers
 	local ctx<const> = rt.ctx
 	for i = 1, #commands do
 		local command<const> = commands[i]
-		handlers[command.op](ctx, command, event)
+		handlers[command.op](ctx, command, payload, emitter, event_type)
 	end
 end
 
-local dispatch_rules_to_runtime<const> = function(rt, rules, event)
-	local fired<const> = {}
-	local changed
+local dispatch_rules_to_runtime<const> = function(rt, rules, event_type, emitter, payload)
+	local depth<const> = rt.dispatch_depth + 1
+	rt.dispatch_depth = depth
+	local fired = rt.fired_by_depth[depth]
+	if fired == nil then
+		fired = {}
+		rt.fired_by_depth[depth] = fired
+		rt.fired_generation_by_depth[depth] = 0
+	end
+	local generation<const> = rt.fired_generation_by_depth[depth] + 1
+	rt.fired_generation_by_depth[depth] = generation
+	local revision
 	repeat
-		changed = false
+		revision = rt.state.revision
 		for i = 1, #rules do
-			if not (fired[i]) then
+			if fired[i] ~= generation then
 				local rule<const> = rules[i]
-				if rule.when_event(event) and rt.state:matches_filter(rule.when_all) then
-					fired[i] = true
+				if rule.when_event(payload) and eval_predicates(rt.state.values, rule.when_all) then
+					fired[i] = generation
 					if not rule.apply_once or not (rt.apply_done[rule.id]) then
-						if apply_set_actions(rt, rule.set) then
-							changed = true
-						end
-						apply_commands(rt, rule.apply, event)
 						if rule.apply_once then
 							rt.apply_done[rule.id] = true
 						end
+						apply_set_actions(rt, rule.set)
+						apply_commands(rt, rule.apply, payload, emitter, event_type)
 					end
 				end
 			end
 		end
-	until not changed
+	until rt.state.revision == revision
+	rt.dispatch_depth = depth - 1
 end
 
-local dispatch_event_now<const> = function(event)
-	local event_type<const> = event.type
+-- progression.dispatch_event(event_type, emitter, payload)
+--   Synchronously feeds direct event values into every subscribed runtime.
+--   In practice you do NOT need to call this manually for normal global events.
+function progression.dispatch_event(event_type, emitter, payload)
 	local runtimes<const> = progression._runtimes_by_event[event_type]
 	if runtimes == nil then
 		return
@@ -412,32 +416,9 @@ local dispatch_event_now<const> = function(event)
 		local rt<const> = runtimes[i]
 		local rules<const> = rt.program.rules_by_event[event_type]
 		if rules ~= nil then
-			dispatch_rules_to_runtime(rt, rules, event)
+			dispatch_rules_to_runtime(rt, rules, event_type, emitter, payload)
 		end
 	end
-end
-
--- progression.dispatch_event(event)
---   Feeds an event into all mounted runtimes that subscribed to event.type.
---   In practice you do NOT need to call this manually for normal global events.
-function progression.dispatch_event(event)
-	local tail<const> = progression._event_tail + 1
-	progression._event_tail = tail
-	progression._event_queue[tail] = event
-	if progression._is_dispatching then
-		return
-	end
-	progression._is_dispatching = true
-	while progression._event_head <= progression._event_tail do
-		local head<const> = progression._event_head
-		local queued_event<const> = progression._event_queue[head]
-		progression._event_queue[head] = nil
-		progression._event_head = head + 1
-		dispatch_event_now(queued_event)
-	end
-	progression._event_head = 1
-	progression._event_tail = 0
-	progression._is_dispatching = false
 end
 
 local add_runtime_subscription<const> = function(rt, event_name)
@@ -490,6 +471,9 @@ function progression.mount(ctx, program_or_rule_defs)
 		program = program,
 		state = state,
 		apply_done = {},
+		dispatch_depth = 0,
+		fired_by_depth = { {} },
+		fired_generation_by_depth = { 0 },
 	}
 	progression._runtime_by_ctx[ctx] = rt
 	for i = 1, #program.event_names do

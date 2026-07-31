@@ -1,11 +1,10 @@
-local eventemitter<const> = require('cartlib/eventemitter').eventemitter
 local input<const> = require('cartlib/input/player')
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}
 local compile_effect_list
 
-local compile_effect<const> = function(owner, player_index, effect, slot)
+local compile_effect<const> = function(player_index, effect, slot)
 	local trigger<const> = effect['effect.trigger']
 	if trigger ~= nil then
 		local id
@@ -28,15 +27,13 @@ local compile_effect<const> = function(owner, player_index, effect, slot)
 	end
 	local gameplay<const> = effect['emit.gameplay']
 	if gameplay ~= nil then
-		local event<const> = eventemitter.instance:create_gameevent({
-			emitter = owner,
-			type = gameplay.event,
-			payload = gameplay.payload,
-		})
+		local event_type<const> = gameplay.event
+		local event_payload<const> = gameplay.payload
 		return function(component)
 			local count<const> = component.queued_event_count + 1
 			component.queued_event_count = count
-			component.queued_events[count] = event
+			component.queued_event_types[count] = event_type
+			component.queued_event_payloads[count] = event_payload
 		end, false, 1, 0
 	end
 	local command<const> = effect['dispatch.command']
@@ -48,28 +45,28 @@ local compile_effect<const> = function(owner, player_index, effect, slot)
 		end, false, 0, 1
 	end
 	if effect.commands ~= nil then
-		return compile_effect_list(owner, player_index, effect.commands, slot)
+		return compile_effect_list(player_index, effect.commands, slot)
 	end
 	error('unknown input effect in slot "' .. slot .. '".')
 end
 
-compile_effect_list = function(owner, player_index, spec, slot)
+compile_effect_list = function(player_index, spec, slot)
 	if spec == nil then
 		return nil, false, 0, 0
 	end
 	if spec[1] == nil then
-		return compile_effect(owner, player_index, spec, slot)
+		return compile_effect(player_index, spec, slot)
 	end
 	local count<const> = #spec
 	if count == 1 then
-		return compile_effect(owner, player_index, spec[1], slot)
+		return compile_effect(player_index, spec[1], slot)
 	end
 	local executors<const> = {}
 	local uses_effect_triggers
 	local queued_event_capacity = 0
 	local queued_command_capacity = 0
 	for i = 1, count do
-		local executor<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect(owner, player_index, spec[i], slot)
+		local executor<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect(player_index, spec[i], slot)
 		executors[i] = executor
 		if uses_trigger then
 			uses_effect_triggers = true
@@ -137,7 +134,7 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 		custom = {}
 		for i = 1, #custom_source do
 			local entry<const> = custom_source[i]
-			local effect<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect_list(owner, player_index, effects[entry.name], entry.name)
+			local effect<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect_list(player_index, effects[entry.name], entry.name)
 			custom[i] = {
 				input = input.bind(player_index, entry.pattern),
 				effect = effect,
@@ -149,9 +146,9 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 			queued_command_capacity = queued_command_capacity + command_count
 		end
 	end
-	local press_effect<const>, press_uses_trigger<const>, press_events<const>, press_commands<const> = compile_effect_list(owner, player_index, effects.press, 'press')
-	local hold_effect<const>, hold_uses_trigger<const>, hold_events<const>, hold_commands<const> = compile_effect_list(owner, player_index, effects.hold, 'hold')
-	local release_effect<const>, release_uses_trigger<const>, release_events<const>, release_commands<const> = compile_effect_list(owner, player_index, effects.release, 'release')
+	local press_effect<const>, press_uses_trigger<const>, press_events<const>, press_commands<const> = compile_effect_list(player_index, effects.press, 'press')
+	local hold_effect<const>, hold_uses_trigger<const>, hold_events<const>, hold_commands<const> = compile_effect_list(player_index, effects.hold, 'hold')
+	local release_effect<const>, release_uses_trigger<const>, release_events<const>, release_commands<const> = compile_effect_list(player_index, effects.release, 'release')
 	queued_event_capacity = queued_event_capacity + press_events + hold_events + release_events
 	queued_command_capacity = queued_command_capacity + press_commands + hold_commands + release_commands
 	return {

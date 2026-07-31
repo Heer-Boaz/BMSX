@@ -118,11 +118,12 @@ local evaluate_component<const> = function(component, frame)
 		commands[i] = false
 	end
 	component.queued_command_count = 0
-	local events<const> = component.queued_events
+	local event_types<const> = component.queued_event_types
+	local event_payloads<const> = component.queued_event_payloads
 	for i = 1, component.queued_event_count do
-		local event<const> = events[i]
-		owner.events:emit_event(event)
-		events[i] = false
+		owner.events:emit(event_types[i], event_payloads[i])
+		event_types[i] = false
+		event_payloads[i] = false
 	end
 	component.queued_event_count = 0
 end

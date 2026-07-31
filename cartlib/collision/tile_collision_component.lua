@@ -9,10 +9,22 @@ function tilecollisioncomponent.new(opts)
 	local self<const> = setmetatable(component.new(opts, component_types.tile_collision, true), tilecollisioncomponent)
 	self.query = opts.query
 	self.event_base = opts.event_base or 'tilecollision'
+	self.begin_event_type = self.event_base .. '.begin'
+	self.stay_event_type = self.event_base .. '.stay'
+	self.end_event_type = self.event_base .. '.end'
 	self.previous_collision_key = nil
-	self.current_payload = {}
-	self.previous_payload = {}
-	self._event = {}
+	self.current_payload = {
+		phase = false,
+		component_id = false,
+		component_local_id = false,
+		collision_key = false,
+	}
+	self.previous_payload = {
+		phase = false,
+		component_id = false,
+		component_local_id = false,
+		collision_key = false,
+	}
 	return self
 end
 

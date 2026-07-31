@@ -14,7 +14,8 @@ function inputactioneffectcomponent.new(opts)
 	self.custom_matches = {}
 	self.queued_commands = {}
 	self.queued_command_count = 0
-	self.queued_events = {}
+	self.queued_event_types = {}
+	self.queued_event_payloads = {}
 	self.queued_event_count = 0
 	self.last_frame = 0
 	return self
@@ -38,7 +39,8 @@ function inputactioneffectcomponent:on_activate()
 		self.queued_commands[i] = false
 	end
 	for i = 1, program.queued_event_capacity do
-		self.queued_events[i] = false
+		self.queued_event_types[i] = false
+		self.queued_event_payloads[i] = false
 	end
 	self.queued_command_count = 0
 	self.queued_event_count = 0

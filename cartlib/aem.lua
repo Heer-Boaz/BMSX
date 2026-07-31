@@ -36,6 +36,12 @@ local slot_play_queue
 local slot_queue_head
 local slot_queue_tail
 
+local actor_key_for_payload<const> = function(payload)
+	if type(payload) == 'table' then
+		return payload['actorId'] or global_actor_key
+	end
+	return global_actor_key
+end
 
 local compile_apu_defaults<const> = function(action)
 	action.__aem_priority = action.priority
@@ -223,7 +229,7 @@ local resolve_action_spec<const> = function(rule, payload)
 		pick_mode = rule.__oneof_has_weights and 'weighted' or 'uniform'
 	end
 	local by_actor<const> = rule.__last_random_pick_by_actor
-	local actor_key<const> = payload['actorId'] or global_actor_key
+	local actor_key<const> = by_actor and actor_key_for_payload(payload)
 	local avoid<const> = by_actor and by_actor[actor_key]
 	local idx
 	if pick_mode == 'weighted' then
@@ -302,7 +308,7 @@ local apply_cooldown<const> = function(action, payload)
 		return true
 	end
 	local cooldown_ms<const> = action.cooldown_ms
-	local actor_key<const> = payload['actorId'] or global_actor_key
+	local actor_key<const> = actor_key_for_payload(payload)
 	local now<const> = os.clock() * 1000
 	local last<const> = by_actor[actor_key] or 0
 	if (now - last) < cooldown_ms then
@@ -692,9 +698,8 @@ local dispatch_action<const> = function(entry, action, payload)
 	dispatch_audio_play(entry, romdir.audio(action.audio_id), action, payload)
 end
 
-local handle_event<const> = function(payload)
-	local event_name<const> = payload.type
-	local entry<const> = events[event_name]
+local handle_event<const> = function(event_type, emitter, payload)
+	local entry<const> = events[event_type]
 	local rules<const> = entry.rules
 	for i = 1, #rules do
 		local rule<const> = rules[i]

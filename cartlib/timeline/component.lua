@@ -89,7 +89,7 @@ function timelinecomponent:define(definition)
 		params = instance.def.params,
 	}
 	self.registry[instance.id] = entry
-	timeline_dispatch.init_entry(entry, self.parent)
+	timeline_dispatch.init_entry(entry)
 end
 
 function timelinecomponent:get(id)
@@ -164,7 +164,7 @@ function timelinecomponent:play(id, opts)
 		entry.compiled_apply_frames = instance.compiled_apply_frames
 		entry.markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	end
-	timeline_dispatch.init_entry(entry, owner)
+	timeline_dispatch.init_entry(entry)
 	if rewind then
 		local controlled<const> = entry.markers.controlled_tags
 		for i = 1, #controlled do

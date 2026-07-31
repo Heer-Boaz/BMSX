@@ -73,7 +73,7 @@ local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
--- Pair rows and the event record are system-owned scratch. The two history
+-- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
 -- stable collider high-water mark does not allocate during physics updates.
 local release_pair_rows<const> = function(system, set)
@@ -100,24 +100,22 @@ local acquire_pair_row<const> = function(system)
 	return row
 end
 
-local emit_overlap_event<const> = function(event, event_name, phase, owner, self_col, other_owner, other_col, contact)
-	event.type = event_name
-	event.emitter = owner
-	event.other_id = other_owner.id
-	event.other_collider_id = other_col.id
-	event.other_collider_local_id = other_col.id_local
-	event.other_layer = other_col.layer
-	event.other_mask = other_col.mask
-	event.collider_id = self_col.id
-	event.collider_local_id = self_col.id_local
-	event.collider_layer = self_col.layer
-	event.collider_mask = self_col.mask
-	event.contact = contact
-	event.phase = phase
-	owner.events:emit_event(event)
+local emit_overlap_event<const> = function(payload, event_type, phase, owner, self_col, other_owner, other_col, contact)
+	payload.other_id = other_owner.id
+	payload.other_collider_id = other_col.id
+	payload.other_collider_local_id = other_col.id_local
+	payload.other_layer = other_col.layer
+	payload.other_mask = other_col.mask
+	payload.collider_id = self_col.id
+	payload.collider_local_id = self_col.id_local
+	payload.collider_layer = self_col.layer
+	payload.collider_mask = self_col.mask
+	payload.contact = contact
+	payload.phase = phase
+	owner.events:emit(event_type, payload)
 end
 
-local emit_overlap_end_events<const> = function(event, prev_pairs, new_pairs)
+local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 	local has_new_pairs<const> = new_pairs ~= nil
 	for a, row in pairs(prev_pairs) do
 		for b in pairs(row) do
@@ -125,8 +123,8 @@ local emit_overlap_end_events<const> = function(event, prev_pairs, new_pairs)
 				local owner_a<const> = a.parent
 				local owner_b<const> = b.parent
 				if owner_a.active and owner_b.active then
-					emit_overlap_event(event, 'overlap.end', 'end', owner_a, a, owner_b, b, nil)
-					emit_overlap_event(event, 'overlap.end', 'end', owner_b, b, owner_a, a, nil)
+					emit_overlap_event(payload, 'overlap.end', 'end', owner_a, a, owner_b, b, nil)
+					emit_overlap_event(payload, 'overlap.end', 'end', owner_b, b, owner_a, a, nil)
 				end
 			end
 		end
@@ -139,7 +137,19 @@ function overlap2dsystem.new(priority)
 	self.next_pairs = {}
 	self.pair_row_pool = {}
 	self.pair_row_pool_count = 0
-	self.overlap_event = {}
+	self.overlap_payload = {
+		other_id = false,
+		other_collider_id = false,
+		other_collider_local_id = false,
+		other_layer = 0,
+		other_mask = 0,
+		collider_id = false,
+		collider_local_id = false,
+		collider_layer = 0,
+		collider_mask = 0,
+		contact = false,
+		phase = false,
+	}
 	self.event_colliders = {}
 	self.overlap_pairs = scratchrecordbatch.new(64)
 	self.event_collider_count = 0
@@ -150,7 +160,7 @@ function overlap2dsystem:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
 	local overlap_pairs<const> = self.overlap_pairs
-	local overlap_event<const> = self.overlap_event
+	local overlap_payload<const> = self.overlap_payload
 	release_pair_rows(self, new_pairs)
 
 	local event_colliders<const> = self.event_colliders
@@ -170,7 +180,7 @@ function overlap2dsystem:update()
 	self.event_collider_count = event_collider_count
 
 	if event_collider_count <= 1 then
-		emit_overlap_end_events(overlap_event, prev_pairs, nil)
+		emit_overlap_end_events(overlap_payload, prev_pairs, nil)
 		release_pair_rows(self, prev_pairs)
 		return
 	end
@@ -201,18 +211,18 @@ function overlap2dsystem:update()
 		local prev_row<const> = prev_pairs[key_a]
 		if prev_row ~= nil and prev_row[key_b] then
 			if owner_a.active and owner_b.active then
-				emit_overlap_event(overlap_event, 'overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
-				emit_overlap_event(overlap_event, 'overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
+				emit_overlap_event(overlap_payload, 'overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event(overlap_payload, 'overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
 			end
 		else
 			if owner_a.active and owner_b.active then
-				emit_overlap_event(overlap_event, 'overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
-				emit_overlap_event(overlap_event, 'overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
+				emit_overlap_event(overlap_payload, 'overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event(overlap_payload, 'overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
 			end
 		end
 	end
 
-	emit_overlap_end_events(overlap_event, prev_pairs, new_pairs)
+	emit_overlap_end_events(overlap_payload, prev_pairs, new_pairs)
 
 	self.prev_pairs = new_pairs
 	self.next_pairs = prev_pairs

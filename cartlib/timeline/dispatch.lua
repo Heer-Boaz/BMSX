@@ -2,96 +2,15 @@ local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
 local timeline_dispatch<const> = {}
 
-local bind_slot<const> = function(slot, owner, timeline_id, scoped_frame_event_type, scoped_end_event_type)
-	local frame_payload = slot.frame_payload
-	if frame_payload == nil then
-		frame_payload = {}
-		slot.frame_payload = frame_payload
-	end
-	frame_payload.timeline_id = timeline_id
-	local end_payload = slot.end_payload
-	if end_payload == nil then
-		end_payload = {}
-		slot.end_payload = end_payload
-	end
-	end_payload.timeline_id = timeline_id
-
-	local base_frame_event = slot.base_frame_event
-	if base_frame_event == nil then
-		base_frame_event = {}
-		slot.base_frame_event = base_frame_event
-	end
-	base_frame_event.type = 'timeline.frame'
-	base_frame_event.emitter = owner
-	base_frame_event.timeline_id = timeline_id
-
-	local scoped_frame_event = slot.scoped_frame_event
-	if scoped_frame_event == nil then
-		scoped_frame_event = {}
-		slot.scoped_frame_event = scoped_frame_event
-	end
-	scoped_frame_event.type = scoped_frame_event_type
-	scoped_frame_event.emitter = owner
-	scoped_frame_event.timeline_id = timeline_id
-
-	local base_end_event = slot.base_end_event
-	if base_end_event == nil then
-		base_end_event = {}
-		slot.base_end_event = base_end_event
-	end
-	base_end_event.type = 'timeline.end'
-	base_end_event.emitter = owner
-	base_end_event.timeline_id = timeline_id
-
-	local scoped_end_event = slot.scoped_end_event
-	if scoped_end_event == nil then
-		scoped_end_event = {}
-		slot.scoped_end_event = scoped_end_event
-	end
-	scoped_end_event.type = scoped_end_event_type
-	scoped_end_event.emitter = owner
-	scoped_end_event.timeline_id = timeline_id
-
-	local marker_event = slot.marker_event
-	if marker_event == nil then
-		marker_event = {}
-		slot.marker_event = marker_event
-	end
-	marker_event.emitter = owner
-end
-
-local ensure_slot<const> = function(state, depth)
-	local slot<const> = state.slots:get(depth)
-	if slot.base_frame_event == nil then
-		bind_slot(slot, state.owner, state.timeline_id, state.scoped_frame_event_type, state.scoped_end_event_type)
-	end
-	return slot
-end
-
-local acquire_slot<const> = function(entry)
-	local state<const> = entry.timeline_dispatch_state
+local acquire_payload<const> = function(state, payloads)
 	local depth<const> = state.depth + 1
 	state.depth = depth
-	return ensure_slot(state, depth)
+	local payload<const> = payloads:get(depth)
+	payload.timeline_id = state.timeline_id
+	return payload
 end
 
-local release_slot<const> = function(entry)
-	local state<const> = entry.timeline_dispatch_state
-	state.depth = state.depth - 1
-end
-
-local emit_and_dispatch<const> = function(owner, event)
-	owner.events:emit_event(event)
-end
-
-local fill_marker_event<const> = function(slot, marker)
-	local event<const> = slot.marker_event
-	event.type = marker.event
-	event.payload = marker.payload
-	return event
-end
-
-local apply_markers<const> = function(entry, owner, slot, frame_index)
+local apply_markers<const> = function(entry, owner, frame_index)
 	local bucket<const> = entry.markers.by_frame[frame_index + 1]
 	if bucket == nil then
 		return
@@ -111,58 +30,65 @@ local apply_markers<const> = function(entry, owner, slot, frame_index)
 			end
 		end
 		if marker.event ~= nil then
-			emit_and_dispatch(owner, fill_marker_event(slot, marker))
+			owner.events:emit(marker.event, marker.payload)
 		end
 	end
 end
 
 local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payload, context)
-	local slot<const> = acquire_slot(entry)
-	local payload<const> = slot.frame_payload
-	local time_ms<const> = evt.time_ms
+	local state<const> = entry.timeline_dispatch_state
+	local payload<const> = acquire_payload(state, state.frame_payloads)
+	local scoped_event_type<const> = state.scoped_frame_event_type
 	payload.frame_index = evt.current
 	payload.frame_value = evt.value
 	payload.rewound = evt.rewound
 	payload.reason = evt.reason
 	payload.direction = evt.direction
 	payload.dt = dt_ms
-	payload.time_ms = time_ms
-	apply_markers(entry, owner, slot, evt.current)
+	payload.time_ms = evt.time_ms
+	apply_markers(entry, owner, evt.current)
 	on_frame_payload(context, entry, owner, payload)
 
-	local base_frame_event<const> = slot.base_frame_event
-	base_frame_event.payload = payload
-	emit_and_dispatch(owner, base_frame_event)
-
-	local scoped_frame_event<const> = slot.scoped_frame_event
-	scoped_frame_event.payload = payload
-	emit_and_dispatch(owner, scoped_frame_event)
-	release_slot(entry)
+	owner.events:emit('timeline.frame', payload)
+	owner.events:emit(scoped_event_type, payload)
+	state.depth = state.depth - 1
 end
 
 local dispatch_end<const> = function(entry, owner, evt)
-	local slot<const> = acquire_slot(entry)
-	local payload<const> = slot.end_payload
+	local state<const> = entry.timeline_dispatch_state
+	local payload<const> = acquire_payload(state, state.end_payloads)
+	local scoped_event_type<const> = state.scoped_end_event_type
 	payload.mode = evt.mode
 	payload.wrapped = evt.wrapped
 
-	local base_end_event<const> = slot.base_end_event
-	base_end_event.payload = payload
-	emit_and_dispatch(owner, base_end_event)
-
-	local scoped_end_event<const> = slot.scoped_end_event
-	scoped_end_event.payload = payload
-	emit_and_dispatch(owner, scoped_end_event)
-	release_slot(entry)
+	owner.events:emit('timeline.end', payload)
+	owner.events:emit(scoped_event_type, payload)
+	state.depth = state.depth - 1
 	return evt.mode == 'once'
 end
 
-function timeline_dispatch.init_entry(entry, owner)
+function timeline_dispatch.init_entry(entry)
 	local state = entry.timeline_dispatch_state
 	local timeline_id<const> = entry.instance.id
 	if state == nil then
+		local frame_payloads<const> = scratchrecordbatch.new(1)
+		local frame_payload<const> = frame_payloads.items[1]
+		frame_payload.timeline_id = timeline_id
+		frame_payload.frame_index = 0
+		frame_payload.frame_value = false
+		frame_payload.rewound = false
+		frame_payload.reason = false
+		frame_payload.direction = 0
+		frame_payload.dt = 0
+		frame_payload.time_ms = 0
+		local end_payloads<const> = scratchrecordbatch.new(1)
+		local end_payload<const> = end_payloads.items[1]
+		end_payload.timeline_id = timeline_id
+		end_payload.mode = false
+		end_payload.wrapped = false
 		state = {
-			slots = scratchrecordbatch.new(1),
+			frame_payloads = frame_payloads,
+			end_payloads = end_payloads,
 			depth = 0,
 			timeline_id = timeline_id,
 			scoped_frame_event_type = 'timeline.frame.' .. timeline_id,
@@ -174,7 +100,6 @@ function timeline_dispatch.init_entry(entry, owner)
 		state.scoped_frame_event_type = 'timeline.frame.' .. timeline_id
 		state.scoped_end_event_type = 'timeline.end.' .. timeline_id
 	end
-	state.owner = owner
 end
 
 function timeline_dispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)

@@ -3240,6 +3240,17 @@ selects them. Timelines are an explicit component capability rather than an
 allocation on every world object, and callers operate on that retained
 component directly.
 
+Cart events are synchronous direct-value dispatch. `eventport:emit` passes the
+event name, emitter and exact payload value to listeners without constructing
+an event envelope or payload metatable; `nil`, `false` and table identity are
+preserved. FSM event callbacks receive the payload as their third argument,
+followed by the emitter and event name; frame-update callbacks receive only
+their target and state. Hot producers retain depth-indexed payload records only
+where their own operation can re-enter; progression likewise owns
+reusable per-depth fired-rule state and grows it only at a newly observed
+nesting high-water mark. No event queue, fixed recursion bound, compatibility
+wrapper or dispatch-time record allocation obscures the synchronous ordering.
+
 State machines and behaviour trees are opt-in world components. Their ECS
 systems iterate the corresponding dense active-component buckets; a stateless
 object therefore owns no controller, blackboard, tree-id map, or empty runtime

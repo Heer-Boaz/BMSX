@@ -3,6 +3,10 @@
 
 local event_matcher<const> = {}
 
+local always_matches<const> = function()
+	return true
+end
+
 local list_contains<const> = function(list, value)
 	for i = 1, #list do
 		if list[i] == value then
@@ -26,24 +30,34 @@ end
 
 function event_matcher.compile(matcher)
 	if not matcher then
-		return function()
-			return true
-		end
+		return always_matches
 	end
 
 	local equals<const> = matcher.equals
+	local equals_entries<const> = {}
+	if equals then
+		for key, value in pairs(equals) do
+			equals_entries[#equals_entries + 1] = key
+			equals_entries[#equals_entries + 1] = value
+		end
+	end
 	local any_of_entries<const> = {}
 	if matcher.any_of then
 		for key, list in pairs(matcher.any_of) do
-			any_of_entries[#any_of_entries + 1] = { key, list }
+			any_of_entries[#any_of_entries + 1] = key
+			any_of_entries[#any_of_entries + 1] = list
 		end
 	end
 	if matcher['in'] then
 		for key, list in pairs(matcher['in']) do
-			any_of_entries[#any_of_entries + 1] = { key, list }
+			any_of_entries[#any_of_entries + 1] = key
+			any_of_entries[#any_of_entries + 1] = list
 		end
 	end
 	local required_tags<const> = matcher.has_tag
+	local reads_payload_fields<const> = #equals_entries > 0
+		or #any_of_entries > 0
+		or (required_tags ~= nil and #required_tags > 0)
 	local and_predicates<const> = {}
 	if matcher['and'] then
 		for i = 1, #matcher['and'] do
@@ -59,16 +73,16 @@ function event_matcher.compile(matcher)
 	local not_predicate<const> = matcher['not'] and event_matcher.compile(matcher['not'])
 
 	return function(payload)
-		if equals then
-			for key, value in pairs(equals) do
-				if payload[key] ~= value then
-					return false
-				end
+		if reads_payload_fields and type(payload) ~= 'table' then
+			return false
+		end
+		for i = 1, #equals_entries, 2 do
+			if payload[equals_entries[i]] ~= equals_entries[i + 1] then
+				return false
 			end
 		end
-		for i = 1, #any_of_entries do
-			local entry<const> = any_of_entries[i]
-			if not any_matches(entry[2], payload[entry[1]]) then
+		for i = 1, #any_of_entries, 2 do
+			if not any_matches(any_of_entries[i + 1], payload[any_of_entries[i]]) then
 				return false
 			end
 		end

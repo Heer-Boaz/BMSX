@@ -32,7 +32,7 @@
 --      self.events:emit('shrine')
 --    RIGHT — single broadcast with payload:
 --      self.events:emit('shrine', { lines = lines })
---    The subscriber reads event.lines in its handler.
+--    The subscriber reads payload.lines in its handler.
 --
 --    Subsystems that need to reset when a new mode starts subscribe to the
 --    appropriate mode broadcast (e.g. 'room') in their own bind() and
@@ -52,8 +52,8 @@
 --      -- B emits the answer with a payload:
 --      self.events:emit('subsystem.result', { value = computed_value })
 --      -- A reacts in its FSM on-handler:
---      on = { ['subsystem.result'] = function(self, _s, e)
---          return e.value and '/state_yes' or '/state_no'
+--      on = { ['subsystem.result'] = function(self, _s, payload)
+--          return payload.value and '/state_yes' or '/state_no'
 --      end }
 --
 -- 4. EMITTER FILTER.
@@ -100,19 +100,14 @@ eventemitter.instance.type_name = 'eventemitter'
 eventemitter.instance.registrypersistent = true
 require('cartlib/registry').instance:register(eventemitter.instance)
 
--- eventemitter:create_gameevent(spec): canonicalize an event spec in place.
--- Table payloads stay nested and are exposed via the event wrapper.
-function eventemitter:create_gameevent(spec)
-	if type(spec.payload) == 'table' then
-		setmetatable(spec, { __index = spec.payload })
-	end
-	return spec
-end
-
 function eventemitter:events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
-		port = setmetatable({ emitter = emitter }, eventport)
+		local emitter_id = emitter
+		if type(emitter) == 'table' then
+			emitter_id = emitter.id
+		end
+		port = setmetatable({ emitter = emitter, emitter_id = emitter_id }, eventport)
 		port_cache[emitter] = port
 	end
 	return port
@@ -121,7 +116,8 @@ end
 -- eventemitter:on(spec): register a listener.
 -- spec fields:
 --   event / event_name  (string)  — required; event type to listen for.
---   handler             (function)— required; called with the event table.
+--   handler             (function)— required; called with event type, emitter
+--                                    and payload as direct Lua values.
 --   subscriber          (object)  — strongly recommended; used by
 --                                    remove_subscriber() for cleanup.
 --   emitter             (string|object) — filter; only fire for this emitter.
@@ -174,23 +170,22 @@ function eventemitter:off_any(handler, force_persistent)
 	end
 end
 
--- eventemitter:emit(event): fire a pre-built event table directly.
--- The global bus does not normalize or mutate caller-owned payload tables.
--- Build canonical events at the edge (eventport:emit / emit_event).
-function eventemitter:emit(event)
-	local list<const> = self.listeners[event.type]
+-- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
+-- is retained by the owning event port for filtering and downstream FSMs.
+function eventemitter:emit(event_type, emitter, payload, emitter_id)
+	local list<const> = self.listeners[event_type]
 	if list then
 		for i = 1, #list do
 			local entry<const> = list[i]
 			local filter<const> = entry.emitter
-			if filter == nil or filter == event.emitter or filter == (event.emitter and event.emitter.id) then
-				entry.handler(event)
+			if filter == nil or filter == emitter or filter == emitter_id then
+				entry.handler(event_type, emitter, payload, emitter_id)
 			end
 		end
 	end
 
 	for i = 1, #self.any_listeners do
-		self.any_listeners[i].handler(event)
+		self.any_listeners[i].handler(event_type, emitter, payload, emitter_id)
 	end
 end
 
@@ -239,7 +234,7 @@ function eventport:on(spec)
 		spec.subscriber = self.emitter
 	end
 	if spec.emitter == nil then
-		spec.emitter = self.emitter.id or self.emitter
+		spec.emitter = self.emitter_id
 	elseif not spec.emitter then
 		spec.emitter = nil
 	end
@@ -251,28 +246,9 @@ function eventport:on(spec)
 end
 
 -- eventport:emit(event_name, payload): preferred cart API for emitting events.
--- Automatically builds a canonical event table with emitter=self.emitter.
--- Table payloads stay nested and are exposed through the event wrapper.
+-- Payload identity is preserved exactly, including nil and false.
 function eventport:emit(event_name, payload)
-	local event<const> = eventemitter.instance:create_gameevent({
-		type = event_name,
-		emitter = self.emitter,
-		payload = payload,
-	})
-	eventemitter.instance:emit(event)
-end
-
--- eventport:emit_event(event): emit a pre-built event table, setting the
--- emitter to the port's owner if not already set.  Returns the event table.
--- Use when you already built the canonical event in a hot path or need to
--- pass the same event object to another system after emission.
-function eventport:emit_event(event)
-	if type(event.payload) == 'table' and getmetatable(event) == nil then
-		setmetatable(event, { __index = event.payload })
-	end
-	event.emitter = event.emitter or self.emitter
-	eventemitter.instance:emit(event)
-	return event
+	eventemitter.instance:emit(event_name, self.emitter, payload, self.emitter_id)
 end
 
 return {
