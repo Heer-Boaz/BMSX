@@ -135,7 +135,7 @@
 
 local fsm_trace<const> = require('cartlib/fsm/trace')
 local clear_map<const> = require('cartlib/util/clear_map')
-local timeline_module<const> = require('cartlib/timeline/index')
+local timeline_module<const> = require('cartlib/timeline/timeline')
 local cart_input<const> = require('cartlib/input/player')
 local clock<const> = require('cartlib/clock')
 

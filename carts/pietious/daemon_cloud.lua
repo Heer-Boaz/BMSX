@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
-local timeline<const> = require('cartlib/timeline/index')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 
 local daemon_cloud<const> = {}

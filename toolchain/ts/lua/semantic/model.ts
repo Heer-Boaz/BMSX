@@ -2290,7 +2290,7 @@ class SemanticBuilder {
 		if (totalMemberCount !== 2 || leadingMember !== 'instance' || trailingMember !== 'get') {
 			return CARTLIB_CALL_NONE;
 		}
-		if (alias.module === 'cartlib/world/index') {
+		if (alias.module === 'cartlib/world/world') {
 			return CARTLIB_CALL_WORLD_GET;
 		}
 		return alias.module === 'cartlib/registry'

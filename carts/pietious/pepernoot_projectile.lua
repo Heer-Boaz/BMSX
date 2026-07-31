@@ -12,7 +12,7 @@
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local tilecollisioncomponent<const> = require('cartlib/collision/tile_collision_component')
 local worldobject<const> = require('cartlib/world/object')

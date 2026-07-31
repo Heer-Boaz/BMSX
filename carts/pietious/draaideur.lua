@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local sprite_id_by_kind<const> = {

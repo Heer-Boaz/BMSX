@@ -54,9 +54,9 @@ local customvisualcomponent<const> = require('cartlib/render/custom_visual_compo
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local prefab<const> = require('cartlib/prefab')
-local timeline<const> = require('cartlib/timeline/index')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'

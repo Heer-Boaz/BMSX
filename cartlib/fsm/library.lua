@@ -13,7 +13,7 @@
 --    In TypeScript/annotated Lua, @build_fsm on a function auto-registers the
 --    result. Prefer that over explicit registration in cart code.
 
-local fsm<const> = require('cartlib/fsm/index')
+local fsm<const> = require('cartlib/fsm/fsm')
 
 local statedefinitions<const> = {}
 

@@ -1,5 +1,5 @@
 require('globals')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 
 __bmsx_host_test = {
 	frames = 0,

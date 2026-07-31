@@ -1,8 +1,8 @@
 -- visual_render.lua
 -- visualrender pipeline system.
 
-local ecs<const> = require('cartlib/ecs/index')
-local world_instance<const> = require('cartlib/world/index').instance
+local ecs<const> = require('cartlib/ecs/ecs')
+local world_instance<const> = require('cartlib/world/world').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

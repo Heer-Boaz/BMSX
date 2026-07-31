@@ -14,7 +14,7 @@ local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local surfacecomponent<const> = require('cartlib/render/surface_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()

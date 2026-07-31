@@ -56,9 +56,9 @@
 --    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local ecs<const> = require('cartlib/ecs/index')
+local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

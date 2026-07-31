@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local progression<const> = require('cartlib/progression')
 require('constants')
 

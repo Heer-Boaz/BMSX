@@ -1,4 +1,4 @@
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local combat_damage<const> = {}
 
 function combat_damage.build_weapon_request(target, target_kind, event, weapon_kind)

@@ -1,13 +1,13 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs<const> = require('cartlib/ecs/index')
+local ecs<const> = require('cartlib/ecs/ecs')
 local action_effects<const> = require('cartlib/action_effects')
 local component_types<const> = require('cartlib/components/types')
 local compiler<const> = require('cartlib/input/action_effect/compiler')
 local cart_input<const> = require('cartlib/input/player')
 local scratchbatch<const> = require('cartlib/util/scratchbatch')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local input_intent_component_type<const> = component_types.input_intent
 local input_action_effect_component_type<const> = component_types.input_action_effect
 local action_effect_component_type<const> = component_types.action_effect

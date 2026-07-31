@@ -4,7 +4,7 @@ local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
 local cart_input<const> = require('cartlib/input/player')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local immediate_text_opts<const> = { typed = false, snap = true }
 
 local background_at_or_after<const> = function(node_id)

@@ -61,7 +61,7 @@
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter<const> = require('cartlib/eventemitter')
 local component<const> = require('cartlib/world/component')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local registry_instance<const> = require('cartlib/registry').instance
 
 local worldobject<const> = {}

@@ -4,7 +4,7 @@ local statemachinecomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local worldobject<const> = require('cartlib/world/object')
 
 local definitions<const> = {}

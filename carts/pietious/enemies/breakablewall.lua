@@ -3,7 +3,7 @@ local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')

@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local worldobject<const> = require('cartlib/world/object')

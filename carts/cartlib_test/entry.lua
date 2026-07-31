@@ -7,7 +7,7 @@ local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecsp
 local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
-local world<const> = require('cartlib/world/index').instance
+local world<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
 
 local gx_gte_plus_vmad3<const> = gx_gte.plus_opcode_vmad3

@@ -30,7 +30,7 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs<const> = require('cartlib/ecs/index')
+local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
 local registry<const> = require('cartlib/registry')
 

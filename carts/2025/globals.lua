@@ -26,7 +26,7 @@ combat_director_fsm_id = 'p3.combat.director.fsm'
 -- use site and `bin.decode` reads the packed bytes (no PICO-style runtime lookup).
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local transition_config<const> = bin.decode(assets.data_transition_config_addr, assets.data_transition_config_len, 'transition_config')
 
 overgang_timeline_id = transition_config.overgang_timeline_id

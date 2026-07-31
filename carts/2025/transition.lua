@@ -3,9 +3,9 @@ require('globals')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
-local timeline<const> = require('cartlib/timeline/index')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_builders<const> = require('timeline_builders')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 local apply_transition_frame<const> = timeline_builders.apply_transition_frame
 local build_transition_fade_in_frames<const> = timeline_builders.build_transition_fade_in_frames
 local build_fade_frames<const> = timeline_builders.build_fade_frames

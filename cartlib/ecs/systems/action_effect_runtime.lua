@@ -1,9 +1,9 @@
 -- action_effect_runtime.lua
 -- actioneffectruntime pipeline system.
 
-local ecs<const> = require('cartlib/ecs/index')
+local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world_instance<const> = require('cartlib/world/index').instance
+local world_instance<const> = require('cartlib/world/world').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

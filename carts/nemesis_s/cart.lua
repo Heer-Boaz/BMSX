@@ -11,11 +11,11 @@ local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local cart_input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
-local world<const> = require('cartlib/world/index').instance
+local world<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
 require('constants')
 local stage_module<const> = require('stage')
-local player_module<const> = require('player/index')
+local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064

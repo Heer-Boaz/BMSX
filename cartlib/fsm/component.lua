@@ -1,6 +1,6 @@
 local component<const> = require('cartlib/world/component')
 local component_types<const> = require('cartlib/components/types')
-local fsm<const> = require('cartlib/fsm/index')
+local fsm<const> = require('cartlib/fsm/fsm')
 local state<const> = fsm.state
 
 local statemachinecomponent<const> = {}

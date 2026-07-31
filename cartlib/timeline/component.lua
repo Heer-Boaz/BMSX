@@ -1,6 +1,6 @@
 local component<const> = require('cartlib/world/component')
 local component_types<const> = require('cartlib/components/types')
-local timeline_module<const> = require('cartlib/timeline/index')
+local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local timeline<const> = timeline_module.timeline
 
