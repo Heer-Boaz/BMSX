@@ -1,5 +1,16 @@
 local romdir<const> = require('cartlib/romdir')
 
+struct geo_collision_variant_header
+	magic: word
+	version: word
+	original_offset: word
+	fliph_offset: word
+	flipv_offset: word
+	fliphv_offset: word
+	reserved0: word
+	reserved1: word
+end
+
 local select_sprite_shape_ref<const> = function(collider, sprite)
 	local image_id<const> = sprite.imgid
 	local flip_h<const> = sprite.flip_h
@@ -11,11 +22,12 @@ local select_sprite_shape_ref<const> = function(collider, sprite)
 	else
 		local image<const> = romdir.image(image_id)
 		local bin_base<const> = image.collision_addr
+		local variants<const>: *geo_collision_variant_header = bin_base
 		collider._sprite_shape_image_id = image_id
-		collider._sprite_shape_ref_original = bin_base + mem[bin_base + 8]
-		collider._sprite_shape_ref_fliph = bin_base + mem[bin_base + 12]
-		collider._sprite_shape_ref_flipv = bin_base + mem[bin_base + 16]
-		collider._sprite_shape_ref_fliphv = bin_base + mem[bin_base + 20]
+		collider._sprite_shape_ref_original = bin_base + variants->original_offset
+		collider._sprite_shape_ref_fliph = bin_base + variants->fliph_offset
+		collider._sprite_shape_ref_flipv = bin_base + variants->flipv_offset
+		collider._sprite_shape_ref_fliphv = bin_base + variants->fliphv_offset
 	end
 
 	local shape_ref
