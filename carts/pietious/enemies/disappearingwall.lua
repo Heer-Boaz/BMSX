@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
 require('constants')
 
 local disappearingwall<const> = {}
@@ -13,7 +16,7 @@ function disappearingwall:ctor()
 	self:update_wall_size()
 	local tile_layer<const> = self:get_component('tilelayercomponent')
 	local tile_count<const> = self.width_tiles * self.height_tiles
-	local tile_source<const> = gx_img_rect(self.tiletype)
+	local tile_source<const> = gx_image.rect(self.tiletype)
 	local sources<const> = {}
 	for index = 1, tile_count do
 		sources[index] = tile_source
@@ -27,7 +30,7 @@ function disappearingwall:ctor()
 end
 
 function disappearingwall.register_enemy_fsm()
-	define_fsm('disappearingwall', {
+	fsmlibrary.register('disappearingwall', {
 		initial = 'active',
 		on = {
 			['room.condition_set'] = function(self, _state, event)
@@ -43,7 +46,7 @@ function disappearingwall.register_enemy_fsm()
 end
 
 function disappearingwall.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		fsms = { 'disappearingwall' },

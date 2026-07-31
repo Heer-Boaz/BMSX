@@ -828,9 +828,7 @@ end
 -- backed type/tag queries still keep a tiny iterator state table.
 
 -- world:objects_by_type(type_name)
---   Iterator over active objects whose type_name matches.
---   Like UE5 GetAllActorsOfClass — returns all objects spawned from a given
---   define_prefab definition_id.
+--   Iterator over active objects whose type_name matches a prefab definition id.
 function world_class:objects_by_type(obj_type_name)
 	local state<const> = { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, reg_key = nil }
 	state.active_space_id = self.active_space_id

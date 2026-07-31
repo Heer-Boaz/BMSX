@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -13,7 +15,7 @@ end
 function marspeinenaardappel.bt_tick(self, _blackboard)
 	local speed_x<const> = self.speed_x_num
 	local speed_y<const> = self.speed_y_num
-	local rm<const> = oget('room')
+	local rm<const> = world_instance:get('room')
 
 	self.x = self.x + speed_x
 	self.y = self.y + speed_y
@@ -73,7 +75,7 @@ end
 enemy_base.extend(marspeinenaardappel, 'marspeinenaardappel')
 
 function marspeinenaardappel.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
 		type = 'sprite',

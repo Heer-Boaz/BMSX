@@ -1,5 +1,6 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
+import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import {
 	aemDocumentFormat,
 	assertValidAemDocument,
@@ -54,10 +55,9 @@ export function applyAemSourceToRuntime(
 		: sources.cartridgeSlots[resource.domain]!.package;
 	runtimePackage.audioevents[assetId] = doc as Record<string, unknown>;
 	const suspendedGuest = luaTooling.suspendedGuest;
-	const aemResource = suspendedGuest.callClosure(
-		suspendedGuest.global('rget'),
-		[suspendedGuest.existingString('aem')],
-	)[0];
+	const aemResource = suspendedGuest.global(
+		buildModuleExportSlotName('cartlib/aem', []),
+	);
 	suspendedGuest.callClosure(
 		suspendedGuest.readStringMember(aemResource, 'reload_from_rom'),
 	);

@@ -1,16 +1,17 @@
 require('globals')
+local world_instance<const> = require('cartlib/world/index').instance
 
 __bmsx_host_test = {
 	frames = 0,
 }
 
 function __bmsx_host_test.ready()
-	return oget(director_instance_id) ~= nil and oget(combat_director_instance_id) ~= nil
+	return world_instance:get(director_instance_id) ~= nil and world_instance:get(combat_director_instance_id) ~= nil
 end
 
 function __bmsx_host_test.setup()
-	local director<const> = oget(director_instance_id)
-	local combat_director<const> = oget(combat_director_instance_id)
+	local director<const> = world_instance:get(director_instance_id)
+	local combat_director<const> = world_instance:get(combat_director_instance_id)
 	director.node_id = 'combat_wekker'
 	director.sc:switch_state('p3.director.fsm', '/combat_wait')
 	combat_director:start_combat('combat_wekker', true)
@@ -19,8 +20,8 @@ end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
-	local director<const> = oget(director_instance_id)
-	local combat_director<const> = oget(combat_director_instance_id)
+	local director<const> = world_instance:get(director_instance_id)
+	local combat_director<const> = world_instance:get(combat_director_instance_id)
 	test.frames = test.frames + 1
 	assert(test.frames < 8, 'combat intro skip did not enter first round')
 

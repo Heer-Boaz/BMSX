@@ -13,7 +13,6 @@ import {
 	type Value,
 	type ValueReference,
 	valueIsTable,
-	valueString,
 	valueToString,
 	valueTag,
 	ValueTag,
@@ -59,10 +58,6 @@ export class SuspendedGuestSession {
 
 	public systemGlobal(name: string): SuspendedGuestValue {
 		return this.cpu.getSystemGlobalByKey(this.stringPool.find(name)!);
-	}
-
-	public existingString(value: string): SuspendedGuestValue {
-		return valueString(this.stringPool.find(value)!);
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

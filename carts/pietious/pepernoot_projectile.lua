@@ -10,6 +10,9 @@
 -- This is the same pattern the player uses — temporary interruption with
 -- automatic state restoration.
 
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local components<const> = require('cartlib/components')
 local worldobject<const> = require('cartlib/world/object')
@@ -26,7 +29,7 @@ function pepernoot_projectile:ctor()
 	self:add_component(components.tilecollisioncomponent.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
-			local collision_flags<const> = oget('room'):collision_flags_at_world(owner.x, owner.y)
+			local collision_flags<const> = world_instance:get('room'):collision_flags_at_world(owner.x, owner.y)
 			if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
 				return nil
 			end
@@ -40,14 +43,14 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:onspawn(pos)
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
@@ -57,7 +60,7 @@ function pepernoot_projectile:update_motion()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	self.x = self.x + (self.direction * secondary_weapon_pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
@@ -68,7 +71,7 @@ function pepernoot_projectile:update_motion()
 end
 
 local define_pepernoot_projectile_fsm<const> = function()
-	define_fsm('pepernoot_projectile', {
+	fsmlibrary.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
 			['tilecollision.begin'] = worldobject.mark_for_disposal,
@@ -101,7 +104,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 end
 
 local register_pepernoot_projectile_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		type = 'sprite',

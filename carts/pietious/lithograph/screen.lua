@@ -9,6 +9,9 @@
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
 -- the object already has an FSM.
 
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -18,7 +21,7 @@ lithograph_screen.__index = lithograph_screen
 local lithograph_mode_sprite_id<const> = 'lithograph_mode'
 
 local draw_lithograph_visual<const> = function()
-	gx_blit_img_color(lithograph_mode_sprite_id, room_tile_size4, room_tile_origin_y + room_tile_size2, 0xffffffff)
+	gx_image.blit_img_color(lithograph_mode_sprite_id, room_tile_size4, room_tile_origin_y + room_tile_size2, 0xffffffff)
 end
 
 function lithograph_screen:ctor()
@@ -33,7 +36,7 @@ function lithograph_screen:ctor()
 end
 
 local define_lithograph_screen_fsm<const> = function()
-	define_fsm('lithograph_screen', {
+	fsmlibrary.register('lithograph_screen', {
 		initial = 'active',
 		on = {
 			['lithograph'] = {
@@ -56,7 +59,7 @@ local define_lithograph_screen_fsm<const> = function()
 end
 
 local register_lithograph_screen_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
 		fsms = { 'lithograph_screen' },

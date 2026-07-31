@@ -64,7 +64,7 @@ import {
 	type ProgramModule,
 } from './compiler/passes/module_contract';
 import { extractAssignmentPath } from './compiler/passes/expression_paths';
-import { appendModuleExportPathKey } from './compiler/passes/module_names';
+import { appendModuleExportPathKey } from './module_path';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
 import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/passes/static_proto_contract';

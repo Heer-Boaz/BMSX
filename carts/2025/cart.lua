@@ -1,7 +1,13 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local application<const> = require('cartlib/application')
+local eventemitter<const> = require('cartlib/eventemitter')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local irq_module<const> = require('cartlib/irq')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
+irq = irq_module.dispatch
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()
 local texture_residency<const> = require('texture_residency')
@@ -62,7 +68,7 @@ end
 local create_transition_visuals<const> = function()
 	local overlay<const> = create_rect_state()
 	overlay.blend_color = 0
-	overlay.blend_mode = gx_draw_mode_blend_half
+	overlay.blend_mode = gx_gpu.draw_mode_blend_half
 	return {
 		overlay = overlay,
 		panels = {
@@ -77,25 +83,25 @@ end
 local draw_director_visual<const> = function(parent)
 	local results<const> = parent.combat_results_visual
 	if results.visible then
-		gx_fill_rect_color(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
+		gx_gpu.fill_rect_color(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
 	end
 	local overlay<const> = parent.transition_visual.overlay
 	if overlay.color ~= 0 and overlay.visible then
-		gx_fill_rect_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
+		gx_gpu.fill_rect_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
 	end
 	if overlay.blend_color ~= 0 then
-		gx_set_draw_mode(overlay.blend_mode)
-		gx_fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
+		gx_gpu.set_draw_mode(overlay.blend_mode)
+		gx_gpu.fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
 	end
 	for i = 1, #parent.transition_visual.panels do
 		local panel<const> = parent.transition_visual.panels[i]
 		if panel.visible then
-			gx_fill_rect_color(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
+			gx_gpu.fill_rect_color(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
 		end
 	end
 	local accent<const> = parent.transition_visual.accent
 	if accent.visible then
-		gx_fill_rect_color(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
+		gx_gpu.fill_rect_color(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
 	end
 end
 
@@ -183,13 +189,13 @@ local build_director_fsm<const> = function()
 	transition_module.register_states(states)
 	dialogue_module.register_states(states)
 
-	define_fsm(director_fsm_id, {
+	fsmlibrary.register(director_fsm_id, {
 		initial = 'boot',
 		states = states,
 	})
 end
 local register_director<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = director_def_id,
 		class = director,
 		type = 'object',
@@ -228,57 +234,57 @@ local register_director<const> = function()
 			just_finished_combat = false,
 		},
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.bg',
 		class = surface_object_class,
 		components = { 'surfacecomponent' },
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.text.main',
 		class = {},
 		type = 'textobject',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.text.choice',
 		class = {},
 		type = 'textobject',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.text.prompt',
 		class = {},
 		type = 'textobject',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.text.transition',
 		class = {},
 		type = 'textobject',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.text.results',
 		class = {},
 		type = 'textobject',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.combat.monster',
 		class = {},
 		type = 'sprite',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.combat.maya_a',
 		class = {},
 		type = 'sprite',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.combat.maya_b',
 		class = {},
 		type = 'sprite',
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.combat.all_out',
 		class = surface_object_class,
 		components = { 'surfacecomponent' },
 	})
-	define_prefab({
+	prefab.define({
 		def_id = 'p3.combat.all_out_portrait',
 		class = {},
 		type = 'sprite',
@@ -286,12 +292,12 @@ local register_director<const> = function()
 end
 
 function init()
-	on_irq(irq_imgdec, texture_residency.complete_upload)
-	on_irq(irq_vblank, function()
+	irq_module.register(irq_imgdec, texture_residency.complete_upload)
+	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
 	*irq_mask_register = irq_imgdec | irq_vblank | irq_apu
-	gx_clear_color(0xff000000)
+	gx_gpu.clear_color(0xff000000)
 	texture_residency.load_font('msx_6b_font_space')
 	combat_module.define_fsm()
 	build_director_fsm()
@@ -300,7 +306,7 @@ function init()
 end
 
 function new_game()
-	reset()
+	application.reset()
 	local w<const> = screen_width
 	local h<const> = screen_height
 	local line_height<const> = 16
@@ -311,84 +317,84 @@ function new_game()
 	local choice_top<const> = h - (line_height * (prompt_lines + choice_lines))
 	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	inst('p3.bg', {
+	prefab.spawn('p3.bg', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		visible = false,
 	})
 
 	local horizontal_margin<const> = w / 10
-		inst('p3.text.main', {
-			id = text_main_id,
-			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
-			blank_lines = 1,
-			pos = { z = 1000 },
-		})
-		inst('p3.text.choice', {
-			id = text_choice_id,
-			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
-			blank_lines = 1,
-			pos = { z = 1001 },
-			highlight_move_enabled = true,
-			highlight_pulse_enabled = true,
-			highlight_jitter_enabled = false,
-		})
-		inst('p3.text.prompt', {
-			id = text_prompt_id,
-			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
-			blank_lines = 1,
-			pos = { z = 1002 },
-		})
-		inst('p3.text.transition', {
-			id = text_transition_id,
-			dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
-			blank_lines = 1,
-			pos = { z = 900 },
-			text_color = p3_ink_color,
-			normal_bg_color = p3_white_color,
-		})
-		inst('p3.text.results', {
-			id = text_results_id,
-			dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
-			blank_lines = 1,
-			pos = { z = 1003 },
-		})
+	prefab.spawn('p3.text.main', {
+		id = text_main_id,
+		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
+		blank_lines = 1,
+		pos = { z = 1000 },
+	})
+	prefab.spawn('p3.text.choice', {
+		id = text_choice_id,
+		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
+		blank_lines = 1,
+		pos = { z = 1001 },
+		highlight_move_enabled = true,
+		highlight_pulse_enabled = true,
+		highlight_jitter_enabled = false,
+	})
+	prefab.spawn('p3.text.prompt', {
+		id = text_prompt_id,
+		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
+		blank_lines = 1,
+		pos = { z = 1002 },
+	})
+	prefab.spawn('p3.text.transition', {
+		id = text_transition_id,
+		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
+		blank_lines = 1,
+		pos = { z = 900 },
+		text_color = p3_ink_color,
+		normal_bg_color = p3_white_color,
+	})
+	prefab.spawn('p3.text.results', {
+		id = text_results_id,
+		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
+		blank_lines = 1,
+		pos = { z = 1003 },
+	})
 
 	clear_texts(text_ids_all)
 
-	inst('p3.combat.monster', {
+	prefab.spawn('p3.combat.monster', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	inst('p3.combat.maya_a', {
+	prefab.spawn('p3.combat.maya_a', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	inst('p3.combat.maya_b', {
+	prefab.spawn('p3.combat.maya_b', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	inst('p3.combat.all_out', {
+	prefab.spawn('p3.combat.all_out', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
-	inst('p3.combat.all_out_portrait', {
+	prefab.spawn('p3.combat.all_out_portrait', {
 		id = combat_all_out_portrait_id,
 		pos = { x = 0, y = 0, z = 750 },
 		imgid = 'maya_v_s',
 		visible = false,
 	})
 
-	combat_director_instance = inst(combat_director_def_id, { id = combat_director_instance_id })
-	inst(director_def_id, { id = director_instance_id })
+	combat_director_instance = prefab.spawn(combat_director_def_id, { id = combat_director_instance_id })
+	prefab.spawn(director_def_id, { id = director_instance_id })
 end
 
 init()
@@ -398,10 +404,10 @@ new_game()
 while true do
 	wait_vblank()
 
-	update_world()
+	world_instance:update()
 	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
-	gx_clear_color(0xff000000)
-	draw_world()
+	gx_gpu.clear_color(0xff000000)
+	world_instance:draw()
 	texture_residency.submit_pending_background()
 
 	*input_control_register = 0x00000001

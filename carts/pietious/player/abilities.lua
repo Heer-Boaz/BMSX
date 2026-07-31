@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local action_effects<const> = require('cartlib/action_effects')
 
@@ -38,7 +40,7 @@ action_effects.register_effect('pepernoot', {
 			return false
 		end
 		local live_count = 0
-		for proj in objects_by_type('pepernoot_projectile') do
+		for proj in world_instance:objects_by_type('pepernoot_projectile') do
 			if proj.owner_id == owner.id then
 				live_count = live_count + 1
 			end
@@ -53,16 +55,16 @@ action_effects.register_effect('pepernoot', {
 	end,
 	handler = function(context)
 		local owner<const> = context.owner
-		local room<const> = oget('room')
+		local room<const> = world_instance:get('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
 		local spawn_y = owner.y + secondary_weapon_pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
-		inst('pepernoot_projectile', {
+		prefab.spawn('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
-			room_number = oget('c').current_room_number,
+			room_number = world_instance:get('c').current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
@@ -77,10 +79,10 @@ action_effects.register_effect('spyglass', {
 	id = 'spyglass',
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(context)
-		return oget('room'):find_near_lithograph(context.owner) ~= nil
+		return world_instance:get('room'):find_near_lithograph(context.owner) ~= nil
 	end,
 	handler = function(context)
-		local lithograph<const> = oget('room'):find_near_lithograph(context.owner)
+		local lithograph<const> = world_instance:get('room'):find_near_lithograph(context.owner)
 		context.owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
@@ -91,7 +93,7 @@ action_effects.register_effect('halo', {
 	id = 'halo',
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(context)
-		local castle<const> = oget('c')
+		local castle<const> = world_instance:get('c')
 		if not context.owner.inventory_items.halo then
 			return false
 		end
@@ -101,8 +103,8 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(context)
-		local castle<const> = oget('c')
-		local from_world<const> = (oget('room').world_number or 0) ~= 0
+		local castle<const> = world_instance:get('c')
+		local from_world<const> = (world_instance:get('room').world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			context.owner:begin_waiting_halo_banner()

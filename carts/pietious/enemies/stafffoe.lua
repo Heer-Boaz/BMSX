@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -42,14 +44,14 @@ function stafffoe.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
 	for i = 0, 3 do
 		local vector_index<const> = ((base_vector_index + (i * 4)) % 16) + 1
 		local speed_x_num<const> = staff_shot_speed_x[vector_index]
 		local speed_y_num<const> = staff_shot_speed_y[vector_index]
-		inst('enemy.staffspawn', {
+		prefab.spawn('enemy.staffspawn', {
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,
 			speed_y_num = speed_y_num,
@@ -64,7 +66,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	oget('c').events:emit('staffspawn')
+	world_instance:get('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 	return 'RUNNING'
@@ -88,7 +90,7 @@ end
 enemy_base.extend(stafffoe, 'stafffoe')
 
 function stafffoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		type = 'sprite',

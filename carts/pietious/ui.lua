@@ -1,3 +1,7 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
 
@@ -37,7 +41,7 @@ end
 
 function ui:ctor()
 	self:get_component('customvisualcomponent').producer = ui.draw_ui
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
 	self.hud_visible = true
@@ -83,22 +87,22 @@ function ui:draw_ui()
 	if not self.hud_visible then
 		return
 	end
-	local player<const> = oget('pietolon')
-	gx_blit_img_color('game_header', 0, 0, 0xffffffff)
+	local player<const> = world_instance:get('pietolon')
+	gx_image.blit_img_color('game_header', 0, 0, 0xffffffff)
 	for i = 0, (self.hud_health_level - 1) do
-		gx_blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 0xffffffff)
+		gx_image.blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 0xffffffff)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		gx_blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff)
+		gx_image.blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff)
 	end
 	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		gx_blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff)
+		gx_image.blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff)
 	end
 end
 
 local define_ui_fsm<const> = function()
-	define_fsm('ui', {
+	fsmlibrary.register('ui', {
 		initial = 'active',
 		on = {
 			['room'] = {
@@ -139,7 +143,7 @@ local define_ui_fsm<const> = function()
 end
 
 local register_ui_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'ui',
 		class = ui,
 		fsms = { 'ui' },

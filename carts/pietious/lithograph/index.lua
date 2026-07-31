@@ -1,3 +1,4 @@
+local prefab<const> = require('cartlib/prefab')
 local lithograph<const> = {}
 lithograph.__index = lithograph
 
@@ -7,7 +8,7 @@ function lithograph:ctor()
 end
 
 local register_lithograph_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'lithograph',
 		class = lithograph,
 		type = 'sprite',

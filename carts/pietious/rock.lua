@@ -1,3 +1,7 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -34,12 +38,12 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	room:mark_rock_destroyed(self.id)
 	if self.item_type == nil then
 		return
 	end
-	if oget('pietolon').inventory_items[self.item_type] then
+	if world_instance:get('pietolon').inventory_items[self.item_type] then
 		return
 	end
 	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]
@@ -54,7 +58,7 @@ function rock:begin_break()
 			item_type = self.item_type,
 		}
 	end
-	local drop<const> = inst('world_item', {
+	local drop<const> = prefab.spawn('world_item', {
 		id = id,
 		space_id = 'main',
 		pos = { x = self.x, y = drop_y, z = 130 },
@@ -67,7 +71,7 @@ function rock:begin_break()
 end
 
 local define_rock_fsm<const> = function()
-		define_fsm('rock', {
+		fsmlibrary.register('rock', {
 				initial = 'idle',
 				on = {
 						['overlap.begin'] = function(self, _state, event)
@@ -118,7 +122,7 @@ local define_rock_fsm<const> = function()
 end
 
 local register_rock_definition<const> = function()
-		define_prefab({
+		prefab.define({
 				def_id = 'rock',
 				class = rock,
 				type = 'sprite',

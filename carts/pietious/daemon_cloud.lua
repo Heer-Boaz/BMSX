@@ -1,3 +1,5 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/index')
 
 local daemon_cloud<const> = {}
@@ -27,7 +29,7 @@ function daemon_cloud:stop_and_hide()
 end
 
 local define_daemon_cloud_fsm<const> = function()
-	define_fsm('daemon_cloud', {
+	fsmlibrary.register('daemon_cloud', {
 		initial = 'active',
 		states = {
 			active = {
@@ -59,7 +61,7 @@ local define_daemon_cloud_fsm<const> = function()
 end
 
 local register_daemon_cloud_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
 		type = 'sprite',

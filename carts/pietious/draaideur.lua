@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local sprite_id_by_kind<const> = {
@@ -99,7 +102,7 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 	else
 		self.player_was_right = false
 	end
-	oget('c').events:emit('rotatedoor')
+	world_instance:get('c').events:emit('rotatedoor')
 	player:start_slow_doorpass()
 end
 
@@ -110,7 +113,7 @@ function draaideur:update_active()
 		return
 	end
 
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local walking_left<const> = player:has_tag('v.wl')
 	local walking_right<const> = player:has_tag('v.wr')
 	local touches<const> = self:touches_player(player, walking_left, walking_right)
@@ -162,7 +165,7 @@ function draaideur:ctor()
 end
 
 local define_draaideur_fsm<const> = function()
-	define_fsm('draaideur', {
+	fsmlibrary.register('draaideur', {
 		initial = 'active',
 		states = {
 			active = {
@@ -173,7 +176,7 @@ local define_draaideur_fsm<const> = function()
 end
 
 local register_draaideur_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'draaideur',
 		class = draaideur,
 		type = 'sprite',

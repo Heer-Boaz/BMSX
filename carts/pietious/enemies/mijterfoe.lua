@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -126,7 +128,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard)
 	end
@@ -152,12 +154,12 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= oget('room').world_width then
+	elseif self.x + 14 >= world_instance:get('room').world_width then
 		self.horizontal_dir_mod = -1
 	end
-	if self.y <= oget('room').world_top then
+	if self.y <= world_instance:get('room').world_top then
 		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= oget('room').world_height then
+	elseif self.y + 14 >= world_instance:get('room').world_height then
 		self.vertical_dir_mod = -1
 	end
 
@@ -198,7 +200,7 @@ end
 enemy_base.extend(mijterfoe, 'mijterfoe')
 
 function mijterfoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		type = 'sprite',

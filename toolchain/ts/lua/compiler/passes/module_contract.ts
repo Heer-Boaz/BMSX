@@ -19,7 +19,7 @@ import {
 	type StaticFunctionExportSymbol,
 } from './static_functions';
 import { collectStaticStorageDeclarations } from './static_storage';
-import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
+import { buildModuleExportPathKey, buildModuleExportSlotName } from '../../module_path';
 import {
 	buildModuleShapeFromExpression,
 	buildTopLevelLocalModuleShapes,

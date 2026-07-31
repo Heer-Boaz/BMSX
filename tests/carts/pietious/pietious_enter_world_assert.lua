@@ -1,4 +1,6 @@
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
+local castle_map<const> = require('castle/map')
 local components<const> = require('cartlib/components')
 
 __bmsx_host_test = __bmsx_host_test or {
@@ -8,7 +10,7 @@ __bmsx_host_test = __bmsx_host_test or {
 }
 
 function __bmsx_host_test.ready()
-	return oget('c') ~= nil and oget('room') ~= nil and oget('pietolon') ~= nil and oget('d') ~= nil
+	return world_instance:get('c') ~= nil and world_instance:get('room') ~= nil and world_instance:get('pietolon') ~= nil and world_instance:get('d') ~= nil
 end
 
 function __bmsx_host_test.setup()
@@ -19,25 +21,24 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
-	local castle_map<const> = require('castle/map')
 	local world_transition<const> = castle_map.world_transitions.world_1
 
 	if __bmsx_host_test.phase == 'boot_room' then
 		__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
 		assert(__bmsx_host_test.frame_count < 120,
 			'room boot timed out'
-				.. ' space=' .. tostring(get_space()))
+				.. ' space=' .. tostring(world_instance.active_space_id))
 		if not __bmsx_host_test.ready() then
 			return false
 		end
-		local director<const> = oget('d')
-		if get_space() ~= 'main' or director.boot_mode == 'title_screen' then
+		local director<const> = world_instance:get('d')
+		if world_instance.active_space_id ~= 'main' or director.boot_mode == 'title_screen' then
 			return false
 		end
 
-		local castle<const> = oget('c')
-		local room<const> = oget('room')
-		local player<const> = oget('pietolon')
+		local castle<const> = world_instance:get('c')
+		local room<const> = world_instance:get('room')
+		local player<const> = world_instance:get('pietolon')
 		local castle_room_number<const> = 8
 		local selected_entrance<const> = castle_map.room_templates[castle_room_number].world_entrances[1]
 
@@ -75,16 +76,16 @@ function __bmsx_host_test.update(_frame, _current_music)
 		return host.press('ArrowDown', 2)
 	end
 
-	local castle<const> = oget('c')
-	local room<const> = oget('room')
-	local player<const> = oget('pietolon')
+	local castle<const> = world_instance:get('c')
+	local room<const> = world_instance:get('room')
+	local player<const> = world_instance:get('pietolon')
 	local feet_y<const> = player.y + player.height
 	local left_x<const> = player.x + 1
 	local right_x<const> = player.x + player.width - 2
 	local player_on_floor<const> = room:has_collision_flags_at_world(left_x, feet_y + 1, collision_flags_solid_mask, true)
 		or room:has_collision_flags_at_world(right_x, feet_y + 1, collision_flags_solid_mask, true)
 
-	local final_outcome<const> = get_space() == 'main'
+	local final_outcome<const> = world_instance.active_space_id == 'main'
 		and castle.current_room_number == world_transition.world_room_number
 		and room.world_number == world_transition.world_number
 		and room.map_id == world_transition.world_number
@@ -113,7 +114,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 		'enter-world timed out'
 			.. ' room=' .. tostring(castle.current_room_number) .. '/' .. tostring(world_transition.world_room_number)
 			.. ' world=' .. tostring(room.world_number) .. '/' .. tostring(world_transition.world_number)
-			.. ' space=' .. tostring(get_space())
+			.. ' space=' .. tostring(world_instance.active_space_id)
 			.. ' map=' .. tostring(room.map_id) .. ',' .. tostring(room.map_x) .. ',' .. tostring(room.map_y)
 			.. ' player=' .. tostring(player.x) .. ',' .. tostring(player.y) .. ',' .. tostring(player.facing)
 			.. ' expectedPlayer=' .. tostring(world_transition.world_spawn_x) .. ',' .. tostring(world_transition.world_spawn_y) .. ',' .. tostring(world_transition.world_spawn_facing)

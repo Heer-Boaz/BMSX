@@ -1,3 +1,7 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 
 local world_entrance_sprite_ids<const> = {
@@ -20,14 +24,14 @@ end
 
 function world_entrance:mark_half_open()
 	self:set_entrance_state('opening_2')
-	oget('c').events:emit('world_entrance.opening_2', {
+	world_instance:get('c').events:emit('world_entrance.opening_2', {
 		target = self.target,
 	})
 end
 
 function world_entrance:finish_opening()
 	self:set_entrance_state('open')
-	oget('c').events:emit('world_entrance.opened', {
+	world_instance:get('c').events:emit('world_entrance.opened', {
 		target = self.target,
 	})
 end
@@ -38,7 +42,7 @@ function world_entrance:ctor()
 end
 
 local define_world_entrance_fsm<const> = function()
-	define_fsm('world_entrance', {
+	fsmlibrary.register('world_entrance', {
 		initial = 'closed',
 		states = {
 			closed = {
@@ -90,7 +94,7 @@ local define_world_entrance_fsm<const> = function()
 end
 
 local register_world_entrance_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'world_entrance',
 		class = world_entrance,
 		type = 'sprite',

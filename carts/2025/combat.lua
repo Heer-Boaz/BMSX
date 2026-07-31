@@ -1,8 +1,14 @@
 local combat<const> = {}
 require('globals')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_primitives<const> = require('cartlib/gx/primitives')
+local prefab<const> = require('cartlib/prefab')
 local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
+local timeline<const> = require('cartlib/timeline/index')
 local timeline_builders<const> = require('timeline_builders')
+local world_instance<const> = require('cartlib/world/index').instance
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local cart_input<const> = require('cartlib/input/player')
@@ -104,8 +110,8 @@ local draw_combat_slash<const> = function(director)
 		return
 	end
 	local points<const> = frame.slash_points
-	gx_set_draw_mode(gx_draw_mode_blend_half)
-	gx_draw_thick_line_semitrans_color(points[1], points[2], points[3], points[4], frame.slash_color, frame.slash_thickness)
+	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
+	gx_primitives.draw_thick_line_semitrans_color(points[1], points[2], points[3], points[4], frame.slash_color, frame.slash_thickness)
 end
 
 function combat_director:ctor()
@@ -137,8 +143,8 @@ end
 local apply_combat_parallax<const> = function(self)
 	local momentum<const> = self.combat_parallax_momentum_steps
 	local offset_base_y<const> = self.combat_parallax_offset_base_y
-	apply_combat_parallax_sprite(oget(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
-	apply_combat_parallax_sprite(oget(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
+	apply_combat_parallax_sprite(world_instance:get(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
+	apply_combat_parallax_sprite(world_instance:get(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
 end
 
 local refresh_combat_parallax<const> = function(self)
@@ -178,20 +184,20 @@ function combat_director:apply_combat_round(node)
 		choice_lines[i] = round.options[i].label
 	end
 	stagger.play(self, 'combat', {
-		bg = oget(bg_id),
+		bg = world_instance:get(bg_id),
 		bg_dim = false,
 		pose_targets = {
-			oget(combat_maya_a_id),
+			world_instance:get(combat_maya_a_id),
 		},
-		text_main = oget(text_main_id),
-		text_choice = oget(text_choice_id),
-		text_prompt = oget(text_prompt_id),
+		text_main = world_instance:get(text_main_id),
+		text_choice = world_instance:get(text_choice_id),
+		text_prompt = world_instance:get(text_prompt_id),
 		text_lines = round.prompt,
 		text_choice_lines = choice_lines,
 		text_typed = true,
 	})
 	self.choice_index = 1
-	oget(text_prompt_id):clear_text()
+	world_instance:get(text_prompt_id):clear_text()
 end
 
 function combat_director:reset_combat_parallax()
@@ -207,8 +213,8 @@ end
 
 function combat_director:activate_combat_parallax_transform()
 	self.combat_parallax_transform_active = true
-	local monster<const> = oget(combat_monster_id)
-	local maya_a<const> = oget(combat_maya_a_id)
+	local monster<const> = world_instance:get(combat_monster_id)
+	local maya_a<const> = world_instance:get(combat_maya_a_id)
 	monster.visible = true
 	maya_a.visible = true
 	apply_combat_parallax(self)
@@ -216,8 +222,8 @@ end
 
 function combat_director:clear_combat_parallax_transform()
 	self.combat_parallax_transform_active = false
-	local monster<const> = oget(combat_monster_id)
-	local maya_a<const> = oget(combat_maya_a_id)
+	local monster<const> = world_instance:get(combat_monster_id)
+	local maya_a<const> = world_instance:get(combat_maya_a_id)
 	monster.sprite_component.draw_offset.y = 0
 	monster.sprite_component.draw_scale.x = 1
 	monster.sprite_component.draw_scale.y = 1
@@ -244,8 +250,8 @@ function combat_director:push_combat_momentum(side, power)
 end
 
 function combat_director:skip_typing()
-	if oget(text_main_id):is_typing() then
-		oget(text_main_id):reveal_text()
+	if world_instance:get(text_main_id):is_typing() then
+		world_instance:get(text_main_id):reveal_text()
 		cart_input.consume(1, 'b')
 		return true
 	end
@@ -287,7 +293,7 @@ function combat.define_fsm()
 	states.combat_done = {
 		entering_state = function(self)
 			self:disable_combat_parallax()
-			oget(director_instance_id).events:emit('combat.end', {
+			world_instance:get(director_instance_id).events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
 				monster_imgid = self.combat_monster_imgid,
@@ -307,7 +313,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_hit<const> = function(self)
-		local monster<const> = oget(combat_monster_id)
+		local monster<const> = world_instance:get(combat_monster_id)
 		monster.sprite_component.color = p3_white_color
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
@@ -316,7 +322,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_dodge<const> = function(self)
-		local monster<const> = oget(combat_monster_id)
+		local monster<const> = world_instance:get(combat_monster_id)
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
 		monster.sprite_component.scale = { x = 1, y = 1 }
@@ -330,24 +336,24 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_results_fade_in<const> = function(self)
-		local bg<const> = oget(director_instance_id).combat_results_visual
+		local bg<const> = world_instance:get(director_instance_id).combat_results_visual
 		bg.visible = true
 		bg.color = combat_results_bg_visible_color
-		local maya_b<const> = oget(combat_maya_b_id)
+		local maya_b<const> = world_instance:get(combat_maya_b_id)
 		maya_b.sprite_component.color = p3_white_color
 		maya_b.x = self.combat_results_maya_target_x
-		local results<const> = oget(text_results_id)
+		local results<const> = world_instance:get(text_results_id)
 		results.text_component.color = p3_white_color
 		results.text_component.offset.x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
 	local finish_combat_results_fade_out<const> = function(self)
-		local maya_b<const> = oget(combat_maya_b_id)
+		local maya_b<const> = world_instance:get(combat_maya_b_id)
 		maya_b.visible = false
 		maya_b.z = combat_maya_z
-		oget(text_results_id):clear_text()
-		local director<const> = oget(director_instance_id)
+		world_instance:get(text_results_id):clear_text()
+		local director<const> = world_instance:get(director_instance_id)
 		local bg<const> = director.combat_results_visual
 		bg.visible = false
 		bg.color = p3_black_color
@@ -368,7 +374,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_exit_fade_in<const> = function(self)
-		local bg<const> = oget(bg_id)
+		local bg<const> = world_instance:get(bg_id)
 		bg.surface_component.color = p3_white_color
 		return '/combat_done'
 	end
@@ -385,14 +391,14 @@ function combat.define_fsm()
 			clear_texts(text_ids_all)
 			hide_combat_sprites()
 			hide_transition_layers()
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -401,7 +407,7 @@ function combat.define_fsm()
 			['b[jp]'] = '/combat_init'
 		},
 		leaving_state = function(self)
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			overlay.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
@@ -419,14 +425,14 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_core)
 			hide_transition_layers()
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -443,14 +449,14 @@ function combat.define_fsm()
 			reset_text_colors()
 			hide_transition_layers()
 
-			local bg<const> = oget(bg_id)
+			local bg<const> = world_instance:get(bg_id)
 			bg.visible = false
 
 			self.combat_round_index = 1
 			self.combat_points = 0
 			self.combat_max_points = #node.rounds
 
-			local monster<const> = oget(combat_monster_id)
+			local monster<const> = world_instance:get(combat_monster_id)
 			texture_residency.load_combat_workset(node.monster_imgid)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
@@ -467,7 +473,7 @@ function combat.define_fsm()
 			self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
 			self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
 
-			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
@@ -478,13 +484,13 @@ function combat.define_fsm()
 			self.combat_maya_a_start_x = screen_width
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
-			local all_out<const> = oget(combat_all_out_id)
+			local all_out<const> = world_instance:get(combat_all_out_id)
 			all_out.visible = false
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
 
-			local maya_b<const> = oget(combat_maya_b_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.color = p3_white_color
@@ -512,9 +518,9 @@ function combat.define_fsm()
 				},
 			},
 		entering_state = function(self)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local maya_b<const> = oget(combat_maya_b_id)
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -554,19 +560,19 @@ function combat.define_fsm()
 			['b[jp]'] = '/combat_round',
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(combat_monster_id)
+			local monster<const> = world_instance:get(combat_monster_id)
 			monster.sprite_component.scale = { x = 1, y = 1 }
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.visible = true
 
-			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			maya_a.sprite_component.scale = { x = 1, y = 1 }
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
 			maya_a.visible = true
 
-			local maya_b<const> = oget(combat_maya_b_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
 			maya_b.sprite_component.scale = { x = 1, y = 1 }
 			maya_b.visible = false
 			maya_b.x = self.combat_maya_b_start_x
@@ -578,16 +584,16 @@ function combat.define_fsm()
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
 			clear_texts(text_ids_transition_results)
-			local bg<const> = oget(bg_id)
+			local bg<const> = world_instance:get(bg_id)
 			bg.visible = false
-			local monster<const> = oget(combat_monster_id)
+			local monster<const> = world_instance:get(combat_monster_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = true
-			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = true
-			oget(combat_all_out_id).visible = false
-			local maya_b<const> = oget(combat_maya_b_id)
+			world_instance:get(combat_all_out_id).visible = false
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
 			maya_b.visible = false
 			self:apply_combat_round(node)
 			self:play_timeline(combat_hover_timeline_id, {
@@ -605,12 +611,12 @@ function combat.define_fsm()
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = oget(text_main_id)
+			local main<const> = world_instance:get(text_main_id)
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					oget(text_prompt_id):set_text(prompt_select, immediate_text_opts)
-					oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					world_instance:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
+					world_instance:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
 				end
 				return
 			end
@@ -621,8 +627,8 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
-					if not oget(text_main_id):is_typing() then
-						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not world_instance:get(text_main_id):is_typing() then
+						world_instance:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -632,8 +638,8 @@ function combat.define_fsm()
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					self.choice_index = math.min(#round.options, self.choice_index + 1)
-					if not oget(text_main_id):is_typing() then
-						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not world_instance:get(text_main_id):is_typing() then
+						world_instance:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -641,15 +647,15 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
-						oget(text_prompt_id):set_text(prompt_select, immediate_text_opts)
-						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+						world_instance:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
+						world_instance:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if oget(text_main_id):is_typing() then return end
+					if world_instance:get(text_main_id):is_typing() then return end
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					local option<const> = round.options[self.choice_index]
@@ -683,10 +689,10 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
-			oget(text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
+			world_instance:get(text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.sprite_component.scale = { x = 1, y = 1 }
@@ -734,9 +740,9 @@ function combat.define_fsm()
 		},
 			entering_state = function(self)
 				clear_texts(text_ids_choice_prompt)
-				oget(text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
-				local monster<const> = oget(combat_monster_id)
-				local maya_a<const> = oget(combat_maya_a_id)
+				world_instance:get(text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
+				local monster<const> = world_instance:get(combat_monster_id)
+				local maya_a<const> = world_instance:get(combat_maya_a_id)
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				self.combat_dodge_dir = -self.combat_dodge_dir
 				self:play_timeline(combat_dodge_timeline_id, {
@@ -773,9 +779,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			clear_texts(text_ids_choice_prompt)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
@@ -794,7 +800,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_draw_mode_blend_add
+			overlay.blend_mode = gx_gpu.draw_mode_blend_add
 			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,
@@ -840,9 +846,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -870,9 +876,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
 			maya_a.visible = true
@@ -890,7 +896,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_draw_mode_blend_add
+			overlay.blend_mode = gx_gpu.draw_mode_blend_add
 			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,
@@ -936,9 +942,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local overlay<const> = world_instance:get(director_instance_id).transition_visual.overlay
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -956,13 +962,13 @@ function combat.define_fsm()
 	states.combat_all_out_prompt = {
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
-			oget(text_main_id):set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
-			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
+			world_instance:get(text_main_id):set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
+			world_instance:get(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
-			oget(text_choice_id).highlight_jitter_enabled = true
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local portrait<const> = oget(combat_all_out_portrait_id)
+			world_instance:get(text_choice_id).highlight_jitter_enabled = true
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local portrait<const> = world_instance:get(combat_all_out_portrait_id)
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
@@ -998,12 +1004,12 @@ function combat.define_fsm()
 			self:activate_combat_parallax_transform()
 		end,
 		update = function(self)
-			local main<const> = oget(text_main_id)
+			local main<const> = world_instance:get(text_main_id)
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					oget(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
-					oget(text_choice_id):set_highlighted_line(0)
+					world_instance:get(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
+					world_instance:get(text_choice_id):set_highlighted_line(0)
 				end
 				return
 			end
@@ -1013,14 +1019,14 @@ function combat.define_fsm()
 			['b[jp]'] = {
 				go = function(self)
 					if self:skip_typing() then
-						oget(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
-						oget(text_choice_id):set_highlighted_line(0)
+						world_instance:get(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
+						world_instance:get(text_choice_id):set_highlighted_line(0)
 					end
 				end
 			},
 				['a[jp]'] = {
 					go = function(self)
-						if oget(text_main_id):is_typing() then return end
+						if world_instance:get(text_main_id):is_typing() then return end
 						return '/combat_all_out'
 					end,
 				},
@@ -1029,10 +1035,10 @@ function combat.define_fsm()
 			self:stop_timeline(combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
 			self:clear_combat_parallax_transform()
-			local portrait<const> = oget(combat_all_out_portrait_id)
+			local portrait<const> = world_instance:get(combat_all_out_portrait_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
-			oget(text_choice_id).highlight_jitter_enabled = false
+			world_instance:get(text_choice_id).highlight_jitter_enabled = false
 		end,
 	}
 
@@ -1047,16 +1053,16 @@ function combat.define_fsm()
 		entering_state = function(self)
 			self:disable_combat_parallax()
 			clear_texts(text_ids_all)
-			local all_out<const> = oget(combat_all_out_id)
+			local all_out<const> = world_instance:get(combat_all_out_id)
 			texture_residency.load_all_out()
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local maya_b<const> = oget(combat_maya_b_id)
-			local bg<const> = oget(bg_id)
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
+			local bg<const> = world_instance:get(bg_id)
 			self.all_out_shake_all_out_x = all_out.x
 			self.all_out_shake_all_out_y = all_out.y
 			self.all_out_shake_monster_x = monster.x
@@ -1101,11 +1107,11 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local all_out<const> = oget(combat_all_out_id)
-			local monster<const> = oget(combat_monster_id)
-			local maya_a<const> = oget(combat_maya_a_id)
-			local maya_b<const> = oget(combat_maya_b_id)
-			local bg<const> = oget(bg_id)
+			local all_out<const> = world_instance:get(combat_all_out_id)
+			local monster<const> = world_instance:get(combat_monster_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
+			local bg<const> = world_instance:get(bg_id)
 			all_out.x = self.all_out_shake_all_out_x
 			all_out.y = self.all_out_shake_all_out_y
 			all_out.visible = false
@@ -1122,7 +1128,7 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 		entering_state = function(self)
-			local monster<const> = oget(combat_monster_id)
+			local monster<const> = world_instance:get(combat_monster_id)
 			monster.visible = true
 
 			self:play_timeline(combat_focus_timeline_id, {
@@ -1164,21 +1170,21 @@ function combat.define_fsm()
 			local node<const> = story[self.node_id]
 			local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
-			oget(director_instance_id).events:emit('combat.results', {
+			world_instance:get(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
 				monster_imgid = self.combat_monster_imgid,
 			})
 
 			clear_texts(text_ids_core)
 
-			local monster<const> = oget(combat_monster_id)
+			local monster<const> = world_instance:get(combat_monster_id)
 			monster.visible = false
-			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_a<const> = world_instance:get(combat_maya_a_id)
 			maya_a.visible = false
-			local all_out<const> = oget(combat_all_out_id)
+			local all_out<const> = world_instance:get(combat_all_out_id)
 			all_out.visible = false
 
-			local bg<const> = oget(director_instance_id).combat_results_visual
+			local bg<const> = world_instance:get(director_instance_id).combat_results_visual
 			bg.visible = true
 			bg.x = 0
 			bg.y = 0
@@ -1186,7 +1192,7 @@ function combat.define_fsm()
 			bg.height = screen_height
 			bg.color = p3_black_color
 
-			local maya_b<const> = oget(combat_maya_b_id)
+			local maya_b<const> = world_instance:get(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			maya_b.z = combat_results_maya_z
@@ -1201,8 +1207,8 @@ function combat.define_fsm()
 				local effect<const> = rewards[i]
 				lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 			end
-			oget(text_results_id):set_text(lines, { typed = false, snap = true })
-			local results<const> = oget(text_results_id)
+			world_instance:get(text_results_id):set_text(lines, { typed = false, snap = true })
+			local results<const> = world_instance:get(text_results_id)
 			results.text_component.color = p3_black_color
 			self.combat_results_text_target_x = results.text_component.offset.x / 2
 			self.combat_results_text_start_x = -screen_width
@@ -1237,9 +1243,9 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = oget(director_instance_id).combat_results_visual,
-					maya_b = oget(combat_maya_b_id),
-					results = oget(text_results_id),
+					bg = world_instance:get(director_instance_id).combat_results_visual,
+					maya_b = world_instance:get(combat_maya_b_id),
+					results = world_instance:get(text_results_id),
 				},
 				params = {
 					maya_start_x = self.combat_results_maya_start_x,
@@ -1290,9 +1296,9 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = oget(director_instance_id).combat_results_visual,
-					maya_b = oget(combat_maya_b_id),
-					results = oget(text_results_id),
+					bg = world_instance:get(director_instance_id).combat_results_visual,
+					maya_b = world_instance:get(combat_maya_b_id),
+					results = world_instance:get(text_results_id),
 				},
 			})
 		end,
@@ -1332,7 +1338,7 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg<const> = oget(bg_id)
+			local bg<const> = world_instance:get(bg_id)
 			bg.surface_component.color = p3_white_color
 		end,
 	}
@@ -1353,7 +1359,7 @@ function combat.define_fsm()
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_end  — transition or action when the timeline finishes.
 	--   on_frame  — action fired on every timeline frame update.
-	define_fsm(combat_director_fsm_id, {
+	fsmlibrary.register(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
@@ -1489,7 +1495,7 @@ function combat.define_fsm()
 end
 
 function combat.register_director()
-	define_prefab({
+	prefab.define({
 		def_id = combat_director_def_id,
 		class = combat_director,
 		type = 'object',

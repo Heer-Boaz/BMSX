@@ -1,14 +1,14 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 
 local gp1_status<const>: *word = 0x0801023c
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
 
 local irq_vblank<const> = 0x0004
-local irq_apu<const> = 0x0020
 
 local target<const> = 50
 local vblank_count = 0
@@ -91,11 +91,11 @@ local draw_cart<const> = function()
 	local progress<const> = vblank_count % 60
 	local bar_width<const> = 16 + progress * 4
 	local pulse<const> = (vblank_count * 5) & 0x000000ff
-	gx_clear_color(0xff081018)
-	gx_fill_rect_color(16, 24, 304, 56, 0xff102840)
-	gx_fill_rect_color(16, 24, 16 + bar_width, 56, 0xff20f0a0)
-	gx_draw_line_color(16, 72 + (progress >> 1), 304, 72, 0xffffd060)
-	gx_fill_rect_color(24, 104, 296, 136, 0xff202020 | (pulse << 8))
+	gx_gpu.clear_color(0xff081018)
+	gx_gpu.fill_rect_color(16, 24, 304, 56, 0xff102840)
+	gx_gpu.fill_rect_color(16, 24, 16 + bar_width, 56, 0xff20f0a0)
+	gx_gpu.draw_line_color(16, 72 + (progress >> 1), 304, 72, 0xffffd060)
+	gx_gpu.fill_rect_color(24, 104, 296, 136, 0xff202020 | (pulse << 8))
 end
 
 local on_vblank_irq<const> = function(_, flags)
@@ -113,8 +113,8 @@ local on_vblank_irq<const> = function(_, flags)
 end
 
 init()
-on_irq(irq_vblank, on_vblank_irq)
-*irq_mask_register = irq_vblank | irq_apu
+irq_module.register(irq_vblank, on_vblank_irq)
+*irq_mask_register = irq_vblank
 new_game()
 *input_control_register = 0x00000001
 while true do

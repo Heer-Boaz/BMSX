@@ -1,4 +1,7 @@
 local bool01<const> = require('cartlib/util/bool01')
+local fsm_library<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world<const> = require('cartlib/world/index').instance
 require('constants')
 
 local director<const> = {}
@@ -41,7 +44,7 @@ end
 
 function director:reset_runtime()
 	self.frame = 0
-	self.stage = oget(ids_stage_instance)
+	self.stage = world:get(ids_stage_instance)
 end
 
 function director:update_runtime()
@@ -50,7 +53,7 @@ function director:update_runtime()
 end
 
 local define_director_fsm<const> = function()
-	define_fsm(ids_director_fsm, {
+	fsm_library.register(ids_director_fsm, {
 		initial = 'boot',
 		on = {
 			['star_blink_toggle'] = {
@@ -115,7 +118,7 @@ local define_director_fsm<const> = function()
 end
 
 local register_director_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = ids_director_def,
 		class = director,
 		fsms = { ids_director_fsm },

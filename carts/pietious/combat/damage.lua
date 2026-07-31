@@ -1,3 +1,4 @@
+local world_instance<const> = require('cartlib/world/index').instance
 local combat_damage<const> = {}
 
 function combat_damage.build_weapon_request(target, target_kind, event, weapon_kind)
@@ -9,7 +10,7 @@ function combat_damage.build_weapon_request(target, target_kind, event, weapon_k
 		damage_kind = 'weapon',
 		weapon_kind = weapon_kind,
 		amount = 1,
-		room_number = oget('c').current_room_number,
+		room_number = world_instance:get('c').current_room_number,
 	}
 end
 

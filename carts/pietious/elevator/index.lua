@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 
 local elevator<const> = {}
@@ -34,8 +37,8 @@ local move_vertical<const> = function(self, target, vertical)
 end
 
 function elevator:update_motion()
-	local player<const> = oget('pietolon')
-	local current_room_number<const> = oget('c').current_room_number
+	local player<const> = world_instance:get('pietolon')
+	local current_room_number<const> = world_instance:get('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider:set_enabled(self.visible)
 	local previous_y<const> = self.y
@@ -91,7 +94,7 @@ function elevator:update_motion()
 end
 
 local define_elevator_fsm<const> = function()
-	define_fsm('elevator_platform', {
+	fsmlibrary.register('elevator_platform', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -100,7 +103,7 @@ local define_elevator_fsm<const> = function()
 end
 
 local register_elevator_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'elevator_platform',
 		class = elevator,
 		type = 'sprite',

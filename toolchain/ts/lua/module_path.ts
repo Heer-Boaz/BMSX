@@ -31,3 +31,36 @@ export function toLuaModulePath(sourcePath: string): string {
 	}
 	return path;
 }
+
+export const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
+	path.join('.');
+
+export const appendModuleExportPathKey = (base: string, key: string): string =>
+	base.length === 0 ? key : `${base}.${key}`;
+
+const sanitizeModuleSlotSegment = (value: string): string =>
+	value.replace(/[^A-Za-z0-9_]/g, '_');
+
+export function buildModuleExportSlotName(
+	modulePath: string,
+	exportPath: ReadonlyArray<string>,
+): string {
+	const compactPath = toLuaModulePath(modulePath);
+	const parts = compactPath.split('/');
+	let out = '';
+	for (let index = 0; index < parts.length; index += 1) {
+		const part = parts[index];
+		if (part.length > 0) {
+			out += out.length === 0
+				? sanitizeModuleSlotSegment(part)
+				: `__${sanitizeModuleSlotSegment(part)}`;
+		}
+	}
+	if (out.length === 0) {
+		out = sanitizeModuleSlotSegment(compactPath);
+	}
+	for (let index = 0; index < exportPath.length; index += 1) {
+		out += `__${sanitizeModuleSlotSegment(exportPath[index])}`;
+	}
+	return out;
+}

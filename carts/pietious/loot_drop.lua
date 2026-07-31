@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local worldobject<const> = require('cartlib/world/object')
@@ -21,18 +24,18 @@ function loot_drop:ctor()
 end
 
 function loot_drop:onspawn(_pos)
-	self.x, self.y = oget('room'):snap_world_to_tile(self.x, self.y)
+	self.x, self.y = world_instance:get('room'):snap_world_to_tile(self.x, self.y)
 end
 
 local define_loot_drop_fsm<const> = function()
-	define_fsm('loot_drop', {
+	fsmlibrary.register('loot_drop', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
 				if combat_overlap.classify_player_contact(event) ~= 'body' then
 					return
 				end
-				local player<const> = oget(event.other_id)
+				local player<const> = world_instance:get(event.other_id)
 				if player:collect_loot(self.loot_type, self.loot_value, self.loot_type) then
 					self:mark_for_disposal()
 				end
@@ -49,7 +52,7 @@ local define_loot_drop_fsm<const> = function()
 end
 
 local register_loot_drop_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'loot_drop',
 		class = loot_drop,
 		type = 'sprite',

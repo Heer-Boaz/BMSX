@@ -1,3 +1,7 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -22,7 +26,7 @@ function breakablewall:process_damage_result(result)
 		return
 	end
 	if result.destroyed then
-		oget('c').events:emit('room.condition_set', {
+		world_instance:get('c').events:emit('room.condition_set', {
 			room_number = result.room_number,
 			condition = self.trigger,
 			play_appearance = true,
@@ -38,7 +42,7 @@ function breakablewall:ctor()
 	self.sy = self.height_tiles * room_tile_size
 	local tile_layer<const> = self:get_component('tilelayercomponent')
 	local tile_count<const> = self.width_tiles * self.height_tiles
-	local tile_source<const> = gx_img_rect(self.tiletype)
+	local tile_source<const> = gx_image.rect(self.tiletype)
 	local sources<const> = {}
 	for index = 1, tile_count do
 		sources[index] = tile_source
@@ -52,7 +56,7 @@ function breakablewall:ctor()
 end
 
 function breakablewall.register_enemy_fsm()
-	define_fsm('breakablewall', {
+	fsmlibrary.register('breakablewall', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
@@ -71,7 +75,7 @@ function breakablewall.register_enemy_fsm()
 end
 
 function breakablewall.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
 		fsms = { 'breakablewall' },

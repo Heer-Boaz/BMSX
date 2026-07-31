@@ -1,6 +1,9 @@
 -- shrine.lua
 -- shrine overlay renderer — displays text on the shrine screen.
 
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -8,7 +11,7 @@ local shrine<const> = {}
 shrine.__index = shrine
 
 local draw_shrine_visual<const> = function()
-	gx_blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff)
+	gx_image.blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff)
 end
 
 function shrine:ctor()
@@ -31,7 +34,7 @@ function room_shrine:ctor()
 end
 
 local define_shrine_fsm<const> = function()
-	define_fsm('shrine', {
+	fsmlibrary.register('shrine', {
 		initial = 'active',
 		on = {
 			['shrine'] = {
@@ -54,7 +57,7 @@ local define_shrine_fsm<const> = function()
 end
 
 local register_shrine_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'shrine',
 		class = shrine,
 		fsms = { 'shrine' },
@@ -66,7 +69,7 @@ local register_shrine_definition<const> = function()
 end
 
 local register_room_shrine_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
 		type = 'sprite',

@@ -4,7 +4,11 @@ local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
-require('cartlib/prelude')
+local application<const> = require('cartlib/application')
+local irq_module<const> = require('cartlib/irq')
+local prefab<const> = require('cartlib/prefab')
+local world<const> = require('cartlib/world/index').instance
+irq = irq_module.dispatch
 require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')
@@ -23,11 +27,11 @@ local wait_vblank<const> = function()
 end
 
 function init()
-	on_irq(irq_vblank, function()
+	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
 	*irq_mask_register = irq_vblank | irq_apu
-	gx_clear_color(0xff000000)
+	gx_gpu.clear_color(0xff000000)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
@@ -38,16 +42,16 @@ function init()
 end
 
 function new_game()
-	reset()
-	inst(stage_module.stage_def_id, {
+	application.reset()
+	prefab.spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	inst(director_module.director_def_id, {
+	prefab.spawn(director_module.director_def_id, {
 		id = director_module.director_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	inst(player_module.player_def_id, {
+	prefab.spawn(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		player_index = 1,
 		pos = { x = player_start_x, y = player_start_y, z = 70 },
@@ -62,9 +66,9 @@ new_game()
 wait_vblank()
 
 while true do
-	update_world()
+	world:update()
 	*input_control_register = 0x00000001
 	wait_vblank()
-	gx_clear_color(0xff000000)
-	draw_world()
+	gx_gpu.clear_color(0xff000000)
+	world:draw()
 end

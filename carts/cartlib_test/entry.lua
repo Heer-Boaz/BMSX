@@ -3,7 +3,10 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local application<const> = require('cartlib/application')
+local irq_module<const> = require('cartlib/irq')
+local world<const> = require('cartlib/world/index').instance
+irq = irq_module.dispatch
 
 local gx_gte_plus_vmad3<const> = gx_gte.plus_opcode_vmad3
 gx_gte_plus[0] = 0x00020001
@@ -38,22 +41,22 @@ local wait_vblank<const> = function()
 	vblank_count = vblank_count - 1
 end
 
-on_irq(irq_vblank, function()
+irq_module.register(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 
-reset()
-add_space('main')
-set_space('main')
+application.reset()
+world:add_space('main')
+world:set_space('main')
 *irq_mask_register = irq_vblank
 *input_control_register = 0x00000001
 wait_vblank()
 cartlib_test_ready = true
 
 while true do
-	update_world()
+	world:update()
 	wait_vblank()
-	gx_clear_color(0xff000000)
-	draw_world()
+	gx_gpu.clear_color(0xff000000)
+	world:draw()
 	*input_control_register = 0x00000001
 end

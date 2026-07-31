@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local progression<const> = require('cartlib/progression')
@@ -10,18 +13,18 @@ function world_item:ctor()
 end
 
 function world_item:onspawn(_pos)
-	self.x, self.y = oget('room'):snap_world_to_tile(self.x, self.y)
+	self.x, self.y = world_instance:get('room'):snap_world_to_tile(self.x, self.y)
 end
 
 local define_world_item_fsm<const> = function()
-	define_fsm('world_item', {
+	fsmlibrary.register('world_item', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
 				if combat_overlap.classify_player_contact(event) ~= 'body' then
 					return
 				end
-				local player<const> = oget('pietolon')
+				local player<const> = world_instance:get('pietolon')
 				local item_id = self.item_id
 				if item_id == nil then
 					item_id = self.id
@@ -30,9 +33,9 @@ local define_world_item_fsm<const> = function()
 					return
 				end
 				if self.rock_drop_id ~= nil then
-					oget('room').rock_drops[self.rock_drop_id] = nil
+					world_instance:get('room').rock_drops[self.rock_drop_id] = nil
 				elseif world_item_inventory[self.item_type] then
-					progression.set(oget('c'), 'item_picked_' .. item_id, true)
+					progression.set(world_instance:get('c'), 'item_picked_' .. item_id, true)
 				end
 				self:mark_for_disposal()
 			end,
@@ -44,7 +47,7 @@ local define_world_item_fsm<const> = function()
 end
 
 local register_world_item_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'world_item',
 		class = world_item,
 		type = 'sprite',

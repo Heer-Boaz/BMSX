@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -36,8 +38,8 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if spawn_ticks <= 0 then
 		local y_speed_num<const> = math.random(-5, 4)
-		oget('c').events:emit('paperspawn')
-		inst('enemy.paperfoe', {
+		world_instance:get('c').events:emit('paperspawn')
+		prefab.spawn('enemy.paperfoe', {
 			direction = self.direction == 'left' and 'left' or 'right',
 			speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
 			speed_y_num = y_speed_num,
@@ -91,7 +93,7 @@ end
 enemy_base.extend(boekfoe, 'boekfoe')
 
 function boekfoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
 		type = 'sprite',

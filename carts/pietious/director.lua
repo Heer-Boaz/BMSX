@@ -51,6 +51,11 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
@@ -82,24 +87,24 @@ function director:draw_visual()
 	if not self.seal_flash_on then
 		return
 	end
-	gx_set_draw_mode(gx_draw_mode_blend_half)
-	gx_fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
+	gx_gpu.fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 function director:activate_spaces()
-	add_space('main')
-	add_space('title')
-	add_space('transition')
-	add_space('shrine')
-	add_space('lithograph')
-	add_space('item')
-	add_space('ui')
+	world_instance:add_space('main')
+	world_instance:add_space('title')
+	world_instance:add_space('transition')
+	world_instance:add_space('shrine')
+	world_instance:add_space('lithograph')
+	world_instance:add_space('item')
+	world_instance:add_space('ui')
 end
 
 function director:set_active_space(space_id)
-	set_space(space_id)
+	world_instance:set_space(space_id)
 	self:set_space(space_id)
-	oget('ui'):set_space(space_id)
+	world_instance:get('ui'):set_space(space_id)
 end
 
 -- disable-next-line single_line_method_pattern -- named director state hook enters this transition from data-driven flow.
@@ -130,7 +135,7 @@ function director:ensure_daemon_cloud_pool()
 	local clouds<const> = self.daemon_clouds
 	for i = 1, flow_daemon_cloud_max do
 		if clouds[i] == nil then
-			clouds[i] = inst('daemon_cloud', {
+			clouds[i] = prefab.spawn('daemon_cloud', {
 				id = 'dc.' .. tostring(i),
 				space_id = 'main',
 				pos = { x = 0, y = 0, z = 23 },
@@ -278,7 +283,7 @@ local define_director_fsm<const> = function()
 		return '/room'
 	end
 
-	define_fsm('director', {
+	fsmlibrary.register('director', {
 		-- daemon_timeline_id is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
 		-- (autoplay = false = registration only).  Each state configures behaviour
@@ -934,7 +939,7 @@ local define_director_fsm<const> = function()
 end
 
 local register_director_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'director',
 		class = director,
 		fsms = { 'director' },

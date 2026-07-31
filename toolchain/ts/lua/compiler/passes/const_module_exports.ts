@@ -16,7 +16,7 @@ import { evaluateCompileTimeNumberBinaryOperator } from '../compile_time_number'
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
-import { buildModuleExportPathKey } from './module_names';
+import { buildModuleExportPathKey } from '../../module_path';
 import type { ModuleExportShape } from './module_shape';
 
 type ExportPathIndex = {

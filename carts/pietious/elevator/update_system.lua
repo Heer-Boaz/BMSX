@@ -13,7 +13,7 @@ setmetatable(elevator_update_system, { __index = ecsystem })
 local pipeline_ref<const> = 'eup'
 
 function elevator_update_system:update()
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
 	for elevator in world_instance:objects_by_type('elevator_platform') do

@@ -1,3 +1,4 @@
+local prefab<const> = require('cartlib/prefab')
 local seal<const> = {}
 seal.__index = seal
 
@@ -7,7 +8,7 @@ function seal:ctor()
 end
 
 local register_seal_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'seal',
 		class = seal,
 		type = 'sprite',

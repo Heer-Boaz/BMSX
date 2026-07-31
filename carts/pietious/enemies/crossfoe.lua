@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -38,7 +40,7 @@ function crossfoe:ctor()
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks or enemy_cross_wait_before_fly_steps
@@ -57,12 +59,12 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	end
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
-	oget('c').events:emit('cross')
+	world_instance:get('c').events:emit('cross')
 	return 'RUNNING'
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
@@ -73,14 +75,14 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
 		or next_left < 0
-		or next_right > oget('room').world_width
+		or next_right > world_instance:get('room').world_width
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
 		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
 		node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
 		node.cross_turn_ticks = enemy_cross_turn_steps
-		oget('c').events:emit('crossland')
+		world_instance:get('c').events:emit('crossland')
 		return 'RUNNING'
 	end
 
@@ -143,7 +145,7 @@ end
 enemy_base.extend(crossfoe, 'crossfoe')
 
 function crossfoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		type = 'sprite',

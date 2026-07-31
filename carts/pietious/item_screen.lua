@@ -1,3 +1,8 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local castle_map<const> = require('castle/map')
 
@@ -73,14 +78,14 @@ function item_screen:item_position_px(item_type)
 end
 
 function item_screen:draw_inventory_items()
-	local player<const> = oget('pietolon')
-	local world_number<const> = oget('room').world_number
+	local player<const> = world_instance:get('pietolon')
+	local world_number<const> = world_instance:get('room').world_number
 	for i = 1, #inventory_item_order do
 		local item_type<const> = inventory_item_order[i]
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x<const>, y<const> = self:item_position_px(item_type)
-				gx_blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff)
+				gx_image.blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff)
 			end
 		end
 	end
@@ -92,12 +97,12 @@ function item_screen:draw_secondary_weapon_selector()
 	end
 	local x<const> = (14 * room_tile_size) + (self.secondary_weapon_selection_index * (3 * room_tile_size))
 	local y<const> = room_hud_height + (16 * room_tile_size) + room_tile_half - 1
-	gx_blit_img_color('f1_selector_white', x, y, 0xffffffff)
+	gx_image.blit_img_color('f1_selector_white', x, y, 0xffffffff)
 end
 
 function item_screen:draw_map()
-	local player<const> = oget('pietolon')
-	local room<const> = oget('room')
+	local player<const> = world_instance:get('pietolon')
+	local room<const> = world_instance:get('room')
 	local world_number<const> = room.world_number
 	if world_number <= 0 then
 		return
@@ -108,12 +113,12 @@ function item_screen:draw_map()
 
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	gx_blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff)
+	gx_image.blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff)
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
 		local sprite_id
-		if self.map_highlight and proxy.room_number == oget('c').current_room_number then
+		if self.map_highlight and proxy.room_number == world_instance:get('c').current_room_number then
 			sprite_id = 'room_proxy_red'
 		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
 			sprite_id = 'room_proxy_blue'
@@ -122,12 +127,12 @@ function item_screen:draw_map()
 		end
 		local proxy_x<const> = (5 * room_tile_size) + (proxy.x * room_tile_size)
 		local proxy_y<const> = room_hud_height + (14 * room_tile_size) + room_tile_half + (proxy.y * room_tile_half)
-		gx_blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff)
+		gx_image.blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff)
 	end
 end
 
 function item_screen:apply_selected_secondary_weapon()
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local selected_weapon<const> = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
 	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
@@ -135,7 +140,7 @@ function item_screen:apply_selected_secondary_weapon()
 end
 
 function item_screen:shift_secondary_weapon_selection(direction)
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	local previous_index<const> = self.secondary_weapon_selection_index
 	if direction > 0 then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
@@ -159,7 +164,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen()
-	gx_blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff)
+	gx_image.blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff)
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()
@@ -178,7 +183,7 @@ local define_item_screen_fsm<const> = function()
 			go = '/closed',
 		}
 	end
-	define_fsm('item_screen', {
+	fsmlibrary.register('item_screen', {
 		initial = 'closed',
 		states = {
 			closed = {
@@ -223,7 +228,7 @@ local define_item_screen_fsm<const> = function()
 end
 
 local register_item_screen_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'item_screen',
 		class = item_screen,
 		fsms = { 'item_screen' },

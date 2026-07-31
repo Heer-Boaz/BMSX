@@ -1,4 +1,5 @@
-
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 local progression<const> = require('cartlib/progression')
 require('constants')
 
@@ -7,10 +8,10 @@ local room_spawner<const> = {}
 local spawn_rocks<const> = function(room)
 	for i = 1, #room.rocks do
 		local def<const> = room.rocks[i]
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if not room.destroyed_rock_ids[def.id] then
 			if existing == nil then
-				local obj<const> = inst('rock', {
+				local obj<const> = prefab.spawn('rock', {
 					id = def.id,
 					space_id = 'main',
 					pos = { x = def.x, y = def.y, z = 140 },
@@ -26,14 +27,14 @@ end
 local spawn_lithographs<const> = function(room)
 	for i = 1, #room.lithographs do
 		local def<const> = room.lithographs[i]
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if existing == nil then
-			local obj<const> = inst('lithograph', {
+			local obj<const> = prefab.spawn('lithograph', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 10 },
 				text = def.text,
-				room_number = oget('c').current_room_number,
+				room_number = world_instance:get('c').current_room_number,
 				rs_room_number = room.room_number,
 			})
 			obj:add_tag('rs')
@@ -44,9 +45,9 @@ end
 local spawn_shrines<const> = function(room)
 	for i = 1, #room.shrines do
 		local def<const> = room.shrines[i]
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if existing == nil then
-			local obj<const> = inst('room_shrine', {
+			local obj<const> = prefab.spawn('room_shrine', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 22 },
@@ -60,9 +61,9 @@ end
 local spawn_draaideuren<const> = function(room)
 	for i = 1, #room.draaideuren do
 		local def<const> = room.draaideuren[i]
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if existing == nil then
-			local obj<const> = inst('draaideur', {
+			local obj<const> = prefab.spawn('draaideur', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 22 },
@@ -75,12 +76,12 @@ local spawn_draaideuren<const> = function(room)
 end
 
 local spawn_world_entrances<const> = function(room)
-	local castle<const> = oget('c')
+	local castle<const> = world_instance:get('c')
 	for i = 1, #room.world_entrances do
 		local def<const> = room.world_entrances[i]
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if existing == nil then
-			local entrance<const> = inst('world_entrance', {
+			local entrance<const> = prefab.spawn('world_entrance', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 22 },
@@ -94,8 +95,8 @@ local spawn_world_entrances<const> = function(room)
 end
 
 local spawn_items<const> = function(room)
-	local castle<const> = oget('c')
-	local player<const> = oget('pietolon')
+	local castle<const> = world_instance:get('c')
+	local player<const> = world_instance:get('pietolon')
 	for i = 1, #room.items do
 		local def<const> = room.items[i]
 		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
@@ -103,10 +104,10 @@ local spawn_items<const> = function(room)
 		local already_owned<const> = player.inventory_items[def.item_type]
 
 		local should_spawn<const> = not picked and matches_conditions and not already_owned
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if should_spawn then
 			if existing == nil then
-				local obj<const> = inst('world_item', {
+				local obj<const> = prefab.spawn('world_item', {
 					id = def.id,
 					space_id = 'main',
 					pos = { x = def.x, y = def.y, z = 130 },
@@ -125,17 +126,17 @@ local spawn_items<const> = function(room)
 end
 
 local spawn_enemies<const> = function(room)
-	local castle<const> = oget('c')
+	local castle<const> = world_instance:get('c')
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = progression.get(castle, def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
 
 		local should_spawn<const> = not defeated and matches_conditions
-		local existing<const> = oget(def.id)
+		local existing<const> = world_instance:get(def.id)
 		if should_spawn then
 			if existing == nil then
-				local obj<const> = inst('enemy.' .. def.kind, {
+				local obj<const> = prefab.spawn('enemy.' .. def.kind, {
 					id = def.id,
 					space_id = 'main',
 					pos = { x = def.x, y = def.y, z = def.draw_z },
@@ -163,8 +164,8 @@ local spawn_enemies<const> = function(room)
 end
 
 local spawn_destroyed_rock_inventory_items<const> = function(room)
-	local castle<const> = oget('c')
-	local player<const> = oget('pietolon')
+	local castle<const> = world_instance:get('c')
+	local player<const> = world_instance:get('pietolon')
 	for i = 1, #room.inventory_rocks do
 		local def<const> = room.inventory_rocks[i]
 		local item_type<const> = def.item_type
@@ -172,8 +173,8 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 			local item_id<const> = 'drop.' .. def.id
 			local picked<const> = progression.get(castle, 'item_picked_' .. item_id)
 			local already_owned<const> = player.inventory_items[item_type]
-			if not picked and not already_owned and oget(item_id) == nil then
-				local obj<const> = inst('world_item', {
+			if not picked and not already_owned and world_instance:get(item_id) == nil then
+				local obj<const> = prefab.spawn('world_item', {
 					id = item_id,
 					space_id = 'main',
 					pos = { x = def.x, y = def.y + world_item_drop_offset_y[item_type], z = 130 },
@@ -189,8 +190,8 @@ end
 
 local spawn_rock_drops<const> = function(room)
 	for id, drop in pairs(room.rock_drops) do
-		if drop.room_number == room.room_number and oget(id) == nil then
-			local obj<const> = inst('world_item', {
+		if drop.room_number == room.room_number and world_instance:get(id) == nil then
+			local obj<const> = prefab.spawn('world_item', {
 				id = id,
 				space_id = 'main',
 				pos = { x = drop.x, y = drop.y, z = 130 },
@@ -205,7 +206,7 @@ local spawn_rock_drops<const> = function(room)
 end
 
 function room_spawner.spawn_all_for_room(room)
-	for obj in all_objects_by_tag('rs') do
+	for obj in world_instance:all_objects_by_tag('rs') do
 		if obj.rs_room_number ~= room.room_number then
 			obj:mark_for_disposal()
 		end
@@ -223,7 +224,7 @@ end
 
 function room_spawner.despawn_previous()
 	local i = 0
-	for obj in all_objects_by_tag('rs') do
+	for obj in world_instance:all_objects_by_tag('rs') do
 		obj:mark_for_disposal()
 		i = i + 1
 	end

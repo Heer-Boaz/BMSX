@@ -1,7 +1,8 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
@@ -34,7 +35,7 @@ local run_round<const> = function()
 	return a ~ b ~ c ~ d
 end
 
-on_irq(irq_vblank, function()
+irq_module.register(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 *irq_mask_register = irq_vblank

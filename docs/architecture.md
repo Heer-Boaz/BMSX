@@ -1047,8 +1047,13 @@ state and restores it against the media inserted at restore time.
 Saving an AEM document follows the same physical revision path. Tooling
 validates and encodes the document, installs the rebuilt ROM, reconnects the
 resident execution image, and only then asks guest `cartlib` code to reread the
-cartridge directory and rebuild its event tables. The machine and APU never
-consume an IDE package record or host-side AEM override.
+cartridge directory and rebuild its event tables. Studio addresses the
+compiler-owned `cartlib/aem` module-root slot through the shared module-slot
+naming contract, reads `reload_from_rom` from that guest table, and invokes the
+guest closure through the suspended-runtime tooling boundary. It does not
+publish a registry getter, AEM hook, or source-aware call API in the cart
+global registerfile or CPU. The machine and APU never consume an IDE package
+record or host-side AEM override.
 
 The TypeScript and C++ memory and cartridge owners expose the same suspended
 raw-media replacement operations. Replacing media only changes the backing byte
@@ -3205,6 +3210,18 @@ guest-visible registers and command ports that bare carts can program directly;
 they are packaged into the cartridge ROM rather than exported by BIOS. Derived
 game-facing geometry such as thick-line construction also belongs to
 `cartlib/gx`.
+
+Cart code imports the focused owner it uses; `cartlib` has no prelude or
+all-purpose system facade and does not inject SDK aliases into the guest global
+registerfile. `cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge
+write. `cartlib/prefab` owns prefab definitions and spawning; it selects and
+prepares each definition's base constructor and instance metatable once when
+the definition is registered rather than re-decoding its type or allocating a
+new metatable for every spawn. `cartlib/application` is the opt-in composition
+root for carts that use the complete world/ECS, collision, and AEM stack. It
+registers those persistent guest subsystems and owns the application reset
+operation. Bare and focused test carts import only their direct IRQ/GX/device
+owners and therefore do not link the application graph.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

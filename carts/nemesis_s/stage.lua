@@ -1,5 +1,8 @@
 local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
+local fsm_library<const> = require('cartlib/fsm/library')
+local gx_image<const> = require('cartlib/gx/image')
+local prefab<const> = require('cartlib/prefab')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -504,7 +507,7 @@ function stage:draw_star_particles(stars, imgid, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		gx_blit_img_color(imgid, star.x, star.y, 0xffffffff)
+		gx_image.blit_img_color(imgid, star.x, star.y, 0xffffffff)
 	end
 end
 
@@ -525,7 +528,7 @@ function stage:draw()
 		for stage_row = 1, self.tile_rows do
 			local tile_id<const> = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				gx_blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
+				gx_image.blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
 			end
 		end
 	end
@@ -551,7 +554,7 @@ function stage:ctor()
 end
 
 local define_stage_fsm<const> = function()
-	define_fsm(ids_stage_fsm, {
+	fsm_library.register(ids_stage_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -597,7 +600,7 @@ local define_stage_fsm<const> = function()
 end
 
 local register_stage_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = ids_stage_def,
 		class = stage,
 		fsms = { ids_stage_fsm },

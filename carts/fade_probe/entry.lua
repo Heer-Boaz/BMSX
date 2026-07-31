@@ -1,12 +1,12 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 local frame = 0
 local irq_mask_register<const>: *word = 0x08000008
 local inp_ctrl_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
-local irq_apu<const> = 0x0020
 local vblank_count = 0
 
 local blue<const> = 0xff2044cc
@@ -26,55 +26,55 @@ local wait_vblank<const> = function()
 	vblank_count = vblank_count - 1
 end
 
-on_irq(irq_vblank, function()
+irq_module.register(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 
 local draw_blend_probe<const> = function(x, y, bg, fg, draw_mode)
-	gx_fill_rect_color(x, y, x + column_w, y + 44, bg)
-	gx_set_draw_mode(draw_mode)
-	gx_fill_rect_semitrans_color(x, y, x + column_w, y + 44, fg)
+	gx_gpu.fill_rect_color(x, y, x + column_w, y + 44, bg)
+	gx_gpu.set_draw_mode(draw_mode)
+	gx_gpu.fill_rect_semitrans_color(x, y, x + column_w, y + 44, fg)
 end
 
 local draw_mode_row<const> = function(y, bg, fg)
-	draw_blend_probe(8, y, bg, fg, gx_draw_mode_blend_half)
-	draw_blend_probe(84, y, bg, fg, gx_draw_mode_blend_add)
-	draw_blend_probe(160, y, bg, fg, gx_draw_mode_blend_subtract)
-	draw_blend_probe(236, y, bg, fg, gx_draw_mode_blend_quarter)
+	draw_blend_probe(8, y, bg, fg, gx_gpu.draw_mode_blend_half)
+	draw_blend_probe(84, y, bg, fg, gx_gpu.draw_mode_blend_add)
+	draw_blend_probe(160, y, bg, fg, gx_gpu.draw_mode_blend_subtract)
+	draw_blend_probe(236, y, bg, fg, gx_gpu.draw_mode_blend_quarter)
 end
 
 local draw_mode_guides<const> = function()
-	gx_fill_rect_color(8, 72, 76, 80, red)
-	gx_fill_rect_color(84, 72, 152, 80, green)
-	gx_fill_rect_color(160, 72, 228, 80, yellow)
-	gx_fill_rect_color(236, 72, 304, 80, cyan)
-	gx_fill_rect_color(8, 148, 76, 156, red)
-	gx_fill_rect_color(84, 148, 152, 156, green)
-	gx_fill_rect_color(160, 148, 228, 156, yellow)
-	gx_fill_rect_color(236, 148, 304, 156, cyan)
+	gx_gpu.fill_rect_color(8, 72, 76, 80, red)
+	gx_gpu.fill_rect_color(84, 72, 152, 80, green)
+	gx_gpu.fill_rect_color(160, 72, 228, 80, yellow)
+	gx_gpu.fill_rect_color(236, 72, 304, 80, cyan)
+	gx_gpu.fill_rect_color(8, 148, 76, 156, red)
+	gx_gpu.fill_rect_color(84, 148, 152, 156, green)
+	gx_gpu.fill_rect_color(160, 148, 228, 156, yellow)
+	gx_gpu.fill_rect_color(236, 148, 304, 156, cyan)
 end
 
 local draw_cart<const> = function()
-	gx_clear_color(black)
+	gx_gpu.clear_color(black)
 
 	if frame >= 20 then
 		draw_mode_row(20, blue, white)
 		draw_mode_row(96, purple, red)
 	else
-		gx_fill_rect_color(8, 20, 76, 64, blue)
-		gx_fill_rect_color(84, 20, 152, 64, blue)
-		gx_fill_rect_color(160, 20, 228, 64, blue)
-		gx_fill_rect_color(236, 20, 304, 64, blue)
-		gx_fill_rect_color(8, 96, 76, 140, purple)
-		gx_fill_rect_color(84, 96, 152, 140, purple)
-		gx_fill_rect_color(160, 96, 228, 140, purple)
-		gx_fill_rect_color(236, 96, 304, 140, purple)
+		gx_gpu.fill_rect_color(8, 20, 76, 64, blue)
+		gx_gpu.fill_rect_color(84, 20, 152, 64, blue)
+		gx_gpu.fill_rect_color(160, 20, 228, 64, blue)
+		gx_gpu.fill_rect_color(236, 20, 304, 64, blue)
+		gx_gpu.fill_rect_color(8, 96, 76, 140, purple)
+		gx_gpu.fill_rect_color(84, 96, 152, 140, purple)
+		gx_gpu.fill_rect_color(160, 96, 228, 140, purple)
+		gx_gpu.fill_rect_color(236, 96, 304, 140, purple)
 	end
 
 	draw_mode_guides()
 end
 
-*irq_mask_register = irq_vblank | irq_apu
+*irq_mask_register = irq_vblank
 *inp_ctrl_register = 0x00000001
 wait_vblank()
 

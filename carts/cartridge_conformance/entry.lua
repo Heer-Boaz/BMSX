@@ -1,6 +1,7 @@
 module<entry>
 local apu<const> = require('cartlib/apu')
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 
 rodata transfer_source: word[4] = {
 	0x01234567,
@@ -31,10 +32,10 @@ local mailbox_status_irq_pending<const> = 0x00000001
 local dma_completion_count = 0
 local mailbox_irq_count = 0
 
-on_irq(irq_dma0_done, function()
+irq_module.register(irq_dma0_done, function()
 	dma_completion_count = dma_completion_count + 1
 end)
-on_irq(irq_cartridge_slot1, function()
+irq_module.register(irq_cartridge_slot1, function()
 	mailbox_irq_count = mailbox_irq_count + 1
 end)
 *irq_mask = irq_dma0_done | irq_cartridge_slot1

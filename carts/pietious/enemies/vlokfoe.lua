@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local velocity<const> = require('cartlib/util/velocity')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -10,7 +12,7 @@ function vlokfoe:ctor()
 end
 
 function vlokfoe.bt_tick(self, _blackboard)
-	move_with_velocity(self)
+	velocity.move_with_velocity(self)
 	return 'RUNNING'
 end
 
@@ -32,7 +34,7 @@ end
 enemy_base.extend(vlokfoe, 'vlokfoe')
 
 function vlokfoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.vlokfoe',
 		class = vlokfoe,
 		type = 'sprite',

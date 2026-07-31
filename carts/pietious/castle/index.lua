@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
@@ -18,7 +21,7 @@ local castle_tags<const> = {
 }
 
 local current_room<const> = function()
-	return oget('room')
+	return world_instance:get('room')
 end
 
 local set_tag_flag<const> = function(owner, tag, enabled)
@@ -262,9 +265,9 @@ function castle:spawn_global_elevators()
 	for i = 1, #routes do
 		local route<const> = routes[i]
 		local elevator_id<const> = 'e.p' .. tostring(i)
-		if oget(elevator_id) == nil then
+		if world_instance:get(elevator_id) == nil then
 			local start<const> = route.path[1]
-			inst('elevator_platform', {
+			prefab.spawn('elevator_platform', {
 				id = elevator_id,
 				space_id = 'main',
 				pos = { x = start.x, y = start.y, z = 21 },
@@ -283,9 +286,9 @@ function castle:sync_current_room_seal_instance()
 	if seal == nil then
 		return
 	end
-	local active_space<const> = get_space()
+	local active_space<const> = world_instance.active_space_id
 
-	local seal_instance = oget(seal.id)
+	local seal_instance = world_instance:get(seal.id)
 	local keep_seal_instance = false
 	if self:has_tag(castle_tags.seal_active) then
 		keep_seal_instance = true
@@ -316,7 +319,7 @@ function castle:sync_current_room_seal_instance()
 	end
 
 	if seal_instance == nil then
-		seal_instance = inst('seal', {
+		seal_instance = prefab.spawn('seal', {
 			id = seal.id,
 			space_id = active_space,
 			pos = { x = seal.x, y = seal.y, z = 23 },
@@ -596,7 +599,7 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 end
 
 function castle:initialize(initial_room_number, emit_room_enter_now)
-	local rm<const> = oget('room')
+	local rm<const> = world_instance:get('room')
 	local room_number<const> = initial_room_number or castle_map.start_room_number
 	rm:reset_rock_drops()
 	self.current_room_number = room_number
@@ -732,7 +735,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 end
 
 local define_castle_fsm<const> = function()
-	define_fsm('castle', {
+	fsmlibrary.register('castle', {
 		initial = 'active',
 		on = {
 			['seal_dissolution'] = {
@@ -811,7 +814,7 @@ local define_castle_fsm<const> = function()
 end
 
 local register_castle_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'castle',
 		class = castle,
 		fsms = { 'castle' },

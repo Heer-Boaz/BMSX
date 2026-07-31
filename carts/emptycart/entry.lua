@@ -1,15 +1,15 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 local irq_mask_register<const>: *word = 0x08000008
 local inp_ctrl_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
-local irq_apu<const> = 0x0020
 local vblank_count = 0
 
 function init()
-	on_irq(irq_vblank, function()
+	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
 end
@@ -21,7 +21,7 @@ local update_cart<const> = function()
 end
 
 local draw_cart<const> = function()
-	gx_clear_color(0xff000000)
+	gx_gpu.clear_color(0xff000000)
 end
 
 local wait_vblank<const> = function()
@@ -32,7 +32,7 @@ local wait_vblank<const> = function()
 end
 
 init()
-*irq_mask_register = irq_vblank | irq_apu
+*irq_mask_register = irq_vblank
 new_game()
 *inp_ctrl_register = 0x00000001
 wait_vblank()

@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -42,7 +44,7 @@ function zakfoe.bt_tick(self, blackboard)
 		self.current_vertical_speed = self.current_vertical_speed + enemy_zak_vertical_speed_step
 
 		if self.direction == 'left' then
-			local rm<const> = oget('room')
+			local rm<const> = world_instance:get('room')
 			if self.x < 0
 				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
@@ -50,7 +52,7 @@ function zakfoe.bt_tick(self, blackboard)
 				self.direction = 'right'
 			end
 		else
-			local rm<const> = oget('room')
+			local rm<const> = world_instance:get('room')
 			if self.x + 14 >= rm.world_width
 				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
@@ -111,7 +113,7 @@ end
 enemy_base.extend(zakfoe, 'zakfoe')
 
 function zakfoe.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.zakfoe',
 		class = zakfoe,
 		type = 'sprite',

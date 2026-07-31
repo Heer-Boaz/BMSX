@@ -1,7 +1,8 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
 gx_gpu.reset_320x240()
-require('cartlib/prelude')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
 
 local irq_mask<const>: *word = 0x08000008
 local irq_vblank<const> = 0x0004

@@ -3,14 +3,15 @@ __bmsx_host_test = __bmsx_host_test or {
 }
 
 local host_timeline_id<const> = 'host.timeline.live_assert'
+local timeline<const> = require('cartlib/timeline/index')
+local world_instance<const> = require('cartlib/world/index').instance
 
 function __bmsx_host_test.ready()
-	return oget('p3.director') ~= nil
+	return world_instance:get('p3.director') ~= nil
 end
 
 function __bmsx_host_test.setup()
-	local director<const> = oget('p3.director')
-	local timeline<const> = require('cartlib/timeline/index')
+	local director<const> = world_instance:get('p3.director')
 	director:define_timeline(timeline.new({
 		id = host_timeline_id,
 		frames = timeline.range(4),
@@ -22,7 +23,7 @@ function __bmsx_host_test.setup()
 end
 
 local capture_state<const> = function(frame)
-	local director<const> = oget('p3.director')
+	local director<const> = world_instance:get('p3.director')
 	local tl<const> = director:get_timeline(host_timeline_id)
 	local timeline_component<const> = director.timelines
 	local snapshot<const> = {

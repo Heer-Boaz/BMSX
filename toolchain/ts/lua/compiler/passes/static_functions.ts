@@ -11,7 +11,7 @@ import {
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
-import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
+import { buildModuleExportPathKey, buildModuleExportSlotName } from '../../module_path';
 
 export type StaticFunctionExportSymbol = {
 	symbolHandle: string;

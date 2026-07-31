@@ -16,7 +16,7 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
-	set_space('main')
+	world:set_space('main')
 
 	tile = worldobject.new({ id = 'visual_tile' })
 	tile:add_component(components.tilelayercomponent.new({

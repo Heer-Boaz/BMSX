@@ -14,6 +14,10 @@
 -- component is enabled by 'transition' and cleared/hidden by every other
 -- transition mode, so presentation performs no director-state polling.
 
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -21,7 +25,7 @@ local transition<const> = {}
 transition.__index = transition
 
 local draw_transition_visual<const> = function()
-	gx_fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
+	gx_gpu.fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
 end
 
 local transition_mode_events<const> = {
@@ -79,7 +83,7 @@ local define_transition_fsm<const> = function()
 			end,
 		}
 	end
-	define_fsm('transition', {
+	fsmlibrary.register('transition', {
 		initial = 'active',
 		on = on,
 		states = {
@@ -89,7 +93,7 @@ local define_transition_fsm<const> = function()
 end
 
 local register_transition_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'transition',
 		class = transition,
 		fsms = { 'transition' },

@@ -1,3 +1,5 @@
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -18,9 +20,9 @@ function vlokspawner.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	local random_x<const> = math.random(-5, 4)
-	inst('enemy.vlokfoe', {
+	prefab.spawn('enemy.vlokfoe', {
 		direction = random_x < 0 and 'left' or 'right',
 		speed_x_num = random_x * 2,
 		speed_y_num = 5,
@@ -55,7 +57,7 @@ end
 enemy_base.extend(vlokspawner, 'vlokspawner')
 
 function vlokspawner.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		type = 'sprite',

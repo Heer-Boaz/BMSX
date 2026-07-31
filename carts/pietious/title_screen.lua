@@ -1,3 +1,6 @@
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/prefab')
+local timeline<const> = require('cartlib/timeline/index')
 require('constants')
 local components<const> = require('cartlib/components')
 
@@ -152,7 +155,7 @@ local build_title_root_on<const> = function(show_path)
 end
 
 local define_title_screen_fsm<const> = function()
-	define_fsm('title_screen', {
+	fsmlibrary.register('title_screen', {
 		initial = 'hidden',
 		on = build_title_root_on('/idle'),
 		states = {
@@ -212,7 +215,7 @@ local define_title_screen_fsm<const> = function()
 end
 
 local register_title_screen_definition<const> = function()
-	define_prefab({
+	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
 		type = 'sprite',

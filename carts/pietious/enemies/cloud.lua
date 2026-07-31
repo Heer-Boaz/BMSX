@@ -1,3 +1,6 @@
+local prefab<const> = require('cartlib/prefab')
+local velocity<const> = require('cartlib/util/velocity')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -23,7 +26,7 @@ end
 
 function cloud.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
-	local room<const> = oget('room')
+	local room<const> = world_instance:get('room')
 	if self.cloud_anim_frame == 2 then
 		self:gfx('cloud_2')
 	else
@@ -67,7 +70,7 @@ function cloud.bt_tick(self, blackboard)
 			wave_speed_num = -1
 		end
 	end
-	local wave_dy<const>, next_wave_accum<const> = consume_axis_accum(wave_accum, wave_speed_num, enemy_cloud_wave_speed_den)
+	local wave_dy<const>, next_wave_accum<const> = velocity.consume_axis_accum(wave_accum, wave_speed_num, enemy_cloud_wave_speed_den)
 	self.y = self.y + wave_dy
 	wave_phase = wave_phase + enemy_cloud_wave_phase_step_millirad
 	if wave_phase >= full_circle_milliradians then
@@ -81,7 +84,7 @@ function cloud.bt_tick(self, blackboard)
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= oget('room').world_width then
+		if self.x + 22 >= world_instance:get('room').world_width then
 			self.direction = 'left'
 		end
 	end
@@ -96,7 +99,7 @@ function cloud.bt_tick(self, blackboard)
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end
-			inst('enemy.vlokfoe', {
+			prefab.spawn('enemy.vlokfoe', {
 				direction = random_x < 0 and 'left' or 'right',
 				speed_x_num = random_x,
 				speed_y_num = random_y,
@@ -134,7 +137,7 @@ end
 enemy_base.extend(cloud, 'cloud')
 
 function cloud.register_enemy_definition()
-	define_prefab({
+	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,
 		type = 'sprite',

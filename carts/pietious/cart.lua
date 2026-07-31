@@ -4,7 +4,11 @@ local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192()
-require('cartlib/prelude')
+local application<const> = require('cartlib/application')
+local irq_module<const> = require('cartlib/irq')
+irq = irq_module.dispatch
+local prefab<const> = require('cartlib/prefab')
+local world_instance<const> = require('cartlib/world/index').instance
 require('constants')
 local enemy_registry<const> = require('enemy/registry')
 local progression<const> = require('cartlib/progression')
@@ -81,7 +85,7 @@ local wait_gpu_after<const> = function(sequence)
 end
 
 local grant_starting_loadout<const> = function()
-	local player<const> = oget('pietolon')
+	local player<const> = world_instance:get('pietolon')
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -91,44 +95,44 @@ local grant_starting_loadout<const> = function()
 	player.inventory_items['map_world1'] = true
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
-	oget('pietolon').weapon_level = hud_weapon_level
-	oget('pietolon'):emit_weapon_changed()
-	local castle<const> = oget('c')
+	player.weapon_level = hud_weapon_level
+	player:emit_weapon_changed()
+	local castle<const> = world_instance:get('c')
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)
 end
 
 local create_world<const> = function(director_boot_mode)
-	reset()
+	application.reset()
 	elevator_update_system_module.apply_pipeline()
-	add_space('main')
-	add_space('title')
-	add_space('transition')
-	add_space('shrine')
-	add_space('lithograph')
-	add_space('item')
-	add_space('ui')
-	set_space('main')
+	world_instance:add_space('main')
+	world_instance:add_space('title')
+	world_instance:add_space('transition')
+	world_instance:add_space('shrine')
+	world_instance:add_space('lithograph')
+	world_instance:add_space('item')
+	world_instance:add_space('ui')
+	world_instance:set_space('main')
 
-	local c<const> = inst('castle', { id = 'c', })
+	local c<const> = prefab.spawn('castle', { id = 'c', })
 
-	inst('room', { id = 'room', })
+	prefab.spawn('room', { id = 'room', })
 
-	inst('player', {
+	prefab.spawn('player', {
 		id = 'pietolon',
 		pos = { x = player_start_x, y = player_start_y, z = 140 },
 	})
 	grant_starting_loadout()
 	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
 
-	inst('transition', { id = 'transition', space_id = 'transition', })
-	inst('shrine', { id = 'shrine', space_id = 'shrine', })
-	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
-	inst('item_screen', { id = 'item_screen', space_id = 'item', })
-	inst('ui', { id = 'ui', pos = { z = draw_z_hud }, })
-	inst('title_screen', { id = 'title_screen', space_id = 'title', })
-	inst('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
+	prefab.spawn('transition', { id = 'transition', space_id = 'transition', })
+	prefab.spawn('shrine', { id = 'shrine', space_id = 'shrine', })
+	prefab.spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
+	prefab.spawn('item_screen', { id = 'item_screen', space_id = 'item', })
+	prefab.spawn('ui', { id = 'ui', pos = { z = draw_z_hud }, })
+	prefab.spawn('title_screen', { id = 'title_screen', space_id = 'title', })
+	prefab.spawn('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
 end
 
 function new_game()
@@ -141,17 +145,17 @@ function new_game()
 end
 
 function init()
-	on_irq(irq_vblank, function()
+	irq_module.register(irq_vblank, function()
 		vblank_sequence = vblank_sequence + 1
 	end)
-	on_irq(irq_gpu, function()
+	irq_module.register(irq_gpu, function()
 		gx_gpu.ack_irq()
 		gpu_completion_sequence = gpu_completion_sequence + 1
 	end)
 	gx_gpu.draw_target(framebuffer_front)
-	gx_clear_color(0xff000000)
+	gx_gpu.clear_color(0xff000000)
 	gx_gpu.draw_target(framebuffer_back)
-	gx_clear_color(0xff000000)
+	gx_gpu.clear_color(0xff000000)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -214,11 +218,11 @@ mem[0x08000064] = 0x00000001
 wait_vblank_after(vblank_sequence)
 
 while true do
-	update_world()
+	world_instance:update()
 
 	wait_vblank_after(vblank_sequence)
-	gx_clear_color(0xff000000)
-	draw_world()
+	gx_gpu.clear_color(0xff000000)
+	world_instance:draw()
 	local completion_sequence<const> = gpu_completion_sequence
 	gx_gpu.request_irq()
 	wait_gpu_after(completion_sequence)
