@@ -46,7 +46,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
-import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, type FileSemanticData, type ModuleAliasEntry } from '../../../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticModel, LuaSemanticModel, type FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticWorkspace } from './semantic/workspace/state';
 import {
 	cacheRuntimeSemanticWorkspaceAnalysis,
@@ -226,20 +226,6 @@ export type LuaScopedSymbolOptions = {
 	source: string;
 	path: string;
 };
-
-export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, ModuleAliasEntry> {
-	const parsed = getCachedLuaParse({
-		path: options.path,
-		source: options.source,
-	}).parsed;
-	const aliases = new Map<string, ModuleAliasEntry>();
-	const entries = collectModuleAliasEntriesFromChunk(parsed.chunk);
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index]!;
-		aliases.set(entry.alias, entry);
-	}
-	return aliases;
-}
 
 let cachedApiCompletionData: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } | null = null;
 export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {

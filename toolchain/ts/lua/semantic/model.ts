@@ -14,9 +14,6 @@ import {
 	type LuaCallExpression,
 	type LuaFunctionExpression,
 	type LuaTableConstructorExpression,
-	type LuaAssignmentStatement,
-	type LuaLocalAssignmentStatement,
-	type LuaStringLiteralExpression,
 	type LuaReturnStatement,
 	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
@@ -37,6 +34,11 @@ import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
+import {
+	resolveModuleAliasInitializer,
+	type ModuleAliasEntry,
+	type ModuleAliasTarget,
+} from './module_aliases';
 
 export type SymbolID = string;
 
@@ -67,12 +69,6 @@ export type PrefabClassEntry = {
 export type ObjectBindingEntry = {
 	objectId: string;
 	prefabId: string;
-};
-
-export type ModuleAliasEntry = {
-	alias: string;
-	module: string;
-	memberPath?: readonly string[];
 };
 
 export type LuaSemanticModel = {
@@ -392,7 +388,21 @@ type AssignmentTargetInfo = {
 	decl: InternalDecl;
 	namePath: readonly string[];
 	path: string | null;
+	moduleAlias?: ModuleAliasTarget;
 };
+
+const CARTLIB_CALL_NONE = 0;
+const CARTLIB_CALL_PREFAB_DEFINE = 1;
+const CARTLIB_CALL_PREFAB_SPAWN = 2;
+const CARTLIB_CALL_WORLD_GET = 3;
+const CARTLIB_CALL_REGISTRY_GET = 4;
+
+type CartlibCallKind =
+	| typeof CARTLIB_CALL_NONE
+	| typeof CARTLIB_CALL_PREFAB_DEFINE
+	| typeof CARTLIB_CALL_PREFAB_SPAWN
+	| typeof CARTLIB_CALL_WORLD_GET
+	| typeof CARTLIB_CALL_REGISTRY_GET;
 
 type SemanticBuildResult = {
 	decls: InternalDecl[];
@@ -403,6 +413,7 @@ type SemanticBuildResult = {
 	declValueHints: DeclValueHintEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
+	moduleAliases: ModuleAliasEntry[];
 };
 
 type TokenInfo = {
@@ -439,7 +450,6 @@ export function buildLuaFileSemanticData(
 	definitions.sort(compareDefinitionInfo);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
-	const moduleAliases = collectModuleAliasEntriesFromChunk(chunk);
 	const model: LuaSemanticModel = createSemanticModel({
 		file: path,
 		decls,
@@ -458,7 +468,7 @@ export function buildLuaFileSemanticData(
 		annotations,
 		decls,
 		refs,
-		moduleAliases,
+		moduleAliases: result.moduleAliases,
 		callExpressions: result.callExpressions,
 		functionSignatures: result.functionSignatures,
 		declValueHints: result.declValueHints,
@@ -472,139 +482,12 @@ export function buildLuaSemanticModel(source: string, path: string, lines?: read
 	return data.model;
 }
 
-type ModuleAliasResolution = {
-	module: string;
-	memberPath: string[];
-};
-
-export function collectModuleAliasEntriesFromChunk(path: LuaChunk): ModuleAliasEntry[] {
-	const aliases = new Map<string, ModuleAliasEntry>();
-	const statements = path.body;
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
-		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
-			recordLocalRequireAliases(statement as LuaLocalAssignmentStatement, aliases);
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
-			recordGlobalRequireAliases(statement as LuaAssignmentStatement, aliases);
-		}
-	}
-	return Array.from(aliases.values(), normalizeModuleAliasEntry);
-}
-
 function normalizeModuleAliasEntry(entry: ModuleAliasEntry): ModuleAliasEntry {
 	return {
 		alias: entry.alias,
 		module: entry.module,
-		memberPath: entry.memberPath ? entry.memberPath.slice() : [],
+		memberPath: entry.memberPath.slice(),
 	};
-}
-
-function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, ModuleAliasEntry>): void {
-	if (statement.values.length === 0) {
-		return;
-	}
-	for (let index = 0; index < statement.names.length; index += 1) {
-		const identifier = statement.names[index];
-		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
-		const alias = resolveModuleAliasExpression(statement.values[valueIndex], aliases);
-		if (alias) {
-			aliases.set(identifier.name, {
-				alias: identifier.name,
-				module: alias.module,
-				memberPath: alias.memberPath,
-			});
-		}
-	}
-}
-
-function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, ModuleAliasEntry>): void {
-	if (statement.right.length === 0) {
-		return;
-	}
-	for (let index = 0; index < statement.left.length; index += 1) {
-		const target = statement.left[index];
-		if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
-			continue;
-		}
-		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
-		const alias = resolveModuleAliasExpression(statement.right[valueIndex], aliases);
-		if (alias) {
-			aliases.set((target as LuaIdentifierExpression).name, {
-				alias: (target as LuaIdentifierExpression).name,
-				module: alias.module,
-				memberPath: alias.memberPath,
-			});
-		}
-	}
-}
-
-function resolveModuleAliasExpression(expression: LuaExpression, aliases: ReadonlyMap<string, ModuleAliasEntry>): ModuleAliasResolution | null {
-	const moduleName = extractRequireModuleName(expression);
-	if (moduleName) {
-		return {
-			module: moduleName,
-			memberPath: [],
-		};
-	}
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		const alias = aliases.get(expression.name);
-		if (!alias) {
-			return null;
-		}
-		return {
-			module: alias.module,
-			memberPath: alias.memberPath ? alias.memberPath.slice() : [],
-		};
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const base = resolveModuleAliasExpression(expression.base, aliases);
-		if (!base) {
-			return null;
-		}
-		base.memberPath.push(expression.identifier);
-		return base;
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const base = resolveModuleAliasExpression(expression.base, aliases);
-		if (!base) {
-			return null;
-		}
-		const key = extractStringLiteral(expression.index);
-		if (!key) {
-			return null;
-		}
-		base.memberPath.push(key);
-		return base;
-	}
-	return null;
-}
-
-function extractRequireModuleName(expression: LuaExpression): string {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
-		return null;
-	}
-	const call = expression as LuaCallExpression;
-	if (call.methodName) {
-		return null;
-	}
-	const callee = call.callee;
-	if (callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return null;
-	}
-	if ((callee as LuaIdentifierExpression).name !== 'require') {
-		return null;
-	}
-	if (call.arguments.length === 0) {
-		return null;
-	}
-	const firstArg = call.arguments[0];
-	if (firstArg.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return null;
-	}
-	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
-	return moduleName.length > 0 ? moduleName : null;
 }
 
 export class LuaProjectIndex {
@@ -1369,6 +1252,11 @@ class SemanticBuilder {
 	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
+	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
+	private readonly immutableModuleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
+	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
+	private readonly moduleAliasLookup = (name: string): ModuleAliasTarget => this.moduleAliasForName(name);
+	private readonly immutableModuleAliasLookup = (name: string): ModuleAliasTarget => this.immutableModuleAliasForName(name);
 	private nextScopeId = 1;
 
 	constructor(options: {
@@ -1399,6 +1287,7 @@ class SemanticBuilder {
 			declValueHints: Array.from(this.declValueHints.entries(), ([declId, hintKey]) => ({ declId, hintKey })),
 			prefabClasses: this.prefabClasses,
 			objectBindings: this.objectBindings,
+			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
 
@@ -1443,6 +1332,23 @@ class SemanticBuilder {
 					}
 				}
 				for (let index = 0; index < pending.length; index += 1) {
+					if (index >= localAssignment.values.length) {
+						continue;
+					}
+					const initializer = localAssignment.values[index];
+					const decl = pending[index];
+					this.setModuleAlias(decl, this.resolveModuleAliasInitializer(initializer, this.moduleAliasLookup));
+					if (pending[index].kind === 'constant') {
+						this.setImmutableModuleAlias(
+							decl,
+							this.resolveModuleAliasInitializer(initializer, this.immutableModuleAliasLookup),
+						);
+					}
+				}
+				for (let index = 0; index < pending.length; index += 1) {
+					if (index >= localAssignment.values.length) {
+						this.setModuleAlias(pending[index], null);
+					}
 					this.activateDecl(pending[index]);
 				}
 				break;
@@ -1516,6 +1422,23 @@ class SemanticBuilder {
 					if (targetInfo?.decl && valueInfo?.hintKey) {
 						this.setDeclValueHint(targetInfo.decl, valueInfo.hintKey);
 					}
+				}
+				for (let index = 0; index < assignment.left.length; index += 1) {
+					const target = assignment.left[index];
+					if (target.kind !== LuaSyntaxKind.IdentifierExpression || index >= assignment.right.length) {
+						continue;
+					}
+					targets[index].moduleAlias = this.resolveModuleAliasInitializer(
+						assignment.right[index],
+						this.moduleAliasLookup,
+					);
+				}
+				for (let index = 0; index < assignment.left.length; index += 1) {
+					const target = assignment.left[index];
+					if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
+						continue;
+					}
+					this.setModuleAlias(targets[index].decl, targets[index].moduleAlias);
 				}
 				break;
 			}
@@ -1678,9 +1601,8 @@ class SemanticBuilder {
 				for (let index = 0; index < callExpression.arguments.length; index += 1) {
 					this.visitExpression(callExpression.arguments[index], { tableBaseDecl: null, tableBasePath: null });
 				}
-				this.recordBuiltinCallMetadata(callExpression);
 				this.callExpressions.push(callExpression);
-				const hintKey = this.resolveCallHintKey(callExpression);
+				const hintKey = this.recordCartlibCallMetadata(callExpression);
 				return hintKey
 					? { namePath: null, decl: null, hintKey }
 					: null;
@@ -2272,47 +2194,143 @@ class SemanticBuilder {
 		return this.declValueHints.get(decl.id);
 	}
 
-	private resolveCallHintKey(callExpression: LuaCallExpression): SemanticHintKey {
-		if (callExpression.methodName) {
+	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticHintKey {
+		const callKind = this.classifyCartlibCall(callExpression);
+		if (callKind === CARTLIB_CALL_PREFAB_DEFINE) {
+			const prefabClass = extractPrefabClassEntry(callExpression, this.path);
+			if (prefabClass) {
+				this.prefabClasses.push(prefabClass);
+			}
 			return null;
 		}
-		const calleeName = resolveDirectCallName(callExpression.callee);
-		if (calleeName === 'oget' || calleeName === 'rget') {
-			const objectId = extractStringLiteral(callExpression.arguments[0]);
-			return objectId ? buildObjectHintKey(objectId) : null;
-		}
-		if (calleeName === 'inst') {
+		if (callKind === CARTLIB_CALL_PREFAB_SPAWN) {
 			const prefabId = extractStringLiteral(callExpression.arguments[0]);
 			if (!prefabId) {
 				return null;
 			}
 			const objectId = extractObjectBindingId(callExpression);
 			if (objectId) {
+				this.objectBindings.push({ objectId, prefabId });
 				return buildObjectHintKey(objectId);
 			}
 			return buildPrefabHintKey(prefabId);
 		}
+		if (callKind === CARTLIB_CALL_WORLD_GET || callKind === CARTLIB_CALL_REGISTRY_GET) {
+			const objectId = extractStringLiteral(callExpression.arguments[0]);
+			return objectId ? buildObjectHintKey(objectId) : null;
+		}
 		return null;
 	}
 
-	private recordBuiltinCallMetadata(callExpression: LuaCallExpression): void {
-		if (callExpression.methodName) {
+	private resolveModuleAliasInitializer(
+		expression: LuaExpression,
+		lookup: (name: string) => ModuleAliasTarget,
+	): ModuleAliasTarget {
+		return resolveModuleAliasInitializer(
+			expression,
+			lookup,
+			this.resolveName('require') === null,
+		);
+	}
+
+	private classifyCartlibCall(callExpression: LuaCallExpression): CartlibCallKind {
+		let trailingMember = callExpression.methodName;
+		let leadingMember: string = null;
+		let memberCount = trailingMember ? 1 : 0;
+		let expression = callExpression.callee;
+		while (expression.kind === LuaSyntaxKind.MemberExpression
+			|| expression.kind === LuaSyntaxKind.IndexExpression) {
+			let member: string;
+			if (expression.kind === LuaSyntaxKind.MemberExpression) {
+				member = expression.identifier;
+			} else {
+				if (expression.index.kind !== LuaSyntaxKind.StringLiteralExpression) {
+					return CARTLIB_CALL_NONE;
+				}
+				member = expression.index.value;
+			}
+			memberCount += 1;
+			if (memberCount > 2) {
+				return CARTLIB_CALL_NONE;
+			}
+			if (trailingMember) {
+				leadingMember = member;
+			} else {
+				trailingMember = member;
+			}
+			expression = expression.base;
+		}
+		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return CARTLIB_CALL_NONE;
+		}
+		const alias = this.immutableModuleAliasForName(expression.name);
+		if (!alias || alias.memberPath.length + memberCount > 2) {
+			return CARTLIB_CALL_NONE;
+		}
+		if (alias.memberPath.length === 2) {
+			leadingMember = alias.memberPath[0];
+			trailingMember = alias.memberPath[1];
+		} else if (alias.memberPath.length === 1) {
+			if (memberCount === 0) {
+				trailingMember = alias.memberPath[0];
+			} else {
+				leadingMember = alias.memberPath[0];
+			}
+		}
+		const totalMemberCount = alias.memberPath.length + memberCount;
+		if (alias.module === 'cartlib/prefab' && totalMemberCount === 1) {
+			if (trailingMember === 'define') {
+				return CARTLIB_CALL_PREFAB_DEFINE;
+			}
+			if (trailingMember === 'spawn') {
+				return CARTLIB_CALL_PREFAB_SPAWN;
+			}
+			return CARTLIB_CALL_NONE;
+		}
+		if (totalMemberCount !== 2 || leadingMember !== 'instance' || trailingMember !== 'get') {
+			return CARTLIB_CALL_NONE;
+		}
+		if (alias.module === 'cartlib/world/index') {
+			return CARTLIB_CALL_WORLD_GET;
+		}
+		return alias.module === 'cartlib/registry'
+			? CARTLIB_CALL_REGISTRY_GET
+			: CARTLIB_CALL_NONE;
+	}
+
+	private moduleAliasForName(name: string): ModuleAliasTarget {
+		const decl = this.resolveName(name);
+		return decl ? this.moduleAliasesByDeclId.get(decl.id) : null;
+	}
+
+	private immutableModuleAliasForName(name: string): ModuleAliasTarget {
+		const decl = this.resolveName(name);
+		return decl ? this.immutableModuleAliasesByDeclId.get(decl.id) : null;
+	}
+
+	private setModuleAlias(decl: InternalDecl, target: ModuleAliasTarget): void {
+		if (target) {
+			this.moduleAliasesByDeclId.set(decl.id, target);
+		} else {
+			this.moduleAliasesByDeclId.delete(decl.id);
+		}
+		if (decl.scopeRef.kind !== 'path') {
 			return;
 		}
-		const calleeName = resolveDirectCallName(callExpression.callee);
-		if (calleeName === 'define_prefab') {
-			const prefabClass = extractPrefabClassEntry(callExpression, this.path);
-			if (prefabClass) {
-				this.prefabClasses.push(prefabClass);
-			}
-			return;
+		if (target) {
+			this.moduleAliasesByName.set(decl.name, {
+				alias: decl.name,
+				module: target.module,
+				memberPath: target.memberPath,
+			});
+		} else {
+			this.moduleAliasesByName.delete(decl.name);
 		}
-		if (calleeName === 'inst') {
-			const prefabId = extractStringLiteral(callExpression.arguments[0]);
-			const objectId = extractObjectBindingId(callExpression);
-			if (prefabId && objectId) {
-				this.objectBindings.push({ objectId, prefabId });
-			}
+	}
+
+	private setImmutableModuleAlias(decl: InternalDecl, target: ModuleAliasTarget): void {
+		if (target) {
+			this.immutableModuleAliasesByDeclId.set(decl.id, target);
 		}
 	}
 
@@ -2638,7 +2656,7 @@ function recordModuleAliasPathHints(
 			continue;
 		}
 		const symbolPath = moduleRoot.slice();
-		const memberPath = alias.memberPath ?? [];
+		const memberPath = alias.memberPath;
 		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
 			symbolPath.push(memberPath[memberIndex]);
 		}

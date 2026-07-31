@@ -36,7 +36,8 @@ import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/cont
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { FileSemanticData, ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_aliases';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
@@ -850,7 +851,7 @@ export class CompletionController {
 	}
 
 	private filterModuleAliasSymbols(symbols: LuaSymbolEntry[], moduleAlias: ModuleAliasEntry): LuaSymbolEntry[] {
-		const memberPath = moduleAlias.memberPath ?? [];
+		const memberPath = moduleAlias.memberPath;
 		if (memberPath.length === 0) {
 			return symbols;
 		}
@@ -886,7 +887,7 @@ export class CompletionController {
 
 	private formatModuleAliasSource(moduleAlias: ModuleAliasEntry): string {
 		const escaped = moduleAlias.module.replace(/'/g, "\\'");
-		const memberPath = moduleAlias.memberPath ?? [];
+		const memberPath = moduleAlias.memberPath;
 		if (memberPath.length === 0) {
 			return `require('${escaped}')`;
 		}
