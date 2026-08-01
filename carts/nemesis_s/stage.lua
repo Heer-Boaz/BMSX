@@ -1,5 +1,6 @@
 local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
@@ -613,8 +614,11 @@ local register_stage_definition<const> = function()
 	prefab.define({
 		def_id = ids_stage_def,
 		class = stage,
-		fsms = { ids_stage_fsm },
-		components = { customvisualcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ ids_stage_fsm }),
+		},
 	})
 end
 

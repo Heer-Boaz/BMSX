@@ -90,6 +90,16 @@ function actioneffectcomponent.new(opts)
 	return self
 end
 
+function actioneffectcomponent.factory(effect_ids)
+	return function(opts)
+		local self<const> = actioneffectcomponent.new(opts)
+		for i = 1, #effect_ids do
+			self:grant_effect(effect_ids[i])
+		end
+		return self
+	end
+end
+
 function actioneffectcomponent:on_attach()
 	self.parent.actioneffects = self
 end

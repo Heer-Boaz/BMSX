@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -1202,8 +1203,11 @@ local register_room_definition<const> = function()
 	prefab.define({
 		def_id = 'room',
 		class = room_object,
-		fsms = { 'room' },
-		components = { customvisualcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ 'room' }),
+		},
 		defaults = {
 		},
 	})

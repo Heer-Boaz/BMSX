@@ -1,19 +1,20 @@
 local component<const> = require('cartlib/world/component')
 local component_types<const> = require('cartlib/components/types')
 local fsm<const> = require('cartlib/fsm/fsm')
+local fsmlibrary<const> = require('cartlib/fsm/library')
 local state<const> = fsm.state
 local bind_machine_state_path<const> = fsm.bind_state_path
 local machine_matches_state_path<const> = fsm.matches_state_path
 local transition_machine_state_path<const> = fsm.transition_state_path
 
-local statemachinecomponent<const> = {}
-statemachinecomponent.__index = statemachinecomponent
-setmetatable(statemachinecomponent, { __index = component })
+local fsmcomponent<const> = {}
+fsmcomponent.__index = fsmcomponent
+setmetatable(fsmcomponent, { __index = component })
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
-function statemachinecomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.state_machine, true), statemachinecomponent)
+function fsmcomponent.new(opts)
+	local self<const> = setmetatable(component.new(opts, component_types.state_machine, true), fsmcomponent)
 	self.statemachines = {}
 	self.statemachine_list = {}
 	self.statemachine_count = 0
@@ -26,16 +27,30 @@ function statemachinecomponent.new(opts)
 	return self
 end
 
-function statemachinecomponent:on_attach()
+function fsmcomponent.factory(machine_ids)
+	local definitions<const> = {}
+	for i = 1, #machine_ids do
+		definitions[i] = fsmlibrary.get(machine_ids[i])
+	end
+	return function(opts)
+		local self<const> = fsmcomponent.new(opts)
+		for i = 1, #machine_ids do
+			self:add_statemachine(machine_ids[i], definitions[i])
+		end
+		return self
+	end
+end
+
+function fsmcomponent:on_attach()
 	self.parent.state_machines = self
 end
 
-function statemachinecomponent:on_detach()
+function fsmcomponent:on_detach()
 	self:dispose()
 	self.parent.state_machines = nil
 end
 
-function statemachinecomponent:on_activate()
+function fsmcomponent:on_activate()
 	self:start()
 end
 
@@ -46,7 +61,7 @@ local append_bound_machine<const> = function(bound, machine, path)
 	bound[count * 2] = bind_machine_state_path(machine.definition, path)
 end
 
-function statemachinecomponent:add_statemachine(id, definition)
+function fsmcomponent:add_statemachine(id, definition)
 	local machine<const> = state.new(definition, self.parent)
 	local index<const> = self.statemachine_count + 1
 	self.statemachine_count = index
@@ -114,7 +129,7 @@ local bind_machines<const> = function(self)
 	end
 end
 
-function statemachinecomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
+function fsmcomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
 	local parent<const> = self.parent
 	if not self.enabled or not parent.active then
 		return
@@ -122,10 +137,10 @@ function statemachinecomponent:auto_dispatch(event_type, emitter, payload, emitt
 	self:dispatch(event_type, payload, emitter, emitter_id)
 end
 
--- statemachinecomponent:start(): start all managed FSMs from their initial
+-- fsmcomponent:start(): start all managed FSMs from their initial
 -- state.  Called automatically by worldobject:activate(); do not call
 -- manually in normal cart code.
-function statemachinecomponent:start()
+function fsmcomponent:start()
 	if self._started then
 		return
 	end
@@ -137,7 +152,7 @@ function statemachinecomponent:start()
 	self._started = true
 end
 
-function statemachinecomponent:update()
+function fsmcomponent:update()
 	local list<const> = self.statemachine_list
 	-- Components only tick machines whose active subtree can actually do frame
 	-- work. That keeps event-only and dormant FSMs out of the per-frame loop.
@@ -149,12 +164,12 @@ function statemachinecomponent:update()
 	end
 end
 
--- statemachinecomponent:dispatch(event_name, payload): deliver an event
+-- fsmcomponent:dispatch(event_name, payload): deliver an event
 -- to all FSMs managed by this controller.  The active state's `on` table and
 -- `input_event_handlers` are consulted.  Returns true if any state handled it.
 -- In cart code, call self.state_machines:dispatch() or use the FSM `on` table
 -- instead of raw dispatch where possible.
-function statemachinecomponent:dispatch(event_name, payload, emitter, emitter_id)
+function fsmcomponent:dispatch(event_name, payload, emitter, emitter_id)
 	if emitter_id == nil then
 		emitter = self.parent
 		emitter_id = self.parent.id
@@ -169,7 +184,7 @@ function statemachinecomponent:dispatch(event_name, payload, emitter, emitter_id
 	return handled
 end
 
-function statemachinecomponent:bind_state_path(path)
+function fsmcomponent:bind_state_path(path)
 	local paths = self.state_paths
 	if paths then
 		local bound<const> = paths[path]
@@ -205,7 +220,7 @@ function statemachinecomponent:bind_state_path(path)
 	return bound
 end
 
-function statemachinecomponent:matches_state(bound)
+function fsmcomponent:matches_state(bound)
 	for i = 1, bound.count do
 		if machine_matches_state_path(bound[i * 2 - 1], bound[i * 2]) then
 			return true
@@ -214,19 +229,19 @@ function statemachinecomponent:matches_state(bound)
 	return false
 end
 
--- statemachinecomponent:transition_to(path): directly navigate to a state
+-- fsmcomponent:transition_to(path): directly navigate to a state
 -- by absolute path, bypassing guard conditions and without requiring an event.
 -- In cart code, prefer returning a path string from an `on`-handler or
 -- `entering_state`; only call transition_to() for imperative external control
 -- (e.g. a debug command or test harness).
 -- Path format: 'machine_id:/state/substate' or just '/state' for the default
 -- machine.
-function statemachinecomponent:transition_to(path)
+function fsmcomponent:transition_to(path)
 	local bound<const> = self:bind_state_path(path)
 	transition_machine_state_path(bound[1], bound[2])
 end
 
-function statemachinecomponent:dispose()
+function fsmcomponent:dispose()
 	self._started = false
 	local list<const> = self.statemachine_list
 	for i = 1, self.statemachine_count do
@@ -235,4 +250,4 @@ function statemachinecomponent:dispose()
 end
 
 
-return statemachinecomponent
+return fsmcomponent

@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
@@ -817,7 +818,7 @@ local register_castle_definition<const> = function()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,
-		fsms = { 'castle' },
+		components = { fsmcomponent.factory({ 'castle' }) },
 		defaults = {
 			id = 'c',
 			current_room_number = 0,

@@ -10,6 +10,7 @@
 -- the object already has an FSM.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -64,8 +65,11 @@ local register_lithograph_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
-		fsms = { 'lithograph_screen' },
-		components = { customvisualcomponent.new, textcomponent.new },
+		components = {
+			customvisualcomponent.new,
+			textcomponent.new,
+			fsmcomponent.factory({ 'lithograph_screen' }),
+		},
 		defaults = {
 			id = 'lithograph',
 		},

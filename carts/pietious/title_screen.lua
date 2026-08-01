@@ -1,5 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
@@ -220,9 +222,8 @@ local register_title_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
-		type = 'sprite',
-		fsms = { 'title_screen' },
-		components = { timelinecomponent.new },
+		base = spriteobject,
+		components = { timelinecomponent.new, fsmcomponent.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})
 end

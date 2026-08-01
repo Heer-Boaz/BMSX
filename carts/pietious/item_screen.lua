@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -252,8 +253,11 @@ local register_item_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'item_screen',
 		class = item_screen,
-		fsms = { 'item_screen' },
-		components = { customvisualcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ 'item_screen' }),
+		},
 		defaults = {
 			player_index = 1,
 			secondary_weapon_selection_index = 0,

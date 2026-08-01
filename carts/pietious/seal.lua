@@ -1,4 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local seal<const> = {}
 seal.__index = seal
 
@@ -11,7 +12,7 @@ local register_seal_definition<const> = function()
 	prefab.define({
 		def_id = 'seal',
 		class = seal,
-		type = 'sprite',
+		base = spriteobject,
 		defaults = {
 		},
 	})

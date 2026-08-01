@@ -1,5 +1,6 @@
 local combat<const> = {}
 require('globals')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
@@ -1533,9 +1534,10 @@ function combat.register_director()
 	prefab.define({
 		def_id = combat_director_def_id,
 		class = combat_director,
-		type = 'object',
-		fsms = { combat_director_fsm_id },
-		components = { timelinecomponent.new },
+		components = {
+			timelinecomponent.new,
+			fsmcomponent.factory({ combat_director_fsm_id }),
+		},
 		defaults = {
 			player_index = 1,
 			node_id = nil,

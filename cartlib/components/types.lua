@@ -10,7 +10,7 @@ return {
 	input_action_effect = 'inputactioneffectcomponent',
 	prohibit_leaving_screen = 'prohibitleavingscreencomponent',
 	screen_boundary = 'screenboundarycomponent',
-	state_machine = 'statemachinecomponent',
+	state_machine = 'fsmcomponent',
 	sprite = 'spritecomponent',
 	surface = 'surfacecomponent',
 	text = 'textcomponent',

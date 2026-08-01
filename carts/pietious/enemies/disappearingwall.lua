@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
@@ -50,8 +51,11 @@ function disappearingwall.register()
 	prefab.define({
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
-		fsms = { 'disappearingwall' },
-		components = { collider2dcomponent.new, tilelayercomponent.new },
+		components = {
+			collider2dcomponent.new,
+			tilelayercomponent.new,
+			fsmcomponent.factory({ 'disappearingwall' }),
+		},
 		defaults = {
 			trigger = nil,
 			conditions = {},

@@ -6,6 +6,7 @@ local aem<const> = require('cartlib/aem')
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local eventemitter<const> = require('cartlib/eventemitter')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/player')
 input.add_player(1)
@@ -14,6 +15,8 @@ local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local render<const> = require('cartlib/render/renderer')
 local surfacecomponent<const> = require('cartlib/render/surface_component')
+local spriteobject<const> = require('cartlib/sprite')
+local textobject<const> = require('cartlib/text/object')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
@@ -203,9 +206,11 @@ local register_director<const> = function()
 	prefab.define({
 		def_id = director_def_id,
 		class = director,
-		type = 'object',
-		fsms = { director_fsm_id },
-		components = { customvisualcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ director_fsm_id }),
+		},
 		defaults = {
 			player_index = 1,
 			node_id = start_node,
@@ -247,43 +252,43 @@ local register_director<const> = function()
 	})
 	prefab.define({
 		def_id = 'p3.text.main',
-		class = {},
-		type = 'textobject',
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.choice',
-		class = {},
-		type = 'textobject',
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.prompt',
-		class = {},
-		type = 'textobject',
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.transition',
-		class = {},
-		type = 'textobject',
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.results',
-		class = {},
-		type = 'textobject',
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.combat.monster',
-		class = {},
-		type = 'sprite',
+		class = spriteobject,
+		base = spriteobject,
 	})
 	prefab.define({
 		def_id = 'p3.combat.maya_a',
-		class = {},
-		type = 'sprite',
+		class = spriteobject,
+		base = spriteobject,
 	})
 	prefab.define({
 		def_id = 'p3.combat.maya_b',
-		class = {},
-		type = 'sprite',
+		class = spriteobject,
+		base = spriteobject,
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out',
@@ -292,8 +297,8 @@ local register_director<const> = function()
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out_portrait',
-		class = {},
-		type = 'sprite',
+		class = spriteobject,
+		base = spriteobject,
 	})
 end
 

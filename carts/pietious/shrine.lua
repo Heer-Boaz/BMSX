@@ -2,10 +2,12 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local spriteobject<const> = require('cartlib/sprite')
 local textcomponent<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
@@ -64,8 +66,11 @@ local register_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'shrine',
 		class = shrine,
-		fsms = { 'shrine' },
-		components = { customvisualcomponent.new, textcomponent.new },
+		components = {
+			customvisualcomponent.new,
+			textcomponent.new,
+			fsmcomponent.factory({ 'shrine' }),
+		},
 		defaults = {
 			id = 'shrine',
 		},
@@ -76,7 +81,7 @@ local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
-		type = 'sprite',
+		base = spriteobject,
 		defaults = {
 		},
 	})

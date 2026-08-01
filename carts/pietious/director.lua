@@ -52,6 +52,7 @@
 
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -945,8 +946,11 @@ local register_director_definition<const> = function()
 	prefab.define({
 		def_id = 'director',
 		class = director,
-		fsms = { 'director' },
-		components = { customvisualcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ 'director' }),
+		},
 		defaults = {
 			id = 'd',
 			player_index = 1,

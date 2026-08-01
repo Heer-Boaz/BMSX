@@ -13,9 +13,6 @@ function component.new(opts, type_name, unique)
 	self.type_name = type_name or opts.type_name or component_types.base
 	self.id_local = opts.id_local
 	self.id = opts.id
-	if not self.id and self.parent then
-		self.id = component.generate_id(self)
-	end
 	self.enabled = opts.enabled == nil or opts.enabled
 	self.unique = unique or opts.unique or false
 	self._attached = false

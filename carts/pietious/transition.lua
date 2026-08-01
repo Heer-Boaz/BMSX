@@ -16,6 +16,7 @@
 -- transition mode, so presentation performs no director-state polling.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local textcomponent<const> = require('cartlib/text/component')
@@ -99,8 +100,12 @@ local register_transition_definition<const> = function()
 	prefab.define({
 		def_id = 'transition',
 		class = transition,
-		fsms = { 'transition' },
-		components = { customvisualcomponent.new, textcomponent.new, timelinecomponent.new },
+		components = {
+			customvisualcomponent.new,
+			textcomponent.new,
+			timelinecomponent.new,
+			fsmcomponent.factory({ 'transition' }),
+		},
 		defaults = {
 			id = 'transition',
 		},

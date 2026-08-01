@@ -12,4 +12,13 @@ function behaviourtreecomponent.new(opts)
 	return self
 end
 
+function behaviourtreecomponent.factory(root)
+	return function(opts)
+		local self<const> = behaviourtreecomponent.new(opts)
+		self.root = root
+		self.id_local = root.id
+		return self
+	end
+end
+
 return behaviourtreecomponent

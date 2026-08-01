@@ -75,9 +75,11 @@
 --    exit animation timeline completes.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local velocity<const> = require('velocity')
+local velocity<const> = require('cartlib/velocity')
 local world_instance<const> = require('cartlib/world/world').instance
 local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
@@ -3182,9 +3184,11 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = 'player',
 		class = player,
-		type = 'sprite',
-		fsms = { 'player' },
-		components = { timelinecomponent.new },
+		base = spriteobject,
+		components = {
+			timelinecomponent.new,
+			fsmcomponent.factory({ 'player' }),
+		},
 		defaults = {
 			imgid = 'pietolon_stand_r',
 			player_index = 1,

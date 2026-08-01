@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
@@ -79,8 +80,11 @@ function breakablewall.register()
 	prefab.define({
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
-		fsms = { 'breakablewall' },
-		components = { collider2dcomponent.new, tilelayercomponent.new },
+		components = {
+			collider2dcomponent.new,
+			tilelayercomponent.new,
+			fsmcomponent.factory({ 'breakablewall' }),
+		},
 		defaults = {
 			trigger = nil,
 			conditions = {},

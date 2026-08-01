@@ -1,5 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local worldobject<const> = require('cartlib/world/object')
@@ -96,9 +98,8 @@ local register_enemy_explosion_definition<const> = function()
 	prefab.define({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
-		type = 'sprite',
-		fsms = { 'enemy_explosion' },
-		components = { timelinecomponent.new },
+		base = spriteobject,
+		components = { timelinecomponent.new, fsmcomponent.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,
 		},

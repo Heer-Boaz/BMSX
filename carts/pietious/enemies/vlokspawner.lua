@@ -1,7 +1,9 @@
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
+local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local vlokspawner<const> = {}
@@ -49,8 +51,8 @@ function vlokspawner.register()
 	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
-		type = 'sprite',
-		bts = { behaviourtree.action.new('enemy_vlokspawner', vlokspawner.bt_tick) },
+		base = spriteobject,
+		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_vlokspawner', vlokspawner.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 0,

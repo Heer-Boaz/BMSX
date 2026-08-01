@@ -1,5 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -56,8 +58,8 @@ local register_loot_drop_definition<const> = function()
 	prefab.define({
 		def_id = 'loot_drop',
 		class = loot_drop,
-		type = 'sprite',
-		fsms = { 'loot_drop' },
+		base = spriteobject,
+		components = { fsmcomponent.factory({ 'loot_drop' }) },
 		defaults = {
 			loot_type = 'life',
 			loot_value = enemy_loot_life_regen,

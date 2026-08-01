@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -144,8 +145,7 @@ local register_ui_definition<const> = function()
 	prefab.define({
 		def_id = 'ui',
 		class = ui,
-		fsms = { 'ui' },
-		components = { customvisualcomponent.new },
+		components = { customvisualcomponent.new, fsmcomponent.factory({ 'ui' }) },
 		defaults = {
 			hud_health_level = hud_health_level,
 			hud_health_target = hud_health_level,

@@ -3308,8 +3308,9 @@ packaged into the cartridge ROM rather than exported by BIOS. Derived
 game-facing geometry such as thick-line construction also belongs to
 `cartlib/gx`. The retired TypeScript-era camera/projection ports are not part of
 that SDK: carts either program the GTE/GTE+ path or link a camera model they
-actually own. Likewise, cart-specific motion policy stays in its cartridge
-rather than acquiring a generic cartlib name.
+actually own. `cartlib/velocity` owns the reusable integer remainder integrator
+for fractional two-axis movement; game-specific acceleration, collision and
+movement policy remain in the cartridge.
 
 Cart code imports the focused owner it uses; `cartlib` has no prelude or
 all-purpose system facade and does not inject SDK aliases into the guest global
@@ -3317,18 +3318,23 @@ registerfile. The Lua compiler owns the exact literal-`require` dependency graph
 and reachable-module traversal; ROM authoring only maps canonical module paths
 to source files and supplies a module when that graph reaches it.
 `cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge write.
-`cartlib/prefab` owns prefab definitions and spawning; it selects and prepares
-each definition's base constructor and instance metatable once when the
-definition is registered rather than re-decoding its type or allocating a new
-metatable for every spawn. Prefab component lists contain direct constructor
-references; there is no string component registry, universal component module,
-prebuilt-instance branch, or compatibility lookup. The world component base
-owns only attachment state, activation reconciliation, event unbinding, IDs,
-and enabled state. Rendering, text, timeline, collision, boundary, and input-effect
-components live at their focused owners and are linked only when a cart
-selects them. Timelines are an explicit component capability rather than an
-allocation on every world object, and callers operate on that retained
-component directly.
+`cartlib/prefab` owns prefab definitions and spawning. A definition names its
+concrete object base directly; prefab code does not know string kinds for
+sprites, text, state machines, behaviour trees, or action effects. It prepares
+the instance metatable once when the definition is registered rather than
+allocating one per spawn. Its component list is one ordered list of direct
+constructors. Parameterized component owners bind immutable FSM definitions,
+behaviour roots, or effect ids into those constructors before spawning; prefab
+does not interpret parallel feature lists. There is no string component
+registry, universal component module, prebuilt-instance branch, or
+compatibility lookup. Component ids are materialized by the object at the
+attachment boundary, after the constructor has supplied its component-local
+identity. The world component base owns only attachment state, activation
+reconciliation, event unbinding, IDs, and enabled state. Rendering, text,
+timeline, collision, boundary, and input-effect components live at their
+focused owners and are linked only when a cart selects them. Timelines are an
+explicit component capability rather than an allocation on every world object,
+and callers operate on that retained component directly.
 
 Cart events are synchronous direct-value dispatch. `eventport:emit` passes the
 event name, emitter and exact payload value to listeners without constructing

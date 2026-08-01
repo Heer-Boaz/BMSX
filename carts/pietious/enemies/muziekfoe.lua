@@ -1,8 +1,10 @@
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local world_instance<const> = require('cartlib/world/world').instance
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
+local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 
@@ -100,8 +102,8 @@ function muziekfoe.register()
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
-		type = 'sprite',
-		bts = { behaviourtree.action.new('enemy_muziekfoe', muziekfoe.bt_tick) },
+		base = spriteobject,
+		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_muziekfoe', muziekfoe.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 4,

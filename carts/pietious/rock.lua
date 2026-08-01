@@ -1,5 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
@@ -123,12 +125,11 @@ local define_rock_fsm<const> = function()
 end
 
 local register_rock_definition<const> = function()
-		prefab.define({
-				def_id = 'rock',
-				class = rock,
-				type = 'sprite',
-				fsms = { 'rock' },
-				components = { timelinecomponent.new },
+	prefab.define({
+		def_id = 'rock',
+		class = rock,
+		base = spriteobject,
+		components = { timelinecomponent.new, fsmcomponent.factory({ 'rock' }) },
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,

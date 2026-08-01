@@ -60,7 +60,7 @@ function spriteobject.new(opts)
 	local self<const> = setmetatable(worldobject.new(opts), spriteobject)
 	self.flip_h = false
 	self.flip_v = false
-	self.imgid = nil
+	self.imgid = opts.imgid
 
 	self.sprite_component = spritecomponent.new({
 		imgid = self.imgid,
@@ -71,6 +71,9 @@ function spriteobject.new(opts)
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
 	self.collider:set_sprite(self.sprite_component)
+	if self.imgid then
+		apply_image_metadata(self, self.imgid)
+	end
 
 	return self
 end

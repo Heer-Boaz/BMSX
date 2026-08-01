@@ -11,7 +11,9 @@
 -- automatic state restoration.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
+local spriteobject<const> = require('cartlib/sprite')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local tilecollisioncomponent<const> = require('cartlib/collision/tile_collision_component')
@@ -108,8 +110,8 @@ local register_pepernoot_projectile_definition<const> = function()
 	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
-		type = 'sprite',
-		fsms = { 'pepernoot_projectile' },
+		base = spriteobject,
+		components = { fsmcomponent.factory({ 'pepernoot_projectile' }) },
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,
