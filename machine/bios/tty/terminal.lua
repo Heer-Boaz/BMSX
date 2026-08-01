@@ -27,6 +27,7 @@ local system_print_data<const>: *word = 0x0801022c
 local system_print_count<const>: *word = 0x08010230
 local ascii_newline<const> = 10
 local terminal_background_word<const> = 0x00000000
+local terminal_cursor_word<const> = 0x00ffffff
 local palette_cell_lsb_mask<const> = 0x55555555
 local palette_text<const> = 0
 local palette_error<const> = 1
@@ -545,7 +546,7 @@ function terminal.flush()
 							target_y,
 							glyph_width,
 							glyph_height,
-							palette_words[palette_text])
+							terminal_cursor_word)
 					end
 					local palette_index = -1
 					local palette_word = 0
