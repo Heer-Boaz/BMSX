@@ -397,15 +397,15 @@ void testSystemPrintRegisters() {
 	require(controller.readHostOutputByte() == 0x68u, "host output retains the first byte");
 	require(controller.readHostOutputByte() == 0x69u, "host output retains the second byte");
 	require(controller.readHostOutputByte() == 0x0au, "host output terminates the completed line");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 3u, "system print count includes the flushed newline");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x68u, "system print data reads the oldest byte");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x69u, "system print character register retains the last written word");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 1u, "system print flush register retains the last written word");
 
 	const bmsx::SystemControllerState state = controller.captureState();
 	controller.reset();
 	controller.restoreState(state);
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x69u, "save-state restores retained system print bytes");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x0au, "system print flush retains a newline for firmware");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 0u, "system print count tracks firmware reads");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x69u, "save-state restores the character latch");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 1u, "save-state restores the flush latch");
+	require(controller.hostOutputAvailableByteCount() == 0u, "save-state restore clears non-serialized host output");
 
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x20acu);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
@@ -414,8 +414,7 @@ void testSystemPrintRegisters() {
 	require(controller.readHostOutputByte() == 0x82u, "host output retains UTF-8 byte two");
 	require(controller.readHostOutputByte() == 0xacu, "host output retains UTF-8 byte three");
 	require(controller.readHostOutputByte() == 0x0au, "host UTF-8 output terminates the completed line");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == static_cast<bmsx::u32>('?'), "BIOS print history maps a wide codepoint to its glyph fallback");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x0au, "BIOS glyph history terminates the Unicode host line");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x20acu, "system print character latch retains the raw codepoint word");
 
 	controller.reset();
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x6fu);
@@ -434,13 +433,6 @@ void testSystemPrintRegisters() {
 	require(controller.hostOutputAvailableByteCount() == 2u, "host output accepts the line after an overflowed line");
 	require(controller.readHostOutputByte() == 0x79u, "host output retains the line after overflow");
 	require(controller.readHostOutputByte() == 0x0au, "host output terminates the line after overflow");
-
-	controller.reset();
-	for (bmsx::u32 index = 0u; index < bmsx::SYS_PRINT_BUFFER_BYTES + 2u; ++index) {
-		memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, index);
-	}
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == bmsx::SYS_PRINT_BUFFER_BYTES, "system print ring retains its fixed byte capacity");
-	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 2u, "system print ring overwrites the oldest byte");
 }
 
 void testRuntimeSystemRebootBoundary() {

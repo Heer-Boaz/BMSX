@@ -181,7 +181,7 @@ test('system timing registers consume scheduler and PCRTC device state without R
 	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 409_922_903);
 });
 
-test('system print registers retain firmware output and publish complete host lines', () => {
+test('system print registers latch writes and publish complete host lines', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
 	machine.resetDevices();
@@ -196,15 +196,15 @@ test('system print registers retain firmware output and publish complete host li
 		controller.readHostOutputByte(),
 		controller.readHostOutputByte(),
 	], [0x68, 0x69, 0x0a]);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 3);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x68);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x69);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
 
 	const state = controller.captureState();
 	controller.reset();
 	controller.restoreState(state);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x69);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x0a);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 0);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
+	assert.equal(controller.hostOutputAvailableByteCount(), 0);
 
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x20ac);
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
@@ -215,8 +215,8 @@ test('system print registers retain firmware output and publish complete host li
 		controller.readHostOutputByte(),
 		controller.readHostOutputByte(),
 	], [0xe2, 0x82, 0xac, 0x0a]);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x3f);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x0a);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x20ac);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
 
 	controller.reset();
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x6f);
@@ -237,13 +237,6 @@ test('system print registers retain firmware output and publish complete host li
 	assert.equal(controller.hostOutputAvailableByteCount(), 2);
 	assert.equal(controller.readHostOutputByte(), 0x79);
 	assert.equal(controller.readHostOutputByte(), 0x0a);
-
-	controller.reset();
-	for (let index = 0; index < SYS_PRINT_BUFFER_BYTES + 2; index += 1) {
-		memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, index);
-	}
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), SYS_PRINT_BUFFER_BYTES);
-	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 2);
 });
 
 test('runtime reset boundary restarts system firmware and preserves cartridge entry', () => {

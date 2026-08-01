@@ -1,5 +1,5 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
-import { IO_DMA_CHANNEL_COUNT, SYS_PRINT_BUFFER_BYTES } from '../../../spec/bmsx/io';
+import { IO_DMA_CHANNEL_COUNT } from '../../../spec/bmsx/io';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
@@ -1253,9 +1253,8 @@ function encodeSystemControllerState(state: SystemControllerState): SystemContro
 		supervisorTransitionTarget: state.supervisorTransitionTarget,
 		supervisorResumable: state.supervisorResumable,
 		supervisorExitRequested: state.supervisorExitRequested,
-		printBuffer: state.printBuffer,
-		printReadIndex: state.printReadIndex,
-		printByteCount: state.printByteCount,
+		printCharWord: state.printCharWord,
+		printFlushWord: state.printFlushWord,
 	};
 }
 
@@ -1267,9 +1266,8 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 		supervisorTransitionTarget: requireBoundedU32(requireObjectKey(object, 'supervisorTransitionTarget', label, `${label}.supervisorTransitionTarget`), `${label}.supervisorTransitionTarget`, 0, SYSTEM_SUPERVISOR_TARGET_FAULT),
 		supervisorResumable: requireBooleanValue(requireObjectKey(object, 'supervisorResumable', label, `${label}.supervisorResumable`), `${label}.supervisorResumable`),
 		supervisorExitRequested: requireBooleanValue(requireObjectKey(object, 'supervisorExitRequested', label, `${label}.supervisorExitRequested`), `${label}.supervisorExitRequested`),
-		printBuffer: requireBinaryFixedLength(requireObjectKey(object, 'printBuffer', label, `${label}.printBuffer`), `${label}.printBuffer`, SYS_PRINT_BUFFER_BYTES),
-		printReadIndex: requireBoundedU32(requireObjectKey(object, 'printReadIndex', label, `${label}.printReadIndex`), `${label}.printReadIndex`, 0, SYS_PRINT_BUFFER_BYTES - 1),
-		printByteCount: requireBoundedU32(requireObjectKey(object, 'printByteCount', label, `${label}.printByteCount`), `${label}.printByteCount`, 0, SYS_PRINT_BUFFER_BYTES),
+		printCharWord: requireBoundedU32(requireObjectKey(object, 'printCharWord', label, `${label}.printCharWord`), `${label}.printCharWord`, 0, 0xffffffff),
+		printFlushWord: requireBoundedU32(requireObjectKey(object, 'printFlushWord', label, `${label}.printFlushWord`), `${label}.printFlushWord`, 0, 0xffffffff),
 	};
 }
 

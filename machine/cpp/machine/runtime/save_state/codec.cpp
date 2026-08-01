@@ -1296,9 +1296,8 @@ BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	object["supervisorTransitionTarget"] = static_cast<i64>(state.supervisorTransitionTarget);
 	object["supervisorResumable"] = state.supervisorResumable;
 	object["supervisorExitRequested"] = state.supervisorExitRequested;
-	object["printBuffer"] = BinValue(BinBinary(state.printBuffer.begin(), state.printBuffer.end()));
-	object["printReadIndex"] = static_cast<i64>(state.printReadIndex);
-	object["printByteCount"] = static_cast<i64>(state.printByteCount);
+	object["printCharWord"] = static_cast<i64>(state.printCharWord);
+	object["printFlushWord"] = static_cast<i64>(state.printFlushWord);
 	return BinValue(std::move(object));
 }
 
@@ -1310,10 +1309,8 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	state.supervisorTransitionTarget = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorTransitionTarget", label), "machineState.machine.systemControl.supervisorTransitionTarget", SYSTEM_SUPERVISOR_TARGET_USER, SYSTEM_SUPERVISOR_TARGET_FAULT));
 	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
-	const BinBinary& printBuffer = requireBinaryWithLength(requireField(object, "printBuffer", label), "machineState.machine.systemControl.printBuffer", SYS_PRINT_BUFFER_BYTES);
-	std::copy(printBuffer.begin(), printBuffer.end(), state.printBuffer.begin());
-	state.printReadIndex = requireBoundedU32(requireField(object, "printReadIndex", label), "machineState.machine.systemControl.printReadIndex", 0u, SYS_PRINT_BUFFER_BYTES - 1u);
-	state.printByteCount = requireBoundedU32(requireField(object, "printByteCount", label), "machineState.machine.systemControl.printByteCount", 0u, SYS_PRINT_BUFFER_BYTES);
+	state.printCharWord = requireU32(requireField(object, "printCharWord", label), "machineState.machine.systemControl.printCharWord");
+	state.printFlushWord = requireU32(requireField(object, "printFlushWord", label), "machineState.machine.systemControl.printFlushWord");
 	return state;
 }
 

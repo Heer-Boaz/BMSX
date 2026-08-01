@@ -9,8 +9,7 @@ local vm_select<const> = __bmsx_select
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
 local vm_xpcall<const> = __bmsx_xpcall
-local print_char<const>: *word = 0x0801022c
-local print_flush<const>: *word = 0x08010230
+local console<const> = require('tty/console')
 
 local ascii_tab<const> = 9
 local ascii_carriage_return<const> = 13
@@ -265,18 +264,12 @@ print = function(...)
 	local count<const> = select('#', ...)
 	for value_index = 1, count do
 		if value_index > 1 then
-			*print_char = ascii_tab
+			console.write('\t')
 		end
 		local text<const> = tostring(select(value_index, ...))
-		local char_index = 1
-		local code = byte(text, char_index)
-		while code ~= nil do
-			*print_char = code
-			char_index = char_index + 1
-			code = byte(text, char_index)
-		end
+		console.write(text)
 	end
-	*print_flush = 1
+	console.end_line()
 end
 
 

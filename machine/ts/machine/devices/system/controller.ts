@@ -42,9 +42,8 @@ export type SystemControllerState = {
 	supervisorTransitionTarget: number;
 	supervisorResumable: boolean;
 	supervisorExitRequested: boolean;
-	printBuffer: Uint8Array;
-	printReadIndex: number;
-	printByteCount: number;
+	printCharWord: number;
+	printFlushWord: number;
 };
 
 const ASCII_NEWLINE = 10;
@@ -60,9 +59,6 @@ export class SystemController {
 	private supervisorFaultEpcWord = 0;
 	private supervisorFaultBadAddressWord = 0;
 	private supervisorFaultLuaReasonWord = 0;
-	private readonly printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
-	private printReadIndex = 0;
-	private printByteCount = 0;
 	private readonly hostOutputBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 	private hostOutputReadIndex = 0;
 	private hostOutputByteCount = 0;
@@ -86,9 +82,7 @@ export class SystemController {
 		memory.mapIoRead(IO_SYS_TIME_MS, this, SystemController.readTimeMilliseconds);
 		memory.mapIoRead(IO_SYS_FRAME_MS_Q16, this, SystemController.readFrameMillisecondsQ16);
 		memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, SystemController.readCyclesPerFrame);
-		memory.mapIoRead(IO_SYS_PRINT_CHAR, this, SystemController.readPrintChar);
 		memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, SystemController.writePrintChar);
-		memory.mapIoRead(IO_SYS_PRINT_FLUSH, this, SystemController.readPrintByteCount);
 		memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, SystemController.flushPrintLine);
 	}
 
@@ -99,11 +93,10 @@ export class SystemController {
 		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
-		this.printBuffer.fill(0);
-		this.printReadIndex = 0;
-		this.printByteCount = 0;
 		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
+		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, 0);
+		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0);
 		this.writeStatusIo();
 	}
 
@@ -139,23 +132,8 @@ export class SystemController {
 		return context.gpu.readPcrtcTiming().nextVblankCycleBudget >>> 0;
 	}
 
-	private static readPrintChar(context: SystemController): number {
-		if (context.printByteCount === 0) {
-			return 0;
-		}
-		const value = context.printBuffer[context.printReadIndex];
-		context.printReadIndex = (context.printReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
-		context.printByteCount -= 1;
-		return value;
-	}
-
-	private static readPrintByteCount(context: SystemController): number {
-		return context.printByteCount;
-	}
-
 	private static writePrintChar(context: SystemController, _address: number, value: number): void {
 		const byteCount = encodeUtf8Codepoint(value, context.printEncodingBytes);
-		context.appendRingByte(value <= 0xff ? value : 0x3f);
 		if (!context.reserveHostOutputBytes(byteCount)) {
 			return;
 		}
@@ -165,7 +143,6 @@ export class SystemController {
 	}
 
 	private static flushPrintLine(context: SystemController): void {
-		context.appendRingByte(ASCII_NEWLINE);
 		if (context.reserveHostOutputBytes(1)) {
 			context.appendHostOutputByte(ASCII_NEWLINE);
 			context.hostOutputCompleteByteCount = context.hostOutputByteCount;
@@ -207,15 +184,6 @@ export class SystemController {
 		this.hostOutputByteCount -= 1;
 		this.hostOutputCompleteByteCount -= 1;
 		return value;
-	}
-
-	private appendRingByte(value: number): void {
-		if (this.printByteCount === SYS_PRINT_BUFFER_BYTES) {
-			this.printReadIndex = (this.printReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
-			this.printByteCount -= 1;
-		}
-		this.printBuffer[(this.printReadIndex + this.printByteCount) & (SYS_PRINT_BUFFER_BYTES - 1)] = value;
-		this.printByteCount += 1;
 	}
 
 	private static writeControl(context: SystemController, _address: number, value: number): void {
@@ -401,9 +369,8 @@ export class SystemController {
 			supervisorTransitionTarget: this.supervisorTransitionTarget,
 			supervisorResumable: this.supervisorResumable,
 			supervisorExitRequested: this.supervisorExitRequested,
-			printBuffer: this.printBuffer.slice(),
-			printReadIndex: this.printReadIndex,
-			printByteCount: this.printByteCount,
+			printCharWord: this.memory.readIoU32(IO_SYS_PRINT_CHAR),
+			printFlushWord: this.memory.readIoU32(IO_SYS_PRINT_FLUSH),
 		};
 	}
 
@@ -413,11 +380,10 @@ export class SystemController {
 		this.supervisorTransitionTarget = state.supervisorTransitionTarget;
 		this.supervisorResumable = state.supervisorResumable;
 		this.supervisorExitRequested = state.supervisorExitRequested;
-		this.printBuffer.set(state.printBuffer);
-		this.printReadIndex = state.printReadIndex;
-		this.printByteCount = state.printByteCount;
 		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
+		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
+		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
 		this.writeStatusIo();
 	}
 

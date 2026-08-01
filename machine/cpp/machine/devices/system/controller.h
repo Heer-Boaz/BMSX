@@ -32,9 +32,8 @@ struct SystemControllerState {
 	u8 supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool supervisorResumable = false;
 	bool supervisorExitRequested = false;
-	std::array<u8, SYS_PRINT_BUFFER_BYTES> printBuffer{};
-	u32 printReadIndex = 0u;
-	u32 printByteCount = 0u;
+	u32 printCharWord = 0u;
+	u32 printFlushWord = 0u;
 };
 
 class SystemController {
@@ -76,15 +75,12 @@ private:
 	u32 readTimeMilliseconds(u32 address) const;
 	u32 readFrameMillisecondsQ16(u32 address) const;
 	u32 readCyclesPerFrame(u32 address) const;
-	u32 readPrintChar(u32 address);
-	u32 readPrintByteCount(u32 address) const;
 	void writeControl(u32 address, u32 value);
 	void writePrintChar(u32 address, u32 value);
 	void flushPrintLine(u32 address, u32 value);
 	bool reserveHostOutputBytes(u32 byteCount);
 	void clearHostOutput();
 	void appendHostOutputByte(u8 value);
-	void appendRingByte(u8 value);
 	void activateSupervisorContext();
 	void enterSupervisorFault();
 	void beginSupervisorLeave();
@@ -109,9 +105,6 @@ private:
 	u32 m_supervisorFaultEpcWord = 0u;
 	u32 m_supervisorFaultBadAddressWord = 0u;
 	u32 m_supervisorFaultLuaReasonWord = 0u;
-	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_printBuffer{};
-	u32 m_printReadIndex = 0u;
-	u32 m_printByteCount = 0u;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_hostOutputBuffer{};
 	u32 m_hostOutputReadIndex = 0u;
 	u32 m_hostOutputByteCount = 0u;

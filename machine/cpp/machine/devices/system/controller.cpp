@@ -36,9 +36,7 @@ SystemController::SystemController(
 	memory.mapIoRead<&SystemController::readTimeMilliseconds>(IO_SYS_TIME_MS, *this);
 	memory.mapIoRead<&SystemController::readFrameMillisecondsQ16>(IO_SYS_FRAME_MS_Q16, *this);
 	memory.mapIoRead<&SystemController::readCyclesPerFrame>(IO_SYS_CYCLES_PER_FRAME, *this);
-	memory.mapIoRead<&SystemController::readPrintChar>(IO_SYS_PRINT_CHAR, *this);
 	memory.mapIoWrite<&SystemController::writePrintChar>(IO_SYS_PRINT_CHAR, *this);
-	memory.mapIoRead<&SystemController::readPrintByteCount>(IO_SYS_PRINT_FLUSH, *this);
 	memory.mapIoWrite<&SystemController::flushPrintLine>(IO_SYS_PRINT_FLUSH, *this);
 }
 
@@ -49,11 +47,10 @@ void SystemController::reset() {
 	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
-	m_printBuffer.fill(0u);
-	m_printReadIndex = 0u;
-	m_printByteCount = 0u;
 	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
+	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, 0u);
+	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0u);
 	writeStatusIo();
 }
 
@@ -79,23 +76,8 @@ u32 SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
 	return static_cast<u32>(m_gpu.readPcrtcTiming().nextVblankCycleBudget);
 }
 
-u32 SystemController::readPrintChar([[maybe_unused]] u32 address) {
-	if (m_printByteCount == 0u) {
-		return 0u;
-	}
-	const u8 value = m_printBuffer[m_printReadIndex];
-	m_printReadIndex = (m_printReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
-	m_printByteCount -= 1u;
-	return value;
-}
-
-u32 SystemController::readPrintByteCount([[maybe_unused]] u32 address) const {
-	return m_printByteCount;
-}
-
 void SystemController::writePrintChar([[maybe_unused]] u32 address, u32 value) {
 	const u32 byteCount = encodeUtf8Codepoint(value, m_printEncodingBytes);
-	appendRingByte(static_cast<u8>(value <= 0xFFu ? value : static_cast<u32>('?')));
 	if (!reserveHostOutputBytes(byteCount)) {
 		return;
 	}
@@ -105,7 +87,6 @@ void SystemController::writePrintChar([[maybe_unused]] u32 address, u32 value) {
 }
 
 void SystemController::flushPrintLine([[maybe_unused]] u32 address, [[maybe_unused]] u32 value) {
-	appendRingByte(static_cast<u8>('\n'));
 	if (reserveHostOutputBytes(1u)) {
 		appendHostOutputByte(static_cast<u8>('\n'));
 		m_hostOutputCompleteByteCount = m_hostOutputByteCount;
@@ -143,15 +124,6 @@ u8 SystemController::readHostOutputByte() {
 	m_hostOutputByteCount -= 1u;
 	m_hostOutputCompleteByteCount -= 1u;
 	return value;
-}
-
-void SystemController::appendRingByte(u8 value) {
-	if (m_printByteCount == SYS_PRINT_BUFFER_BYTES) {
-		m_printReadIndex = (m_printReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
-		m_printByteCount -= 1u;
-	}
-	m_printBuffer[(m_printReadIndex + m_printByteCount) & (SYS_PRINT_BUFFER_BYTES - 1u)] = value;
-	m_printByteCount += 1u;
 }
 
 void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
@@ -311,9 +283,8 @@ SystemControllerState SystemController::captureState() const {
 	state.supervisorTransitionTarget = m_supervisorTransitionTarget;
 	state.supervisorResumable = m_supervisorResumable;
 	state.supervisorExitRequested = m_supervisorExitRequested;
-	state.printBuffer = m_printBuffer;
-	state.printReadIndex = m_printReadIndex;
-	state.printByteCount = m_printByteCount;
+	state.printCharWord = m_memory.readIoU32(IO_SYS_PRINT_CHAR);
+	state.printFlushWord = m_memory.readIoU32(IO_SYS_PRINT_FLUSH);
 	return state;
 }
 
@@ -323,11 +294,10 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_supervisorTransitionTarget = state.supervisorTransitionTarget;
 	m_supervisorResumable = state.supervisorResumable;
 	m_supervisorExitRequested = state.supervisorExitRequested;
-	m_printBuffer = state.printBuffer;
-	m_printReadIndex = state.printReadIndex;
-	m_printByteCount = state.printByteCount;
 	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
+	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
+	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
 	writeStatusIo();
 }
 

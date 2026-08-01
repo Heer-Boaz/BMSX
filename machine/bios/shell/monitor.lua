@@ -137,7 +137,7 @@ local pump_output<const> = function(line_limit)
 	terminal.follow_output()
 	for line = 1, line_limit do
 		local result<const> = monitor_commands.next_row(monitor_output_row)
-		terminal.append_row(monitor_output_row)
+		console.write_row(monitor_output_row)
 		if result == monitor_commands.row_done then
 			finish_output()
 			return
@@ -429,7 +429,7 @@ function monitor.enter(error_value)
 		error_value,
 		terminal.columns)
 	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
-	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
+	console.write_line('BMSX BIOS MONITOR', palette_prompt)
 	console.flush()
 	monitor_commands.start_fault()
 	pump_output(terminal.page_rows)

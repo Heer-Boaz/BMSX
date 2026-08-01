@@ -1524,35 +1524,32 @@ the addresses nor supplies a parallel cart clock.
 | `SYS_FRAME_MS_Q16` | `0x08010228` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
 | `SYS_CYCLES_PER_FRAME` | `0x08010234` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
 
-Cart and firmware `print()` use the system debug-output register pair. A write
-to `SYS_PRINT_CHAR` supplies one Unicode codepoint. The system controller maps
-`0..255` directly into an 8192-byte circular BIOS-glyph history and maps wider
-or invalid raw words to `?`; independently it UTF-8-encodes the codepoint for
-the host transport. A write to `SYS_PRINT_FLUSH` appends a newline
-and completes the host log line. Reading `SYS_PRINT_FLUSH` returns the retained
-glyph count and reading `SYS_PRINT_CHAR` removes the oldest glyph byte. When
-full, the hardware history overwrites its oldest byte, so output never stalls
-the CPU. The byte history and its read cursor are machine state and survive
-save/load.
+Cart and firmware console output uses the system debug-transmit register pair.
+A write to `SYS_PRINT_CHAR` latches one Unicode codepoint and transmits it. A
+write to `SYS_PRINT_FLUSH` latches the raw control word, transmits a newline and
+completes the current host log line. Reads expose those raw write latches; the
+two latch words are machine state. The system controller does not own terminal
+cells or a guest-readable text queue.
 
-The independent host-output transport is also a fixed 8192-byte ring. MMIO
-writes therefore allocate nothing and cannot grow host memory. The host drains
-only newline-complete bytes and performs UTF-8-to-host-string conversion at the
-host boundary. Complete pending lines retain FIFO priority. If the current
+The transmit datapath UTF-8-encodes into a fixed 8192-byte host-output ring.
+MMIO writes allocate nothing and cannot grow host memory. The host drains only
+newline-complete bytes and performs UTF-8-to-host-string conversion at the host
+boundary. Complete pending lines retain FIFO priority. If the current
 uncommitted line exceeds the remaining capacity, the controller discards that
-whole line through its flush instead of replacing already completed output. The
-guest-visible hardware history keeps its normal circular overwrite behavior.
-Host transport cursors and bytes are presentation state and are not serialized.
+whole line through its flush instead of replacing already completed output.
+Transmit bytes and cursors are presentation state and are not serialized.
 
-At reset the boot firmware uses the same path for its banner and cartridge
-state: it writes through `print()`, the BIOS console driver consumes the
-retained glyph history into terminal cells, and GX presents those cells. On
-supervisor entry the console driver consumes the accumulated cart history
-before the monitor produces command output. The terminal owns no SYS-print
-registers. The host log sink receives the same completed lines independently;
-the browser host therefore emits them through its normal developer console.
-Neither host path owns terminal cells, GX state, or a second guest-visible
-output ABI.
+The BIOS console driver owns a separate fixed 8192-byte glyph history in system
+RAM. Firmware `print()` records `0..255` directly, maps wider codepoints to `?`,
+and transmits the original codepoint through the debug port. When full, the
+firmware history overwrites its oldest byte, so output never stalls the CPU; its
+bytes and cursors survive save/load as ordinary RAM. At reset the boot firmware
+consumes that history into terminal cells before GX publication. Supervisor
+entry consumes accumulated cart output at the selected terminal width. Monitor
+rows are formatted once by firmware and the console driver publishes the same
+fixed row to terminal cells and debug TX, so Browser and Libretro receive the
+physical monitor exception without inspecting CPU frames. The terminal owns no
+SYS-print registers, and no host path owns terminal cells or GX state.
 
 The CPU owns a compact coprocessor-0 registerfile. Guest code addresses the
 registers with CPU instructions rather than MMIO or host builtins:
