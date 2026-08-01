@@ -48,33 +48,33 @@ function gx_image.rect(imgid)
 	return rect
 end
 
-function gx_image.blit_rect_color(rect, x, y, color, flip_flags)
+function gx_image.blit_rect_color(rect, x, y, color, flip_flags, blend_mode)
 	local texture<const> = rect.texture
 	local rectangle_flip_mode<const> = flip_flags << 12
 	if texture.mode == palette4_mode then
 		gx_gpu.draw_palette4_textured_rect_color(
 			texture.x, texture.clut_x, texture.clut_y,
 			rect.u, texture.y + rect.v,
-			x, y, rect.w, rect.h, color, rectangle_flip_mode)
+			x, y, rect.w, rect.h, color, rectangle_flip_mode, blend_mode)
 		return
 	end
 	gx_gpu.draw_direct16_textured_rect_color(
 		texture.x + rect.u, texture.y + rect.v,
-		x, y, rect.w, rect.h, color, rectangle_flip_mode)
+		x, y, rect.w, rect.h, color, rectangle_flip_mode, blend_mode)
 end
 
-function gx_image.blit_img_color(imgid, x, y, color)
-	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color, 0)
+function gx_image.blit_img_color(imgid, x, y, color, blend_mode)
+	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color, 0, blend_mode)
 end
 
-function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, origin_x, origin_y)
+function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, origin_x, origin_y, blend_mode)
 	local column = 0
 	local target_x = origin_x
 	local target_y = origin_y
 	for index = 1, tile_count do
 		local rect<const> = sources[index]
 		if rect then
-			gx_image.blit_rect_color(rect, target_x, target_y, 0xffffffff, 0)
+			gx_image.blit_rect_color(rect, target_x, target_y, 0xffffffff, 0, blend_mode)
 		end
 		column = column + 1
 		if column == columns then
@@ -93,7 +93,8 @@ function gx_image.blit_rect_affine_color(
 	axis_xx, axis_xy,
 	axis_yx, axis_yy,
 	flip_flags,
-	color)
+	color,
+	blend_mode)
 	local texture<const> = rect.texture
 	local source_x
 	if texture.mode == palette4_mode then
@@ -126,7 +127,8 @@ function gx_image.blit_rect_affine_color(
 			origin_x + axis_xx, origin_y + axis_xy,
 			origin_x + axis_yx, origin_y + axis_yy,
 			origin_x + axis_xx + axis_yx, origin_y + axis_xy + axis_yy,
-			color)
+			color,
+			blend_mode)
 		return
 	end
 	gx_gpu.draw_direct16_textured_quad_color(
@@ -139,7 +141,8 @@ function gx_image.blit_rect_affine_color(
 		origin_x + axis_xx, origin_y + axis_xy,
 		origin_x + axis_yx, origin_y + axis_yy,
 		origin_x + axis_xx + axis_yx, origin_y + axis_xy + axis_yy,
-		color)
+		color,
+		blend_mode)
 end
 
 function gx_image.blit_img_affine_color(
@@ -148,14 +151,16 @@ function gx_image.blit_img_affine_color(
 	axis_xx, axis_xy,
 	axis_yx, axis_yy,
 	flip_flags,
-	color)
+	color,
+	blend_mode)
 	gx_image.blit_rect_affine_color(
 		gx_image.rect(imgid),
 		origin_x, origin_y,
 		axis_xx, axis_xy,
 		axis_yx, axis_yy,
 		flip_flags,
-		color)
+		color,
+		blend_mode)
 end
 
 return gx_image

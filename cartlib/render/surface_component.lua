@@ -1,6 +1,8 @@
 local component_types<const> = require('cartlib/components/types')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local surfacecomponent<const> = {}
 surfacecomponent.__index = surfacecomponent
@@ -33,7 +35,7 @@ function surfacecomponent:draw()
 	local tiles<const> = image.tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
-		gx_image.blit_rect_color(tile, x + tile.x, y + tile.y, self.color, 0)
+		gx_image.blit_rect_color(tile, x + tile.x, y + tile.y, self.color, 0, opaque_texture_blend_mode)
 	end
 end
 

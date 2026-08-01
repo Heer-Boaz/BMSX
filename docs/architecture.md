@@ -2410,6 +2410,19 @@ uncompressed raw GP0 uploads.
 
 ### GX GPU/GTE
 
+The cart SDK keeps the hardware surfaces separate. `cartlib/gx/gpu` owns GP0
+packet words and direct GP0 submission; `cartlib/gx/display` owns GP1/PCRTC presentation
+programming; and `cartlib/gx/gte` exposes only the raw GTE/GTE+ register blocks,
+opcodes and packed-word representation. Camera and projection policy is cart or
+optional-library code. CPU-side RGBA conversion and its complete GP0 upload
+transaction belong to the optional `cartlib/gx/upload` path.
+
+Immediate textured helpers take their blend mode explicitly and emit the
+required page state. No helper retains shadow authority over commands written
+directly or through DMA. Draw targets and clear packets take their raw origin
+and size words explicitly. Display queries decode the live PCRTC words rather
+than returning a Lua-side copy.
+
 Cartlib submits painter-ordered 2D work through one retained visual-component
 list per world space. Sprite, surface, tile, text and custom visual components share the
 same effective depth `parent.z + offset_z + draw_offset_z`; lower depths submit
@@ -3215,9 +3228,10 @@ ordinary globals before cartridge initialization; explicitly callable BIOS
 services use the fixed public vector described above. Cart-side hardware and
 gameplay libraries are compiled and linked into the cartridge from `cartlib`.
 
-`cartlib` owns the cart-side SDK. Its GX and DMA modules program the same
-guest-visible registers and command ports that bare carts can program directly;
-they are packaged into the cartridge ROM rather than exported by BIOS. Derived
+`cartlib` owns the cart-side SDK. Its focused GX GPU, display, GTE,
+upload and DMA modules program or produce data for the same guest-visible
+registers and command ports that bare carts can program directly; they are
+packaged into the cartridge ROM rather than exported by BIOS. Derived
 game-facing geometry such as thick-line construction also belongs to
 `cartlib/gx`.
 

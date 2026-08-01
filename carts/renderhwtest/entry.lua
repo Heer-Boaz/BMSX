@@ -1,7 +1,9 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_display<const> = require('cartlib/gx/display')
 local gx_primitives<const> = require('cartlib/gx/primitives')
-gx_gpu.reset_320x240()
+local gx_upload<const> = require('cartlib/gx/upload')
+gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 
@@ -15,7 +17,8 @@ local vblank_count = 0
 renderhwtest_affine_ready = false
 renderhwtest_draw_count = 0
 
-local width<const>, height<const> = gx_gpu.display_size()
+local width<const>, height<const> = gx_display.size()
+local framebuffer_size<const> = 320 | (240 << 16)
 local background<const> = 0xff07111f
 local grid_color<const> = 0xff18365a
 local bar_color<const> = 0xff3dd6ff
@@ -23,6 +26,7 @@ local hot_color<const> = 0xffffd166
 local line_color<const> = 0xffff5c8a
 local shadow_color<const> = 0xff102030
 local affine_color<const> = 0xffffffff
+local affine_blend_mode<const> = gx_gpu.draw_mode_blend_half
 local affine_texture_x<const> = 0
 local affine_texture_y<const> = 384
 
@@ -52,7 +56,7 @@ local upload_affine_texture<const> = function()
 	pixels[1] = 0xff00ff00
 	pixels[2] = 0xff0000ff
 	pixels[3] = 0xffffffff
-	gx_gpu.upload_rgba8888_to_direct16_stride(
+	gx_upload.rgba8888_to_direct16_stride(
 		affine_pixels, 0, 0, 2,
 		affine_texture_x, affine_texture_y,
 		2, 2)
@@ -69,11 +73,12 @@ local draw_affine_texture<const> = function()
 		204, 110,
 		90, 138,
 		182, 156,
-		affine_color)
+		affine_color,
+		affine_blend_mode)
 end
 
 local draw_cart<const> = function()
-	gx_gpu.clear_color(background)
+	gx_gpu.clear_color(0, framebuffer_size, background)
 	draw_grid()
 
 	local phase<const> = frame % 160
@@ -91,7 +96,7 @@ local draw_cart<const> = function()
 end
 
 *irq_mask_register = irq_vblank
-gx_gpu.clear_color(background)
+gx_gpu.clear_color(0, framebuffer_size, background)
 upload_affine_texture()
 renderhwtest_affine_ready = true
 *input_control_register = 0x00000001

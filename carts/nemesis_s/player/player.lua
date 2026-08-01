@@ -1,6 +1,7 @@
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
@@ -9,6 +10,7 @@ local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/world').instance
 require('constants')
 local player_abilities<const> = require('player/abilities')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local player<const> = {}
 player.__index = player
@@ -193,7 +195,7 @@ function player:draw_lasers()
 		end
 		local x = start_x
 		while x < end_x do
-			gx_image.blit_img_color(assets_laser, x, visual_y, 0xffffffff)
+			gx_image.blit_img_color(assets_laser, x, visual_y, 0xffffffff, opaque_texture_blend_mode)
 			x = x + weapons_laser.tile_width
 		end
 	end
@@ -202,7 +204,7 @@ end
 function player:draw_missiles()
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
-		gx_image.blit_img_color(missile.sprite_imgid, missile.x, missile.y, 0xffffffff)
+		gx_image.blit_img_color(missile.sprite_imgid, missile.x, missile.y, 0xffffffff, opaque_texture_blend_mode)
 	end
 end
 
@@ -212,7 +214,7 @@ function player:draw_uplasers()
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, weapons_uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, weapons_uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			gx_image.blit_img_color(assets_laser, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff)
+			gx_image.blit_img_color(assets_laser, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff, opaque_texture_blend_mode)
 		end
 	end
 end
@@ -221,9 +223,9 @@ function player:draw_visual()
 	local option_imgid<const> = self:get_option_imgid()
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
-		gx_image.blit_img_color(option_imgid, option.x, option.y, 0xffffffff)
+		gx_image.blit_img_color(option_imgid, option.x, option.y, 0xffffffff, opaque_texture_blend_mode)
 	end
-	gx_image.blit_img_color(self.sprite_imgid, self.x, self.y, 0xffffffff)
+	gx_image.blit_img_color(self.sprite_imgid, self.x, self.y, 0xffffffff, opaque_texture_blend_mode)
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()

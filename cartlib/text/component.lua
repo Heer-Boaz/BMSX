@@ -5,6 +5,7 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local visualcomponent<const> = require('cartlib/render/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local empty_text_lines<const> = {}
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
@@ -103,7 +104,7 @@ function textcomponent:render_glyphs(x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				gx_image.blit_rect_color(glyph.image, cursor_x, line_y, color, 0)
+				gx_image.blit_rect_color(glyph.image, cursor_x, line_y, color, 0, opaque_texture_blend_mode)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end

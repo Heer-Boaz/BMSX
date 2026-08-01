@@ -1,10 +1,12 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local world_instance<const> = require('cartlib/world/world').instance
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local ui<const> = {}
 ui.__index = ui
@@ -89,16 +91,16 @@ function ui:draw_ui()
 		return
 	end
 	local player<const> = world_instance:get('pietolon')
-	gx_image.blit_img_color('game_header', 0, 0, 0xffffffff)
+	gx_image.blit_img_color('game_header', 0, 0, 0xffffffff, opaque_texture_blend_mode)
 	for i = 0, (self.hud_health_level - 1) do
-		gx_image.blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 0xffffffff)
+		gx_image.blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, opaque_texture_blend_mode)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		gx_image.blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff)
+		gx_image.blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, opaque_texture_blend_mode)
 	end
 	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		gx_image.blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff)
+		gx_image.blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, opaque_texture_blend_mode)
 	end
 end
 

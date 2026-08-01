@@ -1,4 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
@@ -7,6 +8,7 @@ local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local castle_map<const> = require('castle/map')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local item_screen<const> = {}
 item_screen.__index = item_screen
@@ -87,7 +89,7 @@ function item_screen:draw_inventory_items()
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x<const>, y<const> = self:item_position_px(item_type)
-				gx_image.blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff)
+				gx_image.blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff, opaque_texture_blend_mode)
 			end
 		end
 	end
@@ -99,7 +101,7 @@ function item_screen:draw_secondary_weapon_selector()
 	end
 	local x<const> = (14 * room_tile_size) + (self.secondary_weapon_selection_index * (3 * room_tile_size))
 	local y<const> = room_hud_height + (16 * room_tile_size) + room_tile_half - 1
-	gx_image.blit_img_color('f1_selector_white', x, y, 0xffffffff)
+	gx_image.blit_img_color('f1_selector_white', x, y, 0xffffffff, opaque_texture_blend_mode)
 end
 
 function item_screen:draw_map()
@@ -115,7 +117,7 @@ function item_screen:draw_map()
 
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	gx_image.blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff)
+	gx_image.blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff, opaque_texture_blend_mode)
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
@@ -129,7 +131,7 @@ function item_screen:draw_map()
 		end
 		local proxy_x<const> = (5 * room_tile_size) + (proxy.x * room_tile_size)
 		local proxy_y<const> = room_hud_height + (14 * room_tile_size) + room_tile_half + (proxy.y * room_tile_half)
-		gx_image.blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff)
+		gx_image.blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff, opaque_texture_blend_mode)
 	end
 end
 
@@ -166,7 +168,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen()
-	gx_image.blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff)
+	gx_image.blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff, opaque_texture_blend_mode)
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()

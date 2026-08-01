@@ -1,6 +1,7 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
-gx_gpu.reset_320x240()
+local gx_display<const> = require('cartlib/gx/display')
+gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
@@ -29,6 +30,7 @@ local input_control_register<const>: *word = 0x08000064
 local irq_imgdec<const> = 0x0080
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
+local framebuffer_size<const> = 320 | (240 << 16)
 local vblank_count = 0
 
 local wait_vblank<const> = function()
@@ -321,7 +323,7 @@ function init()
 	end)
 	aem.reload()
 	*irq_mask_register = irq_imgdec | irq_vblank | irq_apu
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
 	texture_residency.load_font('msx_6b_font_space')
 	combat_module.define_fsm()
 	build_director_fsm()
@@ -432,7 +434,7 @@ while true do
 	input.update()
 	world_instance:update()
 	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
 	world_instance:draw()
 	texture_residency.submit_pending_background()
 

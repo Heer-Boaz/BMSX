@@ -8,6 +8,7 @@ local statemachinecomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_display<const> = require('cartlib/gx/display')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 
@@ -303,7 +304,7 @@ function textobject.new(opts)
 	local font<const> = opts.font or font_module.get('default')
 	local dimensions = opts.dimensions
 	if not dimensions then
-		local width<const>, height<const> = gx_gpu.display_size()
+		local width<const>, height<const> = gx_display.size()
 		dimensions = { left = 0, top = 0, right = width, bottom = height }
 	end
 	self.dimensions = dimensions

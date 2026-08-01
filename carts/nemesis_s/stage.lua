@@ -1,6 +1,7 @@
 local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
@@ -8,6 +9,7 @@ local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local stage<const> = {}
 stage.__index = stage
@@ -509,7 +511,7 @@ function stage:draw_star_particles(stars, imgid, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		gx_image.blit_img_color(imgid, star.x, star.y, 0xffffffff)
+		gx_image.blit_img_color(imgid, star.x, star.y, 0xffffffff, opaque_texture_blend_mode)
 	end
 end
 
@@ -530,7 +532,7 @@ function stage:draw()
 		for stage_row = 1, self.tile_rows do
 			local tile_id<const> = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				gx_image.blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
+				gx_image.blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff, opaque_texture_blend_mode)
 			end
 		end
 	end

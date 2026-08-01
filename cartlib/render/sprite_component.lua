@@ -1,6 +1,8 @@
 local component_types<const> = require('cartlib/components/types')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
+local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local spritecomponent<const> = {}
 spritecomponent.__index = spritecomponent
@@ -55,10 +57,10 @@ function spritecomponent:draw()
 	local scale_x<const> = self.scale_x * self.draw_scale_x
 	local scale_y<const> = self.scale_y * self.draw_scale_y
 	if scale_x == 1 and scale_y == 1 then
-		gx_image.blit_rect_color(rect, x, y, self.color, flip_flags)
+		gx_image.blit_rect_color(rect, x, y, self.color, flip_flags, opaque_texture_blend_mode)
 		return
 	end
-	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color)
+	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color, opaque_texture_blend_mode)
 end
 
 return spritecomponent

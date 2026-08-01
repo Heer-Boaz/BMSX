@@ -1,12 +1,14 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
-gx_gpu.reset_320x240()
+local gx_display<const> = require('cartlib/gx/display')
+gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local frame = 0
 local irq_mask_register<const>: *word = 0x08000008
 local inp_ctrl_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
+local framebuffer_size<const> = 320 | (240 << 16)
 local vblank_count = 0
 
 local blue<const> = 0xff2044cc
@@ -55,7 +57,7 @@ local draw_mode_guides<const> = function()
 end
 
 local draw_cart<const> = function()
-	gx_gpu.clear_color(black)
+	gx_gpu.clear_color(0, framebuffer_size, black)
 
 	if frame >= 20 then
 		draw_mode_row(20, blue, white)

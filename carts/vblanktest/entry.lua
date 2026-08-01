@@ -1,6 +1,7 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
-gx_gpu.reset_320x240()
+local gx_display<const> = require('cartlib/gx/display')
+gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 
@@ -9,6 +10,7 @@ local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
 
 local irq_vblank<const> = 0x0004
+local framebuffer_size<const> = 320 | (240 << 16)
 
 local target<const> = 50
 local vblank_count = 0
@@ -91,7 +93,7 @@ local draw_cart<const> = function()
 	local progress<const> = vblank_count % 60
 	local bar_width<const> = 16 + progress * 4
 	local pulse<const> = (vblank_count * 5) & 0x000000ff
-	gx_gpu.clear_color(0xff081018)
+	gx_gpu.clear_color(0, framebuffer_size, 0xff081018)
 	gx_gpu.fill_rect_color(16, 24, 304, 56, 0xff102840)
 	gx_gpu.fill_rect_color(16, 24, 16 + bar_width, 56, 0xff20f0a0)
 	gx_gpu.draw_line_color(16, 72 + (progress >> 1), 304, 72, 0xffffd060)

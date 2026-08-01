@@ -1,4 +1,4 @@
-local gx_gte<const> = {}
+module<const>
 
 local data<const>: *word[32] = 0x08010240
 local control<const>: *word[32] = 0x080102c0
@@ -6,111 +6,164 @@ local command<const>: *word = 0x08010340
 local cycles<const>: *word = 0x08010344
 local plus<const>: *word[10] = 0x08010380
 
-local opcode_rtsf<const> = 0x00080000
-local opcode_rtps<const> = 0x00000001
-local opcode_nclip<const> = 0x00000006
-local opcode_rtpt<const> = 0x00000030
-local plus_opcode_vmad3<const> = 0x00000001
-
-local plus_add_xy<const> = 0
-local plus_add_z<const> = 1
-local plus_mul_xy<const> = 2
-local plus_mul_z<const> = 3
-local plus_scalar<const> = 4
-local plus_result_xy<const> = 5
-local plus_result_z<const> = 6
-local plus_command<const> = 8
-local plus_cycles<const> = 9
-local plus_cycles_busy<const> = 0x80000000
-
-local q12_one<const> = 0x00001000
-
 local pack_i16_pair<const> = function(lo, hi)
-	return (lo & 0x0000ffff) | ((hi & 0x0000ffff) << 16)
+	return (lo & 0x0000ffff) + (hi & 0x0000ffff) * 0x00010000
 end
 
-local sx<const> = function(sxy)
-	local value<const> = sxy & 0x0000ffff
-	return value >= 0x00008000 and value - 0x00010000 or value
-end
+return {
+	data = data,
+	control = control,
+	command = command,
+	cycles = cycles,
+	plus = plus,
+	pack_i16_pair = pack_i16_pair,
 
-local sy<const> = function(sxy)
-	local value<const> = (sxy >> 16) & 0x0000ffff
-	return value >= 0x00008000 and value - 0x00010000 or value
-end
+	command_function_mask = 0x0000003f,
+	command_sf_shift_12 = 0x00080000,
+	command_lm_positive = 0x00000400,
+	mvmva_matrix_rotation = 0x00000000,
+	mvmva_matrix_light = 0x00020000,
+	mvmva_matrix_color = 0x00040000,
+	mvmva_matrix_reserved = 0x00060000,
+	mvmva_vector_v0 = 0x00000000,
+	mvmva_vector_v1 = 0x00008000,
+	mvmva_vector_v2 = 0x00010000,
+	mvmva_vector_ir = 0x00018000,
+	mvmva_control_translation = 0x00000000,
+	mvmva_control_background = 0x00002000,
+	mvmva_control_far_color = 0x00004000,
+	mvmva_control_none = 0x00006000,
+	opcode_rtps = 0x00000001,
+	opcode_nclip = 0x00000006,
+	opcode_op = 0x0000000c,
+	opcode_dpcs = 0x00000010,
+	opcode_intpl = 0x00000011,
+	opcode_mvmva = 0x00000012,
+	opcode_ncds = 0x00000013,
+	opcode_cdp = 0x00000014,
+	opcode_ncdt = 0x00000016,
+	opcode_nccs = 0x0000001b,
+	opcode_cc = 0x0000001c,
+	opcode_ncs = 0x0000001e,
+	opcode_nct = 0x00000020,
+	opcode_sqr = 0x00000028,
+	opcode_dcpl = 0x00000029,
+	opcode_dpct = 0x0000002a,
+	opcode_avsz3 = 0x0000002d,
+	opcode_avsz4 = 0x0000002e,
+	opcode_rtpt = 0x00000030,
+	opcode_gpf = 0x0000003d,
+	opcode_gpl = 0x0000003e,
+	opcode_ncct = 0x0000003f,
+	flag_error = 0x80000000,
+	flag_mac1_positive = 0x40000000,
+	flag_mac2_positive = 0x20000000,
+	flag_mac3_positive = 0x10000000,
+	flag_mac1_negative = 0x08000000,
+	flag_mac2_negative = 0x04000000,
+	flag_mac3_negative = 0x02000000,
+	flag_ir1_saturated = 0x01000000,
+	flag_ir2_saturated = 0x00800000,
+	flag_ir3_saturated = 0x00400000,
+	flag_color_r_saturated = 0x00200000,
+	flag_color_g_saturated = 0x00100000,
+	flag_color_b_saturated = 0x00080000,
+	flag_sz_otz_saturated = 0x00040000,
+	flag_divide_overflow = 0x00020000,
+	flag_mac0_positive = 0x00010000,
+	flag_mac0_negative = 0x00008000,
+	flag_sx2_saturated = 0x00004000,
+	flag_sy2_saturated = 0x00002000,
+	flag_ir0_saturated = 0x00001000,
+	flag_write_mask = 0x7ffff000,
+	flag_error_mask = 0x7f87e000,
 
-function gx_gte.set_screen_offset(x, y)
-	control[24] = x << 16
-	control[25] = y << 16
-end
+	data_vxy0 = 0,
+	data_vz0 = 1,
+	data_vxy1 = 2,
+	data_vz1 = 3,
+	data_vxy2 = 4,
+	data_vz2 = 5,
+	data_rgb = 6,
+	data_otz = 7,
+	data_ir0 = 8,
+	data_ir1 = 9,
+	data_ir2 = 10,
+	data_ir3 = 11,
+	data_sxy0 = 12,
+	data_sxy1 = 13,
+	data_sxy2 = 14,
+	data_sxyp = 15,
+	data_sz0 = 16,
+	data_sz1 = 17,
+	data_sz2 = 18,
+	data_sz3 = 19,
+	data_rgb0 = 20,
+	data_rgb1 = 21,
+	data_rgb2 = 22,
+	data_res1 = 23,
+	data_mac0 = 24,
+	data_mac1 = 25,
+	data_mac2 = 26,
+	data_mac3 = 27,
+	data_irgb = 28,
+	data_orgb = 29,
+	data_lzcs = 30,
+	data_lzcr = 31,
 
-function gx_gte.set_projection_h(h)
-	control[26] = h
-end
+	control_r11r12 = 0,
+	control_r13r21 = 1,
+	control_r22r23 = 2,
+	control_r31r32 = 3,
+	control_r33 = 4,
+	control_trx = 5,
+	control_try = 6,
+	control_trz = 7,
+	control_l11l12 = 8,
+	control_l13l21 = 9,
+	control_l22l23 = 10,
+	control_l31l32 = 11,
+	control_l33 = 12,
+	control_rbk = 13,
+	control_gbk = 14,
+	control_bbk = 15,
+	control_lr1lr2 = 16,
+	control_lr3lg1 = 17,
+	control_lg2lg3 = 18,
+	control_lb1lb2 = 19,
+	control_lb3 = 20,
+	control_rfc = 21,
+	control_gfc = 22,
+	control_bfc = 23,
+	control_ofx = 24,
+	control_ofy = 25,
+	control_h = 26,
+	control_dqa = 27,
+	control_dqb = 28,
+	control_zsf3 = 29,
+	control_zsf4 = 30,
+	control_flag = 31,
 
-function gx_gte.set_y_rotation_translation(sin_q12, cos_q12, tx, ty, tz)
-	control[0] = pack_i16_pair(cos_q12, 0)
-	control[1] = pack_i16_pair(sin_q12, 0)
-	control[2] = pack_i16_pair(q12_one, 0)
-	control[3] = pack_i16_pair(0 - sin_q12, 0)
-	control[4] = cos_q12
-	control[5] = tx
-	control[6] = ty
-	control[7] = tz
-end
-
-function gx_gte.rtps(x, y, z)
-	data[0] = pack_i16_pair(x, y)
-	data[1] = z & 0x0000ffff
-	*command = opcode_rtsf | opcode_rtps
-	local sxy2<const> = data[14]
-	return sx(sxy2), sy(sxy2), data[19]
-end
-
-function gx_gte.rtpt(x0, y0, z0, x1, y1, z1, x2, y2, z2)
-	data[0] = pack_i16_pair(x0, y0)
-	data[1] = z0 & 0x0000ffff
-	data[2] = pack_i16_pair(x1, y1)
-	data[3] = z1 & 0x0000ffff
-	data[4] = pack_i16_pair(x2, y2)
-	data[5] = z2 & 0x0000ffff
-	*command = opcode_rtsf | opcode_rtpt
-	local sxy0<const> = data[12]
-	local sxy1<const> = data[13]
-	local sxy2<const> = data[14]
-	return sx(sxy0), sy(sxy0), data[17],
-		sx(sxy1), sy(sxy1), data[18],
-		sx(sxy2), sy(sxy2), data[19]
-end
-
-function gx_gte.nclip()
-	*command = opcode_nclip
-	return data[24]
-end
-
-function gx_gte.vmad3(add_x, add_y, add_z, mul_x, mul_y, mul_z, scalar_q12)
-	plus[plus_add_xy] = pack_i16_pair(add_x, add_y)
-	plus[plus_add_z] = add_z & 0x0000ffff
-	plus[plus_mul_xy] = pack_i16_pair(mul_x, mul_y)
-	plus[plus_mul_z] = mul_z & 0x0000ffff
-	plus[plus_scalar] = scalar_q12 & 0x0000ffff
-	plus[plus_command] = plus_opcode_vmad3
-	while (plus[plus_cycles] & plus_cycles_busy) ~= 0 do
-	end
-	local result_xy<const> = plus[plus_result_xy]
-	return sx(result_xy), sy(result_xy), sx(plus[plus_result_z])
-end
-
-gx_gte.data = data
-gx_gte.control = control
-gx_gte.command = command
-gx_gte.cycles = cycles
-gx_gte.plus = plus
-gx_gte.pack_i16_pair = pack_i16_pair
-gx_gte.opcode_rtsf = opcode_rtsf
-gx_gte.opcode_rtps = opcode_rtps
-gx_gte.opcode_nclip = opcode_nclip
-gx_gte.opcode_rtpt = opcode_rtpt
-gx_gte.plus_opcode_vmad3 = plus_opcode_vmad3
-
-return gx_gte
+	plus_add_xy = 0,
+	plus_add_z = 1,
+	plus_mul_xy = 2,
+	plus_mul_z = 3,
+	plus_scalar = 4,
+	plus_result_xy = 5,
+	plus_result_z = 6,
+	plus_flag = 7,
+	plus_command = 8,
+	plus_cycles = 9,
+	plus_opcode_vmad3 = 0x00000001,
+	plus_cycles_invalid = 1,
+	plus_cycles_vmad3 = 5,
+	plus_cycles_busy = 0x80000000,
+	plus_flag_error = 0x80000000,
+	plus_flag_x_positive = 0x40000000,
+	plus_flag_y_positive = 0x20000000,
+	plus_flag_z_positive = 0x10000000,
+	plus_flag_x_negative = 0x08000000,
+	plus_flag_y_negative = 0x04000000,
+	plus_flag_z_negative = 0x02000000,
+	plus_flag_invalid_command = 0x01000000,
+}

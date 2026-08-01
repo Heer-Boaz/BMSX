@@ -1,6 +1,6 @@
 module<entry>
-local gx_gpu<const> = require('cartlib/gx/gpu')
-gx_gpu.reset_320x240()
+local gx_display<const> = require('cartlib/gx/display')
+gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 

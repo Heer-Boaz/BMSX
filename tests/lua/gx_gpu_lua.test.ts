@@ -31,26 +31,26 @@ math = require('math')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 const CART_ENTRY_SOURCE = `
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_display<const> = require('cartlib/gx/display')
 local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
 if *mode_selector == 0 then
-	gx_gpu.reset_256x240()
+	gx_display.reset_256x240()
 elseif *mode_selector == 1 then
-	gx_gpu.reset_320x240()
+	gx_display.reset_320x240()
 elseif *mode_selector == 2 then
-	gx_gpu.reset_368x240()
+	gx_display.reset_368x240()
 elseif *mode_selector == 3 then
-	gx_gpu.reset_512x240()
+	gx_display.reset_512x240()
 elseif *mode_selector == 4 then
-	gx_gpu.reset_640x240()
+	gx_display.reset_640x240()
 elseif *mode_selector == 5 then
-	gx_gpu.reset_640x480i()
+	gx_display.reset_640x480i()
 elseif *mode_selector == 6 then
-	gx_gpu.reset_640x448i()
+	gx_display.reset_640x448i()
 else
-	gx_gpu.reset_640x512i()
+	gx_display.reset_640x512i()
 end
-return gx_gpu.display_size()
+return gx_display.size()
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
@@ -66,6 +66,7 @@ const SYSTEM_MODULE_FILES = [
 	['math/sincos', 'machine/bios/math/sincos.lua'],
 ] as const;
 const CART_MODULE_FILES = [
+	['cartlib/gx/display', 'cartlib/gx/display.lua'],
 	['cartlib/gx/gpu', 'cartlib/gx/gpu.lua'],
 ] as const;
 const BIOS_MODULE_FILES = [

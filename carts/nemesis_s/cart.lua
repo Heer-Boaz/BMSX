@@ -1,9 +1,10 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_display<const> = require('cartlib/gx/display')
 local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
-gx_gpu.reset_256x192()
+gx_display.reset_256x192()
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
@@ -21,6 +22,7 @@ local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
+local framebuffer_size<const> = 256 | (192 << 16)
 local vblank_count = 0
 
 local pipeline_descriptors<const> = {
@@ -47,7 +49,7 @@ function init()
 		vblank_count = vblank_count + 1
 	end)
 	*irq_mask_register = irq_vblank
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
@@ -86,6 +88,6 @@ while true do
 	world:update()
 	*input_control_register = 0x00000001
 	wait_vblank()
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
 	world:draw()
 end

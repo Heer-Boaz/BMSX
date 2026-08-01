@@ -1,9 +1,10 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_display<const> = require('cartlib/gx/display')
 local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
-gx_gpu.reset_256x192()
+gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
@@ -99,6 +100,7 @@ local irq_apu<const> = 0x0020
 local irq_gpu<const> = 0x0040
 local framebuffer_front<const> = texture_layout.framebuffer_front
 local framebuffer_back<const> = texture_layout.framebuffer_back
+local framebuffer_size<const> = 256 | (192 << 16)
 local vblank_sequence = 0
 local gpu_completion_sequence = 0
 local front_framebuffer = framebuffer_front
@@ -188,10 +190,10 @@ function init()
 		gpu_completion_sequence = gpu_completion_sequence + 1
 	end)
 	aem.reload()
-	gx_gpu.draw_target(framebuffer_front)
-	gx_gpu.clear_color(0xff000000)
-	gx_gpu.draw_target(framebuffer_back)
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.draw_target(framebuffer_front, framebuffer_size)
+	gx_gpu.clear_color(framebuffer_front, framebuffer_size, 0xff000000)
+	gx_gpu.draw_target(framebuffer_back, framebuffer_size)
+	gx_gpu.clear_color(framebuffer_back, framebuffer_size, 0xff000000)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -271,16 +273,16 @@ while true do
 	world_instance:update()
 
 	wait_vblank_after(vblank_sequence)
-	gx_gpu.clear_color(0xff000000)
+	gx_gpu.clear_color(back_framebuffer, framebuffer_size, 0xff000000)
 	world_instance:draw()
 	local completion_sequence<const> = gpu_completion_sequence
 	gx_gpu.request_irq()
 	wait_gpu_after(completion_sequence)
 
 	mem[0x08000064] = 0x00000001
-	gx_gpu.display_origin(back_framebuffer)
+	gx_display.origin(back_framebuffer)
 	local flip_vblank_sequence<const> = vblank_sequence
 	wait_vblank_after(flip_vblank_sequence)
 	front_framebuffer, back_framebuffer = back_framebuffer, front_framebuffer
-	gx_gpu.draw_target(back_framebuffer)
+	gx_gpu.draw_target(back_framebuffer, framebuffer_size)
 end
