@@ -52,7 +52,10 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
 		header.blua32StaticLayoutTokenHi
 	);
-	writeLE32(data + CART_ROM_HEADER_RESERVED_0_OFFSET, 0u);
+	writeLE32(
+		data + CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET,
+		header.blua32DiagnosticDirectoryOffset
+	);
 	writeLE32(data + CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset);
 	writeLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength);
 	writeLE32(data + CART_ROM_HEADER_RESERVED_1_OFFSET, 0u);
@@ -99,6 +102,9 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	);
 	header.blua32StaticLayoutTokenHi = readLE32(
 		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET
+	);
+	header.blua32DiagnosticDirectoryOffset = readLE32(
+		data + CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET
 	);
 	header.metadataOffset = readLE32(data + CART_ROM_HEADER_METADATA_OFFSET);
 	header.metadataLength = readLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET);

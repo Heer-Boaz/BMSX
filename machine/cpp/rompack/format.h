@@ -31,6 +31,7 @@ struct CartRomHeader {
 	u32 blua32ExceptionFunctionAddress = 0;
 	u32 blua32StaticLayoutTokenLo = 0;
 	u32 blua32StaticLayoutTokenHi = 0;
+	u32 blua32DiagnosticDirectoryOffset = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
 	u32 cartridgeBoardWord = 0;

@@ -23,12 +23,6 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code, verplaats aantoonbaar cart-specifieke utilities naar hun cart en vernietig centrale registries die modules hardcoded per implementatiefeature (`with_fsm`, `with_bt`, enz.) groeperen. | Iedere module-owner declareert zijn eigen compositie, geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 
-## BIOS-diagnostiek
-
-| ID | Opdracht | Klaar wanneer |
-| --- | --- | --- |
-| `BIOS-DIAG-01` | Geef debug-ROMs een compacte BIOS-leesbare PC-naar-bron-directory en latch fault-domain/slot fysiek in de System Controller. | De BIOS-monitor toont bronpad, regel, kolom en bronregel zonder CPU-debug-API, toolingdecoder of hostcallback; TS/C++ en ROM-formaat zijn exact gespiegeld. |
-
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |

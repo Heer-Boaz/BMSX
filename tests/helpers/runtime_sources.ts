@@ -88,6 +88,7 @@ function emptyRomHeader(): CartRomHeader {
 		blua32ExceptionFunctionAddress: 0,
 		blua32StaticLayoutTokenLo: 0,
 		blua32StaticLayoutTokenHi: 0,
+		blua32DiagnosticDirectoryOffset: 0,
 		metadataOffset: CART_ROM_HEADER_SIZE,
 		metadataLength: 0,
 		cartridgeBoardWord: 0,

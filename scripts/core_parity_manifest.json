@@ -208,6 +208,7 @@
 		"machine/ts/spec/blua32/builtin.ts",
 		"machine/ts/spec/blua32/cop0.ts",
 		"machine/ts/spec/blua32/execution_domain.ts",
+		"machine/ts/spec/blua32/diagnostics.ts",
 		"machine/ts/spec/blua32/image_format.ts",
 		"machine/ts/spec/blua32/instruction_format.ts",
 		"machine/ts/spec/blua32/memory_access_kind.ts",
@@ -452,6 +453,13 @@
 				"machine/cpp/spec/blua32/instruction_format.cpp"
 			],
 			"reason": "blua32_instruction_word_encoding_contract"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/diagnostics.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/diagnostics.h"
+			],
+			"reason": "blua32_physical_diagnostic_directory_wire_contract"
 		},
 		{
 			"ts": "machine/ts/spec/blua32/image_format.ts",
@@ -1142,6 +1150,13 @@
 				"machine/cpp/spec/bmsx/rom_header.h"
 			],
 			"reason": "bmsx_rom_boot_header_wire_filename_parity"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/diagnostics.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/diagnostics.h"
+			],
+			"reason": "blua32_physical_diagnostic_directory_filename_parity"
 		},
 		{
 			"ts": "machine/ts/spec/blua32/image_format.ts",

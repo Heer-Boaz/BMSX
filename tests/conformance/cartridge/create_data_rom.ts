@@ -20,6 +20,7 @@ async function main(): Promise<void> {
 		blua32ExceptionFunctionAddress: 0,
 		blua32StaticLayoutTokenLo: 0,
 		blua32StaticLayoutTokenHi: 0,
+		blua32DiagnosticDirectoryOffset: 0,
 	});
 	await writeFile(outputPath, rom);
 }

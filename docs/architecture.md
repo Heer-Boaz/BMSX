@@ -682,6 +682,9 @@ Owners:
 - BLua32 executable-image wire records:
   `machine/ts/spec/blua32/image_format.ts` and
   `machine/cpp/spec/blua32/image_format.h`.
+- BIOS-readable BLua32 diagnostic-directory wire records:
+  `machine/ts/spec/blua32/diagnostics.ts` and
+  `machine/cpp/spec/blua32/diagnostics.h`.
 - BMSX ROM boot-header fields for BLua32 images:
   `machine/ts/spec/bmsx/rom_header.ts` and
   `machine/cpp/spec/bmsx/rom_header.h`.
@@ -702,6 +705,8 @@ Owners:
   `toolchain/ts/rompack/rom_prefix_layout.ts`.
 - ROM-header serialization shared by the packer and tail rebuilder:
   `toolchain/ts/rompack/header_encode.ts`.
+- Debug-ROM diagnostic-directory construction:
+  `toolchain/ts/rompack/blua32_diagnostics.ts`.
 
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -782,10 +787,11 @@ from the immutable pack prefix into the mutable tail immediately after
 owned by that tail and compact them against the new executable end. Unedited
 assets that still precede `__blua32__`, metadata, and manifest spans remain in
 the immutable prefix. `__blua32_symbols__`, when present, follows the authoring
-assets and contains tooling metadata only. The movable TOC follows the complete
-mutable tail. Hot Resume replaces the ROM header, executable bytes, authoring
-assets, symbols, and TOC; it does not maintain a parallel host-only asset
-override.
+assets and contains tooling metadata only. A debug ROM also carries the compact
+`__blua32_diagnostics__` directory consumed by BIOS code. The movable TOC
+follows the complete mutable tail. Hot Resume replaces the ROM header,
+executable bytes, authoring assets, symbols, diagnostics, and TOC; it does not
+maintain a parallel host-only asset override.
 
 The outer ROM header exposes the executable without a TOC lookup:
 
@@ -798,7 +804,25 @@ The outer ROM header exposes the executable without a TOC lookup:
 | `48` | Exception function-record address. |
 | `52` | Static-layout token low word. |
 | `56` | Static-layout token high word. |
-| `60` | Reserved, zero. |
+| `60` | Debug diagnostic-directory byte offset in this physical ROM; zero means physically absent. |
+
+The diagnostic directory is CPU-readable ROM data rather than a host symbol
+object. Its 32-byte header contains range count/offset, file count/offset,
+line-offset count/offset, and path-table offset/byte count. All offsets inside
+that header are relative to the directory. Each 12-byte range record contains
+an absolute PC start, a packed `(line << 16) | file_index` word, and a 1-based
+column; `0xffffffff` in the packed word means no source. The sorted range table
+starts with a no-source record at PC zero and ends with a no-source record at
+the executable text end, so every raw EPC has deterministic lookup semantics.
+
+Each 20-byte file record contains a directory-relative display-path offset and
+byte count, a ROM-relative source offset and byte count, and the first index in
+the shared line-offset table. Line offsets are UTF-8 byte offsets and each file
+owns a final end-of-source sentinel. Unchanged source assets point at their
+existing physical ROM bytes; only generated or edited sources are stored again
+inside the diagnostic payload. The BIOS therefore needs no TOC lookup, generic
+symbol decoder, source registry, allocation, or host callback to resolve a
+fault PC.
 
 All addresses above are absolute CPU byte addresses. The current BLua32 image
 header is 96 little-endian bytes:
@@ -906,14 +930,16 @@ save-state restore.
 
 TypeScript source builds and source registries stay on the compiler/rompack
 side and enter the machine through the same raw image boundary as native.
-Stripping `__blua32_symbols__` removes source ranges, local-slot names, upvalue
-names, and Hot-Resume maps; it does not change physical executable bytes,
-vectors, global slots, boot, or restore behavior.
+Stripping `__blua32_symbols__` and `__blua32_diagnostics__` removes tooling
+ranges, local-slot/upvalue names, Hot-Resume maps, and BIOS source lookup; it
+does not change physical executable bytes, vectors, global slots, boot, or
+restore behavior.
 
-Release ROMs omit `__blua32_symbols__`. The system build publishes the encoded
-private/debug symbols beside its ROM as `<system-rom>.blua32-symbols`; debug
-ROMs also embed that asset for the debugger and Hot Resume. Cartridge linking
-does not consume it.
+Release ROMs omit both debug assets and publish zero in header word 60. The
+system build publishes the encoded private/debug symbols beside its ROM as
+`<system-rom>.blua32-symbols`; debug ROMs also embed that asset for the debugger
+and Hot Resume and embed the separate BIOS-readable directory. Cartridge
+linking does not consume either representation.
 
 The public BIOS link library is the separate `__blua32_bios_imports__` asset
 and `<system-rom>.blua32-imports` sidecar. It contains the cartridge static-RAM
@@ -1727,6 +1753,17 @@ traps. Long messages are consumed directly into fixed terminal rows without a
 substring or host-formatting allocation. `FAULT` and `REGS` retain the
 underlying raw words. Fault presentation therefore does not depend on host
 exception text or a frontend-owned terminal overlay.
+
+For a synchronous fault, firmware also reads the physical fault-domain word,
+saves the current `CART_SELECT`, selects the interrupted cartridge socket when
+needed, and resolves `EPC` through header word 60 and that ROM's compact
+diagnostic range table. The retained `FAULT` output appends the display path,
+line, column, and referenced source line through the same fixed-row console
+path used for its register rows. `CONT` and an externally requested monitor
+exit restore the saved cartridge selector before exception return. NMI entry
+does not replace the last synchronous source record, and `FAULT CLEAR`
+invalidates it explicitly.
+
 The firmware keeps the current monitor-entry registers separate from its last
 synchronous fault record. A supervisor-request NMI updates `REGS` but cannot
 replace that fault with `NMI SUPERVISOR REQUEST`; `FAULT` reports the retained

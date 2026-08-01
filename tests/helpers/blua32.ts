@@ -140,6 +140,7 @@ function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 		blua32ExceptionFunctionAddress: linked.exceptionFunctionAddress,
 		blua32StaticLayoutTokenLo: linked.symbols.staticLayoutToken.lo,
 		blua32StaticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
+		blua32DiagnosticDirectoryOffset: 0,
 		metadataOffset: 0,
 		metadataLength: 0,
 		cartridgeBoardWord: 0,
@@ -151,8 +152,8 @@ function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 		cart_manifest: null,
 	};
 	return linked.domain === 'system'
-		? buildBlua32Tail({ id: 'system', index, bytes: rom }, linked).bytes
-		: buildBlua32Tail({ id: 'cart', index, bytes: rom }, linked).bytes;
+		? buildBlua32Tail({ id: 'system', index, bytes: rom }, linked, null).bytes
+		: buildBlua32Tail({ id: 'cart', index, bytes: rom }, linked, null).bytes;
 }
 
 function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): TestBlua32Vectors {

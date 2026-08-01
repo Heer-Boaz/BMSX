@@ -30,6 +30,7 @@ const EMPTY_CART_HEADER: CartRomHeader = {
 	blua32ExceptionFunctionAddress: 0,
 	blua32StaticLayoutTokenLo: 0,
 	blua32StaticLayoutTokenHi: 0,
+	blua32DiagnosticDirectoryOffset: 0,
 	metadataOffset: 0,
 	metadataLength: 0,
 	cartridgeBoardWord: 0,

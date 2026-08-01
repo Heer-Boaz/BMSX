@@ -78,6 +78,12 @@ import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
+import {
+	BLUA32_DIAGNOSTICS_IMAGE_ID,
+	encodeBlua32DiagnosticDirectory,
+	type Blua32DiagnosticImage,
+	type PackedBlua32DiagnosticSource,
+} from '../../toolchain/ts/rompack/blua32_diagnostics';
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
@@ -1200,6 +1206,7 @@ type BuildRomBlua32TailOptions = {
 type RomBlua32TailCommon = {
 	boot: Blua32BootHeader;
 	layout: RomAssetPayloadLayout;
+	diagnostics: Blua32DiagnosticImage | null;
 };
 
 export type RomBlua32Tail = RomBlua32TailCommon & (
@@ -1220,7 +1227,7 @@ export function buildRomBlua32Tail(
 	const luaAssets = assetList.filter(asset => asset.type === 'lua');
 	if (options.domain === 'system') {
 		const imageOffset = SYSTEM_BLUA32_IMAGE_OFFSET;
-		const linked = buildBlua32Image({
+		const built = buildBlua32Image({
 			luaAssets,
 			generatedLuaModules: options.generatedLuaModules,
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
@@ -1229,6 +1236,7 @@ export function buildRomBlua32Tail(
 			domain: 'system',
 			biosExports: options.biosExports,
 		});
+		const linked = built.linked;
 		const imageEndOffset = imageOffset + linked.bytes.byteLength;
 		assertSystemBlua32ImageFits(imageEndOffset);
 		const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
@@ -1287,11 +1295,17 @@ export function buildRomBlua32Tail(
 				payloadEnd: tailLayout.payloadEnd,
 				nextOffset: tailLayout.nextOffset,
 			},
+			diagnostics: options.includeSymbols ? {
+				textAddress: linked.layout.header.textAddress,
+				textByteCount: linked.layout.header.textByteCount,
+				debugRanges: linked.symbols.metadata.debugRanges,
+				sources: built.diagnosticSources,
+			} : null,
 			symbolsPayload,
 			biosImportsPayload,
 		};
 	}
-	const linked = buildBlua32Image({
+	const built = buildBlua32Image({
 		luaAssets,
 		generatedLuaModules: options.generatedLuaModules,
 		loadAddress: CART_ROM_BASE + options.imageOffset,
@@ -1300,6 +1314,7 @@ export function buildRomBlua32Tail(
 		domain: 'cart',
 		biosImports: options.biosImports,
 	});
+	const linked = built.linked;
 	const executableAssets: RomAsset[] = [{
 		resid: BLUA32_IMAGE_ID,
 		type: 'code',
@@ -1335,6 +1350,12 @@ export function buildRomBlua32Tail(
 			staticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
 		},
 		layout: layoutRomAssetPayloads(executableAssets, true, options.imageOffset),
+		diagnostics: options.includeSymbols ? {
+			textAddress: linked.layout.header.textAddress,
+			textByteCount: linked.layout.header.textByteCount,
+			debugRanges: linked.symbols.metadata.debugRanges,
+			sources: built.diagnosticSources,
+		} : null,
 	};
 }
 
@@ -1467,13 +1488,58 @@ export async function finalizeRompack(
 	const outputPath = join(options.outputDirectory, outfileBasename);
 	const status = options.status;
 	const physicalSpans = options.layout.ranges.concat(options.blua32.layout.ranges);
-	physicalSpans.sort((left, right) => left.start - right.start);
-
-	const dataOffset = physicalSpans[0].start;
-	const dataEnd = options.layout.payloadEnd > options.blua32.layout.payloadEnd
+	let dataEnd = options.layout.payloadEnd > options.blua32.layout.payloadEnd
 		? options.layout.payloadEnd
 		: options.blua32.layout.payloadEnd;
 	const entries = options.layout.entries.concat(options.blua32.layout.entries);
+	let diagnosticDirectoryOffset = 0;
+	if (options.blua32.diagnostics) {
+		const entryBySourcePath = new Map<string, RomAsset>();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.type === 'lua' && entry.source_path) {
+				entryBySourcePath.set(entry.source_path, entry);
+			}
+		}
+		const spanByStart = new Map<number, Uint8Array>();
+		for (let index = 0; index < physicalSpans.length; index += 1) {
+			const span = physicalSpans[index];
+			spanByStart.set(span.start, span.buffer);
+		}
+		const packedSources = new Map<string, PackedBlua32DiagnosticSource>();
+		for (const [rangePath, source] of options.blua32.diagnostics.sources) {
+			const entry = entryBySourcePath.get(source.displayPath);
+			if (!entry) {
+				continue;
+			}
+			packedSources.set(rangePath, {
+				offset: entry.start!,
+				bytes: spanByStart.get(entry.start!)!,
+			});
+		}
+		diagnosticDirectoryOffset = alignRomAssetOffset(dataEnd);
+		const diagnosticPayload = encodeBlua32DiagnosticDirectory({
+			...options.blua32.diagnostics,
+			directoryOffset: diagnosticDirectoryOffset,
+			packedSources,
+		});
+		const diagnosticLayout = layoutRomAssetPayloads([{
+			resid: BLUA32_DIAGNOSTICS_IMAGE_ID,
+			type: 'code',
+			buffer: Buffer.from(
+				diagnosticPayload.buffer,
+				diagnosticPayload.byteOffset,
+				diagnosticPayload.byteLength,
+			),
+			source_path: BLUA32_DIAGNOSTICS_IMAGE_ID,
+		}], true, diagnosticDirectoryOffset);
+		entries.push(...diagnosticLayout.entries);
+		physicalSpans.push(...diagnosticLayout.ranges);
+		dataEnd = diagnosticLayout.payloadEnd;
+	}
+	physicalSpans.sort((left, right) => left.start - right.start);
+
+	const dataOffset = physicalSpans[0].start;
 	const tocBuffer = Buffer.from(encodeRomToc({
 		entries,
 		projectRootPath: options.projectRootPath,
@@ -1500,6 +1566,7 @@ export async function finalizeRompack(
 		blua32ExceptionFunctionAddress: options.blua32.boot.exceptionFunctionAddress,
 		blua32StaticLayoutTokenLo: options.blua32.boot.staticLayoutTokenLo,
 		blua32StaticLayoutTokenHi: options.blua32.boot.staticLayoutTokenHi,
+		blua32DiagnosticDirectoryOffset: diagnosticDirectoryOffset,
 		metadataOffset: options.layout.metadataOffset,
 		metadataLength: options.layout.metadataLength,
 		cartridgeBoardWord: options.cartridgeBoardWord,

@@ -1,5 +1,6 @@
 local terminal<const> = require('tty/terminal')
 local layout<const> = require('tty/layout')
+local source_location<const> = require('shell/source_location')
 
 local byte<const> = __bmsx_string_byte
 
@@ -17,6 +18,8 @@ local action_none<const> = 0
 local action_output<const> = 1
 local action_clear<const> = 2
 local action_continue<const> = 3
+local fault_section_registers<const> = 0
+local fault_section_source<const> = 1
 
 local palette_text<const> = terminal.palette_text
 local palette_error<const> = terminal.palette_error
@@ -88,6 +91,7 @@ bss monitor_command_value: word
 bss monitor_command_address: word
 bss monitor_command_remaining: word
 bss monitor_command_columns: word
+bss monitor_command_fault_section: word
 bss monitor_completion_commands: word[#command_registry]
 bss monitor_completion_start: word
 bss monitor_entry_status: word
@@ -362,6 +366,7 @@ function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason
 	end
 	*monitor_command_producer = producer_none
 	*monitor_command_text_offset = 0
+	*monitor_command_fault_section = fault_section_registers
 end
 
 function monitor_commands.start_fault()
@@ -370,6 +375,7 @@ function monitor_commands.start_fault()
 			*monitor_command_producer = command
 			*monitor_command_cursor = 0
 			*monitor_command_text_offset = 0
+			*monitor_command_fault_section = fault_section_registers
 			return
 		end
 	end
@@ -523,6 +529,7 @@ function monitor_commands.start(line, length)
 			*monitor_command_producer = command
 			*monitor_command_cursor = 0
 			*monitor_command_text_offset = 0
+			*monitor_command_fault_section = fault_section_registers
 			return action_output
 		end
 		local argument_end = index
@@ -537,6 +544,7 @@ function monitor_commands.start(line, length)
 		end
 		*monitor_fault_valid = 0
 		monitor_fault_lua_fault_message = nil
+		source_location.clear()
 		return action_none
 	end
 	if entry.kind == command_registers then
@@ -613,6 +621,13 @@ function monitor_commands.next_row(row)
 	end
 	local entry<const>: *monitor_command = &command_registry[producer]
 	if entry.kind == command_fault or entry.kind == command_registers then
+		if entry.kind == command_fault and *monitor_command_fault_section == fault_section_source then
+			if source_location.next_row(row, *monitor_command_columns, palette_accent, palette_error) then
+				*monitor_command_producer = producer_none
+				return row_done
+			end
+			return row_more
+		end
 		local cursor<const> = *monitor_command_cursor
 		local column = 0
 		if entry.kind == command_fault and *monitor_fault_valid == 0 then
@@ -692,9 +707,16 @@ function monitor_commands.next_row(row)
 			end
 		end
 		*monitor_command_cursor = cursor + 1
-		if (entry.kind == command_fault and (cursor == 3
-					or (cursor == 2 and has_bad_address == 0 and has_lua_fault_reason == 0)))
-			or (entry.kind == command_registers and cursor == 4) then
+		if entry.kind == command_fault and (cursor == 3
+				or (cursor == 2 and has_bad_address == 0 and has_lua_fault_reason == 0)) then
+			if source_location.begin_output() then
+				*monitor_command_fault_section = fault_section_source
+				return row_more
+			end
+			*monitor_command_producer = producer_none
+			return row_done
+		end
+		if entry.kind == command_registers and cursor == 4 then
 			*monitor_command_producer = producer_none
 			return row_done
 		end

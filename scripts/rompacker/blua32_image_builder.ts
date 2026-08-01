@@ -17,6 +17,10 @@ import {
 	type LinkedBlua32Image,
 	type LinkedSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
+import type {
+	Blua32DiagnosticSource,
+	Blua32DiagnosticSourceMap,
+} from '../../toolchain/ts/rompack/blua32_diagnostics';
 
 export type GeneratedLuaModule = {
 	path: string;
@@ -45,11 +49,17 @@ type Blua32ImageBuildOptions =
 	| SystemBlua32ImageBuildOptions
 	| CartBlua32ImageBuildOptions;
 
-export function buildBlua32Image(options: SystemBlua32ImageBuildOptions): LinkedSystemBlua32Image;
-export function buildBlua32Image(options: CartBlua32ImageBuildOptions): LinkedCartBlua32Image;
-export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32Image {
+export type BuiltBlua32Image<TLinked extends LinkedBlua32Image = LinkedBlua32Image> = {
+	linked: TLinked;
+	diagnosticSources: Blua32DiagnosticSourceMap;
+};
+
+export function buildBlua32Image(options: SystemBlua32ImageBuildOptions): BuiltBlua32Image<LinkedSystemBlua32Image>;
+export function buildBlua32Image(options: CartBlua32ImageBuildOptions): BuiltBlua32Image<LinkedCartBlua32Image>;
+export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32Image {
 	const modulePaths = new Set<string>();
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
+	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	for (let index = 0; index < options.luaAssets.length; index += 1) {
 		const asset = options.luaAssets[index];
 		const modulePath = toLuaModulePath(asset.source_path);
@@ -59,6 +69,10 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 		const chunk = decodeBinary(asset.compiled_buffer!) as LuaChunk;
 		modulePaths.add(modulePath);
 		const source = asset.buffer!.toString('utf8');
+		diagnosticSources.set(chunk.range.path, {
+			displayPath: asset.source_path,
+			source,
+		});
 		modules.push({
 			path: modulePath,
 			chunk,
@@ -77,9 +91,13 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 			throw new Error(`Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
 		}
 		const sourcePath = `${generated.path}.lua`;
-		const chunk = parseLuaChunk(generated.source, sourcePath, splitText(generated.source)).chunk!;
+		const chunk = parseLuaChunk(generated.source, generated.path, splitText(generated.source)).chunk!;
 		modulePaths.add(generated.path);
 		modules.push({ path: generated.path, chunk, source: generated.source });
+		diagnosticSources.set(chunk.range.path, {
+			displayPath: sourcePath,
+			source: generated.source,
+		});
 	}
 
 	if (options.domain === 'cart') {
@@ -89,24 +107,30 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32
 			biosFunctions: options.biosImports.functions,
 			programDomain: 'cart',
 		});
-		return linkCartBlua32Image(
-			options.biosImports,
-			encodeCompiledProgramObject(compiled),
-			compiled.metadata,
-			options.loadAddress,
-			options.ramByteCount,
-		);
+		return {
+			linked: linkCartBlua32Image(
+				options.biosImports,
+				encodeCompiledProgramObject(compiled),
+				compiled.metadata,
+				options.loadAddress,
+				options.ramByteCount,
+			),
+			diagnosticSources,
+		};
 	}
 	const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
 		optLevel: options.optLevel,
 		entrySource: entry.source,
 		programDomain: 'system',
 	});
-	return linkSystemBlua32Image(
-		encodeCompiledProgramObject(compiled),
-		compiled.metadata,
-		options.loadAddress,
-		options.ramByteCount,
-		options.biosExports,
-	);
+	return {
+		linked: linkSystemBlua32Image(
+			encodeCompiledProgramObject(compiled),
+			compiled.metadata,
+			options.loadAddress,
+			options.ramByteCount,
+			options.biosExports,
+		),
+		diagnosticSources,
+	};
 }

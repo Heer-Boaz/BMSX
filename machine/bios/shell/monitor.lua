@@ -3,6 +3,7 @@ local console<const> = require('tty/console')
 local layout<const> = require('tty/layout')
 local monitor_editor<const> = require('shell/editor')
 local monitor_commands<const> = require('shell/commands')
+local source_location<const> = require('shell/source_location')
 local vblank<const> = require('kernel/vblank')
 local dma_transfer<const> = require('kernel/dma')
 local gx_gpu<const> = require('gpu/gpu')
@@ -16,6 +17,8 @@ local input_control<const>: *word = 0x08000064
 local input_keys<const>: *word[8] = 0x0800006c
 local system_control<const>: *word = 0x08010348
 local system_status<const>: *word = 0x0801034c
+local cart_select<const>: *word = 0x0801041c
+local supervisor_fault_domain<const>: *word = 0x08010448
 
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
@@ -377,7 +380,8 @@ local scan_keyboard<const> = function()
 	return continue_requested
 end
 
-local leave_monitor<const> = function(saved_status, saved_epc, owns_supervisor_context)
+local leave_monitor<const> = function(saved_status, saved_epc, saved_cart_select, owns_supervisor_context)
+	*cart_select = saved_cart_select
 	cop0.epc = saved_epc
 	cop0.status = saved_status
 	if owns_supervisor_context then
@@ -394,6 +398,7 @@ function monitor.enter(error_value)
 	local saved_bad_address<const> = cop0.bad_address
 	local saved_lua_fault_reason<const> = cop0.lua_fault_reason
 	local saved_irq_mask<const> = *irq_mask
+	local saved_cart_select<const> = *cart_select
 	local owns_supervisor_context<const> = (*system_status & system_supervisor_resumable) == 0
 
 	-- Firmware owns exception classification. NMI completes an already quiesced
@@ -403,6 +408,11 @@ function monitor.enter(error_value)
 		*system_control = system_supervisor_enter
 	else
 		*system_control = system_supervisor_fault
+		local fault_domain<const> = *supervisor_fault_domain
+		if fault_domain ~= 0xffffffff then
+			*cart_select = fault_domain
+		end
+		source_location.resolve(fault_domain, saved_epc)
 	end
 	vblank.clear()
 	*irq_mask = irq_dma_done | irq_vblank
@@ -441,13 +451,13 @@ function monitor.enter(error_value)
 		*input_control = input_arm
 		vblank.wait()
 		if (*system_status & system_supervisor_exit_requested) ~= 0 then
-			leave_monitor(saved_status, saved_epc, owns_supervisor_context)
+			leave_monitor(saved_status, saved_epc, saved_cart_select, owns_supervisor_context)
 			return
 		end
 		local continue_requested<const> = scan_keyboard()
 		terminal.flush()
 		if continue_requested then
-			leave_monitor(saved_status, saved_epc, owns_supervisor_context)
+			leave_monitor(saved_status, saved_epc, saved_cart_select, owns_supervisor_context)
 			return
 		end
 	end

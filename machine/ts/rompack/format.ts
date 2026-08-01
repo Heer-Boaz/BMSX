@@ -10,6 +10,7 @@ import {
 import {
 	CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET,
 	CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET,
+	CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET,
 	CART_ROM_HEADER_DATA_LENGTH_OFFSET,
 	CART_ROM_HEADER_DATA_OFFSET,
 	CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET,
@@ -41,6 +42,7 @@ export type CartRomHeader = {
 	blua32ExceptionFunctionAddress: number;
 	blua32StaticLayoutTokenLo: number;
 	blua32StaticLayoutTokenHi: number;
+	blua32DiagnosticDirectoryOffset: number;
 	metadataOffset: number;
 	metadataLength: number;
 	cartridgeBoardWord: number;
@@ -104,6 +106,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		blua32ExceptionFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, true),
 		blua32StaticLayoutTokenLo: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET, true),
 		blua32StaticLayoutTokenHi: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, true),
+		blua32DiagnosticDirectoryOffset: view.getUint32(CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET, true),
 		metadataOffset,
 		metadataLength,
 		cartridgeBoardWord,

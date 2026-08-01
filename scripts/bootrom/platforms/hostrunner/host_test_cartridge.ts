@@ -66,7 +66,7 @@ export async function buildHostTestCartridge(
 	const parsed = parseLuaChunk(source, entryAsset.source_path, splitText(source)).chunk!;
 	entryAsset.buffer = Buffer.from(source);
 	entryAsset.compiled_buffer = Buffer.from(encodeBinary(parsed));
-	const linked = buildBlua32Image({
+	const built = buildBlua32Image({
 		luaAssets: cartridgeLuaAssets,
 		generatedLuaModules: [
 			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: buildRomAssetSymbolModuleSource(cartIndex.entries) },
@@ -81,5 +81,9 @@ export async function buildHostTestCartridge(
 		domain: 'cart',
 		biosImports,
 	});
-	return buildBlua32Tail({ id: 'cart', index: cartIndex, bytes: cartridge }, linked).bytes;
+	return buildBlua32Tail(
+		{ id: 'cart', index: cartIndex, bytes: cartridge },
+		built.linked,
+		built.diagnosticSources,
+	).bytes;
 }

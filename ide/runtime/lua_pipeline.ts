@@ -51,6 +51,10 @@ import {
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
+import type {
+	Blua32DiagnosticSource,
+	Blua32DiagnosticSourceMap,
+} from '../../toolchain/ts/rompack/blua32_diagnostics';
 
 export type RebuiltBlua32Image<
 	TLinkedImage extends LinkedBlua32Image = LinkedBlua32Image,
@@ -59,6 +63,7 @@ export type RebuiltBlua32Image<
 	previousImage: Blua32ImageLayout;
 	previousSymbols: Blua32SymbolsImage;
 	sources: ReadonlyMap<string, string>;
+	diagnosticSources: Blua32DiagnosticSourceMap;
 };
 
 type ProgramSourceModule = {
@@ -149,6 +154,7 @@ function prepareRegistryProgramSources(
 	entry: ProgramSourceModule;
 	modules: ProgramSourceModule[];
 	sources: Map<string, string>;
+	diagnosticSources: Map<string, Blua32DiagnosticSource>;
 } {
 	const programSources = buildProgramSources(
 		[registry],
@@ -160,14 +166,25 @@ function prepareRegistryProgramSources(
 	const modules = programSources.modules;
 	registry.entrySourcePath = programSources.entry.sourcePath;
 	const compiledSources = new Map<string, string>();
+	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	compiledSources.set(entryPath, entrySource);
+	diagnosticSources.set(programSources.entry.chunk.range.path, {
+		displayPath: programSources.entry.sourcePath,
+		source: entrySource,
+	});
 	for (let index = 0; index < modules.length; index += 1) {
-		compiledSources.set(modules[index].path, modules[index].source);
+		const module = modules[index];
+		compiledSources.set(module.path, module.source);
+		diagnosticSources.set(module.chunk.range.path, {
+			displayPath: module.sourcePath,
+			source: module.source,
+		});
 	}
 	return {
 		entry: programSources.entry,
 		modules,
 		sources: compiledSources,
+		diagnosticSources,
 	};
 }
 
@@ -198,6 +215,7 @@ function applyLinkedAssetModule(
 	object: ProgramObjectImage,
 	modules: ProgramSourceModule[],
 	sources: Map<string, string>,
+	diagnosticSources: Map<string, Blua32DiagnosticSource>,
 	linked: LinkedBlua32Image,
 	modulePath: string,
 	assetModule: readonly [
@@ -218,6 +236,10 @@ function applyLinkedAssetModule(
 	}
 	modules[moduleIndex].source = assetModule[0];
 	modules[moduleIndex].linkValues = assetModule[1];
+	diagnosticSources.set(modules[moduleIndex].chunk.range.path, {
+		displayPath: modules[moduleIndex].sourcePath,
+		source: assetModule[0],
+	});
 }
 
 function commitInstalledBlua32Sources(
@@ -307,6 +329,7 @@ export function buildBlua32Media(
 			systemObject,
 			programSources.modules,
 			programSources.sources,
+			programSources.diagnosticSources,
 			linked,
 			SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 			buildAssetModule(
@@ -321,6 +344,7 @@ export function buildBlua32Media(
 			previousImage: installedSystem.layout,
 			previousSymbols: installedSystem.symbols!,
 			sources: programSources.sources,
+			diagnosticSources: programSources.diagnosticSources,
 		};
 	}
 
@@ -378,6 +402,7 @@ export function buildBlua32Media(
 			cartObject,
 			programSources.modules,
 			programSources.sources,
+			programSources.diagnosticSources,
 			linked,
 			ROM_ASSET_SYMBOL_MODULE_PATH,
 			buildAssetModule(
@@ -391,6 +416,7 @@ export function buildBlua32Media(
 			previousImage: installed.layout,
 			previousSymbols: installed.symbols!,
 			sources: programSources.sources,
+			diagnosticSources: programSources.diagnosticSources,
 		};
 	}
 	return {
@@ -411,6 +437,7 @@ export function installBlua32Media(
 		systemLayer = buildBlua32Tail(
 			sources.systemRom,
 			rebuilt.system.linked,
+			rebuilt.system.diagnosticSources,
 			assetRevision && assetRevision[0] === SYSTEM_RESOURCE_DOMAIN
 				? assetRevision[1]
 				: undefined,
@@ -422,6 +449,7 @@ export function installBlua32Media(
 			cartridgeLayers[slot] = buildBlua32Tail(
 				sources.cartridgeSlots[slot]!.rom,
 				image.linked,
+				image.diagnosticSources,
 				assetRevision && assetRevision[0] === slot
 					? assetRevision[1]
 					: undefined,
