@@ -1,5 +1,7 @@
 module<const>
 
+local cell_width<const> = 4
+local cell_height<const> = 6
 local columns<const> = 80
 local rows<const> = 40
 local scrollback_rows<const> = 40
@@ -9,8 +11,13 @@ local vram_x<const> = 704
 local vram_y<const> = 720
 
 return {
+	cell_width = cell_width,
+	cell_height = cell_height,
 	columns = columns,
 	rows = rows,
+	width = columns * cell_width,
+	height = rows * cell_height,
+	scrollback_rows = scrollback_rows,
 	buffer_rows = buffer_rows,
 	history_capacity = history_capacity,
 	vram_x = vram_x,

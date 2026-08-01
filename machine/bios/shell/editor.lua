@@ -22,13 +22,14 @@ bss monitor_editor_draft: u8[input_capacity]
 bss monitor_editor_draft_length: word
 bss monitor_editor_draft_cursor: word
 bss monitor_editor_candidate_row: u16[layout.columns]
+bss monitor_editor_active_capacity: word
 
 local render<const> = function()
 	local completion<const>, prefix_length<const> = monitor_commands.inline_completion(
 		monitor_editor_line,
 		*monitor_editor_length,
 		*monitor_editor_cursor,
-		input_capacity)
+		*monitor_editor_active_capacity)
 	terminal.render_input(
 		monitor_editor_line,
 		*monitor_editor_length,
@@ -126,7 +127,8 @@ local load_history<const> = function(offset)
 	load_line(&history[slot * input_capacity], length, length)
 end
 
-function monitor_editor.open()
+function monitor_editor.open(columns)
+	*monitor_editor_active_capacity = columns - 4
 	*monitor_editor_length = 0
 	*monitor_editor_cursor = 0
 	*monitor_editor_history_head = 0
@@ -156,7 +158,7 @@ function monitor_editor.submit()
 end
 
 function monitor_editor.insert(code)
-	if *monitor_editor_length == input_capacity then
+	if *monitor_editor_length == *monitor_editor_active_capacity then
 		return
 	end
 	local line<const>: *u8 = monitor_editor_line
@@ -198,7 +200,7 @@ function monitor_editor.right()
 			monitor_editor_line,
 			*monitor_editor_length,
 			*monitor_editor_cursor,
-			input_capacity)
+			*monitor_editor_active_capacity)
 		if accepted then
 			*monitor_editor_length = length
 			*monitor_editor_cursor = length
@@ -318,7 +320,7 @@ function monitor_editor.complete()
 		monitor_editor_line,
 		*monitor_editor_length,
 		*monitor_editor_cursor,
-		input_capacity)
+		*monitor_editor_active_capacity)
 	*monitor_editor_length = length
 	*monitor_editor_cursor = cursor
 	if changed then
@@ -339,7 +341,7 @@ end
 function monitor_editor.accept_candidate(selected)
 	local length<const> = monitor_commands.accept_candidate(
 		monitor_editor_line,
-		input_capacity,
+		*monitor_editor_active_capacity,
 		selected)
 	*monitor_editor_length = length
 	*monitor_editor_cursor = length

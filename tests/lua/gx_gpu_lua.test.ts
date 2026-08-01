@@ -58,7 +58,7 @@ local smode1_low<const>: *word = 0x080103a8
 local display2_low<const>: *word = 0x08010370
 *smode1_low = 0x40200504
 *display2_low = 420 | (40 << 12)
-bios_gpu.prepare_supervisor_320x240(0)
+bios_gpu.prepare_supervisor(0, 320, 240)
 return 320, 240
 `;
 const SYSTEM_MODULE_FILES = [
@@ -68,6 +68,7 @@ const SYSTEM_MODULE_FILES = [
 const CART_MODULE_FILES = [
 	['cartlib/gx/display', 'cartlib/gx/display.lua'],
 	['cartlib/gx/gpu', 'cartlib/gx/gpu.lua'],
+	['cartlib/gx/gp0', 'cartlib/gx/gp0.lua'],
 ] as const;
 const BIOS_MODULE_FILES = [
 	['gpu/gpu', 'machine/bios/gpu/gpu.lua'],

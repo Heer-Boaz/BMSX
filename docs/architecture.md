@@ -1939,13 +1939,18 @@ external request and a synchronous fault program terminal presentation over the
 same retained cart composition. No path copies the cart framebuffer or
 allocates terminal-only memory.
 
-The BIOS keeps an 80x40 cell screen, fixed 128-line scrollback, two-word dirty
-row bitset, byte-sized dirty column ranges, line editor, history and a fixed
-four-row GP0 scratch list in ordinary `.bss`. Retained terminal cells are packed
-16-bit glyph/palette words. The boot path and supervisor circuit explicitly
-select the standard 320x240 firmware mode; the old 64x32/256x192 terminal
-geometry is not a model-derived PSX mode. A packed ROM table maps each 4x6
-tiny-font codepoint one-to-one to its physical system-texture coordinates.
+The BIOS keeps capacity for an 80x40 cell screen, fixed 40-line scrollback,
+two-word dirty row bitset, byte-sized dirty column ranges, line editor, history
+and a fixed four-row GP0 scratch list in ordinary `.bss`. Retained terminal
+cells are packed 16-bit glyph/palette words. Boot explicitly selects the
+standard 320x240 firmware mode. Supervisor firmware instead derives an active
+viewport from the retained circuit-2 output rectangle, capped by the 320x240
+terminal surface, and programs circuit 1 at the same signal origin without
+enlarging the retained cart composition. The terminal keeps its fixed backing
+capacity while wrapping, paging and raster submission use that active viewport;
+a 256x192 cart therefore exposes 64x32 cells without making 256x192 a fixed
+firmware mode. A packed ROM table maps each 4x6 tiny-font codepoint one-to-one
+to its physical system-texture coordinates.
 The monitor's HID-to-console-ASCII producer emits uppercase alphabetic bytes;
 the ROM packer and glyph renderer do not reinterpret text. A zero retained cell
 leaves its 4x6 terminal area transparent. Every nonzero cell, including an

@@ -412,7 +412,12 @@ function monitor.enter(error_value)
 	vblank.wait()
 
 	initialize_input()
-	monitor_editor.open()
+	local viewport_width<const>, viewport_height<const> = gx_gpu.prepare_supervisor(
+		layout.vram_origin,
+		layout.width,
+		layout.height)
+	terminal.open(viewport_width, viewport_height)
+	monitor_editor.open(terminal.columns)
 	monitor_commands.open(
 		saved_status,
 		saved_cause,
@@ -420,10 +425,9 @@ function monitor.enter(error_value)
 		saved_bad_address,
 		saved_lua_fault_reason,
 		saved_irq_mask,
-		error_value)
-	gx_gpu.prepare_supervisor_320x240(layout.vram_origin)
+		error_value,
+		terminal.columns)
 	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
-	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
 	terminal.drain_print_output(palette_text)
 	monitor_commands.start_fault()

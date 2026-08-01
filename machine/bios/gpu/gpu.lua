@@ -8,6 +8,7 @@ local pcrtc_dispfb1_high<const>: *word = 0x0801035c
 local pcrtc_display1_low<const>: *word = 0x08010360
 local pcrtc_display1_high<const>: *word = 0x08010364
 local pcrtc_display2_low<const>: *word = 0x08010370
+local pcrtc_display2_high<const>: *word = 0x08010374
 local pcrtc_smode1_low<const>: *word = 0x080103a8
 local pcrtc_smode1_high<const>: *word = 0x080103ac
 local pcrtc_smode2_low<const>: *word = 0x080103b0
@@ -125,22 +126,41 @@ function gx_gpu.reset_320x240()
 	*pcrtc_pmode = current_pcrtc_enable_word
 end
 
-function gx_gpu.prepare_supervisor_320x240(origin_word)
+function gx_gpu.prepare_supervisor(origin_word, maximum_width, maximum_height)
 	local smode1_word<const> = *pcrtc_smode1_low
 	local display2_word<const> = *pcrtc_display2_low
+	local display2_extent_word<const> = *pcrtc_display2_high
 	local signal_step_x<const> = (smode1_word >> 21) & 0x0000000f
+	local signal_width = maximum_width * signal_step_x
+	local height = maximum_height
+	if (*pcrtc_pmode & pcrtc_enable_circuit2) ~= 0 then
+		local retained_signal_width<const> = (display2_extent_word & 0x00000fff) + 1
+		local retained_height<const> = ((display2_extent_word >> 12) & 0x000007ff) + 1
+		if retained_signal_width < signal_width then
+			signal_width = retained_signal_width
+		end
+		if retained_height < height then
+			height = retained_height
+		end
+	end
+	local signal_x<const> = display2_word & 0x00000fff
+	local display_left<const> = (signal_x + signal_step_x - 1) // signal_step_x
+	local display_right<const> = (signal_x + signal_width + signal_step_x - 1) // signal_step_x
+	local width<const> = display_right - display_left
 	*gp1 = gp1_vram_y_address_extension
-	current_display_size_word = 320 | (240 << 16)
+	current_display_size_word = width | (height << 16)
 	gx_gpu.display_origin(origin_word)
-	program_pcrtc_circuit1(display2_word & 0x00000fff, (display2_word >> 12) & 0x000007ff, signal_step_x, 320, 240)
+	*pcrtc_display1_low = signal_x | (display2_word & 0x007ff000) | ((signal_step_x - 1) << 23)
+	*pcrtc_display1_high = (signal_width - 1) | ((height - 1) << 12)
 	*gp1 = gp1_horizontal_display_range
-	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + 240) << 10)
+	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + height) << 10)
 	*gp1 = gp1_dma_direction_cpu_to_gp0
 	*gp0 = gp0_draw_mode
 	gx_gpu.draw_target(origin_word)
 	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
 	current_pcrtc_enable_word = (*pcrtc_pmode & pcrtc_enable_circuit2) | pcrtc_enable_circuit1
+	return width, height
 end
 
 function gx_gpu.enable_display()

@@ -67,7 +67,7 @@ local scan_cartridges<const> = function()
 end
 
 local initialize_boot_output<const> = function()
-	terminal.open()
+	terminal.open(terminal_layout.width, terminal_layout.height)
 	print('BMSX SYSTEM ROM')
 	print('CPU       BLUA32')
 	print('VIDEO     320X240 50HZ')

@@ -21,7 +21,7 @@ local action_continue<const> = 3
 local palette_text<const> = terminal.palette_text
 local palette_error<const> = terminal.palette_error
 local palette_accent<const> = terminal.palette_accent
-local terminal_columns<const> = layout.columns
+local terminal_column_capacity<const> = layout.columns
 local ascii_space<const> = 32
 local ascii_digit_0<const> = 48
 local ascii_digit_9<const> = 57
@@ -87,6 +87,7 @@ bss monitor_command_text_offset: word
 bss monitor_command_value: word
 bss monitor_command_address: word
 bss monitor_command_remaining: word
+bss monitor_command_columns: word
 bss monitor_completion_commands: word[#command_registry]
 bss monitor_completion_start: word
 bss monitor_entry_status: word
@@ -263,23 +264,27 @@ end
 
 local clear_row<const> = function(row)
 	local target<const>: *u16 = row
-	for column = 0, terminal_columns - 1 do
+	for column = 0, terminal_column_capacity - 1 do
 		target[column] = 0
 	end
 end
 
 local write_text<const> = function(row, column, text, palette)
 	local target<const>: *u16 = row
-	for index = 1, #text do
+	local columns<const> = *monitor_command_columns
+	local index = 1
+	while index <= #text and column < columns do
 		target[column] = byte(text, index) | (palette << 8)
 		column = column + 1
+		index = index + 1
 	end
 	return column
 end
 
 local write_text_slice<const> = function(row, column, text, offset, palette)
 	local target<const>: *u16 = row
-	while column < terminal_columns and offset < #text do
+	local columns<const> = *monitor_command_columns
+	while column < columns and offset < #text do
 		target[column] = byte(text, offset + 1) | (palette << 8)
 		column = column + 1
 		offset = offset + 1
@@ -289,10 +294,13 @@ end
 
 local write_hex<const> = function(row, column, value, palette)
 	local target<const>: *u16 = row
-	for shift = 28, 0, -4 do
+	local columns<const> = *monitor_command_columns
+	local shift = 28
+	while shift >= 0 and column < columns do
 		local digit<const> = (value >> shift) & 0x0f
 		target[column] = (digit < 10 and ascii_digit_0 + digit or ascii_upper_a + digit - 10) | (palette << 8)
 		column = column + 1
+		shift = shift - 4
 	end
 	return column
 end
@@ -321,7 +329,8 @@ local arguments_end<const> = function(line, index, length)
 	return skip_spaces(line, index, length) == length
 end
 
-function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value)
+function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value, columns)
+	*monitor_command_columns = columns
 	*monitor_entry_status = status
 	*monitor_entry_cause = cause
 	*monitor_entry_epc = epc
