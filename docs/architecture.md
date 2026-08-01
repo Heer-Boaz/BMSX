@@ -1545,12 +1545,12 @@ guest-visible hardware history keeps its normal circular overwrite behavior.
 Host transport cursors and bytes are presentation state and are not serialized.
 
 At reset the boot firmware uses the same path for its banner and cartridge
-state: it writes through `print()`, drains the retained glyph history into the
-firmware terminal, and presents that terminal through GX. On supervisor entry
-the BIOS drains the accumulated cart history into that same retained terminal
-before producing monitor command output. The host log sink receives the same
-completed lines independently; the browser host therefore emits them through
-its normal developer console.
+state: it writes through `print()`, the BIOS console driver consumes the
+retained glyph history into terminal cells, and GX presents those cells. On
+supervisor entry the console driver consumes the accumulated cart history
+before the monitor produces command output. The terminal owns no SYS-print
+registers. The host log sink receives the same completed lines independently;
+the browser host therefore emits them through its normal developer console.
 Neither host path owns terminal cells, GX state, or a second guest-visible
 output ABI.
 
@@ -3236,7 +3236,7 @@ emulator runtime code. Its source tree follows the program's actual owners:
 - root `main.lua` owns reset, boot presentation, and cartridge handoff;
 - `kernel` owns interrupt, VBlank, and BIOS DMA control;
 - `gpu` owns only the private command path used by BIOS presentation;
-- `tty` owns terminal state and raster submission;
+- `tty` owns the firmware console driver, terminal state and raster submission;
 - `shell` owns the resumable supervisor monitor;
 - root `base.lua`, `table.lua`, `string.lua`, `math.lua`, and `os.lua`, with
   their `string/` and `math/` implementation modules, own the resident Lua

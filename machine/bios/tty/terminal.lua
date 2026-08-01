@@ -21,8 +21,6 @@ local command_batch_rows<const> = 4
 -- Worst-case row capacity combines one clear, one continuous background and
 -- one textured rectangle per cell; eight words cover shared state/cursor/IRQ.
 local command_batch_words<const> = command_batch_rows * (terminal_column_capacity * 4 + 6) + 8
-local system_print_data<const>: *word = 0x0801022c
-local system_print_count<const>: *word = 0x08010230
 local ascii_newline<const> = 10
 local terminal_background_word<const> = 0x00000000
 local terminal_cursor_word<const> = 0x00ffffff
@@ -306,12 +304,6 @@ end
 function terminal.write(text, palette)
 	for index = 1, #text do
 		terminal.write_code(byte(text, index), palette)
-	end
-end
-
-function terminal.drain_print_output(palette)
-	while *system_print_count ~= 0 do
-		terminal.write_code(*system_print_data, palette)
 	end
 end
 

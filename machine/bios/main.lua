@@ -14,6 +14,7 @@ local assets<const> = require('bmsx/system_assets')
 local interrupts<const> = require('kernel/interrupts')
 local monitor<const> = require('shell/monitor')
 local terminal<const> = require('tty/terminal')
+local console<const> = require('tty/console')
 local terminal_layout<const> = require('tty/layout')
 local vblank<const> = require('kernel/vblank')
 
@@ -71,7 +72,7 @@ local initialize_boot_output<const> = function()
 	print('BMSX SYSTEM ROM')
 	print('CPU       BLUA32')
 	print('VIDEO     320X240 50HZ')
-	terminal.drain_print_output(terminal.palette_text)
+	console.flush()
 	*boot_cart_state = 0
 	*boot_frame = 0
 end
@@ -92,7 +93,7 @@ local update_boot_output<const> = function(cart_state)
 		print('CARTRIDGE READY')
 		terminal.show_status('BOOTING IN 1.0S', terminal.palette_accent)
 	end
-	terminal.drain_print_output(terminal.palette_text)
+	console.flush()
 end
 
 local update_boot_screen<const> = function()
