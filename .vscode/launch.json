@@ -109,8 +109,8 @@
 		{
 			"type": "msedge",
 			"request": "launch",
-			"name": "STUDIO DEBUG: WSL Server",
-			"url": "http://localhost:8080/studio.html?rom=${input:romtobuild}.debug.rom",
+			"name": "Debug the game from WSL Server",
+			"url": "http://localhost:8080/studio.debug.html?rom=${input:romtobuild}.debug.rom",
 			// "runtimeExecutable": "/usr/bin/microsoft-edge",
 			// "browserLaunchLocation": "workspace",
 			"runtimeArgs": [
@@ -118,7 +118,7 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--app=http://localhost:8080/studio.html?rom=${input:romtobuild}.debug.rom"
+				"--app=http://localhost:8080/studio.debug.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -160,7 +160,7 @@
 		{
 			"type": "msedge",
 			"request": "launch",
-			"name": "STUDIO RELEASE: WSL Server",
+			"name": "Release the game from WSL Server",
 			"url": "http://localhost:8080/studio.html?rom=${input:romtobuild}.rom",
 			"runtimeExecutable": "/usr/bin/microsoft-edge",
 			"browserLaunchLocation": "workspace",

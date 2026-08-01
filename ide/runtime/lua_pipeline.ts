@@ -10,6 +10,7 @@ import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import {
 	createBlua32SourceImage,
 	createBlua32SystemSourceImage,
@@ -517,6 +518,9 @@ export function bootActiveBlua32Media(
 	resetHandledLuaErrors(fault);
 	luaTooling.luaInterpreter = interpreter;
 	runtime.resetForSystemBoot();
+	fault.supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+	);
 	runtime.boot();
 }
 

@@ -73,6 +73,7 @@ export type RuntimeCpuFaultFrame = {
 
 export type RuntimeFaultState = {
 	handledLuaErrors: WeakSet<object>;
+	supervisorFaultSequence: number;
 	lastLuaCallStack: StackTraceFrame[];
 	lastCpuFaultSnapshot: RuntimeCpuFaultFrame[];
 	lastCpuFaultExecutionDomainId: ExecutionDomainId;
@@ -88,6 +89,7 @@ const EMPTY_STACK_TRACE_FRAMES: ReadonlyArray<StackTraceFrame> = [];
 export function createRuntimeFaultState(): RuntimeFaultState {
 	return {
 		handledLuaErrors: new WeakSet<object>(),
+		supervisorFaultSequence: 0,
 		lastLuaCallStack: [],
 		lastCpuFaultSnapshot: [],
 		lastCpuFaultExecutionDomainId: -1,

@@ -225,6 +225,7 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 
 export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 	const inputs = await loadBrowserPageInputs();
+	const pagePath = debug ? './dist/studio.debug.html' : './dist/studio.html';
 	const html = renderBrowserPage(
 		inputs,
 		'BMSX',
@@ -232,7 +233,7 @@ export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 		'',
 	);
 	await Promise.all([
-		writeFile('./dist/studio.html', html),
+		writeFile(pagePath, html),
 		writeBrowserManifest('BMSX', 'BMSX'),
 	]);
 }

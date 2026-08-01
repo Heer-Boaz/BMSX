@@ -113,7 +113,7 @@ async function main(): Promise<void> {
 			ui.ok(
 				`Browser Studio → ${pc.white(`dist/${javascriptProductFilename('browser-studio', debug)}`)}`,
 			);
-			ui.ok(`Browser Studio loader → ${pc.white('dist/studio.html')}`);
+			ui.ok(`Browser Studio loader → ${pc.white(debug ? 'dist/studio.debug.html' : 'dist/studio.html')}`);
 			ui.ok(`Browser manifest → ${pc.white('dist/manifest.webmanifest')}`);
 			break;
 		}

@@ -17,7 +17,6 @@ import { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest'
 import { OverlayRenderer } from './overlay_renderer';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeTaskQueue } from './task_queue';
-import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -31,7 +30,6 @@ export class RuntimeIdeState {
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly runtimeTasks: RuntimeTaskQueue;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
-	public supervisorFaultSequence: number;
 
 	public constructor(
 		runtime: Runtime,
@@ -48,9 +46,6 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
-		this.supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-			IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-		);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(
 			sources,

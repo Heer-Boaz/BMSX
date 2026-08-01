@@ -207,8 +207,8 @@ export function runWorkbenchHostFrame(
 				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
 					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 				);
-				if (supervisorFaultSequence !== ide.supervisorFaultSequence) {
-					ide.supervisorFaultSequence = supervisorFaultSequence;
+				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
 					handleSupervisorFault(
 						logOutput,
 						ide.fault,
