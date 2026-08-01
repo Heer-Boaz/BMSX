@@ -18,7 +18,6 @@ local system_status<const>: *word = 0x0801034c
 
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
-local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
 local system_supervisor_enter<const> = 0x00000002
 local system_supervisor_leave<const> = 0x00000004
@@ -405,7 +404,7 @@ function monitor.enter(error_value)
 		*system_control = system_supervisor_fault
 	end
 	vblank.clear()
-	*irq_mask = irq_dma_done | irq_vblank | irq_gpu
+	*irq_mask = irq_dma_done | irq_vblank
 	cop0.status = saved_status | 1
 	-- Seed monitor edge state from one monitor-owned ICU sample. Keys held while
 	-- the exception was raised must be released before they become editor input.

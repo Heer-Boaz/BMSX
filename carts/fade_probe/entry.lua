@@ -1,5 +1,6 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
 gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
@@ -39,10 +40,10 @@ local draw_blend_probe<const> = function(x, y, bg, fg, draw_mode)
 end
 
 local draw_mode_row<const> = function(y, bg, fg)
-	draw_blend_probe(8, y, bg, fg, gx_gpu.draw_mode_blend_half)
-	draw_blend_probe(84, y, bg, fg, gx_gpu.draw_mode_blend_add)
-	draw_blend_probe(160, y, bg, fg, gx_gpu.draw_mode_blend_subtract)
-	draw_blend_probe(236, y, bg, fg, gx_gpu.draw_mode_blend_quarter)
+	draw_blend_probe(8, y, bg, fg, gp0.draw_mode_blend_half)
+	draw_blend_probe(84, y, bg, fg, gp0.draw_mode_blend_add)
+	draw_blend_probe(160, y, bg, fg, gp0.draw_mode_blend_subtract)
+	draw_blend_probe(236, y, bg, fg, gp0.draw_mode_blend_quarter)
 end
 
 local draw_mode_guides<const> = function()

@@ -11,8 +11,8 @@ function customvisualcomponent.new(opts)
 	return self
 end
 
-function customvisualcomponent:draw()
-	self.producer(self.parent, self)
+function customvisualcomponent:draw(draw)
+	self.producer(self.parent, draw)
 end
 
 return customvisualcomponent

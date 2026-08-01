@@ -1,8 +1,7 @@
 local component_types<const> = require('cartlib/components/types')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local tilelayercomponent<const> = {}
 tilelayercomponent.__index = tilelayercomponent
@@ -17,16 +16,17 @@ function tilelayercomponent.new(opts)
 	return self
 end
 
-function tilelayercomponent:draw()
+function tilelayercomponent:draw(draw)
 	local parent<const> = self.parent
-	gx_image.tile_run_sources(
+	image.draw_tiles(
+		draw,
 		self.sources,
 		self.tile_count,
 		self.columns,
 		self.tile_size,
 		parent.x + self.offset_x + self.draw_offset_x,
 		parent.y + self.offset_y + self.draw_offset_y,
-		opaque_texture_blend_mode)
+		gp0.draw_mode_blend_half)
 end
 
 return tilelayercomponent

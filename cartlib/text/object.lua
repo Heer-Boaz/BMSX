@@ -7,7 +7,7 @@ local timelinecomponent<const> = require('cartlib/timeline/component')
 local statemachinecomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
@@ -24,13 +24,13 @@ function textobjectcomponent.new(opts)
 	return setmetatable(textcomponent.new(opts), textobjectcomponent)
 end
 
-function textobjectcomponent:render(x, y)
+function textobjectcomponent:render(draw, x, y)
 	local owner<const> = self.parent
-	owner:submit_highlight()
+	owner:submit_highlight(draw)
 	if self.background_color ~= nil then
-		owner:submit_text_background_lines(x, y)
+		owner:submit_text_background_lines(draw, x, y)
 	end
-	textcomponent.render_glyphs(self, x, y)
+	textcomponent.render_glyphs(self, draw, x, y)
 end
 
 local highlight_move_timeline_id<const> = 'hmove'
@@ -557,7 +557,7 @@ function textobject:type_next()
 	self.state_machines:dispatch(typing_command_step)
 end
 
-function textobject:submit_text_background_lines(x, y)
+function textobject:submit_text_background_lines(draw, x, y)
 	local tc<const> = self.text_component
 	local glyphs<const> = tc.glyph_lines
 	local highlighted_logical_line<const> = self.highlighted_line_index
@@ -578,7 +578,7 @@ function textobject:submit_text_background_lines(x, y)
 			elseif tc.center_block_width ~= nil then
 					line_x = x + ((tc.center_block_width - line_width) // 2)
 			end
-			gx_gpu.fill_rect_color(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, background_color)
+			draw:rect(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, background_color)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + tc.line_height
@@ -586,7 +586,7 @@ function textobject:submit_text_background_lines(x, y)
 	end
 end
 
-function textobject:submit_highlight()
+function textobject:submit_highlight(draw)
 	local dims<const> = self.dimensions
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
@@ -595,8 +595,8 @@ function textobject:submit_highlight()
 		local offset_x<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
-		gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
-		gx_gpu.fill_rect_semitrans_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, self.highlight_bg_color)
+		draw:mode(gp0.draw_mode_blend_half)
+		draw:semitransparent_rect(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, self.highlight_bg_color)
 	end
 end
 

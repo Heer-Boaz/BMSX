@@ -1,23 +1,22 @@
 local romdir<const> = require('cartlib/romdir')
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local gx_texture<const> = require('cartlib/gx/texture')
 
-local gx_image<const> = {}
+local image<const> = {}
 local image_by_id<const> = {}
-local palette4_mode<const> = gx_gpu.texture_mode_palette4
 local fixed_direct16_texture<const> = {
-	mode = gx_gpu.texture_mode_direct16,
+	mode = gp0.texture_mode_direct16,
 	x = 0,
 	y = 0,
 }
 
-function gx_image.rect(imgid)
-	local cached<const> = image_by_id[imgid]
+function image.load(id)
+	local cached<const> = image_by_id[id]
 	if cached then
 		return cached
 	end
-	local image<const> = romdir.image(imgid)
-	local meta<const> = image.imgmeta
+	local resource<const> = romdir.image(id)
+	local meta<const> = resource.imgmeta
 	local texture
 	local u
 	local v
@@ -26,7 +25,7 @@ function gx_image.rect(imgid)
 		u = meta.gx_source_x
 		v = meta.gx_source_y
 	else
-		texture = gx_texture.from_image(image)
+		texture = gx_texture.from_image(resource)
 		u = meta.texture_u
 		v = meta.texture_v
 	end
@@ -44,37 +43,33 @@ function gx_image.rect(imgid)
 			tiles[index].texture = texture
 		end
 	end
-	image_by_id[imgid] = rect
+	image_by_id[id] = rect
 	return rect
 end
 
-function gx_image.blit_rect_color(rect, x, y, color, flip_flags, blend_mode)
-	local texture<const> = rect.texture
+function image.draw(draw, source, x, y, color, flip_flags, blend_mode)
+	local texture<const> = source.texture
 	local rectangle_flip_mode<const> = flip_flags << 12
-	if texture.mode == palette4_mode then
-		gx_gpu.draw_palette4_textured_rect_color(
+	if texture.mode == gp0.texture_mode_palette4 then
+		draw:palette4_rect(
 			texture.x, texture.clut_x, texture.clut_y,
-			rect.u, texture.y + rect.v,
-			x, y, rect.w, rect.h, color, rectangle_flip_mode, blend_mode)
+			source.u, texture.y + source.v,
+			x, y, source.w, source.h, color, rectangle_flip_mode, blend_mode)
 		return
 	end
-	gx_gpu.draw_direct16_textured_rect_color(
-		texture.x + rect.u, texture.y + rect.v,
-		x, y, rect.w, rect.h, color, rectangle_flip_mode, blend_mode)
+	draw:direct16_rect(
+		texture.x + source.u, texture.y + source.v,
+		x, y, source.w, source.h, color, rectangle_flip_mode, blend_mode)
 end
 
-function gx_image.blit_img_color(imgid, x, y, color, blend_mode)
-	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color, 0, blend_mode)
-end
-
-function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, origin_x, origin_y, blend_mode)
+function image.draw_tiles(draw, sources, tile_count, columns, tile_size, origin_x, origin_y, blend_mode)
 	local column = 0
 	local target_x = origin_x
 	local target_y = origin_y
 	for index = 1, tile_count do
-		local rect<const> = sources[index]
-		if rect then
-			gx_image.blit_rect_color(rect, target_x, target_y, 0xffffffff, 0, blend_mode)
+		local source<const> = sources[index]
+		if source then
+			image.draw(draw, source, target_x, target_y, 0xffffffff, 0, blend_mode)
 		end
 		column = column + 1
 		if column == columns then
@@ -87,36 +82,37 @@ function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, orig
 	end
 end
 
-function gx_image.blit_rect_affine_color(
-	rect,
+function image.draw_affine(
+	draw,
+	source,
 	origin_x, origin_y,
 	axis_xx, axis_xy,
 	axis_yx, axis_yy,
 	flip_flags,
 	color,
 	blend_mode)
-	local texture<const> = rect.texture
+	local texture<const> = source.texture
 	local source_x
-	if texture.mode == palette4_mode then
-		source_x = rect.u
+	if texture.mode == gp0.texture_mode_palette4 then
+		source_x = source.u
 	else
-		source_x = texture.x + rect.u
+		source_x = texture.x + source.u
 	end
-	local source_y<const> = texture.y + rect.v
+	local source_y<const> = texture.y + source.v
 	local u0 = source_x
-	local u1 = source_x + rect.w - 1
+	local u1 = source_x + source.w - 1
 	local v0 = source_y
-	local v1 = source_y + rect.h - 1
+	local v1 = source_y + source.h - 1
 	if (flip_flags & 1) ~= 0 then
-		u0 = source_x + rect.w - 1
+		u0 = source_x + source.w - 1
 		u1 = source_x
 	end
 	if (flip_flags & 2) ~= 0 then
-		v0 = source_y + rect.h - 1
+		v0 = source_y + source.h - 1
 		v1 = source_y
 	end
-	if texture.mode == palette4_mode then
-		gx_gpu.draw_palette4_textured_quad_color(
+	if texture.mode == gp0.texture_mode_palette4 then
+		draw:palette4_quad(
 			texture.x, texture.clut_x, texture.clut_y,
 			source_x, source_y,
 			u0, v0,
@@ -131,7 +127,7 @@ function gx_image.blit_rect_affine_color(
 			blend_mode)
 		return
 	end
-	gx_gpu.draw_direct16_textured_quad_color(
+	draw:direct16_quad(
 		source_x, source_y,
 		u0, v0,
 		u1, v0,
@@ -145,22 +141,4 @@ function gx_image.blit_rect_affine_color(
 		blend_mode)
 end
 
-function gx_image.blit_img_affine_color(
-	imgid,
-	origin_x, origin_y,
-	axis_xx, axis_xy,
-	axis_yx, axis_yy,
-	flip_flags,
-	color,
-	blend_mode)
-	gx_image.blit_rect_affine_color(
-		gx_image.rect(imgid),
-		origin_x, origin_y,
-		axis_xx, axis_xy,
-		axis_yx, axis_yy,
-		flip_flags,
-		color,
-		blend_mode)
-end
-
-return gx_image
+return image

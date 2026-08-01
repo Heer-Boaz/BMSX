@@ -29,7 +29,6 @@ local cart_status<const>: *word = 0x08010420
 local cart_rom_base<const> = 0x10000000
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
-local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
 local cart_state_missing<const> = 1
 local cart_state_invalid<const> = 2
@@ -118,7 +117,7 @@ local update_boot_screen<const> = function()
 end
 
 local init<const> = function()
-	*irq_mask = irq_dma_done | irq_gpu
+	*irq_mask = irq_dma_done
 	gx_gpu.reset_320x240()
 	gx_gpu.display_origin(terminal_layout.vram_origin)
 	gx_gpu.draw_target(terminal_layout.vram_origin)
@@ -128,7 +127,7 @@ local init<const> = function()
 end
 
 init()
-*irq_mask = irq_dma_done | irq_vblank | irq_gpu
+*irq_mask = irq_dma_done | irq_vblank
 *input_control = input_arm
 while true do
 	vblank.wait()

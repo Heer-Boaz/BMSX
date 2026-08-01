@@ -1,6 +1,6 @@
 local transition<const> = {}
 require('globals')
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -205,7 +205,7 @@ function transition.register_states(states)
 			overlay.y = 0
 			overlay.width = screen_width
 			overlay.height = screen_height
-			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
+			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			overlay.color = 0
 			for i = 1, #self.transition_panels do
@@ -374,7 +374,7 @@ function transition.register_states(states)
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
+			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			background.surface_component.color = p3_white_color
 			local target<const> = { bg = background, overlay = overlay }

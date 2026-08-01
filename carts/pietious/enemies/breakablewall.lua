@@ -1,5 +1,5 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_image<const> = require('cartlib/gx/image')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
@@ -46,7 +46,7 @@ function breakablewall:ctor()
 	self.sy = self.height_tiles * room_tile_size
 	local tile_layer<const> = self:get_component('tilelayercomponent')
 	local tile_count<const> = self.width_tiles * self.height_tiles
-	local tile_source<const> = gx_image.rect(self.tiletype)
+	local tile_source<const> = image.load(self.tiletype)
 	local sources<const> = {}
 	for index = 1, tile_count do
 		sources[index] = tile_source

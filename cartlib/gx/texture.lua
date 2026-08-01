@@ -1,10 +1,9 @@
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local romdir<const> = require('cartlib/romdir')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
-local palette4_mode<const> = gx_gpu.texture_mode_palette4
 
 function gx_texture.from_image(image)
 	local texture_id<const> = image.imgmeta.gx_texture_resid
@@ -37,7 +36,7 @@ function gx_texture.upload(texture, destination, clut_destination)
 	texture.x = x
 	texture.y = y
 	local clut = 0
-	if texture.mode == palette4_mode then
+	if texture.mode == gp0.texture_mode_palette4 then
 		texture.clut_x = clut_destination & 0x0000ffff
 		texture.clut_y = clut_destination >> 16
 		clut = clut_destination

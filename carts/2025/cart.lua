@@ -1,12 +1,11 @@
 module<entry>
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/player')
@@ -14,6 +13,7 @@ input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local render<const> = require('cartlib/render/renderer')
 local surfacecomponent<const> = require('cartlib/render/surface_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
@@ -28,17 +28,7 @@ local start_node<const> = 'title'
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
 local irq_imgdec<const> = 0x0080
-local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
-local framebuffer_size<const> = 320 | (240 << 16)
-local vblank_count = 0
-
-local wait_vblank<const> = function()
-	repeat
-		halt_until_irq
-	until vblank_count ~= 0
-	vblank_count = vblank_count - 1
-end
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -47,12 +37,10 @@ local transition_module<const> = require('transition')
 local pipeline_descriptors<const> = {
 	object_fsm_system,
 	timeline_system,
-	visual_render_system,
 }
 local pipeline_spec<const> = {
 	{ ref = object_fsm_system.id },
 	{ ref = timeline_system.id },
-	{ ref = visual_render_system.id },
 }
 
 local surface_object_class<const> = {}
@@ -90,7 +78,7 @@ end
 local create_transition_visuals<const> = function()
 	local overlay<const> = create_rect_state()
 	overlay.blend_color = 0
-	overlay.blend_mode = gx_gpu.draw_mode_blend_half
+	overlay.blend_mode = gp0.draw_mode_blend_half
 	return {
 		overlay = overlay,
 		panels = {
@@ -102,28 +90,28 @@ local create_transition_visuals<const> = function()
 	}
 end
 
-local draw_director_visual<const> = function(parent)
+local draw_director_visual<const> = function(parent, draw)
 	local results<const> = parent.combat_results_visual
 	if results.visible then
-		gx_gpu.fill_rect_color(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
+		draw:rect(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
 	end
 	local overlay<const> = parent.transition_visual.overlay
 	if overlay.color ~= 0 and overlay.visible then
-		gx_gpu.fill_rect_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
+		draw:rect(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
 	end
 	if overlay.blend_color ~= 0 then
-		gx_gpu.set_draw_mode(overlay.blend_mode)
-		gx_gpu.fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
+		draw:mode(overlay.blend_mode)
+		draw:semitransparent_rect(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
 	end
 	for i = 1, #parent.transition_visual.panels do
 		local panel<const> = parent.transition_visual.panels[i]
 		if panel.visible then
-			gx_gpu.fill_rect_color(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
+			draw:rect(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
 		end
 	end
 	local accent<const> = parent.transition_visual.accent
 	if accent.visible then
-		gx_gpu.fill_rect_color(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
+		draw:rect(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
 	end
 end
 
@@ -318,13 +306,8 @@ function init()
 	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	irq_module.register(irq_vblank, function()
-		vblank_count = vblank_count + 1
-	end)
 	aem.reload()
-	*irq_mask_register = irq_imgdec | irq_vblank | irq_apu
-	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
-	texture_residency.load_font('msx_6b_font_space')
+	*irq_mask_register = irq_imgdec | irq_apu
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()
@@ -425,17 +408,18 @@ function new_game()
 end
 
 init()
+local renderer<const> = render.new(world_instance, 0, 0xff000000)
+texture_residency.load_font('msx_6b_font_space')
 texture_residency.replace_background(story.title.bg)
 new_game()
 *input_control_register = 0x00000001
 while true do
-	wait_vblank()
+	renderer:wait_vblank()
 
 	input.update()
 	world_instance:update()
-	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
-	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
-	world_instance:draw()
+	renderer:wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
+	renderer:render()
 	texture_residency.submit_pending_background()
 
 	*input_control_register = 0x00000001

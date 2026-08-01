@@ -1,5 +1,5 @@
 local string_lib<const> = string
-local gx_image<const> = require('cartlib/gx/image')
+local image<const> = require('cartlib/gx/image')
 local byte<const> = string_lib.byte
 
 local font<const> = {}
@@ -22,12 +22,12 @@ local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
-		local image<const> = gx_image.rect(imgid)
+		local source<const> = image.load(imgid)
 		items[byte(glyph)] = {
-			image = image,
-			width = image.w,
-			height = image.h,
-			advance = image.w + advance_padding,
+			image = source,
+			width = source.w,
+			height = source.h,
+			advance = source.w + advance_padding,
 		}
 	end
 	local space<const> = items[0x20]

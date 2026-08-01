@@ -1,8 +1,8 @@
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
@@ -10,7 +10,6 @@ local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/world').instance
 require('constants')
 local player_abilities<const> = require('player/abilities')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local player<const> = {}
 player.__index = player
@@ -18,6 +17,20 @@ player.__index = player
 local option_animation_timeline_id<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
+local sources<const> = {
+	player_neutral = { id = assets_player_n, image = image.load(assets_player_n) },
+	player_up = { id = assets_player_u, image = image.load(assets_player_u) },
+	player_down = { id = assets_player_d, image = image.load(assets_player_d) },
+	options = {
+		image.load(assets_option1),
+		image.load(assets_option2),
+		image.load(assets_option3),
+		image.load(assets_option4),
+	},
+	laser = image.load(assets_laser),
+	missile_falling = image.load(assets_missile1),
+	missile_flying = image.load(assets_missile2),
+}
 
 function player:emit_event(name, extra)
 	if not telemetry_enabled then
@@ -61,7 +74,7 @@ function player:emit_metric()
 		self.y,
 		self.last_dx,
 		self.last_dy,
-		self.sprite_imgid,
+		self.sprite.id,
 		self.last_speed,
 		bool01(self.left_held),
 		bool01(self.right_held),
@@ -140,7 +153,7 @@ function player:reset_runtime()
 	self.fire_held = false
 	self.fire_pressed = false
 	self.speed_powerups = loadout_speed_powerups
-	self.sprite_imgid = assets_player_n
+	self.sprite = sources.player_neutral
 	self:initialize_options()
 	self.lasers = {}
 	self.missiles = {}
@@ -161,19 +174,6 @@ function player:reset_runtime()
 	)
 end
 
-function player:get_option_imgid()
-	if self.option_anim_index == 1 then
-		return assets_option1
-	end
-	if self.option_anim_index == 2 then
-		return assets_option2
-	end
-	if self.option_anim_index == 3 then
-		return assets_option3
-	end
-	return assets_option4
-end
-
 function player:get_laser_visual_x(x, weapon)
 	local tile_width<const> = weapon.tile_width
 	return (x // tile_width) * tile_width
@@ -184,7 +184,7 @@ function player:get_laser_visual_y(y, weapon)
 	return (y // visual_step) * visual_step
 end
 
-function player:draw_lasers()
+function player:draw_lasers(draw)
 	for i = 1, #self.lasers do
 		local laser<const> = self.lasers[i]
 		local start_x<const> = self:get_laser_visual_x(laser.left_x, weapons_laser)
@@ -195,40 +195,40 @@ function player:draw_lasers()
 		end
 		local x = start_x
 		while x < end_x do
-			gx_image.blit_img_color(assets_laser, x, visual_y, 0xffffffff, opaque_texture_blend_mode)
+			image.draw(draw, sources.laser, x, visual_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 			x = x + weapons_laser.tile_width
 		end
 	end
 end
 
-function player:draw_missiles()
+function player:draw_missiles(draw)
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
-		gx_image.blit_img_color(missile.sprite_imgid, missile.x, missile.y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, missile.sprite, missile.x, missile.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 
-function player:draw_uplasers()
+function player:draw_uplasers(draw)
 	for i = 1, #self.uplasers do
 		local uplaser<const> = self.uplasers[i]
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, weapons_uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, weapons_uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			gx_image.blit_img_color(assets_laser, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff, opaque_texture_blend_mode)
+			image.draw(draw, sources.laser, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 		end
 	end
 end
 
-function player:draw_visual()
-	local option_imgid<const> = self:get_option_imgid()
+function player:draw_visual(draw)
+	local option_source<const> = sources.options[self.option_anim_index]
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
-		gx_image.blit_img_color(option_imgid, option.x, option.y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, option_source, option.x, option.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
-	gx_image.blit_img_color(self.sprite_imgid, self.x, self.y, 0xffffffff, opaque_texture_blend_mode)
-	self:draw_lasers()
-	self:draw_missiles()
-	self:draw_uplasers()
+	image.draw(draw, self.sprite.image, self.x, self.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	self:draw_lasers(draw)
+	self:draw_missiles(draw)
+	self:draw_uplasers(draw)
 end
 
 function player:on_fire_input_pressed()
@@ -309,12 +309,12 @@ function player:update_position()
 
 	if self.up_held then
 		try_move_y(-self:get_movement_speed())
-		self.sprite_imgid = assets_player_u
+		self.sprite = sources.player_up
 	elseif self.down_held then
 		try_move_y(self:get_movement_speed())
-		self.sprite_imgid = assets_player_d
+		self.sprite = sources.player_down
 	else
-		self.sprite_imgid = assets_player_n
+		self.sprite = sources.player_neutral
 	end
 
 	self.last_dx = self.x - previous_x
@@ -392,7 +392,7 @@ function player:spawn_missile(vessel_id)
 		x = vessel_x + weapons_missile_spawn_offset_x,
 		y = vessel_y + weapons_missile_spawn_offset_y,
 		state = missile_state_fall_from_vessel,
-		sprite_imgid = assets_missile1,
+		sprite = sources.missile_falling,
 	}
 	self.missiles[#self.missiles + 1] = missile
 	self.weapon_slots.missile[vessel_id] = self.weapon_slots.missile[vessel_id] + 1
@@ -597,7 +597,7 @@ function player:update_missiles()
 			and (not self.stage:is_solid_pixel(missile.x + 8, missile.y + 6))
 
 		if no_floor_below then
-			missile.sprite_imgid = assets_missile1
+			missile.sprite = sources.missile_falling
 			missile.y = missile.y + weapons_missile_movement_speed
 			if self.stage:is_solid_pixel(missile.x + 8, missile.y) then
 				missile.y = missile.y - (weapons_missile_movement_speed * 0.5)
@@ -606,7 +606,7 @@ function player:update_missiles()
 				missile.x = missile.x + (weapons_missile_movement_speed * 0.5)
 			end
 		else
-			missile.sprite_imgid = assets_missile2
+			missile.sprite = sources.missile_flying
 			missile.state = missile_state_fall_from_floor
 			missile.x = missile.x + weapons_missile_movement_speed
 		end
@@ -841,7 +841,7 @@ local register_player_definition<const> = function()
 			fire_held = false,
 			fire_pressed = false,
 			speed_powerups = loadout_speed_powerups,
-			sprite_imgid = assets_player_n,
+			sprite = sources.player_neutral,
 			option_anim_index = 1,
 		},
 	})

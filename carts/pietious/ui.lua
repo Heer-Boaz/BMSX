@@ -1,15 +1,23 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local world_instance<const> = require('cartlib/world/world').instance
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local ui<const> = {}
 ui.__index = ui
+local sources<const> = {
+	header = image.load('game_header'),
+	health_stripe = image.load('energybar_stripe_blue'),
+	weapon_stripe = image.load('energybar_stripe_red'),
+	secondary_weapon = {
+		pepernoot = image.load('pepernoot_16'),
+		spyglass = image.load('spyglass'),
+	},
+}
 
 local animate_level<const> = function(current, target)
 	if current < target then
@@ -19,19 +27,6 @@ local animate_level<const> = function(current, target)
 		return current - 1
 	end
 	return current
-end
-
-local secondary_weapon_sprite_id<const> = function(item_type)
-	if item_type == nil then
-		return nil
-	end
-	if item_type == 'pepernoot' then
-		return 'pepernoot_16'
-	end
-	if item_type == 'spyglass' then
-		return 'spyglass'
-	end
-	error('pietious ui invalid secondary_weapon=' .. tostring(item_type))
 end
 
 function ui:set_health_target(value)
@@ -86,21 +81,21 @@ function ui:update_hud_animation()
 	end
 end
 
-function ui:draw_ui()
+function ui:draw_ui(draw)
 	if not self.hud_visible then
 		return
 	end
 	local player<const> = world_instance:get('pietolon')
-	gx_image.blit_img_color('game_header', 0, 0, 0xffffffff, opaque_texture_blend_mode)
+	image.draw(draw, sources.header, 0, 0, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	for i = 0, (self.hud_health_level - 1) do
-		gx_image.blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, sources.health_stripe, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		gx_image.blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, sources.weapon_stripe, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
-	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
-	if equipped_sprite_id ~= nil then
-		gx_image.blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, opaque_texture_blend_mode)
+	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
+	if equipped_source ~= nil then
+		image.draw(draw, equipped_source, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 

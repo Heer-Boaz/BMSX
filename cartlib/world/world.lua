@@ -776,7 +776,7 @@ function world_class:update()
 
 end
 
-function world_class:draw()
+function world_class:update_presentation()
 	local dt_ms<const> = frame_delta_ms
 	run_phase(self, tickgroup.presentation, dt_ms)
 	run_phase(self, tickgroup.eventflush, dt_ms)

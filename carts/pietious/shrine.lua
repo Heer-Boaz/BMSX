@@ -2,20 +2,20 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local textcomponent<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local shrine<const> = {}
 shrine.__index = shrine
+shrine.background = image.load('shrine_inside')
 
-local draw_shrine_visual<const> = function()
-	gx_image.blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff, opaque_texture_blend_mode)
+local draw_shrine_visual<const> = function(parent, draw)
+	image.draw(draw, parent.background, 0, room_tile_origin_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 end
 
 function shrine:ctor()

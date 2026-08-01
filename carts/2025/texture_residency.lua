@@ -1,5 +1,5 @@
 local texture_residency<const> = {}
-local gx_image<const> = require('cartlib/gx/image')
+local image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 
@@ -22,7 +22,7 @@ local invalidate_background_residency<const> = function()
 end
 
 function texture_residency.preload_background(imgid)
-	local texture<const> = gx_image.rect(imgid).texture
+	local texture<const> = image.load(imgid).texture
 	if texture == active_background_texture or texture == in_flight_background_texture then
 		pending_background_texture = nil
 		pending_background_destination = nil
@@ -39,7 +39,7 @@ end
 function texture_residency.replace_background(imgid)
 	pending_background_texture = nil
 	pending_background_destination = nil
-	local texture<const> = gx_image.rect(imgid).texture
+	local texture<const> = image.load(imgid).texture
 	if font_upload_in_flight then
 		pending_background_texture = texture
 		pending_background_destination = texture_layout.background_left
@@ -54,23 +54,23 @@ function texture_residency.load_font(imgid)
 	-- The DMA channel accepts one transfer at a time. The initial background is
 	-- queued until this persistent texture has reached its dedicated VRAM slot.
 	font_upload_in_flight = true
-	gx_texture.upload(gx_image.rect(imgid).texture, texture_layout.font)
+	gx_texture.upload(image.load(imgid).texture, texture_layout.font)
 end
 
 function texture_residency.load_combat_workset(monster_imgid)
 	invalidate_background_residency()
 	if not combat_common_submitted then
-		gx_texture.upload(gx_image.rect('maya_b').texture, texture_layout.maya_b)
-		gx_texture.upload(gx_image.rect('maya_a').texture, texture_layout.maya_a)
-		gx_texture.upload(gx_image.rect('maya_v_s').texture, texture_layout.maya_vs)
+		gx_texture.upload(image.load('maya_b').texture, texture_layout.maya_b)
+		gx_texture.upload(image.load('maya_a').texture, texture_layout.maya_a)
+		gx_texture.upload(image.load('maya_v_s').texture, texture_layout.maya_vs)
 		combat_common_submitted = true
 	end
-	gx_texture.upload(gx_image.rect(monster_imgid).texture, texture_layout.monster)
+	gx_texture.upload(image.load(monster_imgid).texture, texture_layout.monster)
 end
 
 function texture_residency.load_all_out()
 	invalidate_background_residency()
-	gx_texture.upload(gx_image.rect('all_out').texture, texture_layout.all_out)
+	gx_texture.upload(image.load('all_out').texture, texture_layout.all_out)
 end
 
 function texture_residency.submit_pending_background()

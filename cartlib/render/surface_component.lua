@@ -1,8 +1,7 @@
 local component_types<const> = require('cartlib/components/types')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local surfacecomponent<const> = {}
 surfacecomponent.__index = surfacecomponent
@@ -18,24 +17,24 @@ end
 function surfacecomponent:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self.image = gx_image.rect(imgid)
+		self.image = image.load(imgid)
 	else
 		self.image = nil
 	end
 end
 
-function surfacecomponent:draw()
-	local image<const> = self.image
-	if not image then
+function surfacecomponent:draw(draw)
+	local source<const> = self.image
+	if not source then
 		return
 	end
 	local parent<const> = self.parent
 	local x<const> = parent.x + self.offset_x + self.draw_offset_x
 	local y<const> = parent.y + self.offset_y + self.draw_offset_y
-	local tiles<const> = image.tiles
+	local tiles<const> = source.tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
-		gx_image.blit_rect_color(tile, x + tile.x, y + tile.y, self.color, 0, opaque_texture_blend_mode)
+		image.draw(draw, tile, x + tile.x, y + tile.y, self.color, 0, gp0.draw_mode_blend_half)
 	end
 end
 

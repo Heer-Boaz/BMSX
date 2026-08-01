@@ -1,11 +1,10 @@
 local component_types<const> = require('cartlib/components/types')
 local font_module<const> = require('cartlib/font')
-local gx_image<const> = require('cartlib/gx/image')
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
 local visualcomponent<const> = require('cartlib/render/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local empty_text_lines<const> = {}
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
@@ -77,12 +76,12 @@ function textcomponent:set_wrap_chars(wrap_chars)
 	self:set_text(self.text)
 end
 
-function textcomponent:draw()
+function textcomponent:draw(draw)
 	local obj<const> = self.parent
-	self:render(obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
+	self:render(draw, obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
 end
 
-function textcomponent:render_glyphs(x, y)
+function textcomponent:render_glyphs(draw, x, y)
 	local glyphs<const> = self.glyph_lines
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
@@ -104,7 +103,7 @@ function textcomponent:render_glyphs(x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				gx_image.blit_rect_color(glyph.image, cursor_x, line_y, color, 0, opaque_texture_blend_mode)
+				image.draw(draw, glyph.image, cursor_x, line_y, color, 0, gp0.draw_mode_blend_half)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end
@@ -114,7 +113,7 @@ function textcomponent:render_glyphs(x, y)
 	end
 end
 
-function textcomponent:render(x, y)
+function textcomponent:render(draw, x, y)
 	local glyphs<const> = self.glyph_lines
 	local background_color<const> = self.background_color
 	if background_color ~= nil then
@@ -137,7 +136,7 @@ function textcomponent:render(x, y)
 				local cursor_x = line_x
 				for glyph_index = 1, line_length do
 					local glyph<const> = line[glyph_index]
-					gx_gpu.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, background_color)
+					draw:rect(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, background_color)
 					cursor_x = cursor_x + glyph.advance
 				end
 			end
@@ -146,7 +145,7 @@ function textcomponent:render(x, y)
 			end
 		end
 	end
-	self:render_glyphs(x, y)
+	self:render_glyphs(draw, x, y)
 end
 
 return textcomponent

@@ -1,7 +1,8 @@
 module<entry>
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
-local gx_primitives<const> = require('cartlib/gx/primitives')
+local primitives<const> = require('cartlib/gx/primitives')
 local gx_upload<const> = require('cartlib/gx/upload')
 gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
@@ -26,7 +27,6 @@ local hot_color<const> = 0xffffd166
 local line_color<const> = 0xffff5c8a
 local shadow_color<const> = 0xff102030
 local affine_color<const> = 0xffffffff
-local affine_blend_mode<const> = gx_gpu.draw_mode_blend_half
 local affine_texture_x<const> = 0
 local affine_texture_y<const> = 384
 
@@ -74,7 +74,7 @@ local draw_affine_texture<const> = function()
 		90, 138,
 		182, 156,
 		affine_color,
-		affine_blend_mode)
+		gp0.draw_mode_blend_half)
 end
 
 local draw_cart<const> = function()
@@ -90,7 +90,9 @@ local draw_cart<const> = function()
 	gx_gpu.fill_rect_color(24, 24, 96, 72, shadow_color)
 	gx_gpu.fill_rect_color(20, 20, 92, 68, bar_color)
 	gx_gpu.fill_rect_color(width - 92, height - 68, width - 20, height - 20, hot_color)
-	gx_primitives.draw_thick_line_color(x0, y0, x1, y1, line_color, 4)
+	local q0x<const>, q0y<const>, q1x<const>, q1y<const>, q2x<const>, q2y<const>, q3x<const>, q3y<const> =
+		primitives.thick_line(x0, y0, x1, y1, 4)
+	gx_gpu.draw_quad_color(q0x, q0y, q1x, q1y, q2x, q2y, q3x, q3y, line_color)
 	draw_affine_texture()
 	renderhwtest_draw_count = renderhwtest_draw_count + 1
 end

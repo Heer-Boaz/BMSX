@@ -1,18 +1,17 @@
 module<entry>
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_display<const> = require('cartlib/gx/display')
-local gx_image<const> = require('cartlib/gx/image')
+local image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_display.reset_256x192()
 local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local input<const> = require('cartlib/input/player')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
+local render<const> = require('cartlib/render/renderer')
 local world<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
 require('constants')
@@ -21,42 +20,24 @@ local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
-local irq_vblank<const> = 0x0004
-local framebuffer_size<const> = 256 | (192 << 16)
-local vblank_count = 0
-
 local pipeline_descriptors<const> = {
 	object_fsm_system,
 	timeline_system,
-	visual_render_system,
 }
 local pipeline_spec<const> = {
 	{ ref = object_fsm_system.id },
 	{ ref = timeline_system.id },
-	{ ref = visual_render_system.id },
 }
-
-local wait_vblank<const> = function()
-	repeat
-		halt_until_irq
-	until vblank_count ~= 0
-	vblank_count = vblank_count - 1
-end
 
 function init()
 	ecs_pipeline_registry:register_many(pipeline_descriptors)
-	irq_module.register(irq_vblank, function()
-		vblank_count = vblank_count + 1
-	end)
-	*irq_mask_register = irq_vblank
-	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
+	*irq_mask_register = 0
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
 	stage_module.register_stage_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	gx_texture.upload(gx_image.rect('ground').texture, texture_layout.stage)
 end
 
 function new_game()
@@ -78,16 +59,17 @@ function new_game()
 end
 
 init()
+local renderer<const> = render.new(world, 0, 0xff000000)
+gx_texture.upload(image.load('ground').texture, texture_layout.stage)
 *input_control_register = 0x00000001
 new_game()
 *input_control_register = 0x00000001
-wait_vblank()
+renderer:wait_vblank()
 
 while true do
 	input.update()
 	world:update()
 	*input_control_register = 0x00000001
-	wait_vblank()
-	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
-	world:draw()
+	renderer:wait_vblank()
+	renderer:render()
 end

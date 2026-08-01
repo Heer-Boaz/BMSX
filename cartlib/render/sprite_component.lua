@@ -1,8 +1,7 @@
 local component_types<const> = require('cartlib/components/types')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local spritecomponent<const> = {}
 spritecomponent.__index = spritecomponent
@@ -24,7 +23,7 @@ end
 function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self.image = gx_image.rect(imgid)
+		self.image = image.load(imgid)
 	else
 		self.image = nil
 	end
@@ -39,7 +38,7 @@ function spritecomponent:on_detach()
 	end
 end
 
-function spritecomponent:draw()
+function spritecomponent:draw(draw)
 	local rect<const> = self.image
 	if not rect then
 		return
@@ -57,10 +56,10 @@ function spritecomponent:draw()
 	local scale_x<const> = self.scale_x * self.draw_scale_x
 	local scale_y<const> = self.scale_y * self.draw_scale_y
 	if scale_x == 1 and scale_y == 1 then
-		gx_image.blit_rect_color(rect, x, y, self.color, flip_flags, opaque_texture_blend_mode)
+		image.draw(draw, rect, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
 		return
 	end
-	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color, opaque_texture_blend_mode)
+	image.draw_affine(draw, rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color, gp0.draw_mode_blend_half)
 end
 
 return spritecomponent

@@ -52,7 +52,7 @@
 
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
@@ -84,12 +84,12 @@ local daemon_timeline_id<const> = 'director.daemon'
 local director<const> = {}
 director.__index = director
 
-function director:draw_visual()
+function director:draw_visual(draw)
 	if not self.seal_flash_on then
 		return
 	end
-	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
-	gx_gpu.fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+	draw:mode(gp0.draw_mode_blend_half)
+	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 function director:activate_spaces()

@@ -1,13 +1,11 @@
 module<entry>
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_display<const> = require('cartlib/gx/display')
 local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_display.reset_320x240()
-local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
-local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local input<const> = require('cartlib/input/player')
 local irq_module<const> = require('cartlib/irq')
+local render<const> = require('cartlib/render/renderer')
 local world<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
 
@@ -53,40 +51,20 @@ cartlib_test_gte_plus_ready = true
 
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
-local irq_vblank<const> = 0x0004
-local framebuffer_size<const> = 320 | (240 << 16)
-local vblank_count = 0
 cartlib_test_ready = false
-
-local pipeline_descriptors<const> = { visual_render_system }
-local pipeline_spec<const> = { { ref = visual_render_system.id } }
-
-local wait_vblank<const> = function()
-	repeat
-		halt_until_irq
-	until vblank_count ~= 0
-	vblank_count = vblank_count - 1
-end
-
-irq_module.register(irq_vblank, function()
-	vblank_count = vblank_count + 1
-end)
-
-ecs_pipeline_registry:register_many(pipeline_descriptors)
 world:clear()
-ecs_pipeline_registry:build(world, pipeline_spec)
 world:add_space('main')
 world:set_space('main')
-*irq_mask_register = irq_vblank
+*irq_mask_register = 0
+local renderer<const> = render.new(world, 0, 0xff000000)
 *input_control_register = 0x00000001
-wait_vblank()
+renderer:wait_vblank()
 cartlib_test_ready = true
 
 while true do
 	input.update()
 	world:update()
-	wait_vblank()
-	gx_gpu.clear_color(0, framebuffer_size, 0xff000000)
-	world:draw()
+	renderer:wait_vblank()
+	renderer:render()
 	*input_control_register = 0x00000001
 end

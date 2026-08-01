@@ -9,6 +9,8 @@ local control<const>: *word = 0x08010408
 local control_start<const> = 0x00000001
 
 function imgdec.upload(source, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination_word)
+	dma.wait0_idle()
+	dma.wait1_idle()
 	local output_word_count = texture_word_count + 3
 	if clut_word_count ~= 0 then
 		output_word_count = output_word_count + clut_word_count + 3

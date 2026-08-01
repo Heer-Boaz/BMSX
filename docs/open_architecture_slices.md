@@ -21,7 +21,6 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `CARTLIB-GX-01` | Maak de normale visualroute een cart-owned retained GP0-buffer met expliciete DMA/GPU-completion; immediate GP0 blijft alleen de directe low-level route. | Painter-order, custom visuals en alle features blijven behouden zonder verborgen buffer, per-frame allocatie of hoststate. |
 | `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code, verplaats aantoonbaar cart-specifieke utilities naar hun cart en vernietig centrale registries die modules hardcoded per implementatiefeature (`with_fsm`, `with_bt`, enz.) groeperen. | Iedere module-owner declareert zijn eigen compositie, geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
 
 ## Vereist een interactieve backend of fysieke target

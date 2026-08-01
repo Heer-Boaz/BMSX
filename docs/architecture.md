@@ -2410,10 +2410,11 @@ uncompressed raw GP0 uploads.
 
 ### GX GPU/GTE
 
-The cart SDK keeps the hardware surfaces separate. `cartlib/gx/gpu` owns GP0
-packet words and direct GP0 submission; `cartlib/gx/display` owns GP1/PCRTC presentation
-programming; and `cartlib/gx/gte` exposes only the raw GTE/GTE+ register blocks,
-opcodes and packed-word representation. Camera and projection policy is cart or
+The cart SDK keeps the hardware surfaces separate. `cartlib/gx/gp0` owns raw
+GP0 opcodes and packet-word encoding, `cartlib/gx/gpu` owns direct GP0 MMIO,
+`cartlib/gx/display` owns GP1/PCRTC presentation programming, and
+`cartlib/gx/gte` exposes only the raw GTE/GTE+ register blocks, opcodes and
+packed-word representation. Camera and projection policy is cart or
 optional-library code. CPU-side RGBA conversion and its complete GP0 upload
 transaction belong to the optional `cartlib/gx/upload` path.
 
@@ -2423,15 +2424,25 @@ directly or through DMA. Draw targets and clear packets take their raw origin
 and size words explicitly. Display queries decode the live PCRTC words rather
 than returning a Lua-side copy.
 
-Cartlib submits painter-ordered 2D work through one retained visual-component
-list per world space. Sprite, surface, tile, text and custom visual components share the
-same effective depth `parent.z + offset_z + draw_offset_z`; lower depths submit
-first and higher depths submit last. Activation sequence is the stable equal-z
-tie-break. Add/remove updates that same list and its indices, while one in-place
-BIOS sort accounts for runtime depth changes before the visual system draws the
-components polymorphically. Cart-authored depth alone establishes occlusion;
-there are no kind-priority stages, subsystem draw
-escape paths, per-frame display-list records or backend-facing visual DTOs.
+Cartlib's render owner retains the GP0 word buffer, draw surface, framebuffer
+state and VBlank state. Carts call `render()` and, for page flipping,
+`present()`; they never own command-list begin/submit, a completion counter, a
+GPU IRQ handler or framebuffer rotation. Custom visuals receive only the draw
+surface's primitive operations, not its storage or lifecycle. Single-target
+rendering submits without a GPU fence. The page-flipped renderer alone appends
+the hardware GP0 interrupt packet and completes the physical synchronization
+described below.
+
+The renderer submits painter-ordered 2D work through one retained
+visual-component list per world space. Sprite, surface, tile, text and custom
+visual components share the same effective depth
+`parent.z + offset_z + draw_offset_z`; lower depths submit first and higher
+depths submit last. Activation sequence is the stable equal-z tie-break.
+Add/remove updates that same list and its indices, while one in-place sort
+accounts for runtime depth changes before the renderer draws the components
+polymorphically. Cart-authored depth alone establishes occlusion; there are no
+kind-priority stages, subsystem draw escape paths, per-frame display-list
+records or backend-facing visual DTOs.
 Visual offset, draw-offset, sprite flip and scale state is retained as direct
 scalar component fields. The draw, depth-sort and collision paths consume those
 fields directly; component construction and combat transitions do not allocate
@@ -2440,8 +2451,11 @@ coordinate or scale subtables.
 Text layout is retained component state. Text, font, wrap or textobject-dimension
 mutation rebuilds wrapped lines, glyph references and widths. Typewriter state
 reveals those retained glyph references by index; neither typing nor steady
-presentation rescans strings. Sprite modulation remains one packed GX color
-word from cart producer through command submission.
+presentation rescans strings. Image IDs resolve to retained texture-region
+sources during asset, component or state construction; presentation consumes
+those sources directly and never performs a ROM-directory lookup or lazy
+allocation. Sprite modulation remains one packed GX color word from cart
+producer through command submission.
 
 GX GPU/GTE is the cart graphics ABI and the only cart graphics path
 executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
@@ -2516,17 +2530,19 @@ GP0(1Fh) asserts the GPUSTAT interrupt-request source and raises `IRQ_GPU` only
 on its low-to-high transition. `IRQ_ACK` clears the IRQ controller's pending
 edge without changing GPUSTAT, so another GP0(1Fh) cannot retrigger while the
 GPU source remains asserted. GP1(02h) deasserts the GPU source but does not
-clear an already-pending `IRQ_GPU`; cart code acknowledges that pending bit
-through `IRQ_ACK`. This keeps the GPU source latch and the system interrupt
-pending latch as two distinct hardware words.
+clear an already-pending `IRQ_GPU`; the synchronous guest waiter acknowledges
+that pending bit through `IRQ_ACK`. This keeps the GPU source latch and the
+system interrupt pending latch as two distinct hardware words.
 
-A cart that page-flips uses that ordered GP0 IRQ packet as its completion fence:
-it finishes the back page, appends GP0(1Fh), waits for `IRQ_GPU`, programs
-GP1(05h), snapshots the VBlank sequence after that store, and waits for the next
+Cartlib's page-flipped renderer uses that ordered GP0 IRQ packet as its
+completion fence. It finishes the back page, appends GP0(1Fh), keeps `IRQ_GPU`
+masked, polls the physical `IRQ_FLAGS` word, and acknowledges both `IRQ_ACK`
+and GP1(02h). It then programs GP1(05h), snapshots its render-owner VBlank
+sequence after that store, and waits through `halt_until_irq` for the next
 sequence edge before reusing the former front page. Missing the current beam
 edge can delay publication by one frame but cannot expose a page still being
-written. The cart waits through `halt_until_irq`; it does not poll GPUSTAT,
-drain a host queue, or ask the renderer to publish an atomic frame.
+written. Neither cart nor renderer polls GPUSTAT or drains a host queue; the
+entire fence is guest MMIO against the emulated hardware.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared

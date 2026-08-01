@@ -1,15 +1,14 @@
 local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local stage<const> = {}
 stage.__index = stage
@@ -35,7 +34,7 @@ local non_collision_tile_keys<const> = {
 	snowtree20 = true,
 }
 
-local tile_asset_by_key<const> = {
+local tile_source_by_key<const> = {
 	collision = assets_house_tile_1,
 	house_1 = assets_house_tile_1,
 	house_2 = assets_house_tile_2,
@@ -91,6 +90,13 @@ local tile_asset_by_key<const> = {
 	snowtree19 = assets_snowtree19,
 	snowtree20 = assets_snowtree20,
 	snowtree21 = assets_snowtree21,
+}
+for key, id in pairs(tile_source_by_key) do
+	tile_source_by_key[key] = image.load(id)
+end
+local star_sources<const> = {
+	yellow = image.load(assets_star_yellow),
+	blue = image.load(assets_star_blue),
 }
 
 local new_rows<const> = function(width, height, default_value)
@@ -371,11 +377,11 @@ local resolve_tile_material<const> = function(tile_key)
 		return nil, 0
 	end
 
-	local tile_id<const> = tile_asset_by_key[tile_key]
+	local source<const> = tile_source_by_key[tile_key]
 	if non_collision_tile_keys[tile_key] then
-		return tile_id, 0
+		return source, 0
 	end
-	return tile_id, 1
+	return source, 1
 end
 
 function stage:apply_stage_config(stage_data)
@@ -407,8 +413,8 @@ function stage:build_tape()
 		local row<const> = map_rows[stage_y]
 		for stage_x = 1, width do
 			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y)
-			local tile_id<const> , solid<const> = resolve_tile_material(tile_key)
-			self.tile_tape[stage_y][stage_x] = tile_id
+			local source<const> , solid<const> = resolve_tile_material(tile_key)
+			self.tile_tape[stage_y][stage_x] = source
 			self.solid_tape[stage_y][stage_x] = solid
 		end
 	end
@@ -505,19 +511,19 @@ function stage:update_runtime()
 	self.frame = self.frame + 1
 end
 
-function stage:draw_star_particles(stars, imgid, hidden)
+function stage:draw_star_particles(draw, stars, source, hidden)
 	if hidden then
 		return
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		gx_image.blit_img_color(imgid, star.x, star.y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, source, star.x, star.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 
-function stage:draw()
-	self:draw_star_particles(self.yellow_stars, assets_star_yellow, self.yellow_blink)
-	self:draw_star_particles(self.blue_stars, assets_star_blue, self.blue_blink)
+function stage:draw(draw)
+	self:draw_star_particles(draw, self.yellow_stars, star_sources.yellow, self.yellow_blink)
+	self:draw_star_particles(draw, self.blue_stars, star_sources.blue, self.blue_blink)
 
 	local draw_columns<const> = self.tile_columns + 1
 	local tile_size<const> = self.tile_size
@@ -530,9 +536,9 @@ function stage:draw()
 
 		local draw_x<const> = screen_column * tile_size
 		for stage_row = 1, self.tile_rows do
-			local tile_id<const> = self.tile_tape[stage_row][stage_column]
-			if tile_id ~= nil then
-				gx_image.blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff, opaque_texture_blend_mode)
+			local source<const> = self.tile_tape[stage_row][stage_column]
+			if source ~= nil then
+				image.draw(draw, source, draw_x, (stage_row - 1) * tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
 			end
 		end
 	end

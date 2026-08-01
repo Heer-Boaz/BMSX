@@ -15,7 +15,6 @@
 -- transition mode, so presentation performs no director-state polling.
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local textcomponent<const> = require('cartlib/text/component')
@@ -27,8 +26,8 @@ local font_module<const> = require('cartlib/font')
 local transition<const> = {}
 transition.__index = transition
 
-local draw_transition_visual<const> = function()
-	gx_gpu.fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
+local draw_transition_visual<const> = function(_, draw)
+	draw:rect(0, 0, screen_width, screen_height, 0xff000000)
 end
 
 local transition_mode_events<const> = {

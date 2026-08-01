@@ -1,4 +1,5 @@
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
 
 local display<const> = {}
 
@@ -117,7 +118,7 @@ local program<const> = function(horizontal_resolution, display_mode, vertical_st
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_start | ((vertical_start + vertical_range_height) << 10)
 	*gp1 = gp1_dma_direction_cpu_to_gp0
-	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
+	gx_gpu.set_draw_mode(gp0.draw_mode_blend_half)
 	gx_gpu.draw_target(0, width | (height << 16))
 	gx_gpu.set_mask_bit_mode(0)
 	*gp1 = gp1_display_enable

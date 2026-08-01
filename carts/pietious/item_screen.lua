@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -8,10 +8,21 @@ local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local castle_map<const> = require('castle/map')
-local opaque_texture_blend_mode<const> = gx_gpu.draw_mode_blend_half
 
 local item_screen<const> = {}
 item_screen.__index = item_screen
+local sources<const> = {
+	screen_background = image.load('f1_screen'),
+	selector = image.load('f1_selector_white'),
+	map_title = image.load('f1_map_title'),
+	room_proxy = image.load('room_proxy'),
+	room_proxy_red = image.load('room_proxy_red'),
+	room_proxy_blue = image.load('room_proxy_blue'),
+	items = {},
+}
+for item_type, id in pairs(world_item_sprite) do
+	sources.items[item_type] = image.load(id)
+end
 
 local item_offset_x<const> = 11
 local item_offset_y<const> = 6
@@ -81,7 +92,7 @@ function item_screen:item_position_px(item_type)
 	return tx * room_tile_size, ty * room_tile_size
 end
 
-function item_screen:draw_inventory_items()
+function item_screen:draw_inventory_items(draw)
 	local player<const> = world_instance:get('pietolon')
 	local world_number<const> = world_instance:get('room').world_number
 	for i = 1, #inventory_item_order do
@@ -89,22 +100,22 @@ function item_screen:draw_inventory_items()
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x<const>, y<const> = self:item_position_px(item_type)
-				gx_image.blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff, opaque_texture_blend_mode)
+				image.draw(draw, sources.items[item_type], x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 			end
 		end
 	end
 end
 
-function item_screen:draw_secondary_weapon_selector()
+function item_screen:draw_secondary_weapon_selector(draw)
 	if self.selector_hidden then
 		return
 	end
 	local x<const> = (14 * room_tile_size) + (self.secondary_weapon_selection_index * (3 * room_tile_size))
 	local y<const> = room_hud_height + (16 * room_tile_size) + room_tile_half - 1
-	gx_image.blit_img_color('f1_selector_white', x, y, 0xffffffff, opaque_texture_blend_mode)
+	image.draw(draw, sources.selector, x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 end
 
-function item_screen:draw_map()
+function item_screen:draw_map(draw)
 	local player<const> = world_instance:get('pietolon')
 	local room<const> = world_instance:get('room')
 	local world_number<const> = room.world_number
@@ -117,21 +128,21 @@ function item_screen:draw_map()
 
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	gx_image.blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff, opaque_texture_blend_mode)
+	image.draw(draw, sources.map_title, map_title_x, 103 + room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
-		local sprite_id
+		local source
 		if self.map_highlight and proxy.room_number == world_instance:get('c').current_room_number then
-			sprite_id = 'room_proxy_red'
+			source = sources.room_proxy_red
 		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
-			sprite_id = 'room_proxy_blue'
+			source = sources.room_proxy_blue
 		else
-			sprite_id = 'room_proxy'
+			source = sources.room_proxy
 		end
 		local proxy_x<const> = (5 * room_tile_size) + (proxy.x * room_tile_size)
 		local proxy_y<const> = room_hud_height + (14 * room_tile_size) + room_tile_half + (proxy.y * room_tile_half)
-		gx_image.blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff, opaque_texture_blend_mode)
+		image.draw(draw, source, proxy_x, proxy_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 
@@ -167,11 +178,11 @@ function item_screen:shift_secondary_weapon_selection(direction)
 	self:apply_selected_secondary_weapon()
 end
 
-function item_screen:draw_screen()
-	gx_image.blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff, opaque_texture_blend_mode)
-	self:draw_inventory_items()
-	self:draw_secondary_weapon_selector()
-	self:draw_map()
+function item_screen:draw_screen(draw)
+	image.draw(draw, sources.screen_background, 0, room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	self:draw_inventory_items(draw)
+	self:draw_secondary_weapon_selector(draw)
+	self:draw_map(draw)
 end
 
 local define_item_screen_fsm<const> = function()

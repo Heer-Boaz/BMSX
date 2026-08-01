@@ -1,7 +1,6 @@
 module<entry>
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_display<const> = require('cartlib/gx/display')
-local gx_image<const> = require('cartlib/gx/image')
+local image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_display.reset_256x192()
@@ -15,13 +14,13 @@ local overlap_2d_system<const> = require('cartlib/ecs/systems/overlap_2d')
 local previous_position_system<const> = require('cartlib/ecs/systems/previous_position')
 local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local visual_render_system<const> = require('cartlib/ecs/systems/visual_render')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 local input<const> = require('cartlib/input/player')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
+local render<const> = require('cartlib/render/renderer')
 local world_instance<const> = require('cartlib/world/world').instance
 require('constants')
 local boekfoe_module<const> = require('enemies/boekfoe')
@@ -74,7 +73,6 @@ local pipeline_descriptors<const> = {
 	overlap_2d_system,
 	tile_collision_system,
 	timeline_system,
-	visual_render_system,
 	elevator_update_system_module,
 }
 local pietious_pipeline_spec<const> = {
@@ -87,36 +85,16 @@ local pietious_pipeline_spec<const> = {
 	{ ref = overlap_2d_system.id },
 	{ ref = tile_collision_system.id },
 	{ ref = timeline_system.id },
-	{ ref = visual_render_system.id },
 }
 
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
 local irq_mask_addr<const> = 0x08000008
-local irq_vblank<const> = 0x0004
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
-local irq_gpu<const> = 0x0040
 local framebuffer_front<const> = texture_layout.framebuffer_front
 local framebuffer_back<const> = texture_layout.framebuffer_back
-local framebuffer_size<const> = 256 | (192 << 16)
-local vblank_sequence = 0
-local gpu_completion_sequence = 0
-local front_framebuffer = framebuffer_front
-local back_framebuffer = framebuffer_back
-
-local wait_vblank_after<const> = function(sequence)
-	while vblank_sequence == sequence do
-		halt_until_irq
-	end
-end
-
-local wait_gpu_after<const> = function(sequence)
-	while gpu_completion_sequence == sequence do
-		halt_until_irq
-	end
-end
 
 local grant_starting_loadout<const> = function()
 	local player<const> = world_instance:get('pietolon')
@@ -182,18 +160,7 @@ function init()
 	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	irq_module.register(irq_vblank, function()
-		vblank_sequence = vblank_sequence + 1
-	end)
-	irq_module.register(irq_gpu, function()
-		gx_gpu.ack_irq()
-		gpu_completion_sequence = gpu_completion_sequence + 1
-	end)
 	aem.reload()
-	gx_gpu.draw_target(framebuffer_front, framebuffer_size)
-	gx_gpu.clear_color(framebuffer_front, framebuffer_size, 0xff000000)
-	gx_gpu.draw_target(framebuffer_back, framebuffer_size)
-	gx_gpu.clear_color(framebuffer_back, framebuffer_size, 0xff000000)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -256,33 +223,26 @@ function init()
 	pending_title_boot_epoch = init_epoch
 end
 
--- Pietious owns the hardware cadence explicitly. Input is armed before the
--- VBLANK that samples it, game logic runs during the following visible frame,
--- GP0 submission happens in the next VBLANK, and the extra wait keeps the game
--- tick at half the display refresh rate.
 mem[irq_mask_addr] = 0
 init()
-gx_texture.upload(gx_image.rect('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
-mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu | irq_gpu
+mem[irq_mask_addr] = irq_geo_done_error | irq_apu
+local renderer<const> = render.new_page_flipped(
+	world_instance,
+	framebuffer_front,
+	framebuffer_back,
+	0xff000000)
+gx_texture.upload(image.load('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
 new_game()
 mem[0x08000064] = 0x00000001
-wait_vblank_after(vblank_sequence)
+renderer:wait_vblank()
 
 while true do
 	input.update()
 	world_instance:update()
 
-	wait_vblank_after(vblank_sequence)
-	gx_gpu.clear_color(back_framebuffer, framebuffer_size, 0xff000000)
-	world_instance:draw()
-	local completion_sequence<const> = gpu_completion_sequence
-	gx_gpu.request_irq()
-	wait_gpu_after(completion_sequence)
+	renderer:wait_vblank()
+	renderer:render()
 
 	mem[0x08000064] = 0x00000001
-	gx_display.origin(back_framebuffer)
-	local flip_vblank_sequence<const> = vblank_sequence
-	wait_vblank_after(flip_vblank_sequence)
-	front_framebuffer, back_framebuffer = back_framebuffer, front_framebuffer
-	gx_gpu.draw_target(back_framebuffer, framebuffer_size)
+	renderer:present()
 end

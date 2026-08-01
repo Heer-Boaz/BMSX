@@ -1,8 +1,8 @@
 local combat<const> = {}
 require('globals')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_primitives<const> = require('cartlib/gx/primitives')
+local gp0<const> = require('cartlib/gx/gp0')
+local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/prefab')
 local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
@@ -105,14 +105,16 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
-local draw_combat_slash<const> = function(director)
+local draw_combat_slash<const> = function(director, draw)
 	local frame<const> = director.combat_hit_slash_frame
 	if not frame.slash_active then
 		return
 	end
 	local points<const> = frame.slash_points
-	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
-	gx_primitives.draw_thick_line_semitrans_color(points[1], points[2], points[3], points[4], frame.slash_color, frame.slash_thickness)
+	draw:mode(gp0.draw_mode_blend_half)
+	local x0<const>, y0<const>, x1<const>, y1<const>, x2<const>, y2<const>, x3<const>, y3<const> =
+		primitives.thick_line(points[1], points[2], points[3], points[4], frame.slash_thickness)
+	draw:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, frame.slash_color)
 end
 
 function combat_director:ctor()
@@ -399,7 +401,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
+			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			self.timelines:play(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -433,7 +435,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_gpu.draw_mode_blend_subtract
+			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			self.timelines:play(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -815,7 +817,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_gpu.draw_mode_blend_add
+			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,
@@ -916,7 +918,7 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
-			overlay.blend_mode = gx_gpu.draw_mode_blend_add
+			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,

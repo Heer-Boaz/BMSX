@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local gx_gpu<const> = require('cartlib/gx/gpu')
-local gx_image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local world_instance<const> = require('cartlib/world/world').instance
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
@@ -873,9 +873,9 @@ function room_object:ctor()
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = gx_image.rect(water_surface_frame_imgids[i])
+		self.water_surface_sources[i] = image.load(water_surface_frame_imgids[i])
 	end
-	self.water_body_source = gx_image.rect('water_body_msx')
+	self.water_body_source = image.load('water_body_msx')
 	self.room_tile_layer = tilelayercomponent.new({
 		id_local = 'room',
 		sources = self.room_tile_sources,
@@ -956,7 +956,7 @@ function room_object:rebuild_room_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = gx_image.rect(tile_id)
+			room_tile_sources[tile_index] = image.load(tile_id)
 			::continue::
 		end
 	end
@@ -1036,7 +1036,7 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	self.last_water_surface_frame = water_surface_frame
 end
 
-function room_object:render_room()
+function room_object:render_room(draw)
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
@@ -1044,8 +1044,8 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
-	gx_gpu.fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+	draw:mode(gp0.draw_mode_blend_half)
+	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)
