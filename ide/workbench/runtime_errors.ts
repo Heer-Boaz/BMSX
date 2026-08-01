@@ -9,9 +9,14 @@ import {
 	type SuspendedGuestValue,
 } from '../../tooling/ts/runtime/suspended_guest';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
-import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
+import {
+	recordLuaError,
+	recordSupervisorFault,
+	type RuntimeFaultState,
+} from '../runtime/fault_state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
+import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
 
 const EMPTY_REGISTER_VALUES: readonly SuspendedGuestValue[] = [];
 
@@ -88,4 +93,24 @@ export function handleLuaError(
 		logOutput.log(LogLevel.Error, recorded.stackText);
 		logFaultInstruction(logOutput, fault, sources, session);
 	}
+}
+
+export function handleSupervisorFault(
+	logOutput: LogOutput,
+	fault: RuntimeFaultState,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	session: SuspendedGuestSession,
+): void {
+	const stackText = recordSupervisorFault(fault, sources, runtime, session);
+	logOutput.log(LogLevel.Error, stackText);
+	const system = runtime.machine.systemController;
+	logOutput.log(
+		LogLevel.Error,
+		`\tcause=${formatNumberAsHex(system.readSupervisorFaultCauseWord(), 8)}`
+		+ ` epc=${formatNumberAsHex(system.readSupervisorFaultEpcWord(), 8)}`
+		+ ` bad=${formatNumberAsHex(system.readSupervisorFaultBadAddressWord(), 8)}`
+		+ ` lua=${formatNumberAsHex(system.readSupervisorFaultLuaReasonWord(), 8)}`,
+	);
+	logFaultInstruction(logOutput, fault, sources, session);
 }

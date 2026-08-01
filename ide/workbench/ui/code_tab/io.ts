@@ -181,7 +181,7 @@ export async function save(
 	} catch (error) {
 		switch (context.mode) {
 			case 'lua':
-				if (showLuaErrorOverlay(editor, error)) {
+				if (showLuaErrorOverlay(editor, context.resource, error)) {
 					return;
 				}
 				break;

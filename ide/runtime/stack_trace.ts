@@ -5,9 +5,15 @@ import {
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeCpuFaultFrame } from './fault_state';
-import type { RuntimeSourceState } from './sources';
+import {
+	resolveRuntimeLuaSource,
+	runtimeLuaSourceRegistry,
+	type RuntimeSourceState,
+} from './sources';
+import type { ResourceIdentity } from '../common/resource';
 
 export type StackTraceFrame = {
+	resource: ResourceIdentity;
 	functionName: string;
 	source: string;
 	line: number;
@@ -61,7 +67,13 @@ export function buildLuaStackFrames(
 		const range = symbols === null
 			? null
 			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.tracePc);
-		const source = range ? range.path : sources.activeLuaSources.entrySourcePath;
+		const source = range
+			? range.path
+			: runtimeLuaSourceRegistry(sources, entry.executionDomainId)!.entrySourcePath;
+		const sourceRecord = resolveRuntimeLuaSource(sources, {
+			domain: entry.executionDomainId,
+			path: source,
+		})!.record;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(
@@ -70,6 +82,10 @@ export function buildLuaStackFrames(
 			entry.functionAddress,
 		);
 		frames.push({
+			resource: {
+				domain: entry.executionDomainId,
+				path: sourceRecord.source_path,
+			},
 			functionName,
 			source,
 			line,

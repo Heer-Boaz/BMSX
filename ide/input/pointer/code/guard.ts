@@ -2,13 +2,11 @@ import { processRuntimeErrorOverlayPointer } from '../../../workbench/contrib/co
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from '../../../common/clipboard';
 
 export function handleCodeAreaPointerGuards(
 	clipboard: Clipboard,
 	editor: CartEditor,
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	codeTop: number,
@@ -19,7 +17,6 @@ export function handleCodeAreaPointerGuards(
 	if (!processRuntimeErrorOverlayPointer(
 		clipboard,
 		editor,
-		runtime,
 		snapshot,
 		justPressed,
 		codeTop,

@@ -12,13 +12,11 @@ import {
 	updateRuntimeErrorOverlayPointerHover,
 } from './pointer/hover';
 import type { CartEditor } from '../../../../../../cart_editor';
-import type { Runtime } from '../../../../../../../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from '../../../../../../common/clipboard';
 
 export function processRuntimeErrorOverlayPointer(
 	clipboard: Clipboard,
 	editor: CartEditor,
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	codeTop: number,
@@ -49,7 +47,7 @@ export function processRuntimeErrorOverlayPointer(
 		return true;
 	}
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_BODY) {
-		handleRuntimeErrorOverlayPointerClick(editor, runtime, overlay, overlay.hoverLine);
+		handleRuntimeErrorOverlayPointerClick(editor, overlay, overlay.hoverLine);
 	}
 	return true;
 }

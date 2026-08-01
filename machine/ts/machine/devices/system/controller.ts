@@ -56,6 +56,10 @@ export class SystemController {
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
 	private supervisorFaultSequence = 0;
+	private supervisorFaultCauseWord = 0;
+	private supervisorFaultEpcWord = 0;
+	private supervisorFaultBadAddressWord = 0;
+	private supervisorFaultLuaReasonWord = 0;
 	private readonly printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 	private printReadIndex = 0;
 	private printByteCount = 0;
@@ -317,6 +321,10 @@ export class SystemController {
 	}
 
 	private enterSupervisorFault(): void {
+		this.supervisorFaultCauseWord = this.cpu.readCauseWord();
+		this.supervisorFaultEpcWord = this.cpu.readEpcWord();
+		this.supervisorFaultBadAddressWord = this.cpu.readBadAddressWord();
+		this.supervisorFaultLuaReasonWord = this.cpu.readLuaFaultReasonWord();
 		this.supervisorFaultSequence = (this.supervisorFaultSequence + 1) >>> 0;
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 			this.supervisorExitRequested = false;
@@ -362,6 +370,22 @@ export class SystemController {
 
 	public readSupervisorFaultSequence(): number {
 		return this.supervisorFaultSequence;
+	}
+
+	public readSupervisorFaultCauseWord(): number {
+		return this.supervisorFaultCauseWord;
+	}
+
+	public readSupervisorFaultEpcWord(): number {
+		return this.supervisorFaultEpcWord;
+	}
+
+	public readSupervisorFaultBadAddressWord(): number {
+		return this.supervisorFaultBadAddressWord;
+	}
+
+	public readSupervisorFaultLuaReasonWord(): number {
+		return this.supervisorFaultLuaReasonWord;
 	}
 
 	public takeResetRequest(): boolean {

@@ -314,6 +314,9 @@ public:
 	int getFrameUpvalueCount(int frameIndex) const;
 	Value readFrameUpvalue(int frameIndex, int upvalueIndex) const;
 	u32 readEpcWord() const;
+	u32 readCauseWord() const;
+	u32 readBadAddressWord() const;
+	u32 readLuaFaultReasonWord() const;
 	void writeEpcWord(u32 value);
 	u32 readNmiReturnEpcWord() const;
 	void writeNmiReturnEpcWord(u32 value);

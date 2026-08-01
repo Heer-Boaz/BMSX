@@ -392,8 +392,18 @@ export function resolveRuntimeResourceForContext(
 	path: string,
 ): RuntimeResource | undefined {
 	const resource = state.resourceByIdentity.get(resourceIdentityKeyFromParts(domain, path));
-	if (resource || domain === SYSTEM_RESOURCE_DOMAIN) {
+	if (resource) {
 		return resource;
+	}
+	const source = resolveRuntimeLuaSourceForContext(state, domain, path);
+	if (source) {
+		return state.resourceByIdentity.get(resourceIdentityKeyFromParts(
+			source.domain,
+			source.record.source_path,
+		));
+	}
+	if (domain === SYSTEM_RESOURCE_DOMAIN) {
+		return;
 	}
 	return state.resourceByIdentity.get(resourceIdentityKeyFromParts(SYSTEM_RESOURCE_DOMAIN, path));
 }

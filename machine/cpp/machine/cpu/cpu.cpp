@@ -2205,6 +2205,18 @@ u32 CPU::readEpcWord() const {
 	return m_epcWord;
 }
 
+u32 CPU::readCauseWord() const {
+	return m_causeWord;
+}
+
+u32 CPU::readBadAddressWord() const {
+	return m_badAddressWord;
+}
+
+u32 CPU::readLuaFaultReasonWord() const {
+	return m_luaFaultReasonWord;
+}
+
 void CPU::writeEpcWord(u32 value) {
 	m_epcWord = value;
 }

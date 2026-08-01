@@ -47,9 +47,7 @@ export function executeEditorSearchCommand(
 			openResourceSearch(sources);
 			return;
 		case 'runtimeErrorFocus':
-			if (!focusRuntimeErrorOverlay(editor.resourcePanel)) {
-				openResourceSearch(sources);
-			}
+			focusRuntimeErrorOverlay(editor.resourcePanel);
 			return;
 		case 'createResource':
 			openCreateResourcePrompt(sources, editor.resourcePanel);

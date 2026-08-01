@@ -39,7 +39,6 @@ export function handleCodeAreaPointerInput(
 	if (handleCodeAreaPointerGuards(
 		clipboard,
 		editor,
-		runtime,
 		snapshot,
 		justPressed,
 		bounds.codeTop,

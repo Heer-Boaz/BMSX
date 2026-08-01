@@ -30,6 +30,7 @@ export class RuntimeIdeState {
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly runtimeTasks: RuntimeTaskQueue;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
+	public supervisorFaultSequence: number;
 
 	public constructor(
 		runtime: Runtime,
@@ -46,6 +47,7 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
+		this.supervisorFaultSequence = runtime.machine.systemController.readSupervisorFaultSequence();
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(
 			sources,

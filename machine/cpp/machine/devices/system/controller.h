@@ -61,6 +61,10 @@ public:
 	}
 	bool takeResetRequest();
 	u32 readSupervisorFaultSequence() const { return m_supervisorFaultSequence; }
+	u32 readSupervisorFaultCauseWord() const { return m_supervisorFaultCauseWord; }
+	u32 readSupervisorFaultEpcWord() const { return m_supervisorFaultEpcWord; }
+	u32 readSupervisorFaultBadAddressWord() const { return m_supervisorFaultBadAddressWord; }
+	u32 readSupervisorFaultLuaReasonWord() const { return m_supervisorFaultLuaReasonWord; }
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
 	void postLoad();
@@ -101,6 +105,10 @@ private:
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
 	u32 m_supervisorFaultSequence = 0u;
+	u32 m_supervisorFaultCauseWord = 0u;
+	u32 m_supervisorFaultEpcWord = 0u;
+	u32 m_supervisorFaultBadAddressWord = 0u;
+	u32 m_supervisorFaultLuaReasonWord = 0u;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_printBuffer{};
 	u32 m_printReadIndex = 0u;
 	u32 m_printByteCount = 0u;

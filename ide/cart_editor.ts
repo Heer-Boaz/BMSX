@@ -13,6 +13,7 @@ import type { EditorDisplay, Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
+import type { ResourceIdentity } from './common/resource';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
@@ -125,7 +126,7 @@ export type CartEditor = {
 	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
 	setFontVariant: (variant: Parameters<typeof setFontVariant>[1]) => void;
-	showRuntimeErrorInChunk: (path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
+	showRuntimeErrorInChunk: (resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	showRuntimeError: (line: number, column: number, message: string, details?: RuntimeErrorDetails, path?: string) => void;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
 	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
@@ -547,15 +548,12 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 	}
 
-	public showRuntimeErrorInChunk(path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
+	public showRuntimeErrorInChunk(resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
-		this.navigation.focusChunkSourceForContext(
-			this.runtime.machine.cpu.activeCartridgeSlot(),
-			path,
-		);
-		this.showRuntimeError(line, column, message, details, path);
+		this.navigation.focusChunkSource(resource);
+		this.showRuntimeError(line, column, message, details, resource.path);
 	}
 
 	public showRuntimeError(line: number, column: number, message: string, details?: RuntimeErrorDetails, path: string = ''): void {
@@ -574,7 +572,7 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		this.showRuntimeErrorInChunk(
-			snapshot.path,
+			snapshot.resource,
 			snapshot.line,
 			snapshot.column,
 			snapshot.message,
@@ -594,7 +592,7 @@ export class RuntimeCartEditor implements CartEditor {
 			return false;
 		}
 		this.showRuntimeErrorInChunk(
-			snapshot.path,
+			snapshot.resource,
 			snapshot.line,
 			snapshot.column,
 			snapshot.message,

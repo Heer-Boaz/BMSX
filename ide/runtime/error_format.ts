@@ -1,6 +1,8 @@
 import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
 import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
 import type { StackTraceFrame } from './stack_trace';
+import type { ResourceDomain } from '../common/resource';
+import { resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
 
 function ensureWorkspaceRelativePath(source: string): string {
 	if (!source || source.startsWith('./') || source.startsWith('../') || source.startsWith('/')) {
@@ -12,11 +14,20 @@ function ensureWorkspaceRelativePath(source: string): string {
 	return `./${source}`;
 }
 
-export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
+export function convertLuaCallFrames(
+	callFrames: ReadonlyArray<LuaCallFrame>,
+	sources: RuntimeSourceState,
+	domain: ResourceDomain,
+): StackTraceFrame[] {
 	const frames: StackTraceFrame[] = [];
 	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
 		const frame = callFrames[index];
+		const sourceRecord = resolveRuntimeLuaSource(sources, {
+			domain,
+			path: frame.source,
+		})!.record;
 		frames.push({
+			resource: { domain, path: sourceRecord.source_path },
 			functionName: frame.functionName,
 			source: frame.source,
 			line: frame.line,

@@ -1744,6 +1744,18 @@ export class CPU {
 		return this.epcWord;
 	}
 
+	public readCauseWord(): number {
+		return this.causeWord;
+	}
+
+	public readBadAddressWord(): number {
+		return this.badAddressWord;
+	}
+
+	public readLuaFaultReasonWord(): number {
+		return this.luaFaultReasonWord;
+	}
+
 	public writeEpcWord(value: number): void {
 		this.epcWord = value;
 	}

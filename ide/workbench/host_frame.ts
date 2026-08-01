@@ -19,6 +19,7 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { rebootPreparedRuntime } from './blua32_boot';
+import { handleSupervisorFault } from './runtime_errors';
 import * as workbenchMode from './mode';
 
 function executeWorkbenchHostMenuAction(
@@ -168,7 +169,7 @@ export function runWorkbenchHostFrame(
 			return HostFrameRunResult.Continue;
 		}
 
-		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.faultSnapshot;
+		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed;
 		let action: HostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
@@ -202,6 +203,17 @@ export function runWorkbenchHostFrame(
 					screen,
 					hostDeltaMs,
 				);
+				const supervisorFaultSequence = runtime.machine.systemController.readSupervisorFaultSequence();
+				if (supervisorFaultSequence !== ide.supervisorFaultSequence) {
+					ide.supervisorFaultSequence = supervisorFaultSequence;
+					handleSupervisorFault(
+						logOutput,
+						ide.fault,
+						ide.sources,
+						runtime,
+						ide.luaTooling.suspendedGuest,
+					);
+				}
 				action = HostFrameAction.PresentPending;
 			}
 			ide.microtasks.flush();

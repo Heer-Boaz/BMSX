@@ -25,8 +25,8 @@ import type { StackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
+import type { ResourceIdentity } from '../common/resource';
 import { findFunctionDefinitionRowInActiveFile } from '../editor/contrib/intellisense/engine';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
@@ -151,7 +151,11 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	clearExecutionStopHighlight();
 }
 
-export function showLuaErrorOverlay(editor: CartEditor, error: unknown): boolean {
+export function showLuaErrorOverlay(
+	editor: CartEditor,
+	resource: ResourceIdentity,
+	error: unknown,
+): boolean {
 	if (!(error instanceof LuaError)) {
 		return false;
 	}
@@ -159,20 +163,21 @@ export function showLuaErrorOverlay(editor: CartEditor, error: unknown): boolean
 		showEditorMessage(error.message, constants.COLOR_STATUS_ERROR, 4.0);
 		return true;
 	}
-	editor.showRuntimeErrorInChunk(error.path, error.line, error.column, error.message);
+	editor.showRuntimeErrorInChunk(
+		{ domain: resource.domain, path: error.path },
+		error.line,
+		error.column,
+		error.message,
+	);
 	return true;
 }
 
 export function navigateToRuntimeErrorFrameTarget(
 	editor: CartEditor,
-	runtime: Runtime,
 	frame: StackTraceFrame,
 ): void {
 	try {
-		editor.navigation.focusChunkSourceForContext(
-			runtime.machine.cpu.activeCartridgeSlot(),
-			frame.source,
-		);
+		editor.navigation.focusChunkSource(frame.resource);
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,

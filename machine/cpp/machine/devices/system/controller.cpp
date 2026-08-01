@@ -257,6 +257,10 @@ void SystemController::activateSupervisorContext() {
 }
 
 void SystemController::enterSupervisorFault() {
+	m_supervisorFaultCauseWord = m_cpu.readCauseWord();
+	m_supervisorFaultEpcWord = m_cpu.readEpcWord();
+	m_supervisorFaultBadAddressWord = m_cpu.readBadAddressWord();
+	m_supervisorFaultLuaReasonWord = m_cpu.readLuaFaultReasonWord();
 	m_supervisorFaultSequence += 1u;
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 		m_supervisorExitRequested = false;
