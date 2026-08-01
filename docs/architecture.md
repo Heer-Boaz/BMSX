@@ -3350,8 +3350,10 @@ through a parallel cartlib subsystem lifecycle.
 
 Carts remain the extension owner: a cart may derive a component directly from
 `cartlib/world/component`, use its own component key, and register its own
-system descriptor in the cart-selected ECS pipeline. Neither extension path
-requires modifying a cartlib registry.
+system factory in the cart-selected ECS schedule. Active-component buckets are
+created by component key when a space first uses them; cartlib does not prewarm
+a hardcoded list of built-in component kinds. Neither extension path requires
+modifying a cartlib registry.
 
 Sprite collision association is explicit: a collider owns the selected
 image/flip raw GEO shape reference, while the sprite only holds render state.
@@ -3362,14 +3364,17 @@ components receive explicit flat world bounds and do not query the current GX
 display mode during construction.
 
 The cartridge entry module is the hardware-feature
-composition root: it clears its world, selects an ECS pipeline, samples input
-in its frame loop, and registers only the device IRQ handlers it actually uses.
+composition root: it replaces the ECS manager's schedule from an ordered list
+of direct system factories before clearing the world and constructing its
+spaces, samples input in its frame loop, and registers only the device IRQ
+handlers it actually uses. Each selected system publishes its component-query
+keys once; space construction seeds those keys with one shared empty bucket and
+the component producer materializes storage on the first attachment.
 AEM and GEO have no import-time application facade; carts with AEM data call
 `aem.reload()` and bind its APU handler, while carts that submit GEO work bind
-the collision handler. Each ECS system module owns its compact pipeline
-descriptor; a cart registers only the descriptors in its retained pipeline
-specification. There is no universal built-in schedule or import-time system
-registration.
+the collision handler. Each ECS system factory owns its tick group, priority
+and retained runtime state. There is no system-name registry, reference-spec
+duplication, universal built-in schedule or import-time system registration.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

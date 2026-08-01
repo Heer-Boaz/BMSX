@@ -20,13 +20,8 @@ end
 function elevator_update_system.new(priority)
 	return setmetatable({
 		group = tickgroup.moderesolution,
-		priority = priority,
+		priority = priority or 20,
 	}, elevator_update_system)
 end
 
-return {
-	id = 'eup',
-	group = tickgroup.moderesolution,
-	default_priority = 20,
-	create = elevator_update_system.new,
-}
+return elevator_update_system.new

@@ -23,7 +23,7 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    Global/live queries use explicit all_* methods instead of options tables.
 --
 -- 4. world_instance IS THE GLOBAL SINGLETON.
---    Access via  require('world/index').instance. Do not create extra world.new().
+--    Access via require('cartlib/world/world').instance. Do not create extra world.new().
 --
 -- 5. NEVER ITERATE AND MUTATE at the same time.
 --    Do not spawn/despawn while iterating world:objects() or world:all_objects().
@@ -31,48 +31,15 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
 local ecs<const> = require('cartlib/ecs/ecs')
-local component_types<const> = require('cartlib/components/types')
 local registry<const> = require('cartlib/registry')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
 local world_id_max<const> = 0x7fffffff
+local empty_component_bucket<const> = {}
 
 local world_class<const> = {}
 world_class.__index = world_class
-
-local active_component_bucket_types<const> = {
-	component_types.action_effect,
-	component_types.behaviour_tree,
-	component_types.collider_2d,
-	component_types.custom_visual,
-	component_types.input_action_effect,
-	component_types.prohibit_leaving_screen,
-	component_types.screen_boundary,
-	component_types.state_machine,
-	component_types.sprite,
-	component_types.surface,
-	component_types.text,
-	component_types.tile_layer,
-	component_types.tile_collision,
-	component_types.timeline,
-}
-
-local active_component_buckets_mt<const> = {
-	__index = function(t, key)
-		local bucket<const> = {}
-		rawset(t, key, bucket)
-		return bucket
-	end,
-}
-
-local new_active_component_buckets<const> = function()
-	local buckets<const> = {}
-	for i = 1, #active_component_bucket_types do
-		buckets[active_component_bucket_types[i]] = {}
-	end
-	return setmetatable(buckets, active_component_buckets_mt)
-end
 
 -- Active-space iteration is the dominant gameplay path, so it runs directly
 -- over the current space object list. The object itself is the control value,
@@ -326,7 +293,12 @@ local remove_active_visual<const> = function(comp, space)
 end
 
 local add_active_component<const> = function(world, comp, space)
-	local bucket<const> = space.active_components_by_type[comp.type_name]
+	local component_type<const> = comp.type_name
+	local bucket = space.active_components_by_type[component_type]
+	if not bucket or bucket == empty_component_bucket then
+		bucket = {}
+		space.active_components_by_type[component_type] = bucket
+	end
 	local index<const> = #bucket + 1
 	bucket[index] = comp
 	comp._active_component_index = index
@@ -402,6 +374,11 @@ function world_class:add_space(space_id)
 	if self._spaces[space_id] ~= nil then
 		return false
 	end
+	local active_components_by_type<const> = {}
+	local system_component_types<const> = self.systems.component_types
+	for i = 1, #system_component_types do
+		active_components_by_type[system_component_types[i]] = empty_component_bucket
+	end
 	self._spaces[space_id] = {
 		id = space_id,
 		objects = {},
@@ -413,7 +390,7 @@ function world_class:add_space(space_id)
 			late = {},
 		},
 		by_id = {},
-		active_components_by_type = new_active_component_buckets(),
+		active_components_by_type = active_components_by_type,
 	}
 	self._space_order[#self._space_order + 1] = space_id
 	return true
@@ -667,7 +644,7 @@ function world_class:objects_with_components(type_name)
 	-- Active component queries combine registry type bucketing with direct dense
 	-- active component sets. The goal is to keep ECS system iteration on the
 	-- smallest useful set instead of re-filtering registry buckets every frame.
-	local components<const> = self.active_space.active_components_by_type[type_name]
+	local components<const> = self.active_space.active_components_by_type[type_name] or empty_component_bucket
 	return iter_active_objects_with_components,
 		{ list = components, index = 0, stop = #components + 1 },
 			nil

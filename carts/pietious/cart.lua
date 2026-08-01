@@ -6,7 +6,6 @@ local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
-local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local behaviour_tree_system<const> = require('cartlib/ecs/systems/behaviour_tree')
 local boundary_system<const> = require('cartlib/ecs/systems/boundary')
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
@@ -64,7 +63,7 @@ local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
-local pipeline_descriptors<const> = {
+local world_systems<const> = {
 	previous_position_system,
 	behaviour_tree_system,
 	input_action_effect_system,
@@ -74,17 +73,6 @@ local pipeline_descriptors<const> = {
 	tile_collision_system,
 	timeline_system,
 	elevator_update_system_module,
-}
-local pietious_pipeline_spec<const> = {
-	{ ref = previous_position_system.id },
-	{ ref = behaviour_tree_system.id },
-	{ ref = input_action_effect_system.id },
-	{ ref = object_fsm_system.id },
-	{ ref = elevator_update_system_module.id },
-	{ ref = boundary_system.id },
-	{ ref = overlap_2d_system.id },
-	{ ref = tile_collision_system.id },
-	{ ref = timeline_system.id },
 }
 
 local init_epoch = 0
@@ -116,8 +104,8 @@ local grant_starting_loadout<const> = function()
 end
 
 local create_world<const> = function(director_boot_mode)
+	world_instance.systems:replace(world_systems)
 	world_instance:clear()
-	ecs_pipeline_registry:build(world_instance, pietious_pipeline_spec)
 	world_instance:add_space('main')
 	world_instance:add_space('title')
 	world_instance:add_space('transition')
@@ -157,7 +145,6 @@ function new_game()
 end
 
 function init()
-	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	aem.reload()

@@ -130,10 +130,11 @@ end
 
 local inputactioneffectsystem<const> = {}
 inputactioneffectsystem.__index = inputactioneffectsystem
+inputactioneffectsystem.component_types = { input_component_type }
 setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
 
 function inputactioneffectsystem.new(priority)
-	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority), inputactioneffectsystem)
+	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 10), inputactioneffectsystem)
 	self.frame = 0
 	return self
 end
@@ -147,9 +148,4 @@ function inputactioneffectsystem:update()
 	end
 end
 
-return {
-	id = 'inputactioneffects',
-	group = ecs.tickgroup.input,
-	default_priority = 10,
-	create = inputactioneffectsystem.new,
-}
+return inputactioneffectsystem.new

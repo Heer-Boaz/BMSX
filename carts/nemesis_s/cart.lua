@@ -4,7 +4,6 @@ local image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_display.reset_256x192()
-local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local input<const> = require('cartlib/input/player')
@@ -20,17 +19,12 @@ local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
-local pipeline_descriptors<const> = {
+local world_systems<const> = {
 	object_fsm_system,
 	timeline_system,
 }
-local pipeline_spec<const> = {
-	{ ref = object_fsm_system.id },
-	{ ref = timeline_system.id },
-}
 
 function init()
-	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	*irq_mask_register = 0
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
@@ -41,8 +35,8 @@ function init()
 end
 
 function new_game()
+	world.systems:replace(world_systems)
 	world:clear()
-	ecs_pipeline_registry:build(world, pipeline_spec)
 	prefab.spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },

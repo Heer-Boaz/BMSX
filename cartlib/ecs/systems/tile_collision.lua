@@ -1,5 +1,5 @@
 -- tile_collision.lua
--- tilecollision pipeline system.
+-- Tile-collision ECS system.
 
 local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
@@ -14,6 +14,7 @@ local tile_collision_component_type<const> = component_types.tile_collision
 
 local tilecollisionsystem<const> = {}
 tilecollisionsystem.__index = tilecollisionsystem
+tilecollisionsystem.component_types = { tile_collision_component_type }
 setmetatable(tilecollisionsystem, { __index = ecsystem })
 
 local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
@@ -25,7 +26,7 @@ local emit_tilecollision_event<const> = function(owner, component, event_type, p
 end
 
 function tilecollisionsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), tilecollisionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
 	return self
 end
 
@@ -60,9 +61,4 @@ function tilecollisionsystem:update()
 	end
 end
 
-return {
-	id = 'tilecollision',
-	group = tickgroup.physics,
-	default_priority = 45,
-	create = tilecollisionsystem.new,
-}
+return tilecollisionsystem.new

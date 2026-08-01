@@ -1,5 +1,5 @@
 -- boundary.lua
--- boundary pipeline system.
+-- Screen-boundary ECS system.
 
 local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
@@ -13,10 +13,14 @@ local prohibit_leaving_component_type<const> = component_types.prohibit_leaving_
 
 local boundarysystem<const> = {}
 boundarysystem.__index = boundarysystem
+boundarysystem.component_types = {
+	boundary_component_type,
+	prohibit_leaving_component_type,
+}
 setmetatable(boundarysystem, { __index = ecsystem })
 
 function boundarysystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), boundarysystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 30), boundarysystem)
 	return self
 end
 
@@ -86,9 +90,4 @@ function boundarysystem:update()
 	end
 end
 
-return {
-	id = 'boundary',
-	group = tickgroup.physics,
-	default_priority = 30,
-	create = boundarysystem.new,
-}
+return boundarysystem.new

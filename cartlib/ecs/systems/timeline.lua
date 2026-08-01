@@ -1,5 +1,5 @@
 -- timeline.lua
--- timeline pipeline system.
+-- Timeline ECS system.
 
 local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
@@ -12,6 +12,7 @@ local timeline_component_type<const> = component_types.timeline
 
 local timelinesystem<const> = {}
 timelinesystem.__index = timelinesystem
+timelinesystem.component_types = { timeline_component_type }
 setmetatable(timelinesystem, { __index = ecsystem })
 
 function timelinesystem.new(priority)
@@ -29,8 +30,4 @@ function timelinesystem:update(dt_ms)
 	end
 end
 
-return {
-	id = 'timeline',
-	group = tickgroup.animation,
-	create = timelinesystem.new,
-}
+return timelinesystem.new

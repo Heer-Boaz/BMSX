@@ -3,7 +3,6 @@ local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local ecs_pipeline_registry<const> = require('cartlib/ecs/pipeline').defaultecspipelineregistry
 local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local eventemitter<const> = require('cartlib/eventemitter')
@@ -34,13 +33,9 @@ local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
 
-local pipeline_descriptors<const> = {
+local world_systems<const> = {
 	object_fsm_system,
 	timeline_system,
-}
-local pipeline_spec<const> = {
-	{ ref = object_fsm_system.id },
-	{ ref = timeline_system.id },
 }
 
 local surface_object_class<const> = {}
@@ -303,7 +298,6 @@ local register_director<const> = function()
 end
 
 function init()
-	ecs_pipeline_registry:register_many(pipeline_descriptors)
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	aem.reload()
@@ -315,8 +309,8 @@ function init()
 end
 
 function new_game()
+	world_instance.systems:replace(world_systems)
 	world_instance:clear()
-	ecs_pipeline_registry:build(world_instance, pipeline_spec)
 	local w<const> = screen_width
 	local h<const> = screen_height
 	local line_height<const> = 16

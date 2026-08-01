@@ -1,5 +1,5 @@
 -- action_effect_runtime.lua
--- actioneffectruntime pipeline system.
+-- Action-effect cooldown ECS system.
 
 local ecs<const> = require('cartlib/ecs/ecs')
 local component_types<const> = require('cartlib/components/types')
@@ -12,10 +12,11 @@ local action_effect_runtime_component_type<const> = component_types.action_effec
 
 local actioneffectruntimesystem<const> = {}
 actioneffectruntimesystem.__index = actioneffectruntimesystem
+actioneffectruntimesystem.component_types = { action_effect_runtime_component_type }
 setmetatable(actioneffectruntimesystem, { __index = ecsystem })
 
 function actioneffectruntimesystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.actioneffect, priority), actioneffectruntimesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.actioneffect, priority or 32), actioneffectruntimesystem)
 	return self
 end
 
@@ -32,9 +33,4 @@ function actioneffectruntimesystem:update(dt_ms)
 	end
 end
 
-return {
-	id = 'actioneffectruntime',
-	group = tickgroup.actioneffect,
-	default_priority = 32,
-	create = actioneffectruntimesystem.new,
-}
+return actioneffectruntimesystem.new

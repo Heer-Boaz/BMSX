@@ -53,7 +53,6 @@ function ecsystem.new(group, priority)
 	local self<const> = setmetatable({}, ecsystem)
 	self.group = group
 	self.priority = priority or 0
-	self.__ecs_id = nil
 	return self
 end
 
@@ -117,26 +116,28 @@ function ecsystemmanager.new()
 	return self
 end
 
-function ecsystemmanager:register(sys)
-	self.registration_serial = self.registration_serial + 1
-	sys.__ecs_reg_index = self.registration_serial
-	self.systems[#self.systems + 1] = sys
-	rebuild_system_views(self)
-end
-
-function ecsystemmanager:unregister(sys)
-	for i = #self.systems, 1, -1 do
-		if self.systems[i] == sys then
-			table.remove(self.systems, i)
-			break
+function ecsystemmanager:replace(system_factories)
+	local systems<const> = {}
+	local component_types<const> = {}
+	for i = 1, #system_factories do
+		local system<const> = system_factories[i]()
+		system.__ecs_reg_index = i
+		systems[i] = system
+		local query_types<const> = system.component_types
+		if query_types then
+			for type_index = 1, #query_types do
+				component_types[#component_types + 1] = query_types[type_index]
+			end
 		end
 	end
+	self.systems = systems
+	self.component_types = component_types
 	rebuild_system_views(self)
 end
 
 function ecsystemmanager:clear()
 	self.systems = {}
-	self.registration_serial = 0
+	self.component_types = {}
 	self.phase_systems = new_phase_buckets()
 	self.phase_counts = {
 		[tickgroup.input] = 0,

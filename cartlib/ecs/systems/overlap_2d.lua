@@ -1,5 +1,5 @@
 -- overlap_2d.lua
--- overlapevents pipeline system.
+-- 2D-overlap ECS system.
 
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
@@ -71,6 +71,7 @@ local overlap_component_type<const> = component_types.collider_2d
 
 local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
+overlap2dsystem.component_types = { overlap_component_type }
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
 -- Pair rows and the event payload are system-owned scratch. The two history
@@ -132,7 +133,7 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 end
 
 function overlap2dsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), overlap2dsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}
@@ -228,9 +229,4 @@ function overlap2dsystem:update()
 	self.next_pairs = prev_pairs
 end
 
-return {
-	id = 'overlapevents',
-	group = tickgroup.physics,
-	default_priority = 42,
-	create = overlap2dsystem.new,
-}
+return overlap2dsystem.new
