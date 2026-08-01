@@ -545,7 +545,7 @@ local define_director_fsm<const> = function()
 					world_showing = {
 						on = {
 							[banner_world_show_event] = function(self)
-								self:enter_transition('transition', { lines = self:banner_lines('world_banner', self.banner_world_number) })
+								self:enter_transition('transition', self:banner_lines('world_banner', self.banner_world_number))
 							end,
 						},
 						timelines = {
@@ -577,7 +577,7 @@ local define_director_fsm<const> = function()
 					castle_showing = {
 						on = {
 							[banner_castle_show_event] = function(self)
-								self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+								self:enter_transition('transition', self:banner_lines('castle_banner', 0))
 							end,
 						},
 						timelines = {
@@ -596,7 +596,7 @@ local define_director_fsm<const> = function()
 					castle_emerge_showing = {
 						on = {
 							[banner_castle_show_event] = function(self)
-								self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+								self:enter_transition('transition', self:banner_lines('castle_banner', 0))
 							end,
 						},
 						timelines = {
@@ -721,7 +721,7 @@ local define_director_fsm<const> = function()
 			castle_halo_banner = {
 				on = {
 					[banner_castle_show_event] = function(self)
-						self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+						self:enter_transition('transition', self:banner_lines('castle_banner', 0))
 					end,
 				},
 				timelines = {

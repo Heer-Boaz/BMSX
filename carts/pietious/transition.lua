@@ -4,7 +4,8 @@
 -- CROSS-CUTTING SUBSCRIBER PATTERN:
 -- Subscribes to director broadcasts via FSM root `on`:
 --   'transition'       (from 'd') — rebuilds the retained banner text from
---     event.lines and plays the fade mask timeline.
+--     the direct lines payload and plays the fade mask timeline. A transition
+--     without banner text carries nil.
 --   transition-mode broadcasts ('halo', 'title', 'story', 'ending',
 --     'victory_dance', 'death') — also play the fade mask timeline. The mode
 --     broadcast itself is the canonical signal; no second relay event exists.
@@ -60,9 +61,9 @@ local define_transition_fsm<const> = function()
 	local on<const> = {
 		['transition'] = {
 			emitter = 'd',
-			go = function(self, _state, event)
-				self.text_component:set_text(event.lines)
-				self.text_component.visible = true
+			go = function(self, _state, lines)
+				self.text_component:set_text(lines)
+				self.text_component.visible = lines ~= nil
 				self.timelines:play('transition.timeline', { rewind = true, snap_to_start = true })
 			end,
 		},
