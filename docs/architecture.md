@@ -3308,9 +3308,7 @@ packaged into the cartridge ROM rather than exported by BIOS. Derived
 game-facing geometry such as thick-line construction also belongs to
 `cartlib/gx`. The retired TypeScript-era camera/projection ports are not part of
 that SDK: carts either program the GTE/GTE+ path or link a camera model they
-actually own. `cartlib/velocity` owns the reusable integer remainder integrator
-for fractional two-axis movement; game-specific acceleration, collision and
-movement policy remain in the cartridge.
+actually own.
 
 Cart code imports the focused owner it uses; `cartlib` has no prelude or
 all-purpose system facade and does not inject SDK aliases into the guest global

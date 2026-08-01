@@ -1,3 +1,5 @@
+-- Shared integer-remainder 2D velocity integration for cart entities.
+
 local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	accum = accum + speed_num
 	local delta = 0
