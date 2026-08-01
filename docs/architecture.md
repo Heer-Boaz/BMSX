@@ -3306,7 +3306,10 @@ upload and DMA modules program or produce data for the same guest-visible
 registers and command ports that bare carts can program directly; they are
 packaged into the cartridge ROM rather than exported by BIOS. Derived
 game-facing geometry such as thick-line construction also belongs to
-`cartlib/gx`.
+`cartlib/gx`. The retired TypeScript-era camera/projection ports are not part of
+that SDK: carts either program the GTE/GTE+ path or link a camera model they
+actually own. Likewise, cart-specific motion policy stays in its cartridge
+rather than acquiring a generic cartlib name.
 
 Cart code imports the focused owner it uses; `cartlib` has no prelude or
 all-purpose system facade and does not inject SDK aliases into the guest global
