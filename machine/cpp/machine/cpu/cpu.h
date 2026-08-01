@@ -156,10 +156,12 @@ struct CpuRuntimeState {
 	u32 epcWord = 0;
 	u32 badAddressWord = 0;
 	u32 luaFaultReasonWord = 0;
+	u32 exceptionDomainWord = 0;
 	u32 nmiReturnCauseWord = 0;
 	u32 nmiReturnEpcWord = 0;
 	u32 nmiReturnBadAddressWord = 0;
 	u32 nmiReturnLuaFaultReasonWord = 0;
+	u32 nmiReturnExceptionDomainWord = 0;
 	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
 };
@@ -317,6 +319,7 @@ public:
 	u32 readCauseWord() const;
 	u32 readBadAddressWord() const;
 	u32 readLuaFaultReasonWord() const;
+	u32 readExceptionDomainWord() const;
 	void writeEpcWord(u32 value);
 	u32 readNmiReturnEpcWord() const;
 	void writeNmiReturnEpcWord(u32 value);
@@ -458,10 +461,12 @@ private:
 	u32 m_epcWord = 0;
 	u32 m_badAddressWord = 0;
 	u32 m_luaFaultReasonWord = 0;
+	u32 m_exceptionDomainWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
 	u32 m_nmiReturnEpcWord = 0;
 	u32 m_nmiReturnBadAddressWord = 0;
 	u32 m_nmiReturnLuaFaultReasonWord = 0;
+	u32 m_nmiReturnExceptionDomainWord = 0;
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;

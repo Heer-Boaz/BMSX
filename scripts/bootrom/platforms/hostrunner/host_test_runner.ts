@@ -14,6 +14,7 @@ import type { StringId } from '../../../../machine/ts/machine/cpu/string_pool';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import type { InputEventWriter } from '../../../../hosts/common/input/contracts';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../../machine/ts/spec/bmsx/io';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
 
@@ -91,7 +92,9 @@ export class HostTestRunner {
 	}
 
 	public run(): Promise<void> {
-		this.supervisorFaultSequence = this.options.runtime.machine.systemController.readSupervisorFaultSequence();
+		this.supervisorFaultSequence = this.options.runtime.machine.memory.readMappedU32LE(
+			IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+		);
 		this.options.logger(`test:${this.label} waiting for cart`);
 		this.options.clock.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
 		this.deadline = this.options.clock.scheduleOnce(this.options.ttlMs, () => {
@@ -112,7 +115,8 @@ export class HostTestRunner {
 	}
 
 	private tickUnsafe(timestampMs: number): void {
-		if (this.options.runtime.machine.systemController.readSupervisorFaultSequence() !== this.supervisorFaultSequence) {
+		if (this.options.runtime.machine.memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE)
+			!== this.supervisorFaultSequence) {
 			throw new Error(`Host test '${this.label}' entered the machine fault supervisor.`);
 		}
 		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive()) {

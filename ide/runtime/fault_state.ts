@@ -35,6 +35,12 @@ import {
 	CPU_CAUSE_CODE_TRAP,
 } from '../../machine/ts/spec/blua32/cop0';
 import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
+import {
+	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+	IO_SYS_SUPERVISOR_FAULT_CAUSE,
+	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
+} from '../../machine/ts/spec/bmsx/io';
 
 type RuntimeErrorLocation = {
 	resource: ResourceIdentity;
@@ -307,8 +313,8 @@ export function recordSupervisorFault(
 	session: SuspendedGuestSession,
 ): string {
 	const cpu = runtime.machine.cpu;
-	const system = runtime.machine.systemController;
-	const causeWord = system.readSupervisorFaultCauseWord();
+	const memory = runtime.machine.memory;
+	const causeWord = memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_CAUSE);
 	const causeCode = causeWord & CPU_CAUSE_CODE_MASK;
 	const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
 	let exceptionFrameIndex = cpu.getFrameDepth() - 1;
@@ -317,9 +323,8 @@ export function recordSupervisorFault(
 		|| cpu.readFrameFunctionAddress(exceptionFrameIndex) !== exceptionFunctionAddress) {
 		exceptionFrameIndex -= 1;
 	}
-	const interruptedFrameIndex = exceptionFrameIndex - 1;
-	const executionDomainId = cpu.readFrameExecutionDomain(interruptedFrameIndex);
-	const pc = system.readSupervisorFaultEpcWord();
+	const executionDomainId = (memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_DOMAIN) | 0) as ExecutionDomainId;
+	const pc = memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC);
 	fault.lastCpuFaultExecutionDomainId = executionDomainId;
 	fault.lastCpuFaultPc = pc;
 	fault.lastCpuFaultSnapshot = captureRuntimeCpuFaultFrames(
@@ -334,10 +339,10 @@ export function recordSupervisorFault(
 	let message: string;
 	switch (causeCode) {
 		case CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD:
-			message = `Address error load at ${formatNumberAsHex(system.readSupervisorFaultBadAddressWord(), 8)}.`;
+			message = `Address error load at ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
 			break;
 		case CPU_CAUSE_CODE_ADDRESS_ERROR_STORE:
-			message = `Address error store at ${formatNumberAsHex(system.readSupervisorFaultBadAddressWord(), 8)}.`;
+			message = `Address error store at ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
 			break;
 		case CPU_CAUSE_CODE_DATA_BUS_ERROR:
 			message = 'Data bus error.';

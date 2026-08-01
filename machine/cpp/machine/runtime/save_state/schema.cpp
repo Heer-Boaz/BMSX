@@ -391,6 +391,12 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"supervisorExitRequested",
 	"printCharWord",
 	"printFlushWord",
+	"supervisorFaultSequenceWord",
+	"supervisorFaultCauseWord",
+	"supervisorFaultEpcWord",
+	"supervisorFaultBadAddressWord",
+	"supervisorFaultLuaReasonWord",
+	"supervisorFaultDomainWord",
 	"cartridge",
 	"selectionWord",
 	"slots",
@@ -398,7 +404,9 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"mailboxControlWord",
 	"mailboxIrqPending",
 	"luaFaultReasonWord",
+	"exceptionDomainWord",
 	"nmiReturnLuaFaultReasonWord",
+	"nmiReturnExceptionDomainWord",
 });
 
 } // namespace

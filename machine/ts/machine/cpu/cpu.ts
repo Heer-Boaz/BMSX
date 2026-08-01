@@ -210,10 +210,12 @@ export type CpuRuntimeState = {
 	epcWord: number;
 	badAddressWord: number;
 	luaFaultReasonWord: number;
+	exceptionDomainWord: number;
 	nmiReturnCauseWord: number;
 	nmiReturnEpcWord: number;
 	nmiReturnBadAddressWord: number;
 	nmiReturnLuaFaultReasonWord: number;
+	nmiReturnExceptionDomainWord: number;
 	nonMaskableInterruptPending: boolean;
 	yieldRequested: boolean;
 };
@@ -259,10 +261,12 @@ export class CPU {
 	private epcWord = 0;
 	private badAddressWord = 0;
 	private luaFaultReasonWord = 0;
+	private exceptionDomainWord = 0;
 	private nmiReturnCauseWord = 0;
 	private nmiReturnEpcWord = 0;
 	private nmiReturnBadAddressWord = 0;
 	private nmiReturnLuaFaultReasonWord = 0;
+	private nmiReturnExceptionDomainWord = 0;
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private yieldRequested = false;
@@ -832,10 +836,12 @@ export class CPU {
 		this.epcWord = 0;
 		this.badAddressWord = 0;
 		this.luaFaultReasonWord = 0;
+		this.exceptionDomainWord = 0;
 		this.nmiReturnCauseWord = 0;
 		this.nmiReturnEpcWord = 0;
 		this.nmiReturnBadAddressWord = 0;
 		this.nmiReturnLuaFaultReasonWord = 0;
+		this.nmiReturnExceptionDomainWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
@@ -1472,6 +1478,7 @@ export class CPU {
 			const returnEpcWord = this.epcWord;
 			const returnBadAddressWord = this.badAddressWord;
 			const returnLuaFaultReasonWord = this.luaFaultReasonWord;
+			const returnExceptionDomainWord = this.exceptionDomainWord;
 			this.enterException(
 				this.systemExceptionFunctionAddress,
 				CPU_CAUSE_NMI,
@@ -1482,6 +1489,7 @@ export class CPU {
 			this.nmiReturnEpcWord = returnEpcWord;
 			this.nmiReturnBadAddressWord = returnBadAddressWord;
 			this.nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
+			this.nmiReturnExceptionDomainWord = returnExceptionDomainWord;
 			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
@@ -1530,6 +1538,7 @@ export class CPU {
 		causeWord: number,
 		epcWord: number,
 	): void {
+		this.exceptionDomainWord = this.frames[this.frames.length - 1].executionImage.executionDomainId >>> 0;
 		this.epcWord = epcWord >>> 0;
 		this.causeWord = causeWord >>> 0;
 		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
@@ -1754,6 +1763,10 @@ export class CPU {
 
 	public readLuaFaultReasonWord(): number {
 		return this.luaFaultReasonWord;
+	}
+
+	public readExceptionDomainWord(): number {
+		return this.exceptionDomainWord;
 	}
 
 	public writeEpcWord(value: number): void {
@@ -2316,6 +2329,7 @@ export class CPU {
 						this.epcWord = this.nmiReturnEpcWord;
 						this.badAddressWord = this.nmiReturnBadAddressWord;
 						this.luaFaultReasonWord = this.nmiReturnLuaFaultReasonWord;
+						this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
 					}
 					return;
 				case OpCode.LOADKR:
@@ -3934,10 +3948,12 @@ export class CPU {
 			epcWord: this.epcWord,
 			badAddressWord: this.badAddressWord,
 			luaFaultReasonWord: this.luaFaultReasonWord,
+			exceptionDomainWord: this.exceptionDomainWord,
 			nmiReturnCauseWord: this.nmiReturnCauseWord,
 			nmiReturnEpcWord: this.nmiReturnEpcWord,
 			nmiReturnBadAddressWord: this.nmiReturnBadAddressWord,
 			nmiReturnLuaFaultReasonWord: this.nmiReturnLuaFaultReasonWord,
+			nmiReturnExceptionDomainWord: this.nmiReturnExceptionDomainWord,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
 			yieldRequested: this.yieldRequested,
 		};
@@ -4240,10 +4256,12 @@ export class CPU {
 		this.epcWord = state.epcWord;
 		this.badAddressWord = state.badAddressWord;
 		this.luaFaultReasonWord = state.luaFaultReasonWord;
+		this.exceptionDomainWord = state.exceptionDomainWord;
 		this.nmiReturnCauseWord = state.nmiReturnCauseWord;
 		this.nmiReturnEpcWord = state.nmiReturnEpcWord;
 		this.nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
 		this.nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
+		this.nmiReturnExceptionDomainWord = state.nmiReturnExceptionDomainWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		this.collectTrackedHeapBytes();

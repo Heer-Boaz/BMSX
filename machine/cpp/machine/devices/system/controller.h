@@ -34,6 +34,12 @@ struct SystemControllerState {
 	bool supervisorExitRequested = false;
 	u32 printCharWord = 0u;
 	u32 printFlushWord = 0u;
+	u32 supervisorFaultSequenceWord = 0u;
+	u32 supervisorFaultCauseWord = 0u;
+	u32 supervisorFaultEpcWord = 0u;
+	u32 supervisorFaultBadAddressWord = 0u;
+	u32 supervisorFaultLuaReasonWord = 0u;
+	u32 supervisorFaultDomainWord = 0u;
 };
 
 class SystemController {
@@ -59,11 +65,6 @@ public:
 				|| m_supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 	bool takeResetRequest();
-	u32 readSupervisorFaultSequence() const { return m_supervisorFaultSequence; }
-	u32 readSupervisorFaultCauseWord() const { return m_supervisorFaultCauseWord; }
-	u32 readSupervisorFaultEpcWord() const { return m_supervisorFaultEpcWord; }
-	u32 readSupervisorFaultBadAddressWord() const { return m_supervisorFaultBadAddressWord; }
-	u32 readSupervisorFaultLuaReasonWord() const { return m_supervisorFaultLuaReasonWord; }
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
 	void postLoad();
@@ -100,11 +101,6 @@ private:
 	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
-	u32 m_supervisorFaultSequence = 0u;
-	u32 m_supervisorFaultCauseWord = 0u;
-	u32 m_supervisorFaultEpcWord = 0u;
-	u32 m_supervisorFaultBadAddressWord = 0u;
-	u32 m_supervisorFaultLuaReasonWord = 0u;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_hostOutputBuffer{};
 	u32 m_hostOutputReadIndex = 0u;
 	u32 m_hostOutputByteCount = 0u;

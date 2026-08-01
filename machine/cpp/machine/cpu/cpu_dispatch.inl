@@ -678,6 +678,7 @@ DISPATCH_LABEL(RFE) {
 		m_epcWord = m_nmiReturnEpcWord;
 		m_badAddressWord = m_nmiReturnBadAddressWord;
 		m_luaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
+		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
 	}
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();

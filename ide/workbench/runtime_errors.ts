@@ -17,6 +17,12 @@ import {
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
+import {
+	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+	IO_SYS_SUPERVISOR_FAULT_CAUSE,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
+	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+} from '../../machine/ts/spec/bmsx/io';
 
 const EMPTY_REGISTER_VALUES: readonly SuspendedGuestValue[] = [];
 
@@ -104,13 +110,13 @@ export function handleSupervisorFault(
 ): void {
 	const stackText = recordSupervisorFault(fault, sources, runtime, session);
 	logOutput.log(LogLevel.Error, stackText);
-	const system = runtime.machine.systemController;
+	const memory = runtime.machine.memory;
 	logOutput.log(
 		LogLevel.Error,
-		`\tcause=${formatNumberAsHex(system.readSupervisorFaultCauseWord(), 8)}`
-		+ ` epc=${formatNumberAsHex(system.readSupervisorFaultEpcWord(), 8)}`
-		+ ` bad=${formatNumberAsHex(system.readSupervisorFaultBadAddressWord(), 8)}`
-		+ ` lua=${formatNumberAsHex(system.readSupervisorFaultLuaReasonWord(), 8)}`,
+		`\tcause=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_CAUSE), 8)}`
+		+ ` epc=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC), 8)}`
+		+ ` bad=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}`
+		+ ` lua=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_LUA_REASON), 8)}`,
 	);
 	logFaultInstruction(logOutput, fault, sources, session);
 }

@@ -398,10 +398,12 @@ void CPU::reset() {
 	m_epcWord = 0u;
 	m_badAddressWord = 0u;
 	m_luaFaultReasonWord = 0u;
+	m_exceptionDomainWord = 0u;
 	m_nmiReturnCauseWord = 0u;
 	m_nmiReturnEpcWord = 0u;
 	m_nmiReturnBadAddressWord = 0u;
 	m_nmiReturnLuaFaultReasonWord = 0u;
+	m_nmiReturnExceptionDomainWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
@@ -1156,10 +1158,12 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.epcWord = m_epcWord;
 	state.badAddressWord = m_badAddressWord;
 	state.luaFaultReasonWord = m_luaFaultReasonWord;
+	state.exceptionDomainWord = m_exceptionDomainWord;
 	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
 	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
 	state.nmiReturnBadAddressWord = m_nmiReturnBadAddressWord;
 	state.nmiReturnLuaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
+	state.nmiReturnExceptionDomainWord = m_nmiReturnExceptionDomainWord;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
 	state.yieldRequested = m_yieldRequested;
 	return state;
@@ -1386,10 +1390,12 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_epcWord = state.epcWord;
 	m_badAddressWord = state.badAddressWord;
 	m_luaFaultReasonWord = state.luaFaultReasonWord;
+	m_exceptionDomainWord = state.exceptionDomainWord;
 	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
 	m_nmiReturnEpcWord = state.nmiReturnEpcWord;
 	m_nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
 	m_nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
+	m_nmiReturnExceptionDomainWord = state.nmiReturnExceptionDomainWord;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
@@ -1842,6 +1848,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnEpcWord = m_epcWord;
 		const u32 returnBadAddressWord = m_badAddressWord;
 		const u32 returnLuaFaultReasonWord = m_luaFaultReasonWord;
+		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
 		enterException(
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
@@ -1852,6 +1859,7 @@ bool CPU::enterPendingInterrupt() {
 		m_nmiReturnEpcWord = returnEpcWord;
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
 		m_nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
+		m_nmiReturnExceptionDomainWord = returnExceptionDomainWord;
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
@@ -1886,6 +1894,7 @@ void CPU::enterException(
 	u32 causeWord,
 	u32 epcWord
 ) {
+	m_exceptionDomainWord = static_cast<u32>(m_frames.back()->executionImage->executionDomainId);
 	m_epcWord = epcWord;
 	m_causeWord = causeWord;
 	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
@@ -2215,6 +2224,10 @@ u32 CPU::readBadAddressWord() const {
 
 u32 CPU::readLuaFaultReasonWord() const {
 	return m_luaFaultReasonWord;
+}
+
+u32 CPU::readExceptionDomainWord() const {
+	return m_exceptionDomainWord;
 }
 
 void CPU::writeEpcWord(u32 value) {

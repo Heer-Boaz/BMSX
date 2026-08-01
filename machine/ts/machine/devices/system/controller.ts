@@ -5,6 +5,12 @@ import {
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
 	IO_SYS_STATUS,
+	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+	IO_SYS_SUPERVISOR_FAULT_CAUSE,
+	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
+	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_TIME_MS,
 	SYS_PRINT_BUFFER_BYTES,
 	SYS_CONTROL_RESET,
@@ -44,6 +50,12 @@ export type SystemControllerState = {
 	supervisorExitRequested: boolean;
 	printCharWord: number;
 	printFlushWord: number;
+	supervisorFaultSequenceWord: number;
+	supervisorFaultCauseWord: number;
+	supervisorFaultEpcWord: number;
+	supervisorFaultBadAddressWord: number;
+	supervisorFaultLuaReasonWord: number;
+	supervisorFaultDomainWord: number;
 };
 
 const ASCII_NEWLINE = 10;
@@ -54,11 +66,6 @@ export class SystemController {
 	private supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
-	private supervisorFaultSequence = 0;
-	private supervisorFaultCauseWord = 0;
-	private supervisorFaultEpcWord = 0;
-	private supervisorFaultBadAddressWord = 0;
-	private supervisorFaultLuaReasonWord = 0;
 	private readonly hostOutputBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 	private hostOutputReadIndex = 0;
 	private hostOutputByteCount = 0;
@@ -97,6 +104,12 @@ export class SystemController {
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, 0);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, 0);
 		this.writeStatusIo();
 	}
 
@@ -289,11 +302,15 @@ export class SystemController {
 	}
 
 	private enterSupervisorFault(): void {
-		this.supervisorFaultCauseWord = this.cpu.readCauseWord();
-		this.supervisorFaultEpcWord = this.cpu.readEpcWord();
-		this.supervisorFaultBadAddressWord = this.cpu.readBadAddressWord();
-		this.supervisorFaultLuaReasonWord = this.cpu.readLuaFaultReasonWord();
-		this.supervisorFaultSequence = (this.supervisorFaultSequence + 1) >>> 0;
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, this.cpu.readCauseWord());
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, this.cpu.readEpcWord());
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, this.cpu.readBadAddressWord());
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, this.cpu.readLuaFaultReasonWord());
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, this.cpu.readExceptionDomainWord());
+		this.memory.writeIoU32(
+			IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+			(this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1) >>> 0,
+		);
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 			this.supervisorExitRequested = false;
 			this.writeStatusIo();
@@ -336,26 +353,6 @@ export class SystemController {
 				|| this.supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 
-	public readSupervisorFaultSequence(): number {
-		return this.supervisorFaultSequence;
-	}
-
-	public readSupervisorFaultCauseWord(): number {
-		return this.supervisorFaultCauseWord;
-	}
-
-	public readSupervisorFaultEpcWord(): number {
-		return this.supervisorFaultEpcWord;
-	}
-
-	public readSupervisorFaultBadAddressWord(): number {
-		return this.supervisorFaultBadAddressWord;
-	}
-
-	public readSupervisorFaultLuaReasonWord(): number {
-		return this.supervisorFaultLuaReasonWord;
-	}
-
 	public takeResetRequest(): boolean {
 		const requested = this.resetRequested;
 		this.resetRequested = false;
@@ -371,6 +368,12 @@ export class SystemController {
 			supervisorExitRequested: this.supervisorExitRequested,
 			printCharWord: this.memory.readIoU32(IO_SYS_PRINT_CHAR),
 			printFlushWord: this.memory.readIoU32(IO_SYS_PRINT_FLUSH),
+			supervisorFaultSequenceWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE),
+			supervisorFaultCauseWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE),
+			supervisorFaultEpcWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_EPC),
+			supervisorFaultBadAddressWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS),
+			supervisorFaultLuaReasonWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON),
+			supervisorFaultDomainWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN),
 		};
 	}
 
@@ -384,6 +387,12 @@ export class SystemController {
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
 		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, state.supervisorFaultSequenceWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, state.supervisorFaultCauseWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, state.supervisorFaultEpcWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, state.supervisorFaultBadAddressWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, state.supervisorFaultLuaReasonWord);
+		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, state.supervisorFaultDomainWord);
 		this.writeStatusIo();
 	}
 

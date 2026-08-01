@@ -21,6 +21,7 @@ import type { RuntimeIdeState } from '../runtime/state';
 import { rebootPreparedRuntime } from './blua32_boot';
 import { handleSupervisorFault } from './runtime_errors';
 import * as workbenchMode from './mode';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 
 function executeWorkbenchHostMenuAction(
 	ide: RuntimeIdeState,
@@ -203,7 +204,9 @@ export function runWorkbenchHostFrame(
 					screen,
 					hostDeltaMs,
 				);
-				const supervisorFaultSequence = runtime.machine.systemController.readSupervisorFaultSequence();
+				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+				);
 				if (supervisorFaultSequence !== ide.supervisorFaultSequence) {
 					ide.supervisorFaultSequence = supervisorFaultSequence;
 					handleSupervisorFault(

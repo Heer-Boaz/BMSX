@@ -659,6 +659,12 @@ bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 		case IO_CART_SLOT0_RAM_BYTES:
 		case IO_CART_SLOT1_BOARD:
 		case IO_CART_SLOT1_RAM_BYTES:
+		case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
+		case IO_SYS_SUPERVISOR_FAULT_CAUSE:
+		case IO_SYS_SUPERVISOR_FAULT_EPC:
+		case IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS:
+		case IO_SYS_SUPERVISOR_FAULT_LUA_REASON:
+		case IO_SYS_SUPERVISOR_FAULT_DOMAIN:
 			return true;
 		default:
 			return false;

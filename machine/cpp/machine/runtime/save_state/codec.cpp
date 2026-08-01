@@ -1298,6 +1298,12 @@ BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	object["supervisorExitRequested"] = state.supervisorExitRequested;
 	object["printCharWord"] = static_cast<i64>(state.printCharWord);
 	object["printFlushWord"] = static_cast<i64>(state.printFlushWord);
+	object["supervisorFaultSequenceWord"] = static_cast<i64>(state.supervisorFaultSequenceWord);
+	object["supervisorFaultCauseWord"] = static_cast<i64>(state.supervisorFaultCauseWord);
+	object["supervisorFaultEpcWord"] = static_cast<i64>(state.supervisorFaultEpcWord);
+	object["supervisorFaultBadAddressWord"] = static_cast<i64>(state.supervisorFaultBadAddressWord);
+	object["supervisorFaultLuaReasonWord"] = static_cast<i64>(state.supervisorFaultLuaReasonWord);
+	object["supervisorFaultDomainWord"] = static_cast<i64>(state.supervisorFaultDomainWord);
 	return BinValue(std::move(object));
 }
 
@@ -1311,6 +1317,12 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
 	state.printCharWord = requireU32(requireField(object, "printCharWord", label), "machineState.machine.systemControl.printCharWord");
 	state.printFlushWord = requireU32(requireField(object, "printFlushWord", label), "machineState.machine.systemControl.printFlushWord");
+	state.supervisorFaultSequenceWord = requireU32(requireField(object, "supervisorFaultSequenceWord", label), "machineState.machine.systemControl.supervisorFaultSequenceWord");
+	state.supervisorFaultCauseWord = requireU32(requireField(object, "supervisorFaultCauseWord", label), "machineState.machine.systemControl.supervisorFaultCauseWord");
+	state.supervisorFaultEpcWord = requireU32(requireField(object, "supervisorFaultEpcWord", label), "machineState.machine.systemControl.supervisorFaultEpcWord");
+	state.supervisorFaultBadAddressWord = requireU32(requireField(object, "supervisorFaultBadAddressWord", label), "machineState.machine.systemControl.supervisorFaultBadAddressWord");
+	state.supervisorFaultLuaReasonWord = requireU32(requireField(object, "supervisorFaultLuaReasonWord", label), "machineState.machine.systemControl.supervisorFaultLuaReasonWord");
+	state.supervisorFaultDomainWord = requireU32(requireField(object, "supervisorFaultDomainWord", label), "machineState.machine.systemControl.supervisorFaultDomainWord");
 	return state;
 }
 
@@ -1683,10 +1695,12 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["epcWord"] = static_cast<i64>(state.epcWord);
 	object["badAddressWord"] = static_cast<i64>(state.badAddressWord);
 	object["luaFaultReasonWord"] = static_cast<i64>(state.luaFaultReasonWord);
+	object["exceptionDomainWord"] = static_cast<i64>(state.exceptionDomainWord);
 	object["nmiReturnCauseWord"] = static_cast<i64>(state.nmiReturnCauseWord);
 	object["nmiReturnEpcWord"] = static_cast<i64>(state.nmiReturnEpcWord);
 	object["nmiReturnBadAddressWord"] = static_cast<i64>(state.nmiReturnBadAddressWord);
 	object["nmiReturnLuaFaultReasonWord"] = static_cast<i64>(state.nmiReturnLuaFaultReasonWord);
+	object["nmiReturnExceptionDomainWord"] = static_cast<i64>(state.nmiReturnExceptionDomainWord);
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
 	object["yieldRequested"] = state.yieldRequested;
 	return BinValue(std::move(object));
@@ -1746,10 +1760,12 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.epcWord = requireU32(requireField(object, "epcWord", label), "cpuState.epcWord");
 	state.badAddressWord = requireU32(requireField(object, "badAddressWord", label), "cpuState.badAddressWord");
 	state.luaFaultReasonWord = requireU32(requireField(object, "luaFaultReasonWord", label), "cpuState.luaFaultReasonWord");
+	state.exceptionDomainWord = requireU32(requireField(object, "exceptionDomainWord", label), "cpuState.exceptionDomainWord");
 	state.nmiReturnCauseWord = requireU32(requireField(object, "nmiReturnCauseWord", label), "cpuState.nmiReturnCauseWord");
 	state.nmiReturnEpcWord = requireU32(requireField(object, "nmiReturnEpcWord", label), "cpuState.nmiReturnEpcWord");
 	state.nmiReturnBadAddressWord = requireU32(requireField(object, "nmiReturnBadAddressWord", label), "cpuState.nmiReturnBadAddressWord");
 	state.nmiReturnLuaFaultReasonWord = requireU32(requireField(object, "nmiReturnLuaFaultReasonWord", label), "cpuState.nmiReturnLuaFaultReasonWord");
+	state.nmiReturnExceptionDomainWord = requireU32(requireField(object, "nmiReturnExceptionDomainWord", label), "cpuState.nmiReturnExceptionDomainWord");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");
 	state.yieldRequested = requireBool(requireField(object, "yieldRequested", label), "cpuState.yieldRequested");
 	return state;

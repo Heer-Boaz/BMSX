@@ -1255,6 +1255,12 @@ function encodeSystemControllerState(state: SystemControllerState): SystemContro
 		supervisorExitRequested: state.supervisorExitRequested,
 		printCharWord: state.printCharWord,
 		printFlushWord: state.printFlushWord,
+		supervisorFaultSequenceWord: state.supervisorFaultSequenceWord,
+		supervisorFaultCauseWord: state.supervisorFaultCauseWord,
+		supervisorFaultEpcWord: state.supervisorFaultEpcWord,
+		supervisorFaultBadAddressWord: state.supervisorFaultBadAddressWord,
+		supervisorFaultLuaReasonWord: state.supervisorFaultLuaReasonWord,
+		supervisorFaultDomainWord: state.supervisorFaultDomainWord,
 	};
 }
 
@@ -1268,6 +1274,12 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 		supervisorExitRequested: requireBooleanValue(requireObjectKey(object, 'supervisorExitRequested', label, `${label}.supervisorExitRequested`), `${label}.supervisorExitRequested`),
 		printCharWord: requireBoundedU32(requireObjectKey(object, 'printCharWord', label, `${label}.printCharWord`), `${label}.printCharWord`, 0, 0xffffffff),
 		printFlushWord: requireBoundedU32(requireObjectKey(object, 'printFlushWord', label, `${label}.printFlushWord`), `${label}.printFlushWord`, 0, 0xffffffff),
+		supervisorFaultSequenceWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultSequenceWord', label, `${label}.supervisorFaultSequenceWord`), `${label}.supervisorFaultSequenceWord`, 0, 0xffffffff),
+		supervisorFaultCauseWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultCauseWord', label, `${label}.supervisorFaultCauseWord`), `${label}.supervisorFaultCauseWord`, 0, 0xffffffff),
+		supervisorFaultEpcWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultEpcWord', label, `${label}.supervisorFaultEpcWord`), `${label}.supervisorFaultEpcWord`, 0, 0xffffffff),
+		supervisorFaultBadAddressWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultBadAddressWord', label, `${label}.supervisorFaultBadAddressWord`), `${label}.supervisorFaultBadAddressWord`, 0, 0xffffffff),
+		supervisorFaultLuaReasonWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultLuaReasonWord', label, `${label}.supervisorFaultLuaReasonWord`), `${label}.supervisorFaultLuaReasonWord`, 0, 0xffffffff),
+		supervisorFaultDomainWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultDomainWord', label, `${label}.supervisorFaultDomainWord`), `${label}.supervisorFaultDomainWord`, 0, 0xffffffff),
 	};
 }
 
@@ -1568,10 +1580,12 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		epcWord: state.epcWord,
 		badAddressWord: state.badAddressWord,
 		luaFaultReasonWord: state.luaFaultReasonWord,
+		exceptionDomainWord: state.exceptionDomainWord,
 		nmiReturnCauseWord: state.nmiReturnCauseWord,
 		nmiReturnEpcWord: state.nmiReturnEpcWord,
 		nmiReturnBadAddressWord: state.nmiReturnBadAddressWord,
 		nmiReturnLuaFaultReasonWord: state.nmiReturnLuaFaultReasonWord,
+		nmiReturnExceptionDomainWord: state.nmiReturnExceptionDomainWord,
 		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
 		yieldRequested: state.yieldRequested,
 	};
@@ -1646,10 +1660,12 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		epcWord: requireObjectKey(object, 'epcWord', label, 'cpuState.epcWord') as number,
 		badAddressWord: requireObjectKey(object, 'badAddressWord', label, 'cpuState.badAddressWord') as number,
 		luaFaultReasonWord: requireObjectKey(object, 'luaFaultReasonWord', label, 'cpuState.luaFaultReasonWord') as number,
+		exceptionDomainWord: requireObjectKey(object, 'exceptionDomainWord', label, 'cpuState.exceptionDomainWord') as number,
 		nmiReturnCauseWord: requireObjectKey(object, 'nmiReturnCauseWord', label, 'cpuState.nmiReturnCauseWord') as number,
 		nmiReturnEpcWord: requireObjectKey(object, 'nmiReturnEpcWord', label, 'cpuState.nmiReturnEpcWord') as number,
 		nmiReturnBadAddressWord: requireObjectKey(object, 'nmiReturnBadAddressWord', label, 'cpuState.nmiReturnBadAddressWord') as number,
 		nmiReturnLuaFaultReasonWord: requireObjectKey(object, 'nmiReturnLuaFaultReasonWord', label, 'cpuState.nmiReturnLuaFaultReasonWord') as number,
+		nmiReturnExceptionDomainWord: requireObjectKey(object, 'nmiReturnExceptionDomainWord', label, 'cpuState.nmiReturnExceptionDomainWord') as number,
 		nonMaskableInterruptPending: requireObjectKey(object, 'nonMaskableInterruptPending', label, 'cpuState.nonMaskableInterruptPending') as boolean,
 		yieldRequested: requireObjectKey(object, 'yieldRequested', label, 'cpuState.yieldRequested') as boolean,
 	};

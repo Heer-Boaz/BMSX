@@ -51,6 +51,12 @@ void SystemController::reset() {
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, 0u);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, 0u);
 	writeStatusIo();
 }
 
@@ -229,11 +235,15 @@ void SystemController::activateSupervisorContext() {
 }
 
 void SystemController::enterSupervisorFault() {
-	m_supervisorFaultCauseWord = m_cpu.readCauseWord();
-	m_supervisorFaultEpcWord = m_cpu.readEpcWord();
-	m_supervisorFaultBadAddressWord = m_cpu.readBadAddressWord();
-	m_supervisorFaultLuaReasonWord = m_cpu.readLuaFaultReasonWord();
-	m_supervisorFaultSequence += 1u;
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, m_cpu.readCauseWord());
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, m_cpu.readEpcWord());
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, m_cpu.readBadAddressWord());
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, m_cpu.readLuaFaultReasonWord());
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, m_cpu.readExceptionDomainWord());
+	m_memory.writeIoU32(
+		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+		m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1u
+	);
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 		m_supervisorExitRequested = false;
 		writeStatusIo();
@@ -285,6 +295,12 @@ SystemControllerState SystemController::captureState() const {
 	state.supervisorExitRequested = m_supervisorExitRequested;
 	state.printCharWord = m_memory.readIoU32(IO_SYS_PRINT_CHAR);
 	state.printFlushWord = m_memory.readIoU32(IO_SYS_PRINT_FLUSH);
+	state.supervisorFaultSequenceWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
+	state.supervisorFaultCauseWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE);
+	state.supervisorFaultEpcWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_EPC);
+	state.supervisorFaultBadAddressWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS);
+	state.supervisorFaultLuaReasonWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON);
+	state.supervisorFaultDomainWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN);
 	return state;
 }
 
@@ -298,6 +314,12 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
 	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, state.supervisorFaultSequenceWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, state.supervisorFaultCauseWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, state.supervisorFaultEpcWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, state.supervisorFaultBadAddressWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, state.supervisorFaultLuaReasonWord);
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, state.supervisorFaultDomainWord);
 	writeStatusIo();
 }
 

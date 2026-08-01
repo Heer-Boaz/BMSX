@@ -1742,6 +1742,24 @@ System control is a small privileged registerfile rather than a host callback:
 | `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, begin synchronous-fault supervisor entry `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
 | `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
+The system controller publishes each accepted synchronous supervisor fault in
+one read-only raw registerfile:
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `SYS_SUPERVISOR_FAULT_SEQUENCE` | `0x08010434` | Wrapping publication sequence. |
+| `SYS_SUPERVISOR_FAULT_CAUSE` | `0x08010438` | Captured raw CP0 `CAUSE`. |
+| `SYS_SUPERVISOR_FAULT_EPC` | `0x0801043c` | Captured raw CP0 `EPC`. |
+| `SYS_SUPERVISOR_FAULT_BAD_ADDRESS` | `0x08010440` | Captured raw CP0 `BAD_ADDRESS`. |
+| `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010444` | Captured raw CP0 Lua-fault reason. |
+| `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x08010448` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
+
+The controller copies the five payload words from CPU latches and publishes
+`SEQUENCE` last. The CPU latches the interrupted frame's execution domain at
+exception acceptance and preserves it across a nested NMI beside the other
+return latches. Hosts that observe a fault read this same mapped registerfile;
+there is no host-only fault record or CPU debug-state API.
+
 A supervisor-request edge in user mode starts a dependency-ordered hardware
 fence. The first stage closes GP1 writes, DMA triggers, IMGDEC configuration and
 `START` strobes, and geometry doorbells. Geometry finishes its already accepted
@@ -2016,8 +2034,8 @@ cartridge aperture, not two relocated ROMs:
 | `30000000h`--`30EFFFFFh` | 15 MiB cartridge-RAM window. |
 | `30F00000h`--`30FFFFFFh` | 1 MiB cartridge-MMIO window. |
 
-`CART_SELECT` at `08010424h` is a raw retained word; bit 0 selects socket 1
-when set and socket 0 when clear. `CART_STATUS` at `08010428h` reports socket
+`CART_SELECT` at `0801041Ch` is a raw retained word; bit 0 selects socket 1
+when set and socket 0 when clear. `CART_STATUS` at `08010420h` reports socket
 presence in bits 0--1 and the decoded selection in bit 16. The controller does
 not classify cartridge contents as executable. The four read-only words that
 follow expose each socket's raw board word and physical RAM byte count. Unknown
