@@ -8,6 +8,7 @@
 namespace bmsx {
 
 class CPU;
+class AudioController;
 class DeviceScheduler;
 class DmaController;
 class GeometryController;
@@ -53,6 +54,7 @@ public:
 		GeometryController& geometry,
 		GxGpu& gpu,
 		ImgDecController& imgDec,
+		AudioController& audio,
 		i64 cpuHz);
 	void reset();
 	void setTiming(i64 cpuHz) { m_cpuHz = cpuHz; }
@@ -96,6 +98,7 @@ private:
 	GeometryController& m_geometry;
 	GxGpu& m_gpu;
 	ImgDecController& m_imgDec;
+	AudioController& m_audio;
 	bool m_resetRequested = false;
 	u8 m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;

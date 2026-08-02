@@ -7,6 +7,10 @@ import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
 import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import type { SystemOutputLog } from './system_output_log';
+import {
+	IO_SYS_STATUS,
+	SYS_STATUS_SUPERVISOR_ACTIVE,
+} from '../../machine/ts/spec/bmsx/io';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
 
@@ -137,6 +141,7 @@ function rebootMachine(
 	systemOutput.flush(runtime, logOutput);
 	session.syncMachineTiming(runtime, input, audioOutput);
 	audioOutput.restart(runtime.timing.ufpsScaled);
+	audioOutput.muteSystem(false);
 }
 
 export function executeHostMenuAction(
@@ -241,6 +246,9 @@ export function syncAfterRuntimeUpdate(
 	previousTickSequence: number,
 ): void {
 	session.syncMachineTiming(runtime, input, audioOutput);
+	audioOutput.muteSystem(
+		(runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) !== 0,
+	);
 	screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 }
 

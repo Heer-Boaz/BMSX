@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import {
+	SYSTEM_RESOURCE_DOMAIN,
 	type ResourceDomain,
 	type RuntimeResource,
 } from '../../ide/common/resource';
+import type { RuntimeBreakpointState } from '../../ide/runtime/debugger_state';
 import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
 import type { TimerHandle } from '../../hosts/common/clock';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
@@ -393,7 +395,7 @@ function writeRecord(
 function payload(dirtyFiles: WorkspaceAutosavePayload['dirtyFiles'] = []): WorkspaceAutosavePayload {
 	return {
 		dirtyFiles,
-		breakpoints: {},
+		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
 }
@@ -417,7 +419,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 	await restoreWorkspaceStorageSession(
 		editorStub() as any,
 		sources,
-		{ breakpoints: new Map() },
+		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
 		new Set(),
 	);
@@ -812,7 +814,7 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	await restoreWorkspaceStorageSession(
 		editorStub() as any,
 		sources,
-		{ breakpoints: new Map() },
+		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
 		rejected,
 	);
@@ -884,7 +886,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	await restoreWorkspaceStorageSession(
 		editorStub() as any,
 		sources,
-		{ breakpoints: new Map() },
+		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
 		rejected,
 	);
@@ -1345,25 +1347,40 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', retained.domain, retained.path);
 	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored edit', updatedAt: 1 });
 	installWorkspaceRestoreView();
+	const debuggerState: RuntimeBreakpointState = {
+		breakpoints: [
+			new Map(),
+			new Map(),
+			new Map([['stale.lua', new Set([1])]]),
+		],
+	};
+	const restoredPayload = payload([{
+		domain: TEST_DOMAIN,
+		path: retained.path,
+		updatedAt: 1,
+		cursorRow: 0,
+		cursorColumn: 0,
+		scrollRow: 0,
+		scrollColumn: 0,
+		selectionAnchor: null,
+	}]);
+	restoredPayload.breakpoints = [
+		{ domain: SYSTEM_RESOURCE_DOMAIN, path: 'base.lua', lines: [4] },
+		{ domain: TEST_DOMAIN, path: retained.path, lines: [3, 9] },
+	];
 	await applyWorkspaceAutosavePayload(
 		workspaceEnvironment.storage,
 		editorStub() as any,
 		sources,
-		{ breakpoints: new Map() },
-		payload([{
-			domain: TEST_DOMAIN,
-			path: retained.path,
-			updatedAt: 1,
-			cursorRow: 0,
-			cursorColumn: 0,
-			scrollRow: 0,
-			scrollColumn: 0,
-			selectionAnchor: null,
-		}]),
+		debuggerState,
+		restoredPayload,
 	);
 	const context = findCodeTabContext(retained)!;
 	assert.strictEqual(context.resource, retained);
 	assert.equal(context.buffer.getText(), '-- restored edit');
+	assert.deepEqual(debuggerState.breakpoints[0].get('base.lua'), new Set([4]));
+	assert.deepEqual(debuggerState.breakpoints[1].get(retained.path), new Set([3, 9]));
+	assert.equal(debuggerState.breakpoints[2].size, 0);
 });
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {

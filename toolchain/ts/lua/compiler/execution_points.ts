@@ -1,5 +1,9 @@
 import type { SourceRange } from '../source_range';
-import type { LocalSlotDebug, ProgramResumePoint } from './program';
+import type {
+	LocalSlotDebug,
+	ProgramResumePoint,
+	ProgramStatementPoint,
+} from './program';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';
 import {
@@ -34,6 +38,27 @@ function collectNamedLiveRegisters(
 		registers.push(register);
 	}
 	return registers;
+}
+
+export function buildProgramStatementPoints(
+	instructions: Instruction[],
+	instructionWordOffsets: number[],
+): ProgramStatementPoint[] {
+	const emittedRanges = new Set<SourceRange>();
+	const points: ProgramStatementPoint[] = [];
+	for (let index = 0; index < instructions.length; index += 1) {
+		const range = instructions[index].statementRange;
+		if (range === undefined || emittedRanges.has(range)) {
+			continue;
+		}
+		emittedRanges.add(range);
+		points.push({
+			wordOffset: instructionWordOffsets[index],
+			inlineDepth: instructions[index].inlineDepth ?? 0,
+			range,
+		});
+	}
+	return points;
 }
 
 export function buildProgramResumePoints(

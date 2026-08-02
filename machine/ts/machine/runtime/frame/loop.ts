@@ -3,7 +3,7 @@ import {
 	type FrameState,
 } from './state';
 import { Runtime } from '../runtime';
-import { RunResult } from '../../cpu/cpu';
+import { CpuExecutionResult } from '../cpu_executor';
 
 export type FrameLoopStateSnapshot = {
 	frameState: FrameState;
@@ -91,7 +91,10 @@ export class FrameLoopState {
 		if (!this.prepareScheduledFrame()) {
 			return false;
 		}
-		this.runActiveFrameState();
+		const executionStopped = this.runActiveFrameState();
+		if (executionStopped) {
+			return false;
+		}
 		if (this.frameActive
 			&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 			&& runtime.machine.scheduler.nextDeadline() === Number.MAX_SAFE_INTEGER) {
@@ -127,7 +130,8 @@ export class FrameLoopState {
 			return InstructionStepResult.Blocked;
 		}
 		const result = this.runActiveFrameInstruction();
-		if (result === InstructionStepResult.Executed) {
+		if (result === InstructionStepResult.Executed
+			|| result === InstructionStepResult.ExecutionStopped) {
 			return result;
 		}
 		if (this.frameActive !== previousFrameActive
@@ -164,16 +168,17 @@ export class FrameLoopState {
 		return true;
 	}
 
-	private runActiveFrameState(): void {
+	private runActiveFrameState(): boolean {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry') {
-			this.runUpdatePhase();
+			const executionStopped = this.runUpdatePhase();
 			state.updateExecuted = runtime.pendingCall !== 'entry';
 			this.finalizeUpdateSlice();
-			return;
+			return executionStopped;
 		}
 		this.finalizeUpdateSlice();
+		return false;
 	}
 
 	private runActiveFrameInstruction(): InstructionStepResult {
@@ -196,7 +201,7 @@ export class FrameLoopState {
 		this.abandonFrameState();
 	}
 
-	private runUpdatePhase(): void {
+	private runUpdatePhase(): boolean {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
@@ -205,27 +210,27 @@ export class FrameLoopState {
 			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 				const tickCompleted = cpuExecution.runStoppedCpu(state);
 				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-					return;
+					return false;
 				}
 				continue;
 			}
 			if (runtime.pendingCall !== 'entry') {
-				return;
+				return false;
 			}
 			const result = runtime.cpuExecution.runWithBudget(state);
 			if (this.consumeSystemReset()) {
-				return;
+				return false;
 			}
-			if (result === RunResult.Halted && cpu.getFrameDepth() === 0) {
+			if (result === CpuExecutionResult.Halted && cpu.getFrameDepth() === 0) {
 				runtime.pendingCall = null;
 				runtime.frameScheduler.clearQueuedTime();
 				this.abandonFrameState();
-				return;
+				return false;
 			}
 			if (cpu.isHaltedUntilIrq()) {
-				return;
+				return false;
 			}
-			return;
+			return result === CpuExecutionResult.ExecutionStopped;
 		}
 	}
 

@@ -32,12 +32,19 @@ export type Blua32ResumePoint = {
 	defs: number[];
 };
 
+export type Blua32StatementPoint = {
+	wordOffset: number;
+	inlineDepth: number;
+	range: SourceRange;
+};
+
 export type Blua32DebugMetadata = {
 	functionIds: string[];
 	globalNames: string[];
 	systemGlobalNames: string[];
 	staticFunctionIdBySlot: { [slotName: string]: string };
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
 	upvalueNamesByFunction: ReadonlyArray<ReadonlyArray<string>>;

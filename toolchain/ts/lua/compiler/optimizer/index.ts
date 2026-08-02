@@ -3,7 +3,13 @@ import type { SourceRange } from '../../source_range';
 import type { ProgramConstant, ProgramFunctionSymbol, Proto, UpvalueDesc } from '../program';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
-import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
+import {
+	cloneDuplicatedInstruction,
+	cloneInstruction,
+	computeMaxRegister,
+	duplicateStatementRange,
+	isPureInstruction,
+} from './instructions';
 import { applyGlobalOptimizations } from './ssa';
 import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
@@ -36,6 +42,8 @@ export type Instruction = {
 		| { kind: 'module_init'; symbol: string }
 		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
 		| { kind: 'bios_function'; importIndex: number };
+	statementRange?: SourceRange;
+	inlineDepth?: number;
 	resumeRange?: SourceRange;
 };
 
@@ -1497,6 +1505,7 @@ const buildInlineExpansion = (
 	const oldToNewStart = new Array<number>(calleeCount);
 	const pendingCalleeJumps: Array<{ localIndex: number; target: number }> = [];
 	const pendingExitJumps: number[] = [];
+	const statementRanges = new Map<SourceRange, SourceRange>();
 	const appendInstruction = (instruction: Instruction, range: SourceRange | null): number => {
 		const index = generatedInstructions.length;
 		generatedInstructions.push(instruction);
@@ -1535,6 +1544,10 @@ const buildInlineExpansion = (
 		const instruction = instructions[i];
 		const range = ranges[i] ?? callRange;
 		if (instruction.op === OpCode.RET) {
+			const statementRange = instruction.statementRange === undefined
+				? undefined
+				: duplicateStatementRange(instruction.statementRange, statementRanges);
+			const inlineDepth = (instruction.inlineDepth ?? 0) + 1;
 			const copied = Math.min(instruction.b, resultCount);
 			const retBase = mapRegister(instruction.a);
 			for (let offset = 0; offset < copied; offset += 1) {
@@ -1546,6 +1559,8 @@ const buildInlineExpansion = (
 					format: 'ABC',
 					rkMask: 0,
 					target: null,
+					statementRange,
+					inlineDepth,
 				}, range);
 			}
 			if (resultCount > copied) {
@@ -1557,6 +1572,8 @@ const buildInlineExpansion = (
 					format: 'ABC',
 					rkMask: 0,
 					target: null,
+					statementRange,
+					inlineDepth,
 				}, range);
 			}
 			const jumpIndex = appendInstruction({
@@ -1567,12 +1584,15 @@ const buildInlineExpansion = (
 				format: 'AsBx',
 				rkMask: 0,
 				target: null,
+				statementRange,
+				inlineDepth,
 			}, range);
 			pendingExitJumps.push(jumpIndex);
 			continue;
 		}
 
-		const mapped = cloneInstruction(instruction);
+		const mapped = cloneDuplicatedInstruction(instruction, statementRanges);
+		mapped.inlineDepth = (mapped.inlineDepth ?? 0) + 1;
 		delete mapped.resumeRange;
 		switch (mapped.op) {
 			case OpCode.MOV:

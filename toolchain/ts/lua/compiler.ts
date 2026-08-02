@@ -50,6 +50,7 @@ import type {
 	ProgramModuleExport,
 	ProgramModuleProto,
 	ProgramResumePoint,
+	ProgramStatementPoint,
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
@@ -108,7 +109,10 @@ import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
-import { buildProgramResumePoints } from './compiler/resume_points';
+import {
+	buildProgramResumePoints,
+	buildProgramStatementPoints,
+} from './compiler/execution_points';
 
 export type ProgramCompileDomain = 'cart' | 'system';
 
@@ -255,6 +259,10 @@ type ScopeFrame = {
 
 type LocalBindingKind = 'local' | 'const' | 'parameter';
 
+type RelocatableConstExportValue = Extract<ConstExportValue, {
+	kind: 'bss_addr' | 'data_addr' | 'rodata_addr' | 'link_value';
+}>;
+
 type LocalBinding = {
 	symbolHandle: string;
 	name: string;
@@ -266,6 +274,7 @@ type LocalBinding = {
 	hasConstNumberValue: boolean;
 	constBooleanValue: boolean;
 	hasConstBooleanValue: boolean;
+	constRelocValue: RelocatableConstExportValue | null;
 	constClosureProtoIndex: number | null;
 	moduleBinding: ModuleBinding | null;
 	structView: StructView | null;
@@ -455,6 +464,7 @@ class ProgramBuilder {
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
+	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
@@ -760,6 +770,7 @@ class ProgramBuilder {
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
 		constRelocs: ReadonlyArray<ProgramCompilerConstReloc>,
+		statementPoints: ReadonlyArray<ProgramStatementPoint>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
 		localSlots: ReadonlyArray<LocalSlotDebug>,
 		upvalueNames: ReadonlyArray<string>,
@@ -775,6 +786,7 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
+		this.protoStatementPoints.push(statementPoints);
 		this.protoResumePoints.push(resumePoints);
 		this.protoLocalSlots.push(localSlots);
 		this.protoUpvalueNames.push(upvalueNames);
@@ -956,6 +968,14 @@ class ProgramBuilder {
 							importIndex: reloc.importIndex,
 						});
 						continue;
+					case 'gl':
+					case 'sys':
+						imageConstRelocs.push({
+							wordIndex: targetOffsetWords + reloc.wordIndex,
+							kind: reloc.kind,
+							objectSlot: reloc.objectSlot,
+						});
+						continue;
 					default:
 						imageConstRelocs.push({
 							wordIndex: targetOffsetWords + reloc.wordIndex,
@@ -970,6 +990,7 @@ class ProgramBuilder {
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
 			protoIds: this.protoIds,
+			statementPointsByProto: this.protoStatementPoints,
 			resumePointsByProto: this.protoResumePoints,
 			localSlotsByProto: this.protoLocalSlots,
 			upvalueNamesByProto: this.protoUpvalueNames,
@@ -1118,6 +1139,7 @@ class FunctionBuilder {
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedConstRelocs: ProgramCompilerConstReloc[] | null = null;
+	private finalizedStatementPoints: ProgramStatementPoint[] | null = null;
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
 	private readonly localBindings = new Map<string, LocalBinding>();
 	// Nested closures, including IRQ handlers, alias their owner's open-upvalue registers.
@@ -1131,7 +1153,7 @@ class FunctionBuilder {
 	private readonly labelPositions = new Map<string, number>();
 	private readonly pendingLabelJumps = new Map<string, number[]>();
 	private currentRange: SourceRange | null = null;
-	private currentResumeRange: SourceRange | undefined;
+	private currentStatementRange: SourceRange | undefined;
 	private localCount = 0;
 	private tempTop = 0;
 	private maxStack = 0;
@@ -1145,10 +1167,12 @@ class FunctionBuilder {
 	private compileTimeHasNumberValue = false;
 	private compileTimeBooleanValue = false;
 	private compileTimeHasBooleanValue = false;
+	private compileTimeRelocValue: RelocatableConstExportValue | null = null;
 	private readonly initializerFlags: number[] = [];
 	private readonly initializerValues: ProgramConstant[] = [];
 	private readonly initializerNumberValues: number[] = [];
 	private readonly initializerBooleanValues: boolean[] = [];
+	private readonly initializerRelocValues: Array<RelocatableConstExportValue | null> = [];
 	private readonly initializerValueRegs: number[] = [];
 	private readonly initializerClosureProtoIndices: number[] = [];
 	private readonly initializerModuleBindings: ModuleBinding[] = [];
@@ -1223,6 +1247,7 @@ class FunctionBuilder {
 		this.initializerValues.length = count;
 		this.initializerNumberValues.length = count;
 		this.initializerBooleanValues.length = count;
+		this.initializerRelocValues.length = count;
 		this.initializerValueRegs.length = count;
 		this.initializerClosureProtoIndices.length = count;
 		this.initializerModuleBindings.length = count;
@@ -1243,6 +1268,7 @@ class FunctionBuilder {
 		this.initializerValues[index] = this.compileTimeValue;
 		this.initializerNumberValues[index] = this.compileTimeNumberValue;
 		this.initializerBooleanValues[index] = this.compileTimeBooleanValue;
+		this.initializerRelocValues[index] = this.compileTimeRelocValue;
 	}
 
 	public compileStaticModuleScope(chunk: LuaChunk): void {
@@ -1297,6 +1323,7 @@ class FunctionBuilder {
 						!!(flags & INIT_HAS_NUMBER),
 						this.initializerBooleanValues[nameIndex],
 						!!(flags & INIT_HAS_BOOLEAN),
+						this.initializerRelocValues[nameIndex],
 					);
 				} else {
 					this.declareLocalFromDecl(decl, localName.range, undefined, null, false, null, moduleBinding);
@@ -1642,6 +1669,11 @@ class FunctionBuilder {
 		return this.finalizedConstRelocs!;
 	}
 
+	public getStatementPoints(): ReadonlyArray<ProgramStatementPoint> {
+		this.finalizeCode();
+		return this.finalizedStatementPoints!;
+	}
+
 	public getResumePoints(): ReadonlyArray<ProgramResumePoint> {
 		this.finalizeCode();
 		return this.finalizedResumePoints!;
@@ -1896,9 +1928,9 @@ class FunctionBuilder {
 						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
 					}
 				} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
-					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', constIndex: instr.b });
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', objectSlot: instr.b });
 				} else if (isGlobalSlotOp(instr.op)) {
-					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'gl', constIndex: instr.b });
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'gl', objectSlot: instr.b });
 				}
 				continue;
 			}
@@ -1919,6 +1951,10 @@ class FunctionBuilder {
 		this.finalizedCode = code;
 		this.finalizedRanges = finalRanges;
 		this.finalizedConstRelocs = constRelocs;
+		this.finalizedStatementPoints = buildProgramStatementPoints(
+			instructions,
+			instrStartIndex,
+		);
 		this.finalizedResumePoints = buildProgramResumePoints(
 			instructions,
 			instrStartIndex,
@@ -1991,6 +2027,7 @@ class FunctionBuilder {
 		hasConstNumberValue = false,
 		constBooleanValue = false,
 		hasConstBooleanValue = false,
+		constRelocValue: RelocatableConstExportValue | null = null,
 	): number {
 		if (getMemoryAccessKindForName(name) !== null) {
 			throw new Error(`'${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
@@ -2017,6 +2054,7 @@ class FunctionBuilder {
 			hasConstNumberValue,
 			constBooleanValue,
 			hasConstBooleanValue,
+			constRelocValue,
 			constClosureProtoIndex,
 			moduleBinding,
 			structView: null,
@@ -2049,6 +2087,7 @@ class FunctionBuilder {
 		hasConstNumberValue = false,
 		constBooleanValue = false,
 		hasConstBooleanValue = false,
+		constRelocValue: RelocatableConstExportValue | null = null,
 	): number {
 		let kind: LocalBindingKind;
 		switch (decl.kind) {
@@ -2077,6 +2116,7 @@ class FunctionBuilder {
 			hasConstNumberValue,
 			constBooleanValue,
 			hasConstBooleanValue,
+			constRelocValue,
 		);
 	}
 
@@ -2575,7 +2615,11 @@ class FunctionBuilder {
 		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
-			this.emitLoadConst(target, constBinding.constValue);
+			if (constBinding.constRelocValue !== null) {
+				this.emitLoadConstExportValue(target, constBinding.constRelocValue);
+			} else {
+				this.emitLoadConst(target, constBinding.constValue);
+			}
 			return;
 		}
 		const bssBinding = this.resolveReferenceBssBinding(reference);
@@ -2767,7 +2811,8 @@ class FunctionBuilder {
 			format: 'ABC',
 			rkMask,
 			target: null,
-			resumeRange: this.currentResumeRange,
+			statementRange: this.currentStatementRange,
+			resumeRange: this.currentStatementRange,
 		});
 		this.ranges.push(this.currentRange);
 	}
@@ -2783,7 +2828,8 @@ class FunctionBuilder {
 			format: 'ABC',
 			rkMask: 0,
 			target: null,
-			resumeRange: this.currentResumeRange,
+			statementRange: this.currentStatementRange,
+			resumeRange: this.currentStatementRange,
 		});
 		this.ranges.push(this.currentRange);
 	}
@@ -2799,7 +2845,8 @@ class FunctionBuilder {
 			rkMask: 0,
 			target: null,
 			symbolicReloc,
-			resumeRange: this.currentResumeRange,
+			statementRange: this.currentStatementRange,
+			resumeRange: this.currentStatementRange,
 		});
 		this.ranges.push(this.currentRange);
 	}
@@ -2815,7 +2862,8 @@ class FunctionBuilder {
 			format: 'AsBx',
 			rkMask: 0,
 			target,
-			resumeRange: this.currentResumeRange,
+			statementRange: this.currentStatementRange,
+			resumeRange: this.currentStatementRange,
 		});
 		this.ranges.push(this.currentRange);
 	}
@@ -2995,6 +3043,7 @@ class FunctionBuilder {
 		this.compileTimeValue = value;
 		this.compileTimeHasNumberValue = false;
 		this.compileTimeHasBooleanValue = false;
+		this.compileTimeRelocValue = null;
 		return true;
 	}
 
@@ -3003,6 +3052,7 @@ class FunctionBuilder {
 		this.compileTimeNumberValue = value;
 		this.compileTimeHasNumberValue = true;
 		this.compileTimeHasBooleanValue = false;
+		this.compileTimeRelocValue = null;
 		return true;
 	}
 
@@ -3011,6 +3061,15 @@ class FunctionBuilder {
 		this.compileTimeHasNumberValue = false;
 		this.compileTimeBooleanValue = value;
 		this.compileTimeHasBooleanValue = true;
+		this.compileTimeRelocValue = null;
+		return true;
+	}
+
+	private setCompileTimeRelocValue(value: RelocatableConstExportValue): boolean {
+		this.compileTimeValue = null;
+		this.compileTimeHasNumberValue = false;
+		this.compileTimeHasBooleanValue = false;
+		this.compileTimeRelocValue = value;
 		return true;
 	}
 
@@ -3020,6 +3079,7 @@ class FunctionBuilder {
 		this.compileTimeHasNumberValue = binding.hasConstNumberValue;
 		this.compileTimeBooleanValue = binding.constBooleanValue;
 		this.compileTimeHasBooleanValue = binding.hasConstBooleanValue;
+		this.compileTimeRelocValue = binding.constRelocValue;
 		return true;
 	}
 
@@ -3037,8 +3097,13 @@ class FunctionBuilder {
 			case 'data_addr':
 			case 'rodata_addr':
 			case 'link_value':
-				return false;
+				return this.setCompileTimeRelocValue(value);
 		}
+	}
+
+	private compileTimeValueIsFalsey(): boolean {
+		return this.compileTimeRelocValue === null
+			&& (this.compileTimeValue === null || this.compileTimeValue === false);
 	}
 
 	private evaluateCompileTimeExpression(expression: LuaExpression): boolean {
@@ -3083,7 +3148,7 @@ class FunctionBuilder {
 			}
 			case LuaUnaryOperator.Not:
 				return this.evaluateCompileTimeExpression(expression.operand)
-					&& this.setCompileTimeBooleanValue(this.compileTimeValue === null || this.compileTimeValue === false);
+					&& this.setCompileTimeBooleanValue(this.compileTimeValueIsFalsey());
 			case LuaUnaryOperator.Length: {
 				const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
 				if (arrayLength !== undefined) {
@@ -3196,10 +3261,10 @@ class FunctionBuilder {
 		switch (expression.operator) {
 			case LuaBinaryOperator.And:
 				return this.evaluateCompileTimeExpression(expression.left)
-					&& ((this.compileTimeValue === null || this.compileTimeValue === false) || this.evaluateCompileTimeExpression(expression.right));
+					&& (this.compileTimeValueIsFalsey() || this.evaluateCompileTimeExpression(expression.right));
 			case LuaBinaryOperator.Or:
 				return this.evaluateCompileTimeExpression(expression.left)
-					&& ((this.compileTimeValue !== null && this.compileTimeValue !== false) || this.evaluateCompileTimeExpression(expression.right));
+					&& (!this.compileTimeValueIsFalsey() || this.evaluateCompileTimeExpression(expression.right));
 			case LuaBinaryOperator.Equal: {
 				const equal = this.evaluateCompileTimeEquality(expression.left, expression.right);
 				return (equal || equal === false) && this.setCompileTimeBooleanValue(equal);
@@ -3265,7 +3330,11 @@ class FunctionBuilder {
 		const leftHasNumber = this.compileTimeHasNumberValue;
 		const leftBoolean = this.compileTimeBooleanValue;
 		const leftHasBoolean = this.compileTimeHasBooleanValue;
+		const leftReloc = this.compileTimeRelocValue;
 		if (!this.evaluateCompileTimeExpression(rightExpression)) return;
+		if (leftReloc !== null || this.compileTimeRelocValue !== null) {
+			return;
+		}
 		if (leftHasNumber) {
 			return this.compileTimeHasNumberValue && leftNumber === this.compileTimeNumberValue;
 		}
@@ -3300,8 +3369,8 @@ class FunctionBuilder {
 		if (this.flowAnalysis) {
 			this.currentFlowState = this.flowAnalysis.getFlowStateAt(statement);
 		}
-		const previousResumeRange = this.currentResumeRange;
-		this.currentResumeRange = statement.range;
+		const previousStatementRange = this.currentStatementRange;
+		this.currentStatementRange = statement.range;
 		this.withRange(statement.range, () => {
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement:
@@ -3372,7 +3441,7 @@ class FunctionBuilder {
 					throw new Error(`Unsupported statement kind: ${(statement as LuaStatement).kind}`);
 			}
 		});
-		this.currentResumeRange = previousResumeRange;
+		this.currentStatementRange = previousStatementRange;
 	}
 
 	private compileBssDeclaration(statement: LuaBssDeclarationStatement): void {
@@ -3640,12 +3709,14 @@ class FunctionBuilder {
 			let initializerHasNumberValue = false;
 			let initializerBooleanValue = false;
 			let initializerHasBooleanValue = false;
+			let initializerRelocValue: RelocatableConstExportValue | null = null;
 			if (hasInitializerValue) {
 				constValue = this.initializerValues[i];
 				initializerNumberValue = this.initializerNumberValues[i];
 				initializerHasNumberValue = !!(flags & INIT_HAS_NUMBER);
 				initializerBooleanValue = this.initializerBooleanValues[i];
 				initializerHasBooleanValue = !!(flags & INIT_HAS_BOOLEAN);
+				initializerRelocValue = this.initializerRelocValues[i];
 			}
 			const target = this.declareLocal(
 				decl.id,
@@ -3661,6 +3732,7 @@ class FunctionBuilder {
 				initializerHasNumberValue,
 				initializerBooleanValue,
 				initializerHasBooleanValue,
+				attribute === 'const' ? initializerRelocValue : null,
 			);
 			const pointerTypeRef = pointerTypeRefs[i];
 			if (pointerTypeRef) {
@@ -3669,7 +3741,11 @@ class FunctionBuilder {
 				};
 			}
 			if (hasInitializerValue) {
-				this.emitLoadConst(target, this.initializerValues[i]);
+				if (initializerRelocValue !== null) {
+					this.emitLoadConstExportValue(target, initializerRelocValue);
+				} else {
+					this.emitLoadConst(target, this.initializerValues[i]);
+				}
 				continue;
 			}
 			if (initializerModuleBinding && this.moduleBindingOwnsCompileTimeLocal(initializerModuleBinding)) {
@@ -5327,7 +5403,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, constRelocs, builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, instructionSet);
 	return protoIndex;
 }
 
@@ -5353,7 +5429,7 @@ function compileSectionInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5383,7 +5459,7 @@ function compileStartupProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5410,7 +5486,7 @@ function compileInterruptProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5437,7 +5513,7 @@ function compileExceptionProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5582,7 +5658,7 @@ export function compileLuaChunkToProgram(
 				maxStack: entryBuilder.getMaxStack(),
 				upvalueDescs: entryBuilder.getUpvalueDescs(),
 				staticClosure: false,
-			}, entryCode, entryRanges, entryConstRelocs, entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
+			}, entryCode, entryRanges, entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -5622,7 +5698,7 @@ export function compileLuaChunkToProgram(
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
 				staticClosure: false,
-			}, code, ranges, constRelocs, builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
+			}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({

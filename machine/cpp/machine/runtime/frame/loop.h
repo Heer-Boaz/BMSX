@@ -28,9 +28,9 @@ public:
 
 private:
 	bool prepareScheduledFrame(Runtime& runtime);
-	void runActiveFrameState(Runtime& runtime);
+	bool runActiveFrameState(Runtime& runtime);
 	InstructionStepResult runActiveFrameInstruction(Runtime& runtime);
-	void runUpdatePhase(Runtime& runtime);
+	bool runUpdatePhase(Runtime& runtime);
 	InstructionStepResult runUpdateInstruction(Runtime& runtime);
 	bool consumeSystemReset(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);

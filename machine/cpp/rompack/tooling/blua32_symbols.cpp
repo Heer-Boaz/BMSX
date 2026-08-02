@@ -94,6 +94,22 @@ auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	return BinValue(std::move(value));
 }
 
+auto decodeStatementPoint(const BinValue& value) -> Blua32StatementPoint {
+	return Blua32StatementPoint{
+		value.require("wordOffset").toI32(),
+		value.require("inlineDepth").toI32(),
+		decodeSourceRange(value.require("range")),
+	};
+}
+
+auto encodeStatementPoint(const Blua32StatementPoint& point) -> BinValue {
+	BinObject value;
+	value["wordOffset"] = BinValue(point.wordOffset);
+	value["inlineDepth"] = BinValue(point.inlineDepth);
+	value["range"] = encodeSourceRange(point.range);
+	return BinValue(std::move(value));
+}
+
 auto decodeResumePoint(const BinValue& value) -> Blua32ResumePoint {
 	return Blua32ResumePoint{
 		value.require("wordOffset").toI32(),
@@ -132,6 +148,17 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 			metadata.debugRanges.push_back(std::nullopt);
 		} else {
 			metadata.debugRanges.push_back(decodeSourceRange(range));
+		}
+	}
+
+	const BinArray& statementPoints = value.require("statementPointsByFunction").asArray();
+	metadata.statementPointsByFunction.resize(statementPoints.size());
+	for (size_t functionIndex = 0; functionIndex < statementPoints.size(); ++functionIndex) {
+		const BinArray& encodedPoints = statementPoints[functionIndex].asArray();
+		std::vector<Blua32StatementPoint>& decodedPoints = metadata.statementPointsByFunction[functionIndex];
+		decodedPoints.reserve(encodedPoints.size());
+		for (const BinValue& point : encodedPoints) {
+			decodedPoints.push_back(decodeStatementPoint(point));
 		}
 	}
 
@@ -187,6 +214,18 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 		}
 	}
 	value["debugRanges"] = BinValue(std::move(debugRanges));
+
+	BinArray statementPoints;
+	statementPoints.reserve(metadata.statementPointsByFunction.size());
+	for (const std::vector<Blua32StatementPoint>& functionPoints : metadata.statementPointsByFunction) {
+		BinArray points;
+		points.reserve(functionPoints.size());
+		for (const Blua32StatementPoint& point : functionPoints) {
+			points.push_back(encodeStatementPoint(point));
+		}
+		statementPoints.emplace_back(std::move(points));
+	}
+	value["statementPointsByFunction"] = BinValue(std::move(statementPoints));
 
 	BinArray resumePoints;
 	resumePoints.reserve(metadata.resumePointsByFunction.size());

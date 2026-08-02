@@ -19,8 +19,8 @@ const moduleRevisionSource = (record, revision) => record.base_src
 		'\tget = get,\n\tinserted_before_get = inserted_before_get,\n',
 	);
 const systemRevisionSource = (record, revision) => record.base_src.replace(
-	'function gx_gpu.draw_target(origin_word)\n',
-	`function gx_gpu.draw_target(origin_word)\n\thot_resume_system_probe = ${revision}\n`,
+	'print = function(...)\n',
+	`print = function(...)\n\thot_resume_system_probe = ${revision}\n`,
 );
 const runtime = t.runtime();
 const sourceState = t.sourceState();
@@ -31,7 +31,7 @@ cpu.setGlobalByKey(liveStateProbeKey, tableValueTag, NaN, liveMathTable);
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
 const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
 const valueRecord = cartridge.luaSources.path2lua['value.lua'];
-const gxGpuRecord = sourceState.systemLuaSources.path2lua['gpu/gpu.lua'];
+const baseRecord = sourceState.systemLuaSources.path2lua['base.lua'];
 const dataOnlySlot = cpu.activeCartridgeSlot() === 0 ? 1 : 0;
 const dataOnlyCartridge = sourceState.cartridgeSlots[dataOnlySlot];
 t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
@@ -54,7 +54,7 @@ t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
 	'\tvblank_count = 0\n',
 ));
-t.performHotResume();
+await t.performHotResume();
 await t.frames(60);
 
 t.assert(sourceState.currentBlua32Media === originalMedia, 'rejected edit replaced tooling media');
@@ -78,17 +78,17 @@ t.assert(
 	'rejected edit changed the last-execution latch',
 );
 
-const installRevision = (revision) => {
+const installRevision = async (revision) => {
 	t.openLuaSource('entry.lua');
 	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));
 	t.openLuaSource('value.lua');
 	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
-	t.openLuaSource('gpu/gpu.lua');
-	t.replaceActiveCodeSource(systemRevisionSource(gxGpuRecord, revision));
-	t.performHotResume();
+	t.openLuaSource('base.lua');
+	t.replaceActiveCodeSource(systemRevisionSource(baseRecord, revision));
+	await t.performHotResume();
 };
 
-installRevision(1);
+await installRevision(1);
 await t.frames(60);
 
 t.assert(t.runtime() === runtime, 'first Hot Resume replaced the live runtime');
@@ -100,7 +100,7 @@ t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) ==
 t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === 2, 'first Hot Resume did not rerun init exactly once');
 t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'first Hot Resume reran new_game');
 
-installRevision(2);
+await installRevision(2);
 await t.frames(60);
 
 t.assert(t.runtime() === runtime, 'second Hot Resume replaced the live runtime');

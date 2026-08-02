@@ -31,12 +31,19 @@ struct Blua32ResumePoint {
 	std::vector<i32> defs;
 };
 
+struct Blua32StatementPoint {
+	i32 wordOffset = 0;
+	i32 inlineDepth = 0;
+	SourceRange range;
+};
+
 struct Blua32DebugMetadata {
 	std::vector<std::string> functionIds;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
 	std::unordered_map<std::string, std::string> staticFunctionIdBySlot;
 	std::vector<std::optional<SourceRange>> debugRanges;
+	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
 	std::vector<std::vector<std::string>> upvalueNamesByFunction;

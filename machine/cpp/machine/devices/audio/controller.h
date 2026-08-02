@@ -33,6 +33,7 @@ public:
 	void reset();
 	void dispose();
 	void setTiming(int64_t cpuHz, int64_t nowCycles);
+	void setVoiceClockHeld(bool held, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void onTransferService(int64_t nowCycles);
 	[[nodiscard]] auto synchronizeOutput() -> ApuOutputRing&;

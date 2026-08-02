@@ -98,6 +98,7 @@ function makeMetadata(
 	return {
 		debugRanges: new Array(instructionCount).fill(null),
 		protoIds,
+		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
 		upvalueNamesByProto: protoIds.map(() => []),
@@ -174,6 +175,7 @@ function setFunctionIds(
 ): void {
 	object.link.symbols.protoIds = ids;
 	metadata.protoIds = ids;
+	metadata.statementPointsByProto = ids.map(() => []);
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
 	metadata.upvalueNamesByProto = ids.map(() => []);
@@ -406,7 +408,7 @@ test('BLua32 linker rewrites local and explicit BIOS-import closure operands to 
 	);
 });
 
-test('cartridge global operands keep cartridge-owned slot tables', () => {
+test('cartridge global operands keep cartridge-owned and baseline-stable slot tables', () => {
 	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	system.object.link.symbols = runtimeSymbols(['system'], ['system_private'], ['system_boot']);
 	system.metadata = makeMetadata(['system'], 1, ['system_private'], ['system_boot']);
@@ -425,8 +427,8 @@ test('cartridge global operands keep cartridge-owned slot tables', () => {
 		{ op: OpCode.GETGL, a: 1, b: 0, c: 1 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 	], [], [
-		{ wordIndex: 1, kind: 'gl', constIndex: 0 },
-		{ wordIndex: 3, kind: 'gl', constIndex: 1 },
+		{ wordIndex: 1, kind: 'gl', objectSlot: 0 },
+		{ wordIndex: 3, kind: 'gl', objectSlot: 1 },
 	]);
 	cart.object.link.symbols = runtimeSymbols(['cart'], ['cart_only', 'shared'], ['cart_boot']);
 	cart.metadata = makeMetadata(['cart'], 5, ['cart_only', 'shared'], ['cart_boot']);
@@ -442,6 +444,53 @@ test('cartridge global operands keep cartridge-owned slot tables', () => {
 	assert.deepEqual(linkedCart.layout.systemGlobalNames, ['cart_boot']);
 	assert.equal(decodeBx(linkedCart.layout.textBytes, 1), 0);
 	assert.equal(decodeBx(linkedCart.layout.textBytes, 3), 1);
+
+	const revisedCart = makeCartObject([
+		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+		{ op: OpCode.GETGL, a: 0, b: 0, c: 0 },
+		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+		{ op: OpCode.SETGL, a: 1, b: 0, c: 1 },
+		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+		{ op: OpCode.GETSYS, a: 2, b: 0, c: 0 },
+		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+		{ op: OpCode.SETSYS, a: 3, b: 0, c: 1 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	], [], [
+		{ wordIndex: 1, kind: 'gl', objectSlot: 0 },
+		{ wordIndex: 3, kind: 'gl', objectSlot: 1 },
+		{ wordIndex: 5, kind: 'sys', objectSlot: 0 },
+		{ wordIndex: 7, kind: 'sys', objectSlot: 1 },
+	]);
+	revisedCart.object.link.symbols = runtimeSymbols(
+		['cart'],
+		['inserted', 'shared'],
+		['new_cart_boot', 'cart_boot'],
+	);
+	revisedCart.metadata = makeMetadata(
+		['cart'],
+		9,
+		['inserted', 'shared'],
+		['new_cart_boot', 'cart_boot'],
+	);
+	const linkedRevision = linkCartBlua32Image(
+		linkedSystem.biosImports,
+		revisedCart.object,
+		revisedCart.metadata,
+		CART_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		{ image: linkedCart.layout, symbols: linkedCart.symbols },
+	);
+
+	assert.deepEqual(linkedRevision.layout.globalNames, ['cart_only', 'shared', 'inserted']);
+	assert.deepEqual(linkedRevision.layout.systemGlobalNames, ['cart_boot', 'new_cart_boot']);
+	assert.deepEqual(linkedRevision.symbols.metadata.globalNames, linkedRevision.layout.globalNames);
+	assert.deepEqual(linkedRevision.symbols.metadata.systemGlobalNames, linkedRevision.layout.systemGlobalNames);
+	assert.equal(decodeBx(linkedRevision.layout.textBytes, 1), 2);
+	assert.equal(decodeBx(linkedRevision.layout.textBytes, 3), 1);
+	assert.equal((readInstructionWord(linkedRevision.layout.textBytes, 3) >>> 18) & 0x3f, OpCode.SETGL);
+	assert.equal(decodeBx(linkedRevision.layout.textBytes, 5), 1);
+	assert.equal(decodeBx(linkedRevision.layout.textBytes, 7), 0);
+	assert.equal((readInstructionWord(linkedRevision.layout.textBytes, 7) >>> 18) & 0x3f, OpCode.SETSYS);
 });
 
 test('system and cartridge storage relocations resolve against physical ROM and RAM sections', () => {

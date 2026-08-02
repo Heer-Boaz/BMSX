@@ -5,6 +5,8 @@ import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/va
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from '../../../../hosts/common/clock';
+import type { InputEventWriter, InputEvt } from '../../../../hosts/common/input/contracts';
+import type { HeadlessCaptureCoordinator } from '../headless_capture';
 
 export interface IdeTestRunnerOptions {
 	testPath: string;
@@ -12,6 +14,8 @@ export interface IdeTestRunnerOptions {
 	ide: HeadlessIdeHarness;
 	logger: (msg: string) => void;
 	clock: HostClock;
+	input: InputEventWriter;
+	capture: HeadlessCaptureCoordinator;
 }
 
 /**
@@ -70,9 +74,12 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,
+		postInput: (event: InputEvt) => options.input.post(event),
+		capture: (description: string) => options.capture.captureNow(description, `ide:${label}`),
 		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
 		reboot: () => options.ide.reboot(),
+		command: options.ide.executeCommand,
 		openLuaSource: (path: string) => options.ide.openLuaSource(path),
 		replaceActiveCodeSource: (source: string) => options.ide.replaceActiveCodeSource(source),
 	};

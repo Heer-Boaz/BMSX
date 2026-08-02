@@ -19,6 +19,12 @@ export type ProgramResumePoint = {
 	defs: number[];
 };
 
+export type ProgramStatementPoint = {
+	wordOffset: number;
+	inlineDepth: number;
+	range: SourceRange;
+};
+
 export type LocalSlotDebug = {
 	name: string;
 	registerIndex: number;
@@ -28,6 +34,7 @@ export type LocalSlotDebug = {
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
 	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;

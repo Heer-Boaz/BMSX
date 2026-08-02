@@ -28,6 +28,7 @@
 #include "presentation_state.h"
 #include "runtime_error.h"
 #include "video_output.h"
+#include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
@@ -73,6 +74,12 @@ static bool RETRO_CALLCONV supervisor_request_line_low(void) {
 
 static bmsx_supervisor_request_line_t g_supervisor_request_line_cb =
 	supervisor_request_line_low;
+
+static void RETRO_CALLCONV set_audio_transport_suspended_noop(bool) {
+}
+
+static bmsx_set_audio_transport_suspended_t g_set_audio_transport_suspended_cb =
+	set_audio_transport_suspended_noop;
 
 enum class HardwareContextLifecycle : uint8_t {
 	Software,
@@ -999,6 +1006,15 @@ void retro_set_environment(retro_environment_t cb) {
 	} else {
 		g_supervisor_request_line_cb = supervisor_request_line_low;
 	}
+	BmsxAudioTransportInterface audioTransportInterface{
+		set_audio_transport_suspended_noop,
+	};
+	if (cb(BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE,
+			&audioTransportInterface)) {
+		g_set_audio_transport_suspended_cb = audioTransportInterface.set_suspended;
+	} else {
+		g_set_audio_transport_suspended_cb = set_audio_transport_suspended_noop;
+	}
 
 	// Try to get logging interface
 	if (!cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
@@ -1648,7 +1664,18 @@ void retro_run(void) {
 	}
 	bmsx::flushLibretroSystemOutput(runtime, logging);
 	sync_runtime_timing(runtime);
+	const bool systemAudioMuted = (
+		runtime.machine.memory.readIoU32(bmsx::IO_SYS_STATUS)
+		& bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
+	) != 0u;
+	const bool systemAudioMuteChanged = g_audio_output->setSystemMuted(
+		runtime.machine.audioController,
+		systemAudioMuted
+	);
 	g_audio_output->collectFrame(runtime.machine.audioController);
+	if (systemAudioMuteChanged) {
+		g_set_audio_transport_suspended_cb(systemAudioMuted);
+	}
 	const bool video_frame_presented =
 		frameResult == bmsx::LibretroFrameResult::Presented;
 	const int64_t runtime_ufps_scaled = runtime.timing.ufpsScaled;

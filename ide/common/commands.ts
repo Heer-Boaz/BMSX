@@ -26,11 +26,18 @@ export type EditorWorkspaceCommandId =
 	| 'save'
 	| 'theme-toggle';
 
+export type EditorDebugCommandId =
+	| 'debugContinue'
+	| 'debugStepInto'
+	| 'debugStepOut'
+	| 'debugStepOver';
+
 export type EditorCommandId =
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId
-	| EditorWorkspaceCommandId;
+	| EditorWorkspaceCommandId
+	| EditorDebugCommandId;
 
 export type TopBarButtonId = Extract<
 	EditorCommandId,
@@ -41,4 +48,8 @@ export type TopBarButtonId = Extract<
 	| 'problems'
 	| 'filter'
 	| 'wrap'
+	| 'debugContinue'
+	| 'debugStepInto'
+	| 'debugStepOut'
+	| 'debugStepOver'
 >;

@@ -3,6 +3,7 @@
 #include "common/utf8.h"
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/audio/controller.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/gx/gpu.h"
@@ -21,6 +22,7 @@ SystemController::SystemController(
 	GeometryController& geometry,
 	GxGpu& gpu,
 	ImgDecController& imgDec,
+	AudioController& audio,
 	i64 cpuHz)
 	: m_memory(memory)
 	, m_cpu(cpu)
@@ -30,6 +32,7 @@ SystemController::SystemController(
 	, m_geometry(geometry)
 	, m_gpu(gpu)
 	, m_imgDec(imgDec)
+	, m_audio(audio)
 	, m_cpuHz(cpuHz) {
 	memory.mapIoWrite<&SystemController::writeControl>(IO_SYS_CONTROL, *this);
 	memory.mapIoRead<&SystemController::readStatus>(IO_SYS_STATUS, *this);
@@ -47,6 +50,7 @@ void SystemController::reset() {
 	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
+	m_audio.setVoiceClockHeld(false, m_scheduler.currentNowCycles());
 	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, 0u);
@@ -153,6 +157,7 @@ void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
 
 void SystemController::requestSupervisorLineEdge() {
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_USER) {
+		m_audio.setVoiceClockHeld(true, m_scheduler.currentNowCycles());
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 		m_supervisorResumable = false;
@@ -214,6 +219,7 @@ void SystemController::onService() {
 		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		m_supervisorResumable = false;
 		m_supervisorExitRequested = false;
+		m_audio.setVoiceClockHeld(false, m_scheduler.currentNowCycles());
 		writeStatusIo();
 	}
 }
@@ -251,6 +257,7 @@ void SystemController::enterSupervisorFault() {
 	}
 	m_cpu.cancelNonMaskableInterrupt();
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_USER) {
+		m_audio.setVoiceClockHeld(true, m_scheduler.currentNowCycles());
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 		m_gpu.beginSupervisorControlQuiesce();
 		m_dma.beginSupervisorControlQuiesce();
@@ -310,6 +317,10 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_supervisorTransitionTarget = state.supervisorTransitionTarget;
 	m_supervisorResumable = state.supervisorResumable;
 	m_supervisorExitRequested = state.supervisorExitRequested;
+	m_audio.setVoiceClockHeld(
+		m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_USER,
+		m_scheduler.currentNowCycles()
+	);
 	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);

@@ -38,7 +38,7 @@ import {
 	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from '../../runtime/sources';
-import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
+import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
@@ -52,7 +52,7 @@ let reconnectHandle: TimerHandle = null;
 let reconnectTask: Promise<void> = null;
 let editor: CartEditor = null;
 let sources: RuntimeSourceState = null;
-let debuggerState: RuntimeDebuggerState = null;
+let debuggerState: RuntimeBreakpointState = null;
 let storage: KeyValueStorage = null;
 let clock: HostClock = null;
 
@@ -232,7 +232,7 @@ export async function initializeWorkspaceStorage(
 export async function restoreWorkspaceStorageSession(
 	workspaceEditor: CartEditor,
 	runtimeSources: RuntimeSourceState,
-	runtimeDebuggerState: RuntimeDebuggerState,
+	runtimeDebuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload | null,
 	rejectedDirtyPaths: ReadonlySet<string>,
 ): Promise<void> {

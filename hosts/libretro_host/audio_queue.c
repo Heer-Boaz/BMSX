@@ -51,6 +51,13 @@ void bmsx_audio_queue_stop(BmsxAudioQueue* queue) {
 	pthread_mutex_unlock(&queue->mutex);
 }
 
+void bmsx_audio_queue_clear(BmsxAudioQueue* queue) {
+	pthread_mutex_lock(&queue->mutex);
+	queue->read_frame = queue->write_frame;
+	queue->used_frames = 0u;
+	pthread_mutex_unlock(&queue->mutex);
+}
+
 void bmsx_audio_queue_push(BmsxAudioQueue* queue, const int16_t* data, size_t frames) {
 	if (frames > queue->capacity_frames) {
 		data += (frames - queue->capacity_frames) * queue->channels;

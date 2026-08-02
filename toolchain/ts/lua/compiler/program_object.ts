@@ -52,12 +52,14 @@ export type ProgramObjectSections = {
 	bss: ProgramObjectBssSection;
 };
 
-export type ProgramIndexedConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
+export type ProgramConstantIndexRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c';
+export type ProgramGlobalSlotRelocKind = 'gl' | 'sys';
 export type ProgramNamedConstRelocKind = 'module_init';
 export type ProgramFunctionConstRelocKind = 'export_proto';
 
 export type ProgramImageConstReloc =
-	| { wordIndex: number; kind: ProgramIndexedConstRelocKind; constIndex: number }
+	| { wordIndex: number; kind: ProgramConstantIndexRelocKind; constIndex: number }
+	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number }
 	| { wordIndex: number; kind: ProgramNamedConstRelocKind; symbol: string }
 	| {
 		wordIndex: number;

@@ -22,6 +22,10 @@ type CommandKeyBinding = {
 };
 
 const editorGlobalKeyBindings: readonly CommandKeyBinding[] = [
+	{ code: 'F5', command: 'debugContinue', modifiers: { noneOf: ['ctrl', 'meta', 'shift', 'alt'] } },
+	{ code: 'F10', command: 'debugStepOver', modifiers: { noneOf: ['ctrl', 'meta', 'shift', 'alt'] } },
+	{ code: 'F11', command: 'debugStepInto', modifiers: { noneOf: ['ctrl', 'meta', 'shift', 'alt'] } },
+	{ code: 'F11', command: 'debugStepOut', modifiers: { allOf: ['shift'], noneOf: ['ctrl', 'meta', 'alt'] } },
 	{ code: 'KeyS', command: 'hot-resume', modifiers: { anyOf: ['ctrl', 'meta'], allOf: ['shift'] } },
 	{ code: 'KeyR', command: 'reboot', modifiers: { anyOf: ['ctrl', 'meta'], allOf: ['shift'] } },
 	{ code: 'KeyT', command: 'theme-toggle', modifiers: { anyOf: ['ctrl', 'meta'], allOf: ['alt'] } },
@@ -95,7 +99,9 @@ function matchesModifierConstraint(constraint: ModifierConstraint, state: Modifi
 }
 
 function handleCommandKeyBinding(playerInput: PlayerInput, commands: IdeCommandController, binding: CommandKeyBinding, state: ModifierState): boolean {
-	if (!isKeyJustPressed(binding.code, playerInput) || !matchesModifierConstraint(binding.modifiers, state)) {
+	if (!isKeyJustPressed(binding.code, playerInput)
+		|| !matchesModifierConstraint(binding.modifiers, state)
+		|| !commands.isEnabled(binding.command)) {
 		return false;
 	}
 	consumeIdeKey(binding.code, playerInput);

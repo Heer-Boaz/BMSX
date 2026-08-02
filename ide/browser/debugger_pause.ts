@@ -13,6 +13,9 @@ export function bindBrowserDebuggerPauseShortcut(
 	audioOutput: HostAudioOutput,
 ): void {
 	input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => {
+		if (input.debugHotkeysPaused) {
+			return;
+		}
 		toggleDebuggerControls(session, audioOutput);
 	});
 }

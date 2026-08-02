@@ -11,11 +11,30 @@ class Runtime;
 
 constexpr int MAX_CPU_SLICE_CYCLES = 0x7fffffff;
 
+enum class CpuExecutionResult {
+	Halted,
+	Yielded,
+	ExecutionStopped,
+};
+
+using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
+
 class CpuExecutionState {
 public:
 	void reset();
+	void setExecutionHook(
+		CPU& cpu,
+		ExecutionHook hook,
+		void* context,
+		ExecutionDomainMask domainMask
+	) {
+		m_executionHook = hook;
+		m_executionHookContext = context;
+		m_executionHookDomainMask = domainMask;
+		cpu.setExecutionDomainActivationYieldMask(domainMask);
+	}
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
-	RunResult runWithBudget(Runtime& runtime, FrameState& frameState);
+	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
 
 private:
@@ -24,12 +43,16 @@ private:
 		Advanced,
 		InstructionYielded,
 		InstructionHalted,
+		ExecutionStopped,
 		Halted,
 	};
 
 	CpuSliceResult runSlice(Runtime& runtime, FrameState& frameState, int maximumCpuCycles);
 	i64 m_sliceCycleBudgetRemaining = 0;
 	bool m_instructionRunActive = false;
+	ExecutionHook m_executionHook = nullptr;
+	void* m_executionHookContext = nullptr;
+	ExecutionDomainMask m_executionHookDomainMask = 0;
 };
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles);

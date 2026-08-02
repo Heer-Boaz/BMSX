@@ -1,4 +1,4 @@
-import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
+import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	resolveRuntimeResource,
 	runtimeSourceProjectRootPath,
@@ -26,7 +26,7 @@ export async function applyWorkspaceAutosavePayload(
 	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
+	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
 	clearCodeTabContexts();

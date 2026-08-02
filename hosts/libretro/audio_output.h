@@ -18,6 +18,7 @@ public:
 	void setSampleRate(f64 sampleRate);
 	void setEmulationFrameTimeSec(f64 seconds);
 	void resetPlayback();
+	bool setSystemMuted(AudioController& audioController, bool muted);
 	void collectFrame(AudioController& audioController);
 
 	[[nodiscard]] auto data() const -> const i16* { return m_samples.data(); }
@@ -31,6 +32,7 @@ private:
 	f64 m_sampleRate = DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
 	f64 m_sampleAccumulator = 0.0;
 	f64 m_frameTimeSec;
+	bool m_systemMuted = false;
 	AudioOutputResampler m_resampler;
 };
 

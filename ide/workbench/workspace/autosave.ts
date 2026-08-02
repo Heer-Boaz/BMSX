@@ -2,7 +2,7 @@ import {
 	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from '../../runtime/sources';
-import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
+import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	getCodeTabContextById,
 	getCodeTabContexts,
@@ -46,7 +46,7 @@ export function commitWorkspaceSessionLocally(
 	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
+	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
 	metadataContextIds: ReadonlySet<string>,
 ): WorkspaceSessionGeneration {

@@ -25,7 +25,7 @@ export class RuntimeIdeState {
 	public readonly editor: CartEditor;
 	public readonly overlayRenderer: OverlayRenderer;
 	public lastIdeInputFrame = -1;
-	public readonly debugger: RuntimeDebuggerState = createRuntimeDebuggerState();
+	public readonly debugger: RuntimeDebuggerState;
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly runtimeTasks: RuntimeTaskQueue;
@@ -46,6 +46,7 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
+		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(
 			sources,

@@ -31,6 +31,7 @@ Machine::Machine(
 		geometryController,
 		gxGpu,
 		imgDecController,
+		audioController,
 		model.cpuFreqHz
 	)
 	, inputController(memory, input, systemController)

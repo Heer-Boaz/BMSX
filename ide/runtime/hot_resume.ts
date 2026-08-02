@@ -12,6 +12,10 @@ import {
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
 import type { RuntimeLuaTooling } from './lua_tooling';
+import {
+	resumeRuntimeDebuggerAfterHotResume,
+	type RuntimeDebuggerState,
+} from './debugger_state';
 import type { RuntimeFaultState } from './fault_state';
 import type { CartEditor } from '../cart_editor';
 import {
@@ -19,6 +23,7 @@ import {
 	buildHotResumeRelocation,
 	type HotResumeRevision,
 } from './hot_resume_relocation';
+import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 
 export function applyBlua32Revision(
 	sources: RuntimeSourceState,
@@ -100,6 +105,7 @@ export function hotResume(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
+	debuggerState: RuntimeDebuggerState,
 	editor: CartEditor,
 	runtime: Runtime,
 	rebuildSystem: boolean,
@@ -107,9 +113,6 @@ export function hotResume(
 ): void {
 	const interpreter = luaTooling.luaInterpreter;
 	try {
-		if (fault.hostFrameFailed) {
-			throw new Error('Hot Resume cannot continue a failed host frame. Reboot the machine.');
-		}
 		const rebuildMedia = rebuildSystem
 			|| rebuildCartridgeSlots[0]
 			|| rebuildCartridgeSlots[1];
@@ -129,6 +132,8 @@ export function hotResume(
 		resetHandledLuaErrors(fault);
 		const suspendedGuest = luaTooling.suspendedGuest;
 		suspendedGuest.callClosure(suspendedGuest.global('init'));
+		clearExecutionStopHighlights();
+		resumeRuntimeDebuggerAfterHotResume(debuggerState);
 	} catch (error) {
 		throw convertToError(error);
 	}

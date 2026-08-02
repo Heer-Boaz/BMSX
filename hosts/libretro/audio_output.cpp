@@ -28,7 +28,23 @@ void LibretroAudioOutput::resetPlayback() {
 	m_resampler.reset();
 }
 
+bool LibretroAudioOutput::setSystemMuted(AudioController& audioController, bool muted) {
+	if (m_systemMuted == muted) {
+		return false;
+	}
+	m_systemMuted = muted;
+	resetPlayback();
+	if (muted) {
+		audioController.synchronizeOutput().clear();
+	}
+	return true;
+}
+
 void LibretroAudioOutput::collectFrame(AudioController& audioController) {
+	if (m_systemMuted) {
+		m_frameCount = 0u;
+		return;
+	}
 	m_sampleAccumulator += m_sampleRate * m_frameTimeSec;
 	const size_t requestedFrames = static_cast<size_t>(m_sampleAccumulator);
 	m_sampleAccumulator -= static_cast<f64>(requestedFrames);

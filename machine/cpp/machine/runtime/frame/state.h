@@ -10,6 +10,7 @@ enum class InstructionStepResult : uint8_t {
 	Blocked,
 	Advanced,
 	Executed,
+	ExecutionStopped,
 };
 
 struct FrameState {

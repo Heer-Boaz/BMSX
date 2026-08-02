@@ -1,6 +1,6 @@
 import type { Position } from '../../common/models';
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
-import type { SerializedBreakpointMap } from '../contrib/debugger/controller';
+import type { SerializedBreakpoints } from '../contrib/debugger/controller';
 import type { ResourceDomain } from '../../common/resource';
 import type { WorkspaceRecord } from '../../workspace/records';
 
@@ -26,7 +26,7 @@ export type PersistedDirtyEntry = {
 
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: PersistedDirtyEntry[];
-	breakpoints: SerializedBreakpointMap;
+	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };
 

@@ -176,10 +176,18 @@ async function main(): Promise<void> {
 
 	try {
 		switch (options.mode.kind) {
-			case 'ide-test': {
+		case 'ide-test': {
 				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
 				const microtasks = new IdeMicrotaskQueue();
 				const storage = new MemoryStorage();
+				const capture = new HeadlessCaptureCoordinator(
+					videoBackend,
+					deriveHeadlessCaptureOutputDir(options.mode.path),
+					() => clock.now(),
+				);
+				console.log(
+					`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
+				);
 				const ide = await prepareWorkbenchRuntime(
 					systemRom,
 					[slot0Rom, slot1Rom],
@@ -207,6 +215,7 @@ async function main(): Promise<void> {
 				};
 				process.once('SIGINT', interrupt);
 				process.once('SIGTERM', terminate);
+				let passed = false;
 				try {
 					runtime.frameScheduler.clearQueuedTime();
 					const frameLoop = frames.start((currentTime) => {
@@ -242,6 +251,8 @@ async function main(): Promise<void> {
 							),
 							logger: inputLogger,
 							clock,
+							input: inputHub,
+							capture,
 						}),
 						new Promise<never>((_resolve, reject) => {
 							clock.scheduleOnce(options.ttlMs, () => {
@@ -249,9 +260,12 @@ async function main(): Promise<void> {
 							});
 						}),
 					]);
+					passed = true;
 				} finally {
 					process.removeListener('SIGINT', interrupt);
 					process.removeListener('SIGTERM', terminate);
+					await capture.flushWrites(passed);
+					capture.dispose();
 					await shutdownWorkspaceStorage();
 				}
 				return;

@@ -9,12 +9,17 @@ import type { RuntimeIdeState } from '../runtime/state';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
+import {
+	resetRuntimeDebuggerExecution,
+	type RuntimeDebuggerState,
+} from '../runtime/debugger_state';
 import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import { applyAllWorkspaceSourceOverrides } from '../workspace/workspace';
 import { workspaceDirtyRecords } from './workspace/state';
 import { deactivateEditor } from './overlay_modes';
 import { handleLuaError } from './runtime_errors';
+import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 
 function blua32MediaOverridesRequireRebuild(sources: RuntimeSourceState): boolean {
 	return sources.systemBlua32MediaDirty
@@ -32,6 +37,7 @@ export function startPreparedRuntime(
 		state.sources,
 		state.fault,
 		state.luaTooling,
+		state.debugger,
 		state.editor,
 		runtime,
 		logOutput,
@@ -48,6 +54,7 @@ async function prepareRebootToBootRom(
 	storage: KeyValueStorage,
 ): Promise<boolean> {
 	clearFaultSnapshot(fault);
+	clearExecutionStopHighlights();
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	editor.clearRuntimeErrorOverlay();
 	await applyAllWorkspaceSourceOverrides(
@@ -63,6 +70,7 @@ export async function rebootPreparedRuntime(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	debuggerState: RuntimeDebuggerState,
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -84,6 +92,8 @@ export async function rebootPreparedRuntime(
 		runtime,
 		rebuildBlua32Media,
 	);
+	audioOutput.muteSystem(false);
+	resetRuntimeDebuggerExecution(debuggerState);
 	audioOutput.restart(runtime.timing.ufpsScaled);
 }
 
@@ -91,6 +101,7 @@ function bootPreparedBlua32Media(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	debuggerState: RuntimeDebuggerState,
 	editor: CartEditor,
 	runtime: Runtime,
 	logOutput: LogOutput,
@@ -106,6 +117,7 @@ function bootPreparedBlua32Media(
 			runtime,
 			rebuildBlua32Media,
 		);
+		resetRuntimeDebuggerExecution(debuggerState);
 	} catch (error) {
 		handleLuaError(
 			logOutput,

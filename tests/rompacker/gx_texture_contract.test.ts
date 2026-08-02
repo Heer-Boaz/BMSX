@@ -324,6 +324,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 `;
 		const systemModuleSources = [
 			['base', readFileSync('machine/bios/base.lua', 'utf8')],
+			['tty/console', 'return { write = function() end, end_line = function() end }'],
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
 		] as const;
@@ -380,9 +381,11 @@ return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 `;
 		const cartModuleSources = [
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
+			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
 			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
+			['cartlib/gx/gp0', readFileSync('cartlib/gx/gp0.lua', 'utf8')],
 			['cartlib/gx/imgdec', `
 local imgdec<const> = {}
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0

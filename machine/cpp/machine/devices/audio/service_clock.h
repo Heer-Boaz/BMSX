@@ -24,7 +24,7 @@ public:
 		DeviceScheduler& scheduler,
 		const ApuCommandFifo& commandFifo,
 		ApuActiveSlots& activeSlots,
-		const ApuOutputMixer& audioOutput
+		ApuOutputMixer& audioOutput
 	);
 
 	void reset(i64 nowCycles);
@@ -38,6 +38,7 @@ public:
 		const ApuSampleTransferState& sampleTransferState,
 		i64 nowCycles
 	);
+	void setVoiceClockHeld(bool held, i64 nowCycles);
 	void setCpuHz(i64 cpuHz, i64 nowCycles);
 	void synchronize(i64 nowCycles);
 	void scheduleNext(i64 nowCycles);
@@ -56,13 +57,14 @@ private:
 	DeviceScheduler& m_scheduler;
 	const ApuCommandFifo& m_commandFifo;
 	ApuActiveSlots& m_activeSlots;
-	const ApuOutputMixer& m_audioOutput;
+	ApuOutputMixer& m_audioOutput;
 	DmaController& m_dma;
 	ApuSampleTransfer m_sampleTransfer;
 	i64 m_cpuHz;
 	i64 m_sampleCarry = 0;
 	i64 m_sampleSequence = 0;
 	i64 m_lastCycle = 0;
+	bool m_voiceClockHeld = false;
 	BudgetAccrual m_budgetAccrual{};
 };
 

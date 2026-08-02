@@ -1751,7 +1751,7 @@ firmware `.rodata` registry, includes `BAD_ADDRESS` only for address faults, and
 prints the guest Lua error value supplied by the exception-root ABI for Lua
 traps. Long messages are consumed directly into fixed terminal rows without a
 substring or host-formatting allocation. `FAULT` and `REGS` retain the
-underlying raw words. Fault presentation therefore does not depend on host
+underlying raw status, cause, EPC and IRQ-mask words. Fault presentation therefore does not depend on host
 exception text or a frontend-owned terminal overlay.
 
 For a synchronous fault, firmware also reads the physical fault-domain word,
@@ -1767,8 +1767,10 @@ invalidates it explicitly.
 The firmware keeps the current monitor-entry registers separate from its last
 synchronous fault record. A supervisor-request NMI updates `REGS` but cannot
 replace that fault with `NMI SUPERVISOR REQUEST`; `FAULT` reports the retained
-fault, or `NO SAVED FAULT` before one exists, and `FAULT CLEAR` explicitly
-invalidates it. `CONT` restores the current entry's saved `STATUS` and `EPC`, so
+fault, is an empty action before one exists, and `FAULT CLEAR` explicitly
+invalidates it. Monitor entry presents a retained fault when one exists and
+otherwise opens directly at the command prompt. `CONT` restores the current
+entry's saved `STATUS` and `EPC`, so
 continuing a synchronous fault retries the same guest instruction and may
 immediately raise the same fault again.
 
@@ -1853,12 +1855,17 @@ only after those banks own a complete retained user context. A fault raised by
 monitor code keeps that existing bank active; the fault command acknowledges a
 pending supervisor-line exit request without rebanking the devices.
 
-The APU is autonomous and continues playing while the monitor is active. Its
-events accumulate in the hidden user IRQ pending bank; supervisor VBlank, DMA
-and GPU sources use the visible supervisor bank. The CPU interrupt line is
-derived only from the visible bank. This preserves user audio timing and IRQ
-state without giving firmware a duplicate APU or routing user events into the
-monitor.
+Supervisor entry first synchronizes and then holds the APU voice/DAC service
+clock at the current machine cycle. While held, the clock reanchors its retained
+cycle without advancing sample carry, DAC sequence, active voices or command
+FIFO consumption. The independent sample-transfer engine may still finish
+already accepted sample-RAM/FIFO batches and update DREQ; it does not advance a
+voice. Already-latched APU events remain in the hidden user IRQ pending bank,
+while supervisor VBlank, DMA and GPU sources use the visible supervisor bank.
+The final transition back to `USER` reanchors and releases the voice clock, then
+schedules its next exact edge, so `CONT` resumes the retained song position.
+This hold is derived from the raw supervisor phase and is reapplied after audio
+restore rather than serialized as duplicate state.
 
 The BIOS terminal uses the ordinary GX raster/store path. GX VRAM is one
 uniform linear array of installed raw 16-bit words. The current `psx` model
@@ -3005,9 +3012,10 @@ per-sample loop.
 The mixer writes the continuous 44.1-kHz machine timeline, including silent
 intervals, to the 3072-frame AOUT presentation ring. Each batch carries its
 absolute DAC sequence and the ring retains the sequence of its oldest frame.
-The ring is not cart-visible hardware state. When a host is late or absent, it
-keeps at most about 70 ms and overwrites older presentation history while voice
-phase, filters, fades, END events, IRQs, and emulated time continue normally.
+The ring is not cart-visible hardware state. During user execution, when a host
+is late or absent, it keeps at most about 70 ms and overwrites older
+presentation history while voice phase, filters, fades, END events, IRQs, and
+emulated time continue normally.
 The former AOUT occupancy MMIO words remain reserved address holes so the later
 APU register addresses do not move; APU status exposes command FIFO state, not
 host queue occupancy.
@@ -3034,21 +3042,34 @@ machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
 `hosts/common/HostAudioOutput` owns the TypeScript browser/Node transport
-lifecycle and nested pause, Studio, debugger, and system-task mute reasons.
-Libretro has no browser audio context or Studio lifecycle:
-`hosts/libretro/LibretroAudioOutput` owns its frontend frame batch and fractional
-sample accumulator. This host-specific lifecycle difference stays outside the
-mirrored machine runtime; the resampler and APU/AOUT representations remain
-mirrored.
+lifecycle and distinct pause, Studio, debugger, runtime-task and physical-system
+mute reasons. After each machine update it observes raw
+`SYS_STATUS.SUPERVISOR_ACTIVE`. The inactive-to-active edge detaches the puller,
+resets the resampler, clears AOUT and the existing AudioWorklet transport
+backlog, and suspends the sink. The active-to-inactive edge resumes the sink and
+reattaches the puller without clearing AOUT frames produced after the physical
+voice-clock release.
 
-Save-state first synchronizes the unified APU clock domain to the scheduler cycle, then
+Libretro has no browser audio context or Studio lifecycle.
+`hosts/libretro/LibretroAudioOutput` owns its frontend frame batch and fractional
+sample accumulator, clears AOUT and its resampler on supervisor entry, and emits
+no batch while the raw active bit remains set. The direct BMSX frontend receives
+that same transition before the next batch, discards its partial and queued
+transport frames, and drops or pauses its ALSA/SDL device backlog. None of these
+owners enqueue silence, prebuffer resumed audio or change machine cadence. The
+host-specific lifecycle difference stays outside the mirrored machine runtime;
+the resampler and APU/AOUT representations remain mirrored.
+
+Save-state first synchronizes the voice/DAC service clock and sample-transfer
+engine to the scheduler cycle, then
 captures the command FIFO, raw slot bank, internal sample-RAM and transfer unit,
 service-clock carry and DAC sequence, event/fault latches, and the single live
 voice datapath, including the signed-Q12 gain and fade quotient/remainder/error
 latches. It deliberately excludes immutable sample-ROM, the AOUT ring, and host
 resampler. Restore reinstates machine state at the restored cycle, clears
 presentation transport, restores voices without generating samples, and
-schedules the next exact hardware edge.
+schedules the next exact hardware edge. The subsequently restored system phase
+reapplies the derived voice-clock hold before scheduler execution resumes.
 
 The mirrored owners are `machine/devices/audio/{controller,service_clock,
 sample_memory,sample_transfer,active_slots,slot_bank,command_ingress,
@@ -3113,7 +3134,7 @@ DMA-read request at bit 8, DMA-write request at bit 9, and transfer busy at bit
 The shared DMA controller's four-bit read/write selectors assign
 `APU_WRITE=3` and `APU_READ=4`; the memory side uses `FORCE=0`. The APU does
 not contain a second host-side copy engine.
-Save-state synchronizes the APU clock domain, stores internal RAM once plus FIFO,
+Save-state synchronizes the APU voice and transfer clocks, stores internal RAM once plus FIFO,
 address/control/data latches, timing carry, and the relative transfer deadline,
 and excludes immutable sample-ROM. The TS and C++ runtimes implement this same
 sample-bus, transfer, DMA, and persistence contract.
@@ -3431,6 +3452,13 @@ source of truth. Runtime and tooling diagnostics use host logging and
 IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
 
+The workbench observes the physical supervisor-fault sequence while the BIOS
+monitor remains visible and retains the corresponding tooling fault snapshot.
+It does not replace the monitor by activating the editor. On the next explicit
+editor activation, the IDE resolves that snapshot through its installed
+symbols, opens the owning source resource, positions the caret at the reported
+line and column, and presents the runtime-error overlay.
+
 TypeScript BLua32 source tooling is owned by `@bmsx/blua-toolchain` under
 `toolchain/ts/lua`; ROM authoring is the downstream `@bmsx/rompack-tooling`
 package under `toolchain/ts/rompack`. Neither is compiled by the emulator
@@ -3497,6 +3525,20 @@ dirty-record indexing and transfer when the retained map is already remote.
 Remote failure leaves the local commit authoritative, schedules reconnect, and
 does not abort editor shutdown or workspace reconfiguration.
 
+Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
+With no hook installed, the existing bulk interpreter loop remains the normal
+path and contains no per-instruction debugger branch or callback. An installed
+hook selects one-instruction executor slices only in the execution domains
+watched by tooling, accepts a pending interrupt before observation, and exposes
+only the current raw execution-domain word and instruction PC. IDE tooling
+compiles `(domain, path, line)` breakpoints from the linked functions' statement
+points and owns breakpoint matching, resume suppression and source-level
+stepping. Statement points retain optimizer inline depth without changing the
+physical CPU stack. Step-in stops at the next point; step-over and step-out
+compare the logical `(physical frame depth, inline depth)` position. The frame
+loop stops at the selected boundary. The CPU owns no source paths, symbols,
+editor state, or stepping policy.
+
 Instruction profiling is an opt-in Node tooling-host feature. The TypeScript
 tool loads immutable BLua32 symbol media directly from the boot ROM layers and
 drives the same scheduler-safe single-instruction boundary exposed by both
@@ -3541,11 +3583,15 @@ local memory or an IMGDEC stream.
 One libretro `retro_run()` advances exactly one machine-timed frame. Frontend
 wall time is not fed back into the machine scheduler. A direct host may skip an
 overdue host presentation while catching up, but it still advances machine and
-audio state. The direct host deadline clock remains the pacing master with or
+audio state unless the physical supervisor voice-clock hold is active. The
+direct host deadline clock remains the pacing master with or
 without physical audio output. Its fixed-capacity audio queue never blocks the
 machine thread: when the sink falls behind, the queue discards its oldest
 presentation frames and retains the newest audio. Push/pop/callback paths do
-not allocate, and audio transport timing never changes machine cadence.
+not allocate. On a supervisor-audio transition the same owner discards its
+partial and queued frames and pauses or drops the platform device before the
+core submits another batch; audio transport timing never changes machine
+cadence.
 
 The direct Linux host keeps platform video resources in the concrete
 `video_context` owner. That owner contains the fbdev mapping, SDL window,

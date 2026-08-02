@@ -19,7 +19,7 @@ ApuServiceClock::ApuServiceClock(
 	DeviceScheduler& scheduler,
 	const ApuCommandFifo& commandFifo,
 	ApuActiveSlots& activeSlots,
-	const ApuOutputMixer& audioOutput
+	ApuOutputMixer& audioOutput
 )
 	: m_scheduler(scheduler)
 	, m_commandFifo(commandFifo)
@@ -88,6 +88,7 @@ void ApuServiceClock::reset(i64 nowCycles) {
 	m_sampleCarry = 0;
 	m_sampleSequence = 0;
 	m_lastCycle = nowCycles;
+	m_voiceClockHeld = false;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 }
 
@@ -96,6 +97,7 @@ void ApuServiceClock::dispose() {
 	m_sampleCarry = 0;
 	m_sampleSequence = 0;
 	m_lastCycle = m_scheduler.currentNowCycles();
+	m_voiceClockHeld = false;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 }
 
@@ -120,7 +122,22 @@ void ApuServiceClock::restore(
 	m_sampleCarry = sampleCarry;
 	m_sampleSequence = sampleSequence;
 	m_lastCycle = nowCycles;
+	m_voiceClockHeld = false;
 	m_sampleTransfer.restoreState(sampleTransferState, nowCycles);
+}
+
+void ApuServiceClock::setVoiceClockHeld(bool held, i64 nowCycles) {
+	if (m_voiceClockHeld == held) {
+		return;
+	}
+	synchronize(nowCycles);
+	m_voiceClockHeld = held;
+	if (held) {
+		m_audioOutput.outputRing.clear();
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+	} else {
+		scheduleNext(nowCycles);
+	}
 }
 
 void ApuServiceClock::setCpuHz(i64 cpuHz, i64 nowCycles) {
@@ -141,6 +158,10 @@ void ApuServiceClock::synchronize(i64 nowCycles) {
 }
 
 void ApuServiceClock::scheduleNext(i64 nowCycles) {
+	if (m_voiceClockHeld) {
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+		return;
+	}
 	if (!m_commandFifo.empty()) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
@@ -177,6 +198,9 @@ void ApuServiceClock::advanceVoicesTo(i64 cycle) {
 	}
 	const i64 cycles = cycle - m_lastCycle;
 	m_lastCycle = cycle;
+	if (m_voiceClockHeld) {
+		return;
+	}
 	accrueBudgetUnits(m_budgetAccrual, m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
 	m_sampleCarry = m_budgetAccrual.carry;
 	if (m_budgetAccrual.wholeUnits != 0) {

@@ -75,8 +75,10 @@ import {
 	type Blua32ExecutionBoot,
 } from '../execution_address_space';
 import {
+	executionDomainBit,
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
+	type ExecutionDomainMask,
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
@@ -270,6 +272,7 @@ export class CPU {
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private yieldRequested = false;
+	private executionDomainActivationYieldMask: ExecutionDomainMask = 0;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
@@ -1358,12 +1361,17 @@ export class CPU {
 		return this.activeExecutionImage.executionDomainId;
 	}
 
+	public setExecutionDomainActivationYieldMask(mask: ExecutionDomainMask): void {
+		this.executionDomainActivationYieldMask = mask;
+	}
+
 	private executeFunctionAddress(functionAddress: number): void {
 		if (!this.readFunctionRecordOnSelectedBus(functionAddress)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
 			return;
 		}
+		const previousExecutionDomainId = this.activeExecutionImage.executionDomainId;
 		const image = this.functionRecordLatch.image;
 		this.clearCallStack();
 		this.activeExecutionImage = image;
@@ -1377,6 +1385,10 @@ export class CPU {
 		this.yieldRequested = false;
 		const closure = this.staticClosuresByAddress.get(functionAddress)!;
 		this.pushLatchedFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
+		if (image.executionDomainId !== previousExecutionDomainId
+			&& (this.executionDomainActivationYieldMask & executionDomainBit(image.executionDomainId)) !== 0) {
+			this.yieldRequested = true;
+		}
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -1557,6 +1569,23 @@ export class CPU {
 
 	public getFrameDepth(): number {
 		return this.frames.length;
+	}
+
+	public prepareExecutionBoundary(): boolean {
+		const frames = this.frames;
+		while (frames.length > 0) {
+			if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked || this.yieldRequested) {
+				return false;
+			}
+			if (this.enterPendingInterrupt()) {
+				continue;
+			}
+			const frame = frames[frames.length - 1];
+			const image = frame.executionImage;
+			const wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
+			return (wordIndex >>> 0) < image.decodedWordCount;
+		}
+		return false;
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {

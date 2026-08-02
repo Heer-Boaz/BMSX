@@ -22,6 +22,13 @@ import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../runtime/task_queue';
+import {
+	resumeRuntimeDebugger,
+	RuntimeDebuggerResumeMode,
+	type RuntimeDebuggerState,
+} from '../runtime/debugger_state';
+import { clearExecutionStopHighlights } from '../runtime_error/navigation';
+import { deactivateEditor } from '../workbench/overlay_modes';
 
 export class IdeCommandController {
 	public constructor(
@@ -29,6 +36,7 @@ export class IdeCommandController {
 		private readonly sources: RuntimeSourceState,
 		private readonly fault: RuntimeFaultState,
 		private readonly luaTooling: RuntimeLuaTooling,
+		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
@@ -40,6 +48,28 @@ export class IdeCommandController {
 	}
 
 	public execute(command: EditorCommandId): void {
+		switch (command) {
+			case 'debugContinue':
+				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
+				clearExecutionStopHighlights();
+				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				return;
+			case 'debugStepInto':
+				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepInto);
+				clearExecutionStopHighlights();
+				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				return;
+			case 'debugStepOut':
+				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepOut);
+				clearExecutionStopHighlights();
+				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				return;
+			case 'debugStepOver':
+				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepOver);
+				clearExecutionStopHighlights();
+				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				return;
+		}
 		if (isEditorSymbolNavigationCommand(command)) {
 			executeEditorSymbolNavigationCommand(
 				this.editor,
@@ -65,6 +95,7 @@ export class IdeCommandController {
 				this.sources,
 				this.fault,
 				this.luaTooling,
+				this.debuggerState,
 				this.runtimeTasks,
 				this.overlayRenderer,
 				this.runtime,
@@ -101,6 +132,7 @@ export class IdeCommandController {
 			this.sources,
 			this.fault,
 			this.luaTooling,
+			this.debuggerState,
 			this.runtimeTasks,
 			this.overlayRenderer,
 			this.runtime,
@@ -113,6 +145,14 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'debugContinue':
+			case 'debugStepInto':
+			case 'debugStepOver':
+				return this.debuggerState.stopped;
+			case 'debugStepOut':
+				return this.debuggerState.stopped
+					&& (this.debuggerState.stopInlineDepth > 0
+						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save':
 				return isCodeTabActive() && editorDocumentState.dirty;
 			case 'filter':

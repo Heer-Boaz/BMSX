@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "bmsx_libretro.h"
+#include "audio_output.h"
 #include "host_fatal.h"
 #include "input_devices.h"
 #include "keyboard_input.h"
@@ -203,6 +204,10 @@ bool core_session_environment(unsigned command, void* data) {
 		case BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1:
 			((BmsxSupervisorRequestInterfaceV1*)data)->request_line_high =
 					input_devices_supervisor_request_line_high;
+			return true;
+		case BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE:
+			((BmsxAudioTransportInterface*)data)->set_suspended =
+					audio_output_set_suspended;
 			return true;
 		case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: {
 			struct retro_log_callback* callback = (struct retro_log_callback*)data;

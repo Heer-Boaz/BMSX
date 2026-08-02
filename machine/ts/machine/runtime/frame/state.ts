@@ -10,4 +10,5 @@ export const enum InstructionStepResult {
 	Blocked,
 	Advanced,
 	Executed,
+	ExecutionStopped,
 }

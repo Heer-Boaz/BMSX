@@ -927,6 +927,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		hardHalt();
 		return;
 	}
+	const ExecutionDomainId previousExecutionDomainId = m_activeExecutionImage->executionDomainId;
 	clearCallStack();
 	m_activeExecutionImage = m_functionRecordLatch.image;
 	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
@@ -940,6 +941,11 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_yieldRequested = false;
 	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
 	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
+	if (m_activeExecutionImage->executionDomainId != previousExecutionDomainId
+		&& (m_executionDomainActivationYieldMask
+			& executionDomainBit(m_activeExecutionImage->executionDomainId)) != 0u) {
+		m_yieldRequested = true;
+	}
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
@@ -1930,6 +1936,23 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	if (m_memoryWriteBlocked && m_memoryWriteBlockedAddress == address) {
 		m_memoryWriteBlocked = false;
 	}
+}
+
+bool CPU::prepareExecutionBoundary() {
+	auto& frames = m_frames;
+	while (!frames.empty()) {
+		if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked || m_yieldRequested) {
+			return false;
+		}
+		if (enterPendingInterrupt()) {
+			continue;
+		}
+		CallFrame& frame = *frames.back();
+		Blua32ExecutionImage& image = *frame.executionImage;
+		const size_t wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
+		return wordIndex < image.decodedWordCount;
+	}
+	return false;
 }
 
 template <bool RootBoundary>

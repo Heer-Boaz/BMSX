@@ -178,6 +178,10 @@ export class AudioController {
 		this.serviceClock.scheduleNext(nowCycles);
 	}
 
+	public setVoiceClockHeld(held: boolean, nowCycles: number): void {
+		this.serviceClock.setVoiceClockHeld(held, nowCycles);
+	}
+
 	public onService(nowCycles: number): void {
 		this.serviceClock.synchronize(nowCycles);
 		this.commandExecutor.drainCommandFifo();

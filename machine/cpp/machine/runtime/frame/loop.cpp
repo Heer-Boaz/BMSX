@@ -69,14 +69,15 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	abandonFrameState(runtime);
 }
 
-void FrameLoopState::runActiveFrameState(Runtime& runtime) {
+bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
-		runUpdatePhase(runtime);
+		const bool executionStopped = runUpdatePhase(runtime);
 		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
 		finalizeUpdateSlice(runtime);
-		return;
+		return executionStopped;
 	}
 	finalizeUpdateSlice(runtime);
+	return false;
 }
 
 InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime) {
@@ -90,33 +91,33 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 	return result;
 }
 
-void FrameLoopState::runUpdatePhase(Runtime& runtime) {
+bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	while (true) {
 		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
 			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-				return;
+				return false;
 			}
 			continue;
 		}
 		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
-			return;
+			return false;
 		}
-		const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+		const CpuExecutionResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
 		if (consumeSystemReset(runtime)) {
-			return;
+			return false;
 		}
-		if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
+		if (result == CpuExecutionResult::Halted && cpu.getFrameDepth() == 0) {
 			runtime.m_pendingCall = Runtime::PendingCall::None;
 			runtime.frameScheduler.clearQueuedTime();
 			abandonFrameState(runtime);
-			return;
+			return false;
 		}
 		if (cpu.isHaltedUntilIrq()) {
-			return;
+			return false;
 		}
-		return;
+		return result == CpuExecutionResult::ExecutionStopped;
 	}
 }
 
@@ -157,7 +158,10 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return false;
 	}
 
-	runActiveFrameState(runtime);
+	const bool executionStopped = runActiveFrameState(runtime);
+	if (executionStopped) {
+		return false;
+	}
 	if (frameActive
 		&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 		&& runtime.machine.scheduler.nextDeadline() == std::numeric_limits<i64>::max()) {
@@ -191,7 +195,8 @@ InstructionStepResult FrameLoopState::tickInstruction(Runtime& runtime) {
 		return InstructionStepResult::Blocked;
 	}
 	const InstructionStepResult result = runActiveFrameInstruction(runtime);
-	if (result == InstructionStepResult::Executed) {
+	if (result == InstructionStepResult::Executed
+		|| result == InstructionStepResult::ExecutionStopped) {
 		return result;
 	}
 	if (frameActive != previousFrameActive

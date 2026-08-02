@@ -248,6 +248,9 @@ public:
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
 	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
+	void setExecutionDomainActivationYieldMask(ExecutionDomainMask mask) {
+		m_executionDomainActivationYieldMask = mask;
+	}
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
@@ -281,6 +284,7 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
+	bool prepareExecutionBoundary();
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void collectHeap();
 	class LocalRootsScope {
@@ -470,6 +474,7 @@ private:
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
+	ExecutionDomainMask m_executionDomainActivationYieldMask = 0;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

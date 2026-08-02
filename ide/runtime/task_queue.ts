@@ -19,26 +19,29 @@ export class RuntimeTaskQueue {
 	public schedule(
 		task: () => void | Promise<void>,
 		onError: (error: unknown) => void,
-	): void {
+	): Promise<void> {
 		if (this.pending === 0) {
 			this.failed = false;
-			this.audioOutput.muteSystem(true);
+			this.audioOutput.muteRuntimeTask(true);
 		}
 		this.pending += 1;
-		this.microtasks.queueMicrotask(() => {
-			this.tail = this.tail.then(async () => {
-				try {
-					await task();
-				} catch (error) {
-					this.failed = true;
-					onError(error);
-				} finally {
-					this.pending -= 1;
-					if (!this.failed && this.pending === 0) {
-						this.audioOutput.muteSystem(false);
-					}
-				}
-			});
+		const scheduled = new Promise<void>((resolve) => {
+			this.microtasks.queueMicrotask(resolve);
 		});
+		this.tail = this.tail.then(async () => {
+			await scheduled;
+			try {
+				await task();
+			} catch (error) {
+				this.failed = true;
+				onError(error);
+			} finally {
+				this.pending -= 1;
+				if (!this.failed && this.pending === 0) {
+					this.audioOutput.muteRuntimeTask(false);
+				}
+			}
+		});
+		return this.tail;
 	}
 }

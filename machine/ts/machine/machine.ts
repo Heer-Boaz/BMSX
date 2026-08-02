@@ -88,6 +88,7 @@ export class Machine {
 			this.geometryController,
 			this.gxGpu,
 			this.imgDecController,
+			this.audioController,
 			model.cpuFreqHz,
 		);
 		this.inputController = new InputController(this.memory, input, this.systemController);

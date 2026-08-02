@@ -1,4 +1,6 @@
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
+import type { SourceRange } from '../../source_range';
+import { cloneSourceRange } from '../source_range';
 import type { Instruction } from './index';
 
 const RK_B = 1;
@@ -19,8 +21,36 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	target: instruction.target,
 	callProtoIndex: instruction.callProtoIndex,
 	symbolicReloc: instruction.symbolicReloc,
+	statementRange: instruction.statementRange,
+	inlineDepth: instruction.inlineDepth,
 	resumeRange: instruction.resumeRange,
 });
+
+export function duplicateStatementRange(
+	range: SourceRange,
+	statementRanges: Map<SourceRange, SourceRange>,
+): SourceRange {
+	let duplicate = statementRanges.get(range);
+	if (duplicate === undefined) {
+		duplicate = cloneSourceRange(range);
+		statementRanges.set(range, duplicate);
+	}
+	return duplicate;
+}
+
+export function cloneDuplicatedInstruction(
+	instruction: Instruction,
+	statementRanges: Map<SourceRange, SourceRange>,
+): Instruction {
+	const duplicate = cloneInstruction(instruction);
+	if (duplicate.statementRange !== undefined) {
+		duplicate.statementRange = duplicateStatementRange(
+			duplicate.statementRange,
+			statementRanges,
+		);
+	}
+	return duplicate;
+}
 
 export const computeMaxRegister = (instructions: Instruction[]): number => {
 	let maxRegister = 0;

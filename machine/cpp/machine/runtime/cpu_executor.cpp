@@ -69,8 +69,8 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 	}
 }
 
-RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
-	RunResult result = RunResult::Yielded;
+CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
+	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	m_instructionRunActive = false;
 	m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
@@ -80,17 +80,21 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			case CpuSliceResult::Advanced:
 				continue;
 			case CpuSliceResult::InstructionYielded:
-				result = RunResult::Yielded;
+				result = CpuExecutionResult::Yielded;
 				continue;
 			case CpuSliceResult::InstructionHalted:
-				result = RunResult::Halted;
+				result = CpuExecutionResult::Halted;
 				if (cpu.isMemoryWriteBlocked()) {
 					continue;
 				}
 				running = false;
 				continue;
+			case CpuSliceResult::ExecutionStopped:
+				result = CpuExecutionResult::ExecutionStopped;
+				running = false;
+				continue;
 			case CpuSliceResult::Halted:
-				result = RunResult::Halted;
+				result = CpuExecutionResult::Halted;
 				running = false;
 				continue;
 			case CpuSliceResult::Blocked:
@@ -112,6 +116,7 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 	const bool runCompleted = result == CpuSliceResult::Advanced
 		|| result == CpuSliceResult::Blocked
 		|| result == CpuSliceResult::Halted
+		|| result == CpuSliceResult::ExecutionStopped
 		|| (result == CpuSliceResult::InstructionHalted && !cpu.isMemoryWriteBlocked())
 		|| m_sliceCycleBudgetRemaining <= 0
 		|| runtime.vblank.tickCompleted()
@@ -128,6 +133,8 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 		case CpuSliceResult::InstructionYielded:
 		case CpuSliceResult::InstructionHalted:
 			return InstructionStepResult::Executed;
+		case CpuSliceResult::ExecutionStopped:
+			return InstructionStepResult::ExecutionStopped;
 		case CpuSliceResult::Blocked:
 		case CpuSliceResult::Halted:
 			return InstructionStepResult::Blocked;
@@ -182,6 +189,24 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			}
 			if (deadlineBudget < sliceBudget) {
 				sliceBudget = static_cast<int>(deadlineBudget);
+			}
+		}
+		if (m_executionHook != nullptr) {
+			const ExecutionDomainMask activeExecutionWorld = SYSTEM_EXECUTION_DOMAIN_MASK
+				| executionDomainBit(cpu.activeCartridgeSlot());
+			if ((m_executionHookDomainMask & activeExecutionWorld) != 0u) {
+				if (cpu.prepareExecutionBoundary()) {
+					const int frameIndex = cpu.getFrameDepth() - 1;
+					if (m_executionHook(
+						m_executionHookContext,
+						cpu.readFrameExecutionDomain(frameIndex),
+						cpu.readFramePc(frameIndex)
+					)) {
+						m_sliceCycleBudgetRemaining = remaining;
+						return CpuSliceResult::ExecutionStopped;
+					}
+				}
+				sliceBudget = 1;
 			}
 		}
 		RunResult result;

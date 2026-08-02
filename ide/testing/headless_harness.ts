@@ -16,6 +16,7 @@ import {
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
+import type { EditorDebugCommandId } from '../common/commands';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates
@@ -35,9 +36,10 @@ export type HeadlessIdeHarness = {
 	 * Rebuild the physical BLua32 cartridge image and apply it to the live CPU state.
 	 */
 	hotResumeCore(): void;
-	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
-	performHotResume(): void;
+	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
+	performHotResume(): Promise<void>;
 	reboot(): Promise<void>;
+	executeCommand(command: EditorDebugCommandId): void;
 	openLuaSource(path: string): void;
 	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
@@ -73,36 +75,39 @@ export function createHeadlessIdeHarness(
 				ide.sources,
 				ide.luaTooling,
 				ide.fault,
+				ide.debugger,
 				ide.editor,
 				runtime,
 				slot < 0,
 				[slot === 0, slot === 1],
 			);
 		},
-		performHotResume: () => {
+		performHotResume: () =>
 			performHotResume(
 				ide.editor,
 				ide.sources,
 				ide.fault,
 				ide.luaTooling,
+				ide.debugger,
 				ide.runtimeTasks,
 				ide.overlayRenderer,
 				runtime,
 				audioOutput,
 				storage,
 				logOutput,
-			);
-		},
+			),
 		reboot: () => rebootPreparedRuntime(
 			ide.sources,
 			ide.fault,
 			ide.luaTooling,
+			ide.debugger,
 			ide.editor,
 			ide.overlayRenderer,
 			runtime,
 			audioOutput,
 			storage,
 		),
+		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {
 			activateEditor(
 				ide.editor,

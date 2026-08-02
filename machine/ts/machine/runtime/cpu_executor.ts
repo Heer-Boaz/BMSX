@@ -2,6 +2,12 @@ import { RunResult } from '../cpu/cpu';
 import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import {
+	executionDomainBit,
+	SYSTEM_EXECUTION_DOMAIN_MASK,
+	type ExecutionDomainId,
+	type ExecutionDomainMask,
+} from '../../spec/blua32/execution_domain';
+import {
 	InstructionStepResult,
 	type FrameState,
 } from './frame/state';
@@ -9,17 +15,31 @@ import { Runtime } from './runtime';
 
 export const MAX_CPU_SLICE_CYCLES = 0x7fffffff;
 
+export const enum CpuExecutionResult {
+	Halted,
+	Yielded,
+	ExecutionStopped,
+}
+
+export type ExecutionHook = (
+	executionDomainId: ExecutionDomainId,
+	pc: number,
+) => boolean;
+
 const enum CpuSliceResult {
 	Blocked,
 	Advanced,
 	InstructionYielded,
 	InstructionHalted,
+	ExecutionStopped,
 	Halted,
 }
 
 export class CpuExecutionState {
 	private sliceCycleBudgetRemaining = 0;
 	private instructionRunActive = false;
+	private executionHook: ExecutionHook | null = null;
+	private executionHookDomainMask: ExecutionDomainMask = 0;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -27,6 +47,12 @@ export class CpuExecutionState {
 	public reset(): void {
 		this.sliceCycleBudgetRemaining = 0;
 		this.instructionRunActive = false;
+	}
+
+	public setExecutionHook(hook: ExecutionHook | null, domainMask: ExecutionDomainMask): void {
+		this.executionHook = hook;
+		this.executionHookDomainMask = domainMask;
+		this.runtime.machine.cpu.setExecutionDomainActivationYieldMask(domainMask);
 	}
 
 	public runStoppedCpu(state: FrameState): boolean {
@@ -84,8 +110,8 @@ export class CpuExecutionState {
 		}
 	}
 
-	public runWithBudget(state: FrameState): RunResult {
-		let result = RunResult.Yielded;
+	public runWithBudget(state: FrameState): CpuExecutionResult {
+		let result = CpuExecutionResult.Yielded;
 		const cpu = this.runtime.machine.cpu;
 		this.instructionRunActive = false;
 		this.sliceCycleBudgetRemaining = state.cycleBudgetRemaining;
@@ -95,17 +121,21 @@ export class CpuExecutionState {
 				case CpuSliceResult.Advanced:
 					continue;
 				case CpuSliceResult.InstructionYielded:
-					result = RunResult.Yielded;
+					result = CpuExecutionResult.Yielded;
 					continue;
 				case CpuSliceResult.InstructionHalted:
-					result = RunResult.Halted;
+					result = CpuExecutionResult.Halted;
 					if (cpu.isMemoryWriteBlocked()) {
 						continue;
 					}
 					running = false;
 					continue;
+				case CpuSliceResult.ExecutionStopped:
+					result = CpuExecutionResult.ExecutionStopped;
+					running = false;
+					continue;
 				case CpuSliceResult.Halted:
-					result = RunResult.Halted;
+					result = CpuExecutionResult.Halted;
 					running = false;
 					continue;
 				case CpuSliceResult.Blocked:
@@ -128,6 +158,7 @@ export class CpuExecutionState {
 		const runCompleted = result === CpuSliceResult.Advanced
 			|| result === CpuSliceResult.Blocked
 			|| result === CpuSliceResult.Halted
+			|| result === CpuSliceResult.ExecutionStopped
 			|| (result === CpuSliceResult.InstructionHalted && !cpu.isMemoryWriteBlocked())
 			|| this.sliceCycleBudgetRemaining <= 0
 			|| runtime.vblank.tickCompleted
@@ -144,6 +175,8 @@ export class CpuExecutionState {
 			case CpuSliceResult.InstructionYielded:
 			case CpuSliceResult.InstructionHalted:
 				return InstructionStepResult.Executed;
+			case CpuSliceResult.ExecutionStopped:
+				return InstructionStepResult.ExecutionStopped;
 			case CpuSliceResult.Blocked:
 			case CpuSliceResult.Halted:
 				return InstructionStepResult.Blocked;
@@ -190,6 +223,24 @@ export class CpuExecutionState {
 				}
 				if (deadlineBudget < sliceBudget) {
 					sliceBudget = deadlineBudget;
+				}
+			}
+			const executionHook = this.executionHook;
+			if (executionHook !== null) {
+				const activeExecutionWorld = SYSTEM_EXECUTION_DOMAIN_MASK
+					| executionDomainBit(cpu.activeCartridgeSlot());
+				if ((this.executionHookDomainMask & activeExecutionWorld) !== 0) {
+					if (cpu.prepareExecutionBoundary()) {
+						const frameIndex = cpu.getFrameDepth() - 1;
+						if (executionHook(
+							cpu.readFrameExecutionDomain(frameIndex),
+							cpu.readFramePc(frameIndex),
+						)) {
+							this.sliceCycleBudgetRemaining = remaining;
+							return CpuSliceResult.ExecutionStopped;
+						}
+					}
+					sliceBudget = 1;
 				}
 			}
 			let result: RunResult;

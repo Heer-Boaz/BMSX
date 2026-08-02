@@ -6,7 +6,11 @@ import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
-import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
+import {
+	cloneDuplicatedInstruction,
+	computeMaxRegister,
+	isPureInstruction,
+} from './instructions';
 import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
 	ConstValueKind,
@@ -1730,11 +1734,12 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			const bodyRanges = ranges.slice(bodyStart, bodyEnd + 1);
 			const incRange = ranges[incIndex];
 			for (let iter = 0; iter < iterations; iter += 1) {
+				const statementRanges = new Map<SourceRange, SourceRange>();
 				for (let i = 0; i < bodyInstructions.length; i += 1) {
-					nextInstructions.push(cloneInstruction(bodyInstructions[i]));
+					nextInstructions.push(cloneDuplicatedInstruction(bodyInstructions[i], statementRanges));
 					nextRanges.push(bodyRanges[i]);
 				}
-				nextInstructions.push(cloneInstruction(incInstr));
+				nextInstructions.push(cloneDuplicatedInstruction(incInstr, statementRanges));
 				nextRanges.push(incRange);
 			}
 

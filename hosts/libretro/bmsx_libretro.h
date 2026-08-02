@@ -17,6 +17,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4261u)
 #define BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4271u)
+#define BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x4281u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 typedef bool (RETRO_CALLCONV *bmsx_supervisor_request_line_t)(void);
@@ -48,6 +50,12 @@ typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
 typedef struct BmsxExecutionDomainInterfaceV1 {
 	bmsx_read_execution_domain_id_t read_active_domain_id;
 } BmsxExecutionDomainInterfaceV1;
+
+typedef void (RETRO_CALLCONV *bmsx_set_audio_transport_suspended_t)(bool suspended);
+
+typedef struct BmsxAudioTransportInterface {
+	bmsx_set_audio_transport_suspended_t set_suspended;
+} BmsxAudioTransportInterface;
 
 #ifdef __cplusplus
 }

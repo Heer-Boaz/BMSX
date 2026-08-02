@@ -220,6 +220,7 @@ export class RuntimeCartEditor implements CartEditor {
 			sources,
 			fault,
 			luaTooling,
+			debuggerState,
 			runtimeTasks,
 			overlayRenderer,
 			runtime,
@@ -462,7 +463,7 @@ export class RuntimeCartEditor implements CartEditor {
 				cursorActive,
 				getBreakpointsForChunk(
 					this.debuggerState,
-					getActiveCodeTabContext().resource.path,
+					getActiveCodeTabContext().resource,
 				),
 				renameActive ? renameController.getHighlightMatches() : referenceState.getMatches(),
 				renameActive ? renameController.getActiveIndex() : referenceState.getActiveIndex(),

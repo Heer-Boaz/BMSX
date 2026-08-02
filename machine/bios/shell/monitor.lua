@@ -441,8 +441,17 @@ function monitor.enter(error_value)
 	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
 	console.write_line('BMSX BIOS MONITOR', palette_prompt)
 	console.flush()
-	monitor_commands.start_fault()
-	pump_output(terminal.page_rows)
+	if monitor_commands.start_fault() == monitor_commands.action_output then
+		if (saved_cause & cause_nmi) ~= 0 then
+			local fault_domain<const> = *supervisor_fault_domain
+			if fault_domain ~= 0xffffffff then
+				*cart_select = fault_domain
+			end
+		end
+		pump_output(terminal.page_rows)
+	else
+		write_prompt()
+	end
 	terminal.flush()
 	gx_gpu.enable_display()
 	vblank.wait()

@@ -25,6 +25,7 @@ void bmsx_audio_queue_init(BmsxAudioQueue* queue, size_t capacity_frames, unsign
 		bool track_high_water);
 void bmsx_audio_queue_destroy(BmsxAudioQueue* queue);
 void bmsx_audio_queue_stop(BmsxAudioQueue* queue);
+void bmsx_audio_queue_clear(BmsxAudioQueue* queue);
 void bmsx_audio_queue_push(BmsxAudioQueue* queue, const int16_t* data, size_t frames);
 size_t bmsx_audio_queue_pop_wait(BmsxAudioQueue* queue, int16_t* out, size_t max_frames,
 		size_t min_frames);

@@ -20,7 +20,8 @@ export interface HostAudioSink {
 const MUTE_REASON_PAUSE = 0x01;
 const MUTE_REASON_UI = 0x02;
 const MUTE_REASON_DEBUGGER = 0x04;
-const MUTE_REASON_SYSTEM = 0x08;
+const MUTE_REASON_RUNTIME_TASK = 0x08;
+const MUTE_REASON_SYSTEM = 0x10;
 
 export class HostAudioOutput {
 	private muteReasons = 0;
@@ -46,6 +47,7 @@ export class HostAudioOutput {
 	}
 
 	public bootstrap(): void {
+		this.stop();
 		if (this.muteReasons !== 0) {
 			return;
 		}
@@ -55,8 +57,8 @@ export class HostAudioOutput {
 
 	public restart(ufpsScaled: number): void {
 		this.syncTiming(ufpsScaled);
+		this.stop();
 		if (this.muteReasons !== 0) {
-			this.stop();
 			return;
 		}
 		this.start();
@@ -83,6 +85,10 @@ export class HostAudioOutput {
 		this.setMuteReason(MUTE_REASON_DEBUGGER, muted);
 	}
 
+	public muteRuntimeTask(muted: boolean): void {
+		this.setMuteReason(MUTE_REASON_RUNTIME_TASK, muted);
+	}
+
 	public muteSystem(muted: boolean): void {
 		this.setMuteReason(MUTE_REASON_SYSTEM, muted);
 	}
@@ -107,8 +113,6 @@ export class HostAudioOutput {
 	}
 
 	private start(): void {
-		this.outputResampler.reset();
-		this.outputRing.clear();
 		this.audio.setRuntimeAudioPuller(this.pullRuntimeAudio);
 	}
 

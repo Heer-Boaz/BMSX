@@ -27,6 +27,7 @@ import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { cartridgeSlots } from './cartridge';
+import { decodeRomToc } from '../../machine/ts/rompack/toc';
 
 class TestInputSource implements InputControllerInputSource {
 	public sampleInputControllerSnapshot(): void {
@@ -101,10 +102,17 @@ function romToolingLayer(
 	projectRootPath: string,
 	payload: Uint8Array,
 ): RomToolingLayer {
+	const header = parseCartHeader(payload);
+	const index = cartridgeIndex(projectRootPath);
+	if (header.tocLength !== 0) {
+		index.entries = decodeRomToc(
+			payload.subarray(header.tocOffset, header.tocOffset + header.tocLength),
+		).entries;
+	}
 	return {
 		id,
-		header: parseCartHeader(payload),
-		index: cartridgeIndex(projectRootPath),
+		header,
+		index,
 		bytes: payload,
 		package: toolingPackage(projectRootPath),
 	};

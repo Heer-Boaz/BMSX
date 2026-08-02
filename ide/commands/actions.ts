@@ -10,23 +10,25 @@ import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { ActionPromptAction } from '../common/models';
-import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorViewState } from '../editor/ui/view/state';
 import { capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
+import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../runtime/task_queue';
+import type { RuntimeDebuggerState } from '../runtime/debugger_state';
 
 export function performEditorAction(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	debuggerState: RuntimeDebuggerState,
 	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -37,11 +39,12 @@ export function performEditorAction(
 ): boolean {
 	switch (action) {
 		case 'hot-resume':
-			return performHotResume(
+			performHotResume(
 				editor,
 				sources,
 				fault,
 				luaTooling,
+				debuggerState,
 				runtimeTasks,
 				overlayRenderer,
 				runtime,
@@ -49,12 +52,14 @@ export function performEditorAction(
 				storage,
 				logOutput,
 			);
+			return true;
 		case 'reboot':
 			return performReboot(
 				editor,
 				sources,
 				fault,
 				luaTooling,
+				debuggerState,
 				runtimeTasks,
 				overlayRenderer,
 				runtime,
@@ -78,18 +83,19 @@ export function performHotResume(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	debuggerState: RuntimeDebuggerState,
 	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
-): boolean {
-	clearExecutionStopHighlights();
+): Promise<void> {
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	runtimeTasks.schedule(async () => {
+	persistWorkspaceSessionLocally();
+	return runtimeTasks.schedule(async () => {
 		await applyAllWorkspaceSourceOverrides(
 			storage,
 			sources,
@@ -100,6 +106,7 @@ export function performHotResume(
 			sources,
 			luaTooling,
 			fault,
+			debuggerState,
 			editor,
 			runtime,
 			sources.systemBlua32MediaDirty,
@@ -118,7 +125,6 @@ export function performHotResume(
 		);
 		editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	});
-	return true;
 }
 
 export function performReboot(
@@ -126,6 +132,7 @@ export function performReboot(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
+	debuggerState: RuntimeDebuggerState,
 	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -133,9 +140,9 @@ export function performReboot(
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): boolean {
-	clearExecutionStopHighlights();
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
+	persistWorkspaceSessionLocally();
 	runtimeTasks.schedule(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		applyLuaCodeTabSources(sources, pendingSources);
@@ -143,6 +150,7 @@ export function performReboot(
 			sources,
 			fault,
 			luaTooling,
+			debuggerState,
 			editor,
 			overlayRenderer,
 			runtime,

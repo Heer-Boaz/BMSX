@@ -19,7 +19,9 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { rebootPreparedRuntime } from './blua32_boot';
+import { activateEditor } from './overlay_modes';
 import { handleSupervisorFault } from './runtime_errors';
+import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
 import * as workbenchMode from './mode';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 
@@ -42,6 +44,7 @@ function executeWorkbenchHostMenuAction(
 					ide.sources,
 					ide.fault,
 					ide.luaTooling,
+					ide.debugger,
 					ide.editor,
 					ide.overlayRenderer,
 					runtime,
@@ -204,6 +207,16 @@ export function runWorkbenchHostFrame(
 					screen,
 					hostDeltaMs,
 				);
+				if (ide.debugger.stopPresentationPending) {
+					activateEditor(
+						ide.editor,
+						ide.sources,
+						ide.overlayRenderer,
+						runtime,
+						audioOutput,
+					);
+					presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+				}
 				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
 					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 				);

@@ -23,6 +23,7 @@ import {
 } from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
 import { encodeUtf8Codepoint } from '../../../common/utf8';
+import type { AudioController } from '../audio/controller';
 import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';
 import type { GxGpu } from '../gx/gpu';
@@ -82,6 +83,7 @@ export class SystemController {
 		private readonly geometry: GeometryController,
 		private readonly gpu: GxGpu,
 		private readonly imgdec: ImgDecController,
+		private readonly audio: AudioController,
 		private cpuHz: number,
 	) {
 		memory.mapIoWrite(IO_SYS_CONTROL, this, SystemController.writeControl);
@@ -100,6 +102,7 @@ export class SystemController {
 		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
+		this.audio.setVoiceClockHeld(false, this.scheduler.currentNowCycles());
 		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, 0);
@@ -220,6 +223,7 @@ export class SystemController {
 
 	public requestSupervisorLineEdge(): void {
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_USER) {
+			this.audio.setVoiceClockHeld(true, this.scheduler.currentNowCycles());
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 			this.supervisorResumable = false;
@@ -281,6 +285,7 @@ export class SystemController {
 			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 			this.supervisorResumable = false;
 			this.supervisorExitRequested = false;
+			this.audio.setVoiceClockHeld(false, this.scheduler.currentNowCycles());
 			this.writeStatusIo();
 		}
 	}
@@ -318,6 +323,7 @@ export class SystemController {
 		}
 		this.cpu.cancelNonMaskableInterrupt();
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_USER) {
+			this.audio.setVoiceClockHeld(true, this.scheduler.currentNowCycles());
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 			this.gpu.beginSupervisorControlQuiesce();
 			this.dma.beginSupervisorControlQuiesce();
@@ -383,6 +389,10 @@ export class SystemController {
 		this.supervisorTransitionTarget = state.supervisorTransitionTarget;
 		this.supervisorResumable = state.supervisorResumable;
 		this.supervisorExitRequested = state.supervisorExitRequested;
+		this.audio.setVoiceClockHeld(
+			this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_USER,
+			this.scheduler.currentNowCycles(),
+		);
 		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);

@@ -25,6 +25,7 @@ export class ApuServiceClock {
 	private sampleCarry = 0;
 	private sampleSequence = 0;
 	private lastCycle = 0;
+	private voiceClockHeld = false;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private readonly sampleTransfer: ApuSampleTransfer;
 
@@ -50,6 +51,7 @@ export class ApuServiceClock {
 		this.sampleCarry = 0;
 		this.sampleSequence = 0;
 		this.lastCycle = nowCycles;
+		this.voiceClockHeld = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	}
 
@@ -58,6 +60,7 @@ export class ApuServiceClock {
 		this.sampleCarry = 0;
 		this.sampleSequence = 0;
 		this.lastCycle = this.scheduler.currentNowCycles();
+		this.voiceClockHeld = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	}
 
@@ -81,7 +84,22 @@ export class ApuServiceClock {
 		this.sampleCarry = sampleCarry;
 		this.sampleSequence = sampleSequence;
 		this.lastCycle = nowCycles;
+		this.voiceClockHeld = false;
 		this.sampleTransfer.restoreState(sampleTransferState, nowCycles);
+	}
+
+	public setVoiceClockHeld(held: boolean, nowCycles: number): void {
+		if (this.voiceClockHeld === held) {
+			return;
+		}
+		this.synchronize(nowCycles);
+		this.voiceClockHeld = held;
+		if (held) {
+			this.audioOutput.outputRing.clear();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+		} else {
+			this.scheduleNext(nowCycles);
+		}
 	}
 
 	public setCpuHz(cpuHz: number, nowCycles: number): void {
@@ -102,6 +120,10 @@ export class ApuServiceClock {
 	}
 
 	public scheduleNext(nowCycles: number): void {
+		if (this.voiceClockHeld) {
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+			return;
+		}
 		if (!this.commandFifo.empty) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 			return;
@@ -181,6 +203,9 @@ export class ApuServiceClock {
 		}
 		const cycles = cycle - this.lastCycle;
 		this.lastCycle = cycle;
+		if (this.voiceClockHeld) {
+			return;
+		}
 		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, cycles);
 		this.sampleCarry = this.budgetAccrual.carry;
 		if (this.budgetAccrual.wholeUnits !== 0) {

@@ -128,6 +128,11 @@ type FunctionRecordLayout = {
 	hasTombstones: boolean;
 };
 
+type GlobalNameLayout = {
+	names: string[];
+	slotByObjectSlot: Uint32Array;
+};
+
 type ImageBuildInputBase = {
 	metadata: ProgramMetadata;
 	loadAddress: number;
@@ -452,13 +457,28 @@ function localFunctionAddressesBySymbol(
 	return addresses;
 }
 
-function rewriteLocalSymbolicRelocation(
+function rewriteImageRelocation(
 	code: Uint8Array,
 	reloc: ProgramImageConstReloc,
 	localFunctionAddressBySymbol: ReadonlyMap<string, number>,
 	localModuleAddressByPath: ReadonlyMap<string, number>,
+	globalSlotByObjectSlot: Uint32Array,
+	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	switch (reloc.kind) {
+		case 'gl':
+		case 'sys': {
+			const word = readInstructionWord(code, reloc.wordIndex);
+			rewriteResolvedABx(
+				code,
+				reloc.wordIndex,
+				((word >>> 18) & 0x3f) as OpCode,
+				reloc.kind === 'gl'
+					? globalSlotByObjectSlot[reloc.objectSlot]
+					: systemGlobalSlotByObjectSlot[reloc.objectSlot],
+			);
+			break;
+		}
 		case 'export_proto': {
 			const symbol = `${reloc.path}:${reloc.exportPathKey}`;
 			const address = localFunctionAddressBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
@@ -479,20 +499,47 @@ function rewriteLocalSymbolicRelocation(
 	}
 }
 
-function rewriteImageSymbolicRelocations(
+function rewriteImageRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramImageConstReloc>,
 	localFunctionAddressBySymbol: ReadonlyMap<string, number>,
 	localModuleAddressByPath: ReadonlyMap<string, number>,
+	globalSlotByObjectSlot: Uint32Array,
+	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	for (let index = 0; index < relocs.length; index += 1) {
-		rewriteLocalSymbolicRelocation(
+		rewriteImageRelocation(
 			code,
 			relocs[index],
 			localFunctionAddressBySymbol,
 			localModuleAddressByPath,
+			globalSlotByObjectSlot,
+			systemGlobalSlotByObjectSlot,
 		);
 	}
+}
+
+function layoutGlobalNames(
+	objectNames: ReadonlyArray<string>,
+	previousNames: ReadonlyArray<string> | undefined,
+): GlobalNameLayout {
+	const names = previousNames ? Array.from(previousNames) : [];
+	const slotByName = new Map<string, number>();
+	for (let slot = 0; slot < names.length; slot += 1) {
+		slotByName.set(names[slot], slot);
+	}
+	const slotByObjectSlot = new Uint32Array(objectNames.length);
+	for (let objectSlot = 0; objectSlot < objectNames.length; objectSlot += 1) {
+		const name = objectNames[objectSlot];
+		let slot = slotByName.get(name);
+		if (slot === undefined) {
+			slot = names.length;
+			names.push(name);
+			slotByName.set(name, slot);
+		}
+		slotByObjectSlot[objectSlot] = slot;
+	}
+	return { names, slotByObjectSlot };
 }
 
 function rewriteBiosFunctionRelocations(
@@ -519,6 +566,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const rodata = object.sections.rodata;
 	const data = object.sections.data;
 	const bss = object.sections.bss;
+	const globalNameLayout = layoutGlobalNames(
+		input.globalNames,
+		input.previous?.image.globalNames,
+	);
+	const systemGlobalNameLayout = layoutGlobalNames(
+		input.systemGlobalNames,
+		input.previous?.image.systemGlobalNames,
+	);
 	const pinnedFunctionIds = input.domain === 'system'
 		? resolvePinnedBiosFunctionIds(
 			input.biosExports,
@@ -573,9 +628,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const constantTableOffset = alignImageOffset(offset, input.loadAddress, 4);
 	offset = constantTableOffset + rodata.constPool.length * BLUA32_CONSTANT_RECORD_SIZE;
 	const globalNameTableOffset = alignImageOffset(offset, input.loadAddress, 4);
-	offset = globalNameTableOffset + input.globalNames.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+	offset = globalNameTableOffset + globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const systemGlobalNameTableOffset = alignImageOffset(offset, input.loadAddress, 4);
-	offset = systemGlobalNameTableOffset + input.systemGlobalNames.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+	offset = systemGlobalNameTableOffset + systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 
 	const stringRecordByValue = new Map<string, StringRecord>();
 	const stringRecords: StringRecord[] = [];
@@ -597,11 +652,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			internString(value);
 		}
 	}
-	for (let index = 0; index < input.globalNames.length; index += 1) {
-		internString(input.globalNames[index]);
+	for (let index = 0; index < globalNameLayout.names.length; index += 1) {
+		internString(globalNameLayout.names[index]);
 	}
-	for (let index = 0; index < input.systemGlobalNames.length; index += 1) {
-		internString(input.systemGlobalNames[index]);
+	for (let index = 0; index < systemGlobalNameLayout.names.length; index += 1) {
+		internString(systemGlobalNameLayout.names[index]);
 	}
 
 	const stringTableOffset = offset;
@@ -642,11 +697,13 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		writeInstruction(code, text.code.byteLength / INSTRUCTION_BYTES, OpCode.WIDE, 0, 0, 0);
 	}
 	rewriteLocalClosures(code, functionAddressByProtoIndex);
-	rewriteImageSymbolicRelocations(
+	rewriteImageRelocations(
 		code,
 		input.object.link.constRelocs,
 		localFunctionAddressBySymbol,
 		localModuleAddressByPath,
+		globalNameLayout.slotByObjectSlot,
+		systemGlobalNameLayout.slotByObjectSlot,
 	);
 	if (input.domain === 'cart') {
 		rewriteBiosFunctionRelocations(
@@ -685,9 +742,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	writeLE32(bytes, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, input.loadAddress + constantTableOffset);
 	writeLE32(bytes, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, constants.length);
 	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, input.loadAddress + globalNameTableOffset);
-	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, input.globalNames.length);
+	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, globalNameLayout.names.length);
 	writeLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, input.loadAddress + systemGlobalNameTableOffset);
-	writeLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, input.systemGlobalNames.length);
+	writeLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, systemGlobalNameLayout.names.length);
 	writeLE32(bytes, BLUA32_IMAGE_STRING_ADDRESS_OFFSET, input.loadAddress + stringTableOffset);
 	writeLE32(bytes, BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET, stringByteCount);
 	writeLE32(bytes, BLUA32_IMAGE_RODATA_ADDRESS_OFFSET, rodataAddress);
@@ -766,8 +823,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, stringRecord.bytes.byteLength);
 		}
 	};
-	writeNames(globalNameTableOffset, input.globalNames);
-	writeNames(systemGlobalNameTableOffset, input.systemGlobalNames);
+	writeNames(globalNameTableOffset, globalNameLayout.names);
+	writeNames(systemGlobalNameTableOffset, systemGlobalNameLayout.names);
 	for (let index = 0; index < stringRecords.length; index += 1) {
 		const record = stringRecords[index];
 		bytes.set(record.bytes, stringTableOffset + record.offset);
@@ -787,6 +844,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		bss.byteCount,
 		bss.symbols,
 	);
+	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
 	const upvalueNamesByFunction = new Array<Blua32DebugMetadata['upvalueNamesByFunction'][number]>(functionCount);
@@ -794,24 +852,27 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	for (let slot = 0; slot < functionCount; slot += 1) {
 		const protoIndex = functionLayout.protoIndexBySlot[slot];
 		if (protoIndex < 0) {
+			statementPointsByFunction[slot] = noDebugRecords;
 			resumePointsByFunction[slot] = noDebugRecords;
 			localSlotsByFunction[slot] = noDebugRecords;
 			upvalueNamesByFunction[slot]
 				= input.previous!.symbols.metadata.upvalueNamesByFunction[slot];
 			continue;
 		}
+		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		upvalueNamesByFunction[slot] = input.metadata.upvalueNamesByProto[protoIndex];
 	}
 	const metadata: Blua32DebugMetadata = {
 		functionIds: functionLayout.functionIds,
-		globalNames: input.metadata.globalNames,
-		systemGlobalNames: input.metadata.systemGlobalNames,
+		globalNames: globalNameLayout.names,
+		systemGlobalNames: systemGlobalNameLayout.names,
 		staticFunctionIdBySlot: input.metadata.exportProtoIdBySlot,
 		debugRanges: functionLayout.hasTombstones
 			? [...input.metadata.debugRanges, null]
 			: input.metadata.debugRanges,
+		statementPointsByFunction,
 		resumePointsByFunction,
 		localSlotsByFunction,
 		upvalueNamesByFunction,

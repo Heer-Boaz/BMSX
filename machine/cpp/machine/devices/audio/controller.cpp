@@ -72,6 +72,10 @@ void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
+void AudioController::setVoiceClockHeld(bool held, int64_t nowCycles) {
+	m_serviceClock.setVoiceClockHeld(held, nowCycles);
+}
+
 void AudioController::onService(int64_t nowCycles) {
 	m_serviceClock.synchronize(nowCycles);
 	m_commandExecutor.drainCommandFifo();

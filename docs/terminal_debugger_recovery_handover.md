@@ -1,539 +1,437 @@
-# Handover: herstel de BMSX-terminal, debugger en monitor-audio zonder host-magie
+# Handover: terminal/debugger/Hot Resume/audio recovery
 
-Datum: 2026-08-01  
-Branch bij overdracht: `master`  
-HEAD bij overdracht: `b731ec229 fix(studio): preserve physical fault observation across reboot`
+Date: 2026-08-02
 
-## Opdracht aan de volgende agent
+Branch: `master`
 
-Herstel de verloren terminal- en debuggerfunctionaliteit van BMSX, maar zet de
-oude host-magie niet blind terug. Gebruik de oude implementaties als
-**functionele referentie** en plaats ieder gedrag bij de juiste huidige owner:
+HEAD: `ace39bf52c`
+State: large, uncommitted recovery diff; **do not commit, reset, or partially
+revert before auditing the live worktree**.
 
-- de machine emuleert alleen fysieke CPU-, bus-, register-, interrupt-,
-  supervisor- en devicewerking;
-- de BIOS-ROM bezit de fysieke monitor, TTY, commandline en consoleweergave;
-- IDE/tooling bezit bronbestanden, symbols, source maps, breakpoints,
-  steppingbeleid, overlays en navigatie;
-- hosts transporteren beeld, geluid, invoer en machine-output, maar voeren geen
-  guestsemantiek uit.
+This document supersedes the earlier version of this handover. Git history
+contains the older functional archaeology when it is needed.
 
-Dit is geen cosmetische polish. De eerdere migratie heeft bestaande features
-verloren. Herstel de complete featurecontracten, met exacte TS/C++-pariteit waar
-de machinegrens wordt geraakt. Bedenk geen nieuwe terminal en geen nieuwe
-audiobuffering.
+## Assignment
 
-## Startconditie
+Finish and audit the existing terminal/debugger/Hot Resume/audio recovery as
+one coherent vertical slice. Start from the live diff. Do not reimplement it
+from this document and do not seek quick wins by removing working emulator
+behavior.
 
-Voor het schrijven van dit document was de worktree schoon. De laatste
-afgebroken audiopoging is volledig ongedaan gemaakt. Er staat dus **geen**
-`writeSilence()` of vergelijkbare silence-queue in de huidige checkout.
+Read first:
 
-Controleer dit zelf voordat je begint:
+1. the repository `AGENTS.md` instructions supplied with the task;
+2. `docs/architecture.md` and its current diff;
+3. `docs/open_architecture_slices.md`;
+4. the owner files named below;
+5. the complete live diff.
+
+No commit has been requested.
+
+## Non-negotiable behavior
+
+### Physical fault presentation
+
+- A debug ROM fault enters the physical BIOS terminal first.
+- The terminal shows cause/status/EPC/register information plus filename,
+  line, column, and the failing source line/snippet.
+- A non-debug ROM has no source directory and therefore shows only physical
+  PC/status/register information and whatever firmware-owned disassembly is
+  available. Hosts must not reconstruct source context.
+- The fault must **not** auto-open the IDE. When the user explicitly opens the
+  IDE afterward, it must focus the correct file and line and render the
+  retained runtime-error overlay immediately.
+- Breakpoint and step stops may open the IDE automatically.
+- `Ctrl+E` means focus the retained runtime error; it must not open file search.
+- Empty `FAULT` at the monitor prompt performs no action and prints no
+  `NO SAVED FAULT` placeholder.
+- Guest/system output and the complete exception remain visible through the
+  physical terminal and host log transport.
+
+### Debugger
+
+- Continue, step-in, real step-over, step-out, breakpoints, optimized/inlined
+  code, and Hot Resume breakpoint relocation must work.
+- CPU state contains machine representations only: raw execution domain IDs,
+  PCs, registers, and execution control. Source paths, source revisions,
+  source maps, editor objects, and debugger DTOs remain tooling-owned.
+- There must be no execution-hook branch in the normal CPU interpreter loop.
+  The current design observes selected domains at the outer execution-slice
+  boundary; the ordinary no-debug path still uses bulk slices.
+
+### Hot Resume
+
+- Preserve the already-working lifecycle and global/module/asset behavior.
+- A newly introduced global must not make Hot Resume fail merely because the
+  physical global slot layout changed.
+- Never restore this deleted guard:
+
+  ```ts
+  if (fault.hostFrameFailed) {
+      throw new Error('Hot Resume cannot continue a failed host frame. Reboot the machine.');
+  }
+  ```
+
+- No workspace migration, legacy payload support, schema versioning, save
+  codec versioning, or compatibility fallback.
+- Leave the existing `freshRange === null ? undefined : ...` conversion alone.
+
+### Monitor audio
+
+- Entering supervisor/monitor freezes the guest voice/song clock.
+- Existing outgoing host backlog is discarded.
+- `CONT` resumes at the same machine audio position without queued latency.
+- Never add `writeSilence`, silence frames, prebuffering, an extra output ring,
+  or audio latency compensation.
+- The machine owns the physical clock gate. Browser/libretro/direct hosts only
+  suspend or resume their transport and discard their transport backlog.
+
+## Hard implementation constraints
+
+- No panic rollback. The diff contains working pieces and fixes for bugs found
+  during the recovery.
+- No defensive guards, speculative fallbacks, DTO validation, facade layers,
+  cosmetic one-line wrappers, or local encoding helpers.
+- No host object identity, string-kind probes, or shape casts as substitutes
+  for guest/runtime representation.
+- No hot-path allocations, repeated decode, unnecessary conditionals, or
+  callbacks in the normal CPU loop.
+- Keep TS/C++ machine contracts mirrored.
+- Do not introduce tests. Modify existing tests only when their owned contract
+  changed; use `/tmp` probes/scenarios for additional evidence.
+- Builds and typechecks are not runtime proof. Run carts and inspect frames.
+- Do not remove entries from `docs/open_architecture_slices.md` unless every
+  stated end criterion of that entry is actually complete.
+
+## Live worktree
+
+At handover the worktree has roughly eighty modified paths plus:
+
+- deleted `toolchain/ts/lua/compiler/resume_points.ts`;
+- new `toolchain/ts/lua/compiler/execution_points.ts`;
+- a newly modified `scripts/bootrom/platforms/node_tooling_entry.ts`;
+- this handover update.
+
+Run these before touching anything:
 
 ```sh
 git status --short
-git branch --show-current
-git log -1 --oneline
-rg -n "writeSilence|heap-diag-frames" . \
-  -g '!node_modules/**' -g '!build*/**' -g '!dist/**'
+git diff --stat
+git diff --check
+git diff -- docs/architecture.md
+git diff -- docs/open_architecture_slices.md
 ```
 
-Verander eerst niets. Lees:
+`git diff --check` was green immediately before this document was written.
+`docs/open_architecture_slices.md` was unchanged. Generated ROMs/build products
+under `dist/` are not the source of truth.
 
-1. de instructies die bij deze overdracht zijn meegegeven;
-2. `docs/architecture.md`, vooral de machinegrens, mirrored core, supervisor,
-   BIOS/Lua, IDE/tooling en host-lifecycle;
-3. `docs/open_architecture_slices.md`;
-4. de live owners die hieronder staan;
-5. de historische referenties die hieronder staan;
-6. passende productiecode, minimaal MAME voor execution/debugger hooks en VS
-   Code voor debugger- en editorownership.
+All previously active subagents were interrupted for this handover. They were
+running no-edit cart validation, so do not assume their unfinished tasks
+produced evidence.
 
-## Niet-onderhandelbare werkwijze
+## Representation and hot-path table
 
-- Verifieer de live checkout; behandel dit document en bestaande plannen als
-  hypotheses waar dat nodig is.
-- Fix een verkeerde producer of owner. Voeg geen guards, fallbacks, facades,
-  adapters of wrappers toe om een verkeerd model te verbergen.
-- Geen hostobjecten, source paths, source revisions, debug-DTO's of JS-shape
-  checks in de CPU.
-- Geen nieuwe tests. Gebruik bestaande tests alleen waar ze een actueel
-  contract bewaken. Verwijder een obsolete test als hij de nieuwe fysieke
-  architectuur test in plaats van gedrag.
-- Builds en typechecks zijn geen runtimebewijs. Draai echte carts en bekijk de
-  geproduceerde frames.
-- Geen extra buffering, prebuffer, silence frames of latencycompensatie in de
-  APU of hostaudio.
-- Geen hot-pathallocaties, repeated decode, redundante validatie of cosmetische
-  helpers.
-- Doe vóór iedere machinewijziging een expliciete TS/C++-representatietabel en
-  benoem alle hot-pathcallsites.
-- Commit coherente, reviewbare stukken tussendoor. Laat geen gigantische diff
-  ontstaan.
-- Schrijf implementatiedetails als comments bij hun owner; gebruik
-  `docs/architecture.md` alleen voor blijvende architectuurcontracten.
-- Voeg geen `preLaunchTask` toe aan `.vscode/launch.json`.
+| Concern | TypeScript representation/owner | C++ representation/owner | Hot-path callsite |
+| --- | --- | --- | --- |
+| Execution domain | raw `ExecutionDomainId` word in `machine/ts/spec/blua32/execution_domain.ts` | raw domain word in `machine/cpp/spec/blua32/execution_domain.h` | outer `CpuExecutionState::runSlice`, not the interpreter dispatch loop |
+| Execution PC | raw 32-bit PC | raw `uint32_t` PC | outer CPU slice boundary only when a tooling hook is installed |
+| Source statement | tooling symbol range with statement identity and inline depth | decoded tooling symbol range with the same fields | IDE/debugger lookup outside normal execution |
+| Object global relocation | object-local global slot, then linker name/layout mapping | installed image-local name to live registerfile slot | image install/relocation, not instruction dispatch |
+| Voice clock hold | `voiceClockHeld` in APU service-clock ownership | mirrored `voiceClockHeld` in native service clock | supervisor transition edge and APU service boundary |
+| Host audio mute | browser/common transport state | libretro/direct-host transport state | host lifecycle edge, not guest mixing |
 
-Aanvullende harde codebans voor BMSX-owned waarden:
+Normal execution must not pay for source mapping or debugger callbacks. With a
+debugger hook installed, only selected execution domains are forced into
+one-instruction slices so source boundaries can be observed. The no-hook path
+continues through the regular bulk interpreter loop.
 
-- geen `Number.isFinite`, `Number.isNaN`, `isNaN` of `typeof ... ===/!==
-  'number'`;
-- geen `floor`/`ceil` voor fixed-point, registerwoorden, adressen, opcodes of
-  rendererdata;
-- geen lokale ABI-, fixed-point-, register- of encodinghelpers in feature- of
-  cartfiles;
-- geen capture/rollback/restore rond MMIO-writes tenzij het hardwaredomein
-  werkelijk transacties modelleert;
-- geen runtime-DTO-validatie of veilige fallback voor state die door BMSX zelf
-  wordt geproduceerd;
-- geen legacybehoud zonder werkelijk bestaand, gewenst legacycontract;
-- hardwaredevices bewaren raw words en decoderen alleen aan hun datapathgrens.
+## Implemented work currently in the diff
 
-## Direct waarneembare regressies
+### Compiler, symbols, linker, and Hot Resume
 
-Deze punten zijn door de gebruiker live waargenomen. Neem ze niet als opgelost
-aan omdat een typecheck of headless proces eindigt.
+- `execution_points.ts` replaces the old resume-point-only model with statement
+  points suitable for Hot Resume and debugger stepping.
+- O3 preserves/clones statement-range identity for inlining and unrolling and
+  records inline depth.
+- TS and C++ BLua32 symbol codecs mirror `statementPointsByFunction` and inline
+  depth.
+- Compiler relocatable constants prevent linked asset addresses from becoming
+  accidentally captured runtime upvalues.
+- Global relocations use object-local slots, then map names through the prior
+  live global layout. New globals no longer shift the active registerfile
+  interpretation.
+- `buildAssetModule` only repacks symbols at/after the rebuilt image offset or
+  the exact edited asset.
+- queued runtime tasks return a completion promise; the headless Hot Resume
+  scenario awaits the actual queued rebuild.
+- workspace persistence happens immediately before scheduling Hot Resume or
+  reboot so an older autosave generation cannot reapply stale source.
+- The user-deleted `hostFrameFailed` Hot Resume guard remains absent.
 
-### BIOS-monitor en terminal
-
-- Tijdens de monitor blijft de muziek doorspelen. De oude terminal stopte de
-  uitvoering/audio en hervatte zonder merkbare latency.
-- De monitor toont de nutteloze tekst `NO SAVED FAULT`.
-- Een fout in `pietious` toonde alleen de BIOS-monitor met onder meer
-  `ATTEMPTED TO INDEX FIELD ON A NON-TABLE VALUE`; de rijke Lua-broncontext
-  ontbrak.
-- De caret zag er in de geobserveerde foutflow grijs/afwijkend uit. Het gewenste
-  consolegedrag is een block caret die de glyph eronder werkelijk inverseert.
-- Guest/system-output en de volledige exception kwamen niet meer in de
-  browserconsole terecht.
-
-### IDE en debugger
-
-- Bij een runtime-exception opent de IDE niet meer automatisch op de juiste
-  bronlocatie met een foutoverlay.
-- Wanneer de IDE daarna wordt geopend, is de fout niet zichtbaar zoals vroeger.
-- `Ctrl+E` springt niet meer naar de exception; het opent nu een file search.
-- Breakpoints worden nog opgeslagen en getekend, maar beïnvloeden de CPU niet.
-- Volwaardige continue, step-in, echte step-over, step-out en resumable fault
-  execution zijn verloren gegaan.
-
-### Cartregressies die opnieuw bewezen moeten worden
-
-- `pietious`: de hierboven genoemde non-table fault na recente cartlibrefactors;
-  daarnaast is eerder na enkele minuten actief spelen in World 1 een Lua-heap
-  overflow gezien. Het is onbekend of dat nog bestaat.
-- `2025`: eerder zijn combat-skip/freezes en een niet gewiste achtergrond
-  waargenomen. De status na de recente commits is niet opnieuw volledig live
-  bewezen.
-- `bare_metal_cart`, `pietious` en `2025` moeten in zowel TS als C++ worden
-  uitgevoerd; screenshots moeten inhoudelijk worden bekeken.
-
-## Belangrijk: de mislukte audio-oplossing niet herhalen
-
-De afgebroken patch voegde ongeveer dit concept toe:
-
-```ts
-ApuOutputRing.writeSilence(frameCount, startSequence)
-```
-
-Dat was fundamenteel fout:
-
-- silence frames werden in dezelfde ring vóór hervatte muziek gezet;
-- daardoor ontstond precies de langdurige latencyregressie die al eerder was
-  veroorzaakt;
-- ring-writebeleid werd gedupliceerd;
-- een frontendprobleem werd als nieuwe APU-buffersemantiek gemodelleerd.
-
-Vereist gedrag:
-
-1. supervisor/monitor wordt actief;
-2. guestmuziek stopt onmiddellijk;
-3. de APU-song/voicepositie loopt tijdens de monitor niet ongemerkt door;
-4. bestaand uitgaand hosttransport bevat geen oude backlog;
-5. `CONT` hervat vanaf dezelfde machinepositie zonder hoorbare bufferlatency;
-6. er worden nergens silence frames gequeued om dit te simuleren.
-
-De waarschijnlijke ownerverdeling, die eerst tegen de huidige timing moet worden
-geverifieerd:
-
-- een fysieke supervisor-hold/clock-gate aan de machine/APU-kant bevriest de
-  relevante audiadatapath;
-- de host stopt/suspendeert alleen het transport en verwerpt reeds uitgaande
-  transportbacklog;
-- browser en libretro observeren dezelfde fysieke supervisorstate;
-- geen frontend bestuurt gastvoices of guesttijd rechtstreeks.
-
-Relevante huidige owners:
-
-- `machine/ts/machine/devices/audio/**`
-- `machine/cpp/machine/devices/audio/**`
-- `machine/ts/machine/devices/system/controller.ts`
-- `machine/cpp/machine/devices/system/controller.{h,cpp}`
-- `hosts/common/audio_output.ts`
-- `hosts/common/host_frame.ts`
-- `hosts/libretro/audio_output.{h,cpp}`
-- `hosts/libretro/entry.cpp`
-
-`HostAudioOutput.muteSystem()` bestaat al en stopt de puller, reset de resampler,
-leegt de bestaande outputring en suspendt de sink. Onderzoek of dit het juiste
-hosttransport-eindpunt is; gebruik het niet als vervanging voor het bevriezen
-van machine-audiotijd. De libretrohost heeft een afzonderlijke
-`LibretroAudioOutput` en moet hetzelfde waarneembare contract krijgen zonder
-een tweede bufferbeleid te introduceren.
-
-## Historische functionele referentie: terminal
-
-De laatste commit waarop de oude hostterminal de complete gewenste combinatie
-bezat is:
+Primary owners:
 
 ```text
-db2c68ed9c6b148bf875333b2f734ebc963d3982  2026-06-20
+toolchain/ts/lua/compiler.ts
+toolchain/ts/lua/compiler/execution_points.ts
+toolchain/ts/lua/compiler/optimizer/**
+toolchain/ts/rompack/blua32_linker.ts
+toolchain/ts/rompack/blua32_symbols.ts
+machine/cpp/rompack/tooling/blua32_symbols.{h,cpp}
+ide/runtime/hot_resume.ts
+ide/runtime/lua_pipeline.ts
+ide/runtime/task_queue.ts
 ```
 
-Gebruik deze commit als feature-oracle, niet als architectuursjabloon. De oude
-terminal was host/IDE-owned; de fysieke commandline hoort nu in BIOS-ROM.
+### Debugger
 
-De oude boom op die commit:
+- The rejected `isEditorDebugCommand()` predicate does not exist. Debug
+  commands use the `EditorDebugCommandId` type directly.
+- Breakpoints persist directly as domain/path/line data in the current
+  workspace payload; there is no migration or compatibility path.
+- Breakpoints are resolved from tooling source points to raw domain/PC
+  bindings.
+- Continue, step-in, step-over, and step-out operate through outer execution
+  slices. Pending interrupts are accepted before observing a debug boundary.
+- Domain activation yield masks make the selected cartridge entry boundary
+  observable without changing the normal interpreter loop.
+- A retained physical fault stays in BIOS presentation. `CartEditor.activate()`
+  consumes the retained fault snapshot and focuses/render its source overlay.
+- Breakpoint/step stops set a pending presentation flag and activate the IDE.
+- `Ctrl+E` is bound to `runtimeErrorFocus`.
+
+Primary owners:
 
 ```text
-machine/ts/ide/terminal/common/suggest_model.ts
-machine/ts/ide/terminal/completion_panel/input.ts
-machine/ts/ide/terminal/completion_panel/model.ts
-machine/ts/ide/terminal/completion_panel/renderer.ts
-machine/ts/ide/terminal/ui/commands.ts
-machine/ts/ide/terminal/ui/mode.ts
-machine/ts/ide/terminal/ui/suggest_controller.ts
+ide/runtime/debugger_state.ts
+ide/workbench/contrib/debugger/controller.ts
+ide/workbench/host_frame.ts
+ide/cart_editor.ts
+ide/runtime_error/navigation.ts
+ide/commands/**
+ide/input/keyboard/global_bindings.ts
+machine/ts/machine/runtime/cpu_executor.ts
+machine/cpp/machine/runtime/cpu_executor.{h,cpp}
+machine/ts/machine/cpu/cpu.ts
+machine/cpp/machine/cpu/cpu.{h,cpp}
 ```
 
-Inspecteer bestanden zonder ze terug te checkouten:
+### BIOS terminal and physical source directory
 
-```sh
-git show db2c68ed9:machine/ts/ide/terminal/ui/mode.ts
-git show db2c68ed9:machine/ts/ide/terminal/ui/commands.ts
-git show db2c68ed9:machine/ts/ide/workbench/overlay_modes.ts
-git show db2c68ed9:machine/ts/machine/runtime/debug.ts
-```
+- BIOS `FAULT` presentation retains raw cause, EPC, bad address, Lua reason,
+  status, and IRQ mask.
+- Debug ROM diagnostics resolve filename/line/column and the source line from
+  ROM-resident debug data.
+- Release ROMs omit that directory and therefore do not show source text.
+- Empty `FAULT` returns no action instead of fabricating a message.
+- The terminal block caret redraws the underlying glyph with inverse colors.
 
-Aanwezige functionaliteit op `db2c68ed9`:
-
-- commandline/REPL en `?expr`/`=expr`;
-- ghost completion text;
-- command history met Up/Down;
-- command-outputpager met Up/PageUp, Down/PageDown, Enter, Space en Q;
-- `CLS`, `CONT` en faultcommands;
-- auto-activatie bij runtimefouten;
-- rijke PC/op/instruction/sourceweergave en expressionwaarden;
-- guest `print` naar terminal én browserconsole;
-- overlay blokkeerde guest-frame-executie en suspendde audiotransport.
-
-Regressiegrenzen:
-
-| Contract | Laatste goede commit | Eerste bekende degradatie |
-| --- | --- | --- |
-| Complete terminalcombinatie | `db2c68ed9` | `a468b4b02` |
-| Rijke source/disassembly en locals | `db2c68ed9` | `a468b4b02` |
-| Guest print naar terminal en browserconsole | `ad47e672f` | `4b7e44b82` |
-| Source snippets/expressions nog aanwezig | `e328581be` | `c11346342` |
-| Commandline, ghost, history, pager en overlayaudio | `5530194fa` | `56c848ee9` |
-
-`56c848ee9 feat(bios): move terminal into supervisor firmware` verwijderde de
-oude IDE-terminalboom. De huidige BIOS-files zijn:
+Primary owners:
 
 ```text
-machine/bios/shell/monitor.lua
 machine/bios/shell/commands.lua
-machine/bios/shell/editor.lua
-machine/bios/shell/source_location.lua
-machine/bios/tty/console.lua
-machine/bios/tty/layout.lua
+machine/bios/shell/monitor.lua
 machine/bios/tty/terminal.lua
+toolchain/ts/rompack/**
 ```
 
-De huidige regel die `NO SAVED FAULT` produceert staat in
-`machine/bios/shell/commands.lua`. Verwijder niet alleen de tekst waarna een
-ongeldige producer toch doorloopt. Modelleer de lege `FAULT`-actie bij de
-commandproducer en monitor-entry correct: geen nepbericht en geen dereference
-van ontbrekende faultstate.
+### Supervisor audio
 
-## Historische functionele referentie: execution debugger
+- TS/C++ APU service clocks contain a physical `voiceClockHeld` latch.
+- USER-to-supervisor/fault asserts it; the final transition back to USER
+  releases it.
+- While held, scheduler epoch advances but voice/sample-carry/DAC sequence and
+  command consumption do not.
+- The non-cart-visible AOUT presentation ring is cleared on every actual
+  false-to-true hold edge. This includes USER -> `CONT` -> a second fault that
+  occurs within one host frame and is invisible as a host mute edge.
+- Browser/common, libretro, and direct-host audio paths suspend transport and
+  clear their existing queue/ring; none injects silence.
 
-Let op: de juni-terminal bevatte nog debugger-UI, maar de werkelijke execution
-debugger was al veel eerder gedegradeerd. Gebruik voor CPU-stop/stepgedrag de
-oudere commits:
-
-| Contract | Laatste goede commit | Eerste bekende breuk |
-| --- | --- | --- |
-| Breakpoints, continue, step-in, step-out en exception resume | `6f3c0b353073842e00476236b7d5f7c8b9453ad6` | `14a2329645bd7d37c1ba566e17908386b865d037` |
-| Echte step-over | `b30f062a1abb27933ab8dd1983803ecfdbc3da38` | `4c2cb014baef43524b69fe6eaf539dc672185749` |
-| IDE auto-open en source overlay bij exception | `8755ae34b734d81d66cf25125b901b326d060df7` | `9dab80cd55c94c1d41c007967661a82fe41f66b0` |
-| CPU-fault naar host source mapping | `b3bd4efac6ef6da8a6ab7fbf9b9bab85f8712137` | `a0ab6408858345f34112d9737efc042c191647e3` |
-
-Daarna verwijderden deze commits subsystemen:
-
-- `bf35d283c`: `ide/commands/debug.ts`, `ide/runtime/debug_pause.ts`,
-  `ide/runtime/debug_state.ts`, `ide/workbench/contrib/debugger/state.ts`,
-  `machine/ts/lua/debug_pause.ts` en `machine/ts/lua/debugger.ts`;
-- `f5278a693`: de oude host-fault-MMIO-laag;
-- `f67cc0078`: retained BIOS-faultstate en `NO SAVED FAULT`.
-
-De oude debuggercode mag eveneens niet blind worden teruggezet. Bestudeer hoe
-MAME dit oplost:
-
-- `device_execute_interface` biedt een minimale instruction-hookboundary;
-- alleen wanneer de debuggerhookflag actief is, gaat execution door de
-  debuggercheck;
-- de debugger, niet de CPU, bezit breakpoints, stepping en stopbeleid;
-- source mapping en consoleweergave blijven buiten de CPU.
-
-Productiereferenties:
-
-- <https://github.com/mamedev/mame/blob/master/src/emu/diexec.h>
-- <https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp>
-- <https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcon.cpp>
-- <https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts>
-
-## Huidige ownerkaart
-
-### Fysieke machine/supervisor
-
-`machine/{ts,cpp}/machine/devices/system/controller.*` bezit nu:
-
-- `SYS_CONTROL` en `SYS_STATUS`;
-- supervisor fence/quiesce/contextbanken;
-- fault-registerfile en fault sequence;
-- supervisor enter/leave en resumability.
-
-De fysieke faultstatus staat in raw MMIO-woorden. Houd dat zo. Voeg geen
-bronlocaties, debugobjecten of hostcallbacks met sourcekennis toe.
-
-### BIOS-ROM
-
-- `machine/bios/shell/monitor.lua`: exception/NMI-entry en commandloop;
-- `machine/bios/shell/commands.lua`: fysieke commando's en fault/memory/register
-  output;
-- `machine/bios/shell/editor.lua`: editor/history/completionstate;
-- `machine/bios/shell/source_location.lua`: ROM-side diagnostiek;
-- `machine/bios/tty/terminal.lua`: cellen, scroll, caret en GP0-flush;
-- `machine/bios/tty/console.lua`: consoletransport naar de terminal;
-- `machine/bios/base.lua`: guest `print`.
-
-De BIOS mag fysieke informatie tonen die een echte ROM via registers, RAM en
-ROM-indexen kan lezen. Workspacepaden, editorbuffers en host-source-revisions
-horen hier niet.
-
-### IDE/tooling
-
-- `ide/runtime/fault_state.ts`: tooling-side faultsnapshot en Lua stack;
-- `ide/workbench/runtime_errors.ts`: formatting/logging van runtimefouten;
-- `ide/runtime/debugger_state.ts`: huidige breakpointmetadata;
-- `ide/workbench/contrib/debugger/controller.ts`: breakpoint-UI;
-- `ide/browser/debugger_pause.ts`: browser/DevTools-pause;
-- `ide/runtime/sources.ts` en `ide/runtime/source_registry.ts`: bronownership;
-- `tooling/ts/runtime/suspended_guest.*`: tooling-inspectie van gestopte guest;
-- `toolchain/ts/rompack/**`: symbols, image-layout en disassembly.
-
-Huidige breakpoints worden opgeslagen en getekend, maar niet naar een
-execution-stopcontract gecompileerd. De juiste richting is:
-
-1. IDE/tooling vertaalt `(domain, path, line)` naar fysieke PC-ranges;
-2. een minimale, optionele machine-executionhook observeert raw domain/PC;
-3. de hook is uitgeschakeld in de normale hot path;
-4. tooling bezit breakpointmatching, step-in/over/out en pause events;
-5. de scheduler stopt/hervat bij de executionboundary;
-6. de CPU kent geen source path, source map, editor of `debugState`.
-
-### Host-output
-
-- `hosts/common/system_output_log.ts` draint fysieke systeemoutput;
-- `hosts/common/audio_output.ts` bezit browser/common audiotransport;
-- `hosts/common/host_frame.ts` bezit host pause-reasons;
-- `hosts/libretro/audio_output.*` bezit libretro audiotransport.
-
-Het spiegelen van fysieke console-output naar DevTools/logging is hostobservatie,
-geen BIOS-call naar `console.log` en geen CPU-debugfeature. Herstel terminal- en
-exceptionlogging via de bestaande fysieke output/faultkanalen.
-
-## Gewenste architectuur voor faults
-
-Er zijn twee weergaven van dezelfde gebeurtenis, niet twee concurrerende
-faultsystemen:
-
-1. De machine publiceert de raw exception in het fysieke supervisor-
-   registerfile en vectoriseert naar BIOS.
-2. De BIOS-monitor toont uitsluitend machine-native diagnose.
-3. IDE/tooling observeert de fault sequence en maakt met symbols/source maps een
-   rijke toolingweergave.
-4. De IDE opent de relevante bron en toont de overlay.
-5. Browser/libretro logging consumeert de fysieke output of toolingobservatie
-   op zijn eigen boundary.
-
-`b731ec229` verplaatste de geobserveerde supervisor-faultsequence naar
-`RuntimeFaultState` en synchroniseert deze na reboot/cold boot. Review deze
-commit als startpunt; neem niet aan dat hij de volledige debugger herstelt. Hij
-herstelt alleen het bewaren/observeren van de fysieke fault sequence en bevat
-ook product/launch-configaanpassingen.
-
-## Uitvoeringsvolgorde
-
-Werk niet tegelijk aan cartlib-cleanup en debuggerherstel. Houd de diff klein en
-bewijs elke verticale feature.
-
-### 1. Leg een featurematrix vast uit historische code
-
-Maak vóór edits een korte tabel met:
-
-- oud waarneembaar gedrag;
-- huidige producer/consumer;
-- uiteindelijke owner;
-- TS/C++-impact;
-- hot-pathcallsites;
-- live bewijs dat het gedrag terug is.
-
-Geen nieuwe designfantasie: iedere rij moet naar oude code en huidige owner
-wijzen.
-
-### 2. Herstel output en faultpresentatie
-
-Herstel als één coherente flow:
-
-- fysieke print/system-output naar BIOS-terminal;
-- dezelfde voltooide output naar browserconsole/hostlog;
-- supervisorfault naar rijke IDE-toolingstate;
-- auto-open bron + overlay;
-- exceptionnavigation, inclusief de bedoelde `Ctrl+E`-actie.
-
-Laat de BIOS niet van de IDE afhangen en laat de IDE niet rechtstreeks in CPU-
-interne objecten graven.
-
-### 3. Herstel execution debugging
-
-Port de functionele contracten uit de decembercommits naar de huidige fysieke
-CPU/scheduler. Ontwerp eerst de minimale TS/C++ hookrepresentatie en toon de
-normale fast path. Herstel daarna in deze volgorde:
-
-1. breakpoint stop;
-2. continue;
-3. step-in;
-4. echte step-over;
-5. step-out;
-6. fault resume/`CONT`.
-
-Een breakpoint dat alleen in de gutter staat is niet geïmplementeerd.
-
-### 4. Herstel monitor-audio als machinefeature
-
-Pas dit pas aan nadat de huidige APU-cycle- en outputringownership in TS en C++
-expliciet naast elkaar staat. Geen silence queue. Bewijs live:
-
-- muziek stopt direct bij supervisor-entry;
-- monitorinput en display blijven werken;
-- muziekpositie blijft behouden;
-- `CONT` hervat direct;
-- herhaald open/sluiten bouwt geen latency op;
-- browser en libretro gedragen zich hetzelfde.
-
-### 5. Los de cartregressie pas op vanuit de eerste verkeerde producer
-
-Reproduceer de `pietious` non-table fault en gebruik de herstelde faulttooling om
-de exacte source/stack te vinden. Voeg geen `type(...)`, `nil`-fallback of
-`ensure_*` toe. Controleer vooral recente cartlibcommits vanaf:
+Primary owners:
 
 ```text
-493e35ec5 refactor(cartlib): allocate AEM records only for queued plays
-814ef32fc refactor(cartlib): split ECS systems by owner
-de0a7934d refactor(cartlib): flatten retained visual state
-703abb090 refactor(cartlib): split component owners
-d461e97ce refactor(cartlib): make state runtimes opt in
-5f597326f refactor(cartlib): compile input and FSM runtime state
-235e5ad87 refactor(cartlib): dispatch direct event values
-e562e0761 refactor(cartlib): own retained GX rendering
-67199843d refactor(cartlib): compose ECS systems directly
-740dc418c refactor(cartlib): remove obsolete shared surfaces
-f1b6e2beb refactor(cartlib): compose prefab features at their owners
+machine/ts/machine/devices/audio/**
+machine/cpp/machine/devices/audio/**
+machine/ts/machine/devices/system/controller.ts
+machine/cpp/machine/devices/system/controller.{h,cpp}
+hosts/common/audio_output.ts
+hosts/common/host_frame.ts
+hosts/libretro/audio_output.{h,cpp}
+hosts/libretro/entry.cpp
+hosts/libretro_host/audio_output.c
+hosts/libretro_host/audio_queue.c
+hosts/libretro_host/core_session.c
 ```
 
-`CARTLIB-SURFACE-01` blijft open in `docs/open_architecture_slices.md`, maar
-gebruik dat niet als excuus om nog meer API te herschrijven voordat de concrete
-regressie is gelokaliseerd.
+## Evidence already obtained
 
-## Validatiecontract
+These results were obtained against the current recovery except for the final
+two headless-runner lines described in the next section.
 
-Gebruik bestaande runners en bestaande timelines; voeg geen synthetische
-fixturetests toe om de implementatie groen te verklaren.
+### Automated suites
 
-Minimaal:
+- `npm run audit:core-parity`: passed.
+- `npm run test:rompacker`: 90/90 passed.
+- `npm run test:lua`: 514 passed, 1 skipped, 0 failed.
+- `npm run test:hot-resume`: 28 assertions passed.
+- targeted TS audio/system tests: 40/40 passed.
+- native `bmsx_audio_controller_tests`: passed.
+- native `bmsx_system_controller_tests`: passed.
+- `git diff --check`: passed.
+
+### Live/debug probes
+
+- `/tmp/vblank_debugger_steps.idetest.js`: 11 assertions passed, including
+  breakpoint stop, real step-in, step-out, continue, and step-over without
+  entering the call.
+- `/tmp/vblank_inline_debugger.idetest.js`: 19 assertions passed against an O3
+  inline/unroll temporary cart.
+- `/tmp/vblank_debugger_hot_resume.await.idetest.js`: 4 assertions passed from
+  a clean temporarily moved workspace; the original workspace was restored.
+- `/tmp/bmsx_cpp_execution_hook_probe.cpp`: passed against current native
+  libraries; it stopped in cart domain, retained PC across the host update,
+  then continued after hook removal.
+- `/tmp/bmsx_supervisor_audio_ring_probe.ts`: passed first supervisor entry and
+  hidden USER -> fault AOUT ring clearing.
+- `/tmp/bmsx_cpp_supervisor_audio_ring_probe.cpp`: mirrored native pass.
+- Debug `monitor_fault_probe` visibly showed in the BIOS terminal:
+
+  ```text
+  BMSX BIOS MONITOR
+  EXCEPTION TRAP LUA RUNTIME FAULT
+  ...
+  entry.lua:14:1
+  nothing()
+  ```
+
+- Release `monitor_fault_probe` showed register/PC information without source.
+- An empty monitor `FAULT` showed the prompt with no bogus placeholder.
+- Captured caret frames showed a block caret with the underlying glyph
+  inversed.
+
+Useful retained artifacts include:
+
+```text
+/tmp/bmsx-monitor-debug-1785645099.log
+/tmp/bmsx-monitor-release-1785645099.log
+/tmp/monitor_fault_probe_debug_registers/frame_00030.png
+/tmp/bmsx-monitor-release-shots-1785645099/frame_00030.png
+/tmp/bmsx-monitor-empty-fault.S6Wlnf/
+/tmp/bmsx-monitor-caret.QFtgZ3/
+```
+
+Do not count `/tmp/vblank_debugger_loop_body.idetest.js` as evidence. It used
+an obsolete assertion that current source line 112 could not be a Hot Resume
+point; line 112 is now a normal call statement and legitimately is one.
+
+## Latest incomplete change: headless IDE visual proof
+
+The last edit added existing headless input and capture owners to `--ide-test`:
+
+```text
+scripts/bootrom/platforms/hostrunner/ide_test_runner.ts
+scripts/bootrom/platforms/node_tooling_entry.ts
+```
+
+The intended proof is entirely headless:
+
+1. boot `monitor_fault_probe.debug.rom` through `runWorkbenchHostFrame`;
+2. wait for the physical supervisor fault sequence;
+3. capture the BIOS fault terminal;
+4. post real F1 down/up input through `HeadlessInputHub`;
+5. advance frames and capture the IDE;
+6. visually verify `entry.lua`, line 14, and the error overlay.
+
+The product/tooling build after this change succeeded:
 
 ```sh
-npm run audit:core-parity
-npm run headless:forcebuildallrun -- bare_metal_cart
-npm run headless:forcebuildallrun -- pietious
-npm run headless:forcebuildallrun -- 2025
+npm run build:product:node-headless-tooling -- --debug --force
 ```
 
-Voor echte TS/C++-beeldpariteit bestaan onder meer:
+The first `/tmp/monitor_fault_ide_headless.idetest.js` attempt is **invalid**.
+It waited a fixed 30 clock frames and asserted `!isCartActive()`, but that is
+also true before cartridge boot. It captured:
+
+```text
+/tmp/screenshots/frame_00033.png  # BIOS boot screen, fault not reached
+/tmp/screenshots/frame_00046.png  # IDE main.lua, opened too early, no fault overlay
+```
+
+This does not prove a product regression. Correct the temporary scenario, not
+the runtime. Wait for the actual physical fault sequence word:
+
+```js
+const faultSequenceAddress = 0x08010434;
+let faultSequence = 0;
+for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
+    await t.frames(1);
+    faultSequence = t.runtime().machine.memory.readMappedU32LE(faultSequenceAddress);
+}
+assert(faultSequence !== 0, 'physical supervisor fault was not latched');
+await t.frames(15);
+t.capture('physical BIOS fault terminal');
+// Post F1 down/up with one stable pressId, advancing at least one frame per edge.
+await t.frames(12);
+t.capture('IDE fault source overlay');
+```
+
+Use the existing raw `postInput` context method. Do not add another test
+driver, server, browser, CDP session, or `.mjs` debugging stack. The current
+temporary scenario may be overwritten. Preserve
+`carts/monitor_fault_probe/.bmsx/~workspace` by moving it out and back around
+the run; it was restored after the invalid attempt.
+
+After correcting the scenario, run TypeScript compilation and inspect the
+small runner diff. There is also a formatting-only indentation change on the
+`case 'ide-test'` line in `node_tooling_entry.ts`; fix it while auditing that
+file. Do not turn the two test-boundary calls into a new facade hierarchy.
+
+## Remaining validation and audit
+
+Do these in this order. Fix only a demonstrated blocker at its owner.
+
+1. Complete the physical fault -> BIOS capture -> F1 -> correct IDE source and
+   overlay proof above.
+2. Run the repository TypeScript check after the latest runner edit.
+3. Build the complete current C++ test/product surface, including libretro and
+   the direct SDL/ALSA host.
+4. Run `bare_metal_cart`, `pietious`, and `2025` in both TS and C++ headless
+   runtimes. Inspect screenshots rather than accepting process exit alone.
+5. Exercise `2025` combat/skip/background clearing. Exercise `pietious` long
+   enough to cover the reported World 1 non-table/heap-overflow regression.
+6. Exercise libretro/direct-host supervisor entry and `CONT` with audio
+   transport enabled where the environment permits. Report honestly if audible
+   latency cannot be proven in a dummy headless audio device.
+7. Audit the complete diff for forbidden patterns, unnecessary allocations,
+   duplicate validation, host source magic, hot-loop branches, silence
+   injection, migrations, and versioning.
+8. Rerun the green suites listed above plus `git diff --check`.
+9. Compare every changed architecture statement with the implementation.
+10. Leave `docs/open_architecture_slices.md` unchanged unless all applicable
+    end criteria are genuinely proven.
+
+Suggested quick audits:
 
 ```sh
-npm run test:render-parity
-npm run run:libretro-host:wsl:headless
+git diff -U0 | rg "Number\\.isFinite|Number\\.isNaN|\\bisNaN\\b|typeof .*number|math\\.(floor|ceil)|writeSilence|prebuffer|schemaVersion|codecVersion|migration|backward|legacy"
+rg -n "executionHook" machine/ts/machine machine/cpp/machine
+rg -n "writeSilence|silence|prebuffer" machine hosts ide -g '*.{ts,cpp,h,c,lua}'
+git diff --check
 ```
 
-De exacte cart/timeline-argumenten moet je uit de bestaande scripts onder
-`tests/carts/**` halen. Een proces dat tot het einde draait is geen bewijs:
+Do not mistake `ide.fault.hostFrameFailed` in the workbench frame scheduler for
+the removed Hot Resume prohibition. The forbidden behavior is the deleted
+throw inside Hot Resume, not all lifecycle recording of a failed host frame.
 
-- bekijk representatieve screenshots;
-- vergelijk TS en C++ op dezelfde inputtimeline;
-- controleer terminal/faultframes inhoudelijk;
-- test `pietious` meerdere minuten actief in World 1;
-- test `2025` combat, skip en reboot;
-- test browseraudio live;
-- test libretroaudio live op oplopende latency;
-- open/sluit monitor herhaald en controleer onmiddellijke audioresume;
-- plaats een echt breakpoint en bewijs dat execution stopt;
-- bewijs step-over met een call, niet met een rechte instructiereeks;
-- forceer een Lua-fout en bewijs BIOS-monitor, browserconsole, IDE-overlay,
-  source navigation en resume als één flow.
+## Known process failure
 
-Registreer eerlijk wat niet live kon worden bewezen. Noem builds nooit
-"headless runs" en noem headless runs nooit "de spellen werken" zonder de
-frames te inspecteren.
+A stale `rominspector --blua32-asm` pipeline was found running for more than
+four hours at 100% CPU and was killed. Do not launch broad disassembly pipelines
+for this recovery. Before long validation runs, check for stale processes:
 
-## Breder open werk
+```sh
+ps -eo pid,etimes,pcpu,pmem,stat,cmd --sort=-pcpu | head -20
+```
 
-`docs/open_architecture_slices.md` is de huidige werkvoorraad. Bij overdracht
-staan daar onder andere nog:
-
-- `TOOLCHAIN-BULLSHIT-01`;
-- `PARITY-COVERAGE-01`;
-- `PERF-RUNTIME-01`;
-- `CARTLIB-SURFACE-01`;
-- live backend-, GX-, supervisor-, performance- en SNES Mini-gates.
-
-Verwijder afgeronde regels uit die lijst. Voeg de terminal/debuggerrecovery pas
-als open slice toe als dat nodig is voor overdraagbaarheid; gebruik de lijst
-niet als dagboek van kleine edits.
-
-## Eindcriteria voor deze recovery
-
-De recovery is pas klaar wanneer alle onderstaande beweringen met live bewijs
-waar zijn:
-
-- de BIOS-monitor is een fysiek ROM-programma en niet afhankelijk van IDE-
-  objecten;
-- de CPU is een CPU en kent geen source/debugger/host-DTO's;
-- BIOS-monitor en IDE tonen dezelfde fysieke fault op hun eigen detailniveau;
-- fysieke console-output bereikt terminal en hostconsole zonder dubbele
-  guestsemantiek;
-- exceptionoverlay en bronnavigatie zijn hersteld;
-- breakpoints en alle stepmodi sturen execution werkelijk;
-- `CONT` hervat een resumable machinecontext;
-- monitor-audio stopt en hervat zonder extra buffer of latency;
-- TS en C++ gebruiken hetzelfde machinecontract;
-- `bare_metal_cart`, `pietious` en `2025` zijn inhoudelijk bekeken in beide
-  runtimes;
-- de concrete `pietious`-fault is bij zijn producer opgelost, niet verborgen;
-- er is geen compatibility-, legacy- of corrupt-statefallback toegevoegd.
-
-Als een van deze punten alleen door een hostspecial-case, nieuwe buffer, guard,
-wrapper of CPU-debugobject haalbaar lijkt, stop dan en corrigeer eerst de owner
-of representatie.
+Keep every runtime probe bounded by the existing TTL/timeline mechanism.

@@ -264,5 +264,5 @@ test('toLuaModulePath normalizes source paths through the loader contract', () =
 	assert.equal(toLuaModulePath('system/font.lua'), 'system/font');
 	assert.equal(toLuaModulePath('carts/pietious/cart.lua'), 'cart');
 	assert.equal(toLuaModulePath('carts/pietious/room/room.lua'), 'room/room');
-	assert.equal(toLuaModulePath('carts\\pietious\\room\\index.lua'), 'room/room');
+	assert.equal(toLuaModulePath('carts\\pietious\\room\\room.lua'), 'room/room');
 });

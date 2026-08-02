@@ -103,10 +103,12 @@ bss monitor_entry_irq_mask: word
 bss monitor_entry_has_bad_address: word
 bss monitor_entry_has_lua_fault_reason: word
 bss monitor_fault_valid: word
+bss monitor_fault_status: word
 bss monitor_fault_cause: word
 bss monitor_fault_epc: word
 bss monitor_fault_bad_address: word
 bss monitor_fault_lua_fault_reason: word
+bss monitor_fault_irq_mask: word
 bss monitor_fault_exception: word
 bss monitor_fault_has_bad_address: word
 bss monitor_fault_has_lua_fault_reason: word
@@ -355,10 +357,12 @@ function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason
 	end
 	if exception ~= exception_nmi then
 		*monitor_fault_valid = 1
+		*monitor_fault_status = status
 		*monitor_fault_cause = cause
 		*monitor_fault_epc = epc
 		*monitor_fault_bad_address = bad_address
 		*monitor_fault_lua_fault_reason = lua_fault_reason
+		*monitor_fault_irq_mask = irq_mask
 		*monitor_fault_exception = exception
 		*monitor_fault_has_bad_address = *monitor_entry_has_bad_address
 		*monitor_fault_has_lua_fault_reason = *monitor_entry_has_lua_fault_reason
@@ -370,15 +374,18 @@ function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason
 end
 
 function monitor_commands.start_fault()
-	for command = 0, #command_registry - 1 do
-		if command_registry[command].kind == command_fault then
-			*monitor_command_producer = command
-			*monitor_command_cursor = 0
-			*monitor_command_text_offset = 0
-			*monitor_command_fault_section = fault_section_registers
-			return
-		end
+	if *monitor_fault_valid == 0 then
+		return action_none
 	end
+	local command = 0
+	while command_registry[command].kind ~= command_fault do
+		command = command + 1
+	end
+	*monitor_command_producer = command
+	*monitor_command_cursor = 0
+	*monitor_command_text_offset = 0
+	*monitor_command_fault_section = fault_section_registers
+	return action_output
 end
 
 function monitor_commands.complete(line, length, cursor, capacity)
@@ -526,6 +533,9 @@ function monitor_commands.start(line, length)
 	if entry.kind == command_fault then
 		local index<const> = skip_spaces(line, argument_index, length)
 		if index == length then
+			if *monitor_fault_valid == 0 then
+				return action_none
+			end
 			*monitor_command_producer = command
 			*monitor_command_cursor = 0
 			*monitor_command_text_offset = 0
@@ -629,16 +639,14 @@ function monitor_commands.next_row(row)
 			return row_more
 		end
 		local cursor<const> = *monitor_command_cursor
+		local register_cursor = cursor
 		local column = 0
-		if entry.kind == command_fault and *monitor_fault_valid == 0 then
-			write_text(row, 0, 'NO SAVED FAULT', palette_text)
-			*monitor_command_producer = producer_none
-			return row_done
-		end
+		local status = *monitor_entry_status
 		local cause = *monitor_entry_cause
 		local epc = *monitor_entry_epc
 		local bad_address = *monitor_entry_bad_address
 		local lua_fault_reason = *monitor_entry_lua_fault_reason
+		local irq_mask = *monitor_entry_irq_mask
 		local has_bad_address = *monitor_entry_has_bad_address
 		local has_lua_fault_reason = *monitor_entry_has_lua_fault_reason
 		if entry.kind == command_fault and cursor == 0 then
@@ -653,15 +661,19 @@ function monitor_commands.next_row(row)
 				write_text(row, column, definition.description, palette_text)
 			end
 		else
-			local register_cursor = cursor
 			if entry.kind == command_fault then
-				register_cursor = cursor - 1
+				status = *monitor_fault_status
 				cause = *monitor_fault_cause
 				epc = *monitor_fault_epc
 				bad_address = *monitor_fault_bad_address
 				lua_fault_reason = *monitor_fault_lua_fault_reason
+				irq_mask = *monitor_fault_irq_mask
 				has_bad_address = *monitor_fault_has_bad_address
 				has_lua_fault_reason = *monitor_fault_has_lua_fault_reason
+				register_cursor = cursor - 1
+				if register_cursor >= 2 and has_bad_address == 0 and has_lua_fault_reason == 0 then
+					register_cursor = register_cursor + 1
+				end
 			end
 			if register_cursor == 0 then
 				column = write_text(row, 0, 'CAUSE   ', palette_accent)
@@ -700,15 +712,14 @@ function monitor_commands.next_row(row)
 				end
 			elseif register_cursor == 3 then
 				column = write_text(row, 0, 'STATUS  ', palette_accent)
-				write_hex(row, column, *monitor_entry_status, palette_text)
+				write_hex(row, column, status, palette_text)
 			else
 				column = write_text(row, 0, 'IRQMASK ', palette_accent)
-				write_hex(row, column, *monitor_entry_irq_mask, palette_text)
+				write_hex(row, column, irq_mask, palette_text)
 			end
 		end
 		*monitor_command_cursor = cursor + 1
-		if entry.kind == command_fault and (cursor == 3
-				or (cursor == 2 and has_bad_address == 0 and has_lua_fault_reason == 0)) then
+		if entry.kind == command_fault and register_cursor == 4 then
 			if source_location.begin_output() then
 				*monitor_command_fault_section = fault_section_source
 				return row_more

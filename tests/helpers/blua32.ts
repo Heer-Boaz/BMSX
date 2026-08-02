@@ -219,6 +219,7 @@ function createRawTestBlua32Object(
 		systemGlobalNames,
 		exportProtoIdBySlot: {},
 		debugRanges,
+		statementPointsByProto: functions.map(() => []),
 		resumePointsByProto: functions.map(() => []),
 		localSlotsByProto: functions.map(() => []),
 		upvalueNamesByProto: functions.map(() => []),

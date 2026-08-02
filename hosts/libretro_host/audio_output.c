@@ -41,11 +41,13 @@ typedef struct AudioOutput {
 	size_t sdl_underrun_frames;
 	BmsxAudioQueue queue;
 	pthread_t thread;
+	pthread_mutex_t device_mutex;
 	int16_t* thread_buffer;
 	size_t thread_buffer_frames;
 	int16_t sample_buffer[kSampleBufferFrames * kAudioChannels];
 	size_t sample_buffer_frames;
 	bool active;
+	bool suspended;
 	bool use_sdl;
 	bool track_high_water;
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -58,6 +60,11 @@ static AudioOutput g_audio = {
 };
 
 static void write_alsa_frames(const int16_t* data, size_t frames) {
+	pthread_mutex_lock(&g_audio.device_mutex);
+	if (g_audio.suspended) {
+		pthread_mutex_unlock(&g_audio.device_mutex);
+		return;
+	}
 	size_t remaining = frames;
 	const int16_t* source = data;
 	while (remaining > 0) {
@@ -91,6 +98,7 @@ static void write_alsa_frames(const int16_t* data, size_t frames) {
 		remaining -= (size_t)transfer.result;
 		source += (size_t)transfer.result * kAudioChannels;
 	}
+	pthread_mutex_unlock(&g_audio.device_mutex);
 }
 
 static void set_audio_thread_realtime(void) {
@@ -115,9 +123,11 @@ static void* audio_thread_main(void* argument) {
 		}
 		write_alsa_frames(g_audio.thread_buffer, frames);
 	}
-	if (ioctl(g_audio.fd, SNDRV_PCM_IOCTL_DRAIN) != 0) {
+	pthread_mutex_lock(&g_audio.device_mutex);
+	if (!g_audio.suspended && ioctl(g_audio.fd, SNDRV_PCM_IOCTL_DRAIN) != 0) {
 		host_fatal("SNDRV_PCM_IOCTL_DRAIN failed: %s", strerror(errno));
 	}
+	pthread_mutex_unlock(&g_audio.device_mutex);
 	return NULL;
 }
 
@@ -312,6 +322,9 @@ static void open_alsa_audio(int sample_rate) {
 	}
 	bmsx_audio_queue_init(&g_audio.queue, g_audio.buffer_frames, kAudioChannels,
 			g_audio.track_high_water);
+	if (pthread_mutex_init(&g_audio.device_mutex, NULL) != 0) {
+		host_fatal("pthread_mutex_init failed for audio device");
+	}
 	const int error = pthread_create(&g_audio.thread, NULL, audio_thread_main, NULL);
 	if (error != 0) {
 		host_fatal("pthread_create failed: %s", strerror(error));
@@ -329,6 +342,7 @@ static void close_alsa_audio(void) {
 		host_fatal("pthread_join failed: %s", strerror(error));
 	}
 	bmsx_audio_queue_destroy(&g_audio.queue);
+	pthread_mutex_destroy(&g_audio.device_mutex);
 	if (g_audio.track_high_water || g_audio.underruns > 0u) {
 		fprintf(stderr, "[libretro-host] audio stats: underruns=%u\n", g_audio.underruns);
 	}
@@ -368,8 +382,45 @@ void audio_output_close(void) {
 	};
 }
 
-void audio_output_sample(int16_t left, int16_t right) {
+void audio_output_set_suspended(bool suspended) {
+	if (g_audio.suspended == suspended) {
+		return;
+	}
 	if (!g_audio.active) {
+		g_audio.suspended = suspended;
+		return;
+	}
+	g_audio.sample_buffer_frames = 0u;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_audio.use_sdl) {
+		SDL_PauseAudioDevice(g_audio.sdl_device, 1);
+		bmsx_audio_queue_clear(&g_audio.queue);
+		g_audio.suspended = suspended;
+		if (!suspended) {
+			SDL_PauseAudioDevice(g_audio.sdl_device, 0);
+		}
+		return;
+	}
+#endif
+	pthread_mutex_lock(&g_audio.device_mutex);
+	g_audio.suspended = suspended;
+	bmsx_audio_queue_clear(&g_audio.queue);
+	if (suspended) {
+		if (ioctl(g_audio.fd, SNDRV_PCM_IOCTL_DROP) != 0) {
+			host_fatal("SNDRV_PCM_IOCTL_DROP failed: %s", strerror(errno));
+		}
+		g_audio.prepared = false;
+	} else {
+		if (ioctl(g_audio.fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
+			host_fatal("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
+		}
+		g_audio.prepared = true;
+	}
+	pthread_mutex_unlock(&g_audio.device_mutex);
+}
+
+void audio_output_sample(int16_t left, int16_t right) {
+	if (!g_audio.active || g_audio.suspended) {
 		return;
 	}
 	const size_t index = g_audio.sample_buffer_frames * kAudioChannels;
@@ -383,7 +434,7 @@ void audio_output_sample(int16_t left, int16_t right) {
 }
 
 size_t audio_output_sample_batch(const int16_t* data, size_t frames) {
-	if (!g_audio.active) {
+	if (!g_audio.active || g_audio.suspended) {
 		return frames;
 	}
 	flush_sample_buffer();

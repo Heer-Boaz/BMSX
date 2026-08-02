@@ -23,6 +23,10 @@ export const editorChromeState: EditorChromeState = {
 	topBarBounds: create_rect_bounds(),
 	topBarButtonBounds: {
 		"hot-resume": create_rect_bounds(),
+		debugContinue: create_rect_bounds(),
+		debugStepInto: create_rect_bounds(),
+		debugStepOut: create_rect_bounds(),
+		debugStepOver: create_rect_bounds(),
 		reboot: create_rect_bounds(),
 		save: create_rect_bounds(),
 		resources: create_rect_bounds(),

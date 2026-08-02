@@ -201,8 +201,8 @@ function buildAssetModule(
 		const symbol = symbols[index];
 		if (symbol.offset >= imageOffset
 			|| (assetEdit
-				&& symbol.assetType === assetEdit[0]
-				&& symbol.assetId === assetEdit[1])) {
+			&& symbol.assetType === assetEdit[0]
+			&& symbol.assetId === assetEdit[1])) {
 			linkSymbols.push(symbol);
 		}
 	}
@@ -337,6 +337,7 @@ export function buildBlua32Media(
 				publicAssets.entries,
 				sources.systemRom.id,
 				imageOffset,
+				assetEdit,
 			),
 		);
 		biosImports = linked.biosImports;
@@ -410,6 +411,7 @@ export function buildBlua32Media(
 				publicAssets.entries,
 				cartridge.rom.id,
 				imageOffset,
+				assetEdit,
 			),
 		);
 		rebuiltCartridgeSlots[slot] = {

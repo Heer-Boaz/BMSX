@@ -141,6 +141,27 @@ export function clearExecutionStopHighlights(): void {
 	}
 }
 
+export function focusExecutionStop(
+	editor: CartEditor,
+	resource: ResourceIdentity,
+	line: number,
+	column: number,
+): void {
+	const navigationCheckpoint = beginNavigationCapture();
+	editor.navigation.focusChunkSource(resource);
+	const row = line - 1;
+	setExecutionStopHighlightForCurrentContext(row);
+	editorDocumentState.selectionAnchor = null;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
+	editorCaretState.cursorRevealSuspended = false;
+	editorViewState.scrollbarController.cancel();
+	setCursorPosition(row, column - 1);
+	centerCursorVertically();
+	resetBlink();
+	completeNavigation(navigationCheckpoint);
+}
+
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
 	if (context) {
 		setActiveRuntimeErrorOverlay(context.runtimeErrorOverlay);
