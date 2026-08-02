@@ -83,39 +83,19 @@ export function layoutBlua32PublicAssets(
 			...entry,
 			buffer: entry.start == null
 				? undefined
-				: Buffer.from(
-					layer.bytes.buffer,
-					layer.bytes.byteOffset + entry.start,
-					entry.end! - entry.start,
-				),
+				: layer.bytes.subarray(entry.start, entry.end!),
 			compiled_buffer: entry.compiled_start == null
 				? undefined
-				: Buffer.from(
-					layer.bytes.buffer,
-					layer.bytes.byteOffset + entry.compiled_start,
-					entry.compiled_end! - entry.compiled_start,
-				),
+				: layer.bytes.subarray(entry.compiled_start, entry.compiled_end!),
 			model_texture_buffer: entry.model_texture_start == null
 				? undefined
-				: Buffer.from(
-					layer.bytes.buffer,
-					layer.bytes.byteOffset + entry.model_texture_start,
-					entry.model_texture_end! - entry.model_texture_start,
-				),
+				: layer.bytes.subarray(entry.model_texture_start, entry.model_texture_end!),
 			collision_bin_buffer: entry.collision_bin_start == null
 				? undefined
-				: Buffer.from(
-					layer.bytes.buffer,
-					layer.bytes.byteOffset + entry.collision_bin_start,
-					entry.collision_bin_end! - entry.collision_bin_start,
-				),
+				: layer.bytes.subarray(entry.collision_bin_start, entry.collision_bin_end!),
 		};
 		if (isEdited) {
-			source.buffer = Buffer.from(
-				assetEdit[2].buffer,
-				assetEdit[2].byteOffset,
-				assetEdit[2].byteLength,
-			);
+			source.buffer = assetEdit[2];
 			edited = true;
 		}
 		relocatedEntryIndices.push(entries.length);
@@ -209,11 +189,7 @@ export function buildBlua32Tail(
 	const toolingAssets: RomAsset[] = [{
 		resid: BLUA32_SYMBOLS_IMAGE_ID,
 		type: 'code',
-		buffer: Buffer.from(
-			symbolsPayload.buffer,
-			symbolsPayload.byteOffset,
-			symbolsPayload.byteLength,
-		),
+		buffer: symbolsPayload,
 		source_path: BLUA32_SYMBOLS_IMAGE_ID,
 	}];
 	if (linked.domain === 'system') {
@@ -221,11 +197,7 @@ export function buildBlua32Tail(
 		toolingAssets.push({
 			resid: BLUA32_BIOS_IMPORTS_IMAGE_ID,
 			type: 'code',
-			buffer: Buffer.from(
-				biosImportsPayload.buffer,
-				biosImportsPayload.byteOffset,
-				biosImportsPayload.byteLength,
-			),
+			buffer: biosImportsPayload,
 			source_path: BLUA32_BIOS_IMPORTS_IMAGE_ID,
 		});
 	}
@@ -281,11 +253,7 @@ export function buildBlua32Tail(
 		diagnosticLayout = layoutRomAssetPayloads([{
 			resid: BLUA32_DIAGNOSTICS_IMAGE_ID,
 			type: 'code',
-			buffer: Buffer.from(
-				diagnosticPayload.buffer,
-				diagnosticPayload.byteOffset,
-				diagnosticPayload.byteLength,
-			),
+			buffer: diagnosticPayload,
 			source_path: BLUA32_DIAGNOSTICS_IMAGE_ID,
 		}], true, diagnosticDirectoryOffset);
 		entries.push(...diagnosticLayout.entries);

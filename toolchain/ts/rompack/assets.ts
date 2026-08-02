@@ -65,10 +65,10 @@ export interface TextureMeta {
 export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi'> & {
 	id_token_lo?: number;
 	id_token_hi?: number;
-	buffer?: Buffer;
-	compiled_buffer?: Buffer;
-	model_texture_buffer?: Buffer;
-	collision_bin_buffer?: Buffer;
+	buffer?: Uint8Array;
+	compiled_buffer?: Uint8Array;
+	model_texture_buffer?: Uint8Array;
+	collision_bin_buffer?: Uint8Array;
 	imgmeta?: ImgMeta;
 	texturemeta?: TextureMeta;
 	audiometa?: AudioMeta;

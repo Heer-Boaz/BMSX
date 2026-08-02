@@ -34,7 +34,7 @@ export function layoutRomAssetPayloads(
 	const ranges: RomAssetPayloadRange[] = [];
 	let offset = initialOffset;
 	let payloadEnd = 0;
-	const appendPayload = (buffer: Buffer): RomAssetPayloadRange => {
+	const appendPayload = (buffer: Uint8Array): RomAssetPayloadRange => {
 		offset = alignRomAssetOffset(offset);
 		const range = { start: offset, end: offset + buffer.length, buffer };
 		offset = range.end;

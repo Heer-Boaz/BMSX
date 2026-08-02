@@ -650,7 +650,7 @@ test('workspace records own their local namespace and session path', () => {
 		buildWorkspaceStorageKey('cart', 'cart/.bmsx/workspace.json'),
 		'bmsx.workspace.records:cart:cart/.bmsx/workspace.json',
 	);
-	assert.equal(WORKSPACE_STATE_FILE, 'workspace.json');
+	assert.equal(WORKSPACE_STATE_FILE, 'session.json');
 });
 
 test('workspace state selects the newest exact local or remote record', async (t) => {

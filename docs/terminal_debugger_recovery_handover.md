@@ -4,9 +4,48 @@ Date: 2026-08-02
 
 Branch: `master`
 
-HEAD: `ace39bf52c`
-State: large, uncommitted recovery diff; **do not commit, reset, or partially
-revert before auditing the live worktree**.
+HEAD at handover: `ace39bf52c`
+
+## Completion update (2026-08-02)
+
+The recovery implementation was committed by the user as `1df6dad10` before
+the completion audit. The worktree was clean at takeover; the obsolete
+uncommitted-worktree warning below is historical and was not used as a reason
+to reset or revert any part of that commit.
+
+The remaining headless presentation proof passes against the committed
+runtime. The scenario waited for the physical fault-sequence word, captured
+the BIOS monitor, posted one real F1 press/release through `HeadlessInputHub`,
+and captured the IDE. The captures show the physical exception first and then
+`entry.lua` line 14 with the retained runtime-error overlay.
+
+The completion audit also established:
+
+- the root TypeScript project compiles;
+- node-headless tooling, the libretro core, and the Linux libretro host build;
+- `bare_metal_cart`, `pietious`, and `2025` match exactly across TS software,
+  C++ software, and C++ GLES2 captures (146, 2, and 93 frames respectively);
+- core parity, rompacker (90/90), Lua (514 passed, 1 skipped), Hot Resume
+  (28 assertions), indentation, and the targeted native audio, system, and CPU
+  supervisor tests pass;
+- the worktree passes `git diff --check`.
+
+The completion audit initially missed a real browser cold-boot failure: the
+breakpoint payload changed from a path-keyed object to domain/path/line records
+while the workspace record kept the same identity. Browser-local recovery
+could therefore retain the incompatible old payload even after the on-disk
+`.bmsx` directory was removed. The current workspace-session representation
+now owns a new semantic record name, `.bmsx/session.json`; it does not decode,
+migrate, or fall back to the obsolete payload.
+
+One repository-wide C++ test build remains independently red in
+`tests/cpp/device_quantize_test.cpp`: it constructs `OpenGLES2Backend` with the
+old three-argument signature instead of the current four-argument signature.
+That test and constructor are outside this recovery commit; the recovery-owned
+native targets build and pass. The configured standalone SDL target still
+reports the existing `SDL platform not yet implemented` warning, so an audible
+direct-host latency claim cannot be made from this environment. No workaround
+or unrelated repair was folded into this slice.
 
 This document supersedes the earlier version of this handover. Git history
 contains the older functional archaeology when it is needed.
