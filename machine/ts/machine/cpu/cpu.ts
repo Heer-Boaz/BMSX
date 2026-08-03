@@ -239,7 +239,6 @@ export type ExecutionHook = (
 	pc: number,
 ) => boolean;
 
-
 const TABLE_WEAK_KEYS = 1;
 const TABLE_WEAK_VALUES = 2;
 const TABLE_WEAK_KEY_CODE_UNIT = 0x6b;
@@ -278,6 +277,12 @@ export class CPU {
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private yieldRequested = false;
+	private executionHook: ExecutionHook | null = null;
+	private executionHookDomainMask: ExecutionDomainMask = 0;
+	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
+	private latchedExecutionHook: ExecutionHook | null = null;
+	private latchedExecutionHookDomainMask: ExecutionDomainMask = 0;
+	private latchedPreMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
@@ -1416,6 +1421,24 @@ export class CPU {
 		this.yieldRequested = true;
 	}
 
+	public setExecutionHook(
+		hook: ExecutionHook | null,
+		domainMask: ExecutionDomainMask,
+		preMaskableInterruptDomainMask: ExecutionDomainMask,
+	): void {
+		this.executionHook = hook;
+		this.executionHookDomainMask = domainMask;
+		this.preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
+	}
+
+	public latchExecutionHook(): boolean {
+		this.latchedExecutionHook = this.executionHook;
+		this.latchedExecutionHookDomainMask = this.executionHookDomainMask;
+		this.latchedPreMaskableInterruptExecutionHookDomainMask =
+			this.preMaskableInterruptExecutionHookDomainMask;
+		return this.latchedExecutionHook !== null;
+	}
+
 	public haltUntilIrq(): void {
 		if (this.interruptEventPending) {
 			this.interruptEventPending = false;
@@ -1651,16 +1674,14 @@ export class CPU {
 		return RunResult.Halted;
 	}
 
-	public runUntilDepthInstrumented(
-		targetDepth: number,
-		instructionBudget: number,
-		executionHook: ExecutionHook,
-		executionDomainMask: ExecutionDomainMask,
-		preMaskableInterruptExecutionDomainMask: ExecutionDomainMask,
-	): RunResult {
+	public runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const baseCycles = BASE_CYCLES;
+		const executionHook = this.latchedExecutionHook!;
+		const executionDomainMask = this.latchedExecutionHookDomainMask;
+		const preMaskableInterruptExecutionDomainMask =
+			this.latchedPreMaskableInterruptExecutionHookDomainMask;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {

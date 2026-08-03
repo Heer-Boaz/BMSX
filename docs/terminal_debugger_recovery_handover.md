@@ -4,12 +4,13 @@ Date: 2026-08-03
 
 Branch: `master`
 
-Current HEAD at the start of the scheduler-ownership follow-up: `f883c509d`
+Current HEAD at the start of the CPU execution-owner correction: `22932a343`
 
-The user committed each preceding recovery step deliberately so later work
-could not accidentally reset or revert unrelated changes. Those commits stay in
-history. This scheduler-ownership correction is a new worktree change on top of
-`f883c509d`; it does not reset or revert a commit.
+The user committed every preceding recovery step, including the earlier
+scheduler follow-up, deliberately so later work could not accidentally reset or
+revert unrelated changes. Those commits stay in history. The current CPU
+execution-owner correction is a new worktree change on top of `22932a343`; it
+does not reset or revert a commit.
 
 ## Hot Resume init execution ownership (2026-08-03)
 
@@ -275,12 +276,12 @@ revisions or init, and already-performed guest writes are not rolled back.
 | Concern | TypeScript representation/owner | C++ representation/owner | Runtime/hot-path effect |
 | --- | --- | --- | --- |
 | Execution domain and PC | raw `ExecutionDomainId`, frame depth and 32-bit PC in CPU/debugger state | raw domain word, frame index and `u32` PC | Ordinary uninstrumented bulk loops contain no debugger hook or source lookup. |
-| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus raw executor domain masks | generic instrumented executor receives mirrored raw normal/pre-maskable-interrupt domain masks | Only the already instrumented loop observes the pre-maskable-interrupt boundary; a zero mask adds no callback and the uninstrumented specialization is unchanged. |
+| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus CPU-owned configured and per-operation-latched raw hook/mask fields | mirrored configured and latched bindings also retain the native callback context | Each public executor operation latches once, then selects a generated/template-specialized normal or instrumented scheduler path before its whole loop. Those paths direct-call separate two-argument CPU entries and contain no per-slice mode branch or hook arguments. Mid-callback configuration changes apply to the next operation. The instrumented CPU entry snapshots the latch; the normal entry never reads hook state. |
 | Physical completion root | `CallFrame.returnToCompletionLatch`; `CPU.readFrameReturnsToCompletionLatch()` and `abortCompletionCall(frameIndex)` | mirrored raw latch bit and exact frame-index operations | Read/abort occur only while preparing fault recovery, never in instruction dispatch. |
 | Init-call batch | debugger-plan-manager LIFO `{ firstFrameIndex, executionDomains[] }` records | none | Created when IDE stages consecutive roots; incomplete prefixes are decoded only during later recovery and records are otherwise pruned on Hot Resume/reboot. Machine code never classifies a batch. |
 | Init dispatch | raw execution-domain word plus raw tooling-function record address in ordinary completion frames | mirrored generic completion-frame capability; native has no Hot Resume caller | IDE stages at the idle boundary; the next normal frame executes it with no Hot Resume branch. |
 | Synchronous host result call | CPU completion frame and completion-value latch | mirrored frame and borrowed latch span | `Runtime.callClosure` remains the owner of `runSuspendedUntilDepth`; Hot Resume is not a caller. The committed physical `cpuHeld()` return remains. |
-| Supervisor exit request | independent host/programmatic `Input` source levels plus one cached wired-OR output; raw status/fault-sequence MMIO reads | no IDE plan; native machine consumes the same physical input/status contract | The input hot getter remains one boolean read. BIOS/system hardware retains exit ownership. |
+| Supervisor exit request | independent host/programmatic `Input` source levels plus one cached wired-OR output; raw sticky status/fault-sequence MMIO reads | no IDE plan; native machine consumes the same physical input/status contract | The input hot getter remains one boolean read. A nested monitor fault preserves the request; only supervisor leave or reset consumes it. |
 | Fault publication | BIOS `SUPERVISOR_FAULT_PUBLISH` command after console/terminal/display commit; controller advances the raw sequence | mirrored raw command bit and `u32` sequence | One command at fault presentation only; no normal-loop polling, delay, string match, or terminal buffer. |
 | Breakpoints and steps | tooling statement maps, raw domain/PC maps, LIFO physical-frame-depth resume suppressions | CPU sees only the generic hook words | No source path, symbol, revision or editor state enters the CPU. |
 | Object/global relocation | tooling object-local slot and prior installed name/layout mapping | installed-image raw register slots | Revision build/install boundary only, not instruction dispatch. |
@@ -297,56 +298,47 @@ revisions or init, and already-performed guest writes are not rolled back.
 - The system controller owns only a raw supervisor-fault publication command.
   BIOS emits it after committing the physical monitor. Neither owner contains
   IDE, revision, source-map, init-batch, or Hot Resume policy.
-- The current follow-up changes no cart, cartlib, or toolchain source. The six
+- The current follow-up changes no BIOS, cart, cartlib, compiler or toolchain
+  source. The six
   committed entry-cart `<init>` declaration changes documented above remain the
-  complete cart-language adoption. The one BIOS change is the generic physical
-  fault-publication boundary.
+  complete cart-language adoption. The committed BIOS fault-publication boundary
+  remains unchanged.
 - No machine-state capture/restore, transactional rollback, corrupt-state
   fallback, compatibility payload, or second guest scheduler was introduced.
 
 ## Live worktree at this audit
 
-`HEAD` remains `f883c509d`; the user's committed baseline has not been reset or
-reverted. The worktree contains this follow-up plus new source/test owner files.
-There are no cart or cartlib changes in the slice.
+`HEAD` remains `22932a343`; all preceding recovery work is committed and has not
+been reset or reverted. The worktree contains only the CPU execution-owner
+correction and the mirrored sticky supervisor-exit request correction. There are
+no cart, cartlib, compiler or tooling-language changes in the slice.
 
 The changed implementation owners are:
 
 ```text
-ide/runtime/hot_resume.ts
-ide/runtime/hot_resume_relocation.ts
 ide/runtime/debugger_state.ts
-ide/runtime/debugger_plans.ts
-ide/commands/**
-ide/cart_editor.ts
-ide/testing/headless_harness.ts
-ide/testing/recording_log_output.ts
-ide/workbench/host_frame.ts
-ide/runtime/aem.ts
-hosts/common/input/manager.ts
 machine/ts/machine/cpu/cpu.ts
+machine/ts/machine/runtime/cpu_executor.ts.in
 machine/ts/machine/runtime/cpu_executor.ts
 machine/ts/machine/devices/system/controller.ts
-machine/ts/spec/bmsx/io.ts
 machine/cpp/machine/cpu/cpu.{h,cpp}
 machine/cpp/machine/runtime/cpu_executor.{h,cpp}
-machine/cpp/machine/devices/system/controller.{h,cpp}
-machine/cpp/spec/bmsx/io.h
-machine/bios/shell/monitor.lua
+machine/cpp/machine/devices/system/controller.cpp
+scripts/runtime/generate_cpu_executor_specializations.mjs
+package.json
 ```
 
 The changed existing contract scenarios are:
 
 ```text
-tests/ide/hot_resume_entry_edit.idetest.js
 tests/lua/cpu_interrupt_state.test.ts
-tests/lua/debugger_plans.test.ts
-tests/lua/input_manager.test.ts
 tests/lua/system_controller.test.ts
 tests/cpp/cpu_supervisor_test.cpp
 tests/cpp/system_controller_test.cpp
 ```
 
+`cpu_executor.ts` is the checked-in runtime source generated from the adjacent
+single mode template; `audit:core-parity` rejects a stale generated copy.
 Generated files under `dist/` are build products, not source-of-truth changes.
 `docs/open_architecture_slices.md` is unchanged.
 
@@ -355,14 +347,22 @@ Generated files under `dist/` are build products, not source-of-truth changes.
 The final live slice has the following green evidence:
 
 - forced `npm run test:hot-resume`: **89 assertions**;
-- full Lua suite: **540 total, 539 passed, 1 skipped**;
-- rompacker: **96/96**;
-- touched C++ CPU/supervisor/system-controller targets: passed;
+- full Lua suite: **543 total, 542 passed, 1 skipped**;
+- focused mirrored CPU/system tests: **56/56**;
+- C++ CPU-supervisor and system-controller targets: **2/2**;
+- machine and IDE TypeScript checks, indentation, generated-source/core-parity,
+  and architecture-boundary audits: passed;
 - Browser Studio debug product build: passed;
-- `monitor_fault_probe`: **3 assertions**, with the physical BIOS terminal and
-  host log preceding explicit IDE presentation;
-- Pietious real headless enter-world scenario: passed;
-- `git diff --check`: passed at the documentation audit boundary.
+- real headless system-print/first-terminal-row scenario: passed;
+- Release object inspection: the public boundary copies the configured binding
+  into its CPU latch once; the normal scheduler specializations relocate only to
+  the two-argument `CPU::runUntilDepth`, the instrumented specializations only to
+  `CPU::runUntilDepthInstrumented`, and the normal interpreter specialization
+  has no execution-hook load, operand or callback;
+- mirrored regressions prove that one public selection covers multiple scheduler
+  slices and that a hook which clears its configuration does not change the
+  active latch until the next public operation;
+- `git diff --check`: passed.
 
 The 89-assertion IDE scenario proves both scheduler ownership and live fault
 repair: phase one does not install media, leave supervisor mode, discard the

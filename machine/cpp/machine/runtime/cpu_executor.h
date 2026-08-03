@@ -26,17 +26,6 @@ enum class CpuSuspendedRunResult {
 class CpuExecutionState {
 public:
 	void reset();
-	void setExecutionHook(
-		ExecutionHook hook,
-		void* context,
-		ExecutionDomainMask domainMask,
-		ExecutionDomainMask preMaskableInterruptDomainMask = 0
-	) {
-		m_executionHook = hook;
-		m_executionHookContext = context;
-		m_executionHookDomainMask = domainMask;
-		m_preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
-	}
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
@@ -52,13 +41,16 @@ private:
 		Halted,
 	};
 
+	template <bool Instrumented>
+	CpuExecutionResult runWithBudgetMode(Runtime& runtime, FrameState& frameState);
+	template <bool Instrumented>
+	InstructionStepResult runInstructionMode(Runtime& runtime, FrameState& frameState);
+	template <bool Instrumented>
+	CpuSuspendedRunResult runSuspendedUntilDepthMode(Runtime& runtime, int targetDepth);
+	template <bool Instrumented>
 	CpuSliceResult runSlice(Runtime& runtime, FrameState& frameState, int maximumCpuCycles);
 	i64 m_sliceCycleBudgetRemaining = 0;
 	bool m_instructionRunActive = false;
-	ExecutionHook m_executionHook = nullptr;
-	void* m_executionHookContext = nullptr;
-	ExecutionDomainMask m_executionHookDomainMask = 0;
-	ExecutionDomainMask m_preMaskableInterruptExecutionHookDomainMask = 0;
 };
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles);

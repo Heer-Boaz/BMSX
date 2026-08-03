@@ -19,6 +19,7 @@
 #include "support/cartridge_fixture.h"
 
 #include <array>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -351,6 +352,56 @@ void testSupervisorFaultPublicationBoundary() {
 	require(
 		memory.readMappedU32LE(bmsx::IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 1u,
 		"firmware publication advances the physical fault sequence"
+	);
+}
+
+void testNestedSupervisorFaultPreservesExitRequest() {
+	SystemRuntimeFixture fixture;
+	bmsx::Machine& machine = fixture.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	machine.systemController.requestSupervisorLineEdge();
+	for (bmsx::u32 serviceCount = 0u;
+		serviceCount < 16u
+			&& machine.systemController.captureState().supervisorPhase
+				!= bmsx::SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
+		serviceCount += 1u) {
+		const bmsx::i64 deadline = machine.scheduler.nextDeadline();
+		require(
+			deadline != std::numeric_limits<bmsx::i64>::max(),
+			"supervisor entry retains a device-service deadline"
+		);
+		machine.scheduler.advanceTo(deadline);
+		while (machine.scheduler.hasDueTimer()) {
+			machine.runDeviceService(machine.scheduler.popDueTimer());
+		}
+	}
+	require(
+		machine.systemController.captureState().supervisorPhase
+			== bmsx::SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR,
+		"supervisor entry reaches the exception-vector boundary"
+	);
+	require(machine.cpu.enterPendingInterrupt(), "pending supervisor NMI enters the system exception root");
+	memory.writeMappedU32LE(
+		bmsx::IO_SYS_CONTROL,
+		bmsx::SYS_CONTROL_SUPERVISOR_ENTER
+	);
+	machine.systemController.requestSupervisorLineEdge();
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_STATUS)
+			== (bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
+				| bmsx::SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
+				| bmsx::SYS_STATUS_SUPERVISOR_RESUMABLE),
+		"second supervisor edge publishes the resumable monitor exit request"
+	);
+
+	memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_SUPERVISOR_FAULT);
+
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_STATUS)
+			== (bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
+				| bmsx::SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
+				| bmsx::SYS_STATUS_SUPERVISOR_RESUMABLE),
+		"nested supervisor fault preserves the pending exit request"
 	);
 }
 
@@ -890,6 +941,7 @@ void testRuntimeRestorePreservesInFlightFrameBudget() {
 int main() {
 	testResetCommandLatch();
 	testSupervisorFaultPublicationBoundary();
+	testNestedSupervisorFaultPreservesExitRequest();
 	testSystemTimingRegisters();
 	testSystemPrintRegisters();
 	testRuntimeSystemRebootBoundary();

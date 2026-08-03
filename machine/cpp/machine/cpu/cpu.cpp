@@ -1955,14 +1955,14 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
-	int instructionBudget,
-	ExecutionHook executionHook,
-	void* executionHookContext,
-	ExecutionDomainMask executionDomainMask,
-	ExecutionDomainMask preMaskableInterruptExecutionDomainMask
+	int instructionBudget
 ) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
+	ExecutionHookBinding hookBinding;
+	if constexpr (Instrumented) {
+		hookBinding = m_latchedExecutionHookBinding;
+	}
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
@@ -2020,10 +2020,10 @@ dispatch_loop_check:
 			&& m_irqController.hasAssertedMaskableInterruptLine()) {
 			CallFrame* interruptedFrame = frames.back().get();
 			Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
-			if ((preMaskableInterruptExecutionDomainMask
+			if ((hookBinding.preMaskableInterruptDomainMask
 				& executionDomainBit(interruptedImage->executionDomainId)) != 0u
-				&& executionHook(
-					executionHookContext,
+				&& hookBinding.hook(
+					hookBinding.context,
 					interruptedImage->executionDomainId,
 					interruptedFrame->pc
 				)) {
@@ -2050,8 +2050,8 @@ dispatch_loop_check:
 			return RunResult::Halted;
 		}
 		if constexpr (Instrumented) {
-			if ((executionDomainMask & executionDomainBit(image->executionDomainId)) != 0u
-				&& executionHook(executionHookContext, image->executionDomainId, pc)) {
+			if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
+				&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
 				return RunResult::ExecutionStopped;
 			}
 		}
@@ -2164,39 +2164,20 @@ dispatch_continue:
 	}
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- explicit normal/instrumented entries select compile-time interpreter specializations without a hot-path mode branch.
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	if (targetDepth == 0) {
-		return runLoop<true, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u, 0u);
+		return runLoop<true, false>(targetDepth, instructionBudget);
 	}
-	return runLoop<false, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u, 0u);
+	return runLoop<false, false>(targetDepth, instructionBudget);
 }
 
-RunResult CPU::runUntilDepthInstrumented(
-	int targetDepth,
-	int instructionBudget,
-	ExecutionHook executionHook,
-	void* executionHookContext,
-	ExecutionDomainMask executionDomainMask,
-	ExecutionDomainMask preMaskableInterruptExecutionDomainMask
-) {
+// disable-next-line normalized_ast_duplicate_pattern -- explicit normal/instrumented entries select compile-time interpreter specializations without a hot-path mode branch.
+RunResult CPU::runUntilDepthInstrumented(int targetDepth, int instructionBudget) {
 	if (targetDepth == 0) {
-		return runLoop<true, true>(
-			targetDepth,
-			instructionBudget,
-			executionHook,
-			executionHookContext,
-			executionDomainMask,
-			preMaskableInterruptExecutionDomainMask
-		);
+		return runLoop<true, true>(targetDepth, instructionBudget);
 	}
-	return runLoop<false, true>(
-		targetDepth,
-		instructionBudget,
-		executionHook,
-		executionHookContext,
-		executionDomainMask,
-		preMaskableInterruptExecutionDomainMask
-	);
+	return runLoop<false, true>(targetDepth, instructionBudget);
 }
 
 void CPU::unwindToDepth(int targetDepth) {

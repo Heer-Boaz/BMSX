@@ -1773,6 +1773,8 @@ can preempt a cart IRQ root that reached supervisor mode immediately before the
 common device fence. The system controller emits at most one NMI for that
 transition. A later supervisor-request edge in an active resumable monitor sets
 the supervisor exit-request status bit instead, so monitor entry cannot recurse.
+That request is a sticky hardware event: a nested synchronous monitor fault
+retains it, and only the eventual supervisor-leave command or reset consumes it.
 
 NMI has one fixed hardware return bank for the interrupted `CAUSE`, `EPC`, and
 `BAD_ADDRESS` words. The exception-root frame records that it owns this bank;
@@ -1919,6 +1921,11 @@ System control is a small privileged registerfile rather than a host callback:
 | --- | ---: | --- |
 | `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, capture and begin synchronous-fault supervisor entry `0x8`, publish the presented synchronous fault `0x10`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
 | `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
+
+These are two independent hardware words, not one shared state enum:
+`SYS_CONTROL` bits are write strobes and `SYS_STATUS` bits are retained status
+latches. Their bit positions therefore have no cross-register encoding
+relationship and carry no tooling state.
 
 The system controller publishes each accepted synchronous supervisor fault in
 one read-only raw registerfile:
@@ -2192,7 +2199,8 @@ length tables.
 Monitor exit is the reverse hardware boundary. A new supervisor-request edge
 sets `SYS_STATUS.EXIT_REQUESTED`; firmware observes it on VBlank and writes
 `SYS_CONTROL.LEAVE`. `CONT` issues the same leave command with the saved `EPC`
-unchanged. `LEAVING` holds CPU execution
+unchanged. A nested synchronous monitor fault does not clear the sticky exit
+request. `LEAVING` holds CPU execution
 while DMA closes admission and drains its admitted block, after which GX closes
 and drains supervisor GP0 ingress. IMGDEC and geometry have remained quiesced
 for the complete monitor context and are not supervisor-side producers. Hardware
@@ -3680,7 +3688,25 @@ does not abort editor shutdown or workspace reconfiguration.
 Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal
 path and contains no per-instruction debugger branch or callback. An installed
-hook selects a separate instrumented bulk-loop specialization. That loop checks
+hook, callback context and the ordinary/pre-maskable-interrupt raw domain masks
+form one CPU-owned configured execution-hook binding. Each public CPU-executor
+operation latches that binding and selects its execution mode once before
+entering its scheduler loop. Configuration changes made by a callback therefore
+take effect at the next public operation, never halfway through the selected
+path. C++ compiles
+the complete normal and instrumented scheduler paths as template
+specializations. TypeScript generates the corresponding paired methods from one
+checked-in template; the generated normal path directly calls
+`runUntilDepth()` and the generated instrumented path directly calls
+`runUntilDepthInstrumented()`. Neither specialized slice loop reads hook state,
+branches on instrumentation, passes callback fields, or allocates a dispatch
+object. The CPU's instrumented entry snapshots its CPU-owned latched binding
+before its bulk interpreter loop; the separate normal entry never reads hook
+state. The
+only dynamic mode branch is at the public executor boundary, outside the entire
+scheduler loop. The TypeScript generator's `--check` gate is part of the core
+parity audit, so the two emitted scheduler paths cannot drift from their one
+source template. The instrumented bulk-loop specialization checks
 the selected raw execution-domain mask immediately before each instruction and
 exposes only the current raw execution-domain word and instruction PC; calls,
 returns, interrupts, and domain changes remain inside the same machine slice

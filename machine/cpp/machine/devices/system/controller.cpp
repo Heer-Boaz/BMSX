@@ -250,7 +250,6 @@ void SystemController::enterSupervisorFault() {
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, m_cpu.readLuaFaultReasonWord());
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, m_cpu.readExceptionDomainWord());
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
-		m_supervisorExitRequested = false;
 		writeStatusIo();
 		return;
 	}

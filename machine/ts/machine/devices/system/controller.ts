@@ -317,7 +317,6 @@ export class SystemController {
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, this.cpu.readLuaFaultReasonWord());
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, this.cpu.readExceptionDomainWord());
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
-			this.supervisorExitRequested = false;
 			this.writeStatusIo();
 			return;
 		}

@@ -199,6 +199,24 @@ const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
 	let cpuSliceActive = false;
+	const scheduler = {
+		nowCycles: 0,
+		hasDueTimer: () => false,
+		nextDeadline: () => Number.MAX_SAFE_INTEGER,
+		isCpuSliceActive: () => cpuSliceActive,
+		beginCpuSlice: () => {
+			cpuSliceActive = true;
+			if (sliceStats) {
+				sliceStats.begin += 1;
+			}
+		},
+		endCpuSlice: () => {
+			cpuSliceActive = false;
+			if (sliceStats) {
+				sliceStats.end += 1;
+			}
+		},
+	};
 	const runtime = {
 		machine: {
 			cpu,
@@ -207,27 +225,12 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 			systemController: {
 				cpuHeld: () => false,
 				takeResetRequest: () => false,
-			},
-			gxGpu: { backendReadbackBlocksMachine: () => false },
-				scheduler: {
-					nowCycles: 0,
-					hasDueTimer: () => false,
-					nextDeadline: () => Number.MAX_SAFE_INTEGER,
-					isCpuSliceActive: () => cpuSliceActive,
-					beginCpuSlice: () => {
-						cpuSliceActive = true;
-						if (sliceStats) {
-						sliceStats.begin += 1;
-					}
 				},
-					endCpuSlice: () => {
-						cpuSliceActive = false;
-					if (sliceStats) {
-						sliceStats.end += 1;
-					}
-				},
+				gxGpu: { backendReadbackBlocksMachine: () => false },
+			scheduler,
+			advanceDevices: (cycles: number) => {
+				scheduler.nowCycles += cycles;
 			},
-			advanceDevices: () => {},
 		},
 		vblank: {
 			tickCompleted: false,
@@ -315,11 +318,15 @@ test('instrumented executor observes a selected domain across cross-domain CALL 
 	const cartCallPc = cartEntryPc + 2 * INSTRUCTION_BYTES;
 	const cartReturnPc = cartEntryPc + 3 * INSTRUCTION_BYTES;
 	const visitedPcs: number[] = [];
-	cpuExecution.setExecutionHook((executionDomainId, pc) => {
-		assert.equal(executionDomainId, 0);
-		visitedPcs.push(pc);
-		return pc === cartReturnPc;
-	}, executionDomainBit(0));
+	cpu.setExecutionHook(
+		(executionDomainId, pc) => {
+			assert.equal(executionDomainId, 0);
+			visitedPcs.push(pc);
+			return pc === cartReturnPc;
+		},
+		executionDomainBit(0),
+		0,
+	);
 	const state = makeFrameState();
 
 	assert.equal(cpuExecution.runWithBudget(state), CpuExecutionResult.ExecutionStopped);
@@ -329,13 +336,69 @@ test('instrumented executor observes a selected domain across cross-domain CALL 
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 });
 
+test('CPU entrypoints remain stable and the instrumented entry snapshots its binding', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, runtime } = makeCrossDomainHookRuntime(sliceStats);
+	runtime.machine.scheduler.nextDeadline = () => runtime.machine.scheduler.nowCycles + 1;
+	const runUntilDepth = cpu.runUntilDepth;
+	const runUntilDepthInstrumented = cpu.runUntilDepthInstrumented;
+	let hookCalls = 0;
+	cpu.setExecutionHook(
+		() => {
+			hookCalls += 1;
+			if (hookCalls === 1) {
+				cpu.setExecutionHook(null, 0, 0);
+				return false;
+			}
+			return true;
+		},
+		executionDomainBit(0),
+		0,
+	);
+
+	assert.equal(cpu.runUntilDepth, runUntilDepth);
+	assert.equal(cpu.runUntilDepthInstrumented, runUntilDepthInstrumented);
+	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(hookCalls, 2);
+	assert.deepEqual(sliceStats, { begin: 2, end: 2 });
+
+	assert.equal(cpu.runUntilDepth, runUntilDepth);
+	assert.equal(cpu.runUntilDepthInstrumented, runUntilDepthInstrumented);
+	assert.notEqual(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(hookCalls, 2);
+});
+
+test('executor selects instrumentation once before a multi-slice scheduler run', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
+	const cartEntryPc = images.cartImage.functions[0].codeAddress;
+	const cartReturnPc = cartEntryPc + 3 * INSTRUCTION_BYTES;
+	runtime.machine.scheduler.nextDeadline = () => runtime.machine.scheduler.nowCycles + 1;
+	let selectionCount = 0;
+	const latchExecutionHook = cpu.latchExecutionHook.bind(cpu);
+	cpu.latchExecutionHook = () => {
+		selectionCount += 1;
+		return latchExecutionHook();
+	};
+	cpu.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === 0 && pc === cartReturnPc,
+		executionDomainBit(0),
+		0,
+	);
+
+	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(selectionCount, 1);
+	assert.ok(sliceStats.begin > 1);
+	assert.equal(sliceStats.end, sliceStats.begin);
+});
+
 test('instrumented execution fence stops before a pending IRQ is delivered', () => {
 	const sliceStats = { begin: 0, end: 0 };
 	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
 	const cartEntryPc = images.cartImage.functions[0].codeAddress;
 	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
-	cpuExecution.setExecutionHook(
+	cpu.setExecutionHook(
 		(executionDomainId, pc) => executionDomainId === 0 && pc === cartEntryPc,
 		executionDomainBit(0),
 		executionDomainBit(0),
@@ -353,7 +416,7 @@ test('instrumented maskable-interrupt fence does not delay a pending NMI', () =>
 	const { cpu, cpuExecution, images } = makeCrossDomainHookRuntime(sliceStats);
 	const cartEntryPc = images.cartImage.functions[0].codeAddress;
 	cpu.requestNonMaskableInterrupt();
-	cpuExecution.setExecutionHook(
+	cpu.setExecutionHook(
 		(executionDomainId, pc) => executionDomainId === 0 && pc === cartEntryPc,
 		executionDomainBit(0),
 		executionDomainBit(0),
@@ -373,9 +436,10 @@ test('suspended executor keeps an address-based completion call pending at a deb
 	const systemLeafAddress = images.systemSymbols.functionAddresses[2];
 	const systemLeafPc = images.systemImage.functions[2].codeAddress;
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, systemLeafAddress);
-	cpuExecution.setExecutionHook(
+	cpu.setExecutionHook(
 		(executionDomainId, pc) => executionDomainId === -1 && pc === systemLeafPc,
 		SYSTEM_EXECUTION_DOMAIN_MASK,
+		0,
 	);
 
 	assert.equal(
@@ -386,7 +450,7 @@ test('suspended executor keeps an address-based completion call pending at a deb
 	assert.equal(cpu.getFrameDepth(), baseDepth + 1);
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 
-	cpuExecution.setExecutionHook(null, 0);
+	cpu.setExecutionHook(null, 0, 0);
 	assert.equal(
 		cpuExecution.runSuspendedUntilDepth(baseDepth),
 		CpuSuspendedRunResult.Completed,
@@ -696,9 +760,10 @@ test('suspended completion execution runs above a parked frame and re-exposes th
 	assert.equal(suspendedState.haltedUntilIrqFrameDepth, baseDepth);
 	cpu.restoreRuntimeState(suspendedState);
 
-	runtime.cpuExecution.setExecutionHook(
+	runtime.machine.cpu.setExecutionHook(
 		(executionDomainId, pc) => executionDomainId === 0 && pc === completionPc,
 		executionDomainBit(0),
+		0,
 	);
 	assert.equal(
 		runtime.cpuExecution.runSuspendedUntilDepth(baseDepth),
@@ -707,7 +772,7 @@ test('suspended completion execution runs above a parked frame and re-exposes th
 	assert.equal(cpu.completionCallPending(), true);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
 
-	runtime.cpuExecution.setExecutionHook(null, 0);
+	runtime.machine.cpu.setExecutionHook(null, 0, 0);
 	assert.equal(
 		runtime.cpuExecution.runSuspendedUntilDepth(baseDepth),
 		CpuSuspendedRunResult.Completed,
@@ -797,9 +862,10 @@ test('Runtime callClosure leaves its completion frame pending when the shared ex
 	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
 	const runtime = makeRuntime(cpu, irqController);
 	const closurePc = COMPLETION_LATCH_TEST_IMAGE.image.functions[1].codeAddress;
-	runtime.cpuExecution.setExecutionHook(
+	runtime.machine.cpu.setExecutionHook(
 		(executionDomainId, pc) => executionDomainId === -1 && pc === closurePc,
 		SYSTEM_EXECUTION_DOMAIN_MASK,
+		0,
 	);
 	cpu.instructionBudgetRemaining = 73;
 
@@ -808,7 +874,7 @@ test('Runtime callClosure leaves its completion frame pending when the shared ex
 	assert.equal(runtime.completionCallPending(), true);
 	assert.equal(cpu.readFramePc(0), closurePc);
 
-	runtime.cpuExecution.setExecutionHook(null, 0);
+	runtime.machine.cpu.setExecutionHook(null, 0, 0);
 	assert.equal(
 		runtime.cpuExecution.runSuspendedUntilDepth(0),
 		CpuSuspendedRunResult.Completed,

@@ -59,6 +59,13 @@ enum class RunResult {
 
 using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
 
+struct ExecutionHookBinding {
+	ExecutionHook hook;
+	void* context;
+	ExecutionDomainMask domainMask;
+	ExecutionDomainMask preMaskableInterruptDomainMask;
+};
+
 enum class CpuValueStateTag : uint8_t {
 	Nil,
 	False,
@@ -290,15 +297,15 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
+	void setExecutionHook(ExecutionHookBinding binding) {
+		m_executionHookBinding = binding;
+	}
+	bool latchExecutionHook() {
+		m_latchedExecutionHookBinding = m_executionHookBinding;
+		return m_latchedExecutionHookBinding.hook != nullptr;
+	}
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
-	RunResult runUntilDepthInstrumented(
-		int targetDepth,
-		int instructionBudget,
-		ExecutionHook executionHook,
-		void* executionHookContext,
-		ExecutionDomainMask executionDomainMask,
-		ExecutionDomainMask preMaskableInterruptExecutionDomainMask = 0
-	);
+	RunResult runUntilDepthInstrumented(int targetDepth, int instructionBudget);
 	void collectHeap();
 	class LocalRootsScope {
 	public:
@@ -361,11 +368,7 @@ private:
 	template <bool RootBoundary, bool Instrumented>
 	RunResult runLoop(
 		int targetDepth,
-		int instructionBudget,
-		ExecutionHook executionHook,
-		void* executionHookContext,
-		ExecutionDomainMask executionDomainMask,
-		ExecutionDomainMask preMaskableInterruptExecutionDomainMask
+		int instructionBudget
 	);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
@@ -496,6 +499,8 @@ private:
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
+	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
+	ExecutionHookBinding m_latchedExecutionHookBinding{nullptr, nullptr, 0u, 0u};
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

@@ -69,14 +69,22 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 	}
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- public boundaries latch once and select direct compile-time scheduler specializations.
 CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
+	return runtime.machine.cpu.latchExecutionHook()
+		? runWithBudgetMode<true>(runtime, frameState)
+		: runWithBudgetMode<false>(runtime, frameState);
+}
+
+template <bool Instrumented>
+CpuExecutionResult CpuExecutionState::runWithBudgetMode(Runtime& runtime, FrameState& frameState) {
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	m_instructionRunActive = false;
 	m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool running = true;
 	while (running) {
-		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
+		switch (runSlice<Instrumented>(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
 			case CpuSliceResult::InstructionYielded:
@@ -106,12 +114,20 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	return result;
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- public boundaries latch once and select direct compile-time scheduler specializations.
 InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameState& frameState) {
+	return runtime.machine.cpu.latchExecutionHook()
+		? runInstructionMode<true>(runtime, frameState)
+		: runInstructionMode<false>(runtime, frameState);
+}
+
+template <bool Instrumented>
+InstructionStepResult CpuExecutionState::runInstructionMode(Runtime& runtime, FrameState& frameState) {
 	if (!m_instructionRunActive) {
 		m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
 		m_instructionRunActive = true;
 	}
-	const CpuSliceResult result = runSlice(runtime, frameState, 1);
+	const CpuSliceResult result = runSlice<Instrumented>(runtime, frameState, 1);
 	auto& cpu = runtime.machine.cpu;
 	const bool runCompleted = result == CpuSliceResult::Advanced
 		|| result == CpuSliceResult::Blocked
@@ -142,7 +158,18 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 	__builtin_unreachable();
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- public boundaries latch once and select direct compile-time scheduler specializations.
 CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
+	Runtime& runtime,
+	int targetDepth
+) {
+	return runtime.machine.cpu.latchExecutionHook()
+		? runSuspendedUntilDepthMode<true>(runtime, targetDepth)
+		: runSuspendedUntilDepthMode<false>(runtime, targetDepth);
+}
+
+template <bool Instrumented>
+CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepthMode(
 	Runtime& runtime,
 	int targetDepth
 ) {
@@ -189,16 +216,11 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 		RunResult result;
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = m_executionHook == nullptr
-				? cpu.runUntilDepth(targetDepth, sliceBudget)
-				: cpu.runUntilDepthInstrumented(
-					targetDepth,
-					sliceBudget,
-					m_executionHook,
-					m_executionHookContext,
-					m_executionHookDomainMask,
-					m_preMaskableInterruptExecutionHookDomainMask
-				);
+			if constexpr (Instrumented) {
+				result = cpu.runUntilDepthInstrumented(targetDepth, sliceBudget);
+			} else {
+				result = cpu.runUntilDepth(targetDepth, sliceBudget);
+			}
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;
@@ -265,6 +287,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	return CpuSuspendedRunResult::Completed;
 }
 
+template <bool Instrumented>
 CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	Runtime& runtime,
 	FrameState& frameState,
@@ -317,16 +340,11 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		RunResult result;
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = m_executionHook == nullptr
-				? cpu.runUntilDepth(0, sliceBudget)
-				: cpu.runUntilDepthInstrumented(
-					0,
-					sliceBudget,
-					m_executionHook,
-					m_executionHookContext,
-					m_executionHookDomainMask,
-					m_preMaskableInterruptExecutionHookDomainMask
-				);
+			if constexpr (Instrumented) {
+				result = cpu.runUntilDepthInstrumented(0, sliceBudget);
+			} else {
+				result = cpu.runUntilDepth(0, sliceBudget);
+			}
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;

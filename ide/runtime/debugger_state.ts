@@ -1,4 +1,4 @@
-import type { ExecutionHook } from '../../machine/ts/machine/runtime/cpu_executor';
+import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	ALL_EXECUTION_DOMAINS_MASK,
@@ -178,10 +178,8 @@ function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
 		);
 	}
 	domainMask |= state.plans.executionDomainMask;
-	state.runtime.cpuExecution.setExecutionHook(
-		domainMask !== 0
-			? state.executionHook
-			: null,
+	state.runtime.machine.cpu.setExecutionHook(
+		domainMask !== 0 ? state.executionHook : null,
 		domainMask,
 		state.plans.preMaskableInterruptDomainMask,
 	);

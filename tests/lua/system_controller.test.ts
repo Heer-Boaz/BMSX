@@ -8,6 +8,7 @@ import {
 	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
+	IO_SYS_STATUS,
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_TIME_MS,
 	IO_CART_SELECT,
@@ -15,11 +16,16 @@ import {
 	IO_IRQ_MASK,
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
+	SYS_CONTROL_SUPERVISOR_ENTER,
 	SYS_CONTROL_SUPERVISOR_FAULT,
 	SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
 	SYS_PRINT_BUFFER_BYTES,
+	SYS_STATUS_SUPERVISOR_ACTIVE,
+	SYS_STATUS_SUPERVISOR_EXIT_REQUESTED,
+	SYS_STATUS_SUPERVISOR_RESUMABLE,
 } from '../../machine/ts/spec/bmsx/io';
 import { Machine } from '../../machine/ts/machine/machine';
+import { SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR } from '../../machine/ts/machine/devices/system/controller';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import {
 	GX_GPU_PCRTC_SMODE1_LOW,
@@ -161,6 +167,52 @@ test('supervisor fault capture is published only at the firmware presentation bo
 	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0);
 	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH);
 	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 1);
+});
+
+test('a nested supervisor fault preserves the latched exit request', () => {
+	const images = linkRawTestBlua32Pair(
+		makeExecutionSelectorSystemSource(),
+		makeClosureCartSource(1, 'nested_fault_cart.lua', true),
+	);
+	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
+	runtime.boot();
+	const machine = runtime.machine;
+	const memory = machine.memory;
+	machine.systemController.requestSupervisorLineEdge();
+	for (let serviceCount = 0;
+		serviceCount < 16
+			&& machine.systemController.captureState().supervisorPhase
+				!== SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
+		serviceCount += 1) {
+		const deadline = machine.scheduler.nextDeadline();
+		assert.notEqual(deadline, Number.MAX_SAFE_INTEGER);
+		machine.scheduler.advanceTo(deadline);
+		while (machine.scheduler.hasDueTimer()) {
+			machine.runDeviceService(machine.scheduler.popDueTimer());
+		}
+	}
+	assert.equal(
+		machine.systemController.captureState().supervisorPhase,
+		SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR,
+	);
+	assert.equal(machine.cpu.enterPendingInterrupt(), true);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_ENTER);
+	machine.systemController.requestSupervisorLineEdge();
+	assert.equal(
+		memory.readMappedU32LE(IO_SYS_STATUS),
+		SYS_STATUS_SUPERVISOR_ACTIVE
+			| SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
+			| SYS_STATUS_SUPERVISOR_RESUMABLE,
+	);
+
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+
+	assert.equal(
+		memory.readMappedU32LE(IO_SYS_STATUS),
+		SYS_STATUS_SUPERVISOR_ACTIVE
+			| SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
+			| SYS_STATUS_SUPERVISOR_RESUMABLE,
+	);
 });
 
 test('system timing registers consume scheduler and PCRTC device state without Runtime mappings', () => {
