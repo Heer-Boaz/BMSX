@@ -4,13 +4,11 @@ Date: 2026-08-03
 
 Branch: `master`
 
-Current HEAD at the start of the CPU execution-owner correction: `22932a343`
-
 The user committed every preceding recovery step, including the earlier
 scheduler follow-up, deliberately so later work could not accidentally reset or
-revert unrelated changes. Those commits stay in history. The current CPU
-execution-owner correction is a new worktree change on top of `22932a343`; it
-does not reset or revert a commit.
+revert unrelated changes. Those commits stay in history. Continue from the live
+checkout and never reset or revert them based on hashes or worktree descriptions
+in this handover.
 
 ## Hot Resume init execution ownership (2026-08-03)
 
@@ -276,7 +274,7 @@ revisions or init, and already-performed guest writes are not rolled back.
 | Concern | TypeScript representation/owner | C++ representation/owner | Runtime/hot-path effect |
 | --- | --- | --- | --- |
 | Execution domain and PC | raw `ExecutionDomainId`, frame depth and 32-bit PC in CPU/debugger state | raw domain word, frame index and `u32` PC | Ordinary uninstrumented bulk loops contain no debugger hook or source lookup. |
-| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus CPU-owned configured and per-operation-latched raw hook/mask fields | mirrored configured and latched bindings also retain the native callback context | Each public executor operation latches once, then selects a generated/template-specialized normal or instrumented scheduler path before its whole loop. Those paths direct-call separate two-argument CPU entries and contain no per-slice mode branch or hook arguments. Mid-callback configuration changes apply to the next operation. The instrumented CPU entry snapshots the latch; the normal entry never reads hook state. |
+| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus one CPU-owned raw hook/mask binding | mirrored `ExecutionHookBinding` retains the native callback context and raw masks | The shared scheduler calls one CPU entry with only depth and budget. That entry checks the binding once before each bulk interpreter burst and selects its normal or instrumented specialization. The instrumented burst snapshots the binding, so hook-side reconfiguration affects only the next burst; the normal specialization never reads it. There is no scheduler mode branch, indirect strategy call or callback argument bundle. |
 | Physical completion root | `CallFrame.returnToCompletionLatch`; `CPU.readFrameReturnsToCompletionLatch()` and `abortCompletionCall(frameIndex)` | mirrored raw latch bit and exact frame-index operations | Read/abort occur only while preparing fault recovery, never in instruction dispatch. |
 | Init-call batch | debugger-plan-manager LIFO `{ firstFrameIndex, executionDomains[] }` records | none | Created when IDE stages consecutive roots; incomplete prefixes are decoded only during later recovery and records are otherwise pruned on Hot Resume/reboot. Machine code never classifies a batch. |
 | Init dispatch | raw execution-domain word plus raw tooling-function record address in ordinary completion frames | mirrored generic completion-frame capability; native has no Hot Resume caller | IDE stages at the idle boundary; the next normal frame executes it with no Hot Resume branch. |
@@ -298,71 +296,30 @@ revisions or init, and already-performed guest writes are not rolled back.
 - The system controller owns only a raw supervisor-fault publication command.
   BIOS emits it after committing the physical monitor. Neither owner contains
   IDE, revision, source-map, init-batch, or Hot Resume policy.
-- The current follow-up changes no BIOS, cart, cartlib, compiler or toolchain
-  source. The six
+- The execution-owner follow-up changes no BIOS, cart, cartlib, compiler or
+  toolchain source. The six
   committed entry-cart `<init>` declaration changes documented above remain the
   complete cart-language adoption. The committed BIOS fault-publication boundary
   remains unchanged.
 - No machine-state capture/restore, transactional rollback, corrupt-state
   fallback, compatibility payload, or second guest scheduler was introduced.
 
-## Live worktree at this audit
+## Continuation and validation gates
 
-`HEAD` remains `22932a343`; all preceding recovery work is committed and has not
-been reset or reverted. The worktree contains only the CPU execution-owner
-correction and the mirrored sticky supervisor-exit request correction. There are
-no cart, cartlib, compiler or tooling-language changes in the slice.
+Inspect the live HEAD and worktree before every continuation; this document does
+not pin either. The CPU execution implementation has one scheduler source in
+each runtime. Do not restore the deleted TypeScript generator/template pair or
+duplicate the scheduler merely to specialize CPU instrumentation.
 
-The changed implementation owners are:
-
-```text
-ide/runtime/debugger_state.ts
-machine/ts/machine/cpu/cpu.ts
-machine/ts/machine/runtime/cpu_executor.ts.in
-machine/ts/machine/runtime/cpu_executor.ts
-machine/ts/machine/devices/system/controller.ts
-machine/cpp/machine/cpu/cpu.{h,cpp}
-machine/cpp/machine/runtime/cpu_executor.{h,cpp}
-machine/cpp/machine/devices/system/controller.cpp
-scripts/runtime/generate_cpu_executor_specializations.mjs
-package.json
-```
-
-The changed existing contract scenarios are:
-
-```text
-tests/lua/cpu_interrupt_state.test.ts
-tests/lua/system_controller.test.ts
-tests/cpp/cpu_supervisor_test.cpp
-tests/cpp/system_controller_test.cpp
-```
-
-`cpu_executor.ts` is the checked-in runtime source generated from the adjacent
-single mode template; `audit:core-parity` rejects a stale generated copy.
-Generated files under `dist/` are build products, not source-of-truth changes.
-`docs/open_architecture_slices.md` is unchanged.
-
-## Current validation evidence
-
-The final live slice has the following green evidence:
-
-- forced `npm run test:hot-resume`: **89 assertions**;
-- full Lua suite: **543 total, 542 passed, 1 skipped**;
-- focused mirrored CPU/system tests: **56/56**;
-- C++ CPU-supervisor and system-controller targets: **2/2**;
-- machine and IDE TypeScript checks, indentation, generated-source/core-parity,
-  and architecture-boundary audits: passed;
-- Browser Studio debug product build: passed;
-- real headless system-print/first-terminal-row scenario: passed;
-- Release object inspection: the public boundary copies the configured binding
-  into its CPU latch once; the normal scheduler specializations relocate only to
-  the two-argument `CPU::runUntilDepth`, the instrumented specializations only to
-  `CPU::runUntilDepthInstrumented`, and the normal interpreter specialization
-  has no execution-hook load, operand or callback;
-- mirrored regressions prove that one public selection covers multiple scheduler
-  slices and that a hook which clears its configuration does not change the
-  active latch until the next public operation;
-- `git diff --check`: passed.
+Before claiming this boundary complete, run the machine and IDE TypeScript
+builds, focused mirrored CPU/system/memory tests, the Release native test
+surfaces, the full Lua suite, the core-parity and architecture audits, indentation
+and `git diff --check`. Builds are not runtime proof: force the real Hot Resume
+IDE scenario, the real headless system-print terminal scenario and the Browser
+Studio debug build. Inspect the Release native object to prove the normal
+interpreter specialization contains no execution-hook load or callback, the CPU
+entry performs only the one pre-loop mode check and the executor slice contains
+no hook-presence branch or callback argument bundle.
 
 The 89-assertion IDE scenario proves both scheduler ownership and live fault
 repair: phase one does not install media, leave supervisor mode, discard the

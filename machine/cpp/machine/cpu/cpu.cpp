@@ -1961,7 +1961,7 @@ RunResult CPU::runLoop(
 	auto& frames = m_frames;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
-		hookBinding = m_latchedExecutionHookBinding;
+		hookBinding = m_executionHookBinding;
 	}
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
@@ -2164,20 +2164,17 @@ dispatch_continue:
 	}
 }
 
-// disable-next-line normalized_ast_duplicate_pattern -- explicit normal/instrumented entries select compile-time interpreter specializations without a hot-path mode branch.
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
+	if (m_executionHookBinding.hook != nullptr) {
+		if (targetDepth == 0) {
+			return runLoop<true, true>(targetDepth, instructionBudget);
+		}
+		return runLoop<false, true>(targetDepth, instructionBudget);
+	}
 	if (targetDepth == 0) {
 		return runLoop<true, false>(targetDepth, instructionBudget);
 	}
 	return runLoop<false, false>(targetDepth, instructionBudget);
-}
-
-// disable-next-line normalized_ast_duplicate_pattern -- explicit normal/instrumented entries select compile-time interpreter specializations without a hot-path mode branch.
-RunResult CPU::runUntilDepthInstrumented(int targetDepth, int instructionBudget) {
-	if (targetDepth == 0) {
-		return runLoop<true, true>(targetDepth, instructionBudget);
-	}
-	return runLoop<false, true>(targetDepth, instructionBudget);
 }
 
 void CPU::unwindToDepth(int targetDepth) {

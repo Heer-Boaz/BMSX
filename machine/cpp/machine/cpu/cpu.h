@@ -300,12 +300,7 @@ public:
 	void setExecutionHook(ExecutionHookBinding binding) {
 		m_executionHookBinding = binding;
 	}
-	bool latchExecutionHook() {
-		m_latchedExecutionHookBinding = m_executionHookBinding;
-		return m_latchedExecutionHookBinding.hook != nullptr;
-	}
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
-	RunResult runUntilDepthInstrumented(int targetDepth, int instructionBudget);
 	void collectHeap();
 	class LocalRootsScope {
 	public:
@@ -500,7 +495,6 @@ private:
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
-	ExecutionHookBinding m_latchedExecutionHookBinding{nullptr, nullptr, 0u, 0u};
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

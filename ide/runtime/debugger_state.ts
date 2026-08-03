@@ -77,11 +77,7 @@ export function createRuntimeDebuggerState(
 	let state: RuntimeDebuggerState;
 	const executionHook: ExecutionHook = (executionDomainId, pc) => {
 		if (state.plans.controlActive) {
-			if (state.plans.shouldStop(executionDomainId, pc)) {
-				updateExecutionHookBinding(state);
-				return true;
-			}
-			return false;
+			return state.plans.shouldStop(executionDomainId, pc);
 		}
 		if (state.stopped) {
 			return true;

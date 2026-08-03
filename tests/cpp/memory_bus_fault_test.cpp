@@ -59,10 +59,27 @@ void testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoun
 	require(memory.firstBlockedMappedWordWrite(lastIoWord, 2u) == bmsx::NO_BLOCKED_MAPPED_WRITE, "mapped burst preflight stops when crossing the physical IO registerfile boundary");
 }
 
+void testSystemStatusRejectsMappedWrites() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(
+		bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+		bmsx::PSX_MACHINE_SPEC.ramBytes);
+
+	memory.writeMappedU32LE(bmsx::IO_SYS_STATUS, 0xffffffffu);
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_READ_ONLY, "SYS_STATUS is a read-only register");
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == bmsx::IO_SYS_STATUS, "SYS_STATUS write faults at the status word");
+	require(
+		memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS)
+			== (bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32),
+		"SYS_STATUS write retains its mapped transaction width"
+	);
+}
+
 } // namespace
 
 int main() {
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
+	testSystemStatusRejectsMappedWrites();
 	return 0;
 }

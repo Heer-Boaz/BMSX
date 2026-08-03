@@ -83,6 +83,7 @@ export class RuntimeDebuggerPlanManager {
 		const preMaskableInterruptDomainMask = this.preMaskableInterruptDomainMask;
 		if (this.controlPlan!.didExecute() === RuntimeDebuggerPlanResult.Complete) {
 			this.controlPlan = null;
+			return true;
 		}
 		return executionDomainMask !== this.executionDomainMask
 			|| preMaskableInterruptDomainMask !== this.preMaskableInterruptDomainMask;
@@ -93,6 +94,7 @@ export class RuntimeDebuggerPlanManager {
 		const preMaskableInterruptDomainMask = this.preMaskableInterruptDomainMask;
 		if (this.controlPlan!.didFault() === RuntimeDebuggerPlanResult.Complete) {
 			this.controlPlan = null;
+			return true;
 		}
 		return executionDomainMask !== this.executionDomainMask
 			|| preMaskableInterruptDomainMask !== this.preMaskableInterruptDomainMask;

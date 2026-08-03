@@ -446,40 +446,35 @@ struct SelfClearingExecutionProbe {
 	int calls = 0;
 };
 
-bool clearConfiguredExecutionHook(
-	void* context,
-	bmsx::ExecutionDomainId,
-	bmsx::u32
-) {
+bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32) {
 	auto& probe = *static_cast<SelfClearingExecutionProbe*>(context);
 	probe.calls += 1;
 	probe.cpu->setExecutionHook({});
-	return false;
+	return probe.calls == 2;
 }
 
-void testLatchedExecutionHookSurvivesConfigurationChange() {
+void testExecutionHookReconfigurationAppliesAtTheNextCpuBurst() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 	CpuTestMachine machine(std::move(systemImage));
 	SelfClearingExecutionProbe probe{.cpu = &machine.cpu};
 	machine.cpu.setExecutionHook({
-		.hook = clearConfiguredExecutionHook,
+		.hook = clearExecutionHook,
 		.context = &probe,
 		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
 		.preMaskableInterruptDomainMask = 0u,
 	});
-	require(machine.cpu.latchExecutionHook(), "execution operation latches its configured hook");
+
 	require(
-		machine.cpu.runUntilDepthInstrumented(0, 1) == bmsx::RunResult::Yielded,
-		"first instrumented slice executes after the hook clears its configuration"
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped,
+		"active CPU burst retains its execution-hook snapshot"
 	);
-	require(probe.calls == 1, "first instrumented slice invokes the latched hook");
+	require(probe.calls == 2, "active CPU burst keeps invoking its binding after reconfiguration");
 	require(
-		machine.cpu.runUntilDepthInstrumented(0, 1) == bmsx::RunResult::Yielded,
-		"second instrumented slice retains the operation's latched hook"
+		machine.cpu.runUntilDepth(0, 100) != bmsx::RunResult::ExecutionStopped,
+		"next CPU burst uses the reconfigured normal entry"
 	);
-	require(probe.calls == 2, "configuration changes do not alter an active operation's hook");
-	require(!machine.cpu.latchExecutionHook(), "the next operation observes the cleared hook configuration");
+	require(probe.calls == 2, "normal CPU burst does not read or invoke the cleared binding");
 }
 
 void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
@@ -544,9 +539,8 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 		.domainMask = bmsx::executionDomainBit(0),
 		.preMaskableInterruptDomainMask = 0u,
 	});
-	require(machine.cpu.latchExecutionHook(), "installed execution hook enables instrumented scheduling");
 	require(
-		machine.cpu.runUntilDepthInstrumented(0, 100) == bmsx::RunResult::ExecutionStopped,
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped,
 		"instrumented execution stops after a cross-domain RET reveals the cart caller"
 	);
 	require(
@@ -572,14 +566,12 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
 		.preMaskableInterruptDomainMask = 0u,
 	});
-	require(machine.cpu.latchExecutionHook(), "replacement execution hook is latched for the next operation");
 	require(
-		machine.cpu.runUntilDepthInstrumented(baseDepth, 100) == bmsx::RunResult::ExecutionStopped,
+		machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::ExecutionStopped,
 		"address-based completion entry remains visible to the raw execution hook"
 	);
 	require(machine.cpu.completionCallPending(), "debugger stop retains the completion frame");
 	machine.cpu.setExecutionHook({});
-	require(!machine.cpu.latchExecutionHook(), "cleared execution hook restores normal scheduling");
 	require(
 		machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::Halted,
 		"completion call resumes through the normal non-instrumented dispatch"
@@ -608,10 +600,8 @@ void testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery() {
 		.domainMask = bmsx::executionDomainBit(0),
 		.preMaskableInterruptDomainMask = bmsx::executionDomainBit(0),
 	});
-	require(machine.cpu.latchExecutionHook(), "IRQ-fence hook is latched for instrumented execution");
-
 	require(
-		machine.cpu.runUntilDepthInstrumented(0, 100) == bmsx::RunResult::ExecutionStopped,
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped,
 		"instrumented fence stops on the user boundary before IRQ delivery"
 	);
 	require(machine.cpu.getFrameDepth() == frameDepth, "pending IRQ did not push an exception frame");
@@ -639,10 +629,8 @@ void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
 		.domainMask = bmsx::executionDomainBit(0),
 		.preMaskableInterruptDomainMask = bmsx::executionDomainBit(0),
 	});
-	require(machine.cpu.latchExecutionHook(), "NMI-fence hook is latched for instrumented execution");
-
 	require(
-		machine.cpu.runUntilDepthInstrumented(0, 100) == bmsx::RunResult::ExecutionStopped,
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped,
 		"instrumented fence stops only after the pending NMI returns"
 	);
 	require(
@@ -679,15 +667,13 @@ void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
 		.domainMask = bmsx::executionDomainBit(0),
 		.preMaskableInterruptDomainMask = 0u,
 	});
-	require(machine.cpu.latchExecutionHook(), "completion hook is latched for suspended execution");
 	require(
-		machine.cpu.runUntilDepthInstrumented(baseDepth, 100) == bmsx::RunResult::ExecutionStopped,
+		machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::ExecutionStopped,
 		"instrumented completion execution stops above the latent HALT latch"
 	);
 	require(machine.cpu.completionCallPending(), "debugger stop retains the suspended completion frame");
 	require(!machine.cpu.isHaltedUntilIrq(), "latent HALT remains hidden beneath the stopped completion frame");
 	machine.cpu.setExecutionHook({});
-	require(!machine.cpu.latchExecutionHook(), "cleared completion hook restores normal execution");
 	require(machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::Halted, "normal execution completes the suspended call");
 	require(!machine.cpu.completionCallPending(), "completion RET reaches the parked base depth");
 	require(machine.cpu.isHaltedUntilIrq(), "returning from completion execution exposes the original HALT latch");
@@ -987,7 +973,7 @@ int main() {
 	testControlFlowCannotLeaveTheActiveFunctionRecord();
 	testInvalidClosureTargetHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
-	testLatchedExecutionHookSurvivesConfigurationChange();
+	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();

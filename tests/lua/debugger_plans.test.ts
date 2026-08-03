@@ -72,6 +72,33 @@ test('runtime debugger control plans own replacement, execution, and fault lifec
 	]);
 });
 
+test('completed control plan publishes a binding change after its hook drops the masks', () => {
+	let executionDomainMask = 2;
+	const plan: RuntimeDebuggerControlPlan = {
+		get executionDomainMask() {
+			return executionDomainMask;
+		},
+		get preMaskableInterruptDomainMask() {
+			return executionDomainMask;
+		},
+		shouldStop: () => {
+			executionDomainMask = 0;
+			return true;
+		},
+		willExecute: () => {},
+		didExecute: () => RuntimeDebuggerPlanResult.Complete,
+		didFault: () => RuntimeDebuggerPlanResult.Complete,
+		discard: () => {},
+	};
+	const plans = new RuntimeDebuggerPlanManager();
+	plans.pushControlPlan(plan);
+
+	assert.equal(plans.shouldStop(0, 12), true);
+	assert.equal(plans.executionDomainMask, 0);
+	assert.equal(plans.didExecute(), true);
+	assert.equal(plans.controlActive, false);
+});
+
 test('completion batches retain the physical LIFO root order until every root completes', () => {
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);

@@ -27,6 +27,7 @@ import {
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
+	IO_SYS_STATUS,
 	IRQ_VBLANK,
 } from '../../machine/ts/spec/bmsx/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
@@ -84,6 +85,9 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	clearBusFault(memory);
 	memory.writeMappedU32LE(IO_DMA0_STATUS, 0);
 	assertBusFault(memory, BUS_FAULT_READ_ONLY, IO_DMA0_STATUS, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	clearBusFault(memory);
+	memory.writeMappedU32LE(IO_SYS_STATUS, 0xffffffff);
+	assertBusFault(memory, BUS_FAULT_READ_ONLY, IO_SYS_STATUS, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
 	for (const readOnlyIcuRegister of [IO_INP_STATUS, IO_INP_KEYS, IO_INP_POINTER_BUTTONS, IO_INP_POINTER_X, IO_INP_POINTER_Y, IO_INP_POINTER_WHEEL, IO_INP_PADS, IO_INP_OUTPUT_STATUS]) {
 		memory.writeMappedU32LE(readOnlyIcuRegister, 0);

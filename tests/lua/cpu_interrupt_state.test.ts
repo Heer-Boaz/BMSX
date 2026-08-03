@@ -336,58 +336,43 @@ test('instrumented executor observes a selected domain across cross-domain CALL 
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 });
 
-test('CPU entrypoints remain stable and the instrumented entry snapshots its binding', () => {
+test('instrumented CPU burst snapshots its binding while the hook reconfigures the next burst', () => {
 	const sliceStats = { begin: 0, end: 0 };
-	const { cpu, cpuExecution, runtime } = makeCrossDomainHookRuntime(sliceStats);
-	runtime.machine.scheduler.nextDeadline = () => runtime.machine.scheduler.nowCycles + 1;
-	const runUntilDepth = cpu.runUntilDepth;
-	const runUntilDepthInstrumented = cpu.runUntilDepthInstrumented;
+	const { cpu } = makeCrossDomainHookRuntime(sliceStats);
 	let hookCalls = 0;
 	cpu.setExecutionHook(
 		() => {
 			hookCalls += 1;
-			if (hookCalls === 1) {
-				cpu.setExecutionHook(null, 0, 0);
-				return false;
-			}
-			return true;
+			cpu.setExecutionHook(null, 0, 0);
+			return hookCalls === 2;
 		},
 		executionDomainBit(0),
 		0,
 	);
 
-	assert.equal(cpu.runUntilDepth, runUntilDepth);
-	assert.equal(cpu.runUntilDepthInstrumented, runUntilDepthInstrumented);
-	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 	assert.equal(hookCalls, 2);
-	assert.deepEqual(sliceStats, { begin: 2, end: 2 });
-
-	assert.equal(cpu.runUntilDepth, runUntilDepth);
-	assert.equal(cpu.runUntilDepthInstrumented, runUntilDepthInstrumented);
-	assert.notEqual(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.notEqual(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 	assert.equal(hookCalls, 2);
 });
 
-test('executor selects instrumentation once before a multi-slice scheduler run', () => {
+test('CPU hook reconfiguration takes effect at the next scheduler burst', () => {
 	const sliceStats = { begin: 0, end: 0 };
-	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
-	const cartEntryPc = images.cartImage.functions[0].codeAddress;
-	const cartReturnPc = cartEntryPc + 3 * INSTRUCTION_BYTES;
+	const { cpu, cpuExecution, runtime } = makeCrossDomainHookRuntime(sliceStats);
 	runtime.machine.scheduler.nextDeadline = () => runtime.machine.scheduler.nowCycles + 1;
-	let selectionCount = 0;
-	const latchExecutionHook = cpu.latchExecutionHook.bind(cpu);
-	cpu.latchExecutionHook = () => {
-		selectionCount += 1;
-		return latchExecutionHook();
-	};
+	let hookCalls = 0;
 	cpu.setExecutionHook(
-		(executionDomainId, pc) => executionDomainId === 0 && pc === cartReturnPc,
+		() => {
+			hookCalls += 1;
+			cpu.setExecutionHook(null, 0, 0);
+			return false;
+		},
 		executionDomainBit(0),
 		0,
 	);
 
-	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
-	assert.equal(selectionCount, 1);
+	assert.notEqual(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(hookCalls, 1);
 	assert.ok(sliceStats.begin > 1);
 	assert.equal(sliceStats.end, sliceStats.begin);
 });
@@ -458,6 +443,35 @@ test('suspended executor keeps an address-based completion call pending at a deb
 	assert.equal(cpu.completionCallPending(), false);
 	assert.equal(cpu.getFrameDepth(), baseDepth);
 	assert.deepEqual(sliceStats, { begin: 2, end: 2 });
+});
+
+test('suspended execution observes CPU hook reconfiguration at the next burst', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
+	const baseDepth = cpu.getFrameDepth();
+	cpu.beginCompletionCallInExecutionDomain(
+		SYSTEM_EXECUTION_DOMAIN_ID,
+		images.systemSymbols.functionAddresses[2],
+	);
+	runtime.machine.scheduler.nextDeadline = () => runtime.machine.scheduler.nowCycles + 1;
+	let hookCalls = 0;
+	cpu.setExecutionHook(
+		() => {
+			hookCalls += 1;
+			cpu.setExecutionHook(null, 0, 0);
+			return false;
+		},
+		SYSTEM_EXECUTION_DOMAIN_MASK,
+		0,
+	);
+
+	assert.equal(
+		cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.Completed,
+	);
+	assert.equal(hookCalls, 1);
+	assert.ok(sliceStats.begin > 1);
+	assert.equal(sliceStats.end, sliceStats.begin);
 });
 
 test('suspended executor returns control without advancing hardware while the system controller holds the CPU', () => {

@@ -280,9 +280,6 @@ export class CPU {
 	private executionHook: ExecutionHook | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
-	private latchedExecutionHook: ExecutionHook | null = null;
-	private latchedExecutionHookDomainMask: ExecutionDomainMask = 0;
-	private latchedPreMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
@@ -1431,14 +1428,6 @@ export class CPU {
 		this.preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
 	}
 
-	public latchExecutionHook(): boolean {
-		this.latchedExecutionHook = this.executionHook;
-		this.latchedExecutionHookDomainMask = this.executionHookDomainMask;
-		this.latchedPreMaskableInterruptExecutionHookDomainMask =
-			this.preMaskableInterruptExecutionHookDomainMask;
-		return this.latchedExecutionHook !== null;
-	}
-
 	public haltUntilIrq(): void {
 		if (this.interruptEventPending) {
 			this.interruptEventPending = false;
@@ -1610,6 +1599,9 @@ export class CPU {
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
+		if (this.executionHook !== null) {
+			return this.runUntilDepthInstrumented(targetDepth, instructionBudget);
+		}
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const baseCycles = BASE_CYCLES;
@@ -1674,14 +1666,14 @@ export class CPU {
 		return RunResult.Halted;
 	}
 
-	public runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
+	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const baseCycles = BASE_CYCLES;
-		const executionHook = this.latchedExecutionHook!;
-		const executionDomainMask = this.latchedExecutionHookDomainMask;
+		const executionHook = this.executionHook!;
+		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
-			this.latchedPreMaskableInterruptExecutionHookDomainMask;
+			this.preMaskableInterruptExecutionHookDomainMask;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {

@@ -77,7 +77,7 @@
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
 		"check:deps": "npm exec --yes --package=depcheck -- depcheck",
 		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts",
-		"audit:core-parity": "node scripts/runtime/generate_cpu_executor_specializations.mjs --check && node scripts/render/generate_gx_gpu_software_scanout_specializations.mjs --check && node scripts/render/generate_device_quantize_luts.mjs --check && tsx scripts/audit_core_parity.ts",
+		"audit:core-parity": "node scripts/render/generate_gx_gpu_software_scanout_specializations.mjs --check && node scripts/render/generate_device_quantize_luts.mjs --check && tsx scripts/audit_core_parity.ts",
 		"audit:architecture-boundaries": "npx tsx scripts/audit_architecture_boundaries.ts",
 		"audit:architecture-boundaries:strict": "npx tsx scripts/audit_architecture_boundaries.ts --fail-on-issues",
 		"profile:libretro-particle-soak-offscreen-wsl": "npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- bare_metal_cart --force && env SDL_AUDIODRIVER=dummy ./build-libretro-host-wsl/bmsx_libretro_host --core ./dist/libretro_bmsx.so --video sdl --backend gles2 --hidden-window --system-dir ./dist --rom-folder bare_metal_cart --input-timeline tests/carts/bare_metal_cart/bare_metal_cart_particle_soak.json --paced-timeline --max-frames 16000 --timing-report --timing-warmup 500 ./dist/bare_metal_cart.rom",

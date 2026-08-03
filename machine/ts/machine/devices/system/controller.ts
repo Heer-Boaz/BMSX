@@ -231,7 +231,6 @@ export class SystemController {
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 			this.supervisorResumable = false;
-			this.supervisorExitRequested = false;
 			this.gpu.beginSupervisorControlQuiesce();
 			this.dma.beginSupervisorControlQuiesce();
 			this.geometry.beginSupervisorQuiesce();
@@ -288,7 +287,6 @@ export class SystemController {
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 			this.supervisorResumable = false;
-			this.supervisorExitRequested = false;
 			this.audio.setVoiceClockHeld(false, this.scheduler.currentNowCycles());
 			this.writeStatusIo();
 		}
@@ -306,7 +304,6 @@ export class SystemController {
 		this.supervisorResumable = true;
 		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
 		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
-		this.supervisorExitRequested = false;
 		this.writeStatusIo();
 	}
 
@@ -317,7 +314,6 @@ export class SystemController {
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, this.cpu.readLuaFaultReasonWord());
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, this.cpu.readExceptionDomainWord());
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
-			this.writeStatusIo();
 			return;
 		}
 		this.cpu.cancelNonMaskableInterrupt();
@@ -331,7 +327,6 @@ export class SystemController {
 		}
 		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_FAULT;
 		this.supervisorResumable = false;
-		this.supervisorExitRequested = false;
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 		this.cpu.requestYield();

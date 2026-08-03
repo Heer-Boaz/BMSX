@@ -41,14 +41,11 @@ private:
 		Halted,
 	};
 
-	template <bool Instrumented>
-	CpuExecutionResult runWithBudgetMode(Runtime& runtime, FrameState& frameState);
-	template <bool Instrumented>
-	InstructionStepResult runInstructionMode(Runtime& runtime, FrameState& frameState);
-	template <bool Instrumented>
-	CpuSuspendedRunResult runSuspendedUntilDepthMode(Runtime& runtime, int targetDepth);
-	template <bool Instrumented>
-	CpuSliceResult runSlice(Runtime& runtime, FrameState& frameState, int maximumCpuCycles);
+	CpuSliceResult runSlice(
+		Runtime& runtime,
+		FrameState& frameState,
+		int maximumCpuCycles
+	);
 	i64 m_sliceCycleBudgetRemaining = 0;
 	bool m_instructionRunActive = false;
 };

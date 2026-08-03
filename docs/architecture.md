@@ -3689,24 +3689,21 @@ Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal
 path and contains no per-instruction debugger branch or callback. An installed
 hook, callback context and the ordinary/pre-maskable-interrupt raw domain masks
-form one CPU-owned configured execution-hook binding. Each public CPU-executor
-operation latches that binding and selects its execution mode once before
-entering its scheduler loop. Configuration changes made by a callback therefore
-take effect at the next public operation, never halfway through the selected
-path. C++ compiles
-the complete normal and instrumented scheduler paths as template
-specializations. TypeScript generates the corresponding paired methods from one
-checked-in template; the generated normal path directly calls
-`runUntilDepth()` and the generated instrumented path directly calls
-`runUntilDepthInstrumented()`. Neither specialized slice loop reads hook state,
-branches on instrumentation, passes callback fields, or allocates a dispatch
-object. The CPU's instrumented entry snapshots its CPU-owned latched binding
-before its bulk interpreter loop; the separate normal entry never reads hook
-state. The
-only dynamic mode branch is at the public executor boundary, outside the entire
-scheduler loop. The TypeScript generator's `--check` gate is part of the core
-parity audit, so the two emitted scheduler paths cannot drift from their one
-source template. The instrumented bulk-loop specialization checks
+form one CPU-owned execution-hook binding. The shared scheduler always calls
+`CPU.runUntilDepth()` with only the raw target depth and instruction budget. At
+that CPU-burst boundary, before the bulk interpreter loop, the CPU checks the
+binding once and enters the normal or instrumented loop. The scheduler contains
+no hook-presence branch, callback argument bundle or indirect strategy call.
+C++ compiles the two interpreter loops as template specializations; TypeScript
+keeps the normal loop on the public entry and delegates only the configured case
+to its instrumented loop. The scheduler itself has one hand-written
+implementation in each runtime and requires no generated duplicate.
+
+The instrumented loop snapshots the single binding before instruction dispatch,
+so a hook may update IDE policy and reconfigure the CPU without changing the
+active burst. The next CPU burst observes the new binding at the same CPU-owned
+entry boundary. The normal interpreter specialization never reads hook state.
+The instrumented bulk-loop specialization checks
 the selected raw execution-domain mask immediately before each instruction and
 exposes only the current raw execution-domain word and instruction PC; calls,
 returns, interrupts, and domain changes remain inside the same machine slice
@@ -3722,7 +3719,7 @@ step-out compare the logical `(physical frame depth, inline depth)` position.
 The frame loop stops at the selected boundary. The CPU owns no source paths,
 symbols, editor state, or stepping policy. The uninstrumented specialization
 contains no hook test, domain-mask test, callback, or debugger-induced CALL/RET
-branch. The instrumented executor also accepts a separate raw domain mask for
+branch. The instrumented CPU entry also accepts a separate raw domain mask for
 the generic pre-maskable-interrupt observation boundary. It invokes the same
 raw domain/PC hook before maskable-interrupt entry only for selected domains;
 NMI delivery remains first. IDE Hot Resume uses that opt-in boundary for its

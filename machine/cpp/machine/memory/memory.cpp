@@ -634,6 +634,7 @@ bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_TIME_MS:
 		case IO_SYS_FRAME_MS_Q16:
 		case IO_SYS_CYCLES_PER_FRAME:
+		case IO_SYS_STATUS:
 		case IO_IRQ_FLAGS:
 		case IO_DMA0_STATUS:
 		case IO_DMA1_STATUS:

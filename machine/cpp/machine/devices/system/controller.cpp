@@ -164,7 +164,6 @@ void SystemController::requestSupervisorLineEdge() {
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 		m_supervisorResumable = false;
-		m_supervisorExitRequested = false;
 		m_gpu.beginSupervisorControlQuiesce();
 		m_dma.beginSupervisorControlQuiesce();
 		m_geometry.beginSupervisorQuiesce();
@@ -221,7 +220,6 @@ void SystemController::onService() {
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		m_supervisorResumable = false;
-		m_supervisorExitRequested = false;
 		m_audio.setVoiceClockHeld(false, m_scheduler.currentNowCycles());
 		writeStatusIo();
 	}
@@ -239,7 +237,6 @@ void SystemController::activateSupervisorContext() {
 	m_supervisorResumable = true;
 	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
 	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
-	m_supervisorExitRequested = false;
 	writeStatusIo();
 }
 
@@ -250,7 +247,6 @@ void SystemController::enterSupervisorFault() {
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, m_cpu.readLuaFaultReasonWord());
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, m_cpu.readExceptionDomainWord());
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
-		writeStatusIo();
 		return;
 	}
 	m_cpu.cancelNonMaskableInterrupt();
@@ -264,7 +260,6 @@ void SystemController::enterSupervisorFault() {
 	}
 	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_FAULT;
 	m_supervisorResumable = false;
-	m_supervisorExitRequested = false;
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 	m_cpu.requestYield();
