@@ -13,6 +13,7 @@ import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend'
 import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
 import { Input } from '../../../hosts/common/input/manager';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
+import type { LogOutput } from '../../../hosts/common/log';
 import { DiscardingAudioSink } from '../../../hosts/node/common/discarding_audio';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import {
@@ -64,6 +65,7 @@ import {
 	parseNodeToolingOptions,
 } from './node_tooling_options';
 import { installNodeWorkspaceBridge } from './node_workspace_bridge';
+import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 
 declare const BMSX_BOOTROM_DEBUG: boolean;
 
@@ -116,7 +118,15 @@ async function main(): Promise<void> {
 		212,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
-	const logOutput = new ConsoleLogOutput();
+	const consoleLogOutput = new ConsoleLogOutput();
+	let ideTestLogOutput: RecordingLogOutput;
+	let logOutput: LogOutput;
+	if (options.mode.kind === 'ide-test') {
+		ideTestLogOutput = new RecordingLogOutput(consoleLogOutput);
+		logOutput = ideTestLogOutput;
+	} else {
+		logOutput = consoleLogOutput;
+	}
 	const runtime = initializeMachineRuntime(
 		systemRom,
 		[slot0Rom, slot1Rom],
@@ -248,9 +258,10 @@ async function main(): Promise<void> {
 								ide: createHeadlessIdeHarness(
 									ide,
 									runtime,
+									input,
 									audioOutput,
 									storage,
-									logOutput,
+									ideTestLogOutput,
 								),
 								logger: inputLogger,
 								clock,

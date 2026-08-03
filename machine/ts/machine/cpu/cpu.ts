@@ -1656,6 +1656,7 @@ export class CPU {
 		instructionBudget: number,
 		executionHook: ExecutionHook,
 		executionDomainMask: ExecutionDomainMask,
+		preMaskableInterruptExecutionDomainMask: ExecutionDomainMask,
 	): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
@@ -1675,10 +1676,19 @@ export class CPU {
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
 					}
-					if (this.nonMaskableInterruptPending
-						|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-							&& this.irqController.hasAssertedMaskableInterruptLine())
-					) {
+					if (this.nonMaskableInterruptPending) {
+						this.enterPendingInterrupt();
+						continue;
+					}
+					if ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+						&& this.irqController.hasAssertedMaskableInterruptLine()) {
+						const interruptedFrame = frames[frames.length - 1];
+						const interruptedImage = interruptedFrame.executionImage;
+						if ((preMaskableInterruptExecutionDomainMask
+							& executionDomainBit(interruptedImage.executionDomainId)) !== 0
+							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc)) {
+							return RunResult.ExecutionStopped;
+						}
 						this.enterPendingInterrupt();
 						continue;
 					}
@@ -1822,6 +1832,15 @@ export class CPU {
 			}
 		}
 		return false;
+	}
+
+	public readFrameReturnsToCompletionLatch(frameIndex: number): boolean {
+		return this.frames[frameIndex].returnToCompletionLatch;
+	}
+
+	public abortCompletionCall(frameIndex: number): void {
+		this.unwindToDepth(frameIndex);
+		this.clearCompletionValues();
 	}
 
 	public readCompletionValues(target: Value[]): void {

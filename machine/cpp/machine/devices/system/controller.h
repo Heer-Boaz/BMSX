@@ -86,6 +86,7 @@ private:
 	void appendHostOutputByte(u8 value);
 	void activateSupervisorContext();
 	void enterSupervisorFault();
+	void publishSupervisorFault();
 	void beginSupervisorLeave();
 	u32 statusWord() const;
 	void writeStatusIo();

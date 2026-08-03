@@ -221,6 +221,7 @@ export class RuntimeCartEditor implements CartEditor {
 			fault,
 			luaTooling,
 			debuggerState,
+			input,
 			runtimeTasks,
 			overlayRenderer,
 			runtime,

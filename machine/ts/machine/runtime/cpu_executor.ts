@@ -38,6 +38,7 @@ export class CpuExecutionState {
 	private instructionRunActive = false;
 	private executionHook: ExecutionHook | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
+	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -47,9 +48,14 @@ export class CpuExecutionState {
 		this.instructionRunActive = false;
 	}
 
-	public setExecutionHook(hook: ExecutionHook | null, domainMask: ExecutionDomainMask): void {
+	public setExecutionHook(
+		hook: ExecutionHook | null,
+		domainMask: ExecutionDomainMask,
+		preMaskableInterruptDomainMask: ExecutionDomainMask = 0,
+	): void {
 		this.executionHook = hook;
 		this.executionHookDomainMask = domainMask;
+		this.preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
 	}
 
 	public runStoppedCpu(state: FrameState): boolean {
@@ -231,6 +237,7 @@ export class CpuExecutionState {
 						sliceBudget,
 						executionHook,
 						this.executionHookDomainMask,
+						this.preMaskableInterruptExecutionHookDomainMask,
 					);
 			} finally {
 				scheduler.endCpuSlice();
@@ -347,6 +354,7 @@ export class CpuExecutionState {
 						sliceBudget,
 						executionHook,
 						this.executionHookDomainMask,
+						this.preMaskableInterruptExecutionHookDomainMask,
 					);
 			} finally {
 				scheduler.endCpuSlice();

@@ -144,7 +144,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	public resetInput(): void {
-		this.supervisorRequestLine = false;
+		this.hostSupervisorRequestLine = false;
+		this.updateSupervisorRequestLine();
 		for (let i = 0; i < this.playerInputs.length; i++) {
 			const player = this.playerInputs[i];
 			if (!player) continue;
@@ -158,6 +159,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	}
 
 	public debugHotkeysPaused = false;
+	private hostSupervisorRequestLine = false;
+	private programmaticSupervisorRequestLine = false;
 	private supervisorRequestLine = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts: GlobalShortcutRegistry;
@@ -294,12 +297,25 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.inputControllerPointerHandlers.length = 0;
 		this.pendingVibrationDevices.length = 0;
 		this.debugHotkeysPaused = false;
+		this.hostSupervisorRequestLine = false;
+		this.programmaticSupervisorRequestLine = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
 	}
 
 	public setSupervisorRequestLine(down: boolean): void {
-		this.supervisorRequestLine = down;
+		this.hostSupervisorRequestLine = down;
+		this.updateSupervisorRequestLine();
+	}
+
+	public setProgrammaticSupervisorRequestLine(down: boolean): void {
+		this.programmaticSupervisorRequestLine = down;
+		this.updateSupervisorRequestLine();
+	}
+
+	private updateSupervisorRequestLine(): void {
+		this.supervisorRequestLine = this.hostSupervisorRequestLine
+			|| this.programmaticSupervisorRequestLine;
 	}
 
 	public inputButton(

@@ -8,12 +8,15 @@ import {
 	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_TIME_MS,
 	IO_CART_SELECT,
 	IO_IRQ_ACK,
 	IO_IRQ_MASK,
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
+	SYS_CONTROL_SUPERVISOR_FAULT,
+	SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
 	SYS_PRINT_BUFFER_BYTES,
 } from '../../machine/ts/spec/bmsx/io';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -143,6 +146,21 @@ test('system control reset command is write-only, self-clearing, and save-state 
 	controller.restoreState(state);
 	assert.equal(controller.takeResetRequest(), true);
 	assert.equal(controller.takeResetRequest(), false);
+});
+
+test('supervisor fault capture is published only at the firmware presentation boundary', () => {
+	const images = linkRawTestBlua32Pair(
+		makeExecutionSelectorSystemSource(),
+		makeClosureCartSource(1, 'fault_publication_cart.lua', true),
+	);
+	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
+	runtime.boot();
+	const memory = runtime.machine.memory;
+
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH);
+	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 1);
 });
 
 test('system timing registers consume scheduler and PCRTC device state without Runtime mappings', () => {

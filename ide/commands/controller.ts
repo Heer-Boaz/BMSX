@@ -1,5 +1,6 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { Input } from '../../hosts/common/input/manager';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
@@ -37,6 +38,7 @@ export class IdeCommandController {
 		private readonly fault: RuntimeFaultState,
 		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly debuggerState: RuntimeDebuggerState,
+		private readonly input: Input,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
@@ -96,6 +98,7 @@ export class IdeCommandController {
 				this.fault,
 				this.luaTooling,
 				this.debuggerState,
+				this.input,
 				this.runtimeTasks,
 				this.overlayRenderer,
 				this.runtime,
@@ -133,6 +136,7 @@ export class IdeCommandController {
 			this.fault,
 			this.luaTooling,
 			this.debuggerState,
+			this.input,
 			this.runtimeTasks,
 			this.overlayRenderer,
 			this.runtime,

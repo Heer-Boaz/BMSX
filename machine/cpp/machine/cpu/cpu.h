@@ -296,7 +296,8 @@ public:
 		int instructionBudget,
 		ExecutionHook executionHook,
 		void* executionHookContext,
-		ExecutionDomainMask executionDomainMask
+		ExecutionDomainMask executionDomainMask,
+		ExecutionDomainMask preMaskableInterruptExecutionDomainMask = 0
 	);
 	void collectHeap();
 	class LocalRootsScope {
@@ -324,6 +325,8 @@ public:
 	u32 readFramePc(int frameIndex) const;
 	u32 readFrameCallSitePc(int childFrameIndex) const;
 	bool completionCallPending() const;
+	bool readFrameReturnsToCompletionLatch(int frameIndex) const;
+	void abortCompletionCall(int frameIndex);
 	auto readCompletionValues() const -> std::span<const Value>;
 	bool isExceptionFrame(int frameIndex) const;
 	bool isNonMaskableExceptionFrame(int frameIndex) const;
@@ -361,7 +364,8 @@ private:
 		int instructionBudget,
 		ExecutionHook executionHook,
 		void* executionHookContext,
-		ExecutionDomainMask executionDomainMask
+		ExecutionDomainMask executionDomainMask,
+		ExecutionDomainMask preMaskableInterruptExecutionDomainMask
 	);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);

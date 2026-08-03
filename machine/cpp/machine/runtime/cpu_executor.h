@@ -29,11 +29,13 @@ public:
 	void setExecutionHook(
 		ExecutionHook hook,
 		void* context,
-		ExecutionDomainMask domainMask
+		ExecutionDomainMask domainMask,
+		ExecutionDomainMask preMaskableInterruptDomainMask = 0
 	) {
 		m_executionHook = hook;
 		m_executionHookContext = context;
 		m_executionHookDomainMask = domainMask;
+		m_preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
 	}
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
@@ -56,6 +58,7 @@ private:
 	ExecutionHook m_executionHook = nullptr;
 	void* m_executionHookContext = nullptr;
 	ExecutionDomainMask m_executionHookDomainMask = 0;
+	ExecutionDomainMask m_preMaskableInterruptExecutionHookDomainMask = 0;
 };
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles);

@@ -24,6 +24,11 @@ import { handleSupervisorFault } from './runtime_errors';
 import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
 import * as workbenchMode from './mode';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
+import {
+	didExecuteRuntimeDebuggerPlan,
+	didFaultRuntimeDebuggerPlan,
+	willExecuteRuntimeDebuggerPlan,
+} from '../runtime/debugger_state';
 
 function executeWorkbenchHostMenuAction(
 	ide: RuntimeIdeState,
@@ -147,6 +152,7 @@ export function runWorkbenchHostFrame(
 	currentTime: number,
 ): HostFrameRunResult {
 	let hostDeltaMs = 0;
+	let systemOutputDrained = false;
 	try {
 		hostDeltaMs = beginHostFrame(
 			session,
@@ -198,6 +204,9 @@ export function runWorkbenchHostFrame(
 				hostMenuInput,
 			);
 			if (action === HostFrameAction.Execute) {
+				if (ide.debugger.plans.controlActive) {
+					willExecuteRuntimeDebuggerPlan(ide.debugger);
+				}
 				executeHostUpdate(
 					session,
 					runtime,
@@ -207,6 +216,26 @@ export function runWorkbenchHostFrame(
 					screen,
 					hostDeltaMs,
 				);
+				systemOutput.flush(runtime, logOutput);
+				systemOutputDrained = true;
+				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+				);
+				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+					if (ide.debugger.plans.controlActive) {
+						didFaultRuntimeDebuggerPlan(ide.debugger);
+					}
+					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
+					handleSupervisorFault(
+						logOutput,
+						ide.fault,
+						ide.sources,
+						runtime,
+						ide.luaTooling.suspendedGuest,
+					);
+				} else if (ide.debugger.plans.controlActive) {
+					didExecuteRuntimeDebuggerPlan(ide.debugger);
+				}
 				if (ide.debugger.stopPresentationPending) {
 					activateEditor(
 						ide.editor,
@@ -216,19 +245,6 @@ export function runWorkbenchHostFrame(
 						audioOutput,
 					);
 					presentRuntimeDebuggerStop(ide.editor, ide.debugger);
-				}
-				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-				);
-				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
-					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
-					handleSupervisorFault(
-						logOutput,
-						ide.fault,
-						ide.sources,
-						runtime,
-						ide.luaTooling.suspendedGuest,
-					);
 				}
 				action = HostFrameAction.PresentPending;
 			}
@@ -259,6 +275,8 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 	}
-	systemOutput.flush(runtime, logOutput);
+	if (!systemOutputDrained) {
+		systemOutput.flush(runtime, logOutput);
+	}
 	return HostFrameRunResult.Continue;
 }

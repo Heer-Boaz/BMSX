@@ -196,7 +196,8 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 					sliceBudget,
 					m_executionHook,
 					m_executionHookContext,
-					m_executionHookDomainMask
+					m_executionHookDomainMask,
+					m_preMaskableInterruptExecutionHookDomainMask
 				);
 		} catch (...) {
 			scheduler.endCpuSlice();
@@ -323,7 +324,8 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 					sliceBudget,
 					m_executionHook,
 					m_executionHookContext,
-					m_executionHookDomainMask
+					m_executionHookDomainMask,
+					m_preMaskableInterruptExecutionHookDomainMask
 				);
 		} catch (...) {
 			scheduler.endCpuSlice();

@@ -1106,7 +1106,22 @@ suspended CPU through scalar physical-state primitives and proves a complete
 relocation for every active frame function address and continuation PC, every
 child-frame callsite in its parent execution domain, the active exception
 `EPC`, a nested NMI return `EPC`, and the latched instruction domain/PC pair.
-A missing map rejects the edit before any media or CPU state write.
+A missing map rejects the edit before any Hot Resume media or CPU state write.
+If a recoverable synchronous fault interrupted a CPU completion call, the proof
+targets the retained frame prefix below that call. A physical completion root is
+identified only by the CPU-owned `returnToCompletionLatch` bit. IDE state
+separately retains a LIFO list of the annotated-init batches it staged as a raw
+first-frame index plus the ordered execution-domain words of its consecutive
+completion roots. Calls are pushed cartridge first and system second, so normal
+LIFO execution runs system preparation before cartridge preparation. Completed
+calls form a suffix of that record. A fault in a batch root therefore discards
+from the batch's first frame and restages exactly the still-incomplete prefix;
+already completed preparation is not repeated. A completion call not belonging
+to a staged batch is discarded from its exact marked root. Only after the proof
+succeeds does the generic CPU unwind primitive discard the selected root and
+all frames above it and clear the completion-value latch. Guest writes already
+performed by those calls remain live and are not rolled back. The CPU does not
+store a batch, source revision, or Hot Resume classification.
 
 After that proof, the ROM owner installs the rebuilt physical media. IDE
 tooling reads CPU-owned execution-domain residency before asking the
@@ -1150,21 +1165,66 @@ that cartridge's annotated function, and an edited inactive socket receives
 media without executing guest preparation. When both tooling functions apply,
 system preparation precedes cartridge preparation.
 
-Tooling passes the raw execution-domain word and raw static-vector address to the
-generic suspended completion-call boundary and executes it through the
-debugger-aware CPU executor. The CPU resolves the explicitly named resident
-execution image; this call neither consults nor mutates `CART_SELECT`, whose
-data-bus selection may legitimately differ from the cartridge instruction
+While its runtime task owns the idle scheduler boundary, tooling pushes each
+raw execution-domain word and raw static-vector address as an ordinary physical
+completion frame and then returns without executing a guest instruction. The
+next ordinary host frame executes the staged calls through the normal
+debugger-aware CPU/device scheduler. The CPU resolves each explicitly named
+resident execution image; the call neither consults nor mutates `CART_SELECT`,
+whose data-bus selection may legitimately differ from the cartridge instruction
 latch. Breakpoints, statement stepping, guest output, hardware deadlines, and
-faults therefore use the same execution path as other guest code. A breakpoint
-leaves the completion frame live and continuation resumes it normally; there is
-no state capture, rollback, special opcode, host callback, or machine-side
-reload state. Existing carts keep their ordinary cold `init()` and `new_game()`
-calls in source; Hot Resume calls only the closure marked `<init>`. Those names
-remain cart code rather than a BMSX ABI. Captured-upvalue layout, static-closure
-identity mode, annotated-function layout, or static-storage layout changes
-remain incompatible revisions and are reported before media or CPU state
-writes.
+faults therefore use the same execution path and scheduling owner as all other
+guest code. A breakpoint leaves the completion frame live and continuation
+resumes it normally; there is no second scheduler loop, state capture,
+rollback, special opcode, host callback, or machine-side reload state. Existing
+carts keep their ordinary cold `init()` and `new_game()` calls in source; Hot
+Resume calls only the closure marked `<init>`. Those names remain cart code
+rather than a BMSX ABI. Captured-upvalue layout, static-closure identity mode,
+annotated-function layout, or static-storage layout changes remain incompatible
+revisions and are reported before media or CPU state writes.
+
+Hot Resume requested from a firmware monitor or another in-flight exception
+uses a two-phase debugger plan instead of installing an image over live BIOS
+frames. Phase one compiles and lays out the candidate media without writing the
+machine, records the exact underlying physical user-frame
+`(depth, execution-domain, PC)`, and returns to the host scheduler. Once the
+system controller publishes a resumable supervisor context, the concrete plan
+raises its own programmatic supervisor-request source. The input owner combines
+that source with the independent physical-host source as a wired OR, so tooling
+cannot lower a held host request. BIOS remains the sole
+owner of monitor exit: it restores its saved `CART_SELECT`, `EPC`, and `STATUS`,
+writes the ordinary supervisor-leave control word, and executes exception
+return. A transient debugger fence suppresses user breakpoints during that
+firmware unwind and stops before the exact recorded user instruction. The
+instrumented executor may observe that same selected raw domain/PC immediately
+before accepting a pending maskable interrupt, so an IRQ cannot obscure the
+boundary. A pending NMI retains architectural priority and is delivered before
+this optional observation. The ordinary uninstrumented loop has no
+corresponding branch. The fence does not create a debugger stop or editor
+presentation.
+
+At that scheduler-owned stop, a second IDE task proves relocation against the
+now supervisor-free retained frame prefix, discards the exact failed completion
+root or its IDE-owned annotated-init batch, installs the media, applies the raw
+relocation, and stages a fresh annotated-init batch. It again returns without
+executing guest code. The next ordinary host frame runs init and then resumes
+the retained game. Batch records are inspected and pruned only when another Hot
+Resume is prepared; ordinary host frames do no batch bookkeeping. Plan
+lifecycle callbacks rebind the instrumented executor only when either raw hook
+mask changes, rather than rescanning breakpoint state on every host frame.
+
+After every machine update, the host first drains complete physical system
+output and then reads the BIOS-published supervisor-fault sequence before
+consuming the internal user fence. A different sequence cancels the pending
+plan, lowers only its programmatic supervisor-request source, and leaves the new
+physical fault visible through the BIOS terminal before tooling diagnostics.
+Reboot actions likewise cancel the pending plan and clear the IDE-owned batch
+list before starting the
+ordinary cold-boot path. Dirty editor sources are marked installed only after
+phase two has successfully installed them. The queued plan, source revision,
+batch list, frame fence, and breakpoint policy live entirely in IDE/debugger
+state; the CPU, system controller, firmware, and normal scheduler contain no Hot
+Resume state or branch.
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load
@@ -1264,14 +1324,17 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   exactly `false` plus the handler's first result, using `nil` when the handler
   returns nothing and discarding further results; a handler error produces the
   stable Lua error value `error in error handling`.
-- Host/IDE closure entry is permitted only while the CPU is suspended outside
-  an active scheduler slice. Native code cannot recursively run the Lua CPU
-  inside an executing instruction. `Runtime` is the sole owner of
+- Synchronous host/IDE closure entry is permitted only while the CPU is
+  suspended outside an active scheduler slice. Native code cannot recursively
+  run the Lua CPU inside an executing instruction. `Runtime` is the sole owner of
   scheduler-aware external execution: it grants ordinary CPU slices and
   advances device deadlines. IDE tooling invokes that core primitive and never
   runs a second scheduler loop that can cross an APU, GPU, DMA, or IRQ edge
-  differently. External slices obey the system-controller CPU hold, GPU
-  machine-block fence, MMIO interlocks, and ordinary CPU interrupt entry.
+  differently. This boundary is used when a host operation needs a closure's
+  returned values; Hot Resume does not use it because its annotated init calls
+  are staged for the next ordinary host frame. External slices obey the
+  system-controller CPU hold, GPU machine-block fence, MMIO interlocks, and
+  ordinary CPU interrupt entry.
   Interrupts therefore vector through the retained `STATUS`, `CAUSE`, and
   `EPC` words; the CPU has no host-call mode that suppresses them. External
   execution advances physical machine time without consuming the suspended
@@ -1854,7 +1917,7 @@ System control is a small privileged registerfile rather than a host callback:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, begin synchronous-fault supervisor entry `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
+| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, capture and begin synchronous-fault supervisor entry `0x8`, publish the presented synchronous fault `0x10`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
 | `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
 The system controller publishes each accepted synchronous supervisor fault in
@@ -1869,11 +1932,24 @@ one read-only raw registerfile:
 | `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010444` | Captured raw CP0 Lua-fault reason. |
 | `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x08010448` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
 
-The controller copies the five payload words from CPU latches and publishes
-`SEQUENCE` last. The CPU latches the interrupted frame's execution domain at
-exception acceptance and preserves it across a nested NMI beside the other
-return latches. Hosts that observe a fault read this same mapped registerfile;
-there is no host-only fault record or CPU debug-state API.
+The `SUPERVISOR_FAULT` command copies the five payload words from CPU latches
+before the firmware changes interrupt or display ownership, but does not yet
+advance `SEQUENCE`. After the BIOS monitor has committed its console line,
+terminal command stream, and display-enable command and crossed the following
+VBlank (discarding any older queued firmware VBlank tickets first), it writes
+`SUPERVISOR_FAULT_PUBLISH`; the controller then advances `SEQUENCE`. The host
+drains complete `SYS_PRINT` lines before observing that public sequence and
+emitting debugger-owned diagnostics. Capture and presentation are therefore
+separate physical producer boundaries rather than a host delay, output-string
+probe, or terminal-buffer heuristic. This follows LLDB's split between private
+stop capture and public stop broadcast, including its synchronization of target
+stdio before stop presentation
+([Process.cpp](https://github.com/llvm/llvm-project/blob/7f161cde5751ab5ab38a5e52119f9fe867844758/lldb/source/Target/Process.cpp#L3934-L4085),
+[Debugger.cpp](https://github.com/llvm/llvm-project/blob/7f161cde5751ab5ab38a5e52119f9fe867844758/lldb/source/Core/Debugger.cpp#L2026-L2127)).
+The CPU latches the interrupted frame's execution domain at exception
+acceptance and preserves it across a nested NMI beside the other return
+latches. Hosts read this same mapped registerfile; there is no host-only fault
+record or CPU debug-state API.
 
 A supervisor-request edge in user mode starts a dependency-ordered hardware
 fence. The first stage closes GP1 writes, DMA triggers, IMGDEC configuration and
@@ -3611,12 +3687,21 @@ returns, interrupts, and domain changes remain inside the same machine slice
 instead of round-tripping through the host once per instruction. IDE tooling
 compiles `(domain, path, line)` breakpoints from the linked functions' statement
 points and owns breakpoint matching, resume suppression and source-level
-stepping. Statement points retain optimizer inline depth without changing the
-physical CPU stack. Step-in stops at the next point; step-over and step-out
-compare the logical `(physical frame depth, inline depth)` position. The frame
-loop stops at the selected boundary. The CPU owns no source paths, symbols,
-editor state, or stepping policy. The uninstrumented specialization contains no
-hook test, domain-mask test, callback, or debugger-induced CALL/RET branch.
+stepping. Each one-shot resume suppression is bound to the exact physical frame
+depth that was stopped, and nested stopped calls retain those identities in
+LIFO order; another invocation of the same domain/PC cannot consume the wrong
+frame's suppression. Statement points retain optimizer inline depth without
+changing the physical CPU stack. Step-in stops at the next point; step-over and
+step-out compare the logical `(physical frame depth, inline depth)` position.
+The frame loop stops at the selected boundary. The CPU owns no source paths,
+symbols, editor state, or stepping policy. The uninstrumented specialization
+contains no hook test, domain-mask test, callback, or debugger-induced CALL/RET
+branch. The instrumented executor also accepts a separate raw domain mask for
+the generic pre-maskable-interrupt observation boundary. It invokes the same
+raw domain/PC hook before maskable-interrupt entry only for selected domains;
+NMI delivery remains first. IDE Hot Resume uses that opt-in boundary for its
+exact user-frame fence. With no such fence the mask is zero, and the normal
+uninstrumented specialization has no observation branch.
 
 Instruction profiling is an opt-in Node tooling-host feature. The TypeScript
 tool loads immutable BLua32 symbol media directly from the boot ROM layers and

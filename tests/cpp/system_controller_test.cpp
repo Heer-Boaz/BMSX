@@ -335,6 +335,25 @@ void testResetCommandLatch() {
 	require(!controller.takeResetRequest(), "consuming a system reset clears the latch");
 }
 
+void testSupervisorFaultPublicationBoundary() {
+	SystemRuntimeFixture fixture;
+	bmsx::Memory& memory = fixture.runtime.machine.memory;
+
+	memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_SUPERVISOR_FAULT);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 0u,
+		"fault capture does not publish before firmware presents the monitor"
+	);
+	memory.writeMappedU32LE(
+		bmsx::IO_SYS_CONTROL,
+		bmsx::SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH
+	);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 1u,
+		"firmware publication advances the physical fault sequence"
+	);
+}
+
 void testSystemTimingRegisters() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
 	bmsx::Memory memory(
@@ -715,6 +734,27 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	require(bmsx::asTable(results[0]) == borrowedTable, "borrowed completion results remain rooted by the CPU latch");
 }
 
+void testCpuAbortsPhysicalCompletionCallAtMarkedRoot() {
+	SystemRuntimeFixture fixture(
+		makeCompletionLatchSystemImage(),
+		makeRuntimeImage(bmsx::OpCode::RET)
+	);
+	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	const int completionFrameIndex = cpu.getFrameDepth();
+	cpu.beginCompletionCall(*closure);
+	cpu.beginCompletionCall(*closure);
+
+	require(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex), "completion root retains its raw return latch");
+	require(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex + 1), "later completion root retains its raw return latch");
+	require(cpu.completionCallPending(), "completion call is physically pending");
+	cpu.abortCompletionCall(completionFrameIndex);
+	require(cpu.getFrameDepth() == completionFrameIndex, "completion root and later completion frames are discarded");
+	require(!cpu.completionCallPending(), "completion root latch is no longer live");
+	require(cpu.readCompletionValues().empty(), "completion value latch is cleared");
+}
+
 void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	SystemRuntimeFixture fixture(
 		makeCompletionLatchSystemImage(),
@@ -849,6 +889,7 @@ void testRuntimeRestorePreservesInFlightFrameBudget() {
 
 int main() {
 	testResetCommandLatch();
+	testSupervisorFaultPublicationBoundary();
 	testSystemTimingRegisters();
 	testSystemPrintRegisters();
 	testRuntimeSystemRebootBoundary();
@@ -857,6 +898,7 @@ int main() {
 	testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat();
 	testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveStateLatch();
 	testCompletionCallReturnLatchSurvivesSaveStateAndGc();
+	testCpuAbortsPhysicalCompletionCallAtMarkedRoot();
 	testSuspendedCompletionReturnsAtPhysicalCpuHold();
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();

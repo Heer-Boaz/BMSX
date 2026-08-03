@@ -26,6 +26,7 @@ local input_arm<const> = 0x00000001
 local system_supervisor_enter<const> = 0x00000002
 local system_supervisor_leave<const> = 0x00000004
 local system_supervisor_fault<const> = 0x00000008
+local system_supervisor_fault_publish<const> = 0x00000010
 local system_supervisor_exit_requested<const> = 0x00000002
 local system_supervisor_resumable<const> = 0x00000004
 local cause_nmi<const> = 0x00010000
@@ -454,7 +455,11 @@ function monitor.enter(error_value)
 	end
 	terminal.flush()
 	gx_gpu.enable_display()
+	vblank.clear()
 	vblank.wait()
+	if (saved_cause & cause_nmi) == 0 then
+		*system_control = system_supervisor_fault_publish
+	end
 
 	while true do
 		*input_control = input_arm

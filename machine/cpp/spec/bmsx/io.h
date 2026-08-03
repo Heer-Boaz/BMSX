@@ -434,6 +434,7 @@ constexpr uint32_t SYS_CONTROL_RESET = 1u;
 constexpr uint32_t SYS_CONTROL_SUPERVISOR_ENTER = 1u << 1u;
 constexpr uint32_t SYS_CONTROL_SUPERVISOR_LEAVE = 1u << 2u;
 constexpr uint32_t SYS_CONTROL_SUPERVISOR_FAULT = 1u << 3u;
+constexpr uint32_t SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH = 1u << 4u;
 
 constexpr uint32_t SYS_STATUS_SUPERVISOR_ACTIVE = 1u;
 constexpr uint32_t SYS_STATUS_SUPERVISOR_EXIT_REQUESTED = 1u << 1u;

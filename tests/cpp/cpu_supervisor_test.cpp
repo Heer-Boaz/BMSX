@@ -542,6 +542,72 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	require(!machine.cpu.completionCallPending(), "completion RET returns to the captured base depth");
 }
 
+void testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "HALT parks the user frame");
+	const int frameDepth = machine.cpu.getFrameDepth();
+	const bmsx::u32 userPc = machine.cpu.readFramePc(frameDepth - 1);
+	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+	machine.irq.raise(bmsx::IRQ_VBLANK);
+	machine.cpu.clearHaltUntilIrq();
+	InstrumentedExecutionProbe probe{
+		.expectedDomain = 0,
+		.stopPc = userPc,
+		.pcs = {},
+	};
+
+	require(
+		machine.cpu.runUntilDepthInstrumented(
+			0,
+			100,
+			stopInstrumentedExecution,
+			&probe,
+			bmsx::executionDomainBit(0),
+			bmsx::executionDomainBit(0)
+		) == bmsx::RunResult::ExecutionStopped,
+		"instrumented fence stops on the user boundary before IRQ delivery"
+	);
+	require(machine.cpu.getFrameDepth() == frameDepth, "pending IRQ did not push an exception frame");
+	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
+	require(machine.cpu.canAcceptMaskableInterruptLine(), "pending IRQ remains asserted at the stopped boundary");
+}
+
+void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "HALT parks the user frame");
+	const int frameDepth = machine.cpu.getFrameDepth();
+	const bmsx::u32 userPc = machine.cpu.readFramePc(frameDepth - 1);
+	machine.cpu.clearHaltUntilIrq();
+	machine.cpu.requestNonMaskableInterrupt();
+	InstrumentedExecutionProbe probe{
+		.expectedDomain = 0,
+		.stopPc = userPc,
+		.pcs = {},
+	};
+
+	require(
+		machine.cpu.runUntilDepthInstrumented(
+			0,
+			100,
+			stopInstrumentedExecution,
+			&probe,
+			bmsx::executionDomainBit(0),
+			bmsx::executionDomainBit(0)
+		) == bmsx::RunResult::ExecutionStopped,
+		"instrumented fence stops only after the pending NMI returns"
+	);
+	require(
+		machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None,
+		"pending NMI is delivered before the maskable-interrupt fence"
+	);
+	require(machine.cpu.getFrameDepth() == frameDepth, "NMI handler returns to the user frame");
+	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
+}
+
 void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -874,6 +940,8 @@ int main() {
 	testInvalidClosureTargetHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
+	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
+	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
 	testRfeCannotResumeOutsideTheInterruptedFunctionRecord();
 	testMappedBusErrorsEnterTheSystemExceptionVector();

@@ -148,6 +148,9 @@ void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
 		if ((value & SYS_CONTROL_SUPERVISOR_FAULT) != 0u) {
 			enterSupervisorFault();
 		}
+		if ((value & SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH) != 0u) {
+			publishSupervisorFault();
+		}
 		if ((value & SYS_CONTROL_SUPERVISOR_LEAVE) != 0u) {
 			beginSupervisorLeave();
 		}
@@ -246,10 +249,6 @@ void SystemController::enterSupervisorFault() {
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, m_cpu.readBadAddressWord());
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, m_cpu.readLuaFaultReasonWord());
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, m_cpu.readExceptionDomainWord());
-	m_memory.writeIoU32(
-		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-		m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1u
-	);
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 		m_supervisorExitRequested = false;
 		writeStatusIo();
@@ -270,6 +269,13 @@ void SystemController::enterSupervisorFault() {
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 	m_cpu.requestYield();
+}
+
+void SystemController::publishSupervisorFault() {
+	m_memory.writeIoU32(
+		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+		m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1u
+	);
 }
 
 void SystemController::beginSupervisorLeave() {

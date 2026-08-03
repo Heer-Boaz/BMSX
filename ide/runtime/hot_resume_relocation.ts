@@ -42,8 +42,8 @@ const LATCH_WORDS = 6;
 export function buildHotResumeRelocation(
 	cpu: CPU,
 	revisions: HotResumeRevisions,
+	frameCount: number,
 ): Uint32Array {
-	const frameCount = cpu.getFrameDepth();
 	const frameCallSiteBase = frameCount * FRAME_EXECUTION_WORDS;
 	const latchBase = frameCallSiteBase + frameCount * FRAME_CALL_SITE_WORDS;
 	const relocation = new Uint32Array(latchBase + LATCH_WORDS);

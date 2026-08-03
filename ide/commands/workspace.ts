@@ -4,6 +4,7 @@ import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { Input } from '../../hosts/common/input/manager';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
@@ -35,6 +36,7 @@ export function executeEditorWorkspaceCommand(
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	debuggerState: RuntimeDebuggerState,
+	input: Input,
 	runtimeTasks: RuntimeTaskQueue,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -70,6 +72,7 @@ export function executeEditorWorkspaceCommand(
 				fault,
 				luaTooling,
 				debuggerState,
+				input,
 				runtimeTasks,
 				overlayRenderer,
 				runtime,
@@ -87,6 +90,7 @@ export function executeEditorWorkspaceCommand(
 				fault,
 				luaTooling,
 				debuggerState,
+				input,
 				runtimeTasks,
 				overlayRenderer,
 				runtime,

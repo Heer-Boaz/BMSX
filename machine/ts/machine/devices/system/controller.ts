@@ -16,6 +16,7 @@ import {
 	SYS_CONTROL_RESET,
 	SYS_CONTROL_SUPERVISOR_ENTER,
 	SYS_CONTROL_SUPERVISOR_FAULT,
+	SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
 	SYS_CONTROL_SUPERVISOR_LEAVE,
 	SYS_STATUS_SUPERVISOR_ACTIVE,
 	SYS_STATUS_SUPERVISOR_EXIT_REQUESTED,
@@ -214,6 +215,9 @@ export class SystemController {
 			if ((value & SYS_CONTROL_SUPERVISOR_FAULT) !== 0) {
 				context.enterSupervisorFault();
 			}
+			if ((value & SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH) !== 0) {
+				context.publishSupervisorFault();
+			}
 			if ((value & SYS_CONTROL_SUPERVISOR_LEAVE) !== 0) {
 				context.beginSupervisorLeave();
 			}
@@ -312,10 +316,6 @@ export class SystemController {
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, this.cpu.readBadAddressWord());
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, this.cpu.readLuaFaultReasonWord());
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, this.cpu.readExceptionDomainWord());
-		this.memory.writeIoU32(
-			IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-			(this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1) >>> 0,
-		);
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 			this.supervisorExitRequested = false;
 			this.writeStatusIo();
@@ -336,6 +336,13 @@ export class SystemController {
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 		this.cpu.requestYield();
+	}
+
+	private publishSupervisorFault(): void {
+		this.memory.writeIoU32(
+			IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+			(this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1) >>> 0,
+		);
 	}
 
 	private beginSupervisorLeave(): void {

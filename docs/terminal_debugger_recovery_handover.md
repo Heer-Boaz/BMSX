@@ -4,46 +4,70 @@ Date: 2026-08-03
 
 Branch: `master`
 
-Current HEAD at the start of the terminal follow-up: `caa6e0ae6`
+Current HEAD at the start of the scheduler-ownership follow-up: `f883c509d`
 
-The user committed the rejected implementation deliberately so later work could
-not accidentally reset or revert unrelated recovery changes. That commit stays
-in history. The corrected `<init>` implementation was subsequently committed by
-the user as `caa6e0ae6`; do not reset or revert either commit. The terminal
-follow-up below is a new worktree change on top of it; no commit was requested.
+The user committed each preceding recovery step deliberately so later work
+could not accidentally reset or revert unrelated changes. Those commits stay in
+history. This scheduler-ownership correction is a new worktree change on top of
+`f883c509d`; it does not reset or revert a commit.
 
-## Faulting Hot Resume init: scheduler-boundary correction (2026-08-03)
+## Hot Resume init execution ownership (2026-08-03)
 
-The earlier terminal follow-up only strengthened a probe and did not contain a
-product correction. Calling that a terminal fix was wrong. Reproduction through
-the real IDE Hot Resume action exposed a separate product failure: after an
-annotated init function raised a Lua fault, `performHotResume()` never returned.
+The CPU-hold change committed in `f883c509d` made the fault scenario return to
+the host, but it was a workaround at the wrong owner. The root architectural
+error was that the IDE Hot Resume task pushed annotated-init completion frames
+and then synchronously drove them through `runSuspendedUntilDepth()`. A guest
+breakpoint, print, hardware wait, or fault was therefore executed from inside a
+tooling task instead of by the ordinary host-frame scheduler.
 
-The fault handler physically starts the supervisor transition and the system
-controller holds the CPU while producers and buses quiesce. The suspended-call
-executor nevertheless kept advancing scheduled hardware deadlines. It could
-therefore carry the machine through the transition and continue synchronously
-into the BIOS monitor's VBlank-driven input loop. The IDE task stayed inside
-`runSuspendedUntilDepth()` forever, so the normal host frame/presentation path
-never regained control.
+For an ordinary user-mode Hot Resume, the runtime task compiles, proves
+relocation, installs media, relocates physical execution state, prepares the
+debugger, and pushes raw completion-call frames while the scheduler is idle. It
+then returns. The next ordinary `runWorkbenchHostFrame()` slice executes those
+frames through the normal CPU/device scheduler. Guest output, breakpoint hooks,
+device deadlines, Lua faults, BIOS monitor rendering, and input consequently
+retain their existing owners.
 
-The owning correction is mirrored in
-`machine/{ts,cpp}/machine/runtime/cpu_executor.*`: suspended completion
-execution now returns `Halted` immediately when the physical system controller
-holds the CPU, just as it already did for a backend readback hold. It does not
-advance a device deadline in that state. The completion frame remains pending;
-ordinary host frames then advance the physical supervisor transition and run
-the BIOS monitor. The normal frame executor is unchanged, and the machine has
-no knowledge of Hot Resume, revisions, source maps, or tooling.
+A request made from the physical BIOS monitor uses the two-phase IDE/debugger
+plan described below. Phase one only builds candidate media and arms an exact
+user-frame fence. The plan raises an independent programmatic source on the
+same physical supervisor-request line; the input owner combines it with the
+host source as a wired OR. BIOS performs the physical supervisor exit through
+its normal system-controller and exception-return path. Only after the
+scheduler reaches that fence does a second runtime task prove the retained
+frame prefix, discard the failed init-call batch, install the candidate, and
+stage fresh init frames. Neither phase executes guest code inside the task.
+
+The committed mirrored `cpuHeld()` behavior and its physical
+`runSuspendedUntilDepth()` tests remain. That is a generic synchronous host-call
+boundary, but Hot Resume is no longer a caller. No machine, CPU, firmware, ROM,
+or cart path gains knowledge of Hot Resume, init batches, or source revisions.
+The only executor extension is an opt-in raw pre-maskable-interrupt hook mask in
+the already instrumented specialization; NMI delivery retains priority and the
+ordinary uninstrumented runtime loop is unchanged.
 
 The permanent Hot Resume IDE scenario now injects a call on a numeric value
 inside the existing annotated `init`, invokes the real `performHotResume()`
-action, waits for the physical fault word, and asserts supervisor mode plus the
-firmware monitor's halted input loop. It captures the physical terminal before
-posting a real F1 press/release, then captures the IDE source overlay. The run
-passes 55 assertions. `tests/ide/screenshots/frame_00531.png` shows the complete,
-sharp BIOS fault at `entry.lua:21:2`; only afterward does
-`frame_00544.png` show the IDE focused on that line.
+action, and first proves that the tooling task neither executes guest code nor
+stops at the init breakpoint. One ordinary machine frame reaches that
+breakpoint. The scenario later waits for the physical fault word, asserts
+supervisor mode plus the firmware monitor's halted input loop, captures the
+physical terminal, posts a real F1 press/release, and captures the IDE source
+overlay. The current run passes 89 assertions, including Hot Resume from an
+existing
+cart breakpoint and nested Hot Resume while stopped inside the annotated init.
+Resume suppression is now a tooling-owned LIFO stack of physical frame depths,
+so the newly pushed init reaches its own breakpoint without consuming the
+relocated older frame's one-shot suppression; continuing then executes both
+prints without the older frame immediately stopping again. It additionally
+repairs the faulted init from the live BIOS monitor without reboot, proves that
+phase one writes no machine/media state, that the internal fence does not become
+a debugger stop, that the fixed init runs once, and that the retained game loop
+continues without a second fault sequence. The current captures
+are `tests/ide/screenshots/frame_00676.png` for the complete, sharp BIOS fault
+at `entry.lua:21:2` and `frame_00689.png` for the subsequent IDE source overlay.
+There is no separate post-recovery screenshot; recovery is proven by the live
+CPU/media/global/fault-sequence assertions.
 
 The separate `monitor_fault_probe` test still uses its source-defined,
 uninitialized framebuffer. Rainbow pixels visible through transparent terminal
@@ -52,7 +76,9 @@ glyphs. Supervisor circuit 1 intentionally uses source-alpha composition over
 retained cartridge circuit 2; making it opaque or clearing the cart fixture to
 hide that data would degrade or mask the real architecture. That scenario now
 waits on the physical fault word, captures the BIOS monitor, sends real F1, and
-captures the IDE, but it is coverage rather than a product fix.
+captures the IDE, but it is coverage rather than a product fix. Its current
+three-assertion run passes; `frame_00068.png` is the firmware terminal and
+`frame_00081.png` is the later IDE overlay.
 
 The reported reboot-time font corruption was a real product defect, not a test
 defect. Its producer correction is already part of the committed HEAD lineage,
@@ -140,16 +166,18 @@ Current completion evidence:
   tooling call then produces the dependency/lexical result `1234`. A separate
   test proves explicit source `init()` runs once cold and once more through
   tooling.
-- The full Hot Resume IDE scenario passes 55 assertions over rejected edits,
+- The full Hot Resume IDE scenario passes 89 assertions over rejected edits,
   two consecutive revisions, system-only and no-op refreshes, retained heap
   identity, `init` counts, unchanged `new_game` count, breakpoint continuation,
-  guest `print`, dual-cartridge selection, cold reboot, and an init fault that
-  reaches the physical terminal before explicit IDE entry.
+  guest `print`, dual-cartridge selection, cold reboot, an init fault that
+  reaches the physical terminal before explicit IDE entry, and repair/resume
+  from that live monitor without reboot.
 - The reboot breakpoint and the short cold-boot terminal were captured at
-  `tests/ide/screenshots/frame_00492.png` and
-  `tests/ide/screenshots/frame_00495.png`; both fonts are intact. The faulting
+  `tests/ide/screenshots/frame_00635.png` and
+  `tests/ide/screenshots/frame_00638.png`; both fonts are intact. The faulting
   Hot Resume captures and full diagnostic surface are documented above.
-- Full Lua tests pass 532 with 1 skipped; rompacker passes 96/96. Pietious
+- Full Lua reports 540 tests: 539 pass and 1 is skipped; rompacker passes
+  96/96. Pietious
   rebuilds and passes its real enter-world host test. `2025` and `nemesis_s`
   rebuild successfully. Machine and toolchain TypeScript compilation and the
   Browser Studio debug product build pass.
@@ -157,480 +185,222 @@ Current completion evidence:
   cart `aem.reload()` calls now rebind event definitions without resetting live
   audio state during Hot Resume; no cart callsite or public API was added.
 
-## Completion update (2026-08-02)
+## Current continuation brief
 
-The recovery implementation was committed by the user as `1df6dad10` before
-the completion audit. The worktree was clean at takeover; the obsolete
-uncommitted-worktree warning below is historical and was not used as a reason
-to reset or revert any part of that commit.
-
-The remaining headless presentation proof passes against the committed
-runtime. The scenario waited for the physical fault-sequence word, captured
-the BIOS monitor, posted one real F1 press/release through `HeadlessInputHub`,
-and captured the IDE. The captures show the physical exception first and then
-`entry.lua` line 14 with the retained runtime-error overlay.
-
-The completion audit also established:
-
-- the root TypeScript project compiles;
-- node-headless tooling, the libretro core, and the Linux libretro host build;
-- `bare_metal_cart`, `pietious`, and `2025` match exactly across TS software,
-  C++ software, and C++ GLES2 captures (146, 2, and 93 frames respectively);
-- core parity, rompacker (90/90), Lua (514 passed, 1 skipped), Hot Resume
-  (28 assertions), indentation, and the targeted native audio, system, and CPU
-  supervisor tests pass;
-- the worktree passes `git diff --check`.
-
-The completion audit initially missed a real browser cold-boot failure: the
-breakpoint payload changed from a path-keyed object to domain/path/line records
-while the workspace record kept the same identity. Browser-local recovery
-could therefore retain the incompatible old payload even after the on-disk
-`.bmsx` directory was removed. The current workspace-session representation
-now owns a new semantic record name, `.bmsx/session.json`; it does not decode,
-migrate, or fall back to the obsolete payload.
-
-One repository-wide C++ test build remains independently red in
-`tests/cpp/device_quantize_test.cpp`: it constructs `OpenGLES2Backend` with the
-old three-argument signature instead of the current four-argument signature.
-That test and constructor are outside this recovery commit; the recovery-owned
-native targets build and pass. The configured standalone SDL target still
-reports the existing `SDL platform not yet implemented` warning, so an audible
-direct-host latency claim cannot be made from this environment. No workaround
-or unrelated repair was folded into this slice.
-
-This document supersedes the earlier version of this handover. Git history
-contains the older functional archaeology when it is needed.
-
-## Assignment
-
-Finish and audit the existing terminal/debugger/Hot Resume/audio recovery as
-one coherent vertical slice. Start from the live diff. Do not reimplement it
-from this document and do not seek quick wins by removing working emulator
-behavior.
-
-Read first:
-
-1. the repository `AGENTS.md` instructions supplied with the task;
-2. `docs/architecture.md` and its current diff;
-3. `docs/open_architecture_slices.md`;
-4. the owner files named below;
-5. the complete live diff.
+The scheduler/fault-recovery implementation is now one IDE-owned vertical
+slice. Continue from the live checkout; do not reconstruct it from the historical
+commits summarized above and do not reset or revert the user's commits.
 
 No commit has been requested.
 
-## Non-negotiable behavior
+## Current control flow
 
-### Physical fault presentation
+### User-mode Hot Resume
 
-- A debug ROM fault enters the physical BIOS terminal first.
-- The terminal shows cause/status/EPC/register information plus filename,
-  line, column, and the failing source line/snippet.
-- A non-debug ROM has no source directory and therefore shows only physical
-  PC/status/register information and whatever firmware-owned disassembly is
-  available. Hosts must not reconstruct source context.
-- The fault must **not** auto-open the IDE. When the user explicitly opens the
-  IDE afterward, it must focus the correct file and line and render the
-  retained runtime-error overlay immediately.
-- Breakpoint and step stops may open the IDE automatically.
-- `Ctrl+E` means focus the retained runtime error; it must not open file search.
-- Empty `FAULT` at the monitor prompt performs no action and prints no
-  `NO SAVED FAULT` placeholder.
-- Guest/system output and the complete exception remain visible through the
-  physical terminal and host log transport.
+1. The IDE runtime task applies source overrides, compiles the candidate media,
+   proves relocation against the live physical frames, installs it, updates
+   debugger bindings, and stages the applicable system/cartridge annotated-init
+   functions as ordinary completion frames.
+2. The task returns without executing a guest instruction. Dirty code-tab
+   sources are marked installed only after the media installation succeeds.
+3. The next ordinary host frame executes the staged functions. Breakpoints,
+   output, waits, IRQs and faults therefore use the ordinary instrumented
+   CPU/device scheduler.
 
-### Debugger
+### Supervisor/fault recovery
 
-- Continue, step-in, real step-over, step-out, breakpoints, optimized/inlined
-  code, and Hot Resume breakpoint relocation must work.
-- CPU state contains machine representations only: raw execution domain IDs,
-  PCs, registers, and execution control. Source paths, source revisions,
-  source maps, editor objects, and debugger DTOs remain tooling-owned.
-- There must be no execution-hook branch in the normal CPU interpreter loop.
-  The current design observes selected domains at the outer execution-slice
-  boundary; the ordinary no-debug path still uses bulk slices.
+1. Phase one compiles and lays out candidate media but performs no media or CPU
+   write. It records the exact underlying user-frame
+   `(depth, execution-domain, PC)` and arms an internal debugger fence.
+2. The host frame waits until raw `SYS_STATUS` publishes
+   `SUPERVISOR_RESUMABLE`, samples the aggregated request low for one machine
+   update, and then raises only the plan-owned programmatic request source. It
+   does not simulate a keyboard shortcut, write a supervisor control register,
+   alter CP0, or call a system-controller method. A held host source remains
+   independent.
+3. BIOS owns monitor exit and restores its saved cartridge selection, EPC and
+   status before exception return.
+4. The instrumented CPU observes the selected raw domain/PC before pending
+   maskable-interrupt delivery as well as before instruction execution. Pending
+   NMI is delivered first. The fence can therefore stop before the exact
+   retained user instruction without becoming a user debugger stop or editor
+   presentation.
+5. Synchronous fault capture writes the raw payload early. BIOS writes and
+   flushes the physical monitor, enables its display, clears older queued
+   firmware VBlank tickets, crosses the following VBlank, and only then issues
+   `SYS_CONTROL.SUPERVISOR_FAULT_PUBLISH`, which advances the public fault
+   sequence. After `executeHostUpdate()`, the workbench drains complete
+   `SYS_PRINT` lines before reading that sequence and before consuming the
+   fence. A new sequence wins: the generic plan lifecycle lowers only its own
+   request source and the IDE presents the physical fault after firmware output.
+6. If the sequence is unchanged and the fence was reached, the host queues phase
+   two at the idle runtime-task boundary. It proves relocation against the
+   supervisor-free retained prefix, discards the failed physical completion
+   root or the incomplete prefix of its IDE-owned init-call batch, installs the
+   candidate, relocates the retained state, and stages that work with the calls
+   requested by the fresh rebuild. It again executes no guest instruction.
+7. Only a successful phase-two installation marks the captured dirty code-tab
+   sources as applied. The next ordinary frame executes init and continues the
+   retained game.
 
-### Hot Resume
+A reboot from the editor action, host menu, or headless harness first discards
+the generic debugger plans: the pending control plan and fence are cancelled,
+its programmatic request source is lowered, and retained init-batch records are
+cleared. The
+ordinary cold-boot owner then proceeds. An unexpected new fault cancels only the
+pending plan; it does not rewrite or hide the physical fault.
 
-- Preserve the already-working lifecycle and global/module/asset behavior.
-- A newly introduced global must not make Hot Resume fail merely because the
-  physical global slot layout changed.
-- Never restore this deleted guard:
+## Init-call batch ownership
 
-  ```ts
-  if (fault.hostFrameFailed) {
-      throw new Error('Hot Resume cannot continue a failed host frame. Reboot the machine.');
-  }
-  ```
+Every staged Hot Resume dispatch is made from raw execution-domain and
+function-record address words. The debugger plan manager records a LIFO batch
+descriptor with its first physical frame index and the ordered execution-domain
+word for every consecutive root. Cartridge is pushed first and system second,
+so the CPU's normal LIFO order executes system first. Completed descriptors are
+inspected and pruned when a subsequent Hot Resume is prepared, not on every host
+frame.
 
-- No workspace migration, legacy payload support, schema versioning, save
-  codec versioning, or compatibility fallback.
-- Leave the existing `freshRange === null ? undefined : ...` conversion alone.
-
-### Monitor audio
-
-- Entering supervisor/monitor freezes the guest voice/song clock.
-- Existing outgoing host backlog is discarded.
-- `CONT` resumes at the same machine audio position without queued latency.
-- Never add `writeSilence`, silence frames, prebuffering, an extra output ring,
-  or audio latency compensation.
-- The machine owns the physical clock gate. Browser/libretro/direct hosts only
-  suspend or resume their transport and discard their transport backlog.
-
-## Hard implementation constraints
-
-- No panic rollback. The diff contains working pieces and fixes for bugs found
-  during the recovery.
-- No defensive guards, speculative fallbacks, DTO validation, facade layers,
-  cosmetic one-line wrappers, or local encoding helpers.
-- No host object identity, string-kind probes, or shape casts as substitutes
-  for guest/runtime representation.
-- No hot-path allocations, repeated decode, unnecessary conditionals, or
-  callbacks in the normal CPU loop.
-- Keep TS/C++ machine contracts mirrored.
-- Do not introduce tests. Modify existing tests only when their owned contract
-  changed; use `/tmp` probes/scenarios for additional evidence.
-- Builds and typechecks are not runtime proof. Run carts and inspect frames.
-- Do not remove entries from `docs/open_architecture_slices.md` unless every
-  stated end criterion of that entry is actually complete.
-
-## Live worktree
-
-At handover the worktree has roughly eighty modified paths plus:
-
-- deleted `toolchain/ts/lua/compiler/resume_points.ts`;
-- new `toolchain/ts/lua/compiler/execution_points.ts`;
-- a newly modified `scripts/bootrom/platforms/node_tooling_entry.ts`;
-- this handover update.
-
-Run these before touching anything:
-
-```sh
-git status --short
-git diff --stat
-git diff --check
-git diff -- docs/architecture.md
-git diff -- docs/open_architecture_slices.md
-```
-
-`git diff --check` was green immediately before this document was written.
-`docs/open_architecture_slices.md` was unchanged. Generated ROMs/build products
-under `dist/` are not the source of truth.
-
-All previously active subagents were interrupted for this handover. They were
-running no-edit cart validation, so do not assume their unfinished tasks
-produced evidence.
+A synchronous fault identifies a physical completion root from the existing
+CPU `returnToCompletionLatch` bit. If that root falls within an IDE-owned init
+batch, completed calls are the suffix above it and recovery restages exactly the
+incomplete prefix through the faulting root. Thus a system-first fault retains
+both calls, while a later cartridge fault does not repeat completed system
+preparation. If the root is unrelated to such a batch, its exact marked frame is
+used. The mirrored generic CPU abort primitive unwinds from that frame index and
+clears the completion-result latch. It knows nothing about batches, tooling,
+revisions or init, and already-performed guest writes are not rolled back.
 
 ## Representation and hot-path table
 
-| Concern | TypeScript representation/owner | C++ representation/owner | Hot-path callsite |
+| Concern | TypeScript representation/owner | C++ representation/owner | Runtime/hot-path effect |
 | --- | --- | --- | --- |
-| Execution domain | raw `ExecutionDomainId` word in `machine/ts/spec/blua32/execution_domain.ts` | raw domain word in `machine/cpp/spec/blua32/execution_domain.h` | ordinary `CPU.runUntilDepth` / `CPU::runLoop<..., false>` contains no hook check; the separate instrumented loop checks only while a debugger hook is bound |
-| Execution PC | raw 32-bit PC | raw `u32` PC | instruction fetch in both loops; source lookup remains outside the CPU |
-| Suspended static call | raw execution-domain word plus raw function-record address | mirrored `ExecutionDomainId` plus `u32` address | explicit `beginCompletionCallInExecutionDomain`; no `CART_SELECT`, source, symbol or revision input |
-| Suspended CPU hold | raw supervisor phase/target latch exposed by `SystemController.cpuHeld()` | mirrored phase/target bytes and `SystemController::cpuHeld()` | `runSuspendedUntilDepth` returns to its host caller; ordinary frame execution retains ownership of advancing held hardware |
-| IRQ wait latch | raw frame depth, with `-1` meaning no latch | mirrored signed frame depth | one equality check against current frame depth at the existing halt boundary; it lets a suspended completion frame run above a waiting guest frame |
-| Source statement | tooling symbol range with statement identity and inline depth | decoded tooling symbol range with the same fields | IDE/debugger lookup outside normal execution |
-| Object global relocation | object-local global slot, then linker name/layout mapping | installed image-local name to live registerfile slot | image install/relocation, not instruction dispatch |
-| Voice clock hold | `voiceClockHeld` in APU service-clock ownership | mirrored `voiceClockHeld` in native service clock | supervisor transition edge and APU service boundary |
-| Host audio mute | browser/common transport state | libretro/direct-host transport state | host lifecycle edge, not guest mixing |
+| Execution domain and PC | raw `ExecutionDomainId`, frame depth and 32-bit PC in CPU/debugger state | raw domain word, frame index and `u32` PC | Ordinary uninstrumented bulk loops contain no debugger hook or source lookup. |
+| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus raw executor domain masks | generic instrumented executor receives mirrored raw normal/pre-maskable-interrupt domain masks | Only the already instrumented loop observes the pre-maskable-interrupt boundary; a zero mask adds no callback and the uninstrumented specialization is unchanged. |
+| Physical completion root | `CallFrame.returnToCompletionLatch`; `CPU.readFrameReturnsToCompletionLatch()` and `abortCompletionCall(frameIndex)` | mirrored raw latch bit and exact frame-index operations | Read/abort occur only while preparing fault recovery, never in instruction dispatch. |
+| Init-call batch | debugger-plan-manager LIFO `{ firstFrameIndex, executionDomains[] }` records | none | Created when IDE stages consecutive roots; incomplete prefixes are decoded only during later recovery and records are otherwise pruned on Hot Resume/reboot. Machine code never classifies a batch. |
+| Init dispatch | raw execution-domain word plus raw tooling-function record address in ordinary completion frames | mirrored generic completion-frame capability; native has no Hot Resume caller | IDE stages at the idle boundary; the next normal frame executes it with no Hot Resume branch. |
+| Synchronous host result call | CPU completion frame and completion-value latch | mirrored frame and borrowed latch span | `Runtime.callClosure` remains the owner of `runSuspendedUntilDepth`; Hot Resume is not a caller. The committed physical `cpuHeld()` return remains. |
+| Supervisor exit request | independent host/programmatic `Input` source levels plus one cached wired-OR output; raw status/fault-sequence MMIO reads | no IDE plan; native machine consumes the same physical input/status contract | The input hot getter remains one boolean read. BIOS/system hardware retains exit ownership. |
+| Fault publication | BIOS `SUPERVISOR_FAULT_PUBLISH` command after console/terminal/display commit; controller advances the raw sequence | mirrored raw command bit and `u32` sequence | One command at fault presentation only; no normal-loop polling, delay, string match, or terminal buffer. |
+| Breakpoints and steps | tooling statement maps, raw domain/PC maps, LIFO physical-frame-depth resume suppressions | CPU sees only the generic hook words | No source path, symbol, revision or editor state enters the CPU. |
+| Object/global relocation | tooling object-local slot and prior installed name/layout mapping | installed-image raw register slots | Revision build/install boundary only, not instruction dispatch. |
+| Voice-clock hold | raw APU/system-controller hold state | mirrored physical hold state | Supervisor transition/APU service boundary; unrelated to the IDE plan. |
 
-Normal execution does not pay for source mapping or debugger callbacks. The
-no-hook path continues through the regular bulk interpreter loop. With a
-debugger hook installed, the executor selects the separately compiled
-instrumented loop, which observes instruction PCs inside the same scheduled
-CPU slice; it does not force the host executor into one-instruction slices.
+## Machine/tooling boundary audit
 
-## Implemented work currently in the diff
+- Candidate revisions, breakpoint maps, fence identity, dirty-source completion
+  and init-batch records all live under `ide/`; the rejected
+  `RuntimeHotResumeState` no longer exists.
+- The CPU additions are representation-level operations over raw frame state and
+  a generic instrumented pre-maskable-interrupt hook mask. They contain no Hot Resume,
+  source, editor, revision or batch branch.
+- The system controller owns only a raw supervisor-fault publication command.
+  BIOS emits it after committing the physical monitor. Neither owner contains
+  IDE, revision, source-map, init-batch, or Hot Resume policy.
+- The current follow-up changes no cart, cartlib, or toolchain source. The six
+  committed entry-cart `<init>` declaration changes documented above remain the
+  complete cart-language adoption. The one BIOS change is the generic physical
+  fault-publication boundary.
+- No machine-state capture/restore, transactional rollback, corrupt-state
+  fallback, compatibility payload, or second guest scheduler was introduced.
 
-### Compiler, symbols, linker, and Hot Resume
+## Live worktree at this audit
 
-- `execution_points.ts` replaces the old resume-point-only model with statement
-  points suitable for Hot Resume and debugger stepping.
-- O3 preserves/clones statement-range identity for inlining and unrolling and
-  records inline depth.
-- TS and C++ BLua32 symbol codecs mirror `statementPointsByFunction` and inline
-  depth.
-- Compiler relocatable constants prevent linked asset addresses from becoming
-  accidentally captured runtime upvalues.
-- Global relocations use object-local slots, then map names through the prior
-  live global layout. New globals no longer shift the active registerfile
-  interpretation.
-- `buildAssetModule` only repacks symbols at/after the rebuilt image offset or
-  the exact edited asset.
-- queued runtime tasks return a completion promise; the headless Hot Resume
-  scenario awaits the actual queued rebuild.
-- workspace persistence happens immediately before scheduling Hot Resume or
-  reboot so an older autosave generation cannot reapply stale source.
-- suspended completion execution treats a physical system-controller CPU hold
-  as a return-to-host boundary, while MMIO write interlocks still advance to
-  their owning device deadline. The ordinary frame executor is unchanged.
-- The user-deleted `hostFrameFailed` Hot Resume guard remains absent.
+`HEAD` remains `f883c509d`; the user's committed baseline has not been reset or
+reverted. The worktree contains this follow-up plus new source/test owner files.
+There are no cart or cartlib changes in the slice.
 
-Primary owners:
+The changed implementation owners are:
 
 ```text
-toolchain/ts/lua/compiler.ts
-toolchain/ts/lua/compiler/execution_points.ts
-toolchain/ts/lua/compiler/optimizer/**
-toolchain/ts/rompack/blua32_linker.ts
-toolchain/ts/rompack/blua32_symbols.ts
-machine/cpp/rompack/tooling/blua32_symbols.{h,cpp}
 ide/runtime/hot_resume.ts
-ide/runtime/lua_pipeline.ts
-ide/runtime/task_queue.ts
-machine/ts/machine/runtime/cpu_executor.ts
-machine/cpp/machine/runtime/cpu_executor.cpp
-```
-
-### Debugger
-
-- The rejected `isEditorDebugCommand()` predicate does not exist. Debug
-  commands use the `EditorDebugCommandId` type directly.
-- Breakpoints persist directly as domain/path/line data in the current
-  workspace payload; there is no migration or compatibility path.
-- Breakpoints are resolved from tooling source points to raw domain/PC
-  bindings.
-- Continue, step-in, step-over, and step-out operate through outer execution
-  slices. Pending interrupts are accepted before observing a debug boundary.
-- Domain activation yield masks make the selected cartridge entry boundary
-  observable without changing the normal interpreter loop.
-- A retained physical fault stays in BIOS presentation. `CartEditor.activate()`
-  consumes the retained fault snapshot and focuses/render its source overlay.
-- Breakpoint/step stops set a pending presentation flag and activate the IDE.
-- `Ctrl+E` is bound to `runtimeErrorFocus`.
-
-Primary owners:
-
-```text
+ide/runtime/hot_resume_relocation.ts
 ide/runtime/debugger_state.ts
-ide/workbench/contrib/debugger/controller.ts
-ide/workbench/host_frame.ts
-ide/cart_editor.ts
-ide/runtime_error/navigation.ts
+ide/runtime/debugger_plans.ts
 ide/commands/**
-ide/input/keyboard/global_bindings.ts
-machine/ts/machine/runtime/cpu_executor.ts
-machine/cpp/machine/runtime/cpu_executor.{h,cpp}
+ide/cart_editor.ts
+ide/testing/headless_harness.ts
+ide/testing/recording_log_output.ts
+ide/workbench/host_frame.ts
+ide/runtime/aem.ts
+hosts/common/input/manager.ts
 machine/ts/machine/cpu/cpu.ts
-machine/cpp/machine/cpu/cpu.{h,cpp}
-```
-
-### BIOS terminal and physical source directory
-
-- BIOS `FAULT` presentation retains raw cause, EPC, bad address, Lua reason,
-  status, and IRQ mask.
-- Debug ROM diagnostics resolve filename/line/column and the source line from
-  ROM-resident debug data.
-- Release ROMs omit that directory and therefore do not show source text.
-- Empty `FAULT` returns no action instead of fabricating a message.
-- The terminal block caret redraws the underlying glyph with inverse colors.
-
-Primary owners:
-
-```text
-machine/bios/shell/commands.lua
-machine/bios/shell/monitor.lua
-machine/bios/tty/terminal.lua
-toolchain/ts/rompack/**
-```
-
-### Supervisor audio
-
-- TS/C++ APU service clocks contain a physical `voiceClockHeld` latch.
-- USER-to-supervisor/fault asserts it; the final transition back to USER
-  releases it.
-- While held, scheduler epoch advances but voice/sample-carry/DAC sequence and
-  command consumption do not.
-- The non-cart-visible AOUT presentation ring is cleared on every actual
-  false-to-true hold edge. This includes USER -> `CONT` -> a second fault that
-  occurs within one host frame and is invisible as a host mute edge.
-- Browser/common, libretro, and direct-host audio paths suspend transport and
-  clear their existing queue/ring; none injects silence.
-
-Primary owners:
-
-```text
-machine/ts/machine/devices/audio/**
-machine/cpp/machine/devices/audio/**
+machine/ts/machine/runtime/cpu_executor.ts
 machine/ts/machine/devices/system/controller.ts
+machine/ts/spec/bmsx/io.ts
+machine/cpp/machine/cpu/cpu.{h,cpp}
+machine/cpp/machine/runtime/cpu_executor.{h,cpp}
 machine/cpp/machine/devices/system/controller.{h,cpp}
-hosts/common/audio_output.ts
-hosts/common/host_frame.ts
-hosts/libretro/audio_output.{h,cpp}
-hosts/libretro/entry.cpp
-hosts/libretro_host/audio_output.c
-hosts/libretro_host/audio_queue.c
-hosts/libretro_host/core_session.c
+machine/cpp/spec/bmsx/io.h
+machine/bios/shell/monitor.lua
 ```
 
-## Evidence already obtained
-
-These results were obtained against the current recovery except for the final
-two headless-runner lines described in the next section.
-
-### Automated suites
-
-- `npm run audit:core-parity`: passed.
-- `npm run test:rompacker`: 90/90 passed.
-- `npm run test:lua`: 514 passed, 1 skipped, 0 failed.
-- `npm run test:hot-resume`: 28 assertions passed.
-- targeted TS audio/system tests: 40/40 passed.
-- native `bmsx_audio_controller_tests`: passed.
-- native `bmsx_system_controller_tests`: passed.
-- `git diff --check`: passed.
-
-### Live/debug probes
-
-- `/tmp/vblank_debugger_steps.idetest.js`: 11 assertions passed, including
-  breakpoint stop, real step-in, step-out, continue, and step-over without
-  entering the call.
-- `/tmp/vblank_inline_debugger.idetest.js`: 19 assertions passed against an O3
-  inline/unroll temporary cart.
-- `/tmp/vblank_debugger_hot_resume.await.idetest.js`: 4 assertions passed from
-  a clean temporarily moved workspace; the original workspace was restored.
-- `/tmp/bmsx_cpp_execution_hook_probe.cpp`: passed against current native
-  libraries; it stopped in cart domain, retained PC across the host update,
-  then continued after hook removal.
-- `/tmp/bmsx_supervisor_audio_ring_probe.ts`: passed first supervisor entry and
-  hidden USER -> fault AOUT ring clearing.
-- `/tmp/bmsx_cpp_supervisor_audio_ring_probe.cpp`: mirrored native pass.
-- Debug `monitor_fault_probe` visibly showed in the BIOS terminal:
-
-  ```text
-  BMSX BIOS MONITOR
-  EXCEPTION TRAP LUA RUNTIME FAULT
-  ...
-  entry.lua:14:1
-  nothing()
-  ```
-
-- Release `monitor_fault_probe` showed register/PC information without source.
-- An empty monitor `FAULT` showed the prompt with no bogus placeholder.
-- Captured caret frames showed a block caret with the underlying glyph
-  inversed.
-
-Useful retained artifacts include:
+The changed existing contract scenarios are:
 
 ```text
-/tmp/bmsx-monitor-debug-1785645099.log
-/tmp/bmsx-monitor-release-1785645099.log
-/tmp/monitor_fault_probe_debug_registers/frame_00030.png
-/tmp/bmsx-monitor-release-shots-1785645099/frame_00030.png
-/tmp/bmsx-monitor-empty-fault.S6Wlnf/
-/tmp/bmsx-monitor-caret.QFtgZ3/
+tests/ide/hot_resume_entry_edit.idetest.js
+tests/lua/cpu_interrupt_state.test.ts
+tests/lua/debugger_plans.test.ts
+tests/lua/input_manager.test.ts
+tests/lua/system_controller.test.ts
+tests/cpp/cpu_supervisor_test.cpp
+tests/cpp/system_controller_test.cpp
 ```
 
-Do not count `/tmp/vblank_debugger_loop_body.idetest.js` as evidence. It used
-an obsolete assertion that current source line 112 could not be a Hot Resume
-point; line 112 is now a normal call statement and legitimately is one.
+Generated files under `dist/` are build products, not source-of-truth changes.
+`docs/open_architecture_slices.md` is unchanged.
 
-## Latest incomplete change: headless IDE visual proof
+## Current validation evidence
 
-The last edit added existing headless input and capture owners to `--ide-test`:
+The final live slice has the following green evidence:
+
+- forced `npm run test:hot-resume`: **89 assertions**;
+- full Lua suite: **540 total, 539 passed, 1 skipped**;
+- rompacker: **96/96**;
+- touched C++ CPU/supervisor/system-controller targets: passed;
+- Browser Studio debug product build: passed;
+- `monitor_fault_probe`: **3 assertions**, with the physical BIOS terminal and
+  host log preceding explicit IDE presentation;
+- Pietious real headless enter-world scenario: passed;
+- `git diff --check`: passed at the documentation audit boundary.
+
+The 89-assertion IDE scenario proves both scheduler ownership and live fault
+repair: phase one does not install media, leave supervisor mode, discard the
+failed completion call or execute init; firmware exits physically; phase two
+installs the fixed media; init and its `print` run exactly once through normal
+frames; `new_game` remains at one; the original fault sequence does not advance;
+the internal fence is not surfaced; no completion root remains; and the
+retained game loop advances without reboot.
+
+The retained fault/IDE captures remain:
 
 ```text
-scripts/bootrom/platforms/hostrunner/ide_test_runner.ts
-scripts/bootrom/platforms/node_tooling_entry.ts
+tests/ide/screenshots/frame_00676.png  # sharp physical BIOS init fault
+tests/ide/screenshots/frame_00689.png  # later explicit IDE source overlay
 ```
 
-The intended proof is entirely headless:
+The reboot breakpoint and short cold-boot terminal remain
+`frame_00635.png` and `frame_00638.png`, with intact fonts. No separate screenshot
+was added after live fault recovery; that final continuation is asserted from
+physical CPU, media, global and fault-sequence state.
 
-1. boot `monitor_fault_probe.debug.rom` through `runWorkbenchHostFrame`;
-2. wait for the physical supervisor fault sequence;
-3. capture the BIOS fault terminal;
-4. post real F1 down/up input through `HeadlessInputHub`;
-5. advance frames and capture the IDE;
-6. visually verify `entry.lua`, line 14, and the error overlay.
+## Non-negotiable continuation rules
 
-The product/tooling build after this change succeeded:
-
-```sh
-npm run build:product:node-headless-tooling -- --debug --force
-```
-
-The first `/tmp/monitor_fault_ide_headless.idetest.js` attempt is **invalid**.
-It waited a fixed 30 clock frames and asserted `!isCartActive()`, but that is
-also true before cartridge boot. It captured:
-
-```text
-/tmp/screenshots/frame_00033.png  # BIOS boot screen, fault not reached
-/tmp/screenshots/frame_00046.png  # IDE main.lua, opened too early, no fault overlay
-```
-
-This does not prove a product regression. Correct the temporary scenario, not
-the runtime. Wait for the actual physical fault sequence word:
-
-```js
-const faultSequenceAddress = 0x08010434;
-let faultSequence = 0;
-for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
-    await t.frames(1);
-    faultSequence = t.runtime().machine.memory.readMappedU32LE(faultSequenceAddress);
-}
-assert(faultSequence !== 0, 'physical supervisor fault was not latched');
-await t.frames(15);
-t.capture('physical BIOS fault terminal');
-// Post F1 down/up with one stable pressId, advancing at least one frame per edge.
-await t.frames(12);
-t.capture('IDE fault source overlay');
-```
-
-Use the existing raw `postInput` context method. Do not add another test
-driver, server, browser, CDP session, or `.mjs` debugging stack. The current
-temporary scenario may be overwritten. Preserve
-`carts/monitor_fault_probe/.bmsx/~workspace` by moving it out and back around
-the run; it was restored after the invalid attempt.
-
-After correcting the scenario, run TypeScript compilation and inspect the
-small runner diff. There is also a formatting-only indentation change on the
-`case 'ide-test'` line in `node_tooling_entry.ts`; fix it while auditing that
-file. Do not turn the two test-boundary calls into a new facade hierarchy.
-
-## Remaining validation and audit
-
-Do these in this order. Fix only a demonstrated blocker at its owner.
-
-1. Complete the physical fault -> BIOS capture -> F1 -> correct IDE source and
-   overlay proof above.
-2. Run the repository TypeScript check after the latest runner edit.
-3. Build the complete current C++ test/product surface, including libretro and
-   the direct SDL/ALSA host.
-4. Run `bare_metal_cart`, `pietious`, and `2025` in both TS and C++ headless
-   runtimes. Inspect screenshots rather than accepting process exit alone.
-5. Exercise `2025` combat/skip/background clearing. Exercise `pietious` long
-   enough to cover the reported World 1 non-table/heap-overflow regression.
-6. Exercise libretro/direct-host supervisor entry and `CONT` with audio
-   transport enabled where the environment permits. Report honestly if audible
-   latency cannot be proven in a dummy headless audio device.
-7. Audit the complete diff for forbidden patterns, unnecessary allocations,
-   duplicate validation, host source magic, hot-loop branches, silence
-   injection, migrations, and versioning.
-8. Rerun the green suites listed above plus `git diff --check`.
-9. Compare every changed architecture statement with the implementation.
-10. Leave `docs/open_architecture_slices.md` unchanged unless all applicable
-    end criteria are genuinely proven.
-
-Suggested quick audits:
-
-```sh
-git diff -U0 | rg "Number\\.isFinite|Number\\.isNaN|\\bisNaN\\b|typeof .*number|math\\.(floor|ceil)|writeSilence|prebuffer|schemaVersion|codecVersion|migration|backward|legacy"
-rg -n "executionHook" machine/ts/machine machine/cpp/machine
-rg -n "writeSilence|silence|prebuffer" machine hosts ide -g '*.{ts,cpp,h,c,lua}'
-git diff --check
-```
-
-Do not mistake `ide.fault.hostFrameFailed` in the workbench frame scheduler for
-the removed Hot Resume prohibition. The forbidden behavior is the deleted
-throw inside Hot Resume, not all lifecycle recording of a failed host frame.
-
-## Known process failure
-
-A stale `rominspector --blua32-asm` pipeline was found running for more than
-four hours at 100% CPU and was killed. Do not launch broad disassembly pipelines
-for this recovery. Before long validation runs, check for stale processes:
-
-```sh
-ps -eo pid,etimes,pcpu,pmem,stat,cmd --sort=-pcpu | head -20
-```
-
-Keep every runtime probe bounded by the existing TTL/timeline mechanism.
+- Start from the live diff and the real owner files; do not reset or revert the
+  user's commits.
+- Do not reintroduce synchronous Hot Resume guest execution through
+  `runSuspendedUntilDepth()`.
+- Do not put revisions, source maps, init batches, relocation policy or tooling
+  control into the CPU, system controller, firmware or cart code.
+- Do not replace the physical supervisor-request input with a key simulation,
+  direct MMIO/CP0 write or host call into firmware/system-controller control.
+- Preserve `fault capture -> physical terminal/display commit -> discard old
+  VBlank tickets -> fresh VBlank -> fault publication -> host output drain ->
+  fault-before-fence consumption` ordering, and cancel pending plan state on
+  all reboot entry points.
+- Do not roll back guest side effects from a failed init. Weird but physical
+  retained state remains deterministic.
+- Do not add guards, fallbacks, migrations, facade layers, silence injection,
+  output buffering or ordinary-loop debugger overhead.
+- Treat builds as compile evidence. Keep the 89-assertion real IDE run, physical
+  monitor probe and real cart run as the behavioral gates.

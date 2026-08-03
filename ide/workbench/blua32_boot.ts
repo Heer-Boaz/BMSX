@@ -10,6 +10,7 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import {
+	discardRuntimeDebuggerPlans,
 	resetRuntimeDebuggerExecution,
 	type RuntimeDebuggerState,
 } from '../runtime/debugger_state';
@@ -77,6 +78,7 @@ export async function rebootPreparedRuntime(
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 ): Promise<void> {
+	discardRuntimeDebuggerPlans(debuggerState);
 	const rebuildBlua32Media = await prepareRebootToBootRom(
 		sources,
 		fault,

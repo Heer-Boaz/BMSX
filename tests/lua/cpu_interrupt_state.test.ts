@@ -329,6 +329,43 @@ test('instrumented executor observes a selected domain across cross-domain CALL 
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 });
 
+test('instrumented execution fence stops before a pending IRQ is delivered', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
+	const cartEntryPc = images.cartImage.functions[0].codeAddress;
+	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
+	cpuExecution.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === 0 && pc === cartEntryPc,
+		executionDomainBit(0),
+		executionDomainBit(0),
+	);
+
+	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.readFramePc(0), cartEntryPc);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), true);
+	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
+});
+
+test('instrumented maskable-interrupt fence does not delay a pending NMI', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images } = makeCrossDomainHookRuntime(sliceStats);
+	const cartEntryPc = images.cartImage.functions[0].codeAddress;
+	cpu.requestNonMaskableInterrupt();
+	cpuExecution.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === 0 && pc === cartEntryPc,
+		executionDomainBit(0),
+		executionDomainBit(0),
+	);
+
+	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
+	assert.equal(cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.readFramePc(0), cartEntryPc);
+	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
+});
+
 test('suspended executor keeps an address-based completion call pending at a debugger stop and resumes to base depth', () => {
 	const sliceStats = { begin: 0, end: 0 };
 	const { cpu, cpuExecution, images } = makeCrossDomainHookRuntime(sliceStats);
@@ -737,6 +774,23 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(results[0], borrowedTable);
 });
 
+test('CPU aborts a physical completion call at its marked root', () => {
+	const { cpu } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+	const completionFrameIndex = cpu.getFrameDepth();
+	cpu.beginCompletionCall(closure);
+	cpu.beginCompletionCall(closure);
+
+	assert.equal(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex), true);
+	assert.equal(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex + 1), true);
+	assert.equal(cpu.completionCallPending(), true);
+	cpu.abortCompletionCall(completionFrameIndex);
+	assert.equal(cpu.getFrameDepth(), completionFrameIndex, 'root and later completion frames are discarded');
+	assert.equal(cpu.completionCallPending(), false);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), []);
+});
+
 test('Runtime callClosure leaves its completion frame pending when the shared executor hits a breakpoint', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -1045,7 +1099,7 @@ test('Hot Resume relocates exception callsites and EPC as interrupted continuati
 			identityHotResumeRevision(HALT_TEST_IMAGES.systemImage),
 			target,
 			null,
-		]),
+		], cpu.getFrameDepth()),
 	);
 	assert.equal(cpu.readEpcWord(), relocatedEpcWord);
 	assert.equal(cpu.readFrameCallSitePc(1), relocatedEpcWord);
@@ -1106,7 +1160,7 @@ halt_until_irq
 			identityHotResumeRevision(linked.systemImage),
 			identityHotResumeRevision(linked.cartImage),
 			null,
-		]),
+		], cpu.getFrameDepth()),
 	);
 	assert.equal(cpu.readNmiReturnEpcWord(), nmiReturnEpcWord);
 });
@@ -1124,7 +1178,7 @@ test('Hot Resume rejects an unmapped continuation before any physical state writ
 			identityHotResumeRevision(HALT_TEST_IMAGES.systemImage),
 			target,
 			null,
-		]),
+		], cpu.getFrameDepth()),
 		/Hot resume could not relocate/,
 	);
 	assert.equal(cpu.readFrameFunctionAddress(0), functionAddress);
@@ -1153,7 +1207,7 @@ wait()
 			identityHotResumeRevision(images.systemImage),
 			identityHotResumeRevision(images.cartImage),
 			null,
-		]),
+		], cpu.getFrameDepth()),
 	);
 	assert.equal(cpu.getFrameUpvalueCount(frameIndex), 1);
 	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
@@ -1174,7 +1228,7 @@ test('Hot Resume updates the physical last-PC latch', () => {
 			identityHotResumeRevision(HALT_TEST_IMAGES.systemImage),
 			target,
 			null,
-		]),
+		], cpu.getFrameDepth()),
 	);
 	assert.equal(cpu.lastPc, relocatedPc);
 });

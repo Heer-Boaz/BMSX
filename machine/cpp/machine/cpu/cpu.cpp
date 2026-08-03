@@ -1958,7 +1958,8 @@ RunResult CPU::runLoop(
 	int instructionBudget,
 	ExecutionHook executionHook,
 	void* executionHookContext,
-	ExecutionDomainMask executionDomainMask
+	ExecutionDomainMask executionDomainMask,
+	ExecutionDomainMask preMaskableInterruptExecutionDomainMask
 ) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
@@ -2010,12 +2011,34 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (m_nonMaskableInterruptPending
-		|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& m_irqController.hasAssertedMaskableInterruptLine())
-	) {
-		enterPendingInterrupt();
-		goto dispatch_loop_check;
+	if constexpr (Instrumented) {
+		if (m_nonMaskableInterruptPending) {
+			enterPendingInterrupt();
+			goto dispatch_loop_check;
+		}
+		if ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+			&& m_irqController.hasAssertedMaskableInterruptLine()) {
+			CallFrame* interruptedFrame = frames.back().get();
+			Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
+			if ((preMaskableInterruptExecutionDomainMask
+				& executionDomainBit(interruptedImage->executionDomainId)) != 0u
+				&& executionHook(
+					executionHookContext,
+					interruptedImage->executionDomainId,
+					interruptedFrame->pc
+				)) {
+				return RunResult::ExecutionStopped;
+			}
+			enterPendingInterrupt();
+			goto dispatch_loop_check;
+		}
+	} else {
+		if (m_nonMaskableInterruptPending
+			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+				&& m_irqController.hasAssertedMaskableInterruptLine())) {
+			enterPendingInterrupt();
+			goto dispatch_loop_check;
+		}
 	}
 		frame = frames.back().get();
 		image = frame->executionImage;
@@ -2143,9 +2166,9 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	if (targetDepth == 0) {
-		return runLoop<true, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u);
+		return runLoop<true, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u, 0u);
 	}
-	return runLoop<false, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u);
+	return runLoop<false, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u, 0u);
 }
 
 RunResult CPU::runUntilDepthInstrumented(
@@ -2153,7 +2176,8 @@ RunResult CPU::runUntilDepthInstrumented(
 	int instructionBudget,
 	ExecutionHook executionHook,
 	void* executionHookContext,
-	ExecutionDomainMask executionDomainMask
+	ExecutionDomainMask executionDomainMask,
+	ExecutionDomainMask preMaskableInterruptExecutionDomainMask
 ) {
 	if (targetDepth == 0) {
 		return runLoop<true, true>(
@@ -2161,7 +2185,8 @@ RunResult CPU::runUntilDepthInstrumented(
 			instructionBudget,
 			executionHook,
 			executionHookContext,
-			executionDomainMask
+			executionDomainMask,
+			preMaskableInterruptExecutionDomainMask
 		);
 	}
 	return runLoop<false, true>(
@@ -2169,7 +2194,8 @@ RunResult CPU::runUntilDepthInstrumented(
 		instructionBudget,
 		executionHook,
 		executionHookContext,
-		executionDomainMask
+		executionDomainMask,
+		preMaskableInterruptExecutionDomainMask
 	);
 }
 
@@ -2236,6 +2262,15 @@ bool CPU::completionCallPending() const {
 		}
 	}
 	return false;
+}
+
+bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->returnToCompletionLatch;
+}
+
+void CPU::abortCompletionCall(int frameIndex) {
+	unwindToDepth(frameIndex);
+	m_completionValues.clear();
 }
 
 auto CPU::readCompletionValues() const -> std::span<const Value> {

@@ -3,7 +3,7 @@ import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { LogOutput } from '../../hosts/common/log';
+import type { Input } from '../../hosts/common/input/manager';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { editorDocumentState } from '../editor/editing/document_state';
@@ -18,6 +18,11 @@ import type { RuntimeIdeState } from '../runtime/state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorDebugCommandId } from '../common/commands';
 import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
+import { handleLuaError } from '../workbench/runtime_errors';
+import type {
+	RecordedLogMessage,
+	RecordingLogOutput,
+} from './recording_log_output';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates
@@ -33,6 +38,8 @@ export type HeadlessIdeHarness = {
 	getSourceState(): RuntimeSourceState;
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
+	getLogMessageCount(): number;
+	getLogMessage(index: number): RecordedLogMessage;
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
@@ -61,25 +68,44 @@ export type HeadlessIdeHeapStats = {
 export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
+	input: Input,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
-	logOutput: LogOutput,
+	logOutput: RecordingLogOutput,
 ): HeadlessIdeHarness {
+	const handleHotResumeError = (error: unknown): void => {
+		console.error(error);
+		handleLuaError(
+			logOutput,
+			ide.fault,
+			ide.sources,
+			runtime,
+			ide.luaTooling.suspendedGuest,
+			error,
+		);
+		ide.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+	};
 	return {
 		getRuntime: () => runtime,
 		getSourceState: () => ide.sources,
 		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive(),
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
+		getLogMessageCount: () => logOutput.messages.length,
+		getLogMessage: index => logOutput.messages[index],
 		hotResumeCore: () => {
 			hotResume(
 				ide.sources,
 				ide.luaTooling,
 				ide.fault,
 				ide.debugger,
+				input,
+				ide.runtimeTasks,
 				ide.editor,
 				runtime,
 				ide.sources.systemBlua32MediaDirty,
 				ide.sources.cartridgeBlua32MediaDirty,
+				handleHotResumeError,
+				null,
 			);
 		},
 		performHotResume: () =>
@@ -89,6 +115,7 @@ export function createHeadlessIdeHarness(
 				ide.fault,
 				ide.luaTooling,
 				ide.debugger,
+				input,
 				ide.runtimeTasks,
 				ide.overlayRenderer,
 				runtime,
