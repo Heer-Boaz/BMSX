@@ -2164,17 +2164,25 @@ dispatch_continue:
 	}
 }
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
-	if (m_executionHookBinding.hook != nullptr) {
-		if (targetDepth == 0) {
-			return runLoop<true, true>(targetDepth, instructionBudget);
-		}
-		return runLoop<false, true>(targetDepth, instructionBudget);
-	}
+RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
 	if (targetDepth == 0) {
-		return runLoop<true, false>(targetDepth, instructionBudget);
+		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
 	}
-	return runLoop<false, false>(targetDepth, instructionBudget);
+	return cpu.runLoop<false, false>(targetDepth, instructionBudget);
+}
+
+RunResult CPU::runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instructionBudget) {
+	if (targetDepth == 0) {
+		return cpu.runLoop<true, true>(targetDepth, instructionBudget);
+	}
+	return cpu.runLoop<false, true>(targetDepth, instructionBudget);
+}
+
+void CPU::setExecutionHook(ExecutionHookBinding binding) {
+	m_executionHookBinding = binding;
+	m_runUntilDepthEntry = binding.hook == nullptr
+		? &CPU::runUntilDepthNormal
+		: &CPU::runUntilDepthInstrumented;
 }
 
 void CPU::unwindToDepth(int targetDepth) {

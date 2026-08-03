@@ -1229,6 +1229,12 @@
 			"reason": "TS emits storage-and-operation-specialized loops while C++ owns equivalent native specializations in gx_gpu_scanout.cpp"
 		}
 	],
+	"cpp_missing_ts_exclusions": [
+		{
+			"cpp": "machine/cpp/common/scope_exit.h",
+			"reason": "C++20 RAII counterpart to TypeScript try/finally"
+		}
+	],
 	"public_symbol_parity": [
 		{
 			"ts": "machine/ts/rompack/toc.ts",

@@ -3689,20 +3689,26 @@ Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal
 path and contains no per-instruction debugger branch or callback. An installed
 hook, callback context and the ordinary/pre-maskable-interrupt raw domain masks
-form one CPU-owned execution-hook binding. The shared scheduler always calls
-`CPU.runUntilDepth()` with only the raw target depth and instruction budget. At
-that CPU-burst boundary, before the bulk interpreter loop, the CPU checks the
-binding once and enters the normal or instrumented loop. The scheduler contains
-no hook-presence branch, callback argument bundle or indirect strategy call.
-C++ compiles the two interpreter loops as template specializations; TypeScript
-keeps the normal loop on the public entry and delegates only the configured case
-to its instrumented loop. The scheduler itself has one hand-written
-implementation in each runtime and requires no generated duplicate.
+form one CPU-owned execution-hook binding. The shared runtime executor always
+calls
+`DeviceScheduler.runCpuSlice()` with only the raw target depth and instruction
+budget. The scheduler owns activation and exception-safe closure of that slice
+and invokes the CPU; executor callsites no longer reproduce its lifetime
+protocol. Updating the CPU binding selects a stable normal or instrumented run
+entry at that cold configuration boundary. `CPU.runUntilDepth()` dispatches
+through the selected entry without reading or testing the hook. C++ retains a
+raw function pointer and TypeScript a shared prototype-method reference, so a
+binding update allocates nothing. There is one indirect dispatch per bulk CPU
+burst, never per instruction. C++ compiles the interpreter loops as template
+specializations; TypeScript retains separate normal and instrumented loops. The
+scheduler contains no hook-presence branch or callback argument bundle, has one
+hand-written implementation in each runtime, and requires no generated
+duplicate.
 
 The instrumented loop snapshots the single binding before instruction dispatch,
 so a hook may update IDE policy and reconfigure the CPU without changing the
-active burst. The next CPU burst observes the new binding at the same CPU-owned
-entry boundary. The normal interpreter specialization never reads hook state.
+active burst. The next CPU burst uses the run entry selected by that update.
+The normal interpreter specialization never reads hook state.
 The instrumented bulk-loop specialization checks
 the selected raw execution-domain mask immediately before each instruction and
 exposes only the current raw execution-domain word and instruction PC; calls,

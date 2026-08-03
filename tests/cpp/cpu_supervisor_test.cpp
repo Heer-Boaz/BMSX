@@ -453,6 +453,10 @@ bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32) {
 	return probe.calls == 2;
 }
 
+bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32) {
+	throw std::runtime_error("execution hook failure");
+}
+
 void testExecutionHookReconfigurationAppliesAtTheNextCpuBurst() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -475,6 +479,26 @@ void testExecutionHookReconfigurationAppliesAtTheNextCpuBurst() {
 		"next CPU burst uses the reconfigured normal entry"
 	);
 	require(probe.calls == 2, "normal CPU burst does not read or invoke the cleared binding");
+}
+
+void testDeviceSchedulerOwnsCpuSliceLifetime() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	machine.cpu.setExecutionHook({
+		.hook = throwExecutionHook,
+		.context = nullptr,
+		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
+		.preMaskableInterruptDomainMask = 0u,
+	});
+	bool threw = false;
+	try {
+		machine.scheduler.runCpuSlice(0, 100);
+	} catch (const std::runtime_error&) {
+		threw = true;
+	}
+	require(threw, "execution-hook host failure escapes the CPU slice");
+	require(!machine.scheduler.isCpuSliceActive(), "scheduler ends the CPU slice during stack unwinding");
 }
 
 void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
@@ -974,6 +998,7 @@ int main() {
 	testInvalidClosureTargetHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
+	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();

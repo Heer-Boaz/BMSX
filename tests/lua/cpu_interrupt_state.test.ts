@@ -70,6 +70,7 @@ import {
 } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
 import {
 	createTestBlua32PairCpu,
@@ -199,21 +200,31 @@ const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
 	let cpuSliceActive = false;
+	const beginCpuSlice = (): void => {
+		cpuSliceActive = true;
+		if (sliceStats) {
+			sliceStats.begin += 1;
+		}
+	};
+	const endCpuSlice = (): void => {
+		cpuSliceActive = false;
+		if (sliceStats) {
+			sliceStats.end += 1;
+		}
+	};
 	const scheduler = {
 		nowCycles: 0,
 		hasDueTimer: () => false,
 		nextDeadline: () => Number.MAX_SAFE_INTEGER,
 		isCpuSliceActive: () => cpuSliceActive,
-		beginCpuSlice: () => {
-			cpuSliceActive = true;
-			if (sliceStats) {
-				sliceStats.begin += 1;
-			}
-		},
-		endCpuSlice: () => {
-			cpuSliceActive = false;
-			if (sliceStats) {
-				sliceStats.end += 1;
+		beginCpuSlice,
+		endCpuSlice,
+		runCpuSlice: (targetDepth: number, sliceBudget: number) => {
+			beginCpuSlice();
+			try {
+				return cpu.runUntilDepth(targetDepth, sliceBudget);
+			} finally {
+				endCpuSlice();
 			}
 		},
 	};
@@ -377,6 +388,25 @@ test('CPU hook reconfiguration takes effect at the next scheduler burst', () => 
 	assert.equal(sliceStats.end, sliceStats.begin);
 });
 
+test('device scheduler ends an active CPU slice when instrumented execution throws', () => {
+	const { cpu } = makeCrossDomainHookRuntime({ begin: 0, end: 0 });
+	const scheduler = new DeviceScheduler(cpu);
+	const failure = new Error('execution hook failure');
+	cpu.setExecutionHook(
+		() => {
+			throw failure;
+		},
+		executionDomainBit(0),
+		0,
+	);
+
+	assert.throws(
+		() => scheduler.runCpuSlice(0, 100),
+		(error) => error === failure,
+	);
+	assert.equal(scheduler.isCpuSliceActive(), false);
+});
+
 test('instrumented execution fence stops before a pending IRQ is delivered', () => {
 	const sliceStats = { begin: 0, end: 0 };
 	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
@@ -529,6 +559,8 @@ function makeHaltFrameRuntime(): Runtime {
 		isCpuSliceActive: () => false,
 		beginCpuSlice: () => {},
 		endCpuSlice: () => {},
+		runCpuSlice: (targetDepth: number, sliceBudget: number) =>
+			cpu.runUntilDepth(targetDepth, sliceBudget),
 	};
 	const runtime = {
 		machine: {
@@ -614,6 +646,8 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 		nextDeadline: () => Number.MAX_SAFE_INTEGER,
 		beginCpuSlice: () => {},
 		endCpuSlice: () => {},
+		runCpuSlice: (targetDepth: number, sliceBudget: number) =>
+			cpu.runUntilDepth(targetDepth, sliceBudget),
 	};
 	const runtime = {
 		machine: {

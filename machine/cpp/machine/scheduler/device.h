@@ -9,6 +9,7 @@
 namespace bmsx {
 
 class CPU;
+enum class RunResult;
 
 constexpr uint8_t DEVICE_SERVICE_GEO = 1;
 constexpr uint8_t DEVICE_SERVICE_DMA = 2;
@@ -29,8 +30,14 @@ public:
 	void reset();
 	i64 currentNowCycles() const;
 	bool isCpuSliceActive() const { return m_schedulerSliceActive; }
-	void beginCpuSlice(int sliceBudget);
-	void endCpuSlice();
+	void beginCpuSlice(int sliceBudget) {
+		m_schedulerSliceActive = true;
+		m_activeSliceBaseCycle = m_schedulerNowCycles;
+		m_activeSliceBudgetCycles = sliceBudget;
+		m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
+	}
+	void endCpuSlice() { m_schedulerSliceActive = false; }
+	RunResult runCpuSlice(int targetDepth, int sliceBudget);
 	void advanceTo(i64 nowCycles);
 	i64 nextDeadline();
 	bool hasDueTimer();

@@ -210,13 +210,7 @@ export class CpuExecutionState {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			let result: RunResult;
-			scheduler.beginCpuSlice(sliceBudget);
-			try {
-				result = cpu.runUntilDepth(targetDepth, sliceBudget);
-			} finally {
-				scheduler.endCpuSlice();
-			}
+			const result = scheduler.runCpuSlice(targetDepth, sliceBudget);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				machine.advanceDevices(consumed);
@@ -321,13 +315,7 @@ export class CpuExecutionState {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			let result: RunResult;
-			scheduler.beginCpuSlice(sliceBudget);
-			try {
-				result = cpu.runUntilDepth(0, sliceBudget);
-			} finally {
-				scheduler.endCpuSlice();
-			}
+			const result = scheduler.runCpuSlice(0, sliceBudget);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;

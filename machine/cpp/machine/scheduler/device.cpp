@@ -1,5 +1,6 @@
 #include "machine/scheduler/device.h"
 
+#include "common/scope_exit.h"
 #include "machine/cpu/cpu.h"
 
 #include <limits>
@@ -36,15 +37,10 @@ i64 DeviceScheduler::currentNowCycles() const {
 	return m_activeSliceBaseCycle + (m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining);
 }
 
-void DeviceScheduler::beginCpuSlice(int sliceBudget) {
-	m_schedulerSliceActive = true;
-	m_activeSliceBaseCycle = m_schedulerNowCycles;
-	m_activeSliceBudgetCycles = sliceBudget;
-	m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
-}
-
-void DeviceScheduler::endCpuSlice() {
-	m_schedulerSliceActive = false;
+RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget) {
+	beginCpuSlice(sliceBudget);
+	ScopeExit activeSlice([this]() { endCpuSlice(); });
+	return m_cpu.runUntilDepth(targetDepth, sliceBudget);
 }
 
 void DeviceScheduler::advanceTo(i64 nowCycles) {

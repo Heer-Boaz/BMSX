@@ -1,4 +1,4 @@
-import type { CPU } from '../cpu/cpu';
+import type { CPU, RunResult } from '../cpu/cpu';
 
 export const DEVICE_SERVICE_GEO = 1;
 export const DEVICE_SERVICE_DMA = 2;
@@ -68,6 +68,15 @@ export class DeviceScheduler {
 
 	public endCpuSlice(): void {
 		this.schedulerSliceActive = false;
+	}
+
+	public runCpuSlice(targetDepth: number, sliceBudget: number): RunResult {
+		this.beginCpuSlice(sliceBudget);
+		try {
+			return this.cpu.runUntilDepth(targetDepth, sliceBudget);
+		} finally {
+			this.endCpuSlice();
+		}
 	}
 
 	public advanceTo(nowCycles: number): void {

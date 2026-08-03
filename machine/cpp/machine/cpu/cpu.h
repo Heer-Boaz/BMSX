@@ -297,10 +297,10 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
-	void setExecutionHook(ExecutionHookBinding binding) {
-		m_executionHookBinding = binding;
+	void setExecutionHook(ExecutionHookBinding binding);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget) {
+		return m_runUntilDepthEntry(*this, targetDepth, instructionBudget);
 	}
-	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void collectHeap();
 	class LocalRootsScope {
 	public:
@@ -360,6 +360,10 @@ private:
 	friend class BuiltinResultsScratchScope;
 	friend class GcHeap;
 	friend class LuaHeap;
+	using RunUntilDepthEntry = RunResult (*)(CPU&, int, int);
+
+	static RunResult runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget);
+	static RunResult runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instructionBudget);
 	template <bool RootBoundary, bool Instrumented>
 	RunResult runLoop(
 		int targetDepth,
@@ -495,6 +499,7 @@ private:
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
+	RunUntilDepthEntry m_runUntilDepthEntry = &CPU::runUntilDepthNormal;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

@@ -274,7 +274,7 @@ revisions or init, and already-performed guest writes are not rolled back.
 | Concern | TypeScript representation/owner | C++ representation/owner | Runtime/hot-path effect |
 | --- | --- | --- | --- |
 | Execution domain and PC | raw `ExecutionDomainId`, frame depth and 32-bit PC in CPU/debugger state | raw domain word, frame index and `u32` PC | Ordinary uninstrumented bulk loops contain no debugger hook or source lookup. |
-| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus one CPU-owned raw hook/mask binding | mirrored `ExecutionHookBinding` retains the native callback context and raw masks | The shared scheduler calls one CPU entry with only depth and budget. That entry checks the binding once before each bulk interpreter burst and selects its normal or instrumented specialization. The instrumented burst snapshots the binding, so hook-side reconfiguration affects only the next burst; the normal specialization never reads it. There is no scheduler mode branch, indirect strategy call or callback argument bundle. |
+| Exact user fence | IDE-owned `(frame depth, domain, PC)` plus one CPU-owned raw hook/mask binding and a stable normal/instrumented method entry selected by `setExecutionHook()` | mirrored `ExecutionHookBinding` retains the native callback context and raw masks; `setExecutionHook()` selects one raw run-entry function pointer | `DeviceScheduler.runCpuSlice(depth, budget)` owns slice activation/closure and invokes the selected CPU entry. There is one indirect dispatch per bulk burst, no hook-presence check or callback argument bundle, and no dispatch work per instruction. The instrumented burst snapshots the binding, so hook-side reconfiguration affects only the next burst; the normal specialization never reads it. |
 | Physical completion root | `CallFrame.returnToCompletionLatch`; `CPU.readFrameReturnsToCompletionLatch()` and `abortCompletionCall(frameIndex)` | mirrored raw latch bit and exact frame-index operations | Read/abort occur only while preparing fault recovery, never in instruction dispatch. |
 | Init-call batch | debugger-plan-manager LIFO `{ firstFrameIndex, executionDomains[] }` records | none | Created when IDE stages consecutive roots; incomplete prefixes are decoded only during later recovery and records are otherwise pruned on Hot Resume/reboot. Machine code never classifies a batch. |
 | Init dispatch | raw execution-domain word plus raw tooling-function record address in ordinary completion frames | mirrored generic completion-frame capability; native has no Hot Resume caller | IDE stages at the idle boundary; the next normal frame executes it with no Hot Resume branch. |
@@ -318,8 +318,9 @@ and `git diff --check`. Builds are not runtime proof: force the real Hot Resume
 IDE scenario, the real headless system-print terminal scenario and the Browser
 Studio debug build. Inspect the Release native object to prove the normal
 interpreter specialization contains no execution-hook load or callback, the CPU
-entry performs only the one pre-loop mode check and the executor slice contains
-no hook-presence branch or callback argument bundle.
+entry is a single selected indirect dispatch with no hook-presence comparison,
+and the scheduler-owned slice contains no hook-presence branch or callback
+argument bundle.
 
 The 89-assertion IDE scenario proves both scheduler ownership and live fault
 repair: phase one does not install media, leave supervisor mode, discard the

@@ -280,6 +280,7 @@ export class CPU {
 	private executionHook: ExecutionHook | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
+	private runUntilDepthEntry = this.runUntilDepthNormal;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
@@ -1426,6 +1427,9 @@ export class CPU {
 		this.executionHook = hook;
 		this.executionHookDomainMask = domainMask;
 		this.preMaskableInterruptExecutionHookDomainMask = preMaskableInterruptDomainMask;
+		this.runUntilDepthEntry = hook === null
+			? this.runUntilDepthNormal
+			: this.runUntilDepthInstrumented;
 	}
 
 	public haltUntilIrq(): void {
@@ -1599,9 +1603,10 @@ export class CPU {
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
-		if (this.executionHook !== null) {
-			return this.runUntilDepthInstrumented(targetDepth, instructionBudget);
-		}
+		return this.runUntilDepthEntry(targetDepth, instructionBudget);
+	}
+
+	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const baseCycles = BASE_CYCLES;

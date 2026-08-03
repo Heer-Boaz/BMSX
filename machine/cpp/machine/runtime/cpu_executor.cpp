@@ -186,15 +186,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		RunResult result;
-		scheduler.beginCpuSlice(sliceBudget);
-		try {
-			result = cpu.runUntilDepth(targetDepth, sliceBudget);
-		} catch (...) {
-			scheduler.endCpuSlice();
-			throw;
-		}
-		scheduler.endCpuSlice();
+		const RunResult result = scheduler.runCpuSlice(targetDepth, sliceBudget);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
 			machine.advanceDevices(consumed);
@@ -305,15 +297,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		RunResult result;
-		scheduler.beginCpuSlice(sliceBudget);
-		try {
-			result = cpu.runUntilDepth(0, sliceBudget);
-		} catch (...) {
-			scheduler.endCpuSlice();
-			throw;
-		}
-		scheduler.endCpuSlice();
+		const RunResult result = scheduler.runCpuSlice(0, sliceBudget);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
 			remaining -= consumed;
