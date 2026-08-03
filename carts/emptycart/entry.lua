@@ -10,13 +10,8 @@ local irq_vblank<const> = 0x0004
 local framebuffer_size<const> = 320 | (240 << 16)
 local vblank_count = 0
 
-function init()
-	irq_module.register(irq_vblank, function()
-		vblank_count = vblank_count + 1
-	end)
-end
-
-function new_game()
+local on_vblank_irq<const> = function()
+	vblank_count = vblank_count + 1
 end
 
 local update_cart<const> = function()
@@ -33,9 +28,10 @@ local wait_vblank<const> = function()
 	vblank_count = vblank_count - 1
 end
 
-init()
+local function bind_vblank_irq<init>()
+	irq_module.register(irq_vblank, on_vblank_irq)
+end
 *irq_mask_register = irq_vblank
-new_game()
 *inp_ctrl_register = 0x00000001
 wait_vblank()
 

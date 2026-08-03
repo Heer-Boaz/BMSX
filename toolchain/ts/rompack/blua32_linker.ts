@@ -81,6 +81,7 @@ import type {
 } from '../lua/compiler/program_object';
 import type {
 	ProgramMetadata,
+	ProgramInitParticipant,
 	ProgramRuntimeSymbols,
 } from '../lua/compiler/program';
 import { programModuleExportKey } from '../lua/compiler/program';
@@ -94,6 +95,7 @@ import type {
 	Blua32BiosImports,
 } from './blua32_bios_imports';
 import { SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY } from './system';
+import { evaluateProgramLinkValueExpression } from '../lua/compiler/compile_time_number';
 
 export type LinkedBlua32ImageBase = {
 	bytes: Uint8Array;
@@ -102,6 +104,7 @@ export type LinkedBlua32ImageBase = {
 	startupFunctionAddress: number;
 	irqFunctionAddress: number;
 	exceptionFunctionAddress: number;
+	initFunctionAddress: number;
 };
 
 export type LinkedCartBlua32Image = LinkedBlua32ImageBase & {
@@ -213,11 +216,24 @@ function buildStaticLayoutToken(
 	bssAddress: number,
 	bssByteCount: number,
 	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
+	initParticipants: ReadonlyArray<ProgramInitParticipant>,
 ): Blua32StaticLayoutToken {
 	const token = { lo: 0x84222325, hi: 0xcbf29ce4 };
 	mixStaticLayoutSection(token, 1, rodataAddress, rodataByteCount, rodataSymbols);
 	mixStaticLayoutSection(token, 2, dataAddress, dataByteCount, dataSymbols);
 	mixStaticLayoutSection(token, 3, bssAddress, bssByteCount, bssSymbols);
+	mixStaticLayoutWord(token, 4);
+	mixStaticLayoutWord(token, initParticipants.length);
+	for (let index = 0; index < initParticipants.length; index += 1) {
+		const participant = initParticipants[index];
+		const functionToken = hashAssetId(participant.functionId);
+		const slotToken = hashAssetId(participant.slotName);
+		mixStaticLayoutWord(token, functionToken.lo);
+		mixStaticLayoutWord(token, functionToken.hi);
+		mixStaticLayoutWord(token, slotToken.lo);
+		mixStaticLayoutWord(token, slotToken.hi);
+		mixStaticLayoutWord(token, participant.system ? 1 : 0);
+	}
 	return token;
 }
 
@@ -256,7 +272,7 @@ function resolveConstValueRelocation(
 		case 'rodata_addr':
 			return resolveStorageSymbolAddress(rodataSymbols, rodataAddress, reloc.symbol, reloc.addend);
 		case 'link_value':
-			return reloc.value;
+			return evaluateProgramLinkValueExpression(reloc.expression);
 	}
 }
 
@@ -574,13 +590,22 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		input.systemGlobalNames,
 		input.previous?.image.systemGlobalNames,
 	);
-	const pinnedFunctionIds = input.domain === 'system'
-		? resolvePinnedBiosFunctionIds(
+	const initFunctionId = object.vectors.initProtoIndex === null
+		? null
+		: input.metadata.protoIds[object.vectors.initProtoIndex];
+	let pinnedFunctionIds: string[] | undefined;
+	if (input.domain === 'system') {
+		pinnedFunctionIds = resolvePinnedBiosFunctionIds(
 			input.biosExports,
 			rodata.moduleExports,
 			object.link.symbols,
-		)
-		: undefined;
+		);
+		if (initFunctionId !== null) {
+			pinnedFunctionIds.push(initFunctionId);
+		}
+	} else if (initFunctionId !== null) {
+		pinnedFunctionIds = [initFunctionId];
+	}
 	const functionLayout = layoutFunctionRecords(input.metadata.protoIds, pinnedFunctionIds, input.previous);
 	const functionCount = functionLayout.protoIndexBySlot.length;
 	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? INSTRUCTION_BYTES : 0);
@@ -843,6 +868,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		input.bssAddress,
 		bss.byteCount,
 		bss.symbols,
+		object.link.symbols.initParticipants,
 	);
 	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
@@ -882,6 +908,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		imageAddress: input.loadAddress,
 		functionAddresses,
 		moduleFunctions,
+		initFunctionAddress: object.vectors.initProtoIndex === null
+			? 0
+			: functionAddressByProtoIndex[object.vectors.initProtoIndex],
+		initParticipants: object.link.symbols.initParticipants,
 		staticLayoutToken,
 		metadata,
 	};
@@ -903,6 +933,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 			irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],
 			exceptionFunctionAddress: functionAddressByProtoIndex[object.vectors.exceptionProtoIndex],
+			initFunctionAddress: symbols.initFunctionAddress,
 		};
 	}
 	return {
@@ -913,6 +944,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 		irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],
 		exceptionFunctionAddress: functionAddressByProtoIndex[object.vectors.exceptionProtoIndex],
+		initFunctionAddress: symbols.initFunctionAddress,
 	};
 }
 
@@ -991,7 +1023,7 @@ export function applyBlua32LinkValues(
 		if (reloc.kind !== 'link_value' || reloc.modulePath !== modulePath) {
 			continue;
 		}
-		const value = values.get(reloc.exportPath)!;
+		const value = evaluateProgramLinkValueExpression(reloc.expression, values);
 		view.setFloat64(
 			constantTableOffset
 				+ reloc.constIndex * BLUA32_CONSTANT_RECORD_SIZE

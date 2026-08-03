@@ -88,14 +88,13 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 	return lines.join('\n');
 }
 
-export function buildRomAssetLinkValuesFromSymbols(
+export function buildRomAssetAddressLinkValuesFromSymbols(
 	symbols: ReadonlyArray<RomAssetSymbol>,
 ): ReadonlyMap<string, number> {
 	const values = new Map<string, number>();
 	for (let index = 0; index < symbols.length; index += 1) {
 		const symbol = symbols[index];
 		values.set(`${symbol.name}_addr`, symbol.address);
-		values.set(`${symbol.name}_len`, symbol.byteLength);
 	}
 	return values;
 }
@@ -109,9 +108,9 @@ export function buildRomAssetLinkValuesFromSymbols(
 		declarations and one `return` table that exports them by name.
 	- The compiler therefore treats `bmsx/assets` as a const module: the
 		return table is a compile-time export descriptor, never a runtime table. Stable
-		prefix values are folded normally; Studio marks only mutable-tail AEM values for
-		link relocation. The module emits no proto, global slots, `require` call or runtime
-		table construction.
+		values and all payload lengths are folded normally; Studio marks only addresses in
+		the cartridge tail whose position depends on the linked image for relocation. The
+		module emits no proto, global slots, `require` call or runtime table construction.
 */
 export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>): string {
 	const symbols = collectRomAssetSymbols(assetList, 'cart');

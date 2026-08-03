@@ -20,8 +20,7 @@ local textobject<const> = require('cartlib/text/object')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local world_instance<const> = require('cartlib/world/world').instance
 irq = irq_module.dispatch
-local pietsona_font<const> = require('pietsona_font')
-pietsona_font.register_fonts()
+require('pietsona_font')
 local texture_residency<const> = require('texture_residency')
 require('globals')
 local story<const> = require('story')
@@ -32,7 +31,7 @@ local input_control_register<const>: *word = 0x08000064
 local irq_imgdec<const> = 0x0080
 local irq_apu<const> = 0x0020
 
-local combat_module<const> = require('combat')
+require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
 
@@ -128,7 +127,7 @@ end
 
 dialogue_module.register_methods(director)
 
-local build_director_fsm<const> = function()
+local function build_director_fsm<init>()
 	local states<const> = {
 		boot = {
 			entering_state = function(self)
@@ -202,7 +201,7 @@ local build_director_fsm<const> = function()
 		states = states,
 	})
 end
-local register_director<const> = function()
+local function register_director<init>()
 	prefab.define({
 		def_id = director_def_id,
 		class = director,
@@ -302,18 +301,15 @@ local register_director<const> = function()
 	})
 end
 
-function init()
+*irq_mask_register = 0
+local function bind_runtime<init>()
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	aem.reload()
-	*irq_mask_register = irq_imgdec | irq_apu
-	combat_module.define_fsm()
-	build_director_fsm()
-	combat_module.register_director()
-	register_director()
+	aem.rebind()
 end
+*irq_mask_register = irq_imgdec | irq_apu
 
-function new_game()
+local start_game<const> = function()
 	world_instance.systems:replace(world_systems)
 	world_instance:clear()
 	local w<const> = screen_width
@@ -406,11 +402,10 @@ function new_game()
 	prefab.spawn(director_def_id, { id = director_instance_id })
 end
 
-init()
 local renderer<const> = render.new(world_instance, 0, 0xff000000)
 texture_residency.load_font('msx_6b_font_space')
 texture_residency.replace_background(story.title.bg)
-new_game()
+start_game()
 *input_control_register = 0x00000001
 while true do
 	renderer:wait_vblank()

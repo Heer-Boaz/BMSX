@@ -152,6 +152,8 @@ local transition_callback<const> = 2
 local compile_definition_transitions
 local transition_cached_path
 
+local assert_rebind_compatible
+
 local make_def_id<const> = function(id, parent)
 	if not parent then
 		return id
@@ -490,6 +492,24 @@ function statedefinition.new(id, def, root, parent)
 	return self
 end
 
+assert_rebind_compatible = function(previous, replacement)
+	for state_id, previous_child in pairs(previous.states) do
+		local replacement_child<const> = replacement.states[state_id]
+		if replacement_child == nil then
+			error('cannot rebind state definition "' .. previous.def_id .. '": state "' .. state_id .. '" was removed.')
+		end
+		if previous_child.is_concurrent ~= replacement_child.is_concurrent then
+			error('cannot rebind state definition "' .. previous_child.def_id .. '": concurrent role changed.')
+		end
+		assert_rebind_compatible(previous_child, replacement_child)
+	end
+	for state_id, replacement_child in pairs(replacement.states) do
+		if previous.states[state_id] == nil and replacement_child.is_concurrent then
+			error('cannot rebind state definition "' .. previous.def_id .. '": concurrent state "' .. state_id .. '" was added.')
+		end
+	end
+end
+
 local state<const> = {}
 state.__index = state
 
@@ -609,6 +629,19 @@ local build_timeline_bindings<const> = function(owner, definitions)
 	return bindings
 end
 
+local build_input_bindings<const> = function(target, definition)
+	local input_patterns<const> = definition.input_patterns
+	if not input_patterns then
+		return nil
+	end
+	local player_index<const> = target.player_index
+	local bindings<const> = {}
+	for i = 1, #input_patterns do
+		bindings[i] = input.bind(player_index, input_patterns[i])
+	end
+	return bindings
+end
+
 function state.new(definition, target, parent)
 	local self<const> = setmetatable({}, state)
 	self.definition = definition
@@ -654,18 +687,46 @@ function state.new(definition, target, parent)
 	self._tag_remove_scratch = nil
 	self._active_state_tag_refs = nil
 	self._active_state_tags = nil
-	local input_patterns<const> = definition.input_patterns
-	if input_patterns then
-		local player_index<const> = target.player_index
-		local bindings<const> = {}
-		for i = 1, #input_patterns do
-			bindings[i] = input.bind(player_index, input_patterns[i])
-		end
-		self.input_bindings = bindings
-	end
+	self.input_bindings = build_input_bindings(target, definition)
 	self:populate_states()
 	self:reset(true)
 	return self
+end
+
+local rebind_definition_tree
+rebind_definition_tree = function(self, definition)
+	self.definition = definition
+	self.def_id = definition.def_id
+	self.timeline_bindings = build_timeline_bindings(self.target, definition.timelines)
+	self.tag_list = definition.tags
+	self.tag_lookup = build_state_tag_lookup(definition.tags)
+	self.input_bindings = build_input_bindings(self.target, definition)
+	local states<const> = self.states
+	local state_ids<const> = self.state_ids
+	for i = 1, self.state_count do
+		local state_id<const> = state_ids[i]
+		rebind_definition_tree(states[state_id], definition.states[state_id])
+	end
+	for state_id, child_definition in pairs(definition.states) do
+		if states[state_id] == nil then
+			local child<const> = state.new(child_definition, self.target, self)
+			local index<const> = self.state_count + 1
+			self.state_count = index
+			states[state_id] = child
+			state_ids[index] = state_id
+		end
+	end
+end
+
+-- Rebind a retained runtime tree to a freshly compiled definition tree. Hot
+-- reload requires retained state ids and their concurrent roles to remain
+-- stable. New non-concurrent branches receive fresh runtime nodes; retained
+-- nodes are never reset or reconstructed to rescue incompatible graph edits.
+function state:rebind_definition(definition)
+	rebind_definition_tree(self, definition)
+	self:refresh_active_frame_work()
+	self:rebuild_active_subtree_tags()
+	self:sync_target_state_tags()
 end
 
 function state:is_root()
@@ -1645,6 +1706,7 @@ function state:dispose()
 end
 
 return {
+	assert_rebind_compatible = assert_rebind_compatible,
 	bind_state_path = get_definition_path_plan,
 	matches_state_path = matches_cached_path_plan,
 	statedefinition = statedefinition,

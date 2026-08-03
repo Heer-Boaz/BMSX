@@ -43,7 +43,7 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"globals",
 	"systemGlobals",
 	"stringIndexTable",
-	"haltedUntilIrq",
+	"haltedUntilIrqFrameDepth",
 	"interruptEventPending",
 	"memoryWriteBlocked",
 	"memoryWriteBlockedAddress",

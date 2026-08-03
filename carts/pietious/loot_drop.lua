@@ -30,7 +30,7 @@ function loot_drop:onspawn(_pos)
 	self.x, self.y = world_instance:get('room'):snap_world_to_tile(self.x, self.y)
 end
 
-local define_loot_drop_fsm<const> = function()
+local function define_loot_drop_fsm<init>()
 	fsmlibrary.register('loot_drop', {
 		initial = 'active',
 		on = {
@@ -54,7 +54,7 @@ local define_loot_drop_fsm<const> = function()
 	})
 end
 
-local register_loot_drop_definition<const> = function()
+local function register_loot_drop_definition<init>()
 	prefab.define({
 		def_id = 'loot_drop',
 		class = loot_drop,
@@ -69,6 +69,4 @@ end
 
 return {
 	loot_drop = loot_drop,
-	define_loot_drop_fsm = define_loot_drop_fsm,
-	register_loot_drop_definition = register_loot_drop_definition,
 }

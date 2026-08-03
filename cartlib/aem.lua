@@ -722,9 +722,10 @@ local reset_audio_state<const> = function()
 	clear_stinger()
 end
 
-local reload<const> = function()
+reset_audio_state()
+
+local rebind<const> = function()
 	eventemitter.instance:remove_subscriber(handle_event, true)
-	reset_audio_state()
 	events = merge_events(romdir.audioevents())
 	for event_name in pairs(events) do
 		eventemitter.instance:on({
@@ -734,6 +735,11 @@ local reload<const> = function()
 		})
 	end
 	return events
+end
+
+local reload<const> = function()
+	reset_audio_state()
+	return rebind()
 end
 
 local reload_from_rom<const> = function()
@@ -785,6 +791,7 @@ local on_apu_irq<const> = function()
 end
 
 return {
+	rebind = rebind,
 	reload = reload,
 	reload_from_rom = reload_from_rom,
 	on_apu_irq = on_apu_irq,

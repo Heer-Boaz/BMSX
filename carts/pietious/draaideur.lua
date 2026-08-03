@@ -166,7 +166,7 @@ function draaideur:ctor()
 	self:sync_sprite()
 end
 
-local define_draaideur_fsm<const> = function()
+local function define_draaideur_fsm<init>()
 	fsmlibrary.register('draaideur', {
 		initial = 'active',
 		states = {
@@ -177,7 +177,7 @@ local define_draaideur_fsm<const> = function()
 	})
 end
 
-local register_draaideur_definition<const> = function()
+local function register_draaideur_definition<init>()
 	prefab.define({
 		def_id = 'draaideur',
 		class = draaideur,
@@ -193,6 +193,4 @@ end
 
 return {
 	draaideur = draaideur,
-	define_draaideur_fsm = define_draaideur_fsm,
-	register_draaideur_definition = register_draaideur_definition,
 }

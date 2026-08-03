@@ -53,7 +53,7 @@ function director:update_runtime()
 	self.frame = self.frame + 1
 end
 
-local define_director_fsm<const> = function()
+local function define_director_fsm<init>()
 	fsm_library.register(ids_director_fsm, {
 		initial = 'boot',
 		on = {
@@ -118,7 +118,7 @@ local define_director_fsm<const> = function()
 		})
 end
 
-local register_director_definition<const> = function()
+local function register_director_definition<init>()
 	prefab.define({
 		def_id = ids_director_def,
 		class = director,
@@ -131,8 +131,6 @@ end
 
 return {
 	director = director,
-	define_director_fsm = define_director_fsm,
-	register_director_definition = register_director_definition,
 	director_def_id = ids_director_def,
 	director_instance_id = ids_director_instance,
 	director_fsm_id = ids_director_fsm,

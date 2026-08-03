@@ -34,7 +34,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'globals',
 	'systemGlobals',
 	'stringIndexTable',
-	'haltedUntilIrq',
+	'haltedUntilIrqFrameDepth',
 	'interruptEventPending',
 	'memoryWriteBlocked',
 	'memoryWriteBlockedAddress',

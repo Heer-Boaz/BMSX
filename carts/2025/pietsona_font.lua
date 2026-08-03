@@ -52,13 +52,11 @@ for codepoint = string.byte('a'), string.byte('z') do
 	glyphs[upper] = 'msx_6b_font_' .. lower
 end
 
-local register_fonts<const> = function()
+local function register_fonts<init>()
 	font.define('default', {
 		glyphs = glyphs,
 		line_height = 8,
 	})
 end
 
-return {
-	register_fonts = register_fonts,
-}
+return {}

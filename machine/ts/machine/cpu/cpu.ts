@@ -203,7 +203,7 @@ export type CpuRuntimeState = {
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
 	instructionBudgetRemaining: number;
-	haltedUntilIrq: boolean;
+	haltedUntilIrqFrameDepth: number;
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
@@ -231,7 +231,13 @@ export const enum AcceptedInterruptKind {
 export const enum RunResult {
 	Halted,
 	Yielded,
+	ExecutionStopped,
 }
+
+export type ExecutionHook = (
+	executionDomainId: ExecutionDomainId,
+	pc: number,
+) => boolean;
 
 
 const TABLE_WEAK_KEYS = 1;
@@ -251,7 +257,7 @@ export class CPU {
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private modeKey!: StringId;
-	private haltedUntilIrq = false;
+	private haltedUntilIrqFrameDepth = -1;
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
@@ -272,7 +278,6 @@ export class CPU {
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private yieldRequested = false;
-	private executionDomainActivationYieldMask: ExecutionDomainMask = 0;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
@@ -829,7 +834,7 @@ export class CPU {
 		this.clearCompletionValues();
 		this.clearCallStack();
 		this.stringIndexTable = null;
-		this.haltedUntilIrq = false;
+		this.haltedUntilIrqFrameDepth = -1;
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
@@ -1361,23 +1366,18 @@ export class CPU {
 		return this.activeExecutionImage.executionDomainId;
 	}
 
-	public setExecutionDomainActivationYieldMask(mask: ExecutionDomainMask): void {
-		this.executionDomainActivationYieldMask = mask;
-	}
-
 	private executeFunctionAddress(functionAddress: number): void {
 		if (!this.readFunctionRecordOnSelectedBus(functionAddress)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
 			return;
 		}
-		const previousExecutionDomainId = this.activeExecutionImage.executionDomainId;
 		const image = this.functionRecordLatch.image;
 		this.clearCallStack();
 		this.activeExecutionImage = image;
 		const cartridgeEntry = image.executionDomainId >= 0;
 		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
-		this.haltedUntilIrq = false;
+		this.haltedUntilIrqFrameDepth = -1;
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
@@ -1385,16 +1385,31 @@ export class CPU {
 		this.yieldRequested = false;
 		const closure = this.staticClosuresByAddress.get(functionAddress)!;
 		this.pushLatchedFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
-		if (image.executionDomainId !== previousExecutionDomainId
-			&& (this.executionDomainActivationYieldMask & executionDomainBit(image.executionDomainId)) !== 0) {
-			this.yieldRequested = true;
-		}
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.clearCompletionValues();
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true);
+	}
+
+	public beginCompletionCallInExecutionDomain(
+		executionDomainId: ExecutionDomainId,
+		functionAddress: number,
+	): void {
+		this.clearCompletionValues();
+		this.yieldRequested = false;
+		this.readFunctionRecordInImage(
+			this.executionImageForDomain(executionDomainId)!,
+			functionAddress,
+		);
+		this.pushLatchedFrame(
+			this.staticClosuresByAddress.get(functionAddress)!,
+			EMPTY_CALL_ARGS,
+			0,
+			0,
+			true,
+		);
 	}
 
 	public requestYield(): void {
@@ -1406,24 +1421,24 @@ export class CPU {
 			this.interruptEventPending = false;
 			return;
 		}
-		this.haltedUntilIrq = true;
+		this.haltedUntilIrqFrameDepth = this.frames.length;
 		this.yieldRequested = false;
 	}
 
 	private hardHalt(): void {
 		this.hardHalted = true;
-		this.haltedUntilIrq = false;
+		this.haltedUntilIrqFrameDepth = -1;
 		this.yieldRequested = false;
 	}
 
 
 	public clearHaltUntilIrq(): void {
-		this.haltedUntilIrq = false;
+		this.haltedUntilIrqFrameDepth = -1;
 		this.yieldRequested = false;
 	}
 
 	public isHaltedUntilIrq(): boolean {
-		return this.haltedUntilIrq;
+		return this.haltedUntilIrqFrameDepth === this.frames.length;
 	}
 
 	public isMemoryWriteBlocked(): boolean {
@@ -1485,7 +1500,7 @@ export class CPU {
 	public enterPendingInterrupt(): boolean {
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
-			const wasHalted = this.haltedUntilIrq;
+			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
 			const returnCauseWord = this.causeWord;
 			const returnEpcWord = this.epcWord;
 			const returnBadAddressWord = this.badAddressWord;
@@ -1502,18 +1517,18 @@ export class CPU {
 			this.nmiReturnBadAddressWord = returnBadAddressWord;
 			this.nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
 			this.nmiReturnExceptionDomainWord = returnExceptionDomainWord;
-			if (!wasHalted) this.interruptEventPending = true;
+			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
 		}
 		if (this.canAcceptMaskableInterruptLine()) {
 			const image = this.isUserMode() ? this.activeExecutionImage : this.systemImage;
-			const wasHalted = this.haltedUntilIrq;
+			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
 			this.enterException(
 				image.irqFunctionAddress,
 				CPU_CAUSE_IRQ,
 				this.frames[this.frames.length - 1].pc,
 			);
-			if (!wasHalted) this.interruptEventPending = true;
+			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
 		}
 		return false;
@@ -1563,29 +1578,12 @@ export class CPU {
 	}
 
 	private clearHaltAfterAcceptedInterrupt(): void {
-		this.haltedUntilIrq = false;
+		this.haltedUntilIrqFrameDepth = -1;
 		this.yieldRequested = false;
 	}
 
 	public getFrameDepth(): number {
 		return this.frames.length;
-	}
-
-	public prepareExecutionBoundary(): boolean {
-		const frames = this.frames;
-		while (frames.length > 0) {
-			if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked || this.yieldRequested) {
-				return false;
-			}
-			if (this.enterPendingInterrupt()) {
-				continue;
-			}
-			const frame = frames[frames.length - 1];
-			const image = frame.executionImage;
-			const wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
-			return (wordIndex >>> 0) < image.decodedWordCount;
-		}
-		return false;
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
@@ -1595,7 +1593,9 @@ export class CPU {
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
-					if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
+					if (this.hardHalted
+						|| this.haltedUntilIrqFrameDepth === frames.length
+						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
 					}
 					if (this.yieldRequested) {
@@ -1645,36 +1645,114 @@ export class CPU {
 					);
 				}
 			} catch (error) {
-				if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
-					const errorStringId = this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY];
-					if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
-						this.enterLuaFaultException(
-							LUA_FAULT_REASON_OUT_OF_MEMORY,
-							ValueTag.String,
-							errorStringId,
-							null,
-						);
-					}
-				} else if (error instanceof LuaThrownValueError) {
-					if (!this.handleProtectedCallError(error.tag, error.scalar, error.reference)) {
-						this.enterLuaFaultException(
-							LUA_FAULT_REASON_EXPLICIT_ERROR,
-							error.tag,
-							error.scalar,
-							error.reference,
-						);
-					}
-				} else if (error instanceof LuaExecutionError) {
-					const errorStringId = this.luaFaultErrorStringIds[error.reason];
-					if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
-						this.enterLuaFaultException(error.reason, ValueTag.String, errorStringId, null);
-					}
-				} else {
-					throw error;
-				}
+				this.handleRunLoopError(error);
 			}
 		}
 		return RunResult.Halted;
+	}
+
+	public runUntilDepthInstrumented(
+		targetDepth: number,
+		instructionBudget: number,
+		executionHook: ExecutionHook,
+		executionDomainMask: ExecutionDomainMask,
+	): RunResult {
+		this.instructionBudgetRemaining = instructionBudget;
+		const frames = this.frames;
+		const baseCycles = BASE_CYCLES;
+		while (frames.length > targetDepth) {
+			try {
+				while (frames.length > targetDepth) {
+					if (this.hardHalted
+						|| this.haltedUntilIrqFrameDepth === frames.length
+						|| this.memoryWriteBlocked) {
+						return RunResult.Halted;
+					}
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
+					}
+					if (this.instructionBudgetRemaining <= 0) {
+						return RunResult.Yielded;
+					}
+					if (this.nonMaskableInterruptPending
+						|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+							&& this.irqController.hasAssertedMaskableInterruptLine())
+					) {
+						this.enterPendingInterrupt();
+						continue;
+					}
+					const frame = frames[frames.length - 1];
+					const image = frame.executionImage;
+					const pc = frame.pc;
+					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
+					if ((wordIndex >>> 0) >= image.decodedWordCount) {
+						this.hardHalt();
+						return RunResult.Halted;
+					}
+					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
+						&& executionHook(image.executionDomainId, pc)) {
+						return RunResult.ExecutionStopped;
+					}
+					const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
+					const page = image.decodedPages[pageIndex];
+					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const width = page.widths[pageOffset];
+					const op = page.ops[pageOffset];
+					this.currentInstructionPc = pc;
+					frame.pc = pc + (width * INSTRUCTION_BYTES);
+					this.lastExecutionDomainId = image.executionDomainId;
+					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.instructionBudgetRemaining -= baseCycles[op];
+					this.executeInstruction(
+						frame,
+						page.tableCacheIndexes[pageOffset],
+						op,
+						page.a[pageOffset],
+						page.b[pageOffset],
+						page.c[pageOffset],
+						page.bx[pageOffset],
+						page.sbx[pageOffset],
+						page.rkB[pageOffset],
+						page.rkC[pageOffset],
+						page.disp[pageOffset],
+					);
+				}
+			} catch (error) {
+				this.handleRunLoopError(error);
+			}
+		}
+		return RunResult.Halted;
+	}
+
+	private handleRunLoopError(error: unknown): void {
+		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
+			const errorStringId = this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY];
+			if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
+				this.enterLuaFaultException(
+					LUA_FAULT_REASON_OUT_OF_MEMORY,
+					ValueTag.String,
+					errorStringId,
+					null,
+				);
+			}
+		} else if (error instanceof LuaThrownValueError) {
+			if (!this.handleProtectedCallError(error.tag, error.scalar, error.reference)) {
+				this.enterLuaFaultException(
+					LUA_FAULT_REASON_EXPLICIT_ERROR,
+					error.tag,
+					error.scalar,
+					error.reference,
+				);
+			}
+		} else if (error instanceof LuaExecutionError) {
+			const errorStringId = this.luaFaultErrorStringIds[error.reason];
+			if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
+				this.enterLuaFaultException(error.reason, ValueTag.String, errorStringId, null);
+			}
+		} else {
+			throw error;
+		}
 	}
 
 	private unwindToDepth(targetDepth: number): void {
@@ -3968,7 +4046,7 @@ export class CPU {
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
-			haltedUntilIrq: this.haltedUntilIrq,
+			haltedUntilIrqFrameDepth: this.haltedUntilIrqFrameDepth,
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
@@ -4276,7 +4354,7 @@ export class CPU {
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
-		this.haltedUntilIrq = state.haltedUntilIrq;
+		this.haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;

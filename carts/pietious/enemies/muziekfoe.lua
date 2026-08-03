@@ -98,7 +98,7 @@ end
 
 enemy_base.extend(muziekfoe, 'muziekfoe')
 
-function muziekfoe.register()
+local function register<init>()
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,

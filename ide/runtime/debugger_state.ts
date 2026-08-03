@@ -12,6 +12,7 @@ import {
 	resolveRuntimeLuaSource,
 	type RuntimeSourceState,
 } from './sources';
+import type { Blua32SourceMedia } from './sources';
 
 type RuntimeBreakpointLines = [
 	Map<string, Set<number>>,
@@ -19,7 +20,7 @@ type RuntimeBreakpointLines = [
 	Map<string, Set<number>>,
 ];
 
-type RuntimeBreakpointPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
+export type RuntimeBreakpointPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
 
 type RuntimeStepPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
 
@@ -168,16 +169,19 @@ function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
 	);
 }
 
-export function rebuildRuntimeBreakpointPcs(state: RuntimeDebuggerState): void {
-	for (let domainIndex = 0; domainIndex < state.breakpointPcs.length; domainIndex += 1) {
-		const target = state.breakpointPcs[domainIndex];
-		target.clear();
+export function buildRuntimeBreakpointPcs(
+	state: RuntimeDebuggerState,
+	media: Blua32SourceMedia,
+): RuntimeBreakpointPcs {
+	const breakpointPcs: RuntimeBreakpointPcs = [new Map(), new Map(), new Map()];
+	for (let domainIndex = 0; domainIndex < breakpointPcs.length; domainIndex += 1) {
+		const target = breakpointPcs[domainIndex];
 		const breakpoints = state.breakpoints[domainIndex];
 		if (breakpoints.size === 0) {
 			continue;
 		}
 		const domain = (domainIndex - 1) as ExecutionDomainId;
-		const image = blua32ToolingImageForDomain(state.sources.currentBlua32Media, domain)!;
+		const image = blua32ToolingImageForDomain(media, domain)!;
 		const symbols = image.symbols!;
 		for (const [path, lines] of breakpoints) {
 			const source = resolveRuntimeLuaSource(state.sources, { domain, path })!;
@@ -197,7 +201,24 @@ export function rebuildRuntimeBreakpointPcs(state: RuntimeDebuggerState): void {
 			}
 		}
 	}
+	return breakpointPcs;
+}
+
+function installRuntimeBreakpointPcs(
+	state: RuntimeDebuggerState,
+	breakpointPcs: RuntimeBreakpointPcs,
+): void {
+	for (let domainIndex = 0; domainIndex < breakpointPcs.length; domainIndex += 1) {
+		state.breakpointPcs[domainIndex] = breakpointPcs[domainIndex];
+	}
 	updateExecutionHookBinding(state);
+}
+
+export function rebuildRuntimeBreakpointPcs(state: RuntimeDebuggerState): void {
+	installRuntimeBreakpointPcs(
+		state,
+		buildRuntimeBreakpointPcs(state, state.sources.currentBlua32Media),
+	);
 }
 
 function rebuildRuntimeStepPcs(state: RuntimeDebuggerState): void {
@@ -260,14 +281,27 @@ export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void
 	rebuildRuntimeBreakpointPcs(state);
 }
 
-export function resumeRuntimeDebuggerAfterHotResume(state: RuntimeDebuggerState): void {
+export function prepareRuntimeDebuggerForHotResume(
+	state: RuntimeDebuggerState,
+	breakpointPcs: RuntimeBreakpointPcs,
+): boolean {
 	const resumeStoppedExecution = state.stopped;
 	state.stopped = false;
 	state.stopPresentationPending = false;
 	state.stepMode = RuntimeDebuggerStepMode.None;
 	state.resumeSuppressionPending = false;
-	rebuildRuntimeBreakpointPcs(state);
-	if (!resumeStoppedExecution) {
+	for (let domainIndex = 0; domainIndex < state.stepPcs.length; domainIndex += 1) {
+		state.stepPcs[domainIndex].clear();
+	}
+	installRuntimeBreakpointPcs(state, breakpointPcs);
+	return resumeStoppedExecution;
+}
+
+export function finishRuntimeDebuggerHotResume(
+	state: RuntimeDebuggerState,
+	resumeStoppedExecution: boolean,
+): void {
+	if (!resumeStoppedExecution || state.stopped) {
 		return;
 	}
 	const cpu = state.runtime.machine.cpu;

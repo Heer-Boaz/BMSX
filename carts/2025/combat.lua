@@ -260,7 +260,7 @@ function combat_director:skip_typing()
 	return false
 end
 
-function combat.define_fsm()
+local function define_fsm<init>()
 	local states<const> = {}
 
 	states.boot = {
@@ -1530,7 +1530,7 @@ function combat.define_fsm()
 	})
 end
 
-function combat.register_director()
+local function register_director<init>()
 	prefab.define({
 		def_id = combat_director_def_id,
 		class = combat_director,

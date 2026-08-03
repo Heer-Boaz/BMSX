@@ -1067,7 +1067,7 @@ local room_runtime_state_name<const> = function(room_state)
 	return 'castle'
 end
 
-local define_room_fsm<const> = function()
+local function define_room_fsm<init>()
 	fsmlibrary.register('room', {
 		initial = 'mode_state',
 		on = {
@@ -1199,7 +1199,7 @@ local define_room_fsm<const> = function()
 	})
 end
 
-local register_room_definition<const> = function()
+local function register_room_definition<init>()
 	prefab.define({
 		def_id = 'room',
 		class = room_object,
@@ -1212,8 +1212,5 @@ local register_room_definition<const> = function()
 		},
 	})
 end
-
-room.define_room_fsm = define_room_fsm
-room.register_room_definition = register_room_definition
 
 return room

@@ -1,12 +1,7 @@
-import { RunResult } from '../cpu/cpu';
+import { RunResult, type ExecutionHook } from '../cpu/cpu';
 import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
-import {
-	executionDomainBit,
-	SYSTEM_EXECUTION_DOMAIN_MASK,
-	type ExecutionDomainId,
-	type ExecutionDomainMask,
-} from '../../spec/blua32/execution_domain';
+import type { ExecutionDomainMask } from '../../spec/blua32/execution_domain';
 import {
 	InstructionStepResult,
 	type FrameState,
@@ -21,10 +16,13 @@ export const enum CpuExecutionResult {
 	ExecutionStopped,
 }
 
-export type ExecutionHook = (
-	executionDomainId: ExecutionDomainId,
-	pc: number,
-) => boolean;
+export const enum CpuSuspendedRunResult {
+	Completed,
+	Halted,
+	ExecutionStopped,
+}
+
+export type { ExecutionHook } from '../cpu/cpu';
 
 const enum CpuSliceResult {
 	Blocked,
@@ -52,7 +50,6 @@ export class CpuExecutionState {
 	public setExecutionHook(hook: ExecutionHook | null, domainMask: ExecutionDomainMask): void {
 		this.executionHook = hook;
 		this.executionHookDomainMask = domainMask;
-		this.runtime.machine.cpu.setExecutionDomainActivationYieldMask(domainMask);
 	}
 
 	public runStoppedCpu(state: FrameState): boolean {
@@ -183,6 +180,115 @@ export class CpuExecutionState {
 		}
 	}
 
+	public runSuspendedUntilDepth(targetDepth: number): CpuSuspendedRunResult {
+		const runtime = this.runtime;
+		const machine = runtime.machine;
+		const cpu = machine.cpu;
+		const scheduler = machine.scheduler;
+		this.instructionRunActive = false;
+		runDueRuntimeTimers(runtime);
+		while (cpu.getFrameDepth() > targetDepth) {
+			if (machine.gxGpu.backendReadbackBlocksMachine()) {
+				return CpuSuspendedRunResult.Halted;
+			}
+			if (machine.systemController.cpuHeld() || cpu.isMemoryWriteBlocked()) {
+				const nextDeadline = scheduler.nextDeadline();
+				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
+					return CpuSuspendedRunResult.Halted;
+				}
+				const waitBudget = nextDeadline - scheduler.nowCycles;
+				if (waitBudget <= 0) {
+					runDueRuntimeTimers(runtime);
+					continue;
+				}
+				const waitCycles = waitBudget < MAX_CPU_SLICE_CYCLES
+					? waitBudget
+					: MAX_CPU_SLICE_CYCLES;
+				advanceRuntimeTime(runtime, waitCycles);
+				continue;
+			}
+			let sliceBudget = MAX_CPU_SLICE_CYCLES;
+			const nextDeadline = scheduler.nextDeadline();
+			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
+				const deadlineBudget = nextDeadline - scheduler.nowCycles;
+				if (deadlineBudget <= 0) {
+					runDueRuntimeTimers(runtime);
+					continue;
+				}
+				if (deadlineBudget < sliceBudget) {
+					sliceBudget = deadlineBudget;
+				}
+			}
+			const executionHook = this.executionHook;
+			let result: RunResult;
+			scheduler.beginCpuSlice(sliceBudget);
+			try {
+				result = executionHook === null
+					? cpu.runUntilDepth(targetDepth, sliceBudget)
+					: cpu.runUntilDepthInstrumented(
+						targetDepth,
+						sliceBudget,
+						executionHook,
+						this.executionHookDomainMask,
+					);
+			} finally {
+				scheduler.endCpuSlice();
+			}
+			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
+			if (consumed > 0) {
+				advanceRuntimeTime(runtime, consumed);
+			}
+			if (cpu.getFrameDepth() <= targetDepth) {
+				return CpuSuspendedRunResult.Completed;
+			}
+			if (result === RunResult.ExecutionStopped) {
+				return CpuSuspendedRunResult.ExecutionStopped;
+			}
+			if (cpu.isMemoryWriteBlocked()) {
+				continue;
+			}
+			if (result === RunResult.Halted) {
+				if (!cpu.isHaltedUntilIrq()) {
+					return CpuSuspendedRunResult.Halted;
+				}
+				let advancedDeadline = false;
+				while (cpu.isHaltedUntilIrq()) {
+					if (machine.gxGpu.backendReadbackBlocksMachine()) {
+						return CpuSuspendedRunResult.Halted;
+					}
+					const cpuHeld = machine.systemController.cpuHeld();
+					if (!cpuHeld && cpu.enterPendingInterrupt()) {
+						break;
+					}
+					if (!cpuHeld && advancedDeadline) {
+						return CpuSuspendedRunResult.Halted;
+					}
+					const haltedDeadline = scheduler.nextDeadline();
+					if (haltedDeadline === Number.MAX_SAFE_INTEGER) {
+						return CpuSuspendedRunResult.Halted;
+					}
+					const cyclesToDeadline = haltedDeadline - scheduler.nowCycles;
+					if (cyclesToDeadline <= 0) {
+						if (runDueRuntimeTimers(runtime)) {
+							return CpuSuspendedRunResult.Halted;
+						}
+						continue;
+					}
+					const idleCycles = cyclesToDeadline < MAX_CPU_SLICE_CYCLES
+						? cyclesToDeadline
+						: MAX_CPU_SLICE_CYCLES;
+					advanceRuntimeTime(runtime, idleCycles);
+					advancedDeadline = idleCycles === cyclesToDeadline;
+				}
+				continue;
+			}
+			if (consumed <= 0) {
+				runDueRuntimeTimers(runtime);
+			}
+		}
+		return CpuSuspendedRunResult.Completed;
+	}
+
 	private runSlice(state: FrameState, maximumCpuCycles: number): CpuSliceResult {
 		const runtime = this.runtime;
 		let remaining = this.sliceCycleBudgetRemaining;
@@ -226,27 +332,17 @@ export class CpuExecutionState {
 				}
 			}
 			const executionHook = this.executionHook;
-			if (executionHook !== null) {
-				const activeExecutionWorld = SYSTEM_EXECUTION_DOMAIN_MASK
-					| executionDomainBit(cpu.activeCartridgeSlot());
-				if ((this.executionHookDomainMask & activeExecutionWorld) !== 0) {
-					if (cpu.prepareExecutionBoundary()) {
-						const frameIndex = cpu.getFrameDepth() - 1;
-						if (executionHook(
-							cpu.readFrameExecutionDomain(frameIndex),
-							cpu.readFramePc(frameIndex),
-						)) {
-							this.sliceCycleBudgetRemaining = remaining;
-							return CpuSliceResult.ExecutionStopped;
-						}
-					}
-					sliceBudget = 1;
-				}
-			}
 			let result: RunResult;
 			scheduler.beginCpuSlice(sliceBudget);
 			try {
-				result = cpu.runUntilDepth(0, sliceBudget);
+				result = executionHook === null
+					? cpu.runUntilDepth(0, sliceBudget)
+					: cpu.runUntilDepthInstrumented(
+						0,
+						sliceBudget,
+						executionHook,
+						this.executionHookDomainMask,
+					);
 			} finally {
 				scheduler.endCpuSlice();
 			}
@@ -256,6 +352,10 @@ export class CpuExecutionState {
 				state.activeCpuUsedCycles += consumed;
 				advanced = true;
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
+			}
+			if (result === RunResult.ExecutionStopped) {
+				this.sliceCycleBudgetRemaining = remaining;
+				return CpuSliceResult.ExecutionStopped;
 			}
 			if (cpu.isMemoryWriteBlocked()) {
 				if (consumed > 0) {

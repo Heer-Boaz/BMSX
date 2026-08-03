@@ -78,6 +78,8 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		capture: (description: string) => options.capture.captureNow(description, `ide:${label}`),
 		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
+		toggleBreakpoint: (path: string, line: number) => options.ide.toggleLuaBreakpoint(path, line),
+		debuggerStopped: () => options.ide.isDebuggerStopped(),
 		reboot: () => options.ide.reboot(),
 		command: options.ide.executeCommand,
 		openLuaSource: (path: string) => options.ide.openLuaSource(path),
@@ -86,13 +88,14 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 
 	log('starting');
 	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-	const factory = new Function('t', 'assert', 'tableValueTag', `"use strict"; return (async () => {\n${source}\n})();`) as (
+	const factory = new Function('t', 'assert', 'numberValueTag', 'tableValueTag', `"use strict"; return (async () => {\n${source}\n})();`) as (
 		ctx: typeof t,
 		assertFn: typeof assert,
+		numberValueTag: ValueTag,
 		tableValueTag: ValueTag,
 	) => Promise<void>;
 	try {
-		await factory(t, assert, ValueTag.Table);
+		await factory(t, assert, ValueTag.Number, ValueTag.Table);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
 		throw error;

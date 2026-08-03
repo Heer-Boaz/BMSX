@@ -508,7 +508,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			lastExecutionDomainId: 0,
 			lastPc: 0,
 			instructionBudgetRemaining: 0,
-			haltedUntilIrq: false,
+			haltedUntilIrqFrameDepth: -1,
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,

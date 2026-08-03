@@ -60,7 +60,7 @@ function breakablewall:ctor()
 	tile_layer.offset_y = 0
 end
 
-function breakablewall.register()
+local function register<init>()
 	fsmlibrary.register('breakablewall', {
 		initial = 'active',
 		on = {

@@ -144,8 +144,11 @@ const buildModuleCompileInfo = (
 			exportConstValueByPathKey.set(exportPath, {
 				kind: 'link_value',
 				modulePath,
-				exportPath,
-				value,
+				expression: {
+					kind: 'export',
+					exportPath,
+					value,
+				},
 			});
 		}
 	}

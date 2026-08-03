@@ -6,12 +6,14 @@ import type {
 	ProgramRuntimeSymbols,
 	Proto,
 } from './program';
+import type { LuaBinaryOperator, LuaUnaryOperator } from '../syntax/ast';
 
 export type ProgramObjectVectorTable = {
 	resetProtoIndex: number;
 	sectionInitProtoIndex: number;
 	irqProtoIndex: number;
 	exceptionProtoIndex: number;
+	initProtoIndex: number | null;
 };
 
 export type ProgramStorageSymbol = {
@@ -73,6 +75,46 @@ export type ProgramBiosFunctionConstReloc = {
 	importIndex: number;
 };
 
+export type ProgramLinkValueUnaryOperator =
+	LuaUnaryOperator.Negate
+	| LuaUnaryOperator.BitwiseNot;
+
+export type ProgramLinkValueBinaryOperator =
+	LuaBinaryOperator.BitwiseOr
+	| LuaBinaryOperator.BitwiseXor
+	| LuaBinaryOperator.BitwiseAnd
+	| LuaBinaryOperator.ShiftLeft
+	| LuaBinaryOperator.ShiftRight
+	| LuaBinaryOperator.Add
+	| LuaBinaryOperator.Subtract
+	| LuaBinaryOperator.Multiply
+	| LuaBinaryOperator.Divide
+	| LuaBinaryOperator.FloorDivide
+	| LuaBinaryOperator.Modulus
+	| LuaBinaryOperator.Exponent;
+
+export type ProgramLinkValueExpression =
+	| {
+		kind: 'export';
+		exportPath: string;
+		value: number;
+	}
+	| {
+		kind: 'number';
+		value: number;
+	}
+	| {
+		kind: 'unary';
+		operator: ProgramLinkValueUnaryOperator;
+		operand: ProgramLinkValueExpression;
+	}
+	| {
+		kind: 'binary';
+		operator: ProgramLinkValueBinaryOperator;
+		left: ProgramLinkValueExpression;
+		right: ProgramLinkValueExpression;
+	};
+
 export type ProgramConstValueReloc =
 	| {
 		constIndex: number;
@@ -84,8 +126,7 @@ export type ProgramConstValueReloc =
 		constIndex: number;
 		kind: 'link_value';
 		modulePath: string;
-		exportPath: string;
-		value: number;
+		expression: ProgramLinkValueExpression;
 	};
 
 export type ProgramRodataConstReloc = {

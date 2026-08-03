@@ -388,7 +388,7 @@ void CPU::reset() {
 	m_completionValues.clear();
 	clearCallStack();
 	m_stringIndexTable = nullptr;
-	m_haltedUntilIrq = false;
+	m_haltedUntilIrqFrameDepth = -1;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -927,13 +927,12 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		hardHalt();
 		return;
 	}
-	const ExecutionDomainId previousExecutionDomainId = m_activeExecutionImage->executionDomainId;
 	clearCallStack();
 	m_activeExecutionImage = m_functionRecordLatch.image;
 	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
-	m_haltedUntilIrq = false;
+	m_haltedUntilIrqFrameDepth = -1;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -941,17 +940,32 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_yieldRequested = false;
 	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
 	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
-	if (m_activeExecutionImage->executionDomainId != previousExecutionDomainId
-		&& (m_executionDomainActivationYieldMask
-			& executionDomainBit(m_activeExecutionImage->executionDomainId)) != 0u) {
-		m_yieldRequested = true;
-	}
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
 	m_completionValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
+}
+
+void CPU::beginCompletionCallInExecutionDomain(
+	ExecutionDomainId executionDomainId,
+	u32 functionAddress
+) {
+	m_completionValues.clear();
+	m_yieldRequested = false;
+	readFunctionRecordInImage(
+		*executionImageForDomain(executionDomainId),
+		functionAddress
+	);
+	pushLatchedFrame(
+		&m_staticClosuresByAddress.at(functionAddress),
+		nullptr,
+		0,
+		0,
+		0,
+		true
+	);
 }
 
 CpuRuntimeState CPU::captureRuntimeState() const {
@@ -1155,7 +1169,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
-	state.haltedUntilIrq = m_haltedUntilIrq;
+	state.haltedUntilIrqFrameDepth = m_haltedUntilIrqFrameDepth;
 	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
@@ -1387,7 +1401,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
-	m_haltedUntilIrq = state.haltedUntilIrq;
+	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
@@ -1416,13 +1430,13 @@ void CPU::haltUntilIrq() {
 		m_interruptEventPending = false;
 		return;
 	}
-	m_haltedUntilIrq = true;
+	m_haltedUntilIrqFrameDepth = static_cast<int>(m_frames.size());
 	m_yieldRequested = false;
 }
 
 void CPU::hardHalt() {
 	m_hardHalted = true;
-	m_haltedUntilIrq = false;
+	m_haltedUntilIrqFrameDepth = -1;
 	m_yieldRequested = false;
 }
 
@@ -1821,7 +1835,7 @@ void CPU::runBuiltinError(BuiltinArgsView args) {
 }
 
 void CPU::clearHaltUntilIrq() {
-	m_haltedUntilIrq = false;
+	m_haltedUntilIrqFrameDepth = -1;
 	m_yieldRequested = false;
 }
 
@@ -1849,7 +1863,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 bool CPU::enterPendingInterrupt() {
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
-		const bool wasHalted = m_haltedUntilIrq;
+		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
 		const u32 returnCauseWord = m_causeWord;
 		const u32 returnEpcWord = m_epcWord;
 		const u32 returnBadAddressWord = m_badAddressWord;
@@ -1866,14 +1880,14 @@ bool CPU::enterPendingInterrupt() {
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
 		m_nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
 		m_nmiReturnExceptionDomainWord = returnExceptionDomainWord;
-		if (!wasHalted) m_interruptEventPending = true;
+		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
 	if (canAcceptMaskableInterruptLine()) {
 		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
-		const bool wasHalted = m_haltedUntilIrq;
+		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
 		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
-		if (!wasHalted) m_interruptEventPending = true;
+		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
 	return false;
@@ -1920,7 +1934,7 @@ void CPU::enterException(
 }
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
-	m_haltedUntilIrq = false;
+	m_haltedUntilIrqFrameDepth = -1;
 	m_yieldRequested = false;
 }
 
@@ -1938,25 +1952,14 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
-bool CPU::prepareExecutionBoundary() {
-	auto& frames = m_frames;
-	while (!frames.empty()) {
-		if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked || m_yieldRequested) {
-			return false;
-		}
-		if (enterPendingInterrupt()) {
-			continue;
-		}
-		CallFrame& frame = *frames.back();
-		Blua32ExecutionImage& image = *frame.executionImage;
-		const size_t wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
-		return wordIndex < image.decodedWordCount;
-	}
-	return false;
-}
-
-template <bool RootBoundary>
-RunResult CPU::runLoop(int targetDepth, int instructionBudget) {
+template <bool RootBoundary, bool Instrumented>
+RunResult CPU::runLoop(
+	int targetDepth,
+	int instructionBudget,
+	ExecutionHook executionHook,
+	void* executionHookContext,
+	ExecutionDomainMask executionDomainMask
+) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
@@ -1995,7 +1998,9 @@ dispatch_loop_check:
 			return RunResult::Halted;
 		}
 	}
-	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) {
+	if (m_hardHalted
+		|| m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())
+		|| m_memoryWriteBlocked) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -2020,6 +2025,12 @@ dispatch_loop_check:
 		if (wordIndex >= image->decodedWordCount) {
 			hardHalt();
 			return RunResult::Halted;
+		}
+		if constexpr (Instrumented) {
+			if ((executionDomainMask & executionDomainBit(image->executionDomainId)) != 0u
+				&& executionHook(executionHookContext, image->executionDomainId, pc)) {
+				return RunResult::ExecutionStopped;
+			}
 		}
 		decoded = &decodedAtWordIndex(*image, wordIndex);
 		m_currentInstructionPc = pc;
@@ -2132,9 +2143,34 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	if (targetDepth == 0) {
-		return runLoop<true>(targetDepth, instructionBudget);
+		return runLoop<true, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u);
 	}
-	return runLoop<false>(targetDepth, instructionBudget);
+	return runLoop<false, false>(targetDepth, instructionBudget, nullptr, nullptr, 0u);
+}
+
+RunResult CPU::runUntilDepthInstrumented(
+	int targetDepth,
+	int instructionBudget,
+	ExecutionHook executionHook,
+	void* executionHookContext,
+	ExecutionDomainMask executionDomainMask
+) {
+	if (targetDepth == 0) {
+		return runLoop<true, true>(
+			targetDepth,
+			instructionBudget,
+			executionHook,
+			executionHookContext,
+			executionDomainMask
+		);
+	}
+	return runLoop<false, true>(
+		targetDepth,
+		instructionBudget,
+		executionHook,
+		executionHookContext,
+		executionDomainMask
+	);
 }
 
 void CPU::unwindToDepth(int targetDepth) {

@@ -12,18 +12,19 @@ local irq_vblank<const> = 0x0004
 local framebuffer_size<const> = 320 | (240 << 16)
 local vblank_count = 0
 hot_resume_init_count = 0
-hot_resume_new_game_count = 0
+hot_resume_start_game_count = 0
 
-function init()
+local function refresh_hot_resume_probe<init>()
 	hot_resume_init_count = hot_resume_init_count + 1
 	hot_resume_module_probe = hot_value.get()
+	print('hot-resume-init')
 	irq_module.register(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
 end
 
-function new_game()
-	hot_resume_new_game_count = hot_resume_new_game_count + 1
+local start_game<const> = function()
+	hot_resume_start_game_count = hot_resume_start_game_count + 1
 end
 
 local wait_vblank<const> = function()
@@ -33,9 +34,8 @@ local wait_vblank<const> = function()
 	vblank_count = vblank_count - 1
 end
 
-init()
 *irq_mask_register = irq_vblank
-new_game()
+start_game()
 *input_control_register = 0x00000001
 wait_vblank()
 

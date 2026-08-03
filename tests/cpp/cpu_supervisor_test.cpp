@@ -7,6 +7,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/memory_map.h"
+#include "spec/bmsx/rom_header.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
@@ -30,6 +31,7 @@ constexpr bmsx::u32 CART_USER_HALT_FUNCTION = 0u;
 constexpr bmsx::u32 CART_IRQ_FUNCTION = 1u;
 constexpr bmsx::u32 CART_USER_CP0_FUNCTION = 2u;
 constexpr bmsx::u32 CART_USER_BUS_LOAD_FUNCTION = 3u;
+constexpr bmsx::u32 CART_COMPLETION_FUNCTION = 4u;
 constexpr bmsx::u32 UNMAPPED_ADDRESS = 0x06000000u;
 
 void require(bool condition, const char* message) {
@@ -88,7 +90,7 @@ auto makeSupervisorSystemImage(
 
 auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(11u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(12u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
 		static_cast<bmsx::f64>(UNMAPPED_ADDRESS),
 	};
@@ -104,11 +106,13 @@ auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
 	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::Word));
 	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
+	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
 		{.firstWord = 3u, .wordCount = 1u},
 		{.firstWord = 4u, .wordCount = 3u},
 		{.firstWord = 7u, .wordCount = 4u, .maxStack = 2u},
+		{.firstWord = 11u, .wordCount = 1u},
 	};
 	image.startupFunctionIndex = CART_USER_HALT_FUNCTION;
 	image.irqFunctionIndex = CART_IRQ_FUNCTION;
@@ -424,6 +428,165 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	}
 }
 
+struct InstrumentedExecutionProbe {
+	bmsx::ExecutionDomainId expectedDomain = bmsx::SYSTEM_EXECUTION_DOMAIN_ID;
+	bmsx::u32 stopPc = 0;
+	std::vector<bmsx::u32> pcs;
+};
+
+bool stopInstrumentedExecution(void* context, bmsx::ExecutionDomainId executionDomainId, bmsx::u32 pc) {
+	auto& probe = *static_cast<InstrumentedExecutionProbe*>(context);
+	require(executionDomainId == probe.expectedDomain, "instrumented hook receives only the selected raw domain");
+	probe.pcs.push_back(pc);
+	return pc == probe.stopPc;
+}
+
+void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
+	bmsx::test::Blua32TestImage system;
+	system.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> systemCode(system.text);
+	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 0, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
+	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	system.functions = {
+		{.firstWord = 0u, .wordCount = 3u},
+		{.firstWord = 3u, .wordCount = 1u},
+		{.firstWord = 4u, .wordCount = 2u},
+	};
+	system.constants = {
+		static_cast<bmsx::f64>(
+			bmsx::CART_ROM_BASE
+				+ bmsx::BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
+		),
+	};
+	system.startupFunctionIndex = 0u;
+	system.irqFunctionIndex = 1u;
+	system.exceptionFunctionIndex = 1u;
+
+	bmsx::test::Blua32TestImage cart;
+	cart.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> cartCode(cart.text);
+	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(0), 0);
+	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	cart.functions = {
+		{.firstWord = 0u, .wordCount = 5u, .maxStack = 1u},
+		{.firstWord = 5u, .wordCount = 1u},
+	};
+	cart.closureRelocations = {{
+		1u,
+		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
+	}};
+	cart.startupFunctionIndex = 0u;
+	cart.irqFunctionIndex = 1u;
+	cart.exceptionFunctionIndex = 1u;
+
+	CpuTestMachine machine(std::move(system), std::move(cart));
+	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
+	const bmsx::u32 cartEntryPc = machine.cartRom.textAddress;
+	const bmsx::u32 cartCallPc = cartEntryPc + 2u * bmsx::INSTRUCTION_BYTES;
+	const bmsx::u32 cartReturnPc = cartEntryPc + 3u * bmsx::INSTRUCTION_BYTES;
+	InstrumentedExecutionProbe cartProbe{
+		.expectedDomain = 0,
+		.stopPc = cartReturnPc,
+		.pcs = {},
+	};
+	require(
+		machine.cpu.runUntilDepthInstrumented(
+			0,
+			100,
+			stopInstrumentedExecution,
+			&cartProbe,
+			bmsx::executionDomainBit(0)
+		) == bmsx::RunResult::ExecutionStopped,
+		"instrumented execution stops after a cross-domain RET reveals the cart caller"
+	);
+	require(
+		cartProbe.pcs == std::vector<bmsx::u32>{cartEntryPc, cartCallPc, cartReturnPc},
+		"instrumented execution crosses the unselected system callee without host instruction stepping"
+	);
+
+	const int baseDepth = machine.cpu.getFrameDepth();
+	const bmsx::u32 systemLeafAddress = machine.systemRom.functionAddresses[2];
+	const bmsx::u32 systemLeafPc = machine.systemRom.textAddress + 4u * bmsx::INSTRUCTION_BYTES;
+	machine.cpu.beginCompletionCallInExecutionDomain(
+		bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+		systemLeafAddress
+	);
+	InstrumentedExecutionProbe systemProbe{
+		.expectedDomain = bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+		.stopPc = systemLeafPc,
+		.pcs = {},
+	};
+	require(
+		machine.cpu.runUntilDepthInstrumented(
+			baseDepth,
+			100,
+			stopInstrumentedExecution,
+			&systemProbe,
+			bmsx::SYSTEM_EXECUTION_DOMAIN_MASK
+		) == bmsx::RunResult::ExecutionStopped,
+		"address-based completion entry remains visible to the raw execution hook"
+	);
+	require(machine.cpu.completionCallPending(), "debugger stop retains the completion frame");
+	require(
+		machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::Halted,
+		"completion call resumes through the normal non-instrumented dispatch"
+	);
+	require(!machine.cpu.completionCallPending(), "completion RET returns to the captured base depth");
+}
+
+void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart reaches HALT before suspended completion execution");
+	const int baseDepth = machine.cpu.getFrameDepth();
+	const bmsx::u32 completionFunctionAddress = machine.cartRom.functionAddresses[CART_COMPLETION_FUNCTION];
+	const bmsx::u32 completionPc = machine.cartRom.textAddress + 11u * bmsx::INSTRUCTION_BYTES;
+
+	machine.cpu.beginCompletionCallInExecutionDomain(0, completionFunctionAddress);
+	require(!machine.cpu.isHaltedUntilIrq(), "completion frame executes above the parked frame");
+	bmsx::CpuRuntimeState suspended = machine.cpu.captureRuntimeState();
+	require(suspended.haltedUntilIrqFrameDepth == baseDepth, "save state stores the raw parked frame depth");
+	machine.cpu.restoreRuntimeState(suspended);
+
+	InstrumentedExecutionProbe probe{
+		.expectedDomain = 0,
+		.stopPc = completionPc,
+		.pcs = {},
+	};
+	require(
+		machine.cpu.runUntilDepthInstrumented(
+			baseDepth,
+			100,
+			stopInstrumentedExecution,
+			&probe,
+			bmsx::executionDomainBit(0)
+		) == bmsx::RunResult::ExecutionStopped,
+		"instrumented completion execution stops above the latent HALT latch"
+	);
+	require(machine.cpu.completionCallPending(), "debugger stop retains the suspended completion frame");
+	require(!machine.cpu.isHaltedUntilIrq(), "latent HALT remains hidden beneath the stopped completion frame");
+	require(machine.cpu.runUntilDepth(baseDepth, 100) == bmsx::RunResult::Halted, "normal execution completes the suspended call");
+	require(!machine.cpu.completionCallPending(), "completion RET reaches the parked base depth");
+	require(machine.cpu.isHaltedUntilIrq(), "returning from completion execution exposes the original HALT latch");
+
+	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+	machine.cpu.beginCompletionCallInExecutionDomain(0, completionFunctionAddress);
+	machine.irq.raise(bmsx::IRQ_VBLANK);
+	require(machine.cpu.enterPendingInterrupt(), "IRQ is accepted above suspended completion execution");
+	const bmsx::CpuRuntimeState interrupted = machine.cpu.captureRuntimeState();
+	require(interrupted.haltedUntilIrqFrameDepth == -1, "accepted IRQ consumes the latent HALT latch");
+	require(!interrupted.interruptEventPending, "accepted IRQ does not queue a duplicate wake event for a consumed HALT latch");
+}
+
 void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -710,6 +873,8 @@ int main() {
 	testControlFlowCannotLeaveTheActiveFunctionRecord();
 	testInvalidClosureTargetHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
+	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
+	testSuspendedCompletionExecutionRunsAboveParkedFrame();
 	testRfeCannotResumeOutsideTheInterruptedFunctionRecord();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testMappedMemoryAlignmentContract();

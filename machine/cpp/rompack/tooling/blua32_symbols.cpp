@@ -296,6 +296,14 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 			static_cast<u32>(value.require("address").toNumber()),
 		});
 	}
+	symbols.initFunctionAddress = static_cast<u32>(root.require("initFunctionAddress").toNumber());
+	for (const BinValue& value : root.require("initParticipants").asArray()) {
+		symbols.initParticipants.push_back(Blua32InitParticipant{
+			value.require("functionId").asString(),
+			value.require("slotName").asString(),
+			value.require("system").asBool(),
+		});
+	}
 	const BinValue& staticLayoutToken = root.require("staticLayoutToken");
 	symbols.staticLayoutToken.lo = static_cast<u32>(staticLayoutToken.require("lo").toNumber());
 	symbols.staticLayoutToken.hi = static_cast<u32>(staticLayoutToken.require("hi").toNumber());
@@ -312,6 +320,15 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 		value["address"] = BinValue(static_cast<i64>(function.address));
 		moduleFunctions.emplace_back(std::move(value));
 	}
+	BinArray initParticipants;
+	initParticipants.reserve(symbols.initParticipants.size());
+	for (const Blua32InitParticipant& participant : symbols.initParticipants) {
+		BinObject value;
+		value["functionId"] = BinValue(participant.functionId);
+		value["slotName"] = BinValue(participant.slotName);
+		value["system"] = BinValue(participant.system);
+		initParticipants.emplace_back(std::move(value));
+	}
 	BinObject staticLayoutToken;
 	staticLayoutToken["lo"] = BinValue(static_cast<i64>(symbols.staticLayoutToken.lo));
 	staticLayoutToken["hi"] = BinValue(static_cast<i64>(symbols.staticLayoutToken.hi));
@@ -320,6 +337,8 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	root["imageAddress"] = BinValue(static_cast<i64>(symbols.imageAddress));
 	root["functionAddresses"] = encodeU32Array(symbols.functionAddresses);
 	root["moduleFunctions"] = BinValue(std::move(moduleFunctions));
+	root["initFunctionAddress"] = BinValue(static_cast<i64>(symbols.initFunctionAddress));
+	root["initParticipants"] = BinValue(std::move(initParticipants));
 	root["staticLayoutToken"] = BinValue(std::move(staticLayoutToken));
 	root["metadata"] = encodeMetadata(symbols.metadata);
 	return encodeBinary(BinValue(std::move(root)));

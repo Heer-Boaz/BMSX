@@ -1,4 +1,5 @@
 local world_instance<const> = require('cartlib/world/world').instance
+local game_session<const> = require('game_session')
 require('constants')
 local castle_map<const> = require('castle/map')
 
@@ -13,7 +14,7 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
-	return host.new_game()
+	game_session.start('room')
 end
 
 function __bmsx_host_test.update(_frame, _current_music)

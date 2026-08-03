@@ -6,6 +6,83 @@ Branch: `master`
 
 HEAD at handover: `ace39bf52c`
 
+Current committed baseline: `d5998b5eb`
+
+## `<init>` / Hot Resume architecture completion (2026-08-02)
+
+The user committed every previously open recovery change through
+`d5998b5eb` before this continuation, specifically to prevent an accidental
+reset or revert. That commit was treated as the immutable baseline. The
+architecture slice described below is the current uncommitted worktree; no
+commit was requested.
+
+BLua now owns reloadable preparation as an explicit language feature:
+
+```lua
+local function publish_blueprints<init>()
+    -- registration work
+end
+```
+
+The declaration is top-level, zero-argument and arbitrarily named. Cold
+execution retains and invokes the closure at its lexical declaration point.
+The compiler also emits a zero-upvalue static vector in dependency and lexical
+order and publishes only its raw address and participant identities in private
+tooling symbols. The ROM header, firmware, CPU and save-state contain no reload
+field, source revision, linker baseline or tooling identity. There is no
+platform `new_game` or named global `init` ABI; cold-only game/session creation
+is ordinary cart code.
+
+Hot Resume now builds and lays out all media before the first media/state write,
+proves active-frame relocation and participant layout, installs the resulting
+physical media, and invokes the applicable system then active-cart vectors
+through the debugger-aware suspended executor. The generic mirrored CPU call
+accepts a raw execution-domain word and raw function address. It resolves that
+resident execution image directly and neither reads nor changes `CART_SELECT`,
+so a data-only selected socket cannot redirect the active cartridge's init
+vector. Breakpoints, continuation, guest `print`, faults and hardware deadlines
+remain on the normal execution machinery. The normal TS/C++ CPU loop is a
+separate uninstrumented specialization with no hook or domain-mask branch.
+
+Cart preparation was migrated into `<init>` participants. FSM definitions,
+behaviour-tree roots, timeline definitions, font/prefab registries, IRQ handlers,
+ROM-directory state and AEM event bindings refresh while existing world, heap,
+FSM state/history/data, behaviour-tree node data, timeline playback and audio
+state remain live. Active function-built timelines rebuild their replacement
+frames with retained runtime parameters before rebinding; incompatible FSM
+topology is rejected before publication. Pietious cold world creation moved to
+the ordinary `game_session.start()` module path and is not rerun by Hot Resume.
+
+System public assets are laid out in their fixed partition before compilation,
+and cartridge payload lengths are concrete before compilation. Only unresolved
+cartridge-tail addresses remain link values. Pure numeric expressions over
+those leaves stay one compiler/linker expression and execute as one relocated
+constant load; the linker evaluates them again against the final physical
+layout. This fixes the terminal-font corruption whose immediate cause was a
+relocatable `assets.*_len >> 2` being compiled as `SHR ..., nil, 2`, while
+preserving the cold instruction count and base-cycle cost.
+
+Completion evidence against the live worktree:
+
+- Lua: 531 passed, 1 skipped (532 total); rompacker: 96/96.
+- `<init>`/parser: 26/26; CPU/save-state focus: 46/46; linker: 25/25;
+  module/link-expression lowering: 17/17; cartlib live-rebind scenario passed.
+- Mirrored native `bmsx_cpu_supervisor_tests` and
+  `bmsx_system_controller_tests` rebuilt and passed; core-parity audit passed.
+- Full Hot Resume IDE scenario passed 51 assertions, including rejected edits,
+  two consecutive source revisions, system-only rebuild, an init breakpoint,
+  no-op refresh, dual-cart `CART_SELECT` independence, runtime-heap retention,
+  performance shape and reboot.
+- Pietious rebuilt and passed the real enter-world headless scenario; `2025`
+  and `nemesis_s` rebuilt successfully.
+- Browser Studio debug product rebuilt successfully. This is bundle evidence,
+  not a claim of manual interactive-browser testing.
+- The direct post-rebuild/reboot monitor capture is sharp and reads
+  `BMSX BIOS MONITOR`, `HOT-RESUME-INIT`, and `HOT-RESUME-REVISION-2` at
+  `/tmp/bmsx-font-proof-final-hHtMul/screenshots/frame_00566.png`.
+- Indentation and `git diff --check` pass; banned-pattern and machine/tooling
+  boundary audits found no added violation.
+
 ## Completion update (2026-08-02)
 
 The recovery implementation was committed by the user as `1df6dad10` before
@@ -173,17 +250,20 @@ produced evidence.
 
 | Concern | TypeScript representation/owner | C++ representation/owner | Hot-path callsite |
 | --- | --- | --- | --- |
-| Execution domain | raw `ExecutionDomainId` word in `machine/ts/spec/blua32/execution_domain.ts` | raw domain word in `machine/cpp/spec/blua32/execution_domain.h` | outer `CpuExecutionState::runSlice`, not the interpreter dispatch loop |
-| Execution PC | raw 32-bit PC | raw `uint32_t` PC | outer CPU slice boundary only when a tooling hook is installed |
+| Execution domain | raw `ExecutionDomainId` word in `machine/ts/spec/blua32/execution_domain.ts` | raw domain word in `machine/cpp/spec/blua32/execution_domain.h` | ordinary `CPU.runUntilDepth` / `CPU::runLoop<..., false>` contains no hook check; the separate instrumented loop checks only while a debugger hook is bound |
+| Execution PC | raw 32-bit PC | raw `u32` PC | instruction fetch in both loops; source lookup remains outside the CPU |
+| Suspended static call | raw execution-domain word plus raw function-record address | mirrored `ExecutionDomainId` plus `u32` address | explicit `beginCompletionCallInExecutionDomain`; no `CART_SELECT`, source, symbol or revision input |
+| IRQ wait latch | raw frame depth, with `-1` meaning no latch | mirrored signed frame depth | one equality check against current frame depth at the existing halt boundary; it lets a suspended completion frame run above a waiting guest frame |
 | Source statement | tooling symbol range with statement identity and inline depth | decoded tooling symbol range with the same fields | IDE/debugger lookup outside normal execution |
 | Object global relocation | object-local global slot, then linker name/layout mapping | installed image-local name to live registerfile slot | image install/relocation, not instruction dispatch |
 | Voice clock hold | `voiceClockHeld` in APU service-clock ownership | mirrored `voiceClockHeld` in native service clock | supervisor transition edge and APU service boundary |
 | Host audio mute | browser/common transport state | libretro/direct-host transport state | host lifecycle edge, not guest mixing |
 
-Normal execution must not pay for source mapping or debugger callbacks. With a
-debugger hook installed, only selected execution domains are forced into
-one-instruction slices so source boundaries can be observed. The no-hook path
-continues through the regular bulk interpreter loop.
+Normal execution does not pay for source mapping or debugger callbacks. The
+no-hook path continues through the regular bulk interpreter loop. With a
+debugger hook installed, the executor selects the separately compiled
+instrumented loop, which observes instruction PCs inside the same scheduled
+CPU slice; it does not force the host executor into one-instruction slices.
 
 ## Implemented work currently in the diff
 

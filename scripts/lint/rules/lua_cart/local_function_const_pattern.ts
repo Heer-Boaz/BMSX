@@ -9,6 +9,9 @@ export function lintLocalFunctionConstPattern(statement: Statement, issues: Cart
 		return;
 	}
 	const localFunction = statement as LocalFunctionStatement;
+	if (localFunction.attribute === 'init') {
+		return;
+	}
 	pushIssue(
 		issues,
 		localFunctionConstPatternRule.name,

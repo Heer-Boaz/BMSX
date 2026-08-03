@@ -23,6 +23,7 @@ import type {
 	LuaStringLiteralExpression,
 	LuaTableConstructorExpression,
 	LuaIndexExpression,
+	LuaLocalFunctionStatement,
 } from '../../toolchain/ts/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
@@ -62,6 +63,22 @@ test('parses function declaration with method name and parameters', () => {
 	assert.equal(funcExpr.parameters[1].name, 'y');
 	assert.equal(funcExpr.hasVararg, true);
 	assert.equal(funcExpr.body.body.length, 1);
+});
+
+test('parses init attribute on a local function declaration', () => {
+	const chunk = parseChunk('local function reload<init>()\nreturn 1\nend');
+	const statement = chunk.body[0] as LuaLocalFunctionStatement;
+	assert.equal(statement.kind, LuaSyntaxKind.LocalFunctionStatement);
+	assert.equal(statement.name.name, 'reload');
+	assert.equal(statement.attribute, 'init');
+	assert.equal(statement.functionExpression.parameters.length, 0);
+});
+
+test('rejects unsupported local function attributes', () => {
+	assert.throws(
+		() => parseChunk('local function reload<const>() end'),
+		/Unsupported function attribute 'const'/,
+	);
 });
 
 test('parses if-elseif-else statement', () => {

@@ -328,6 +328,27 @@ function timeline.new(def)
 	return self
 end
 
+-- Replace definition-owned datapath state while retaining playback state. The
+-- owner keeps the same timeline id and frame topology across a live rebind;
+-- incompatible timeline edits are not reset or clamped here.
+function timeline:rebind_definition(replacement)
+	self.def = replacement.def
+	self.tracks = replacement.tracks
+	self.repetitions = replacement.repetitions
+	self.frames = replacement.frames
+	self.length = replacement.length
+	self.built = replacement.built
+	self.frame_builder = replacement.frame_builder
+	self.range_source_length = replacement.range_source_length
+	self.ticks_per_frame = replacement.ticks_per_frame
+	self.playback_mode = replacement.playback_mode
+	self.continuous = replacement.continuous
+	self.auto_tick = replacement.auto_tick
+	self.duration_ms = replacement.duration_ms
+	self.compiled_track_runner = replacement.compiled_track_runner
+	self.compiled_apply_frames = replacement.compiled_apply_frames
+end
+
 function timeline:build(params)
 	if not self.frame_builder then
 		error('timeline "' .. tostring(self.id) .. '" has no frame builder.')

@@ -46,6 +46,7 @@ import type {
 	Program,
 	ProgramConstant,
 	ProgramFunctionSymbol,
+	ProgramInitParticipant,
 	ProgramMetadata,
 	ProgramModuleExport,
 	ProgramModuleProto,
@@ -54,7 +55,7 @@ import type {
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
-import { programModuleExportKey } from './compiler/program';
+import { buildInitParticipantSlotName, programModuleExportKey } from './compiler/program';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import {
@@ -68,6 +69,7 @@ import { extractAssignmentPath } from './compiler/passes/expression_paths';
 import { appendModuleExportPathKey } from './module_path';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
+import { validateInitParticipantPlacement } from './compiler/passes/init_participants';
 import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/passes/static_proto_contract';
 import { toLuaModulePath } from './module_path';
 import {
@@ -83,12 +85,16 @@ import {
 	type ProgramCartObjectImage,
 	type ProgramObjectImage,
 	type ProgramImageConstReloc,
+	type ProgramLinkValueExpression,
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
-import { evaluateCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
+import {
+	evaluateCompileTimeNumberBinaryOperator,
+	resolveCompileTimeNumberBinaryOperator,
+} from './compiler/compile_time_number';
 import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
@@ -124,6 +130,10 @@ type ProgramCompilerConstReloc =
 		importIndex: number;
 	};
 
+type InitParticipantBinding = ProgramInitParticipant & {
+	objectSlot: number;
+};
+
 type CompiledProgramBase = {
 	program: Program;
 	metadata: ProgramMetadata;
@@ -132,6 +142,7 @@ type CompiledProgramBase = {
 	sectionInitProtoIndex: number;
 	irqProtoIndex: number;
 	exceptionProtoIndex: number;
+	initProtoIndex: number | null;
 	moduleProtoMap: Map<string, number>;
 	staticModulePaths: string[];
 	constValueRelocs: ProgramConstValueReloc[];
@@ -165,6 +176,7 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 		sectionInitProtoIndex: compiled.sectionInitProtoIndex,
 		irqProtoIndex: compiled.irqProtoIndex,
 		exceptionProtoIndex: compiled.exceptionProtoIndex,
+		initProtoIndex: compiled.initProtoIndex,
 	};
 	const sections = encodeProgramObjectSections(
 		compiled.program,
@@ -188,6 +200,7 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 					globalNames: compiled.metadata.globalNames,
 					systemGlobalNames: compiled.metadata.systemGlobalNames,
 					exportProtoIdBySlot: compiled.metadata.exportProtoIdBySlot,
+					initParticipants: compiled.metadata.initParticipants,
 				},
 			},
 		};
@@ -206,6 +219,7 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 				globalNames: compiled.metadata.globalNames,
 				systemGlobalNames: compiled.metadata.systemGlobalNames,
 				exportProtoIdBySlot: compiled.metadata.exportProtoIdBySlot,
+				initParticipants: compiled.metadata.initParticipants,
 			},
 		},
 	};
@@ -262,6 +276,14 @@ type LocalBindingKind = 'local' | 'const' | 'parameter';
 type RelocatableConstExportValue = Extract<ConstExportValue, {
 	kind: 'bss_addr' | 'data_addr' | 'rodata_addr' | 'link_value';
 }>;
+
+type CompileTimeNumericValue =
+	| { kind: 'number'; value: number }
+	| {
+		kind: 'link_value';
+		modulePath: string;
+		expression: ProgramLinkValueExpression;
+	};
 
 type LocalBinding = {
 	symbolHandle: string;
@@ -497,6 +519,7 @@ class ProgramBuilder {
 	private readonly modulePathSet = new Set<string>();
 	public readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
+	private readonly initParticipantsByModule = new Map<string, InitParticipantBinding[]>();
 	private readonly programDomain: ProgramCompileDomain;
 
 	public constructor(
@@ -545,10 +568,9 @@ class ProgramBuilder {
 
 	public linkValueRelocIndex(
 		modulePath: string,
-		exportPath: string,
-		value: number,
+		expression: ProgramLinkValueExpression,
 	): number {
-		const key = programModuleExportKey(modulePath, exportPath);
+		const key = `${modulePath}\0${JSON.stringify(expression)}`;
 		const slot = this.linkValueRelocSlotByKey.get(key);
 		if (slot) {
 			return slot - 1;
@@ -561,8 +583,7 @@ class ProgramBuilder {
 			constIndex: index,
 			kind: 'link_value',
 			modulePath,
-			exportPath,
-			value,
+			expression,
 		});
 		return index;
 	}
@@ -863,6 +884,50 @@ class ProgramBuilder {
 		this.staticModulePaths.push(path);
 	}
 
+	public recordInitParticipant(moduleId: string, functionId: string): InitParticipantBinding {
+		const system = this.programDomain === 'system';
+		const slotName = buildInitParticipantSlotName(functionId);
+		const participant = {
+			functionId,
+			slotName,
+			system,
+			objectSlot: system
+				? this.resolveSystemGlobalSlot(slotName)
+				: this.resolveGlobalSlot(slotName),
+		};
+		let moduleParticipants = this.initParticipantsByModule.get(moduleId);
+		if (moduleParticipants === undefined) {
+			moduleParticipants = [];
+			this.initParticipantsByModule.set(moduleId, moduleParticipants);
+		}
+		moduleParticipants.push(participant);
+		return participant;
+	}
+
+	public orderedInitParticipants(entryModuleId: string): InitParticipantBinding[] {
+		for (const [moduleId] of this.initParticipantsByModule) {
+			if (moduleId !== entryModuleId && !this.staticModulePathSet.has(moduleId)) {
+				throw new Error(`Module '${moduleId}' declares <init> but is not statically required by the program.`);
+			}
+		}
+		const participants: InitParticipantBinding[] = [];
+		for (let index = 0; index < this.staticModulePaths.length; index += 1) {
+			const moduleParticipants = this.initParticipantsByModule.get(this.staticModulePaths[index]);
+			if (moduleParticipants !== undefined) {
+				for (let participantIndex = 0; participantIndex < moduleParticipants.length; participantIndex += 1) {
+					participants.push(moduleParticipants[participantIndex]);
+				}
+			}
+		}
+		const entryParticipants = this.initParticipantsByModule.get(entryModuleId);
+		if (entryParticipants !== undefined) {
+			for (let participantIndex = 0; participantIndex < entryParticipants.length; participantIndex += 1) {
+				participants.push(entryParticipants[participantIndex]);
+			}
+		}
+		return participants;
+	}
+
 	public markStaticClosureProto(protoIndex: number): void {
 		this.protos[protoIndex].staticClosure = true;
 	}
@@ -903,7 +968,7 @@ class ProgramBuilder {
 		return this.biosFunctionImportIndexBySymbol.get(programModuleExportKey(path, exportPathKey));
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			totalBytes += this.protos[i].codeLen;
@@ -997,6 +1062,11 @@ class ProgramBuilder {
 			globalNames: this.globalNames,
 			systemGlobalNames: this.systemGlobalNames,
 			exportProtoIdBySlot: this.exportProtoIdBySlot,
+			initParticipants: initParticipants.map(({ functionId, slotName, system }) => ({
+				functionId,
+				slotName,
+				system,
+			})),
 		};
 		const moduleProtoMap = new Map<string, number>();
 		for (let index = 0; index < this.moduleProtoEntries.length; index += 1) {
@@ -1113,6 +1183,7 @@ const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(mo
 
 const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
 const buildStartupProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/startup`;
+const buildInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/init`;
 const buildInterruptProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/irq`;
 const buildExceptionProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/exception`;
 
@@ -1441,6 +1512,26 @@ class FunctionBuilder {
 			}
 			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
 			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.RET, callReg, 0, 0);
+		});
+		this.finalizeLabels();
+	}
+
+	public compileInitVector(
+		range: LuaSourceRange,
+		participants: ReadonlyArray<InitParticipantBinding>,
+	): void {
+		this.withRange(range, () => {
+			const callReg = this.allocTemp();
+			for (let index = 0; index < participants.length; index += 1) {
+				const participant = participants[index];
+				this.emitABx(
+					participant.system ? OpCode.GETSYS : OpCode.GETGL,
+					callReg,
+					participant.objectSlot,
+				);
+				this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 1);
+			}
 			this.emitABC(OpCode.RET, callReg, 0, 0);
 		});
 		this.finalizeLabels();
@@ -2536,8 +2627,7 @@ class FunctionBuilder {
 			case 'link_value': {
 				const index = this.program.linkValueRelocIndex(
 					value.modulePath,
-					value.exportPath,
-					value.value,
+					value.expression,
 				);
 				this.emitABx(OpCode.LOADK, target, index);
 				return;
@@ -3073,6 +3163,12 @@ class FunctionBuilder {
 		return true;
 	}
 
+	private setCompileTimeNumericValue(value: CompileTimeNumericValue): boolean {
+		return value.kind === 'number'
+			? this.setCompileTimeNumberValue(value.value)
+			: this.setCompileTimeRelocValue(value);
+	}
+
 	private setCompileTimeBindingValue(binding: LocalBinding): boolean {
 		this.compileTimeValue = binding.constValue;
 		this.compileTimeNumberValue = binding.constNumberValue;
@@ -3143,8 +3239,8 @@ class FunctionBuilder {
 	private evaluateCompileTimeUnaryExpression(expression: LuaUnaryExpression): boolean {
 		switch (expression.operator) {
 			case LuaUnaryOperator.Negate: {
-				const value = this.evaluateCompileTimeNumber(expression.operand);
-				return (value || value === 0) && this.setCompileTimeNumberValue(-value);
+				const value = this.evaluateCompileTimeNumericValue(expression);
+				return value !== undefined && this.setCompileTimeNumericValue(value);
 			}
 			case LuaUnaryOperator.Not:
 				return this.evaluateCompileTimeExpression(expression.operand)
@@ -3159,8 +3255,8 @@ class FunctionBuilder {
 					&& this.setCompileTimeNumberValue(utf8CodepointCount(this.compileTimeValue));
 			}
 			case LuaUnaryOperator.BitwiseNot: {
-				const value = this.evaluateCompileTimeNumber(expression.operand);
-				return (value || value === 0) && this.setCompileTimeNumberValue(~value);
+				const value = this.evaluateCompileTimeNumericValue(expression);
+				return value !== undefined && this.setCompileTimeNumericValue(value);
 			}
 			case LuaUnaryOperator.StringId:
 				return this.evaluateCompileTimeExpression(expression.operand) && typeof this.compileTimeValue === 'string';
@@ -3170,41 +3266,72 @@ class FunctionBuilder {
 	}
 
 	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
+		const value = this.evaluateCompileTimeNumericValue(expression);
+		return value?.kind === 'number' ? value.value : undefined;
+	}
+
+	private evaluateCompileTimeNumericValue(expression: LuaExpression): CompileTimeNumericValue | undefined {
 		switch (expression.kind) {
 			case LuaSyntaxKind.NumericLiteralExpression:
-				return (expression as LuaNumericLiteralExpression).value;
+				return { kind: 'number', value: (expression as LuaNumericLiteralExpression).value };
 			case LuaSyntaxKind.IdentifierExpression: {
 				const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
 				if (binding && binding.hasConstNumberValue) {
-					return binding.constNumberValue;
+					return { kind: 'number', value: binding.constNumberValue };
+				}
+				if (binding?.constRelocValue?.kind === 'link_value') {
+					return binding.constRelocValue;
 				}
 				return;
 			}
 			case LuaSyntaxKind.MemberExpression:
 			case LuaSyntaxKind.IndexExpression: {
 				const exported = this.resolveModuleExportConstValue(expression);
-				return exported?.value.kind === 'number' ? exported.value.value : undefined;
+				if (exported?.value.kind === 'number') {
+					return { kind: 'number', value: exported.value.value };
+				}
+				return exported?.value.kind === 'link_value' ? exported.value : undefined;
 			}
 			case LuaSyntaxKind.UnaryExpression: {
 				const unary = expression as LuaUnaryExpression;
 				switch (unary.operator) {
 					case LuaUnaryOperator.Negate: {
-						const value = this.evaluateCompileTimeNumber(unary.operand);
-						if (value || value === 0) return -value;
-						return;
+						const operand = this.evaluateCompileTimeNumericValue(unary.operand);
+						if (operand === undefined) return;
+						return operand.kind === 'number'
+							? { kind: 'number', value: -operand.value }
+							: {
+								kind: 'link_value',
+								modulePath: operand.modulePath,
+								expression: {
+									kind: 'unary',
+									operator: unary.operator,
+									operand: operand.expression,
+								},
+							};
 					}
 					case LuaUnaryOperator.BitwiseNot: {
-						const value = this.evaluateCompileTimeNumber(unary.operand);
-						if (value || value === 0) return ~value;
-						return;
+						const operand = this.evaluateCompileTimeNumericValue(unary.operand);
+						if (operand === undefined) return;
+						return operand.kind === 'number'
+							? { kind: 'number', value: ~operand.value }
+							: {
+								kind: 'link_value',
+								modulePath: operand.modulePath,
+								expression: {
+									kind: 'unary',
+									operator: unary.operator,
+									operand: operand.expression,
+								},
+							};
 					}
 					case LuaUnaryOperator.Length: {
 						const arrayLength = this.resolveStaticStorageArrayLength(unary.operand);
 						if (arrayLength !== undefined) {
-							return arrayLength;
+							return { kind: 'number', value: arrayLength };
 						}
 						if (this.evaluateCompileTimeExpression(unary.operand) && typeof this.compileTimeValue === 'string') {
-							return utf8CodepointCount(this.compileTimeValue);
+							return { kind: 'number', value: utf8CodepointCount(this.compileTimeValue) };
 						}
 						return;
 					}
@@ -3213,28 +3340,61 @@ class FunctionBuilder {
 				}
 			}
 			case LuaSyntaxKind.BinaryExpression:
-				return this.evaluateCompileTimeNumberBinaryExpression(expression as LuaBinaryExpression);
+				return this.evaluateCompileTimeNumericBinaryExpression(expression as LuaBinaryExpression);
 			case LuaSyntaxKind.SizeOfExpression:
-				return this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size;
+				return { kind: 'number', value: this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size };
 			case LuaSyntaxKind.OffsetOfExpression: {
 				const offsetOf = expression as LuaOffsetOfExpression;
-				return this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath);
+				return { kind: 'number', value: this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath) };
 			}
 			default:
 				return;
 		}
 	}
 
-	private evaluateCompileTimeNumberBinaryExpression(expression: LuaBinaryExpression): number | undefined {
-		const left = this.evaluateCompileTimeNumber(expression.left);
-		const right = this.evaluateCompileTimeNumber(expression.right);
-		if ((!left && left !== 0) || (!right && right !== 0)) return;
-		return evaluateCompileTimeNumberBinaryOperator(expression.operator, left, right);
+	private evaluateCompileTimeNumericBinaryExpression(expression: LuaBinaryExpression): CompileTimeNumericValue | undefined {
+		const left = this.evaluateCompileTimeNumericValue(expression.left);
+		const right = this.evaluateCompileTimeNumericValue(expression.right);
+		if (left === undefined || right === undefined) return;
+		if (left.kind === 'number' && right.kind === 'number') {
+			const value = evaluateCompileTimeNumberBinaryOperator(expression.operator, left.value, right.value);
+			return value === undefined ? undefined : { kind: 'number', value };
+		}
+		let modulePath: string;
+		if (left.kind === 'link_value') {
+			modulePath = left.modulePath;
+		} else if (right.kind === 'link_value') {
+			modulePath = right.modulePath;
+		} else {
+			return;
+		}
+		if ((left.kind === 'link_value' && left.modulePath !== modulePath)
+			|| (right.kind === 'link_value' && right.modulePath !== modulePath)) {
+			return;
+		}
+		const operator = resolveCompileTimeNumberBinaryOperator(expression.operator);
+		if (operator === undefined) {
+			return;
+		}
+		return {
+			kind: 'link_value',
+			modulePath,
+			expression: {
+				kind: 'binary',
+				operator,
+				left: left.kind === 'number'
+					? { kind: 'number', value: left.value }
+					: left.expression,
+				right: right.kind === 'number'
+					? { kind: 'number', value: right.value }
+					: right.expression,
+			},
+		};
 	}
 
 	private evaluateCompileTimeNumberBinaryInto(expression: LuaBinaryExpression): boolean {
-		const value = this.evaluateCompileTimeNumberBinaryExpression(expression);
-		return (value || value === 0) && this.setCompileTimeNumberValue(value);
+		const value = this.evaluateCompileTimeNumericBinaryExpression(expression);
+		return value !== undefined && this.setCompileTimeNumericValue(value);
 	}
 
 	private evaluateCompileTimeRelationalInto(expression: LuaBinaryExpression): boolean {
@@ -4276,7 +4436,7 @@ class FunctionBuilder {
 		ctx.breakJumps.push(this.emitJumpPlaceholder());
 	}
 
-	private compileLocalFunction(statement: any): void {
+	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
 		const decl = this.requireBoundDeclaration(statement.name.range, `local function '${statement.name.name}'`);
 		const name = decl.name;
 		const reg = this.declareLocalFromDecl(decl, statement.name.range);
@@ -4284,6 +4444,13 @@ class FunctionBuilder {
 		const protoId = buildProtoId(this.protoId, hint);
 		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
+		if (statement.attribute === 'init') {
+			const participant = this.program.recordInitParticipant(this.moduleId, protoId);
+			this.emitABx(participant.system ? OpCode.SETSYS : OpCode.SETGL, reg, participant.objectSlot);
+			const callReg = this.allocTemp();
+			this.emitABC(OpCode.MOV, callReg, reg, 0);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 1);
+		}
 	}
 
 	private compileFunctionDeclaration(statement: any): void {
@@ -4540,7 +4707,7 @@ class FunctionBuilder {
 	}
 
 	private getConstIndex(expression: LuaExpression): number | undefined {
-		if (!this.evaluateCompileTimeExpression(expression)) return;
+		if (!this.evaluateCompileTimeExpression(expression) || this.compileTimeRelocValue !== null) return;
 		return this.program.constIndex(this.compileTimeValue);
 	}
 
@@ -4877,6 +5044,12 @@ class FunctionBuilder {
 	}
 
 	private compileUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
+		const compileTimeValue = this.evaluateCompileTimeNumericValue(expression);
+		if (compileTimeValue?.kind === 'link_value') {
+			this.emitLoadConstExportValue(target, compileTimeValue);
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return;
+		}
 		if (expression.operator === LuaUnaryOperator.Length) {
 			const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
 			if (arrayLength) {
@@ -4926,6 +5099,11 @@ class FunctionBuilder {
 	}
 
 	private compileBinaryExpression(expression: any, target: number): void {
+		const compileTimeValue = this.evaluateCompileTimeNumericValue(expression as LuaBinaryExpression);
+		if (compileTimeValue?.kind === 'link_value') {
+			this.emitLoadConstExportValue(target, compileTimeValue);
+			return;
+		}
 		switch (expression.operator) {
 			case LuaBinaryOperator.And:
 				this.compileAndExpression(expression, target);
@@ -5464,6 +5642,34 @@ function compileStartupProto(
 	return protoIndex;
 }
 
+function compileInitProto(
+	program: ProgramBuilder,
+	moduleId: string,
+	range: LuaSourceRange,
+	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
+	participants: ReadonlyArray<InitParticipantBinding>,
+): number {
+	const protoId = buildInitProtoId(moduleId);
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	builder.compileInitVector(range, participants);
+	const code = builder.getCode();
+	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
+	const protoIndex = program.addProto({
+		entryPC: 0,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
+		numParams: 0,
+		isVararg: false,
+		maxStack: builder.getMaxStack(),
+		upvalueDescs: [],
+		staticClosure: true,
+	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	program.markStaticClosureProto(protoIndex);
+	return protoIndex;
+}
+
 function compileInterruptProto(
 	program: ProgramBuilder,
 	moduleId: string,
@@ -5545,6 +5751,34 @@ export function compileLuaChunkToProgram(
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
 	const compileErrors: CompileError[] = [];
+	try {
+		validateInitParticipantPlacement(chunk);
+	} catch (error) {
+		compileErrors.push({
+			path: chunk.range.path,
+			stage: 'entry',
+			message: extractCompileErrorMessage(error, chunk.range.path),
+		});
+	}
+	for (let index = 0; index < canonicalModules.length; index += 1) {
+		const module = canonicalModules[index];
+		try {
+			const moduleInfo = moduleCompileContext.modulesByPath.get(module.path);
+			validateInitParticipantPlacement(
+				module.chunk,
+				module.chunk.constModule || (moduleInfo !== undefined && moduleInfo.constModule),
+			);
+		} catch (error) {
+			compileErrors.push({
+				path: module.path,
+				stage: 'module',
+				message: extractCompileErrorMessage(error, module.path),
+			});
+		}
+	}
+	if (compileErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(compileErrors));
+	}
 	const programBuilder = new ProgramBuilder(optLevel, programDomain);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;
@@ -5636,6 +5870,7 @@ export function compileLuaChunkToProgram(
 	let sectionInitProtoIndex = -1;
 	let irqProtoIndex = -1;
 	let exceptionProtoIndex = -1;
+	let initProtoIndex: number | null = null;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
@@ -5720,6 +5955,17 @@ export function compileLuaChunkToProgram(
 			entryBuilder.markStaticModulePath(canonicalModules[index].path);
 		}
 	}
+	const initParticipants = programBuilder.orderedInitParticipants(moduleId);
+	if (initParticipants.length !== 0) {
+		initProtoIndex = compileInitProto(
+			programBuilder,
+			moduleId,
+			chunk.range,
+			entrySemantics,
+			frontend,
+			initParticipants,
+		);
+	}
 	startupProtoIndex = compileStartupProto(
 		programBuilder,
 		moduleId,
@@ -5742,7 +5988,7 @@ export function compileLuaChunkToProgram(
 		rodataBytes,
 		rodataSymbols,
 		staticModulePaths,
-	} = programBuilder.buildProgram();
+	} = programBuilder.buildProgram(initParticipants);
 	if (programDomain === 'system') {
 		return {
 			domain: 'system',
@@ -5753,6 +5999,7 @@ export function compileLuaChunkToProgram(
 			sectionInitProtoIndex,
 			irqProtoIndex,
 			exceptionProtoIndex,
+			initProtoIndex,
 			moduleProtoMap: program.moduleProtoMap,
 			staticModulePaths,
 			constRelocs: imageConstRelocs,
@@ -5773,6 +6020,7 @@ export function compileLuaChunkToProgram(
 		sectionInitProtoIndex,
 		irqProtoIndex,
 		exceptionProtoIndex,
+		initProtoIndex,
 		moduleProtoMap: program.moduleProtoMap,
 		staticModulePaths,
 		constRelocs: imageConstRelocs,

@@ -3,11 +3,21 @@ import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 
 export type ProgramConstant = null | boolean | number | string;
 
+export type ProgramInitParticipant = {
+	functionId: string;
+	slotName: string;
+	system: boolean;
+};
+
+export const buildInitParticipantSlotName = (functionId: string): string =>
+	`@init:${functionId}`;
+
 export type ProgramRuntimeSymbols = {
 	protoIds: string[];
 	globalNames: string[];
 	systemGlobalNames: string[];
 	exportProtoIdBySlot: { [slotName: string]: string };
+	initParticipants: ProgramInitParticipant[];
 };
 
 export type ProgramResumePoint = {

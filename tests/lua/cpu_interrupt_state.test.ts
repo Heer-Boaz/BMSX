@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { encodeFixedCallArgCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
@@ -52,7 +52,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -62,13 +62,19 @@ import {
 	buildHotResumeRelocation,
 	type HotResumeRevision,
 } from '../../ide/runtime/hot_resume_relocation';
-import { CpuExecutionState, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
+import {
+	CpuExecutionResult,
+	CpuExecutionState,
+	CpuSuspendedRunResult,
+	runDueRuntimeTimers,
+} from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
 import {
 	createTestBlua32PairCpu,
 	createTestSystemCpu,
+	blua32TestFunctionAddress,
 	linkRawTestBlua32Pair,
 	linkRawTestSystemBlua32,
 	linkTestBlua32Pair,
@@ -78,6 +84,11 @@ import {
 	type TestBlua32Source,
 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
+import {
+	executionDomainBit,
+	SYSTEM_EXECUTION_DOMAIN_ID,
+	SYSTEM_EXECUTION_DOMAIN_MASK,
+} from '../../machine/ts/spec/blua32/execution_domain';
 
 const CART_LAUNCHER_SYSTEM_CODE = new Uint8Array(4 * INSTRUCTION_BYTES);
 writeInstruction(CART_LAUNCHER_SYSTEM_CODE, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -188,7 +199,7 @@ const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
 	let cpuSliceActive = false;
-	return {
+	const runtime = {
 		machine: {
 			cpu,
 			memory: cpu.memory,
@@ -222,9 +233,69 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 			tickCompleted: false,
 		},
 		completionValues: [],
+		cpuExecution: null,
 		callClosure: Runtime.prototype.callClosure,
 		readCompletionValues: Runtime.prototype.readCompletionValues,
+		completionCallPending: Runtime.prototype.completionCallPending,
 	} as unknown as Runtime;
+	(runtime as unknown as { cpuExecution: CpuExecutionState }).cpuExecution = new CpuExecutionState(runtime);
+	return runtime;
+}
+
+function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }): {
+	cpu: CPU;
+	cpuExecution: CpuExecutionState;
+	images: TestBlua32ImagePair;
+	runtime: Runtime;
+} {
+	const systemCode = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(systemCode, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(systemCode, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(systemCode, 2, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
+	writeInstruction(systemCode, 3, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(systemCode, 4, OpCode.K0, 0, 0, 0, 0);
+	writeInstruction(systemCode, 5, OpCode.RET, 0, 0, 0, 0);
+	const cartCode = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(cartCode, 0, OpCode.WIDE, 0, 0, 0, 0);
+	writeInstruction(cartCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
+	writeInstruction(cartCode, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
+	writeInstruction(cartCode, 3, OpCode.K0, 0, 0, 0, 0);
+	writeInstruction(cartCode, 4, OpCode.RET, 0, 0, 0, 0);
+	writeInstruction(cartCode, 5, OpCode.RFE, 0, 0, 0, 0);
+	const images = linkRawTestBlua32Pair(
+		{
+			text: systemCode,
+			functions: [
+				{ firstWord: 0, wordCount: 3 },
+				{ firstWord: 3, wordCount: 1 },
+				{ firstWord: 4, wordCount: 2 },
+			],
+			constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET],
+			startupFunctionIndex: 0,
+			irqFunctionIndex: 1,
+			exceptionFunctionIndex: 1,
+		},
+		{
+			text: cartCode,
+			functions: [
+				{ firstWord: 0, wordCount: 5, maxStack: 1 },
+				{ firstWord: 5, wordCount: 1 },
+			],
+			closureRelocations: [{
+				wordIndex: 1,
+				functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2),
+			}],
+			startupFunctionIndex: 0,
+			irqFunctionIndex: 1,
+			exceptionFunctionIndex: 1,
+		},
+	);
+	const { cpu, irqController } = createTestBlua32PairCpu(images);
+	assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.readFrameExecutionDomain(0), 0);
+	const runtime = makeRuntime(cpu, irqController, sliceStats);
+	return { cpu, cpuExecution: runtime.cpuExecution, images, runtime };
 }
 
 function makeFrameState(): FrameState {
@@ -236,6 +307,57 @@ function makeFrameState(): FrameState {
 		activeCpuUsedCycles: 0,
 	};
 }
+
+test('instrumented executor observes a selected domain across cross-domain CALL and RET in one CPU slice', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images } = makeCrossDomainHookRuntime(sliceStats);
+	const cartEntryPc = images.cartImage.functions[0].codeAddress;
+	const cartCallPc = cartEntryPc + 2 * INSTRUCTION_BYTES;
+	const cartReturnPc = cartEntryPc + 3 * INSTRUCTION_BYTES;
+	const visitedPcs: number[] = [];
+	cpuExecution.setExecutionHook((executionDomainId, pc) => {
+		assert.equal(executionDomainId, 0);
+		visitedPcs.push(pc);
+		return pc === cartReturnPc;
+	}, executionDomainBit(0));
+	const state = makeFrameState();
+
+	assert.equal(cpuExecution.runWithBudget(state), CpuExecutionResult.ExecutionStopped);
+	assert.deepEqual(visitedPcs, [cartEntryPc, cartCallPc, cartReturnPc]);
+	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0);
+	assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), cartReturnPc);
+	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
+});
+
+test('suspended executor keeps an address-based completion call pending at a debugger stop and resumes to base depth', () => {
+	const sliceStats = { begin: 0, end: 0 };
+	const { cpu, cpuExecution, images } = makeCrossDomainHookRuntime(sliceStats);
+	const baseDepth = cpu.getFrameDepth();
+	const systemLeafAddress = images.systemSymbols.functionAddresses[2];
+	const systemLeafPc = images.systemImage.functions[2].codeAddress;
+	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, systemLeafAddress);
+	cpuExecution.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === -1 && pc === systemLeafPc,
+		SYSTEM_EXECUTION_DOMAIN_MASK,
+	);
+
+	assert.equal(
+		cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.ExecutionStopped,
+	);
+	assert.equal(cpu.completionCallPending(), true);
+	assert.equal(cpu.getFrameDepth(), baseDepth + 1);
+	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
+
+	cpuExecution.setExecutionHook(null, 0);
+	assert.equal(
+		cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.Completed,
+	);
+	assert.equal(cpu.completionCallPending(), false);
+	assert.equal(cpu.getFrameDepth(), baseDepth);
+	assert.deepEqual(sliceStats, { begin: 2, end: 2 });
+});
 
 function makeMachine(
 	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),
@@ -496,6 +618,53 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 	assert.deepEqual(out, []);
 });
 
+test('suspended completion execution runs above a parked frame and re-exposes the latent HALT latch', () => {
+	const { cpu, irqController } = makeHaltCpu();
+	const runtime = makeRuntime(cpu, irqController);
+	const baseDepth = cpu.getFrameDepth();
+	const completionFunctionAddress = HALT_TEST_IMAGES.cartSymbols.functionAddresses[1];
+	const completionPc = HALT_TEST_IMAGES.cartImage.functions[1].codeAddress;
+
+	cpu.beginCompletionCallInExecutionDomain(0, completionFunctionAddress);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+	const suspendedState = cpu.captureRuntimeState();
+	assert.equal(suspendedState.haltedUntilIrqFrameDepth, baseDepth);
+	cpu.restoreRuntimeState(suspendedState);
+
+	runtime.cpuExecution.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === 0 && pc === completionPc,
+		executionDomainBit(0),
+	);
+	assert.equal(
+		runtime.cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.ExecutionStopped,
+	);
+	assert.equal(cpu.completionCallPending(), true);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+
+	runtime.cpuExecution.setExecutionHook(null, 0);
+	assert.equal(
+		runtime.cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.Completed,
+	);
+	assert.equal(cpu.completionCallPending(), false);
+	assert.equal(cpu.getFrameDepth(), baseDepth);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+});
+
+test('an IRQ accepted above suspended completion execution consumes the latent HALT latch once', () => {
+	const { cpu, memory, irqController } = makeHaltCpu();
+	const completionFunctionAddress = HALT_TEST_IMAGES.cartSymbols.functionAddresses[1];
+	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+	cpu.beginCompletionCallInExecutionDomain(0, completionFunctionAddress);
+	irqController.raise(IRQ_VBLANK);
+
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	const state = cpu.captureRuntimeState();
+	assert.equal(state.haltedUntilIrqFrameDepth, -1);
+	assert.equal(state.interruptEventPending, false);
+});
+
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	const { memory, cpu, irqController: irq } = makeHaltCpu();
 
@@ -538,6 +707,32 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	const borrowedTable = results[0];
 	cpu.collectTrackedHeapBytes();
 	assert.equal(results[0], borrowedTable);
+});
+
+test('Runtime callClosure leaves its completion frame pending when the shared executor hits a breakpoint', () => {
+	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+	const runtime = makeRuntime(cpu, irqController);
+	const closurePc = COMPLETION_LATCH_TEST_IMAGE.image.functions[1].codeAddress;
+	runtime.cpuExecution.setExecutionHook(
+		(executionDomainId, pc) => executionDomainId === -1 && pc === closurePc,
+		SYSTEM_EXECUTION_DOMAIN_MASK,
+	);
+	cpu.instructionBudgetRemaining = 73;
+
+	assert.deepEqual(runtime.callClosure(closure), []);
+	assert.equal(cpu.instructionBudgetRemaining, 73);
+	assert.equal(runtime.completionCallPending(), true);
+	assert.equal(cpu.readFramePc(0), closurePc);
+
+	runtime.cpuExecution.setExecutionHook(null, 0);
+	assert.equal(
+		runtime.cpuExecution.runSuspendedUntilDepth(0),
+		CpuSuspendedRunResult.Completed,
+	);
+	assert.equal(runtime.completionCallPending(), false);
+	assert.equal(runtime.readCompletionValues().length, 1);
 });
 
 test('frame loop yields after HALT instead of continuing in the same host slice', () => {

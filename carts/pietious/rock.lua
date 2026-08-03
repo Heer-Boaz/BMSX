@@ -73,7 +73,7 @@ function rock:begin_break()
 	drop:add_tag('rs')
 end
 
-local define_rock_fsm<const> = function()
+local function define_rock_fsm<init>()
 		fsmlibrary.register('rock', {
 				initial = 'idle',
 				on = {
@@ -124,7 +124,7 @@ local define_rock_fsm<const> = function()
 	})
 end
 
-local register_rock_definition<const> = function()
+local function register_rock_definition<init>()
 	prefab.define({
 		def_id = 'rock',
 		class = rock,
@@ -139,7 +139,5 @@ local register_rock_definition<const> = function()
 end
 
 return {
-		rock = rock,
-		define_rock_fsm = define_rock_fsm,
-		register_rock_definition = register_rock_definition,
+	rock = rock,
 }

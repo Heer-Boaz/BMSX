@@ -17,6 +17,7 @@ import {
 import type { RuntimeIdeState } from '../runtime/state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorDebugCommandId } from '../common/commands';
+import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates
@@ -32,12 +33,12 @@ export type HeadlessIdeHarness = {
 	getSourceState(): RuntimeSourceState;
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
-	/**
-	 * Rebuild the physical BLua32 cartridge image and apply it to the live CPU state.
-	 */
+	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
 	performHotResume(): Promise<void>;
+	toggleLuaBreakpoint(path: string, line: number): void;
+	isDebuggerStopped(): boolean;
 	reboot(): Promise<void>;
 	executeCommand(command: EditorDebugCommandId): void;
 	openLuaSource(path: string): void;
@@ -70,7 +71,6 @@ export function createHeadlessIdeHarness(
 		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive(),
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		hotResumeCore: () => {
-			const slot = runtime.machine.cpu.activeCartridgeSlot();
 			hotResume(
 				ide.sources,
 				ide.luaTooling,
@@ -78,8 +78,8 @@ export function createHeadlessIdeHarness(
 				ide.debugger,
 				ide.editor,
 				runtime,
-				slot < 0,
-				[slot === 0, slot === 1],
+				ide.sources.systemBlua32MediaDirty,
+				ide.sources.cartridgeBlua32MediaDirty,
 			);
 		},
 		performHotResume: () =>
@@ -96,6 +96,15 @@ export function createHeadlessIdeHarness(
 				storage,
 				logOutput,
 			),
+		toggleLuaBreakpoint: (path: string, line: number) => {
+			const resource = resolveRuntimeResourceForContext(
+				ide.sources,
+				ide.sources.activeCartridgeSlot,
+				path,
+			)!;
+			toggleBreakpoint(ide.debugger, resource, line);
+		},
+		isDebuggerStopped: () => ide.debugger.stopped,
 		reboot: () => rebootPreparedRuntime(
 			ide.sources,
 			ide.fault,

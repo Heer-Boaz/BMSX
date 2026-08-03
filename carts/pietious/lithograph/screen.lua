@@ -38,7 +38,7 @@ function lithograph_screen:ctor()
 	self:get_component('customvisualcomponent').producer = draw_lithograph_visual
 end
 
-local define_lithograph_screen_fsm<const> = function()
+local function define_lithograph_screen_fsm<init>()
 	fsmlibrary.register('lithograph_screen', {
 		initial = 'active',
 		on = {
@@ -61,7 +61,7 @@ local define_lithograph_screen_fsm<const> = function()
 	})
 end
 
-local register_lithograph_screen_definition<const> = function()
+local function register_lithograph_screen_definition<init>()
 	prefab.define({
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
@@ -78,6 +78,4 @@ end
 
 return {
 	lithograph_screen = lithograph_screen,
-	define_lithograph_screen_fsm = define_lithograph_screen_fsm,
-	register_lithograph_screen_definition = register_lithograph_screen_definition,
 }

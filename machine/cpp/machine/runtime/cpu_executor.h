@@ -17,13 +17,16 @@ enum class CpuExecutionResult {
 	ExecutionStopped,
 };
 
-using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
+enum class CpuSuspendedRunResult {
+	Completed,
+	Halted,
+	ExecutionStopped,
+};
 
 class CpuExecutionState {
 public:
 	void reset();
 	void setExecutionHook(
-		CPU& cpu,
 		ExecutionHook hook,
 		void* context,
 		ExecutionDomainMask domainMask
@@ -31,11 +34,11 @@ public:
 		m_executionHook = hook;
 		m_executionHookContext = context;
 		m_executionHookDomainMask = domainMask;
-		cpu.setExecutionDomainActivationYieldMask(domainMask);
 	}
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
+	CpuSuspendedRunResult runSuspendedUntilDepth(Runtime& runtime, int targetDepth);
 
 private:
 	enum class CpuSliceResult : uint8_t {

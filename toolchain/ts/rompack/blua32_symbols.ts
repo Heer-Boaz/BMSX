@@ -4,7 +4,7 @@ import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 1;
+export const BLUA32_SYMBOLS_VERSION = 2;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -14,6 +14,12 @@ export type Blua32StaticLayoutToken = {
 export type Blua32ModuleFunction = {
 	path: string;
 	address: number;
+};
+
+export type Blua32InitParticipant = {
+	functionId: string;
+	slotName: string;
+	system: boolean;
 };
 
 export type Blua32LocalSlotDebug = {
@@ -55,6 +61,8 @@ export type Blua32SymbolsImage = {
 	imageAddress: number;
 	functionAddresses: number[];
 	moduleFunctions: Blua32ModuleFunction[];
+	initFunctionAddress: number;
+	initParticipants: Blua32InitParticipant[];
 	staticLayoutToken: Blua32StaticLayoutToken;
 	metadata: Blua32DebugMetadata;
 };

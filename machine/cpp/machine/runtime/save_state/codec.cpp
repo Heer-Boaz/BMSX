@@ -1686,7 +1686,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
 	object["lastPc"] = static_cast<i64>(state.lastPc);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
-	object["haltedUntilIrq"] = state.haltedUntilIrq;
+	object["haltedUntilIrqFrameDepth"] = static_cast<i64>(state.haltedUntilIrqFrameDepth);
 	object["interruptEventPending"] = state.interruptEventPending;
 	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
 	object["memoryWriteBlockedAddress"] = static_cast<i64>(state.memoryWriteBlockedAddress);
@@ -1751,7 +1751,10 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	);
 	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
-	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
+	state.haltedUntilIrqFrameDepth = requireI32(
+		requireField(object, "haltedUntilIrqFrameDepth", label),
+		"cpuState.haltedUntilIrqFrameDepth"
+	);
 	state.interruptEventPending = requireBool(requireField(object, "interruptEventPending", label), "cpuState.interruptEventPending");
 	state.memoryWriteBlocked = requireBool(requireField(object, "memoryWriteBlocked", label), "cpuState.memoryWriteBlocked");
 	state.memoryWriteBlockedAddress = requireU32(requireField(object, "memoryWriteBlockedAddress", label), "cpuState.memoryWriteBlockedAddress");

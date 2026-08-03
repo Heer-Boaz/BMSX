@@ -54,7 +54,10 @@ private:
 enum class RunResult {
 	Halted,
 	Yielded,
+	ExecutionStopped,
 };
+
+using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
 
 enum class CpuValueStateTag : uint8_t {
 	Nil,
@@ -147,7 +150,7 @@ struct CpuRuntimeState {
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	int instructionBudgetRemaining = 0;
-	bool haltedUntilIrq = false;
+	int haltedUntilIrqFrameDepth = -1;
 	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
@@ -248,9 +251,6 @@ public:
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
 	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
-	void setExecutionDomainActivationYieldMask(ExecutionDomainMask mask) {
-		m_executionDomainActivationYieldMask = mask;
-	}
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
@@ -268,12 +268,18 @@ public:
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 
 	void beginCompletionCall(Closure& closure, BuiltinArgsView args = {});
+	void beginCompletionCallInExecutionDomain(
+		ExecutionDomainId executionDomainId,
+		u32 functionAddress
+	);
 	CpuRuntimeState captureRuntimeState() const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
-	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
+	bool isHaltedUntilIrq() const {
+		return m_haltedUntilIrqFrameDepth == static_cast<int>(m_frames.size());
+	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
 	void resumeMemoryWrite(uint32_t address);
@@ -284,8 +290,14 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
-	bool prepareExecutionBoundary();
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
+	RunResult runUntilDepthInstrumented(
+		int targetDepth,
+		int instructionBudget,
+		ExecutionHook executionHook,
+		void* executionHookContext,
+		ExecutionDomainMask executionDomainMask
+	);
 	void collectHeap();
 	class LocalRootsScope {
 	public:
@@ -343,8 +355,14 @@ private:
 	friend class BuiltinResultsScratchScope;
 	friend class GcHeap;
 	friend class LuaHeap;
-	template <bool RootBoundary>
-	RunResult runLoop(int targetDepth, int instructionBudget);
+	template <bool RootBoundary, bool Instrumented>
+	RunResult runLoop(
+		int targetDepth,
+		int instructionBudget,
+		ExecutionHook executionHook,
+		void* executionHookContext,
+		ExecutionDomainMask executionDomainMask
+	);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
@@ -453,7 +471,7 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
 	size_t m_protectedCallDepth = 0;
-	bool m_haltedUntilIrq = false;
+	int m_haltedUntilIrqFrameDepth = -1;
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
@@ -474,7 +492,6 @@ private:
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
-	ExecutionDomainMask m_executionDomainActivationYieldMask = 0;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

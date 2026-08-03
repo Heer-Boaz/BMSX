@@ -155,7 +155,7 @@ local build_title_root_on<const> = function(show_path)
 	return on
 end
 
-local define_title_screen_fsm<const> = function()
+local function define_title_screen_fsm<init>()
 	fsmlibrary.register('title_screen', {
 		initial = 'hidden',
 		on = build_title_root_on('/idle'),
@@ -218,7 +218,7 @@ local define_title_screen_fsm<const> = function()
 	})
 end
 
-local register_title_screen_definition<const> = function()
+local function register_title_screen_definition<init>()
 	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
@@ -228,7 +228,4 @@ local register_title_screen_definition<const> = function()
 	})
 end
 
-return {
-	define_title_screen_fsm = define_title_screen_fsm,
-	register_title_screen_definition = register_title_screen_definition,
-}
+return {}

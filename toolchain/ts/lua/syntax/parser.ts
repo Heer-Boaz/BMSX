@@ -26,6 +26,7 @@ import type {
 	LuaExpression,
 	LuaForGenericStatement,
 	LuaForNumericStatement,
+	LuaFunctionAttribute,
 	LuaFunctionDeclarationStatement,
 	LuaFunctionExpression,
 	LuaFunctionName,
@@ -404,14 +405,29 @@ export class LuaParser {
 		const functionToken = this.previous();
 		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected function name after local function declaration.');
 		const nameExpression = this.createIdentifierExpression(nameToken);
+		const attribute = this.parseLocalFunctionAttribute();
 		const functionExpression = this.parseFunctionExpression(functionToken);
 		const range = this.rangeFromTokenAndNode(localToken, functionExpression);
 		return {
 			kind: LuaSyntaxKind.LocalFunctionStatement,
 			range,
 			name: nameExpression,
+			attribute,
 			functionExpression,
 		};
+	}
+
+	private parseLocalFunctionAttribute(): LuaFunctionAttribute | null {
+		if (!this.match(LuaTokenType.Less)) {
+			return null;
+		}
+		const attributeToken = this.consume(LuaTokenType.Identifier, 'Expected function attribute name.');
+		const attribute = attributeToken.lexeme.toLowerCase();
+		if (attribute !== 'init') {
+			throw this.error(attributeToken, `Unsupported function attribute '${attributeToken.lexeme}'.`);
+		}
+		this.consume(LuaTokenType.Greater, 'Expected ">" after function attribute name.');
+		return 'init';
 	}
 
 	private parseLabelStatement(): LuaLabelStatement {

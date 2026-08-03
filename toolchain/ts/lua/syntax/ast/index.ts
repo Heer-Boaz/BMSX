@@ -146,6 +146,8 @@ export type LuaAssignmentStatement = LuaNode & {
 
 export type LuaLocalAttribute = 'const';
 
+export type LuaFunctionAttribute = 'init';
+
 export type LuaLocalAssignmentStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.LocalAssignmentStatement;
 	readonly names: ReadonlyArray<LuaIdentifierExpression>;
@@ -157,6 +159,7 @@ export type LuaLocalAssignmentStatement = LuaNode & {
 export type LuaLocalFunctionStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.LocalFunctionStatement;
 	readonly name: LuaIdentifierExpression;
+	readonly attribute: LuaFunctionAttribute | null;
 	readonly functionExpression: LuaFunctionExpression;
 };
 

@@ -13,7 +13,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 1u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 2u;
 
 struct Blua32LocalSlotDebug {
 	std::string name;
@@ -59,11 +59,19 @@ struct Blua32ModuleFunction {
 	u32 address = 0;
 };
 
+struct Blua32InitParticipant {
+	std::string functionId;
+	std::string slotName;
+	bool system = false;
+};
+
 struct Blua32SymbolsImage {
 	u32 version = 0;
 	u32 imageAddress = 0;
 	std::vector<u32> functionAddresses;
 	std::vector<Blua32ModuleFunction> moduleFunctions;
+	u32 initFunctionAddress = 0;
+	std::vector<Blua32InitParticipant> initParticipants;
 	Blua32StaticLayoutToken staticLayoutToken;
 	Blua32DebugMetadata metadata;
 };

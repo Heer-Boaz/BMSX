@@ -129,6 +129,19 @@ local bind_machines<const> = function(self)
 	end
 end
 
+function fsmcomponent:rebind_statemachine(id, definition)
+	local machine<const> = self.statemachines[id]
+	if machine == nil then
+		return
+	end
+	machine:rebind_definition(definition)
+	self.state_paths = nil
+	if self._started then
+		self:unbind()
+		bind_machines(self)
+	end
+end
+
 function fsmcomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
 	local parent<const> = self.parent
 	if not self.enabled or not parent.active then

@@ -73,7 +73,7 @@ function pepernoot_projectile:update_motion()
 	end
 end
 
-local define_pepernoot_projectile_fsm<const> = function()
+local function define_pepernoot_projectile_fsm<init>()
 	fsmlibrary.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
@@ -106,7 +106,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 	})
 end
 
-local register_pepernoot_projectile_definition<const> = function()
+local function register_pepernoot_projectile_definition<init>()
 	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
@@ -121,6 +121,4 @@ end
 
 return {
 	pepernoot_projectile = pepernoot_projectile,
-	define_pepernoot_projectile_fsm = define_pepernoot_projectile_fsm,
-	register_pepernoot_projectile_definition = register_pepernoot_projectile_definition,
 }

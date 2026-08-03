@@ -71,7 +71,25 @@ function timelinecomponent:on_detach()
 end
 
 function timelinecomponent:define(definition)
-	local instance<const> = definition.__is_timeline and definition or timeline.new(definition)
+	local replacement<const> = definition.__is_timeline and definition or timeline.new(definition)
+	local entry = self.registry[replacement.id]
+	local instance = replacement
+	local active = false
+	if entry ~= nil then
+		active = self.active_index_by_id[replacement.id] ~= nil
+		if active and replacement.frame_builder then
+			replacement:build(entry.params)
+		end
+		instance = entry.instance
+		instance:rebind_definition(replacement)
+	else
+		entry = {
+			instance = instance,
+			target = instance.def.target,
+			params = instance.def.params,
+		}
+		self.registry[instance.id] = entry
+	end
 	local markers<const> = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	local apply_function
 	local compiled_apply_frames
@@ -80,15 +98,13 @@ function timelinecomponent:define(definition)
 	else
 		compiled_apply_frames = instance.compiled_apply_frames
 	end
-	local entry<const> = {
-		instance = instance,
-		markers = markers,
-		apply_function = apply_function,
-		compiled_apply_frames = compiled_apply_frames,
-		target = instance.def.target,
-		params = instance.def.params,
-	}
-	self.registry[instance.id] = entry
+	entry.markers = markers
+	entry.apply_function = apply_function
+	entry.compiled_apply_frames = compiled_apply_frames
+	if not active then
+		entry.target = instance.def.target
+		entry.params = instance.def.params
+	end
 	timeline_dispatch.init_entry(entry)
 end
 

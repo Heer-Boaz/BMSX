@@ -1,4 +1,3 @@
-import { RunResult } from '../cpu/cpu';
 import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, type Value } from '../cpu/value';
 import type { RuntimeOptions } from './options';
@@ -7,48 +6,13 @@ import { FrameSchedulerState } from '../scheduler/frame';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
-import { advanceRuntimeTime, CpuExecutionState, MAX_CPU_SLICE_CYCLES, runDueRuntimeTimers } from './cpu_executor';
+import { CpuExecutionState } from './cpu_executor';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from '../../spec/bmsx/timing';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import type { InputControllerInputSource } from '../devices/input/contracts';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
-
-function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
-	const machine = runtime.machine;
-	const cpu = machine.cpu;
-	const scheduler = machine.scheduler;
-	let advancedDeadline = false;
-	while (cpu.isHaltedUntilIrq()) {
-		if (machine.gxGpu.backendReadbackBlocksMachine()) {
-			return;
-		}
-		const cpuHeld = machine.systemController.cpuHeld();
-		if (!cpuHeld && cpu.enterPendingInterrupt()) {
-			return;
-		}
-		if (!cpuHeld && advancedDeadline) {
-			return;
-		}
-		const nextDeadline = scheduler.nextDeadline();
-		if (nextDeadline === Number.MAX_SAFE_INTEGER) {
-			return;
-		}
-		const cyclesToDeadline = nextDeadline - scheduler.nowCycles;
-		if (cyclesToDeadline <= 0) {
-			if (runDueRuntimeTimers(runtime)) {
-				return;
-			}
-			continue;
-		}
-		const idleCycles = cyclesToDeadline < MAX_CPU_SLICE_CYCLES
-			? cyclesToDeadline
-			: MAX_CPU_SLICE_CYCLES;
-		advanceRuntimeTime(runtime, idleCycles);
-		advancedDeadline = idleCycles === cyclesToDeadline;
-	}
-}
 
 export class Runtime {
 	public readonly timing: TimingState;
@@ -117,12 +81,10 @@ export class Runtime {
 		this.pendingCall = 'entry';
 	}
 
-	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
 	public callClosure(fn: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): ReadonlyArray<Value> {
-		const machine = this.machine;
-		const cpu = machine.cpu;
-		const scheduler = machine.scheduler;
+		const cpu = this.machine.cpu;
+		const scheduler = this.machine.scheduler;
 		if (scheduler.isCpuSliceActive()) {
 			throw new Error('External Lua closure execution requires a suspended CPU.');
 		}
@@ -131,86 +93,7 @@ export class Runtime {
 		try {
 			this.completionValues.length = 0;
 			cpu.beginCompletionCall(fn, args);
-			runDueRuntimeTimers(this);
-			while (cpu.getFrameDepth() > depth) {
-				if (machine.gxGpu.backendReadbackBlocksMachine()) {
-					break;
-				}
-				if (machine.systemController.cpuHeld()) {
-					const nextDeadline = scheduler.nextDeadline();
-					if (nextDeadline === Number.MAX_SAFE_INTEGER) {
-						break;
-					}
-					let waitCycles = nextDeadline - scheduler.nowCycles;
-					if (waitCycles <= 0) {
-						runDueRuntimeTimers(this);
-						continue;
-					}
-					if (waitCycles > MAX_CPU_SLICE_CYCLES) {
-						waitCycles = MAX_CPU_SLICE_CYCLES;
-					}
-					advanceRuntimeTime(this, waitCycles);
-					continue;
-				}
-				if (cpu.isMemoryWriteBlocked()) {
-					const nextDeadline = scheduler.nextDeadline();
-					let waitCycles = nextDeadline - scheduler.nowCycles;
-					if (waitCycles <= 0) {
-						runDueRuntimeTimers(this);
-						continue;
-					}
-					if (waitCycles > MAX_CPU_SLICE_CYCLES) {
-						waitCycles = MAX_CPU_SLICE_CYCLES;
-					}
-					// External closures obey the same hardware wait contract as the
-					// frame executor: only the scheduled device edge releases the store.
-					advanceRuntimeTime(this, waitCycles);
-					continue;
-				}
-				let sliceBudget = MAX_CPU_SLICE_CYCLES;
-				const nextDeadline = scheduler.nextDeadline();
-				if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-					const deadlineBudget = nextDeadline - scheduler.nowCycles;
-					if (deadlineBudget <= 0) {
-						runDueRuntimeTimers(this);
-						continue;
-					}
-					if (deadlineBudget < sliceBudget) {
-						sliceBudget = deadlineBudget;
-					}
-				}
-				scheduler.beginCpuSlice(sliceBudget);
-				let result = RunResult.Yielded;
-				let consumed = 0;
-				try {
-					result = cpu.runUntilDepth(depth, sliceBudget);
-				} finally {
-					scheduler.endCpuSlice();
-					consumed = sliceBudget - cpu.instructionBudgetRemaining;
-					if (consumed > 0) {
-						advanceRuntimeTime(this, consumed);
-					}
-				}
-				if (cpu.getFrameDepth() <= depth) {
-					break;
-				}
-				if (cpu.isMemoryWriteBlocked()) {
-					continue;
-				}
-				if (result === RunResult.Halted) {
-					if (!cpu.isHaltedUntilIrq()) {
-						break;
-					}
-					runHaltedClosureUntilInterrupt(this);
-					if (cpu.isHaltedUntilIrq()) {
-						break;
-					}
-					continue;
-				}
-				if (consumed <= 0) {
-					runDueRuntimeTimers(this);
-				}
-			}
+			this.cpuExecution.runSuspendedUntilDepth(depth);
 			return this.readCompletionValues();
 		} finally {
 			cpu.instructionBudgetRemaining = previousBudget;
@@ -226,7 +109,6 @@ export class Runtime {
 	public completionCallPending(): boolean {
 		return this.machine.cpu.completionCallPending();
 	}
-	// end repeated-sequence-acceptable
 
 	public constructor(
 		options: RuntimeOptions,

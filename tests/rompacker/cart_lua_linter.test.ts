@@ -164,6 +164,26 @@ test('cart lua linter allows const module imports without member copies', async 
 	);
 });
 
+test('cart lua linter reserves local function declarations for init participants', async () => {
+	await withCartLintFixture(
+		'cart_lua_linter_plain_local_function',
+		'local function prepare() end',
+		async root => {
+			await assert.rejects(
+				lintCartSources({ roots: [root], profile: 'cart' }),
+				/Local function "prepare" is forbidden/,
+			);
+		},
+	);
+	await withCartLintFixture(
+		'cart_lua_linter_init_function',
+		'local function prepare<init>() print("prepared") end',
+		async root => {
+			await lintCartSources({ roots: [root], profile: 'cart' });
+		},
+	);
+});
+
 test('cart lua linter rejects newline normalization calls', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_newline_normalization',

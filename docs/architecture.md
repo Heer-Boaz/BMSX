@@ -778,7 +778,7 @@ directly. Host runtime packages deliberately do not decode, copy, or cache cart
 texture records: the ROM bytes remain the single payload owner until guest DMA
 or an explicit tooling inspection reads them.
 
-`__blua32__` begins the deliberately mutable executable tail after that prefix.
+For cartridge media, `__blua32__` begins the deliberately mutable executable tail after that prefix.
 It is one ordinary TOC payload containing a fixed binary image; it has no
 generic serializer descriptor and no parallel compiled range. Editing a
 ROM-backed authoring asset is also a physical-media revision: that asset moves
@@ -792,6 +792,16 @@ assets and contains tooling metadata only. A debug ROM also carries the compact
 follows the complete mutable tail. Hot Resume replaces the ROM header,
 executable bytes, authoring assets, symbols, diagnostics, and TOC; it does not
 maintain a parallel host-only asset override.
+
+System media has the separate fixed asset partition at ROM offset
+`0x00400000`, beyond the maximum system executable end. A source-only system
+revision retains every public system-asset payload at its exact physical
+address and copies those bytes directly into the rebuilt medium; executable,
+symbols, diagnostics, and TOC may change around that fixed set. Editing one
+system authoring asset moves only that asset after the retained public ranges.
+Unrelated firmware fonts, textures, and binary tables do not move merely
+because source or another asset changed, so retained guest raw pointers keep
+naming the same physical payload without heap traversal or pointer rewriting.
 
 The outer ROM header exposes the executable without a TOC lookup:
 
@@ -966,12 +976,17 @@ or BIOS source modules.
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
 recognises that module as compile-time only. Stable immutable-prefix exports
-remain ordinary foldable compile-time constants. Studio marks only exports for
-assets in the mutable tail as deduplicated constant-pool relocations, and the
-linker resolves those loads to their final physical address or length. The
-module never produces a runtime Lua table, module function, global slot, or
-`require` call in executable cart code. Using the module root as a value is a
-compile-time error; cart code must read concrete exports such as
+and every payload length remain ordinary foldable compile-time constants.
+System tooling lays out the fixed public-asset partition before compilation, so
+all system asset exports are already concrete. Cartridge tooling marks only
+addresses whose position after the executable tail is not final yet as
+deduplicated constant-pool relocations. Pure numeric expressions over those
+address leaves remain one symbolic linker expression and therefore emit one
+constant load rather than runtime arithmetic; the linker evaluates that same
+expression against the final physical layout. The module never produces a
+runtime Lua table, module function, global slot, or `require` call in executable
+cart code. Using the module root as a value is a compile-time error; cart code
+must read concrete exports such as
 `assets.data_transition_config_addr` and
 `assets.data_transition_config_len`.
 Do not add a `rom_asset("name")`-style API, even as a compile-time builtin: the
@@ -985,11 +1000,12 @@ records except Lua/code records and the ROM label. Address values are absolute
 CPU-visible ROM addresses: `SYSTEM_ROM_BASE` or `CART_ROM_BASE` plus the record
 offset in the corresponding ROM payload. An ordinary pack layout produces the
 final TOC records before BLua32 compilation; `bmsx/assets` and the TOC encoder
-consume those same records. Studio compiles a revised object once with the
-generated exports kept as relocations, computes the physical mutable-tail
-layout from the fixed executable byte count, and resolves those relocations to
-that final layout. It never recompiles address guesses or maintains a parallel
-writer-owned layout. Length values are byte counts.
+consume those same records. Studio compiles a revised object once with only the
+unresolved cartridge-tail addresses kept as relocations, computes the physical
+mutable-tail layout from the fixed executable byte count, and resolves those
+relocations to that final layout. It never recompiles address guesses or
+maintains a parallel writer-owned layout. Length values are final byte counts
+before compilation.
 `rominspector.ts
 --asset-symbols` prints the generated symbol table so the ROM address ABI can be
 checked without disassembling BLua32 code.
@@ -1033,6 +1049,33 @@ returns. On cold reset the CPU resolves and activates the system domain, system
 boot seeds the CPU-owned primitive values, and execution enters the raw
 reset-vector word in supervisor mode. Runtime coordination never reads, returns,
 or passes the startup address.
+
+BLua gives reloadable preparation an explicit local-function attribute:
+
+```lua
+local function publish_blueprints<init>()
+    -- registration work
+end
+```
+
+An `<init>` declaration is valid only at module or entry-chunk top level and
+must have no parameters or varargs. The function may capture lexical state and
+its name has no platform meaning. At its ordinary lexical declaration point,
+the compiler stores the closure in one compiler-owned hidden global slot and
+calls it once, so cold execution keeps source ordering and has no separate
+lifecycle pass. System-program slots use the system registerfile; cartridge
+slots use the cartridge's ordinary global registerfile. Participants in
+statically required modules are ordered by the same dependency order as cold
+module execution and then by lexical declaration order. Compile-time modules
+and modules that are not statically required by a cartridge cannot declare one.
+
+When a program has participants, the compiler also emits one zero-upvalue
+static vector that loads those retained closures from their hidden slots and
+calls them in that same order. The private tooling-symbol image publishes the
+vector's raw function-record address and the ordered participant identities.
+Zero participants publishes address zero and emits no vector. Neither the ROM
+header nor the CPU, execution address space, runtime save-state, or firmware
+contains an init-vector field or a reload concept.
 Firmware inspects the raw cartridge headers through `CART_SELECT` and transfers
 to the selected cartridge startup address through the privileged `CP0.EXEC`
 control word. The host never calls a cartridge entry or assembles a combined
@@ -1087,12 +1130,33 @@ raw-media replacement operations. Replacing media only changes the backing byte
 view; the owners retain no source identity, generation counter, decoded image,
 or tooling callback.
 
-Hot Resume does not perform a cold boot, run the startup vector, section
-initialization, static module initialization, or `new_game`. It reruns `init`
-so registration-owned handlers publish changed code. Captured-upvalue layout,
-static-closure identity mode, or static-storage layout changes are incompatible
-revisions. Incompatibility is reported to the IDE; it never becomes an implicit
-reboot, rollback, or legacy fallback.
+Hot Resume does not perform a cold boot, run the startup vector, initialize
+sections or modules, or recognize an `init`/`new_game` global name. Before media
+installation, the participant identities and hidden-slot layout are part of the
+same tooling-owned static-layout proof as closure storage; adding, removing, or
+reordering a participant is therefore an incompatible live-lineage edit. After
+installation and frame relocation, tooling invokes the rebuilt system vector
+only for an explicitly dirty system program. It invokes the active cartridge
+vector only when that cartridge was explicitly dirty, or for an explicit
+no-source-change refresh. A system rebuild that mechanically relinks a
+cartridge does not run that cartridge's vector, and an edited inactive socket
+receives media without executing guest preparation. When both vectors apply,
+system preparation precedes cartridge preparation.
+
+Tooling passes the raw execution-domain word and raw static-vector address to the
+generic suspended completion-call boundary and executes it through the
+debugger-aware CPU executor. The CPU resolves the explicitly named resident
+execution image; this call neither consults nor mutates `CART_SELECT`, whose
+data-bus selection may legitimately differ from the cartridge instruction
+latch. Breakpoints, statement stepping, guest output, hardware deadlines, and
+faults therefore use the same execution path as other guest code. A breakpoint
+leaves the completion frame live and continuation resumes it normally; there is
+no state capture, rollback, special opcode, host callback, or machine-side
+reload state. Cold-only world/session creation stays as root-level source
+execution. A game that offers restart owns an ordinary game function;
+`new_game` is not a BMSX ABI. Captured-upvalue layout, static-closure identity
+mode, participant layout, or static-storage layout changes remain incompatible
+revisions and are reported before media or CPU state writes.
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load
@@ -1166,16 +1230,20 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 - `HALT` is an interrupt-event wait, not an unconditional sleep for a future
   edge. The CPU has one event latch. An asynchronous interrupt accepted while
   code is active sets it; `HALT` consumes a set latch without parking. If no
-  event is latched, the CPU parks until an accepted interrupt. An interrupt that
-  wakes an already parked CPU consumes its event in the wake transition. This
-  makes sequence-latch IRQ waits lossless across the condition-to-`HALT`
-  instruction window without polling or host scheduling.
+  event is latched, the CPU records the current raw call-frame depth and parks
+  when that frame is the top frame. A suspended completion frame pushed above
+  that depth executes normally without clearing the lower latch; when it pops,
+  the unchanged parked depth becomes current again. An accepted interrupt
+  clears any retained parked depth, including a latent lower one, and therefore
+  does not queue a duplicate event for the same wake. This makes sequence-latch
+  IRQ waits lossless across the condition-to-`HALT` instruction window without
+  polling, state capture/restore, or host scheduling.
 - Host/native
-  closure entry does not wake it and does not throw. If an entered external
-  closure executes `HALT` and no interrupt is scheduled, the host call stops with
-  the CPU still parked and the stopped frame intact instead of converting that
-  state into a host exception or fast-forwarding device time outside the frame
-  scheduler.
+  closure entry does not wake a parked lower frame and does not throw. If an
+  entered external closure executes `HALT`, it records its own current depth;
+  when no interrupt is scheduled, the host call stops with that frame intact
+  instead of converting the state into a host exception or fast-forwarding
+  device time outside the frame scheduler.
 - `pcall` and `xpcall` are retained Lua-CPU microcode, not BIOS algorithms and
   not recursive host interpreter calls. BIOS ROM only installs their guest
   bindings. A protected invocation retains its caller, target, return window,
@@ -3528,16 +3596,19 @@ does not abort editor shutdown or workspace reconfiguration.
 Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal
 path and contains no per-instruction debugger branch or callback. An installed
-hook selects one-instruction executor slices only in the execution domains
-watched by tooling, accepts a pending interrupt before observation, and exposes
-only the current raw execution-domain word and instruction PC. IDE tooling
+hook selects a separate instrumented bulk-loop specialization. That loop checks
+the selected raw execution-domain mask immediately before each instruction and
+exposes only the current raw execution-domain word and instruction PC; calls,
+returns, interrupts, and domain changes remain inside the same machine slice
+instead of round-tripping through the host once per instruction. IDE tooling
 compiles `(domain, path, line)` breakpoints from the linked functions' statement
 points and owns breakpoint matching, resume suppression and source-level
 stepping. Statement points retain optimizer inline depth without changing the
 physical CPU stack. Step-in stops at the next point; step-over and step-out
 compare the logical `(physical frame depth, inline depth)` position. The frame
 loop stops at the selected boundary. The CPU owns no source paths, symbols,
-editor state, or stepping policy.
+editor state, or stepping policy. The uninstrumented specialization contains no
+hook test, domain-mask test, callback, or debugger-induced CALL/RET branch.
 
 Instruction profiling is an opt-in Node tooling-host feature. The TypeScript
 tool loads immutable BLua32 symbol media directly from the boot ROM layers and

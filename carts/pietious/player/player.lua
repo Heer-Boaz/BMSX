@@ -2595,7 +2595,7 @@ function player:update_common_frame()
 	self:update_hit_invulnerability()
 end
 
-local define_player_fsm<const> = function()
+local function define_player_fsm<init>()
 	local input_event_handlers<const> = {
 		{
 			pattern = 'left[jp]',
@@ -3180,7 +3180,7 @@ local define_player_fsm<const> = function()
 	})
 end
 
-local register_player_definition<const> = function()
+local function register_player_definition<init>()
 	prefab.define({
 		def_id = 'player',
 		class = player,
@@ -3268,6 +3268,4 @@ end
 
 return {
 	player = player,
-	define_player_fsm = define_player_fsm,
-	register_player_definition = register_player_definition,
 }

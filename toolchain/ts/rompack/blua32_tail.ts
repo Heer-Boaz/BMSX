@@ -54,7 +54,7 @@ export function layoutBlua32PublicAssets(
 	const entries: RomAsset[] = [];
 	const relocatedSources: RomAsset[] = [];
 	const relocatedEntryIndices: number[] = [];
-	const tailOffset = layer.id === 'system'
+	let tailOffset = layer.id === 'system'
 		? SYSTEM_ROM_ASSET_OFFSET
 		: alignRomAssetOffset(imageOffset + imageByteCount);
 	let edited = false;
@@ -69,14 +69,29 @@ export function layoutBlua32PublicAssets(
 		const isEdited = assetEdit
 			&& entry.type === assetEdit[0]
 			&& entry.resid === assetEdit[1];
-		const movePayloads = layer.id === 'system'
-			|| isEdited
-			|| (entry.start != null && entry.start >= imageOffset)
-			|| (entry.compiled_start != null && entry.compiled_start >= imageOffset)
-			|| (entry.model_texture_start != null && entry.model_texture_start >= imageOffset)
-			|| (entry.collision_bin_start != null && entry.collision_bin_start >= imageOffset);
+		const movePayloads = isEdited
+			|| (layer.id === 'cart' && (
+				(entry.start != null && entry.start >= imageOffset)
+				|| (entry.compiled_start != null && entry.compiled_start >= imageOffset)
+				|| (entry.model_texture_start != null && entry.model_texture_start >= imageOffset)
+				|| (entry.collision_bin_start != null && entry.collision_bin_start >= imageOffset)
+			));
 		if (!movePayloads) {
-			entries.push(entry);
+			entries.push({ ...entry });
+			if (layer.id === 'system') {
+				if (entry.end != null && entry.end > tailOffset) {
+					tailOffset = entry.end;
+				}
+				if (entry.compiled_end != null && entry.compiled_end > tailOffset) {
+					tailOffset = entry.compiled_end;
+				}
+				if (entry.model_texture_end != null && entry.model_texture_end > tailOffset) {
+					tailOffset = entry.model_texture_end;
+				}
+				if (entry.collision_bin_end != null && entry.collision_bin_end > tailOffset) {
+					tailOffset = entry.collision_bin_end;
+				}
+			}
 			continue;
 		}
 		const source: RomAsset = {
@@ -273,7 +288,12 @@ export function buildBlua32Tail(
 	}
 
 	const payload = new Uint8Array(payloadByteCount);
-	payload.set(layer.bytes.subarray(0, imageOffset));
+	payload.set(layer.bytes.subarray(
+		0,
+		layer.id === 'system'
+			? payloadByteCount
+			: imageOffset,
+	));
 	payload.set(linked.bytes, imageOffset);
 	for (let index = 0; index < publicAssets.ranges.length; index += 1) {
 		const range = publicAssets.ranges[index];

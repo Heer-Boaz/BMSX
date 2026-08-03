@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
@@ -177,96 +178,104 @@ async function main(): Promise<void> {
 	try {
 		switch (options.mode.kind) {
 		case 'ide-test': {
-				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
-				const microtasks = new IdeMicrotaskQueue();
-				const storage = new MemoryStorage();
-				const capture = new HeadlessCaptureCoordinator(
-					videoBackend,
-					deriveHeadlessCaptureOutputDir(options.mode.path),
-					() => clock.now(),
-				);
-				console.log(
-					`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
-				);
-				const ide = await prepareWorkbenchRuntime(
-					systemRom,
-					[slot0Rom, slot1Rom],
-					runtime,
-					presenter,
-					videoOutput,
-					input,
-					audioOutput,
-					storage,
-					clock,
-					new HeadlessClipboard(),
-					microtasks,
-					logOutput,
-					RESOURCE_PANEL_DEFAULT_RATIO,
-				);
-				systemOutput.flush(runtime, logOutput);
-				audioOutput.bootstrap();
-				const interrupt = (): never => {
-					persistWorkspaceSessionLocally();
-					process.exit(130);
-				};
-				const terminate = (): never => {
-					persistWorkspaceSessionLocally();
-					process.exit(143);
-				};
-				process.once('SIGINT', interrupt);
-				process.once('SIGTERM', terminate);
-				let passed = false;
+				const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-ide-test-'));
 				try {
-					runtime.frameScheduler.clearQueuedTime();
-					const frameLoop = frames.start((currentTime) => {
-						const result = runWorkbenchHostFrame(
-							frameSession,
-							runtime,
-							presenter,
-							input,
-							audioOutput,
-							systemOutput,
-							logOutput,
-							ide,
-							presentation,
-							hostOverlayMenu,
-							currentTime,
-						);
-						if (result === HostFrameRunResult.ExitRequested) {
-							frameLoop.stop();
-							persistWorkspaceSessionLocally();
-							process.exit(0);
-						}
-					});
-					await Promise.race([
-						runIdeTest({
-							testPath: options.mode.path,
-							frameIntervalMs: options.frameIntervalMs,
-							ide: createHeadlessIdeHarness(
-								ide,
+					installNodeWorkspaceBridge(workspaceRoot);
+					const microtasks = new IdeMicrotaskQueue();
+					const storage = new MemoryStorage();
+					const capture = new HeadlessCaptureCoordinator(
+						videoBackend,
+						deriveHeadlessCaptureOutputDir(options.mode.path),
+						() => clock.now(),
+					);
+					console.log(
+						`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
+					);
+					const ide = await prepareWorkbenchRuntime(
+						systemRom,
+						[slot0Rom, slot1Rom],
+						runtime,
+						presenter,
+						videoOutput,
+						input,
+						audioOutput,
+						storage,
+						clock,
+						new HeadlessClipboard(),
+						microtasks,
+						logOutput,
+						RESOURCE_PANEL_DEFAULT_RATIO,
+					);
+					systemOutput.flush(runtime, logOutput);
+					audioOutput.bootstrap();
+					const interrupt = (): never => {
+						persistWorkspaceSessionLocally();
+						process.exit(130);
+					};
+					const terminate = (): never => {
+						persistWorkspaceSessionLocally();
+						process.exit(143);
+					};
+					process.once('SIGINT', interrupt);
+					process.once('SIGTERM', terminate);
+					let passed = false;
+					try {
+						runtime.frameScheduler.clearQueuedTime();
+						const frameLoop = frames.start((currentTime) => {
+							const result = runWorkbenchHostFrame(
+								frameSession,
 								runtime,
+								presenter,
+								input,
 								audioOutput,
-								storage,
+								systemOutput,
 								logOutput,
-							),
-							logger: inputLogger,
-							clock,
-							input: inputHub,
-							capture,
-						}),
-						new Promise<never>((_resolve, reject) => {
-							clock.scheduleOnce(options.ttlMs, () => {
-								reject(new Error('IDE test did not finish before TTL.'));
-							});
-						}),
-					]);
-					passed = true;
+								ide,
+								presentation,
+								hostOverlayMenu,
+								currentTime,
+							);
+							if (result === HostFrameRunResult.ExitRequested) {
+								frameLoop.stop();
+								persistWorkspaceSessionLocally();
+								process.exit(0);
+							}
+						});
+						await Promise.race([
+							runIdeTest({
+								testPath: options.mode.path,
+								frameIntervalMs: options.frameIntervalMs,
+								ide: createHeadlessIdeHarness(
+									ide,
+									runtime,
+									audioOutput,
+									storage,
+									logOutput,
+								),
+								logger: inputLogger,
+								clock,
+								input: inputHub,
+								capture,
+							}),
+							new Promise<never>((_resolve, reject) => {
+								clock.scheduleOnce(options.ttlMs, () => {
+									reject(new Error('IDE test did not finish before TTL.'));
+								});
+							}),
+						]);
+						passed = true;
+					} finally {
+						process.removeListener('SIGINT', interrupt);
+						process.removeListener('SIGTERM', terminate);
+						await capture.flushWrites(passed);
+						capture.dispose();
+					}
 				} finally {
-					process.removeListener('SIGINT', interrupt);
-					process.removeListener('SIGTERM', terminate);
-					await capture.flushWrites(passed);
-					capture.dispose();
-					await shutdownWorkspaceStorage();
+					try {
+						await shutdownWorkspaceStorage();
+					} finally {
+						await fs.rm(workspaceRoot, { recursive: true });
+					}
 				}
 				return;
 			}

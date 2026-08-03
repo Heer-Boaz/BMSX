@@ -30,7 +30,13 @@ import {
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
-import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
+import {
+	BASE_BX_BITS,
+	INSTRUCTION_BYTES,
+	MAX_BX_BITS,
+	readInstructionWord,
+	writeInstruction,
+} from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import type { ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -63,6 +69,7 @@ type TestBlua32Vectors = {
 	sectionInitFunctionAddress: number;
 	irqFunctionAddress: number;
 	exceptionFunctionAddress: number;
+	initFunctionAddress: number;
 };
 
 export type TestBlua32Image = {
@@ -110,6 +117,10 @@ export type TestBlua32Source = {
 	startupFunctionIndex?: number;
 	irqFunctionIndex?: number;
 	exceptionFunctionIndex?: number;
+	closureRelocations?: ReadonlyArray<{
+		wordIndex: number;
+		functionAddress: number;
+	}>;
 };
 
 type RawTestSystemBlua32Object = {
@@ -164,6 +175,7 @@ function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): Test
 		sectionInitFunctionAddress: functionAddresses[compiled.sectionInitProtoIndex],
 		irqFunctionAddress: linked.irqFunctionAddress,
 		exceptionFunctionAddress: linked.exceptionFunctionAddress,
+		initFunctionAddress: linked.initFunctionAddress,
 	};
 }
 
@@ -218,6 +230,7 @@ function createRawTestBlua32Object(
 		globalNames,
 		systemGlobalNames,
 		exportProtoIdBySlot: {},
+		initParticipants: [],
 		debugRanges,
 		statementPointsByProto: functions.map(() => []),
 		resumePointsByProto: functions.map(() => []),
@@ -230,6 +243,7 @@ function createRawTestBlua32Object(
 			sectionInitProtoIndex: source.startupFunctionIndex ?? 0,
 			irqProtoIndex: source.irqFunctionIndex ?? 0,
 			exceptionProtoIndex: source.exceptionFunctionIndex ?? 0,
+			initProtoIndex: null,
 		},
 		sections: {
 			text: {
@@ -287,7 +301,40 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 		sectionInitFunctionAddress: linked.symbols.functionAddresses[startupFunctionIndex],
 		irqFunctionAddress: linked.irqFunctionAddress,
 		exceptionFunctionAddress: linked.exceptionFunctionAddress,
+		initFunctionAddress: linked.initFunctionAddress,
 	};
+}
+
+function applyRawTestClosureRelocations(
+	text: Uint8Array,
+	relocations: TestBlua32Source['closureRelocations'],
+): void {
+	if (!relocations) {
+		return;
+	}
+	for (let index = 0; index < relocations.length; index += 1) {
+		const relocation = relocations[index];
+		const word = readInstructionWord(text, relocation.wordIndex);
+		const wideWord = readInstructionWord(text, relocation.wordIndex - 1);
+		const functionOperand = relocation.functionAddress >> 4;
+		writeInstruction(
+			text,
+			relocation.wordIndex - 1,
+			OpCode.WIDE,
+			(wideWord >>> 12) & 0x3f,
+			functionOperand >> BASE_BX_BITS,
+			wideWord & 0x3f,
+		);
+		writeInstruction(
+			text,
+			relocation.wordIndex,
+			OpCode.CLOSURE,
+			(word >>> 12) & 0x3f,
+			(functionOperand >>> 6) & 0x3f,
+			functionOperand & 0x3f,
+			functionOperand >> MAX_BX_BITS,
+		);
+	}
 }
 
 export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Image {
@@ -314,6 +361,7 @@ export function linkRawTestBlua32Pair(
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
+	applyRawTestClosureRelocations(system.layout.textBytes, systemSource.closureRelocations);
 	const cartRaw = createRawTestBlua32Object(cartSource, 'cart');
 	const cart = linkCartBlua32Image(
 		system.biosImports,
@@ -322,6 +370,7 @@ export function linkRawTestBlua32Pair(
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
 	);
+	applyRawTestClosureRelocations(cart.layout.textBytes, cartSource.closureRelocations);
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,

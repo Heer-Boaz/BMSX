@@ -94,7 +94,7 @@ function elevator:update_motion()
 	end
 end
 
-local define_elevator_fsm<const> = function()
+local function define_elevator_fsm<init>()
 	fsmlibrary.register('elevator_platform', {
 		initial = 'active',
 		states = {
@@ -103,7 +103,7 @@ local define_elevator_fsm<const> = function()
 	})
 end
 
-local register_elevator_definition<const> = function()
+local function register_elevator_definition<init>()
 	prefab.define({
 		def_id = 'elevator_platform',
 		class = elevator,
@@ -120,6 +120,4 @@ end
 
 return {
 	elevator = elevator,
-	define_elevator_fsm = define_elevator_fsm,
-	register_elevator_definition = register_elevator_definition,
 }

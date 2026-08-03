@@ -693,7 +693,7 @@ function player:ctor()
 	rc.producer = player.draw_visual
 end
 
-local define_player_fsm<const> = function()
+local function define_player_fsm<init>()
 	fsm_library.register(ids_player_fsm, {
 		initial = 'boot',
 		states = {
@@ -818,7 +818,7 @@ local define_player_fsm<const> = function()
 	})
 end
 
-local register_player_definition<const> = function()
+local function register_player_definition<init>()
 	prefab.define({
 		def_id = ids_player_def,
 		class = player,
@@ -854,8 +854,6 @@ end
 
 return {
 	player = player,
-	define_player_fsm = define_player_fsm,
-	register_player_definition = register_player_definition,
 	player_def_id = ids_player_def,
 	player_instance_id = ids_player_instance,
 	player_fsm_id = ids_player_fsm,

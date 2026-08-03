@@ -33,6 +33,7 @@ import {
 	SYSTEM_ROM_BASE,
 } from '../../machine/ts/spec/bmsx/memory_map';
 import {
+	applyBlua32LinkValues,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
@@ -41,6 +42,7 @@ import {
 	relocatedInstructionPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 
 type EncodedWord = {
 	op: OpCode;
@@ -85,6 +87,7 @@ function runtimeSymbols(
 		globalNames,
 		systemGlobalNames,
 		exportProtoIdBySlot,
+		initParticipants: [],
 	};
 }
 
@@ -105,6 +108,7 @@ function makeMetadata(
 		globalNames,
 		systemGlobalNames,
 		exportProtoIdBySlot,
+		initParticipants: [],
 	};
 }
 
@@ -123,6 +127,7 @@ function makeSystemObject(
 				sectionInitProtoIndex: 0,
 				irqProtoIndex: 0,
 				exceptionProtoIndex: 0,
+				initProtoIndex: null,
 			},
 			sections: {
 				text: { code, protos: [makeProto(0, words.length)] },
@@ -408,6 +413,47 @@ test('BLua32 linker rewrites local and explicit BIOS-import closure operands to 
 	);
 });
 
+test('system init vector pin follows public BIOS export pins without shifting their ABI', () => {
+	const system = makeSystemObject([
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	]);
+	system.object.sections.text.protos = [
+		makeProto(0, 1),
+		makeProto(1, 1),
+		makeProto(2, 1),
+		makeProto(3, 1),
+	];
+	setFunctionIds(system.object, system.metadata, ['system/entry', 'system/export', 'system/participant', 'system/init']);
+	system.object.vectors.initProtoIndex = 3;
+	system.object.link.symbols.exportProtoIdBySlot = { system__boot: 'system/export' };
+	system.metadata.exportProtoIdBySlot = { system__boot: 'system/export' };
+	system.object.link.symbols.initParticipants = [{
+		functionId: 'system/participant',
+		slotName: '@init:system/participant',
+		system: true,
+	}];
+	system.metadata.initParticipants = system.object.link.symbols.initParticipants;
+	system.object.sections.rodata.moduleExports.push({
+		path: 'system/boot',
+		exportPathKey: '',
+		slotName: 'system__boot',
+	});
+	const linked = linkSystemBlua32Image(
+		system.object,
+		system.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[{ path: 'system/boot', exportPathKey: '' }],
+	);
+	assert.equal(linked.biosImports.functions[0].functionAddress, linked.symbols.functionAddresses[0]);
+	assert.equal(linked.initFunctionAddress, linked.symbols.functionAddresses[1]);
+	assert.equal(linked.symbols.metadata.functionIds[0], 'system/export');
+	assert.equal(linked.symbols.metadata.functionIds[1], 'system/init');
+});
+
 test('cartridge global operands keep cartridge-owned and baseline-stable slot tables', () => {
 	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	system.object.link.symbols = runtimeSymbols(['system'], ['system_private'], ['system_boot']);
@@ -558,6 +604,36 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 	assert.equal(linkedCart.layout.header.bssAddress, DYNAMIC_RAM_BASE + 12);
 	assert.deepEqual(Array.from(linkedSystem.layout.dataLoadBytes), [1, 0, 0, 0]);
 	assert.deepEqual(Array.from(linkedCart.layout.dataLoadBytes), [2, 0, 0, 0]);
+});
+
+test('BLua32 linker evaluates composite link-value expressions at initial and final layout', () => {
+	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0]);
+	system.object.link.constValueRelocs = [{
+		constIndex: 0,
+		kind: 'link_value',
+		modulePath: 'assets',
+		expression: {
+			kind: 'binary',
+			operator: LuaBinaryOperator.ShiftRight,
+			left: { kind: 'export', exportPath: 'font_len', value: 6156 },
+			right: { kind: 'number', value: 2 },
+		},
+	}];
+	const linked = linkSystemBlua32Image(
+		system.object,
+		system.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+	);
+	assert.equal(linked.layout.constants[0], 1539);
+	applyBlua32LinkValues(
+		linked,
+		system.object.link.constValueRelocs,
+		'assets',
+		new Map([['font_len', 8192]]),
+	);
+	assert.equal(linked.layout.constants[0], 2048);
 });
 
 test('BLua32 hot revision maps unchanged physical function code one word at a time', () => {
@@ -967,6 +1043,100 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		restored,
 		NO_SOURCES,
 	));
+});
+
+test('BLua32 linker pins the init vector across body-only revisions', () => {
+	const initialSource = [
+		'local captured = 1',
+		'local function refresh<init>() marker = (marker or 0) + captured end',
+		'return marker',
+	].join('\n');
+	const initialCompiled = compileLuaChunkToProgram(
+		parseLuaChunk(initialSource, 'entry.lua'),
+		[],
+		{ entrySource: initialSource, programDomain: 'system' },
+	);
+	const initial = linkSystemBlua32Image(
+		encodeCompiledProgramObject(initialCompiled),
+		initialCompiled.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+	);
+	assert.notEqual(initial.initFunctionAddress, 0);
+	assert.equal(initial.initFunctionAddress, initial.symbols.functionAddresses[0]);
+
+	const changedSource = [
+		'',
+		'local captured = 1',
+		'local function refresh<init>()',
+		'\tmarker = (marker or 0) + captured + 1',
+		'end',
+		'return marker',
+	].join('\n');
+	const changedCompiled = compileLuaChunkToProgram(
+		parseLuaChunk(changedSource, 'entry.lua'),
+		[],
+		{ entrySource: changedSource, programDomain: 'system' },
+	);
+	const changed = linkSystemBlua32Image(
+		encodeCompiledProgramObject(changedCompiled),
+		changedCompiled.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+		{ image: initial.layout, symbols: initial.symbols },
+	);
+	assert.equal(changed.initFunctionAddress, initial.initFunctionAddress);
+	assert.deepEqual(changed.symbols.initParticipants, initial.symbols.initParticipants);
+	assert.deepEqual(changed.symbols.staticLayoutToken, initial.symbols.staticLayoutToken);
+});
+
+test('BLua32 static layout rejects init participant add, remove, and reorder', () => {
+	const compile = (source: string) => compileLuaChunkToProgram(
+		parseLuaChunk(source, 'entry.lua'),
+		[],
+		{ entrySource: source, programDomain: 'system' },
+	);
+	const initialSource = [
+		'local function first<init>() end',
+		'local function second<init>() end',
+		'return 0',
+	].join('\n');
+	const initialCompiled = compile(initialSource);
+	const initial = linkSystemBlua32Image(
+		encodeCompiledProgramObject(initialCompiled),
+		initialCompiled.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+	);
+	for (const changedSource of [
+		'local function first<init>() end\nreturn 0',
+		'local function first<init>() end\nlocal function added<init>() end\nlocal function second<init>() end\nreturn 0',
+		'local function second<init>() end\nlocal function first<init>() end\nreturn 0',
+	]) {
+		const changedCompiled = compile(changedSource);
+		const changed = linkSystemBlua32Image(
+			encodeCompiledProgramObject(changedCompiled),
+			changedCompiled.metadata,
+			SYSTEM_ROM_BASE + 0x100,
+			LINK_TARGET_RAM_BYTES,
+			[],
+			{ image: initial.layout, symbols: initial.symbols },
+		);
+		assert.notDeepEqual(changed.symbols.staticLayoutToken, initial.symbols.staticLayoutToken);
+		assert.throws(
+			() => buildBlua32ExecutionRevision(
+				initial.layout,
+				initial.symbols,
+				new Map([['entry.lua', initialSource]]),
+				changed,
+				new Map([['entry.lua', changedSource]]),
+			),
+			/Hot resume cannot change the static storage layout\./,
+		);
+	}
 });
 
 test('text-only BLua32 revisions keep physical rodata addresses stable', () => {

@@ -1,5 +1,6 @@
 local component<const> = require('cartlib/world/component')
 local component_types<const> = require('cartlib/components/types')
+local registry_instance<const> = require('cartlib/registry').instance
 
 local behaviourtreecomponent<const> = {}
 behaviourtreecomponent.__index = behaviourtreecomponent
@@ -13,6 +14,12 @@ function behaviourtreecomponent.new(opts)
 end
 
 function behaviourtreecomponent.factory(root)
+	local components<const> = registry_instance:get_registered_entities_by_type(component_types.behaviour_tree)
+	for _, behaviour_tree in pairs(components) do
+		if behaviour_tree.id_local == root.id then
+			behaviour_tree.root = root
+		end
+	end
 	return function(opts)
 		local self<const> = behaviourtreecomponent.new(opts)
 		self.root = root

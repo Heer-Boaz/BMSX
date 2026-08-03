@@ -14,7 +14,7 @@ import {
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from './sources';
 import type { RuntimeLuaTooling } from './lua_tooling';
-import { applyBlua32Revision } from './hot_resume';
+import { buildBlua32Revision, installBlua32Revision } from './hot_resume';
 
 function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
 	const activePackage = sources.activePackage;
@@ -41,15 +41,15 @@ export function applyAemSourceToRuntime(
 	const assetId = resource.source.resid;
 	const doc = parseStructuredTextDocument(source, aemDocumentFormat(resource.path), `AEM file '${resource.path}'`);
 	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(sources), resource.path);
-	applyBlua32Revision(
+	const revision = buildBlua32Revision(
 		sources,
 		luaTooling,
-		editor,
 		runtime,
 		resource.domain === SYSTEM_RESOURCE_DOMAIN,
 		[resource.domain === 0, resource.domain === 1],
 		[resource.domain, ['aem', assetId, encodeBinary(doc)]],
 	);
+	installBlua32Revision(sources, editor, runtime, revision);
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;

@@ -142,6 +142,123 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 	__builtin_unreachable();
 }
 
+CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
+	Runtime& runtime,
+	int targetDepth
+) {
+	auto& machine = runtime.machine;
+	auto& cpu = machine.cpu;
+	auto& scheduler = machine.scheduler;
+	m_instructionRunActive = false;
+	runDueRuntimeTimers(runtime);
+	while (cpu.getFrameDepth() > targetDepth) {
+		if (machine.gxGpu.backendReadbackBlocksMachine()) {
+			return CpuSuspendedRunResult::Halted;
+		}
+		if (machine.systemController.cpuHeld() || cpu.isMemoryWriteBlocked()) {
+			const i64 nextDeadline = scheduler.nextDeadline();
+			if (nextDeadline == std::numeric_limits<i64>::max()) {
+				return CpuSuspendedRunResult::Halted;
+			}
+			const i64 waitBudget = nextDeadline - scheduler.nowCycles();
+			if (waitBudget <= 0) {
+				runDueRuntimeTimers(runtime);
+				continue;
+			}
+			const int waitCycles = static_cast<int>(
+				waitBudget < MAX_CPU_SLICE_CYCLES
+					? waitBudget
+					: MAX_CPU_SLICE_CYCLES
+			);
+			advanceRuntimeTime(runtime, waitCycles);
+			continue;
+		}
+		int sliceBudget = MAX_CPU_SLICE_CYCLES;
+		const i64 nextDeadline = scheduler.nextDeadline();
+		if (nextDeadline != std::numeric_limits<i64>::max()) {
+			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
+			if (deadlineBudget <= 0) {
+				runDueRuntimeTimers(runtime);
+				continue;
+			}
+			if (deadlineBudget < sliceBudget) {
+				sliceBudget = static_cast<int>(deadlineBudget);
+			}
+		}
+		RunResult result;
+		scheduler.beginCpuSlice(sliceBudget);
+		try {
+			result = m_executionHook == nullptr
+				? cpu.runUntilDepth(targetDepth, sliceBudget)
+				: cpu.runUntilDepthInstrumented(
+					targetDepth,
+					sliceBudget,
+					m_executionHook,
+					m_executionHookContext,
+					m_executionHookDomainMask
+				);
+		} catch (...) {
+			scheduler.endCpuSlice();
+			throw;
+		}
+		scheduler.endCpuSlice();
+		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
+		if (consumed > 0) {
+			advanceRuntimeTime(runtime, consumed);
+		}
+		if (cpu.getFrameDepth() <= targetDepth) {
+			return CpuSuspendedRunResult::Completed;
+		}
+		if (result == RunResult::ExecutionStopped) {
+			return CpuSuspendedRunResult::ExecutionStopped;
+		}
+		if (cpu.isMemoryWriteBlocked()) {
+			continue;
+		}
+		if (result == RunResult::Halted) {
+			if (!cpu.isHaltedUntilIrq()) {
+				return CpuSuspendedRunResult::Halted;
+			}
+			bool advancedDeadline = false;
+			while (cpu.isHaltedUntilIrq()) {
+				if (machine.gxGpu.backendReadbackBlocksMachine()) {
+					return CpuSuspendedRunResult::Halted;
+				}
+				const bool cpuHeld = machine.systemController.cpuHeld();
+				if (!cpuHeld && cpu.enterPendingInterrupt()) {
+					break;
+				}
+				if (!cpuHeld && advancedDeadline) {
+					return CpuSuspendedRunResult::Halted;
+				}
+				const i64 haltedDeadline = scheduler.nextDeadline();
+				if (haltedDeadline == std::numeric_limits<i64>::max()) {
+					return CpuSuspendedRunResult::Halted;
+				}
+				const i64 cyclesToDeadline = haltedDeadline - scheduler.nowCycles();
+				if (cyclesToDeadline <= 0) {
+					if (runDueRuntimeTimers(runtime)) {
+						return CpuSuspendedRunResult::Halted;
+					}
+					continue;
+				}
+				const int idleCycles = static_cast<int>(
+					cyclesToDeadline < MAX_CPU_SLICE_CYCLES
+						? cyclesToDeadline
+						: MAX_CPU_SLICE_CYCLES
+				);
+				advanceRuntimeTime(runtime, idleCycles);
+				advancedDeadline = idleCycles == cyclesToDeadline;
+			}
+			continue;
+		}
+		if (consumed <= 0) {
+			runDueRuntimeTimers(runtime);
+		}
+	}
+	return CpuSuspendedRunResult::Completed;
+}
+
 CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	Runtime& runtime,
 	FrameState& frameState,
@@ -191,28 +308,18 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		if (m_executionHook != nullptr) {
-			const ExecutionDomainMask activeExecutionWorld = SYSTEM_EXECUTION_DOMAIN_MASK
-				| executionDomainBit(cpu.activeCartridgeSlot());
-			if ((m_executionHookDomainMask & activeExecutionWorld) != 0u) {
-				if (cpu.prepareExecutionBoundary()) {
-					const int frameIndex = cpu.getFrameDepth() - 1;
-					if (m_executionHook(
-						m_executionHookContext,
-						cpu.readFrameExecutionDomain(frameIndex),
-						cpu.readFramePc(frameIndex)
-					)) {
-						m_sliceCycleBudgetRemaining = remaining;
-						return CpuSliceResult::ExecutionStopped;
-					}
-				}
-				sliceBudget = 1;
-			}
-		}
 		RunResult result;
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = cpu.runUntilDepth(0, sliceBudget);
+			result = m_executionHook == nullptr
+				? cpu.runUntilDepth(0, sliceBudget)
+				: cpu.runUntilDepthInstrumented(
+					0,
+					sliceBudget,
+					m_executionHook,
+					m_executionHookContext,
+					m_executionHookDomainMask
+				);
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;
@@ -224,6 +331,10 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			frameState.activeCpuUsedCycles += consumed;
 			advanced = true;
 			tickCompleted = advanceRuntimeTime(runtime, consumed);
+		}
+		if (result == RunResult::ExecutionStopped) {
+			m_sliceCycleBudgetRemaining = remaining;
+			return CpuSliceResult::ExecutionStopped;
 		}
 		if (cpu.isMemoryWriteBlocked()) {
 			if (consumed > 0) {

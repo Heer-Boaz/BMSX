@@ -18,6 +18,7 @@ import { getBoundIdentifierReference as getResolvedIdentifierReference } from '.
 import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey } from '../../module_path';
 import type { ModuleExportShape } from './module_shape';
+import type { ProgramLinkValueExpression } from '../program_object';
 
 type ExportPathIndex = {
 	has(pathKey: string): boolean;
@@ -34,8 +35,7 @@ export type ConstExportValue =
 	| {
 		kind: 'link_value';
 		modulePath: string;
-		exportPath: string;
-		value: number;
+		expression: ProgramLinkValueExpression;
 	};
 
 const evaluateModuleConstLiteral = (

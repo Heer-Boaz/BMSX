@@ -8,12 +8,14 @@ import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import type { ProgramImageConstReloc } from '../../toolchain/ts/lua/compiler/program_object';
 import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
+import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,
 	runCompiledTestSystem,
 } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -64,14 +66,20 @@ function compileWithModule(
 	};
 }
 
-function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledSystemProgram; disasm: string } {
+function compileWithConstModule(
+	entrySource: string,
+	modulePath: string,
+	moduleSource: string,
+	linkValues?: ReadonlyMap<string, number>,
+	optLevel: OptimizationLevel = 0,
+): { compiled: CompiledSystemProgram; disasm: string } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const declaredModuleSource = `module<const>\n${moduleSource}`;
 	const moduleChunk = parseSource(declaredModuleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
-		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource }],
-		{ entrySource, programDomain: 'system' },
+		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource, linkValues }],
+		{ entrySource, optLevel, programDomain: 'system' },
 	);
 	return {
 		compiled,
@@ -272,6 +280,86 @@ test('const modules inline direct require member reads', () => {
 	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
 	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not emit a runtime import call');
 	assert.doesNotMatch(disasm, /\bNEWT\b/, 'direct const module member read must not build a runtime export table');
+});
+
+test('relocatable const-module values remain operands until the linker supplies them', () => {
+	const moduleSource = [
+		'local len<const> = 6156',
+		'return { len = len }',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithConstModule(
+			'local assets<const> = require("assets")\nreturn assets.len >> 2',
+			'assets',
+			moduleSource,
+			new Map([['len', 6156]]),
+			optLevel,
+		);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.modulePath === 'assets'
+				&& reloc.expression.kind === 'binary',
+		), true);
+		assert.doesNotMatch(disasm, /\bSHR\b/);
+		assert.match(disasm, /\bLOADK\b/);
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [1539]);
+	}
+	const cold = compileWithConstModule(
+		'local assets<const> = require("assets")\nreturn assets.len >> 2',
+		'assets',
+		moduleSource,
+		undefined,
+		3,
+	);
+	assert.doesNotMatch(cold.disasm, /\bSHR\b/);
+	assert.match(cold.disasm, /\bKSMI\b[^\n]*1539/);
+	assert.equal(BASE_CYCLES[OpCode.LOADK], BASE_CYCLES[OpCode.KSMI]);
+});
+
+test('asset-address relocation leaves the final payload length foldable', () => {
+	const moduleSource = [
+		'local aem_events_addr<const> = 17',
+		'local aem_events_len<const> = 6156',
+		'return { aem_events_addr = aem_events_addr, aem_events_len = aem_events_len }',
+	].join('\n');
+	const linkValues = buildRomAssetAddressLinkValuesFromSymbols([{
+		name: 'aem_events',
+		assetId: 'events',
+		assetType: 'aem',
+		payloadId: 'cart',
+		offset: 0x1234,
+		address: 0x00801234,
+		byteLength: 6156,
+	}]);
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithConstModule(
+			'local assets<const> = require("assets")\nreturn assets.aem_events_addr, assets.aem_events_len >> 2',
+			'assets',
+			moduleSource,
+			linkValues,
+			optLevel,
+		);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.expression.kind === 'export'
+				&& reloc.expression.exportPath === 'aem_events_addr',
+		), true);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.expression.kind === 'export'
+				&& reloc.expression.exportPath === 'aem_events_len',
+		), false);
+		assert.doesNotMatch(disasm, /\bLOADK\b[^\n]*6156/);
+		if (optLevel === 0) {
+			assert.match(disasm, /\bSHR\b[^\n]*k\d+\(6156\)[^\n]*k\d+\(2\)/);
+		} else {
+			assert.doesNotMatch(disasm, /\bSHR\b/);
+			assert.match(disasm, /\bKSMI\b[^\n]*1539/);
+		}
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x00801234, 1539]);
+	}
 });
 
 test('compile-time require rejects dynamic module names', () => {

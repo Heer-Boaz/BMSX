@@ -100,7 +100,7 @@ function ui:draw_ui(draw)
 	end
 end
 
-local define_ui_fsm<const> = function()
+local function define_ui_fsm<init>()
 	fsmlibrary.register('ui', {
 		initial = 'active',
 		on = {
@@ -141,7 +141,7 @@ local define_ui_fsm<const> = function()
 	})
 end
 
-local register_ui_definition<const> = function()
+local function register_ui_definition<init>()
 	prefab.define({
 		def_id = 'ui',
 		class = ui,
@@ -159,6 +159,4 @@ end
 
 return {
 	ui = ui,
-	define_ui_fsm = define_ui_fsm,
-	register_ui_definition = register_ui_definition,
 }
