@@ -1,8 +1,14 @@
 // Real end-to-end check: an uncaught Lua runtime error becomes a genuine CPU_CAUSE_CODE_TRAP
 // exception handled entirely by firmware (the BIOS monitor), not a host-level crash.
 
-await t.waitForCart();
-await t.frames(20);
+const faultSequenceAddress = 0x08010434;
+let faultSequence = 0;
+for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
+	await t.frames(1);
+	faultSequence = t.runtime().machine.memory.readMappedU32LE(faultSequenceAddress);
+}
+t.assert(faultSequence !== 0, 'physical supervisor fault was not latched');
+await t.frames(15);
 
 const runtime = t.runtime();
 const cpu = runtime.machine.cpu;
@@ -19,3 +25,10 @@ const CPU_STATUS_USER_MODE_CURRENT = 1 << 1;
 const state = cpu.captureRuntimeState();
 t.assert((state.statusWord & CPU_STATUS_USER_MODE_CURRENT) === 0, 'fault should leave the CPU in supervisor/system mode, not user/cart mode');
 t.assert(cpu.isHaltedUntilIrq(), 'firmware monitor should be halted waiting for input, not looping');
+t.capture('physical BIOS fault terminal');
+
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: true, value: 1, timestamp: 0, pressId: 1 });
+await t.frames(1);
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: false, value: 0, timestamp: 0, pressId: 1 });
+await t.frames(12);
+t.capture('IDE fault source overlay');

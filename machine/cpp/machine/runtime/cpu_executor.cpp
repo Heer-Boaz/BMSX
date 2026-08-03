@@ -152,10 +152,11 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	m_instructionRunActive = false;
 	runDueRuntimeTimers(runtime);
 	while (cpu.getFrameDepth() > targetDepth) {
-		if (machine.gxGpu.backendReadbackBlocksMachine()) {
+		if (machine.gxGpu.backendReadbackBlocksMachine()
+			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
 		}
-		if (machine.systemController.cpuHeld() || cpu.isMemoryWriteBlocked()) {
+		if (cpu.isMemoryWriteBlocked()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				return CpuSuspendedRunResult::Halted;
@@ -204,7 +205,11 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 		scheduler.endCpuSlice();
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
-			advanceRuntimeTime(runtime, consumed);
+			machine.advanceDevices(consumed);
+			if (machine.systemController.cpuHeld()) {
+				return CpuSuspendedRunResult::Halted;
+			}
+			runDueRuntimeTimers(runtime);
 		}
 		if (cpu.getFrameDepth() <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;

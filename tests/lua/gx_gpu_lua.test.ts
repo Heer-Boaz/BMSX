@@ -8,6 +8,7 @@ import {
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
 	GX_GPU_PCRTC_DISPLAY1_LOW,
 	GX_GPU_PCRTC_DISPLAY1_HIGH,
+	GX_GPU_PCRTC_PMODE_LOW,
 	GX_GPU_PCRTC_SMODE2_INT,
 	GX_GPU_PCRTC_SMODE2_LOW,
 	GxGpuPcrtcScanout,
@@ -54,12 +55,17 @@ return gx_display.size()
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
+local pmode<const>: *word = 0x08010350
 local smode1_low<const>: *word = 0x080103a8
 local display2_low<const>: *word = 0x08010370
+local display2_high<const>: *word = 0x08010374
+*pmode = 2
 *smode1_low = 0x40200504
 *display2_low = 420 | (40 << 12)
-bios_gpu.prepare_supervisor(0, 320, 240)
-return 320, 240
+*display2_high = 319 | (239 << 12)
+local width<const>, height<const> = bios_gpu.prepare_supervisor(0, 320, 240)
+bios_gpu.enable_display()
+return width, height
 `;
 const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
@@ -150,10 +156,11 @@ test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () 
 	}
 });
 
-test('BIOS GX code aligns the supervisor circuit to a retained PS2 DTV origin', () => {
+test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = createTestSystemCpu(biosImage);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [320, 240]);
+	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW)), 0x00000003);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 319 | (239 << 12));
 });

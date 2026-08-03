@@ -240,3 +240,30 @@ t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_mo
 t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_system_probe')) === 3, 'cold boot did not execute the third system-ROM revision');
 t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === 1, 'cold boot did not execute init exactly once');
 t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'cold boot did not execute new_game exactly once');
+
+t.openLuaSource('entry.lua');
+t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
+	"\tprint('hot-resume-init')\n",
+	"\tprint('hot-resume-init')\n\thot_resume_module_probe()\n",
+));
+await t.performHotResume();
+
+const faultSequenceAddress = 0x08010434;
+let faultSequence = 0;
+for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
+	await t.frames(1);
+	faultSequence = rebootedRuntime.machine.memory.readMappedU32LE(faultSequenceAddress);
+}
+t.assert(faultSequence !== 0, 'faulting Hot Resume init did not reach the physical BIOS monitor');
+await t.frames(15);
+const CPU_STATUS_USER_MODE_CURRENT = 1 << 1;
+const faultState = rebootedCpu.captureRuntimeState();
+t.assert((faultState.statusWord & CPU_STATUS_USER_MODE_CURRENT) === 0, 'faulting Hot Resume init did not enter supervisor mode');
+t.assert(rebootedCpu.isHaltedUntilIrq(), 'physical BIOS monitor did not halt for input after the Hot Resume fault');
+t.capture('hot-resume-init-fault-terminal');
+
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: true, value: 1, timestamp: 0, pressId: 2 });
+await t.frames(1);
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: false, value: 0, timestamp: 0, pressId: 2 });
+await t.frames(12);
+t.capture('hot-resume-init-fault-ide');

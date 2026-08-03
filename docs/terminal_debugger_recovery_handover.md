@@ -4,12 +4,66 @@ Date: 2026-08-03
 
 Branch: `master`
 
-Current HEAD: `9078b7bbf`
+Current HEAD at the start of the terminal follow-up: `caa6e0ae6`
 
 The user committed the rejected implementation deliberately so later work could
 not accidentally reset or revert unrelated recovery changes. That commit stays
-in history. The correction below is a new worktree change on top of it; no
-commit was requested.
+in history. The corrected `<init>` implementation was subsequently committed by
+the user as `caa6e0ae6`; do not reset or revert either commit. The terminal
+follow-up below is a new worktree change on top of it; no commit was requested.
+
+## Faulting Hot Resume init: scheduler-boundary correction (2026-08-03)
+
+The earlier terminal follow-up only strengthened a probe and did not contain a
+product correction. Calling that a terminal fix was wrong. Reproduction through
+the real IDE Hot Resume action exposed a separate product failure: after an
+annotated init function raised a Lua fault, `performHotResume()` never returned.
+
+The fault handler physically starts the supervisor transition and the system
+controller holds the CPU while producers and buses quiesce. The suspended-call
+executor nevertheless kept advancing scheduled hardware deadlines. It could
+therefore carry the machine through the transition and continue synchronously
+into the BIOS monitor's VBlank-driven input loop. The IDE task stayed inside
+`runSuspendedUntilDepth()` forever, so the normal host frame/presentation path
+never regained control.
+
+The owning correction is mirrored in
+`machine/{ts,cpp}/machine/runtime/cpu_executor.*`: suspended completion
+execution now returns `Halted` immediately when the physical system controller
+holds the CPU, just as it already did for a backend readback hold. It does not
+advance a device deadline in that state. The completion frame remains pending;
+ordinary host frames then advance the physical supervisor transition and run
+the BIOS monitor. The normal frame executor is unchanged, and the machine has
+no knowledge of Hot Resume, revisions, source maps, or tooling.
+
+The permanent Hot Resume IDE scenario now injects a call on a numeric value
+inside the existing annotated `init`, invokes the real `performHotResume()`
+action, waits for the physical fault word, and asserts supervisor mode plus the
+firmware monitor's halted input loop. It captures the physical terminal before
+posting a real F1 press/release, then captures the IDE source overlay. The run
+passes 55 assertions. `tests/ide/screenshots/frame_00531.png` shows the complete,
+sharp BIOS fault at `entry.lua:21:2`; only afterward does
+`frame_00544.png` show the IDE focused on that line.
+
+The separate `monitor_fault_probe` test still uses its source-defined,
+uninitialized framebuffer. Rainbow pixels visible through transparent terminal
+cells are therefore deterministic retained-underlay data, not damaged terminal
+glyphs. Supervisor circuit 1 intentionally uses source-alpha composition over
+retained cartridge circuit 2; making it opaque or clearing the cart fixture to
+hide that data would degrade or mask the real architecture. That scenario now
+waits on the physical fault word, captures the BIOS monitor, sends real F1, and
+captures the IDE, but it is coverage rather than a product fix.
+
+The reported reboot-time font corruption was a real product defect, not a test
+defect. Its producer correction is already part of the committed HEAD lineage,
+so it does not appear in this follow-up diff. `ide/runtime/lua_pipeline.ts` now
+lays out system public assets before compiling the rebuilt firmware;
+`toolchain/ts/rompack/asset_symbols.ts` keeps final payload lengths as concrete
+compile-time values while only layout-dependent addresses relocate; and
+`toolchain/ts/rompack/blua32_tail.ts` preserves the immutable system payload.
+This prevents the rebuilt BIOS font upload length from becoming an invalid
+runtime operand. The Hot Resume scenario rebuilds the system ROM, cold reboots,
+and captures the resulting physical boot font before continuing.
 
 ## `<init>` semantic correction (2026-08-03)
 
@@ -42,11 +96,11 @@ init()
 - `new_game()` remains exactly where existing carts already owned and called
   it. Hot Resume neither looks up nor invokes that name.
 
-All cart changes introduced by the rejected distributed-init migration are
-being undone against parent `d5998b5eb`. The only intended cart-source
-differences from that parent are these six existing entry declarations changing
-from `function init()` to `local function init<init>()` while their existing
-explicit `init()` calls remain:
+All cart changes introduced by the rejected distributed-init migration were
+undone against parent `d5998b5eb`. For the `<init>` correction itself, the only
+intended cart-source differences from that parent are these six existing entry
+declarations changing from `function init()` to `local function init<init>()`
+while their existing explicit `init()` calls remain.
 
 - `carts/2025/cart.lua`
 - `carts/emptycart/entry.lua`
@@ -79,21 +133,23 @@ Current completion evidence:
   multi-annotation, module ordering, hidden-slot and tooling-vector machinery is
   otherwise unchanged.
 - All 748 files under `carts/` were compared to parent `d5998b5eb`. There are
-  zero mismatches beyond the six declaration-line changes listed above, and
-  the only shipped Lua `<init>` annotations are those six.
+  zero mismatches beyond the six declaration-line changes listed above, and the
+  only shipped Lua `<init>` annotations remain those six.
 - The compiler execution test uses four annotations across an entry and two
   source modules: cold execution leaves the counter at zero; the explicit
   tooling call then produces the dependency/lexical result `1234`. A separate
   test proves explicit source `init()` runs once cold and once more through
   tooling.
-- The full Hot Resume IDE scenario passes 52 assertions over rejected edits,
+- The full Hot Resume IDE scenario passes 55 assertions over rejected edits,
   two consecutive revisions, system-only and no-op refreshes, retained heap
   identity, `init` counts, unchanged `new_game` count, breakpoint continuation,
-  guest `print`, dual-cartridge selection and cold reboot.
-- The reboot breakpoint and the underlying physical terminal were captured at
-  `tests/ide/screenshots/frame_00493.png` and
-  `tests/ide/screenshots/frame_00496.png`; both fonts are intact.
-- Full Lua tests pass 531 with 1 skipped; rompacker passes 96/96. Pietious
+  guest `print`, dual-cartridge selection, cold reboot, and an init fault that
+  reaches the physical terminal before explicit IDE entry.
+- The reboot breakpoint and the short cold-boot terminal were captured at
+  `tests/ide/screenshots/frame_00492.png` and
+  `tests/ide/screenshots/frame_00495.png`; both fonts are intact. The faulting
+  Hot Resume captures and full diagnostic surface are documented above.
+- Full Lua tests pass 532 with 1 skipped; rompacker passes 96/96. Pietious
   rebuilds and passes its real enter-world host test. `2025` and `nemesis_s`
   rebuild successfully. Machine and toolchain TypeScript compilation and the
   Browser Studio debug product build pass.
@@ -271,6 +327,7 @@ produced evidence.
 | Execution domain | raw `ExecutionDomainId` word in `machine/ts/spec/blua32/execution_domain.ts` | raw domain word in `machine/cpp/spec/blua32/execution_domain.h` | ordinary `CPU.runUntilDepth` / `CPU::runLoop<..., false>` contains no hook check; the separate instrumented loop checks only while a debugger hook is bound |
 | Execution PC | raw 32-bit PC | raw `u32` PC | instruction fetch in both loops; source lookup remains outside the CPU |
 | Suspended static call | raw execution-domain word plus raw function-record address | mirrored `ExecutionDomainId` plus `u32` address | explicit `beginCompletionCallInExecutionDomain`; no `CART_SELECT`, source, symbol or revision input |
+| Suspended CPU hold | raw supervisor phase/target latch exposed by `SystemController.cpuHeld()` | mirrored phase/target bytes and `SystemController::cpuHeld()` | `runSuspendedUntilDepth` returns to its host caller; ordinary frame execution retains ownership of advancing held hardware |
 | IRQ wait latch | raw frame depth, with `-1` meaning no latch | mirrored signed frame depth | one equality check against current frame depth at the existing halt boundary; it lets a suspended completion frame run above a waiting guest frame |
 | Source statement | tooling symbol range with statement identity and inline depth | decoded tooling symbol range with the same fields | IDE/debugger lookup outside normal execution |
 | Object global relocation | object-local global slot, then linker name/layout mapping | installed image-local name to live registerfile slot | image install/relocation, not instruction dispatch |
@@ -304,6 +361,9 @@ CPU slice; it does not force the host executor into one-instruction slices.
   scenario awaits the actual queued rebuild.
 - workspace persistence happens immediately before scheduling Hot Resume or
   reboot so an older autosave generation cannot reapply stale source.
+- suspended completion execution treats a physical system-controller CPU hold
+  as a return-to-host boundary, while MMIO write interlocks still advance to
+  their owning device deadline. The ordinary frame executor is unchanged.
 - The user-deleted `hostFrameFailed` Hot Resume guard remains absent.
 
 Primary owners:
@@ -318,6 +378,8 @@ machine/cpp/rompack/tooling/blua32_symbols.{h,cpp}
 ide/runtime/hot_resume.ts
 ide/runtime/lua_pipeline.ts
 ide/runtime/task_queue.ts
+machine/ts/machine/runtime/cpu_executor.ts
+machine/cpp/machine/runtime/cpu_executor.cpp
 ```
 
 ### Debugger

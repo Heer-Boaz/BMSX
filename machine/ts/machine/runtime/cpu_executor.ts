@@ -188,10 +188,11 @@ export class CpuExecutionState {
 		this.instructionRunActive = false;
 		runDueRuntimeTimers(runtime);
 		while (cpu.getFrameDepth() > targetDepth) {
-			if (machine.gxGpu.backendReadbackBlocksMachine()) {
+			if (machine.gxGpu.backendReadbackBlocksMachine()
+				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
-			if (machine.systemController.cpuHeld() || cpu.isMemoryWriteBlocked()) {
+			if (cpu.isMemoryWriteBlocked()) {
 				const nextDeadline = scheduler.nextDeadline();
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
@@ -236,7 +237,11 @@ export class CpuExecutionState {
 			}
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
-				advanceRuntimeTime(runtime, consumed);
+				machine.advanceDevices(consumed);
+				if (machine.systemController.cpuHeld()) {
+					return CpuSuspendedRunResult.Halted;
+				}
+				runDueRuntimeTimers(runtime);
 			}
 			if (cpu.getFrameDepth() <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;

@@ -359,6 +359,34 @@ test('suspended executor keeps an address-based completion call pending at a deb
 	assert.deepEqual(sliceStats, { begin: 2, end: 2 });
 });
 
+test('suspended executor returns control without advancing hardware while the system controller holds the CPU', () => {
+	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const sliceStats = { begin: 0, end: 0 };
+	const runtime = makeRuntime(cpu, irqController, sliceStats);
+	const baseDepth = cpu.getFrameDepth();
+	let nextDeadline = 7;
+	let advancedCycles = 0;
+	runtime.machine.systemController.cpuHeld = () => true;
+	runtime.machine.scheduler.nextDeadline = () => nextDeadline;
+	runtime.machine.advanceDevices = (cycles) => {
+		advancedCycles += cycles;
+		nextDeadline = Number.MAX_SAFE_INTEGER;
+	};
+	cpu.beginCompletionCallInExecutionDomain(
+		SYSTEM_EXECUTION_DOMAIN_ID,
+		COMPLETION_LATCH_TEST_IMAGE.symbols.functionAddresses[1],
+	);
+
+	assert.equal(
+		runtime.cpuExecution.runSuspendedUntilDepth(baseDepth),
+		CpuSuspendedRunResult.Halted,
+	);
+	assert.equal(runtime.completionCallPending(), true);
+	assert.equal(cpu.getFrameDepth(), baseDepth + 1);
+	assert.equal(advancedCycles, 0);
+	assert.deepEqual(sliceStats, { begin: 0, end: 0 });
+});
+
 function makeMachine(
 	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes),
 ): Machine {

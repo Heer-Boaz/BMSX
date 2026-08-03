@@ -715,6 +715,37 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	require(bmsx::asTable(results[0]) == borrowedTable, "borrowed completion results remain rooted by the CPU latch");
 }
 
+void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
+	SystemRuntimeFixture fixture(
+		makeCompletionLatchSystemImage(),
+		makeRuntimeImage(bmsx::OpCode::RET)
+	);
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::CPU& cpu = runtime.machine.cpu;
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	const bmsx::StringId closureKey = cpu.stringPool().intern("held_completion_call");
+	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
+
+	runtime.machine.scheduler.reset();
+	bmsx::SystemControllerState systemState = runtime.machine.systemController.captureState();
+	systemState.supervisorPhase = bmsx::SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE;
+	systemState.supervisorTransitionTarget = bmsx::SYSTEM_SUPERVISOR_TARGET_FAULT;
+	runtime.machine.systemController.restoreState(systemState);
+	runtime.machine.scheduler.scheduleDeviceService(bmsx::DEVICE_SERVICE_SYSTEM, 7);
+	const int baseDepth = cpu.getFrameDepth();
+	cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(closureKey)));
+
+	require(
+		runtime.cpuExecution.runSuspendedUntilDepth(runtime, baseDepth)
+			== bmsx::CpuSuspendedRunResult::Halted,
+		"suspended completion returns when the physical system controller holds the CPU"
+	);
+	require(runtime.machine.scheduler.nowCycles() == 0, "suspended completion does not advance held hardware deadlines");
+	require(runtime.completionCallPending(), "held suspended completion remains physically pending");
+	require(cpu.getFrameDepth() == baseDepth + 1, "held suspended completion preserves its frame");
+}
+
 void testExternalClosureAdvancesToGteInterlockDeadline() {
 	ExternalClosureFixture fixture;
 	const bmsx::i64 cycleBefore = fixture.runtime.machine.scheduler.nowCycles();
@@ -826,6 +857,7 @@ int main() {
 	testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat();
 	testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveStateLatch();
 	testCompletionCallReturnLatchSurvivesSaveStateAndGc();
+	testSuspendedCompletionReturnsAtPhysicalCpuHold();
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();
 	testRuntimeRestorePreservesInFlightFrameBudget();
