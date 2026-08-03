@@ -34,8 +34,9 @@ const compileSystem = (
 	);
 };
 
-test('init functions run once at cold lexical points and retained vector reruns in dependency order', () => {
+test('init annotations have no cold semantics and tooling invokes modules in dependency order', () => {
 	const entrySource = [
+		'trace = 0',
 		'local a<const> = require("a")',
 		'local captured = 4',
 		'local function entry_init<init>() trace = trace * 10 + captured end',
@@ -86,15 +87,15 @@ test('init functions run once at cold lexical points and retained vector reruns 
 	assert.deepEqual(image.symbols.initParticipants, compiled.metadata.initParticipants);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1234]);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 1234);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 0);
 
 	cpu.beginCompletionCallInExecutionDomain(
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 12341234);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 1234);
 });
 
 test('init participant slots follow the compiled program domain', () => {
@@ -115,17 +116,25 @@ test('init participant slots follow the compiled program domain', () => {
 	assert.equal(cart.metadata.systemGlobalNames.includes(cartParticipant.slotName), false);
 });
 
-test('cold init invocation preserves the annotated local function binding', () => {
+test('an explicit source init call runs once cold and the tooling vector invokes it again', () => {
 	const source = [
 		'local calls = 0',
-		'local function refresh<init>() calls = calls + 1 return 99 end',
-		'local value = refresh()',
-		'return calls, value',
+		'local function init<init>() calls = calls + 1 marker = calls return 99 end',
+		'local value = init()',
+		'return marker, value',
 	].join('\n');
 	const compiled = compileSystem(source);
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
+	const image = linkTestSystemBlua32(compiled);
+	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [2, 99]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 99]);
+
+	cpu.beginCompletionCallInExecutionDomain(
+		SYSTEM_EXECUTION_DOMAIN_ID,
+		image.vectors.initFunctionAddress,
+	);
+	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('marker')), 2);
 });
 
 test('cart init vector invokes retained cart-global closures', () => {
@@ -137,6 +146,7 @@ test('cart init vector invokes retained cart-global closures', () => {
 	const cartSource = [
 		'local captured = 2',
 		'local function refresh<init>() value = (value or 0) + captured end',
+		'refresh()',
 		'return value',
 	].join('\n');
 	const system = compileSystem(systemSource);

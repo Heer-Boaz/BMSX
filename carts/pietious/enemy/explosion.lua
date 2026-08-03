@@ -58,7 +58,7 @@ function enemy_explosion:ctor()
 	self:sync_explosion_sprite(explosion_frames[1])
 end
 
-local function define_enemy_explosion_fsm<init>()
+local define_enemy_explosion_fsm<const> = function()
 	fsmlibrary.register('enemy_explosion', {
 		timelines = {
 			[explosion_timeline_id] = {
@@ -94,7 +94,7 @@ local function define_enemy_explosion_fsm<init>()
 	})
 end
 
-local function register_enemy_explosion_definition<init>()
+local register_enemy_explosion_definition<const> = function()
 	prefab.define({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
@@ -108,4 +108,6 @@ end
 
 return {
 	enemy_explosion = enemy_explosion,
+	define_enemy_explosion_fsm = define_enemy_explosion_fsm,
+	register_enemy_explosion_definition = register_enemy_explosion_definition,
 }

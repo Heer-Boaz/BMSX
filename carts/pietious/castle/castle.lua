@@ -735,7 +735,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	}
 end
 
-local function define_castle_fsm<init>()
+local define_castle_fsm<const> = function()
 	fsmlibrary.register('castle', {
 		initial = 'active',
 		on = {
@@ -814,7 +814,7 @@ local function define_castle_fsm<init>()
 	})
 end
 
-local function register_castle_definition<init>()
+local register_castle_definition<const> = function()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,
@@ -831,4 +831,6 @@ end
 
 return {
 	castle = castle,
+	define_castle_fsm = define_castle_fsm,
+	register_castle_definition = register_castle_definition,
 }

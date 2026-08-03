@@ -24,7 +24,17 @@ local world_systems<const> = {
 	timeline_system,
 }
 
-local start_game<const> = function()
+local function init<init>()
+	*irq_mask_register = 0
+	stage_module.define_stage_fsm()
+	director_module.define_director_fsm()
+	player_module.define_player_fsm()
+	stage_module.register_stage_definition()
+	director_module.register_director_definition()
+	player_module.register_player_definition()
+end
+
+function new_game()
 	world.systems:replace(world_systems)
 	world:clear()
 	prefab.spawn(stage_module.stage_def_id, {
@@ -42,11 +52,11 @@ local start_game<const> = function()
 	})
 end
 
-*irq_mask_register = 0
+init()
 local renderer<const> = render.new(world, 0, 0xff000000)
 gx_texture.upload(image.load('ground').texture, texture_layout.stage)
 *input_control_register = 0x00000001
-start_game()
+new_game()
 *input_control_register = 0x00000001
 renderer:wait_vblank()
 

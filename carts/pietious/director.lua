@@ -265,7 +265,7 @@ end
 --   'player.shrine_overlay_exit'   → player → reply 'shrine_exit_done'
 --   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
 --   'player.world_emerge'          → player (begins emergence animation)
-local function define_director_fsm<init>()
+local define_director_fsm<const> = function()
 	-- Shared timeline callbacks for both daemon appearance variants.
 	-- Two FSM states (daemon_appearance / daemon_appearance_post_death) share
 	-- the same cloud-spawning on_frame and completion on_end.  Defining them
@@ -942,7 +942,7 @@ local function define_director_fsm<init>()
 	})
 end
 
-local function register_director_definition<init>()
+local register_director_definition<const> = function()
 	prefab.define({
 		def_id = 'director',
 		class = director,
@@ -960,4 +960,6 @@ end
 
 return {
 	director = director,
+	define_director_fsm = define_director_fsm,
+	register_director_definition = register_director_definition,
 }

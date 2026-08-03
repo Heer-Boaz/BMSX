@@ -8,7 +8,7 @@ function seal:ctor()
 	self:gfx('seal')
 end
 
-local function register_seal_definition<init>()
+local register_seal_definition<const> = function()
 	prefab.define({
 		def_id = 'seal',
 		class = seal,
@@ -20,4 +20,5 @@ end
 
 return {
 	seal = seal,
+	register_seal_definition = register_seal_definition,
 }

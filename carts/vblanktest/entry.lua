@@ -63,11 +63,14 @@ local check_gpustat<const> = function(label)
 	return status
 end
 
-local check_initial_gpu_state<const> = function()
+local function init<init>()
 	local status<const> = check_gpustat('init')
 	if (status & gpustat_interlace_field) == 0 then
 		fail('init: GPUSTAT interlace field bit clear in progressive mode')
 	end
+end
+
+function new_game()
 end
 
 local update_cart<const> = function()
@@ -111,11 +114,10 @@ local on_vblank_irq<const> = function(_, flags)
 	end
 end
 
-check_initial_gpu_state()
-local function bind_vblank_irq<init>()
-	irq_module.register(irq_vblank, on_vblank_irq)
-end
+init()
+irq_module.register(irq_vblank, on_vblank_irq)
 *irq_mask_register = irq_vblank
+new_game()
 *input_control_register = 0x00000001
 while true do
 	halt_until_irq

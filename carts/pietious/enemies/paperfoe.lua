@@ -25,7 +25,7 @@ end
 
 enemy_base.extend(paperfoe, 'paperfoe')
 
-local function register<init>()
+function paperfoe.register()
 	prefab.define({
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,

@@ -19,7 +19,7 @@ function world_item:onspawn(_pos)
 	self.x, self.y = world_instance:get('room'):snap_world_to_tile(self.x, self.y)
 end
 
-local function define_world_item_fsm<init>()
+local define_world_item_fsm<const> = function()
 	fsmlibrary.register('world_item', {
 		initial = 'active',
 		on = {
@@ -49,7 +49,7 @@ local function define_world_item_fsm<init>()
 	})
 end
 
-local function register_world_item_definition<init>()
+local register_world_item_definition<const> = function()
 	prefab.define({
 		def_id = 'world_item',
 		class = world_item,
@@ -64,4 +64,6 @@ end
 
 return {
 	world_item = world_item,
+	define_world_item_fsm = define_world_item_fsm,
+	register_world_item_definition = register_world_item_definition,
 }

@@ -31,7 +31,7 @@ function daemon_cloud:stop_and_hide()
 	self.collider:set_enabled(false)
 end
 
-local function define_daemon_cloud_fsm<init>()
+local define_daemon_cloud_fsm<const> = function()
 	fsmlibrary.register('daemon_cloud', {
 		initial = 'active',
 		states = {
@@ -63,7 +63,7 @@ local function define_daemon_cloud_fsm<init>()
 	})
 end
 
-local function register_daemon_cloud_definition<init>()
+local register_daemon_cloud_definition<const> = function()
 	prefab.define({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
@@ -75,4 +75,7 @@ local function register_daemon_cloud_definition<init>()
 	})
 end
 
-return {}
+return {
+	define_daemon_cloud_fsm = define_daemon_cloud_fsm,
+	register_daemon_cloud_definition = register_daemon_cloud_definition,
+}

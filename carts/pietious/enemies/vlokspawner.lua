@@ -47,7 +47,7 @@ end
 
 enemy_base.extend(vlokspawner, 'vlokspawner')
 
-local function register<init>()
+function vlokspawner.register()
 	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,

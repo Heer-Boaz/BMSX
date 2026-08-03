@@ -376,16 +376,15 @@ local list_entries<const> = function(roms, kind)
 end
 
 local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true))
-local active_roms<const> = {}
-local active_plus_system_roms<const> = { false, system_rom }
+local active_roms<const> = { parse_rom(read_header(cart_rom_base, 'cart', true)) }
+local active_plus_system_roms<const> = { active_roms[1], system_rom }
 local system_roms<const> = { system_rom }
 
-local function reload_cartridge_directory<init>()
+function romdir.reload_cartridge_directory()
 	local cart_rom<const> = parse_rom(read_header(cart_rom_base, 'cart', true))
 	active_roms[1] = cart_rom
 	active_plus_system_roms[1] = cart_rom
 end
-romdir.reload_cartridge_directory = reload_cartridge_directory
 
 function romdir.resource(id)
 	local entry<const> = find_in_roms(active_plus_system_roms, id)

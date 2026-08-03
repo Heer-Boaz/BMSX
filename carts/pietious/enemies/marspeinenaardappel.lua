@@ -65,7 +65,7 @@ end
 
 enemy_base.extend(marspeinenaardappel, 'marspeinenaardappel')
 
-local function register<init>()
+function marspeinenaardappel.register()
 	prefab.define({
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,

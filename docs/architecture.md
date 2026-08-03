@@ -1050,32 +1050,38 @@ boot seeds the CPU-owned primitive values, and execution enters the raw
 reset-vector word in supervisor mode. Runtime coordination never reads, returns,
 or passes the startup address.
 
-BLua gives reloadable preparation an explicit local-function attribute:
+BLua gives Hot Resume an explicit tooling annotation for reloadable
+preparation:
 
 ```lua
-local function publish_blueprints<init>()
-    -- registration work
+local function init<init>()
+    -- prepare the cart
 end
+
+init()
 ```
 
-An `<init>` declaration is valid only at module or entry-chunk top level and
-must have no parameters or varargs. The function may capture lexical state and
-its name has no platform meaning. At its ordinary lexical declaration point,
-the compiler stores the closure in one compiler-owned hidden global slot and
-calls it once, so cold execution keeps source ordering and has no separate
-lifecycle pass. System-program slots use the system registerfile; cartridge
-slots use the cartridge's ordinary global registerfile. Participants in
-statically required modules are ordered by the same dependency order as cold
-module execution and then by lexical declaration order. Compile-time modules
-and modules that are not statically required by a cartridge cannot declare one.
+An `<init>` declaration is valid on top-level local functions in the entry
+chunk and in statically required source modules, and must have no parameters or
+varargs. A program may contain multiple annotations. The annotation adds no
+source-language call and therefore has no cold-runtime semantics: the ordinary
+explicit `init()` call above is the cart's cold preparation call, at the
+source-defined location. Annotated functions in modules likewise run cold only
+when ordinary source calls them. The functions may capture lexical state and
+their names have no platform meaning. Compile-time modules and modules that are
+not statically required by the program cannot declare one.
 
-When a program has participants, the compiler also emits one zero-upvalue
-static vector that loads those retained closures from their hidden slots and
-calls them in that same order. The private tooling-symbol image publishes the
-vector's raw function-record address and the ordered participant identities.
-Zero participants publishes address zero and emits no vector. Neither the ROM
-header nor the CPU, execution address space, runtime save-state, or firmware
-contains an init-vector field or a reload concept.
+At each declaration, the compiler creates the ordinary local closure and also
+retains that closure in a compiler-owned hidden global slot. System-program
+slots use the system registerfile; cartridge slots use the cartridge's ordinary
+global registerfile. The compiler emits one zero-upvalue tooling function that
+loads and calls all retained closures in static dependency order and then
+lexical declaration order. The private tooling-symbol image publishes its raw
+function-record address and the ordered annotated-function identities. A
+program without annotations publishes address zero and emits no tooling
+function. Neither the ROM header nor the CPU, execution address space, runtime
+save-state, firmware, nor ordinary cold startup contains an init-vector field
+or reload behavior.
 Firmware inspects the raw cartridge headers through `CART_SELECT` and transfers
 to the selected cartridge startup address through the privileged `CP0.EXEC`
 control word. The host never calls a cartridge entry or assembles a combined
@@ -1132,15 +1138,16 @@ or tooling callback.
 
 Hot Resume does not perform a cold boot, run the startup vector, initialize
 sections or modules, or recognize an `init`/`new_game` global name. Before media
-installation, the participant identities and hidden-slot layout are part of the
-same tooling-owned static-layout proof as closure storage; adding, removing, or
-reordering a participant is therefore an incompatible live-lineage edit. After
-installation and frame relocation, tooling invokes the rebuilt system vector
-only for an explicitly dirty system program. It invokes the active cartridge
-vector only when that cartridge was explicitly dirty, or for an explicit
-no-source-change refresh. A system rebuild that mechanically relinks a
-cartridge does not run that cartridge's vector, and an edited inactive socket
-receives media without executing guest preparation. When both vectors apply,
+installation, the annotated function identities, their order, and hidden-slot
+layout are part of the same tooling-owned static-layout proof as closure
+storage; adding, removing, reordering, or changing the identity of an
+annotation is therefore an incompatible live-lineage edit. After installation and frame relocation,
+tooling invokes the rebuilt system tooling function only for an explicitly
+dirty system program. It invokes the active cartridge tooling function only
+when that cartridge was explicitly dirty, or for an explicit no-source-change
+refresh. A system rebuild that mechanically relinks a cartridge does not run
+that cartridge's annotated function, and an edited inactive socket receives
+media without executing guest preparation. When both tooling functions apply,
 system preparation precedes cartridge preparation.
 
 Tooling passes the raw execution-domain word and raw static-vector address to the
@@ -1152,11 +1159,12 @@ latch. Breakpoints, statement stepping, guest output, hardware deadlines, and
 faults therefore use the same execution path as other guest code. A breakpoint
 leaves the completion frame live and continuation resumes it normally; there is
 no state capture, rollback, special opcode, host callback, or machine-side
-reload state. Cold-only world/session creation stays as root-level source
-execution. A game that offers restart owns an ordinary game function;
-`new_game` is not a BMSX ABI. Captured-upvalue layout, static-closure identity
-mode, participant layout, or static-storage layout changes remain incompatible
-revisions and are reported before media or CPU state writes.
+reload state. Existing carts keep their ordinary cold `init()` and `new_game()`
+calls in source; Hot Resume calls only the closure marked `<init>`. Those names
+remain cart code rather than a BMSX ABI. Captured-upvalue layout, static-closure
+identity mode, annotated-function layout, or static-storage layout changes
+remain incompatible revisions and are reported before media or CPU state
+writes.
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load

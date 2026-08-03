@@ -36,6 +36,7 @@ type ScheduledHostCommand = {
 	up: string | null;
 	press: string | null;
 	holdFrames: number;
+	newGame: boolean;
 };
 
 const HOST_TEST_GLOBAL = '__bmsx_host_test';
@@ -50,6 +51,7 @@ export class HostTestRunner {
 	private ready!: Closure;
 	private setup!: Closure;
 	private update!: Closure;
+	private newGame!: Closure;
 	private frameKey!: StringId;
 	private pressKey!: StringId;
 	private downKey!: StringId;
@@ -57,6 +59,7 @@ export class HostTestRunner {
 	private holdFramesKey!: StringId;
 	private captureKey!: StringId;
 	private logKey!: StringId;
+	private newGameKey!: StringId;
 	private doneKey!: StringId;
 	private phase: 'cart' | 'install' | 'ready' | 'setup' | 'update' = 'cart';
 	private cartSettleFrames = 0;
@@ -64,6 +67,7 @@ export class HostTestRunner {
 	private updateFrames = 0;
 	private updateFramePrepared = false;
 	private guestCallPending = false;
+	private newGamePending = false;
 	private tickTimestampMs = 0;
 	private supervisorFaultSequence = 0;
 	private nextInputPressId = 1;
@@ -119,6 +123,12 @@ export class HostTestRunner {
 			return;
 		}
 		this.tickTimestampMs = timestampMs;
+		if (this.newGamePending) {
+			if (!this.guestCallCompleted(this.newGame, EMPTY_CALL_ARGS)) {
+				return;
+			}
+			this.newGamePending = false;
+		}
 		switch (this.phase) {
 			case 'cart':
 				this.cartSettleFrames += 1;
@@ -165,6 +175,9 @@ export class HostTestRunner {
 					this.updateFramePrepared = true;
 					this.applyScheduledCommands();
 					this.updateArgs[0] = this.updateFrames;
+					if (this.newGamePending) {
+						return;
+					}
 				}
 				if (!this.guestCallCompleted(this.update, this.updateArgs)) {
 					return;
@@ -188,6 +201,9 @@ export class HostTestRunner {
 		this.ready = testTable.getStringKey(cpu.stringPool.intern('ready')) as Closure;
 		this.setup = testTable.getStringKey(cpu.stringPool.intern('setup')) as Closure;
 		this.update = testTable.getStringKey(cpu.stringPool.intern('update')) as Closure;
+		this.newGame = cpu.getGlobalByKey(
+			cpu.stringPool.intern('new_game'),
+		) as Closure;
 		this.frameKey = cpu.stringPool.intern('frame');
 		this.pressKey = cpu.stringPool.intern('press');
 		this.downKey = cpu.stringPool.intern('down');
@@ -195,6 +211,7 @@ export class HostTestRunner {
 		this.holdFramesKey = cpu.stringPool.intern('hold_frames');
 		this.captureKey = cpu.stringPool.intern('capture');
 		this.logKey = cpu.stringPool.intern('log');
+		this.newGameKey = cpu.stringPool.intern('new_game');
 		this.doneKey = cpu.stringPool.intern('done');
 		this.options.logger(`test:${this.label} loaded`);
 	}
@@ -235,7 +252,8 @@ export class HostTestRunner {
 		const holdFramesValue = command.getStringKey(this.holdFramesKey);
 		const captureValue = command.getStringKey(this.captureKey);
 		const logValue = command.getStringKey(this.logKey);
-		if (pressValue === null && downValue === null && upValue === null && captureValue === null && logValue === null) {
+		const newGameValue = command.getStringKey(this.newGameKey);
+		if (pressValue === null && downValue === null && upValue === null && captureValue === null && logValue === null && newGameValue === null) {
 			for (let index = 1; index <= command.arrayLength; index += 1) {
 				this.applyCommands(command.getInteger(index));
 			}
@@ -264,6 +282,7 @@ export class HostTestRunner {
 			? null
 			: stringPool.toString(asStringId(logValue as StringValue));
 		const holdFrames = holdFramesValue === null ? 1 : holdFramesValue as number;
+		const newGame = newGameValue === true;
 		if (frameValue !== null && (frameValue as number) > 0) {
 			const dueFrame = this.updateFrames + (frameValue as number);
 			let commands = this.scheduledCommands.get(dueFrame);
@@ -271,10 +290,10 @@ export class HostTestRunner {
 				commands = [];
 				this.scheduledCommands.set(dueFrame, commands);
 			}
-			commands.push({ log, capture, down, up, press, holdFrames });
+			commands.push({ log, capture, down, up, press, holdFrames, newGame });
 			return;
 		}
-		this.applyCommand(log, capture, down, up, press, holdFrames);
+		this.applyCommand(log, capture, down, up, press, holdFrames, newGame);
 	}
 
 	private applyScheduledCommands(): void {
@@ -285,11 +304,11 @@ export class HostTestRunner {
 		this.scheduledCommands.delete(this.updateFrames);
 		for (let index = 0; index < commands.length; index += 1) {
 			const command = commands[index];
-			this.applyCommand(command.log, command.capture, command.down, command.up, command.press, command.holdFrames);
+			this.applyCommand(command.log, command.capture, command.down, command.up, command.press, command.holdFrames, command.newGame);
 		}
 	}
 
-	private applyCommand(log: string | null, capture: string | null, down: string | null, up: string | null, press: string | null, holdFrames: number): void {
+	private applyCommand(log: string | null, capture: string | null, down: string | null, up: string | null, press: string | null, holdFrames: number, newGame: boolean): void {
 		if (log !== null) {
 			this.options.logger(`test:${this.label} ${log}`);
 		}
@@ -310,7 +329,10 @@ export class HostTestRunner {
 				commands = [];
 				this.scheduledCommands.set(dueFrame, commands);
 			}
-			commands.push({ log: null, capture: null, down: null, up: press, press: null, holdFrames: 1 });
+			commands.push({ log: null, capture: null, down: null, up: press, press: null, holdFrames: 1, newGame: false });
+		}
+		if (newGame) {
+			this.newGamePending = !this.guestCallCompleted(this.newGame, EMPTY_CALL_ARGS);
 		}
 	}
 

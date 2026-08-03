@@ -44,7 +44,7 @@ function world_entrance:ctor()
 	self:set_entrance_state('closed')
 end
 
-local function define_world_entrance_fsm<init>()
+local define_world_entrance_fsm<const> = function()
 	fsmlibrary.register('world_entrance', {
 		initial = 'closed',
 		states = {
@@ -96,7 +96,7 @@ local function define_world_entrance_fsm<init>()
 	})
 end
 
-local function register_world_entrance_definition<init>()
+local register_world_entrance_definition<const> = function()
 	prefab.define({
 		def_id = 'world_entrance',
 		class = world_entrance,
@@ -109,4 +109,7 @@ local function register_world_entrance_definition<init>()
 	})
 end
 
-return {}
+return {
+	define_world_entrance_fsm = define_world_entrance_fsm,
+	register_world_entrance_definition = register_world_entrance_definition,
+}

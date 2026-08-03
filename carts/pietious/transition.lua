@@ -58,7 +58,7 @@ function transition:ctor()
 	}))
 end
 
-local function define_transition_fsm<init>()
+local define_transition_fsm<const> = function()
 	local on<const> = {
 		['transition'] = {
 			emitter = 'd',
@@ -96,7 +96,7 @@ local function define_transition_fsm<init>()
 	})
 end
 
-local function register_transition_definition<init>()
+local register_transition_definition<const> = function()
 	prefab.define({
 		def_id = 'transition',
 		class = transition,
@@ -114,4 +114,6 @@ end
 
 return {
 	transition = transition,
+	define_transition_fsm = define_transition_fsm,
+	register_transition_definition = register_transition_definition,
 }

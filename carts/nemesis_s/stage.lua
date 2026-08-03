@@ -564,7 +564,7 @@ function stage:ctor()
 	self.stage_visual.producer = stage.draw
 end
 
-local function define_stage_fsm<init>()
+local define_stage_fsm<const> = function()
 	fsm_library.register(ids_stage_fsm, {
 		initial = 'boot',
 		states = {
@@ -610,7 +610,7 @@ local function define_stage_fsm<init>()
 		})
 end
 
-local function register_stage_definition<init>()
+local register_stage_definition<const> = function()
 	prefab.define({
 		def_id = ids_stage_def,
 		class = stage,
@@ -623,6 +623,8 @@ local function register_stage_definition<init>()
 end
 
 return {
+	define_stage_fsm = define_stage_fsm,
+	register_stage_definition = register_stage_definition,
 	stage_def_id = ids_stage_def,
 	stage_instance_id = ids_stage_instance,
 	stage_fsm_id = ids_stage_fsm,

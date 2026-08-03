@@ -39,7 +39,7 @@ function room_shrine:ctor()
 	self:gfx('shrine')
 end
 
-local function define_shrine_fsm<init>()
+local define_shrine_fsm<const> = function()
 	fsmlibrary.register('shrine', {
 		initial = 'active',
 		on = {
@@ -62,7 +62,7 @@ local function define_shrine_fsm<init>()
 	})
 end
 
-local function register_shrine_definition<init>()
+local register_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'shrine',
 		class = shrine,
@@ -77,7 +77,7 @@ local function register_shrine_definition<init>()
 	})
 end
 
-local function register_room_shrine_definition<init>()
+local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
@@ -90,4 +90,7 @@ end
 return {
 	shrine = shrine,
 	room_shrine = room_shrine,
+	define_shrine_fsm = define_shrine_fsm,
+	register_shrine_definition = register_shrine_definition,
+	register_room_shrine_definition = register_room_shrine_definition,
 }

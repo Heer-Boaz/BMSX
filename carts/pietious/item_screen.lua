@@ -186,7 +186,7 @@ function item_screen:draw_screen(draw)
 	self:draw_map(draw)
 end
 
-local function define_item_screen_fsm<init>()
+local define_item_screen_fsm<const> = function()
 	local open_on<const> = {
 		['item_screen.blink_toggle'] = function(self)
 			self.selector_hidden = not self.selector_hidden
@@ -249,7 +249,7 @@ local function define_item_screen_fsm<init>()
 	})
 end
 
-local function register_item_screen_definition<init>()
+local register_item_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'item_screen',
 		class = item_screen,
@@ -269,4 +269,6 @@ end
 
 return {
 	item_screen = item_screen,
+	define_item_screen_fsm = define_item_screen_fsm,
+	register_item_screen_definition = register_item_screen_definition,
 }

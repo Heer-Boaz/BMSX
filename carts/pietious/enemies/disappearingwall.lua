@@ -34,7 +34,7 @@ function disappearingwall:ctor()
 	tile_layer.offset_y = 0
 end
 
-local function register<init>()
+function disappearingwall.register()
 	fsmlibrary.register('disappearingwall', {
 		initial = 'active',
 		on = {

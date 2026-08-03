@@ -190,7 +190,7 @@ end
 
 enemy_base.extend(mijterfoe, 'mijterfoe')
 
-local function register<init>()
+function mijterfoe.register()
 	prefab.define({
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,

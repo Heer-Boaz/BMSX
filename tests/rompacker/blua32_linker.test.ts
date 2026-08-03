@@ -1049,6 +1049,7 @@ test('BLua32 linker pins the init vector across body-only revisions', () => {
 	const initialSource = [
 		'local captured = 1',
 		'local function refresh<init>() marker = (marker or 0) + captured end',
+		'refresh()',
 		'return marker',
 	].join('\n');
 	const initialCompiled = compileLuaChunkToProgram(
@@ -1072,6 +1073,7 @@ test('BLua32 linker pins the init vector across body-only revisions', () => {
 		'local function refresh<init>()',
 		'\tmarker = (marker or 0) + captured + 1',
 		'end',
+		'refresh()',
 		'return marker',
 	].join('\n');
 	const changedCompiled = compileLuaChunkToProgram(

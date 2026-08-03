@@ -186,8 +186,7 @@ local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 	end
 end
 
-local function define_textobject_fsm<init>()
-	fsmlibrary.register(textobject_fsm_id, {
+fsmlibrary.register(textobject_fsm_id, {
 	initial = textobject_state_idle,
 	tag_derivations = {
 		[state_tags.group.typing] = { state_tags.variant.typing },
@@ -268,8 +267,7 @@ local function define_textobject_fsm<init>()
 			},
 		},
 	},
-	})
-end
+})
 
 function textobject.new(opts)
 	opts = opts or {}

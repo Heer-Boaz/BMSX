@@ -127,7 +127,7 @@ end
 
 enemy_base.extend(cloud, 'cloud')
 
-local function register<init>()
+function cloud.register()
 	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,

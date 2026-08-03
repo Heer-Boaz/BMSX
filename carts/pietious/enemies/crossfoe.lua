@@ -135,7 +135,7 @@ end
 
 enemy_base.extend(crossfoe, 'crossfoe')
 
-local function register<init>()
+function crossfoe.register()
 	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,

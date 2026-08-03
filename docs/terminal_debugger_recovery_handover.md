@@ -1,87 +1,105 @@
 # Handover: terminal/debugger/Hot Resume/audio recovery
 
-Date: 2026-08-02
+Date: 2026-08-03
 
 Branch: `master`
 
-HEAD at handover: `ace39bf52c`
+Current HEAD: `9078b7bbf`
 
-Current committed baseline: `d5998b5eb`
-
-## `<init>` / Hot Resume architecture completion (2026-08-02)
-
-The user committed every previously open recovery change through
-`d5998b5eb` before this continuation, specifically to prevent an accidental
-reset or revert. That commit was treated as the immutable baseline. The
-architecture slice described below is the current uncommitted worktree; no
+The user committed the rejected implementation deliberately so later work could
+not accidentally reset or revert unrelated recovery changes. That commit stays
+in history. The correction below is a new worktree change on top of it; no
 commit was requested.
 
-BLua now owns reloadable preparation as an explicit language feature:
+## `<init>` semantic correction (2026-08-03)
+
+The implementation in `9078b7bbf` did not match the agreed design. It gave
+`<init>` automatic cold-runtime call semantics and spread the annotation over
+cart modules with no source callers. Both behaviors are rejected.
+
+The actual language contract is deliberately narrow:
 
 ```lua
-local function publish_blueprints<init>()
-    -- registration work
+local function init<init>()
+    -- the cart's existing preparation code
 end
+
+init()
 ```
 
-The declaration is top-level, zero-argument and arbitrarily named. Cold
-execution retains and invokes the closure at its lexical declaration point.
-The compiler also emits a zero-upvalue static vector in dependency and lexical
-order and publishes only its raw address and participant identities in private
-tooling symbols. The ROM header, firmware, CPU and save-state contain no reload
-field, source revision, linker baseline or tooling identity. There is no
-platform `new_game` or named global `init` ABI; cold-only game/session creation
-is ordinary cart code.
+- `<init>` adds **no call** to ordinary program execution. The explicit source
+  `init()` remains the one and only cold preparation call.
+- A program may mark multiple zero-argument, non-vararg, top-level local
+  functions, both in its entry chunk and in statically required source modules.
+  This language capability does not require carts to distribute their
+  preparation across modules.
+- The compiler emits each ordinary closure and retains it in a private slot so
+  tooling can publish one raw callable vector. Hot Resume invokes the retained
+  closures in dependency and lexical order after installing compatible code.
+- The CPU, firmware, ROM header, runtime state and cart runtime know nothing
+  about source revisions or Hot Resume. The annotation is a compiler/tooling
+  contract only.
+- `new_game()` remains exactly where existing carts already owned and called
+  it. Hot Resume neither looks up nor invokes that name.
 
-Hot Resume now builds and lays out all media before the first media/state write,
-proves active-frame relocation and participant layout, installs the resulting
-physical media, and invokes the applicable system then active-cart vectors
-through the debugger-aware suspended executor. The generic mirrored CPU call
-accepts a raw execution-domain word and raw function address. It resolves that
-resident execution image directly and neither reads nor changes `CART_SELECT`,
-so a data-only selected socket cannot redirect the active cartridge's init
-vector. Breakpoints, continuation, guest `print`, faults and hardware deadlines
-remain on the normal execution machinery. The normal TS/C++ CPU loop is a
-separate uninstrumented specialization with no hook or domain-mask branch.
+All cart changes introduced by the rejected distributed-init migration are
+being undone against parent `d5998b5eb`. The only intended cart-source
+differences from that parent are these six existing entry declarations changing
+from `function init()` to `local function init<init>()` while their existing
+explicit `init()` calls remain:
 
-Cart preparation was migrated into `<init>` participants. FSM definitions,
-behaviour-tree roots, timeline definitions, font/prefab registries, IRQ handlers,
-ROM-directory state and AEM event bindings refresh while existing world, heap,
-FSM state/history/data, behaviour-tree node data, timeline playback and audio
-state remain live. Active function-built timelines rebuild their replacement
-frames with retained runtime parameters before rebinding; incompatible FSM
-topology is rejected before publication. Pietious cold world creation moved to
-the ordinary `game_session.start()` module path and is not rerun by Hot Resume.
+- `carts/2025/cart.lua`
+- `carts/emptycart/entry.lua`
+- `carts/hot_resume_test/entry.lua`
+- `carts/nemesis_s/cart.lua`
+- `carts/pietious/cart.lua`
+- `carts/vblanktest/entry.lua`
 
-System public assets are laid out in their fixed partition before compilation,
-and cartridge payload lengths are concrete before compilation. Only unresolved
-cartridge-tail addresses remain link values. Pure numeric expressions over
-those leaves stay one compiler/linker expression and execute as one relocated
-constant load; the linker evaluates them again against the final physical
-layout. This fixes the terminal-font corruption whose immediate cause was a
-relocatable `assets.*_len >> 2` being compiled as `SHR ..., nil, 2`, while
-preserving the cold instruction count and base-cycle cost.
+There are no cartlib or module-local `<init>` functions. The extra Pietious
+`game_session.lua` from the rejected migration is removed, and the old
+Pietious cart and headless test ownership are restored. Useful library support
+for rebinding retained FSM, behaviour-tree and timeline runtime objects remains,
+but it is reached only through the existing cart `init()` body and its explicit
+calls.
 
-Completion evidence against the live worktree:
+The validation contract for this correction is stronger than compilation:
+compiler execution tests must prove annotation-only cold count zero, including
+multiple annotations in source modules, and an explicit cold `init()` count
+one; linker tests must reject annotation add/remove/reorder/identity changes;
+the full IDE scenario must prove Hot Resume reruns
+`init` exactly once without rerunning `new_game`, reaches an init breakpoint,
+prints through the terminal path, survives repeated revisions and reboots
+without corrupting the font; and Pietious must pass its real headless world
+scenario.
 
-- Lua: 531 passed, 1 skipped (532 total); rompacker: 96/96.
-- `<init>`/parser: 26/26; CPU/save-state focus: 46/46; linker: 25/25;
-  module/link-expression lowering: 17/17; cartlib live-rebind scenario passed.
-- Mirrored native `bmsx_cpu_supervisor_tests` and
-  `bmsx_system_controller_tests` rebuilt and passed; core-parity audit passed.
-- Full Hot Resume IDE scenario passed 51 assertions, including rejected edits,
-  two consecutive source revisions, system-only rebuild, an init breakpoint,
-  no-op refresh, dual-cart `CART_SELECT` independence, runtime-heap retention,
-  performance shape and reboot.
-- Pietious rebuilt and passed the real enter-world headless scenario; `2025`
-  and `nemesis_s` rebuilt successfully.
-- Browser Studio debug product rebuilt successfully. This is bundle evidence,
-  not a claim of manual interactive-browser testing.
-- The direct post-rebuild/reboot monitor capture is sharp and reads
-  `BMSX BIOS MONITOR`, `HOT-RESUME-INIT`, and `HOT-RESUME-REVISION-2` at
-  `/tmp/bmsx-font-proof-final-hHtMul/screenshots/frame_00566.png`.
-- Indentation and `git diff --check` pass; banned-pattern and machine/tooling
-  boundary audits found no added violation.
+Current completion evidence:
+
+- Relative to `9078b7bbf`, the compiler correction is exactly the deletion of
+  the emitted `MOV`/`CALL` sequence at an annotated declaration. The existing
+  multi-annotation, module ordering, hidden-slot and tooling-vector machinery is
+  otherwise unchanged.
+- All 748 files under `carts/` were compared to parent `d5998b5eb`. There are
+  zero mismatches beyond the six declaration-line changes listed above, and
+  the only shipped Lua `<init>` annotations are those six.
+- The compiler execution test uses four annotations across an entry and two
+  source modules: cold execution leaves the counter at zero; the explicit
+  tooling call then produces the dependency/lexical result `1234`. A separate
+  test proves explicit source `init()` runs once cold and once more through
+  tooling.
+- The full Hot Resume IDE scenario passes 52 assertions over rejected edits,
+  two consecutive revisions, system-only and no-op refreshes, retained heap
+  identity, `init` counts, unchanged `new_game` count, breakpoint continuation,
+  guest `print`, dual-cartridge selection and cold reboot.
+- The reboot breakpoint and the underlying physical terminal were captured at
+  `tests/ide/screenshots/frame_00493.png` and
+  `tests/ide/screenshots/frame_00496.png`; both fonts are intact.
+- Full Lua tests pass 531 with 1 skipped; rompacker passes 96/96. Pietious
+  rebuilds and passes its real enter-world host test. `2025` and `nemesis_s`
+  rebuild successfully. Machine and toolchain TypeScript compilation and the
+  Browser Studio debug product build pass.
+- AEM cold state is initialized once when its owner module loads. The existing
+  cart `aem.reload()` calls now rebind event definitions without resetting live
+  audio state during Hot Resume; no cart callsite or public API was added.
 
 ## Completion update (2026-08-02)
 

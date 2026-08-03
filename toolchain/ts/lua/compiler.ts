@@ -4447,9 +4447,6 @@ class FunctionBuilder {
 		if (statement.attribute === 'init') {
 			const participant = this.program.recordInitParticipant(this.moduleId, protoId);
 			this.emitABx(participant.system ? OpCode.SETSYS : OpCode.SETGL, reg, participant.objectSlot);
-			const callReg = this.allocTemp();
-			this.emitABC(OpCode.MOV, callReg, reg, 0);
-			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 1);
 		}
 	}
 

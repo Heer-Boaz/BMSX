@@ -8,7 +8,7 @@ function lithograph:ctor()
 	self:gfx('lithograph')
 end
 
-local function register_lithograph_definition<init>()
+local register_lithograph_definition<const> = function()
 	prefab.define({
 		def_id = 'lithograph',
 		class = lithograph,
@@ -22,4 +22,5 @@ end
 
 return {
 	lithograph = lithograph,
+	register_lithograph_definition = register_lithograph_definition,
 }

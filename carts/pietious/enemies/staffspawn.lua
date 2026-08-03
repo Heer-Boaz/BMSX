@@ -25,7 +25,7 @@ end
 
 enemy_base.extend(staffspawn, 'staffspawn')
 
-local function register<init>()
+function staffspawn.register()
 	prefab.define({
 		def_id = 'enemy.staffspawn',
 		class = staffspawn,

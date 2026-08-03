@@ -3,9 +3,9 @@
 --
 -- DESIGN PRINCIPLES — FSM definitions
 --
--- 1. PUBLISH ONCE PER COMPILED REVISION, ATTACH MANY TIMES.
---    A 'machine_name' maps to a single compiled statedefinition.  Register the
---    blueprint from its module-level <init> participant. A replacement rebinds
+-- 1. PUBLISH ONCE PER EXPLICIT CART INITIALIZATION, ATTACH MANY TIMES.
+--    A 'machine_name' maps to a single compiled statedefinition. The cart's
+--    explicit init function registers each blueprint. A replacement rebinds
 --    retained runtime trees without resetting their live state. Prefabs attach
 --    the runtime component only to objects that list the definition in `fsms`.
 --

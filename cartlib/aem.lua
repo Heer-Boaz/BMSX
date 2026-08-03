@@ -737,14 +737,9 @@ local rebind<const> = function()
 	return events
 end
 
-local reload<const> = function()
-	reset_audio_state()
-	return rebind()
-end
-
 local reload_from_rom<const> = function()
 	romdir.reload_cartridge_directory()
-	return reload()
+	return rebind()
 end
 
 local on_apu_irq<const> = function()
@@ -791,8 +786,7 @@ local on_apu_irq<const> = function()
 end
 
 return {
-	rebind = rebind,
-	reload = reload,
+	reload = rebind,
 	reload_from_rom = reload_from_rom,
 	on_apu_irq = on_apu_irq,
 }

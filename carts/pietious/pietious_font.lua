@@ -32,10 +32,12 @@ for codepoint = string.byte('A'), string.byte('Z') do
 	glyphs[lower] = glyph_id
 end
 
-local function register_fonts<init>()
+local register_fonts<const> = function()
 	font.define('pietious', {
 		glyphs = glyphs,
 	})
 end
 
-return {}
+return {
+	register_fonts = register_fonts,
+}
