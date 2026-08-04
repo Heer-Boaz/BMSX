@@ -35,7 +35,7 @@ import {
 } from '../../machine/ts/spec/bmsx/rom_toc';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
-import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
+import { buildGxVramLayoutModuleSource, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
@@ -151,7 +151,8 @@ test('release BLua32 images do not synthesize editable Lua source records', () =
 });
 
 test('debug package source boot resolves the persisted GX VRAM layout module', async () => {
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: {},
 		slots: {
 			scene: { texture: { x: 64, y: 256, width: 128, height: 128 } },
@@ -168,7 +169,7 @@ test('debug package source boot resolves the persisted GX VRAM layout module', a
 		`local vram_layout<const> = require('${GX_VRAM_LAYOUT_MODULE_PATH}')`,
 		'return vram_layout.scene_texture',
 	].join('\n');
-	const layoutSource = buildGxTextureLayoutModuleSource(layout);
+	const layoutSource = buildGxVramLayoutModuleSource(layout);
 	const cartBytes = textEncoder.encode(cartSource);
 	const layoutBytes = textEncoder.encode(layoutSource);
 	const cartStart = CART_ROM_HEADER_SIZE;

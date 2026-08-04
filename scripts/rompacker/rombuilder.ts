@@ -61,10 +61,10 @@ import {
 } from './system_texture';
 import {
 	type GxTextureGroupLayout,
-	type GxTextureLayout,
+	type GxVramLayout,
 	type GxTextureSlot,
-	validateGxTextureLayout,
-} from './gx_texture_layout';
+	validateGxVramLayout,
+} from './gx_vram_layout';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
@@ -270,7 +270,7 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 }
 
 export type RomBuildManifest = RomManifest & {
-	gx_texture_layout?: GxTextureLayout;
+	gx_vram_layout?: GxVramLayout;
 };
 
 export async function getRomManifest(dirPath: string): Promise<RomBuildManifest | null> {
@@ -1361,7 +1361,7 @@ export function buildRomBlua32Tail(
 
 function textureGroupBuild(
 	groupId: number,
-	layout?: GxTextureLayout,
+	layout?: GxVramLayout,
 ): { group: GxTextureGroupLayout; slots: GxTextureSlot[]; maxPixelWidth: number; maxHeight: number } {
 	if (groupId === GX_SYSTEM_TEXTURE_GROUP_ID) {
 		return {
@@ -1375,11 +1375,11 @@ function textureGroupBuild(
 		throw new Error(`[RomPacker] Cart texture group id ${groupId} collides with reserved system texture group id ${GX_SYSTEM_TEXTURE_GROUP_ID}.`);
 	}
 	if (!layout) {
-		throw new Error(`[RomPacker] Cart images require a gx_texture_layout in the ROM manifest.`);
+		throw new Error(`[RomPacker] Cart images require a gx_vram_layout in the ROM manifest.`);
 	}
 	const group = layout.groups[String(groupId)];
 	if (!group) {
-		throw new Error(`[RomPacker] GX texture group ${groupId} has no entry in gx_texture_layout.groups.`);
+		throw new Error(`[RomPacker] GX texture group ${groupId} has no entry in gx_vram_layout.groups.`);
 	}
 	const slots = group.slots.map(slotName => layout.slots[slotName]);
 	let maxWordWidth = slots[0].texture.width;
@@ -1427,7 +1427,7 @@ function assertTextureFitsSlots(
 /** Builds producer-only image packing groups and destination-free GX texture payloads. */
 export async function createTextureAtlases(
 	resources: Resource[],
-	layout?: GxTextureLayout,
+	layout?: GxVramLayout,
 	reportProgress?: ProgressNote,
 ): Promise<void> {
 	const atlases = resources.filter((resource): resource is TextureAtlasResource => resource.type === 'atlas');
@@ -1436,7 +1436,7 @@ export async function createTextureAtlases(
 		return;
 	}
 	if (layout) {
-		validateGxTextureLayout(layout);
+		validateGxVramLayout(layout);
 	}
 	for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
 		const atlas = atlases[atlasIndex];
@@ -1464,7 +1464,7 @@ export async function createTextureAtlases(
 	if (layout) {
 		for (const groupId of Object.keys(layout.groups)) {
 			if (!atlases.some(atlas => atlas.atlasId === Number(groupId))) {
-				throw new Error(`[RomPacker] gx_texture_layout.groups.${groupId} has no images.`);
+				throw new Error(`[RomPacker] gx_vram_layout.groups.${groupId} has no images.`);
 			}
 		}
 	}

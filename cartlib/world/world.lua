@@ -752,6 +752,10 @@ function world_class:update()
 
 end
 
+function world_class:render()
+	run_phase(self, tick_group.presentation, frame_delta_ms)
+end
+
 function world_class:clear()
 	for i = #self._objects, 1, -1 do
 		local obj<const> = self._objects[i]

@@ -1,17 +1,17 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_256x192()
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
+local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
+local render_system<const> = require('cartlib/ecs/systems/render')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
-local world_render<const> = require('cartlib/render/world')
 local world<const> = require('cartlib/world/world')
 irq = irq_module.dispatch
 require('constants')
@@ -19,13 +19,11 @@ local stage_module<const> = require('stage')
 local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
-local framebuffer<const> = vram_layout.framebuffer
-local framebuffer_size<const> = gx_display.size_word()
-local clear_color<const> = 0xff000000
 local ecs_systems<const> = {
-	player_input.ecs_system,
+	player_input_system,
 	fsm_system,
 	timeline_system,
+	render_system,
 }
 
 local function init<init>()
@@ -59,17 +57,12 @@ function new_game()
 end
 
 init()
-gx_gpu.draw_target(framebuffer, framebuffer_size)
-gx_gpu.clear_color(framebuffer, framebuffer_size, clear_color)
 gx_texture.upload(gx_texture.load('ground'), vram_layout.stage_texture)
-player_input.arm_vblank_sample()
 new_game()
-player_input.arm_vblank_sample()
 vblank.wait()
 
 while true do
 	world:update()
-	player_input.arm_vblank_sample()
 	vblank.wait()
-	world_render.draw(world, framebuffer, framebuffer_size, clear_color)
+	world:render()
 end

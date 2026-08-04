@@ -31,7 +31,8 @@ export type GxTextureGroupLayout = {
 	page_local: boolean;
 };
 
-export type GxTextureLayout = {
+export type GxVramLayout = {
+	framebuffers: GxVramRect[];
 	reserved: Record<string, GxVramRect>;
 	slots: Record<string, GxTextureSlot>;
 	groups: Record<string, GxTextureGroupLayout>;
@@ -58,7 +59,25 @@ function slotRects(slot: GxTextureSlot): GxVramRect[] {
 	return slot.clut ? [slot.texture, slot.clut] : [slot.texture];
 }
 
-export function validateGxTextureLayout(layout: GxTextureLayout): void {
+export function validateGxVramLayout(layout: GxVramLayout): void {
+	const framebuffers = layout.framebuffers;
+	if (framebuffers.length > 2) {
+		throw new Error('[RomPacker] GX VRAM layout supports at most two display framebuffers.');
+	}
+	for (let index = 0; index < framebuffers.length; index += 1) {
+		const framebuffer = framebuffers[index];
+		assertVramRect(`framebuffers.${index}`, framebuffer);
+		for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
+			if (rectsOverlap(framebuffer, framebuffers[otherIndex])) {
+				throw new Error(`[RomPacker] GX display framebuffers ${otherIndex} and ${index} overlap.`);
+			}
+		}
+	}
+	if (framebuffers.length === 2
+		&& (framebuffers[0].width !== framebuffers[1].width || framebuffers[0].height !== framebuffers[1].height)) {
+		throw new Error('[RomPacker] GX double-buffered display framebuffers must have identical dimensions.');
+	}
+
 	const reservedEntries = Object.entries(layout.reserved);
 	const system = layout.reserved.system;
 	if (!system
@@ -74,6 +93,11 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 			throw new Error(`[RomPacker] GX reserved region '${name}' is not a Lua identifier.`);
 		}
 		assertVramRect(`reserved.${name}`, rect);
+		for (let framebufferIndex = 0; framebufferIndex < framebuffers.length; framebufferIndex += 1) {
+			if (rectsOverlap(rect, framebuffers[framebufferIndex])) {
+				throw new Error(`[RomPacker] GX reserved region '${name}' overlaps display framebuffer ${framebufferIndex}.`);
+			}
+		}
 		for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
 			const [otherName, otherRect] = reservedEntries[otherIndex];
 			if (rectsOverlap(rect, otherRect)) {
@@ -81,7 +105,6 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 			}
 		}
 	}
-
 	for (const [slotName, slot] of Object.entries(layout.slots)) {
 		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(slotName)) {
 			throw new Error(`[RomPacker] GX slot '${slotName}' is not a Lua identifier.`);
@@ -90,6 +113,11 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 		for (let rectIndex = 0; rectIndex < rects.length; rectIndex += 1) {
 			const rect = rects[rectIndex];
 			assertVramRect(`slots.${slotName}.${rectIndex === 0 ? 'texture' : 'clut'}`, rect);
+			for (let framebufferIndex = 0; framebufferIndex < framebuffers.length; framebufferIndex += 1) {
+				if (rectsOverlap(rect, framebuffers[framebufferIndex])) {
+					throw new Error(`[RomPacker] GX slot '${slotName}' overlaps display framebuffer ${framebufferIndex}.`);
+				}
+			}
 			for (const [reservedName, reserved] of reservedEntries) {
 				if (rectsOverlap(rect, reserved)) {
 					throw new Error(`[RomPacker] GX slot '${slotName}' overlaps reserved region '${reservedName}'.`);
@@ -156,7 +184,7 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 	}
 }
 
-export function buildGxTextureLayoutModuleSource(layout: GxTextureLayout): string {
+export function buildGxVramLayoutModuleSource(layout: GxVramLayout): string {
 	const declarations: string[] = [];
 	const exports: string[] = [];
 	const reservedEntries = Object.entries(layout.reserved).sort(([left], [right]) => left.localeCompare(right));
@@ -164,6 +192,25 @@ export function buildGxTextureLayoutModuleSource(layout: GxTextureLayout): strin
 		const [name, rect] = reservedEntries[index];
 		declarations.push(`local ${name}<const> = ${(rect.x | (rect.y << 16)) >>> 0}`);
 		exports.push(name);
+	}
+	const framebuffers = layout.framebuffers;
+	if (framebuffers.length === 1) {
+		const framebuffer = framebuffers[0];
+		declarations.push(`local framebuffer<const> = ${(framebuffer.x | (framebuffer.y << 16)) >>> 0}`);
+		declarations.push('local framebuffer_front<const> = framebuffer');
+		declarations.push('local framebuffer_back<const> = framebuffer');
+		declarations.push(`local framebuffer_size<const> = ${(framebuffer.width | (framebuffer.height << 16)) >>> 0}`);
+		declarations.push('local framebuffer_count<const> = 1');
+		exports.push('framebuffer', 'framebuffer_front', 'framebuffer_back', 'framebuffer_size', 'framebuffer_count');
+	} else if (framebuffers.length === 2) {
+		const framebufferFront = framebuffers[0];
+		const framebufferBack = framebuffers[1];
+		declarations.push(`local framebuffer_front<const> = ${(framebufferFront.x | (framebufferFront.y << 16)) >>> 0}`);
+		declarations.push(`local framebuffer_back<const> = ${(framebufferBack.x | (framebufferBack.y << 16)) >>> 0}`);
+		declarations.push('local framebuffer<const> = framebuffer_front');
+		declarations.push(`local framebuffer_size<const> = ${(framebufferFront.width | (framebufferFront.height << 16)) >>> 0}`);
+		declarations.push('local framebuffer_count<const> = 2');
+		exports.push('framebuffer', 'framebuffer_front', 'framebuffer_back', 'framebuffer_size', 'framebuffer_count');
 	}
 	const slotEntries = Object.entries(layout.slots).sort(([left], [right]) => left.localeCompare(right));
 	for (let index = 0; index < slotEntries.length; index += 1) {

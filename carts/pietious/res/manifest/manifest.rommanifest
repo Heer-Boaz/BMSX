@@ -1,8 +1,9 @@
 title: Maze of Pietious
-gx_texture_layout:
+gx_vram_layout:
+    framebuffers:
+        - { x: 0, y: 0, width: 256, height: 192 }
+        - { x: 256, y: 0, width: 256, height: 192 }
     reserved:
-        framebuffer_front: { x: 0, y: 0, width: 256, height: 192 }
-        framebuffer_back: { x: 256, y: 0, width: 256, height: 192 }
         system: { x: 704, y: 720, width: 320, height: 304 }
     slots:
         sprites:

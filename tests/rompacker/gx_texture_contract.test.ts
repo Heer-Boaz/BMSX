@@ -33,7 +33,7 @@ import {
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
+import { buildGxVramLayoutModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -159,7 +159,8 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 });
 
 test('GX layout validation rejects overlapping slots in one cart-authored working set', () => {
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			left: { texture: { x: 0, y: 256, width: 128, height: 128 } },
@@ -169,13 +170,80 @@ test('GX layout validation rejects overlapping slots in one cart-authored workin
 		working_sets: { scene: ['left', 'right'] },
 	};
 	assert.throws(
-		() => validateGxTextureLayout(layout),
+		() => validateGxVramLayout(layout),
 		/working set 'scene' overlaps slots 'left' and 'right'/,
 	);
 });
 
+test('GX VRAM module emits one standardized framebuffer contract for a single display page', () => {
+	const layout: GxVramLayout = {
+		framebuffers: [
+			{ x: 32, y: 16, width: 320, height: 240 },
+		],
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
+		slots: {},
+		groups: {},
+		working_sets: {},
+	};
+	validateGxVramLayout(layout);
+	const source = buildGxVramLayoutModuleSource(layout);
+	assert.match(source, /local framebuffer_front<const> = framebuffer/);
+	assert.match(source, /local framebuffer_back<const> = framebuffer/);
+	assert.match(source, /local framebuffer_size<const> = 15728960/);
+	assert.match(source, /local framebuffer_count<const> = 1/);
+});
+
+test('GX VRAM module emits one standardized framebuffer contract for two display pages', () => {
+	const layout: GxVramLayout = {
+		framebuffers: [
+			{ x: 0, y: 0, width: 256, height: 192 },
+			{ x: 256, y: 0, width: 256, height: 192 },
+		],
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
+		slots: {},
+		groups: {},
+		working_sets: {},
+	};
+	validateGxVramLayout(layout);
+	const source = buildGxVramLayoutModuleSource(layout);
+	assert.match(source, /local framebuffer<const> = framebuffer_front/);
+	assert.match(source, /local framebuffer_size<const> = 12583168/);
+	assert.match(source, /local framebuffer_count<const> = 2/);
+});
+
+test('GX layout validation rejects excessive or differently sized display page sets', () => {
+	assert.throws(
+		() => validateGxVramLayout({
+			framebuffers: [
+				{ x: 0, y: 0, width: 256, height: 192 },
+				{ x: 256, y: 0, width: 256, height: 192 },
+				{ x: 512, y: 0, width: 256, height: 192 },
+			],
+			reserved: GX_SYSTEM_VRAM_RESERVATION,
+			slots: {},
+			groups: {},
+			working_sets: {},
+		}),
+		/supports at most two display framebuffers/,
+	);
+	assert.throws(
+		() => validateGxVramLayout({
+			framebuffers: [
+				{ x: 0, y: 0, width: 256, height: 192 },
+				{ x: 256, y: 0, width: 320, height: 192 },
+			],
+			reserved: GX_SYSTEM_VRAM_RESERVATION,
+			slots: {},
+			groups: {},
+			working_sets: {},
+		}),
+		/must have identical dimensions/,
+	);
+});
+
 test('GX layout validation rejects texture storage outside physical VRAM', () => {
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 		main: { texture: { x: 1024, y: 0, width: 1, height: 1 } },
@@ -184,13 +252,14 @@ test('GX layout validation rejects texture storage outside physical VRAM', () =>
 		working_sets: {},
 	};
 	assert.throws(
-		() => validateGxTextureLayout(layout),
+		() => validateGxVramLayout(layout),
 		/outside 1024x1024 VRAM/,
 	);
 });
 
 test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactly', () => {
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: {
@@ -204,13 +273,14 @@ test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactl
 		working_sets: {},
 	};
 	assert.throws(
-		() => validateGxTextureLayout(layout),
+		() => validateGxVramLayout(layout),
 		/not aligned for a PSX texture page and 16-word CLUT/,
 	);
 });
 
 test('GX layout validation reserves the system group id from cart manifests', () => {
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
@@ -221,13 +291,14 @@ test('GX layout validation reserves the system group id from cart manifests', ()
 		working_sets: {},
 	};
 	assert.throws(
-		() => validateGxTextureLayout(layout),
+		() => validateGxVramLayout(layout),
 		/not a cart texture group id below 254/,
 	);
 });
 
 test('GX layout validation rejects unknown texture modes at the manifest boundary', () => {
 	const layout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
@@ -236,9 +307,9 @@ test('GX layout validation rejects unknown texture modes at the manifest boundar
 			0: { mode: 'rgb777', slots: ['main'], page_local: true },
 		},
 		working_sets: {},
-	} as unknown as GxTextureLayout;
+	} as unknown as GxVramLayout;
 	assert.throws(
-		() => validateGxTextureLayout(layout),
+		() => validateGxVramLayout(layout),
 		/unknown mode 'rgb777'/,
 	);
 });
@@ -275,7 +346,8 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 		img: secondCanvas as unknown as ImageResource['img'],
 	};
 	const resources: Resource[] = [group, first, second];
-	const layout: GxTextureLayout = {
+	const layout: GxVramLayout = {
+		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 0, width: 256, height: 256 } },

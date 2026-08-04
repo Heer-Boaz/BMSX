@@ -1,7 +1,8 @@
 title: Pietsona 2025
-gx_texture_layout:
+gx_vram_layout:
+    framebuffers:
+        - { x: 0, y: 0, width: 320, height: 240 }
     reserved:
-        framebuffer: { x: 0, y: 0, width: 320, height: 240 }
         system: { x: 704, y: 720, width: 320, height: 304 }
     slots:
         background_left:

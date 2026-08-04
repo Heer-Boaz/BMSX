@@ -2666,18 +2666,22 @@ directly or through DMA. Draw targets and clear packets take their raw origin
 and size words explicitly. Display queries decode the live PCRTC words rather
 than returning a Lua-side copy.
 
-`cartlib/render/world` retains the GP0 word buffer and translates the active
-world's visual components into one command list. Its `draw` and `draw_fenced`
-operations receive the raw framebuffer origin and size words explicitly; they
-do not own display origin, framebuffer selection, IRQ masks, VBlank state or
-frame cadence. The cartridge entry module owns those policies. A single-buffer
-cart submits directly, while a page-flipped cart selects its back page, requests
-the fenced submission, programs the display origin, waits for its chosen VBlank
-edge and rotates its page words explicitly. `cartlib/gx/vblank` owns only the
-retained edge sequence and the wait operation; the cart registers its handler
-and enables its IRQ bit. There is no hidden wait or mandatory double buffering.
-Custom visuals receive only the draw surface's primitive operations, not its
-storage or lifecycle.
+`cartlib/ecs/systems/render` is the ECS render system. It retains
+the GP0 word buffer and translates the active world's visual components into one
+command list when the cart invokes `world:render()`. The ROM producer emits the
+framebuffer origin, dimensions and buffer count as raw constants in
+`bmsx/gx_vram_layout`; the system consumes those constants once when the ECS
+graph is composed. A one-page layout selects the single-buffer implementation
+and a two-page layout selects the double-buffer implementation. The frame hot
+path has no framebuffer-mode branch, display-size query or per-frame allocation.
+
+The presentation system owns its draw page, display page, GPU target and page
+rotation. Double-buffered submission uses the ordered GPU fence before staging
+the next display origin; single-buffered submission does not pay that fence.
+Neither implementation waits for VBlank. `cartlib/gx/vblank` owns only the
+retained edge sequence and wait operation, while each cart keeps its one- or
+two-edge pacing visible in the entry loop. Custom visuals receive only the
+command list's primitive operations, not framebuffer storage or lifecycle.
 
 The world render path submits painter-ordered 2D work through one retained
 visual-component list per world space. Sprite, surface, tile, text and custom
@@ -2782,13 +2786,14 @@ system interrupt pending latch as two distinct hardware words.
 
 `cartlib/gx/command_list.submit_fenced` uses that ordered GP0 IRQ packet as a
 completion fence. It appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the physical
-`IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). A page-flipped
-cart invokes that fence before programming GP1(05h), then explicitly waits for
-the VBlank edge at which the new display origin becomes visible before reusing
-the former front page. Missing the current beam edge can delay publication by
-one frame but cannot expose a page still being written. Neither cartlib path
-polls GPUSTAT or drains a host queue; the entire fence is guest MMIO against the
-emulated hardware.
+`IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). The
+double-buffered visual-render system invokes that fence before programming
+GP1(05h), rotates its retained page words, and leaves the publication edge to
+the cart's following explicit `vblank.wait()`. The former front page is not
+drawn again until that wait has completed. Missing the current beam edge can
+delay publication by one frame but cannot expose a page still being written.
+Neither cartlib path polls GPUSTAT or drains a host queue; the entire fence is
+guest MMIO against the emulated hardware.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
@@ -2984,7 +2989,7 @@ packing-group directive: its numeric value is not serialized into the image ABI
 and is not visible to BIOS, cartlib, GPU or DMA.
 
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
-working sets in `gx_texture_layout`. The producer validates the complete layout
+working sets in `gx_vram_layout`. The producer validates the complete layout
 and emits `bmsx/gx_vram_layout`, whose reserved-region words keep their manifest
 names and whose texture-slot destination words use explicit `_texture` and
 `_clut` suffixes. The cart decides when a compressed texture payload is
@@ -3580,10 +3585,12 @@ The cartridge entry module is the hardware-feature composition root: it
 replaces the ECS manager's schedule from an ordered `ecs_systems` list of direct
 system factories before clearing the world and constructing its spaces, and it
 registers only the device IRQ handlers it actually uses. Normal carts include
-the PlayerInput factory in that schedule, so `world:update()` samples retained
-PlayerInput state in the input tick group before gameplay systems run. The entry
-loop separately arms the ICU's next-VBlank sample latch at the point selected by
-that cart's explicit frame cadence; it does not call a second input-update path.
+the `player_input_system` factory in that schedule, so `world:update()` samples
+retained PlayerInput state in the input tick group before gameplay systems run.
+That system arms the ICU's next-VBlank sample latch after consuming the current
+snapshot; cart code neither updates PlayerInput separately nor programs the ICU
+latch. The entry loop still owns every explicit `vblank.wait()` and therefore
+keeps gameplay/display pacing visible.
 Each selected system publishes its component-query
 keys once; space construction seeds those keys with one shared empty bucket and
 the component producer materializes storage on the first attachment.

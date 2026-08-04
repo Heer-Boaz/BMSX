@@ -13,7 +13,7 @@ import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
-import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
+import { buildGxVramLayoutModuleSource } from './gx_vram_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
@@ -489,7 +489,7 @@ async function main() {
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-		const { gx_texture_layout, ...runtimeRomManifest } = romManifest;
+		const { gx_vram_layout, ...runtimeRomManifest } = romManifest;
 		title = romManifest.title ?? title;
 		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
@@ -570,7 +570,7 @@ async function main() {
 
 			await progress.runWithDetail('Generate GX textures', () => createTextureAtlases(
 				resources,
-				gx_texture_layout,
+				gx_vram_layout,
 				message => progress.setDetail(message),
 			));
 			await progress.taskCompleted();
@@ -579,8 +579,8 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			if (gx_texture_layout) {
-				const source = buildGxTextureLayoutModuleSource(gx_texture_layout);
+			if (gx_vram_layout) {
+				const source = buildGxVramLayoutModuleSource(gx_vram_layout);
 				romAssets.push({
 					resid: GX_VRAM_LAYOUT_MODULE_PATH,
 					type: 'lua',

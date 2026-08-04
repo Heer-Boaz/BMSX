@@ -1,13 +1,12 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
 local gx_gte<const> = require('cartlib/gx/gte')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local vblank<const> = require('cartlib/gx/vblank')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_display.reset_320x240()
-local player_input<const> = require('cartlib/input/player')
+local player_input_system<const> = require('cartlib/ecs/systems/player_input')
+local render_system<const> = require('cartlib/ecs/systems/render')
 local irq_module<const> = require('cartlib/irq')
-local world_render<const> = require('cartlib/render/world')
 local world<const> = require('cartlib/world/world')
 irq = irq_module.dispatch
 
@@ -52,24 +51,17 @@ assert(
 cartlib_test_gte_plus_ready = true
 
 local irq_mask_register<const>: *word = 0x08000008
-local framebuffer<const> = 0
-local framebuffer_size<const> = gx_display.size_word()
-local clear_color<const> = 0xff000000
 cartlib_test_ready = false
-world.systems:replace({ player_input.ecs_system })
+world.systems:replace({ player_input_system, render_system })
 world:clear()
 world:set_space('main')
 irq_module.register(vblank.irq_mask, vblank.on_irq)
 *irq_mask_register = vblank.irq_mask
-gx_gpu.draw_target(framebuffer, framebuffer_size)
-gx_gpu.clear_color(framebuffer, framebuffer_size, clear_color)
-player_input.arm_vblank_sample()
 vblank.wait()
 cartlib_test_ready = true
 
 while true do
 	world:update()
 	vblank.wait()
-	world_render.draw(world, framebuffer, framebuffer_size, clear_color)
-	player_input.arm_vblank_sample()
+	world:render()
 end

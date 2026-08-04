@@ -1,1 +1,9 @@
 title: Cartlib Test
+gx_vram_layout:
+    framebuffers:
+        - { x: 0, y: 0, width: 320, height: 240 }
+    reserved:
+        system: { x: 704, y: 720, width: 320, height: 304 }
+    slots: {}
+    groups: {}
+    working_sets: {}

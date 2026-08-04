@@ -1,6 +1,5 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 local vram_layout<const> = require('bmsx/gx_vram_layout')
@@ -10,17 +9,18 @@ local collision2d<const> = require('cartlib/collision2d')
 local behaviour_tree_system<const> = require('cartlib/ecs/systems/behaviour_tree')
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local overlap_2d_system<const> = require('cartlib/ecs/systems/overlap_2d')
+local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local screen_boundary_capture_system<const> = require('cartlib/ecs/systems/screen_boundary_capture')
 local screen_boundary_system<const> = require('cartlib/ecs/systems/screen_boundary')
 local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
+local render_system<const> = require('cartlib/ecs/systems/render')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
-local world_render<const> = require('cartlib/render/world')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local boekfoe_module<const> = require('enemies/boekfoe')
@@ -65,7 +65,7 @@ local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
 local ecs_systems<const> = {
-	player_input.ecs_system,
+	player_input_system,
 	screen_boundary_capture_system,
 	behaviour_tree_system,
 	input_action_effect_system,
@@ -75,6 +75,7 @@ local ecs_systems<const> = {
 	tile_collision_system,
 	timeline_system,
 	elevator_system,
+	render_system,
 }
 
 local init_epoch = 0
@@ -83,10 +84,6 @@ local pending_title_boot_epoch = -1
 local irq_mask_register<const>: *word = 0x08000008
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
-local framebuffer_size<const> = gx_display.size_word()
-local clear_color<const> = 0xff000000
-local front_framebuffer = vram_layout.framebuffer_front
-local back_framebuffer = vram_layout.framebuffer_back
 
 local grant_starting_loadout<const> = function()
 	local player<const> = world:get('pietolon')
@@ -218,13 +215,8 @@ end
 *irq_mask_register = 0
 init()
 *irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu
-gx_gpu.draw_target(front_framebuffer, framebuffer_size)
-gx_gpu.clear_color(front_framebuffer, framebuffer_size, clear_color)
-gx_gpu.draw_target(back_framebuffer, framebuffer_size)
-gx_gpu.clear_color(back_framebuffer, framebuffer_size, clear_color)
 gx_texture.upload(gx_texture.load('pietolon_stand_r'), vram_layout.sprites_texture, vram_layout.sprites_clut)
 new_game()
-player_input.arm_vblank_sample()
 vblank.wait()
 
 -- Pietious intentionally advances one gameplay tick across two display frames.
@@ -232,11 +224,6 @@ while true do
 	world:update()
 
 	vblank.wait()
-	world_render.draw_fenced(world, back_framebuffer, framebuffer_size, clear_color)
-
-	player_input.arm_vblank_sample()
-	gx_display.origin(back_framebuffer)
+	world:render()
 	vblank.wait()
-	front_framebuffer, back_framebuffer = back_framebuffer, front_framebuffer
-	gx_gpu.draw_target(back_framebuffer, framebuffer_size)
 end

@@ -1,13 +1,13 @@
 module<entry>
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local vblank<const> = require('cartlib/gx/vblank')
-local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
+local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
+local render_system<const> = require('cartlib/ecs/systems/render')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
@@ -16,7 +16,6 @@ player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local world_render<const> = require('cartlib/render/world')
 local surfacecomponent<const> = require('cartlib/render/surface_component')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
@@ -33,18 +32,16 @@ local start_node<const> = 'title'
 local irq_mask_register<const>: *word = 0x08000008
 local irq_imgdec<const> = 0x0080
 local irq_apu<const> = 0x0020
-local framebuffer<const> = vram_layout.framebuffer
-local framebuffer_size<const> = gx_display.size_word()
-local clear_color<const> = 0xff000000
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
 
 local ecs_systems<const> = {
-	player_input.ecs_system,
+	player_input_system,
 	fsm_system,
 	timeline_system,
+	render_system,
 }
 
 local surface_object_class<const> = {}
@@ -414,20 +411,15 @@ function new_game()
 end
 
 init()
-gx_gpu.draw_target(framebuffer, framebuffer_size)
-gx_gpu.clear_color(framebuffer, framebuffer_size, clear_color)
 texture_residency.load_font('msx_6b_font_space')
 texture_residency.replace_background(story.title.bg)
 new_game()
-player_input.arm_vblank_sample()
 -- Pietsona intentionally advances one gameplay tick across two display frames.
 while true do
 	vblank.wait()
 
 	world:update()
 	vblank.wait()
-	world_render.draw(world, framebuffer, framebuffer_size, clear_color)
+	world:render()
 	texture_residency.submit_pending_background()
-
-	player_input.arm_vblank_sample()
 end
