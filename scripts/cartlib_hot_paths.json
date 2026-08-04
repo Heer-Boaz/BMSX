@@ -1,0 +1,440 @@
+{
+	"version": 1,
+	"state": "pre_core_baseline",
+	"closure": {
+		"status": "blocked",
+		"reason": "The current ECS, FSM, event, tile-query, action-effect and timeline owners retain anonymous or runtime-selected callbacks, while current render and query paths still sort or allocate. This baseline therefore makes no transitive steady-state or no-allocation claim."
+	},
+	"audited_carts": [
+		"2025",
+		"cartlib_test",
+		"nemesis_s",
+		"pietious"
+	],
+	"roots": [
+		"cartlib/world/world.lua::world_class:render",
+		"cartlib/world/world.lua::world_class:update"
+	],
+	"cartlib_functions": [
+		"cartlib/action_effects.lua::actioneffectcomponent:trigger",
+		"cartlib/aem.lua::handle_event",
+		"cartlib/aem.lua::on_apu_irq",
+		"cartlib/behaviourtree.lua::action:tick",
+		"cartlib/behaviourtree.lua::condition:tick",
+		"cartlib/behaviourtree.lua::selector:tick",
+		"cartlib/behaviourtree.lua::sequence:tick",
+		"cartlib/collision/collider_2d_component.lua::collider2dcomponent:prepare_overlap",
+		"cartlib/collision/sprite_shape.lua::select_sprite_shape_ref",
+		"cartlib/collision2d.lua::collision2d.collect_overlaps",
+		"cartlib/easing.lua::arc01",
+		"cartlib/easing.lua::ease_in_out_quad",
+		"cartlib/easing.lua::ease_in_quad",
+		"cartlib/easing.lua::ease_out_back",
+		"cartlib/easing.lua::ease_out_quad",
+		"cartlib/easing.lua::linear",
+		"cartlib/easing.lua::pingpong01",
+		"cartlib/easing.lua::smoothstep",
+		"cartlib/ecs.lua::system_manager:update_phase",
+		"cartlib/ecs/systems/action_effect_runtime.lua::action_effect_runtime_system:update",
+		"cartlib/ecs/systems/behaviour_tree.lua::behaviour_tree_system:update",
+		"cartlib/ecs/systems/fsm.lua::fsm_system:update",
+		"cartlib/ecs/systems/overlap_2d.lua::acquire_pair_row",
+		"cartlib/ecs/systems/overlap_2d.lua::overlap_2d_system:update",
+		"cartlib/ecs/systems/player_input.lua::player_input_system:update",
+		"cartlib/ecs/systems/render.lua::build_visual_commands",
+		"cartlib/ecs/systems/render.lua::double_buffer_system:update",
+		"cartlib/ecs/systems/render.lua::single_buffer_system:update",
+		"cartlib/ecs/systems/screen_boundary.lua::emit_boundary_events",
+		"cartlib/ecs/systems/screen_boundary.lua::screen_boundary_system:update",
+		"cartlib/ecs/systems/screen_boundary_capture.lua::screen_boundary_capture_system:update",
+		"cartlib/ecs/systems/tile_collision.lua::tile_collision_system:update",
+		"cartlib/ecs/systems/timeline.lua::timeline_system:update",
+		"cartlib/eventemitter.lua::eventemitter:emit",
+		"cartlib/fsm/component.lua::fsmcomponent:dispatch",
+		"cartlib/fsm/component.lua::fsmcomponent:update",
+		"cartlib/fsm/fsm.lua::state:dispatch_event",
+		"cartlib/fsm/fsm.lua::state:handle_event",
+		"cartlib/fsm/fsm.lua::state:update",
+		"cartlib/gx/command_list.lua::commandlist.submit",
+		"cartlib/gx/command_list.lua::commandlist.submit_fenced",
+		"cartlib/gx/command_list.lua::drawlist:direct16_quad",
+		"cartlib/gx/command_list.lua::drawlist:direct16_rect",
+		"cartlib/gx/command_list.lua::drawlist:palette4_quad",
+		"cartlib/gx/command_list.lua::drawlist:palette4_rect",
+		"cartlib/gx/image.lua::image.draw",
+		"cartlib/gx/image.lua::image.draw_affine",
+		"cartlib/gx/image.lua::image.draw_tiles",
+		"cartlib/input/action_effect/system.lua::evaluate_component",
+		"cartlib/input/action_effect/system.lua::input_action_effect_system:update",
+		"cartlib/input/action_parser.lua::action_eval",
+		"cartlib/input/action_parser.lua::eval_function",
+		"cartlib/input/player.lua::evaluate_action_state",
+		"cartlib/input/player.lua::input.advance_frame",
+		"cartlib/input/player.lua::input.is_active",
+		"cartlib/input/player.lua::sample_player",
+		"cartlib/render/custom_visual_component.lua::customvisualcomponent:draw",
+		"cartlib/render/sprite_component.lua::spritecomponent:draw",
+		"cartlib/render/surface_component.lua::surfacecomponent:draw",
+		"cartlib/render/tile_layer_component.lua::tilelayercomponent:draw",
+		"cartlib/text/component.lua::textcomponent:draw",
+		"cartlib/text/component.lua::textcomponent:render_glyphs",
+		"cartlib/text/object.lua::textobject:advance_typing",
+		"cartlib/text/object.lua::textobject:submit_highlight",
+		"cartlib/text/object.lua::textobject:submit_text_background_lines",
+		"cartlib/timeline/apply.lua::timeline_apply.compile_frames",
+		"cartlib/timeline/apply.lua::timeline_apply.compile_tracks",
+		"cartlib/timeline/component.lua::process_timeline_frame_payload",
+		"cartlib/timeline/component.lua::timelinecomponent:tick_active",
+		"cartlib/timeline/dispatch.lua::dispatch_frame",
+		"cartlib/timeline/dispatch.lua::timeline_dispatch.process_instance_events",
+		"cartlib/timeline/timeline.lua::timeline:update",
+		"cartlib/util/clamp.lua::clamp",
+		"cartlib/util/div_toward_zero.lua::div_toward_zero",
+		"cartlib/util/rect_overlaps.lua::rect_overlaps",
+		"cartlib/util/swap_remove.lua::swap_remove",
+		"cartlib/velocity.lua::move_with_velocity",
+		"cartlib/world/world.lua::run_phase",
+		"cartlib/world/world.lua::world_class:flush_active_components",
+		"cartlib/world/world.lua::world_class:flush_active_objects",
+		"cartlib/world/world.lua::world_class:objects_by_type",
+		"cartlib/world/world.lua::world_class:render",
+		"cartlib/world/world.lua::world_class:sort_active_visuals",
+		"cartlib/world/world.lua::world_class:update"
+	],
+	"cart_functions": [
+		"carts/2025/cart.lua::draw_director_visual",
+		"carts/2025/combat.lua::draw_combat_slash",
+		"carts/nemesis_s/player/player.lua::player:draw_visual",
+		"carts/nemesis_s/stage.lua::stage:draw",
+		"carts/pietious/director.lua::director:draw_visual",
+		"carts/pietious/elevator/system.lua::elevator_system:update",
+		"carts/pietious/enemies/boekfoe.lua::boekfoe.bt_tick",
+		"carts/pietious/enemies/cloud.lua::cloud.bt_tick",
+		"carts/pietious/enemies/crossfoe.lua::crossfoe.bt_tick",
+		"carts/pietious/enemies/crossfoe.lua::crossfoe.bt_tick_flying",
+		"carts/pietious/enemies/crossfoe.lua::crossfoe.bt_tick_waiting",
+		"carts/pietious/enemies/marspeinenaardappel.lua::marspeinenaardappel.bt_tick",
+		"carts/pietious/enemies/mijterfoe.lua::mijterfoe.bt_tick",
+		"carts/pietious/enemies/mijterfoe.lua::mijterfoe.bt_tick_flying",
+		"carts/pietious/enemies/mijterfoe.lua::mijterfoe.bt_tick_waiting",
+		"carts/pietious/enemies/muziekfoe.lua::muziekfoe.bt_tick",
+		"carts/pietious/enemies/nootfoe.lua::nootfoe.bt_tick",
+		"carts/pietious/enemies/paperfoe.lua::paperfoe.bt_tick",
+		"carts/pietious/enemies/stafffoe.lua::stafffoe.bt_tick",
+		"carts/pietious/enemies/staffspawn.lua::staffspawn.bt_tick",
+		"carts/pietious/enemies/vlokfoe.lua::vlokfoe.bt_tick",
+		"carts/pietious/enemies/vlokspawner.lua::vlokspawner.bt_tick",
+		"carts/pietious/enemies/zakfoe.lua::zakfoe.bt_tick",
+		"carts/pietious/item_screen.lua::item_screen:draw_screen",
+		"carts/pietious/lithograph/screen.lua::draw_lithograph_visual",
+		"carts/pietious/room/room.lua::room_object:render_room",
+		"carts/pietious/shrine.lua::draw_shrine_visual",
+		"carts/pietious/transition.lua::draw_transition_visual",
+		"carts/pietious/ui.lua::ui:draw_ui"
+	],
+	"dispatch_boundaries": [
+		{
+			"id": "action-effect-gate",
+			"caller": "cartlib/action_effects.lua::actioneffectcomponent:trigger",
+			"call": "gate",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Cart definitions provide callbacks whose anonymous function expressions have no stable named source identity."
+		},
+		{
+			"id": "action-effect-handler",
+			"caller": "cartlib/action_effects.lua::actioneffectcomponent:trigger",
+			"call": "handler",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Cart definitions provide callbacks whose anonymous function expressions have no stable named source identity."
+		},
+		{
+			"id": "behaviour-action-callback",
+			"caller": "cartlib/behaviourtree.lua::action:tick",
+			"call": "self.action",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"carts/pietious/enemies/boekfoe.lua::boekfoe.bt_tick",
+				"carts/pietious/enemies/cloud.lua::cloud.bt_tick",
+				"carts/pietious/enemies/crossfoe.lua::crossfoe.bt_tick",
+				"carts/pietious/enemies/marspeinenaardappel.lua::marspeinenaardappel.bt_tick",
+				"carts/pietious/enemies/mijterfoe.lua::mijterfoe.bt_tick",
+				"carts/pietious/enemies/muziekfoe.lua::muziekfoe.bt_tick",
+				"carts/pietious/enemies/nootfoe.lua::nootfoe.bt_tick",
+				"carts/pietious/enemies/paperfoe.lua::paperfoe.bt_tick",
+				"carts/pietious/enemies/stafffoe.lua::stafffoe.bt_tick",
+				"carts/pietious/enemies/staffspawn.lua::staffspawn.bt_tick",
+				"carts/pietious/enemies/vlokfoe.lua::vlokfoe.bt_tick",
+				"carts/pietious/enemies/vlokspawner.lua::vlokspawner.bt_tick",
+				"carts/pietious/enemies/zakfoe.lua::zakfoe.bt_tick"
+			]
+		},
+		{
+			"id": "behaviour-root-tick",
+			"caller": "cartlib/ecs/systems/behaviour_tree.lua::behaviour_tree_system:update",
+			"call": "component.root:tick",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/behaviourtree.lua::action:tick"
+			]
+		},
+		{
+			"id": "custom-visual-producer",
+			"caller": "cartlib/render/custom_visual_component.lua::customvisualcomponent:draw",
+			"call": "self.producer",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"carts/2025/cart.lua::draw_director_visual",
+				"carts/2025/combat.lua::draw_combat_slash",
+				"carts/nemesis_s/player/player.lua::player:draw_visual",
+				"carts/nemesis_s/stage.lua::stage:draw",
+				"carts/pietious/director.lua::director:draw_visual",
+				"carts/pietious/item_screen.lua::item_screen:draw_screen",
+				"carts/pietious/lithograph/screen.lua::draw_lithograph_visual",
+				"carts/pietious/room/room.lua::room_object:render_room",
+				"carts/pietious/shrine.lua::draw_shrine_visual",
+				"carts/pietious/transition.lua::draw_transition_visual",
+				"carts/pietious/ui.lua::ui:draw_ui"
+			]
+		},
+		{
+			"id": "ecs-system-update",
+			"caller": "cartlib/ecs.lua::system_manager:update_phase",
+			"call": "systems[]:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/ecs/systems/behaviour_tree.lua::behaviour_tree_system:update",
+				"cartlib/ecs/systems/fsm.lua::fsm_system:update",
+				"cartlib/ecs/systems/overlap_2d.lua::overlap_2d_system:update",
+				"cartlib/ecs/systems/player_input.lua::player_input_system:update",
+				"cartlib/ecs/systems/render.lua::double_buffer_system:update",
+				"cartlib/ecs/systems/render.lua::single_buffer_system:update",
+				"cartlib/ecs/systems/screen_boundary.lua::screen_boundary_system:update",
+				"cartlib/ecs/systems/screen_boundary_capture.lua::screen_boundary_capture_system:update",
+				"cartlib/ecs/systems/tile_collision.lua::tile_collision_system:update",
+				"cartlib/ecs/systems/timeline.lua::timeline_system:update",
+				"cartlib/input/action_effect/system.lua::input_action_effect_system:update",
+				"carts/pietious/elevator/system.lua::elevator_system:update"
+			]
+		},
+		{
+			"id": "event-any-listener",
+			"caller": "cartlib/eventemitter.lua::eventemitter:emit",
+			"call": "self.any_listeners[].handler",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Listener callbacks are runtime registrations and are predominantly anonymous cart closures."
+		},
+		{
+			"id": "event-specific-listener",
+			"caller": "cartlib/eventemitter.lua::eventemitter:emit",
+			"call": "entry.handler",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Listener callbacks are runtime registrations and are predominantly anonymous cart closures."
+		},
+		{
+			"id": "fsm-component-update",
+			"caller": "cartlib/ecs/systems/fsm.lua::fsm_system:update",
+			"call": "components[]:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/fsm/component.lua::fsmcomponent:update"
+			]
+		},
+		{
+			"id": "fsm-concurrent-child-update",
+			"caller": "cartlib/fsm/fsm.lua::state:update",
+			"call": "child:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/fsm/fsm.lua::state:update"
+			]
+		},
+		{
+			"id": "fsm-current-state-update",
+			"caller": "cartlib/fsm/fsm.lua::state:update",
+			"call": "current:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/fsm/fsm.lua::state:update"
+			]
+		},
+		{
+			"id": "fsm-machine-update",
+			"caller": "cartlib/fsm/component.lua::fsmcomponent:update",
+			"call": "machine:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/fsm/fsm.lua::state:update"
+			]
+		},
+		{
+			"id": "fsm-state-update-handler",
+			"caller": "cartlib/fsm/fsm.lua::state:update",
+			"call": "update_handler",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "State definitions include anonymous update closures, so the current runtime does not retain stable source identities for the target set."
+		},
+		{
+			"id": "input-action-effect-callback",
+			"caller": "cartlib/input/action_effect/system.lua::evaluate_component",
+			"call": "effect",
+			"count": 4,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Compiled input bindings retain cart callback values without stable named source identities."
+		},
+		{
+			"id": "tile-collision-query",
+			"caller": "cartlib/ecs/systems/tile_collision.lua::tile_collision_system:update",
+			"call": "component.query",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "The live Pietious projectile query is an anonymous closure and cannot be named without changing its producer."
+		},
+		{
+			"id": "timeline-apply-callback",
+			"caller": "cartlib/timeline/component.lua::process_timeline_frame_payload",
+			"call": "apply_function",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Timeline definitions may retain anonymous cart apply callbacks."
+		},
+		{
+			"id": "timeline-compiled-frame-callback",
+			"caller": "cartlib/timeline/component.lua::process_timeline_frame_payload",
+			"call": "compiled_apply_frames[]",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Timeline frame functions are compiler-produced closures without stable source identities."
+		},
+		{
+			"id": "timeline-frame-payload-bridge",
+			"caller": "cartlib/timeline/dispatch.lua::dispatch_frame",
+			"call": "on_frame_payload",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/timeline/component.lua::process_timeline_frame_payload"
+			]
+		},
+		{
+			"id": "timeline-instance-update",
+			"caller": "cartlib/timeline/component.lua::timelinecomponent:tick_active",
+			"call": "entry.instance:update",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/timeline/timeline.lua::timeline:update"
+			]
+		},
+		{
+			"id": "timeline-system-component-tick",
+			"caller": "cartlib/ecs/systems/timeline.lua::timeline_system:update",
+			"call": "component:tick_active",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/timeline/component.lua::timelinecomponent:tick_active"
+			]
+		},
+		{
+			"id": "timeline-track-runner",
+			"caller": "cartlib/timeline/component.lua::process_timeline_frame_payload",
+			"call": "track_runner",
+			"count": 1,
+			"coverage": "blocked",
+			"known_targets": [],
+			"reason": "Compiled track runners are generated closures without stable source identities."
+		},
+		{
+			"id": "visual-component-draw",
+			"caller": "cartlib/ecs/systems/render.lua::build_visual_commands",
+			"call": "component:draw",
+			"count": 1,
+			"coverage": "complete",
+			"targets": [
+				"cartlib/render/custom_visual_component.lua::customvisualcomponent:draw",
+				"cartlib/render/sprite_component.lua::spritecomponent:draw",
+				"cartlib/render/surface_component.lua::surfacecomponent:draw",
+				"cartlib/render/tile_layer_component.lua::tilelayercomponent:draw",
+				"cartlib/text/component.lua::textcomponent:draw"
+			]
+		}
+	],
+	"known_blockers": [
+		{
+			"id": "elevator-query-call",
+			"function": "carts/pietious/elevator/system.lua::elevator_system:update",
+			"evidence": {
+				"kind": "call",
+				"value": "world:objects_by_type",
+				"count": 1
+			},
+			"reason": "The gameplay system enters an allocation-backed query on every update."
+		},
+		{
+			"id": "objects-by-type-iterator-state",
+			"function": "cartlib/world/world.lua::world_class:objects_by_type",
+			"evidence": {
+				"kind": "table_literal",
+				"count": 1
+			},
+			"reason": "The query constructs a fresh iterator-state table."
+		},
+		{
+			"id": "overlap-pair-row-growth",
+			"function": "cartlib/ecs/systems/overlap_2d.lua::acquire_pair_row",
+			"evidence": {
+				"kind": "table_literal",
+				"count": 1
+			},
+			"reason": "A new pair row is allocated when the retained pool reaches a new high-water mark."
+		},
+		{
+			"id": "render-depth-sort",
+			"function": "cartlib/world/world.lua::world_class:sort_active_visuals",
+			"evidence": {
+				"kind": "call",
+				"value": "table.sort",
+				"count": 1
+			},
+			"reason": "Presentation unconditionally sorts the active visual list every render."
+		},
+		{
+			"id": "screen-boundary-event-payloads",
+			"function": "cartlib/ecs/systems/screen_boundary.lua::emit_boundary_events",
+			"evidence": {
+				"kind": "table_literal",
+				"count": 8
+			},
+			"reason": "Boundary processing constructs event payload tables in the frame path."
+		}
+	],
+	"pipeline_gaps": [
+		{
+			"id": "action-effect-runtime-unregistered",
+			"function": "cartlib/ecs/systems/action_effect_runtime.lua::action_effect_runtime_system:update",
+			"reason": "The system exists but none of the audited carts registers it, so action-effect cooldown time has no pipeline owner."
+		}
+	]
+}

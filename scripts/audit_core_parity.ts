@@ -2,23 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import {
-	LuaBinaryOperator,
-	type LuaBlock,
-	type LuaBinaryExpression,
-	type LuaCallExpression,
-	type LuaFunctionDeclarationStatement,
-	type LuaFunctionExpression,
-	type LuaLocalAssignmentStatement,
-	type LuaLocalFunctionStatement,
-	type LuaNode,
-	type LuaStatement,
 	LuaSyntaxKind,
 } from '../toolchain/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../toolchain/ts/lua/analysis/parse';
 import {
+	auditLuaNoHeapBody,
+	indexTopLevelLuaFunctions,
+} from './analysis/lua_hot_paths';
+import {
 	auditPublicSymbolParity,
 	type PublicSymbolParityEntry,
 } from './analysis/core_parity/public_symbols';
+import {
+	auditCartlibHotPaths,
+	readCartlibHotPathManifest,
+} from './analysis/cartlib_hot_paths';
 import {
 	normalizeConstantExpression,
 	readDelimitedBody,
@@ -1003,113 +1001,13 @@ function auditStrictRuntimeNoHeapFunctions(manifest: Manifest): string[] {
 	return errors;
 }
 
-type LuaNamedFunction = { name: string; expression: LuaFunctionExpression };
-
-function luaNamedFunction(statement: LuaStatement): LuaNamedFunction | null {
-	switch (statement.kind) {
-		case LuaSyntaxKind.LocalFunctionStatement: {
-			const localFunction = statement as LuaLocalFunctionStatement;
-			return { name: localFunction.name.name, expression: localFunction.functionExpression };
-		}
-		case LuaSyntaxKind.FunctionDeclarationStatement: {
-			const declaration = statement as LuaFunctionDeclarationStatement;
-			const prefix = declaration.name.identifiers.join('.');
-			const name = declaration.name.methodName === null ? prefix : `${prefix}:${declaration.name.methodName}`;
-			return { name, expression: declaration.functionExpression };
-		}
-		case LuaSyntaxKind.LocalAssignmentStatement: {
-			const assignment = statement as LuaLocalAssignmentStatement;
-			if (assignment.names.length !== 1 || assignment.values.length !== 1 || assignment.values[0].kind !== LuaSyntaxKind.FunctionExpression) {
-				return null;
-			}
-			return { name: assignment.names[0].name, expression: assignment.values[0] as LuaFunctionExpression };
-		}
-		default:
-			return null;
-	}
-}
-
-function walkLuaAst(value: unknown, parent: LuaNode | null, visit: (node: LuaNode, parent: LuaNode | null) => void): void {
-	if (Array.isArray(value)) {
-		for (let index = 0; index < value.length; index += 1) {
-			walkLuaAst(value[index], parent, visit);
-		}
-		return;
-	}
-	if (value === null || typeof value !== 'object') {
-		return;
-	}
-	const record = value as Record<string, unknown>;
-	let childParent = parent;
-	if ('kind' in record && 'range' in record) {
-		const node = value as LuaNode;
-		visit(node, parent);
-		childParent = node;
-	}
-	for (const [key, child] of Object.entries(record)) {
-		if (key !== 'range') {
-			walkLuaAst(child, childParent, visit);
-		}
-	}
-}
-
-function luaCallRootName(call: LuaCallExpression): string | null {
-	const callee = call.callee;
-	if (callee.kind === LuaSyntaxKind.IdentifierExpression) {
-		return callee.name;
-	}
-	if (callee.kind === LuaSyntaxKind.MemberExpression && callee.base.kind === LuaSyntaxKind.IdentifierExpression) {
-		return callee.base.name;
-	}
-	return null;
-}
-
-function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock): string[] {
-	const errors: string[] = [];
-	walkLuaAst(body, null, (node) => {
-		let allocation: string | null = null;
-		switch (node.kind) {
-			case LuaSyntaxKind.TableConstructorExpression:
-				allocation = 'table literal';
-				break;
-			case LuaSyntaxKind.FunctionExpression:
-				allocation = 'function literal';
-				break;
-			case LuaSyntaxKind.BinaryExpression:
-				if ((node as LuaBinaryExpression).operator === LuaBinaryOperator.Concat) {
-					allocation = 'string concat';
-				}
-				break;
-			case LuaSyntaxKind.CallExpression: {
-				const root = luaCallRootName(node as LuaCallExpression);
-				if (root === 'table') allocation = 'table library';
-				else if (root === 'string') allocation = 'string library';
-				else if (root === 'coroutine') allocation = 'coroutine';
-				else if (root === 'pairs' || root === 'ipairs') allocation = `${root} iterator`;
-				else if (root === 'setmetatable' || root === 'getmetatable') allocation = 'metatable';
-				break;
-			}
-		}
-		if (allocation !== null) {
-			errors.push(`${file}:${node.range.start.line}: function ${label} forbidden lua heap/gc pattern ${allocation}`);
-		}
-	});
-	return errors;
-}
-
 function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_lua_no_heap_functions ?? []) {
 		const source = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
 		const lines = source.split('\n');
 		const parsed = parseLuaChunk(source, entry.file, lines);
-		const functions = new Map<string, LuaFunctionExpression>();
-		for (const statement of parsed.chunk.body) {
-			const named = luaNamedFunction(statement);
-			if (named !== null) {
-				functions.set(named.name, named.expression);
-			}
-		}
+		const functions = indexTopLevelLuaFunctions(parsed.chunk);
 		for (const name of entry.functions) {
 			const expression = functions.get(name);
 			if (expression === undefined) {
@@ -1499,6 +1397,7 @@ function main(): void {
 	const strictRuntimeNoChurnErrors = auditStrictRuntimeNoChurn(manifest);
 	const strictRuntimeNoHeapFunctionErrors = auditStrictRuntimeNoHeapFunctions(manifest);
 	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
+	const cartlibHotPathErrors = auditCartlibHotPaths(repoRoot, readCartlibHotPathManifest(repoRoot));
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
 	const strictBlua32IsaParityErrors = auditStrictBlua32IsaParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
@@ -1592,6 +1491,11 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict Lua no-heap function errors (${strictLuaNoHeapFunctionErrors.length}):`);
 		for (const item of strictLuaNoHeapFunctionErrors) console.error(`  ${item}`);
+	}
+	if (cartlibHotPathErrors.length > 0) {
+		hasErrors = true;
+		console.error(`\nCartlib hot-path inventory errors (${cartlibHotPathErrors.length}):`);
+		for (const item of cartlibHotPathErrors) console.error(`  ${item}`);
 	}
 	if (strictRpuTableParityErrors.length > 0) {
 		hasErrors = true;
