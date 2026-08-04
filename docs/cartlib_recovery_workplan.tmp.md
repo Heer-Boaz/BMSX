@@ -23,8 +23,8 @@ teruggedraaid alleen omdat oudere code anders werkte.
 
 De Lua-dialect accepteert geen hoofdletters in identifiers. Alle Lua-modules,
 locals, tabellen, methods en componentkeys gebruiken daarom `snake_case`.
-Namen zoals `world`, `schedule`, `world_renderer` en `presentation` hieronder
-zijn de werkelijke Lua-vorm; het zijn geen hoofdletterige engine-types.
+Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
+`world_object`, `world_module` en `game_view`.
 
 ## Niet-onderhandelbare besluiten
 
@@ -32,8 +32,9 @@ zijn de werkelijke Lua-vorm; het zijn geen hoofdletterige engine-types.
   exports. Na migratie bestaat het oude contract niet meer.
 - Geen gedrag-behoudende verhuizing van code waarvan ownership of representatie
   fout is. Contract en callers veranderen samen.
-- Geen generieke `game`, `host`, service-locator, dependency-DAG of multi-world-
-  facade. Eén cartridge gebruikt één `world`.
+- Geen extra `game`-/`host`facade, service-locator, dependency-DAG of multi-world-
+  laag rond de concrete cartowners. Eén cartridge gebruikt één `world` en één
+  `game_view`.
 - Intern geproduceerde data wordt direct geconsumeerd. Geen DTO-validatie,
   fallbacks, guards of wrappers rond eigen runtime- of producerrepresentaties.
 - Hot paths maken geen tijdelijke tables, closures of iteratorstate. Ze scannen
@@ -47,19 +48,20 @@ zijn de werkelijke Lua-vorm; het zijn geen hoofdletterige engine-types.
   mag zichtbaar zijn terwijl de transfer nog loopt.
 - De ROM-producer bepaalt fysieke VRAM-plaatsing; cartlib bevat geen runtime
   VRAM-allocator.
-- Typechecks en unit tests zijn geen runtime- of performancebewijs.
 
-De oude TypeScript-engine is alleen een referentie voor heldere namen en
-verantwoordelijkheden. De oude globale Registry, hostservices, generators,
-rendergraph en dynamische frameworklagen komen niet terug.
+De historische TypeScript-engine levert drie concrete lessen voor dit plan:
+`world`/`world_object`/`space` benoemen de levende spelwereld, `world_module`
+is de cart-owned compositiegrens en `game_view` bezit het tekenen. Een sprite
+behoudt daarbij zijn `imgid` tot aan de image-/texturegrens. De uitvoering
+hieronder blijft die van de huidige cartridge-runtime en het GX-hardwaremodel.
 
 ## Waarom de huidige architectuur fout is
 
 De zichtbare lelijkheid komt niet vooral door namen, maar door verkeerde owners:
 
-1. `world` bezit objectstorage én een system manager én de frame-loop.
-   `world:update()` hardcodeert stages; `world:render()` behandelt presentation
-   als een ECS-stage.
+1. `world:update()` schrijft zelf de tick-groupvolgorde uit en `world:render()`
+   behandelt tekenen als een ECS-tick. Daardoor liggen systeemuitvoering,
+   structurele commits en tekenen in dezelfde owner.
 2. Lifecycle heeft meerdere waarheden: `world`-tabellen, Registry,
    `dispose_flag`, immediate despawn en een apart end-of-framepad.
 3. Queries lekken private `active_space`-tabellen of bouwen iteratorstate en
@@ -71,7 +73,7 @@ De zichtbare lelijkheid komt niet vooral door namen, maar door verkeerde owners:
    `framebuffer_count`. Dat zijn fysieke plaatsingsdetails, geen cartconcepten.
 
 Recente nuttige verbeteringen blijven bruikbaar: dense lijsten, swap-remove,
-phase-lokale systemarrays, cached inputprogramma's en één retained GX-
+tick-group-lokale systemarrays, cached inputprogramma's en één retained GX-
 commandbuffer. Zij worden onder de juiste owner geplaatst in plaats van
 weggegooid.
 
@@ -91,11 +93,13 @@ De cart entry bezit:
 
 - displaymodus;
 - IRQ-registratie en maskers;
-- de exacte volgorde van gameplay, VBlank, render, transfers en presentation;
-- keuze van de cart-features en presentationconfiguratie.
+- de exacte volgorde van gameplay, VBlank, draw, transfers en display;
+- keuze van `world_module` en de configuratie van `game_view`.
 
 De entry importeert geen interne systemfactorylijst en geen generated fysieke
-VRAM-layoutmodule.
+VRAM-layoutmodule. In de frame-loop roept hij alleen de cart-facing
+`world:update()` en `view:draw()` aan; tick groups, frame timing, commandbouw,
+fences en page advancement zijn geen losse entry-callers.
 
 ### ROM-producer
 
@@ -109,27 +113,29 @@ mogelijke consumer.
 `world` is de enige owner van levende objecten, ids, `space`-partities,
 lifecycle en alle object-, tag-, type-, component- en visualindexen.
 
-### `schedule`
+### `system_manager`
 
-`schedule` bezit alleen stagevolgorde, systemorder en structurele barriers. Het
-bezit geen objectstorage, framebufferstate of VBlank.
+De bestaande `system_manager` blijft een interne uitvoeringsowner. Hij bezit de
+eenmaal gecomposeerde tick groups, de vaste systemorder en de flat arrays die de
+framehotpath doorloopt. Hij bezit geen objectstorage, framebufferstate of
+VBlank en wordt niet door cartcode aangeroepen of vervangen.
 
-### Features
+### `world_module` en features
 
-Een feature bezit zijn componentkey, retained queryviews, systems en eventuele
-feature-indexen. Voorbeelden zijn input, FSM, behaviour tree, timelines, action
-effects en collision. Er is geen centrale componentcatalogus die al die owners
-weer samenvoegt.
+`world_module` is een plain cart-owned compositietable. Hij declareert de vaste
+`space`-topologie en kiest semantische featuremodules plus echte cart-owned
+extensions. Een feature bezit zijn componentkey, retained queryviews, complete
+systemset en eventuele feature-indexen. Voorbeelden zijn input, FSM, behaviour
+tree, timelines, action effects en collision. De cart kiest geen losse
+`cartlib/ecs/systems/*`-factories en geeft geen cartlib-priorities door.
 
-### `world_renderer`
+### `game_view`
 
-`world_renderer` bezit de retained draw-commandbuffer en vertaalt actieve visual
-components naar GX-commands. Het bezit geen display origin of page rotation.
-
-### `presentation`
-
-`presentation` bezit de cart-side draw/display pages, clearbeleid, fence,
-submit en page advancement. Het is geen ECS-system en geen hardwaredevice.
+`game_view` bezit de retained draw-commandbuffer, de geordende projectie van
+actieve visuals, visual-naar-GX-commandbouw, draw/display pages, clearbeleid,
+submit/fence en page advancement. Het is geen ECS-system en geen
+hardwaredevice. Een cart configureert deze owner eenmaal voor zijn view; hij
+krijgt geen afzonderlijke commandbouwer en page-owner.
 
 ### Image- en texture-owner
 
@@ -167,10 +173,12 @@ Despawn heeft één opdracht en één commitroute. Het oude onderscheid tussen
 
 ### Structurele barriers
 
-Voor iedere schedule-stage opent `schedule` een structurele scope en commit
-`world` na de stage. `world` kent de naam van de stage niet.
+De interne `system_manager` opent voor iedere tick group een structurele scope;
+`world` commit de gevraagde lifecycle- en membershipwijzigingen na die group.
+De groupvolgorde komt uit de eenmaal gebouwde `world_module`-compositie en staat
+niet als een reeks calls in `world:update()`.
 
-Tijdens een actieve stage:
+Tijdens een actieve tick group:
 
 - blijven alle dense querylijsten stabiel;
 - worden spawn, despawn, `space`-move, activate/deactivate, tagmutatie,
@@ -180,10 +188,10 @@ Tijdens een actieve stage:
 - krijgen systems geen per-item guards voor pending mutation.
 
 De directe value state mag al de nieuwe waarde tonen. Indexed membership blijft
-de stage-snapshot. Er komt geen rollback, transaction of statecapture.
+de tick-groupsnapshot. Er komt geen rollback, transaction of statecapture.
 
-Buiten een schedule-scope gebruikt `world` dezelfde commitoperatie direct. Er
-bestaan dus geen twee lifecycle-implementaties.
+Wanneer geen tick group actief is, gebruikt `world` dezelfde commitoperatie
+direct. Er bestaan dus geen twee lifecycle-implementaties.
 
 Een despawncommit doet in deze volgorde:
 
@@ -194,8 +202,9 @@ Een despawncommit doet in deze volgorde:
 5. unbind en finaliseer het object.
 
 `world:clear()` gebruikt dezelfde despawntransitie voor alle objecten. De vaste
-`space`-topologie, retained bucketidentiteiten, views en `schedule` blijven
-bestaan; de gedeclareerde initiële `space` wordt opnieuw geselecteerd.
+`space`-topologie, retained bucketidentiteiten, views en gecomposeerde
+`system_manager` blijven bestaan; de gedeclareerde initiële `space` wordt
+opnieuw geselecteerd.
 
 ### Queries en retained views
 
@@ -228,9 +237,9 @@ Tag- en typebuckets zijn echte `world`-indexen. Zij worden niet uit een globale
 Registry gefilterd. Hot cartcode die een lijst nodig heeft, loopt direct over de
 dense array met een numerieke loop.
 
-### `schedule` en featurecomposition
+### `world_module` en systeemuitvoering
 
-De vaste runtime-stages zijn semantisch:
+De vaste tick groups zijn semantisch:
 
 ```text
 input
@@ -240,17 +249,18 @@ physics
 animation
 ```
 
-Presentation is geen stage. Een cart entry roept `schedule:update(dt_ms)` en de
-render/presentationowners expliciet aan in zijn eigen cadence.
+Tekenen is geen tick group. `world:update()` is de enige cart-facing updatecall
+en heeft geen delta-argument. De runtime leest de machine-frame timing zelf en
+de interne `system_manager` voert de vooraf gecomposeerde groups uit.
 
-Stagevolgorde en systemorder worden bij composition vastgelegd. De framehotpath
-loopt alleen over de reeds geordende flat stage-array. Geen filtering, sorteren,
+Groupvolgorde en systemorder worden bij composition vastgelegd. De framehotpath
+loopt alleen over reeds geordende flat group-arrays. Geen filtering, sorteren,
 factorybouw of dependencyoplossing per frame.
 
-Carts kiezen semantische features of een cart-owned worldmodule. Zij importeren
+Carts kiezen semantische features in een cart-owned `world_module`. Zij importeren
 geen interne systems en geven geen willekeurige numerieke priorities door.
 Een cart-specifieke executor, zoals elevatorlogica, wordt als cart-owned feature
-op een benoemde stage/order gecomposeerd.
+op een benoemde group/order gecomposeerd.
 
 Iedere feature levert zijn complete tijdowner. Een action-effectcomponent zonder
 system dat zijn cooldowntijd bijwerkt is niet toegestaan. Input sampling hoort
@@ -258,28 +268,28 @@ bij de inputfeature; de cart declareert alleen mappings en leest playerinput.
 
 ## Render- en GX-contract
 
-### Visuals en `world_renderer`
+### Visuals en `game_view`
 
 Een visualcomponent bevat alleen retained authoringstate: owner, zichtbaarheid,
 depth/offsets, `imgid` en de scalars die zijn visualtype nodig heeft. Hij bezit
 geen framebuffer of pagepolicy.
 
 `world` verhoogt de visual revision bij membership- of depthwijzigingen.
-`world_renderer` rebuildt en sorteert zijn retained visualprojection alleen als
-die revision verandert. Een onveranderd frame loopt de bestaande geordende
+`game_view` rebuildt en sorteert zijn retained visualprojection alleen als die
+revision verandert. Een onveranderd frame loopt de bestaande geordende
 projection af en bouwt commands zonder allocatie of sort.
 
-`world_renderer` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
+`game_view` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
 in diezelfde commandroute image-local of absolute raw commands schrijven.
 
-### `presentation`
+### Pages, submit en display
 
-`presentation` wordt eenmaal geconfigureerd voor één of twee door de producer
-geplaatste framebufferpages. De policy wordt niet als twee verschillende
-systems geïmplementeerd.
+`game_view` wordt eenmaal geconfigureerd met de door de producer geplaatste
+framebufferpage of -pages. Het gekozen pagebeleid verandert niet tijdens de
+framehotpath.
 
 Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
-`presentation` expliciet front en back bij:
+`game_view` expliciet front en back bij:
 
 - render schrijft naar back;
 - submit is fenced;
@@ -290,19 +300,18 @@ Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
 Initial clear en per-frame clear volgen één expliciet clearbeleid. Er is geen
 per-frame branch die opnieuw moet ontdekken hoeveel pages bestaan.
 
-`presentation` en `world_renderer` wachten nooit zelf op VBlank. De cart entry
-behoudt zijn bestaande volgorde. Een cart met twee displayframes per gameplay-
-tick blijft dat doen; een cart met één VBlank tussen update en render blijft dat
-doen.
+`game_view:draw()` wacht niet zelf op VBlank. De cart entry behoudt zijn
+bestaande volgorde. Een cart met twee displayframes per gameplay-tick blijft dat
+doen; een cart met één VBlank tussen update en draw blijft dat doen.
 
-De grens tussen `world_renderer` en `presentation` gebruikt bestaande raw page-
-en sizewoorden of directe scalarargumenten. Er komt geen frame-DTO.
+De view consumeert de producerwoorden voor page en size rechtstreeks. Er komt
+geen frame-DTO of tweede object dat dezelfde pagestate spiegelt.
 
 ### `imgid`, bindings en uploads
 
-Generated output wordt gesplitst in twee kleine ownerrecords:
+Generated output wordt gesplitst naar de twee consumers die de data bezitten:
 
-1. presentationconfiguratie met de fysieke framebufferpages en grootte;
+1. `game_view`-configuratie met de fysieke framebufferpages en grootte;
 2. semantische image-/texturebindings voor de assets die de producer plaatste.
 
 Cartcode kent semantische ids, geen fysieke slotnamen. Een normale upload is in
@@ -311,7 +320,7 @@ verdwijnen omdat zij geen runtime load uitvoeren.
 
 `image.resolve(imgid)` en de texture-owner mogen retained records cachen. Een
 sprite behoudt publiek zijn `imgid` en source-scalars; resolution gebeurt
-éénmaal bij de image/renderergrens, niet via een hashlookup en allocatie per
+éénmaal bij de image-/viewgrens, niet via een hashlookup en allocatie per
 frame.
 
 Wanneer meerdere `imgid`s dezelfde atlastexture delen, delen zij één retained
@@ -338,22 +347,24 @@ encodinghelpers.
 ### Stap 1: runtime-owner herstellen
 
 - Implementeer `world`-owned lifecycle, indexes en retained views.
-- Implementeer `schedule` met flat stages en barriers.
+- Laat `world_module` eenmaal de featuremodules en cart-extensions composeren en
+  laat de interne `system_manager` daaruit zijn flat tick-grouparrays bouwen.
 - Migreer objecten, componenten en prefabs naar de ene mutationroute.
 - Verplaats ieder system naar zijn feature-owner en bind retained views bij
   composition.
 - Migreer alle live callers van de gewijzigde API.
-- Verwijder Registry, de generieke ECS-owner, `world:update()`, `world:render()`,
-  allocationqueries en het dubbele disposalpad.
+- Verwijder Registry, cart-facing toegang tot `world.systems`, `world:render()`,
+  allocationqueries en het dubbele disposalpad. `world:update()` blijft de
+  argumentloze updategrens maar bevat zelf geen uitgeschreven tick groups.
 
 Deze stap is niet klaar zolang een feature private `world`-/`space`-tabellen
 leest of oud en nieuw lifecyclecontract naast elkaar bestaan.
 
 ### Stap 2: render- en GX-owner herstellen
 
-- Implementeer `world_renderer` op de retained visualview/revision.
-- Implementeer één `presentation`-owner voor één- en tweepagebeleid.
-- Splits produceroutput in presentationconfig en semantische bindings.
+- Implementeer `game_view` op de retained visualview/revision en laat dezelfde
+  owner commandbouw, clear, submit/fence en page advancement bezitten.
+- Splits produceroutput in viewconfiguratie en semantische bindings.
 - Migreer componenten en cart entries naar `imgid` en scalar source/quad APIs.
 - Behoud per cart de bestaande IRQ-, VBlank-, upload- en displaycadans.
 - Verwijder het render-ECS-system en de generated layout-API volledig.
@@ -377,27 +388,18 @@ handmatig JSON-bestands-, consumer- of hot-functionregister.
 
 ## Validatie
 
-Voor iedere ownerwijziging is het bewijs proportioneel aan de wijziging:
+Bewijs wordt op de echte runtime geleverd:
 
-- compile en unit tests voor het gewijzigde contract;
-- een echte headless run van iedere geraakte cart;
-- lifecycleprobes voor spawn, detach, disable, tagmutatie, `space`-switch,
-  despawn en clear tijdens een stage;
-- orderprobes die iedere feature exact eenmaal op de juiste stage uitvoeren;
-- queryprobes voor directe dense membership en `bucket[1]`-lookup;
-- visual-revisionprobes: geen rebuild op onveranderde frames, exact één rebuild
-  na membership/depthwijziging;
-- presentationprobes voor één page en front/back-rotatie;
-- een vertraagde uploadprobe die vóór IMGDEC-completion al de nieuwe binding in
-  drawcommands ziet;
-- imageprobes voor full draw, source rect, image-local quad en absolute raw
-  quad;
-- guest-heapmetingen na warm-up voor een vaste steady topologie;
-- renderparity voor GX-wijzigingen en raw hardwarecarts als onafhankelijke
-  regressiegate.
-
-Typecheck/buildsucces wordt niet als headless, heap- of pixelbewijs beschreven.
-Een performanceclaim vereist gemeten heap/profilerdata op de echte frame-loop.
+- run iedere geraakte cart headless via zijn bestaande gameplaypad;
+- controleer lifecycle en tick-order in de cart waarin die code werkelijk wordt
+  gebruikt, inclusief mutaties tijdens een tick group en `world:clear()`;
+- meet na warm-up de guest heap op een vaste steady topologie en profileer de
+  echte update-/drawloop;
+- controleer één- en tweepagecarts op hun bestaande displaycadans en beeld;
+- laat een vertraagde upload al vóór IMGDEC-completion via de nieuwe binding
+  tekenen;
+- voer voor GX-wijzigingen renderparity en de bestaande raw-hardwarecarts uit,
+  zodat full image, crop, image-local quad en absolute raw GX zichtbaar blijven.
 
 ## Drift die expliciet verboden is
 
@@ -409,14 +411,11 @@ Een implementatie is fout wanneer zij:
 - een runtime VRAM-allocator toevoegt;
 - Registry naast nieuwe `world`-indexen laat bestaan;
 - oude APIs met aliases of forwarding modules bewaart;
-- `world` opnieuw scheduler of presentationowner maakt;
-- presentation terugbrengt als ECS-stage;
-- single en double buffering opnieuw als twee systemklassen bouwt;
+- de interne `system_manager` of tick groups naar cartcode lekt;
+- tekenen terugbrengt als ECS-tick;
 - per-frame query-, sorteer-, callback- of commandrecordallocaties toevoegt;
 - handmatige repo-inventarissen bouwt in plaats van live owners en callers te
-  wijzigen;
-- historische TypeScript-frameworkmachinerie kopieert in plaats van alleen de
-  betere ownershiplessen toe te passen.
+  wijzigen.
 
 ## Definitie van klaar
 
