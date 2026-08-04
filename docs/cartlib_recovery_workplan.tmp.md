@@ -24,7 +24,7 @@ teruggedraaid alleen omdat oudere code anders werkte.
 De Lua-dialect accepteert geen hoofdletters in identifiers. Alle Lua-modules,
 locals, tabellen, methods en componentkeys gebruiken daarom `snake_case`.
 Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
-`world_object`, `world_module` en `game_view`.
+`world_object` en `world_module`.
 
 ## Niet-onderhandelbare besluiten
 
@@ -34,7 +34,7 @@ Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
   fout is. Contract en callers veranderen samen.
 - Geen extra `game`-/`host`facade, service-locator, dependency-DAG of multi-world-
   laag rond de concrete cartowners. Eén cartridge gebruikt één `world` en één
-  `game_view`.
+  `renderer`.
 - Intern geproduceerde data wordt direct geconsumeerd. Geen DTO-validatie,
   fallbacks, guards of wrappers rond eigen runtime- of producerrepresentaties.
 - Hot paths maken geen tijdelijke tables, closures of iteratorstate. Ze scannen
@@ -49,11 +49,10 @@ Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
 - De ROM-producer bepaalt fysieke VRAM-plaatsing; cartlib bevat geen runtime
   VRAM-allocator.
 
-De historische TypeScript-engine levert drie concrete lessen voor dit plan:
-`world`/`world_object`/`space` benoemen de levende spelwereld, `world_module`
-is de cart-owned compositiegrens en `game_view` bezit het tekenen. Een sprite
-behoudt daarbij zijn `imgid` tot aan de image-/texturegrens. De uitvoering
-hieronder blijft die van de huidige cartridge-runtime en het GX-hardwaremodel.
+De historische TypeScript-engine levert hier alleen de bruikbare domeinnamen en
+de compositiegrens: `world`, `world_object`, `space` en `world_module`. Voor
+rendering blijft alleen de les dat een sprite zijn `imgid` tot aan de
+renderer-/texturegrens behoudt; de historische `game_view` keert niet terug.
 
 ## Waarom de huidige architectuur fout is
 
@@ -94,11 +93,11 @@ De cart entry bezit:
 - displaymodus;
 - IRQ-registratie en maskers;
 - de exacte volgorde van gameplay, VBlank, draw, transfers en display;
-- keuze van `world_module` en de configuratie van `game_view`.
+- keuze van `world_module` en de configuratie van `renderer`.
 
 De entry importeert geen interne systemfactorylijst en geen generated fysieke
 VRAM-layoutmodule. In de frame-loop roept hij alleen de cart-facing
-`world:update()` en `view:draw()` aan; tick groups, frame timing, commandbouw,
+`world:update()` en `renderer:draw()` aan; tick groups, frame timing, commandbouw,
 fences en page advancement zijn geen losse entry-callers.
 
 ### ROM-producer
@@ -129,12 +128,12 @@ systemset en eventuele feature-indexen. Voorbeelden zijn input, FSM, behaviour
 tree, timelines, action effects en collision. De cart kiest geen losse
 `cartlib/ecs/systems/*`-factories en geeft geen cartlib-priorities door.
 
-### `game_view`
+### `renderer`
 
-`game_view` bezit de retained draw-commandbuffer, de geordende projectie van
+`renderer` bezit de retained draw-commandbuffer, de geordende projectie van
 actieve visuals, visual-naar-GX-commandbouw, draw/display pages, clearbeleid,
 submit/fence en page advancement. Het is geen ECS-system en geen
-hardwaredevice. Een cart configureert deze owner eenmaal voor zijn view; hij
+hardwaredevice. Een cart configureert deze owner eenmaal; hij
 krijgt geen afzonderlijke commandbouwer en page-owner.
 
 ### Image- en texture-owner
@@ -268,28 +267,28 @@ bij de inputfeature; de cart declareert alleen mappings en leest playerinput.
 
 ## Render- en GX-contract
 
-### Visuals en `game_view`
+### Visuals en `renderer`
 
 Een visualcomponent bevat alleen retained authoringstate: owner, zichtbaarheid,
 depth/offsets, `imgid` en de scalars die zijn visualtype nodig heeft. Hij bezit
 geen framebuffer of pagepolicy.
 
 `world` verhoogt de visual revision bij membership- of depthwijzigingen.
-`game_view` rebuildt en sorteert zijn retained visualprojection alleen als die
+`renderer` rebuildt en sorteert zijn retained visualprojection alleen als die
 revision verandert. Een onveranderd frame loopt de bestaande geordende
 projection af en bouwt commands zonder allocatie of sort.
 
-`game_view` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
+`renderer` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
 in diezelfde commandroute image-local of absolute raw commands schrijven.
 
 ### Pages, submit en display
 
-`game_view` wordt eenmaal geconfigureerd met de door de producer geplaatste
+`renderer` wordt eenmaal geconfigureerd met de door de producer geplaatste
 framebufferpage of -pages. Het gekozen pagebeleid verandert niet tijdens de
 framehotpath.
 
 Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
-`game_view` expliciet front en back bij:
+`renderer` expliciet front en back bij:
 
 - render schrijft naar back;
 - submit is fenced;
@@ -300,18 +299,18 @@ Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
 Initial clear en per-frame clear volgen één expliciet clearbeleid. Er is geen
 per-frame branch die opnieuw moet ontdekken hoeveel pages bestaan.
 
-`game_view:draw()` wacht niet zelf op VBlank. De cart entry behoudt zijn
+`renderer:draw()` wacht niet zelf op VBlank. De cart entry behoudt zijn
 bestaande volgorde. Een cart met twee displayframes per gameplay-tick blijft dat
 doen; een cart met één VBlank tussen update en draw blijft dat doen.
 
-De view consumeert de producerwoorden voor page en size rechtstreeks. Er komt
+De renderer consumeert de producerwoorden voor page en size rechtstreeks. Er komt
 geen frame-DTO of tweede object dat dezelfde pagestate spiegelt.
 
 ### `imgid`, bindings en uploads
 
 Generated output wordt gesplitst naar de twee consumers die de data bezitten:
 
-1. `game_view`-configuratie met de fysieke framebufferpages en grootte;
+1. `renderer`-configuratie met de fysieke framebufferpages en grootte;
 2. semantische image-/texturebindings voor de assets die de producer plaatste.
 
 Cartcode kent semantische ids, geen fysieke slotnamen. Een normale upload is in
@@ -320,7 +319,7 @@ verdwijnen omdat zij geen runtime load uitvoeren.
 
 `image.resolve(imgid)` en de texture-owner mogen retained records cachen. Een
 sprite behoudt publiek zijn `imgid` en source-scalars; resolution gebeurt
-éénmaal bij de image-/viewgrens, niet via een hashlookup en allocatie per
+éénmaal bij de image-/renderergrens, niet via een hashlookup en allocatie per
 frame.
 
 Wanneer meerdere `imgid`s dezelfde atlastexture delen, delen zij één retained
@@ -362,9 +361,9 @@ leest of oud en nieuw lifecyclecontract naast elkaar bestaan.
 
 ### Stap 2: render- en GX-owner herstellen
 
-- Implementeer `game_view` op de retained visualview/revision en laat dezelfde
+- Implementeer `renderer` op de retained visualview/revision en laat dezelfde
   owner commandbouw, clear, submit/fence en page advancement bezitten.
-- Splits produceroutput in viewconfiguratie en semantische bindings.
+- Splits produceroutput in rendererconfiguratie en semantische bindings.
 - Migreer componenten en cart entries naar `imgid` en scalar source/quad APIs.
 - Behoud per cart de bestaande IRQ-, VBlank-, upload- en displaycadans.
 - Verwijder het render-ECS-system en de generated layout-API volledig.
