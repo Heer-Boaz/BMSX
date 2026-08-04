@@ -1,26 +1,26 @@
--- boundary.lua
+-- screen_boundary.lua
 -- Screen-boundary ECS system.
 
-local ecs<const> = require('cartlib/ecs/ecs')
+local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 
-local tickgroup<const> = ecs.tickgroup
-local ecsystem<const> = ecs.ecsystem
+local tick_group<const> = ecs.tick_group
+local system<const> = ecs.system
 
 local boundary_component_type<const> = component_types.screen_boundary
 local prohibit_leaving_component_type<const> = component_types.prohibit_leaving_screen
 
-local boundarysystem<const> = {}
-boundarysystem.__index = boundarysystem
-boundarysystem.component_types = {
+local screen_boundary_system<const> = {}
+screen_boundary_system.__index = screen_boundary_system
+screen_boundary_system.component_types = {
 	boundary_component_type,
 	prohibit_leaving_component_type,
 }
-setmetatable(boundarysystem, { __index = ecsystem })
+setmetatable(screen_boundary_system, { __index = system })
 
-function boundarysystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 30), boundarysystem)
+function screen_boundary_system.new(priority)
+	local self<const> = setmetatable(system.new(tick_group.physics, priority or 30), screen_boundary_system)
 	return self
 end
 
@@ -75,14 +75,14 @@ local emit_boundary_events<const> = function(obj, component, prohibit_leaving)
 	end
 end
 
-function boundarysystem:update()
-	local screen_boundary_components<const> = world_instance.active_space.active_components_by_type[boundary_component_type]
+function screen_boundary_system:update()
+	local screen_boundary_components<const> = world.active_space.active_components_by_type[boundary_component_type]
 	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent
 		emit_boundary_events(obj, component, false)
 	end
-	local prohibit_leave_components<const> = world_instance.active_space.active_components_by_type[prohibit_leaving_component_type]
+	local prohibit_leave_components<const> = world.active_space.active_components_by_type[prohibit_leaving_component_type]
 	for i = #prohibit_leave_components, 1, -1 do
 		local component<const> = prohibit_leave_components[i]
 		local obj<const> = component.parent
@@ -90,4 +90,4 @@ function boundarysystem:update()
 	end
 end
 
-return boundarysystem.new
+return screen_boundary_system.new

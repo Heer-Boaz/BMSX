@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -22,7 +22,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	local random_x<const> = math.random(-5, 4)
 	prefab.spawn('enemy.vlokfoe', {
 		direction = random_x < 0 and 'left' or 'right',

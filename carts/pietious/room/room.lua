@@ -3,7 +3,7 @@ local fsmcomponent<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -600,7 +600,7 @@ function room_object:patch_rows(rows)
 end
 
 function room_object:apply_progression_command(command)
-	if command.room_number ~= nil and command.room_number ~= world_instance:get('c').current_room_number then
+	if command.room_number ~= nil and command.room_number ~= world:get('c').current_room_number then
 		return false
 	end
 	if command.op == 'room.patch_rows' then
@@ -681,9 +681,9 @@ function room_object:collision_flags_at_tile(tx, ty, include_elevator)
 end
 
 function room_object:overlaps_active_elevator(x, y, w, h)
-	local elevator_count<const> = world_instance:get('c').elevator_count
+	local elevator_count<const> = world:get('c').elevator_count
 	for i = 1, elevator_count do
-		local platform<const> = world_instance:get('e.p' .. tostring(i))
+		local platform<const> = world:get('e.p' .. tostring(i))
 		if platform.current_room_number == self.room_number
 			and rect_overlaps(x, y, w, h, platform.x, platform.y, room_tile_size4, room_tile_size2)
 		then
@@ -703,7 +703,7 @@ function room_object:overlaps_active_breakable_wall(x, y, w, h)
 	for i = 1, #enemy_defs do
 		local enemy_def<const> = enemy_defs[i]
 		if breakable_wall_kinds[enemy_def.kind] then
-			local wall<const> = world_instance:get(enemy_def.id)
+			local wall<const> = world:get(enemy_def.id)
 			if wall ~= nil and wall.active and wall.space_id == 'main' then
 				local wall_width<const> = enemy_def.width_tiles * self.tile_size
 				local wall_height<const> = enemy_def.height_tiles * self.tile_size
@@ -750,7 +750,7 @@ function room_object:is_active_draaideur_at_tile(tx, ty)
 		local door_tx<const> = ((door_def.x - self.tile_origin_x) // self.tile_size) + 1
 		local door_ty<const> = ((door_def.y - self.tile_origin_y) // self.tile_size) + 1
 		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
-			local draaideur<const> = world_instance:get(door_def.id)
+			local draaideur<const> = world:get(door_def.id)
 			if draaideur ~= nil and draaideur.state >= 0 then
 				return true
 			end
@@ -823,7 +823,7 @@ function room_object:find_near_lithograph(player)
 	local player_bottom<const> = player.y + player.height
 
 	for i = 1, #lithograph_defs do
-		local lithograph<const> = world_instance:get(lithograph_defs[i].id)
+		local lithograph<const> = world:get(lithograph_defs[i].id)
 		local area_left<const> = lithograph.x + lithograph_hit_left_px
 		local area_top<const> = lithograph.y + lithograph_hit_top_px
 		local area_right<const> = lithograph.x + lithograph_hit_right_px
@@ -837,7 +837,7 @@ function room_object:find_near_lithograph(player)
 end
 
 function room_object:switch_room(direction)
-	local from_room_number<const> = world_instance:get('c').current_room_number
+	local from_room_number<const> = world:get('c').current_room_number
 	local target_room_number<const> = self.room_links[direction]
 
 	if target_room_number < 0 then
@@ -1041,7 +1041,7 @@ function room_object:render_room(draw)
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
-	local director<const> = world_instance:get('d')
+	local director<const> = world:get('d')
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
@@ -1052,7 +1052,7 @@ end
 local room_runtime_state_name<const> = function(room_state)
 	local world_number<const> = room_state.world_number or 0
 	if world_number ~= 0 then
-		local castle<const> = world_instance:get('c')
+		local castle<const> = world:get('c')
 		if castle:has_tag('c.daemon.fight') then
 			return 'daemon_fight'
 		end

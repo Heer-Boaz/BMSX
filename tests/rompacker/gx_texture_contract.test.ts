@@ -371,11 +371,10 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		);
 
 		const cartEntrySource = `module<entry>
-local romdir<const> = require('cartlib/romdir')
 local texture<const> = require('cartlib/gx/texture')
 local imgdec<const> = require('cartlib/gx/imgdec')
-local first_texture<const> = texture.from_image(romdir.image('first'))
-local second_texture<const> = texture.from_image(romdir.image('second'))
+local first_texture<const> = texture.load('first')
+local second_texture<const> = texture.load('second')
 texture.upload(first_texture, 0x00200040, 0)
 return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 `;

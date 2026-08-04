@@ -2,7 +2,7 @@ local bool01<const> = require('cartlib/util/bool01')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
-local world<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 
 local director<const> = {}

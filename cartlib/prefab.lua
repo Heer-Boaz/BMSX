@@ -1,4 +1,4 @@
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local worldobject<const> = require('cartlib/world/object')
 
 local definitions<const> = {}
@@ -41,7 +41,7 @@ local construct<const> = function(definition, addons)
 	if ctor then
 		ctor(instance, addons, definition.def_id)
 	end
-	world_instance:spawn(instance, addons and addons.pos)
+	world:spawn(instance, addons and addons.pos)
 	return instance
 end
 

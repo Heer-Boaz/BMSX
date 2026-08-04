@@ -1,41 +1,47 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local image<const> = require('cartlib/gx/image')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
-local texture_layout<const> = require('bmsx/gx_texture_layout')
+local vblank<const> = require('cartlib/gx/vblank')
+local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_256x192()
-local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
+local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local input<const> = require('cartlib/input/player')
-input.add_player(1)
+local player_input<const> = require('cartlib/input/player')
+player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
-local render<const> = require('cartlib/render/renderer')
-local world<const> = require('cartlib/world/world').instance
+local world_render<const> = require('cartlib/render/world')
+local world<const> = require('cartlib/world/world')
 irq = irq_module.dispatch
 require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
-local input_control_register<const>: *word = 0x08000064
-local world_systems<const> = {
-	object_fsm_system,
+local framebuffer<const> = vram_layout.framebuffer
+local framebuffer_size<const> = gx_display.size_word()
+local clear_color<const> = 0xff000000
+local ecs_systems<const> = {
+	player_input.ecs_system,
+	fsm_system,
 	timeline_system,
 }
 
 local function init<init>()
 	*irq_mask_register = 0
+	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
 	stage_module.register_stage_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
+	*irq_mask_register = vblank.irq_mask
 end
 
 function new_game()
-	world.systems:replace(world_systems)
+	world.systems:replace(ecs_systems)
 	world:clear()
 	prefab.spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
@@ -53,17 +59,17 @@ function new_game()
 end
 
 init()
-local renderer<const> = render.new(world, 0, 0xff000000)
-gx_texture.upload(image.load('ground').texture, texture_layout.stage)
-*input_control_register = 0x00000001
+gx_gpu.draw_target(framebuffer, framebuffer_size)
+gx_gpu.clear_color(framebuffer, framebuffer_size, clear_color)
+gx_texture.upload(gx_texture.load('ground'), vram_layout.stage_texture)
+player_input.arm_vblank_sample()
 new_game()
-*input_control_register = 0x00000001
-renderer:wait_vblank()
+player_input.arm_vblank_sample()
+vblank.wait()
 
 while true do
-	input.update()
 	world:update()
-	*input_control_register = 0x00000001
-	renderer:wait_vblank()
-	renderer:render()
+	player_input.arm_vblank_sample()
+	vblank.wait()
+	world_render.draw(world, framebuffer, framebuffer_size, clear_color)
 end

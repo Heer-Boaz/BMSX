@@ -1,4 +1,3 @@
--- ecs.lua
 -- ECS core types and system manager for the cart runtime.
 --
 -- DESIGN PRINCIPLES — ECS systems vs per-object logic
@@ -8,16 +7,14 @@
 --    group run before those in a higher-numbered group.
 --
 --      input          (10) — read player/AI input, dispatch FSM input events
---      actioneffect   (20) — process queued action effects
---      moderesolution (30) — resolve mode / space switches
+--      action_effects (20) — process queued action effects
+--      gameplay       (30) — update state machines and game-specific systems
 --      physics        (40) — movement, collision, position integration
 --      animation      (50) — advance timelines, sprite frame selection
---      presentation   (60) — program GX / submit render work
---      eventflush     (70) — flush deferred events after all updates
 --
 -- 2. USE ECS SYSTEMS FOR SHARED PER-FRAME WORK.
 --    Logic that runs the same way for every object of a given type (e.g.
---    sprite rendering, collision, timeline ticking) belongs in an ecsystem,
+--    sprite rendering, collision, timeline ticking) belongs in an ECS system,
 --    not in each object's update() method.  The system iterates all active
 --    objects in one pass, which is cheaper than N separate update() calls
 --    and avoids duplicating the iteration + filter logic.
@@ -36,38 +33,34 @@
 --    state-specific physics).  Never put generic rendering or component
 --    processing there.
 
-local tickgroup<const> = {
+local tick_group<const> = {
 	input = 10,
-	actioneffect = 20,
-	moderesolution = 30,
+	action_effects = 20,
+	gameplay = 30,
 	physics = 40,
 	animation = 50,
-	presentation = 60,
-	eventflush = 70,
 }
 
-local ecsystem<const> = {}
-ecsystem.__index = ecsystem
+local system<const> = {}
+system.__index = system
 
-function ecsystem.new(group, priority)
-	local self<const> = setmetatable({}, ecsystem)
+function system.new(group, priority)
+	local self<const> = setmetatable({}, system)
 	self.group = group
 	self.priority = priority or 0
 	return self
 end
 
-local ecsystemmanager<const> = {}
-ecsystemmanager.__index = ecsystemmanager
+local system_manager<const> = {}
+system_manager.__index = system_manager
 
 local new_phase_buckets<const> = function()
 	return {
-		[tickgroup.input] = {},
-		[tickgroup.actioneffect] = {},
-		[tickgroup.moderesolution] = {},
-		[tickgroup.physics] = {},
-		[tickgroup.animation] = {},
-		[tickgroup.presentation] = {},
-		[tickgroup.eventflush] = {},
+		[tick_group.input] = {},
+		[tick_group.action_effects] = {},
+		[tick_group.gameplay] = {},
+		[tick_group.physics] = {},
+		[tick_group.animation] = {},
 	}
 end
 
@@ -90,13 +83,11 @@ local rebuild_system_views<const> = function(self)
 
 	local phase_systems<const> = new_phase_buckets()
 	local phase_counts<const> = {
-		[tickgroup.input] = 0,
-		[tickgroup.actioneffect] = 0,
-		[tickgroup.moderesolution] = 0,
-		[tickgroup.physics] = 0,
-		[tickgroup.animation] = 0,
-		[tickgroup.presentation] = 0,
-		[tickgroup.eventflush] = 0,
+		[tick_group.input] = 0,
+		[tick_group.action_effects] = 0,
+		[tick_group.gameplay] = 0,
+		[tick_group.physics] = 0,
+		[tick_group.animation] = 0,
 	}
 	for i = 1, #self.systems do
 		local sys<const> = self.systems[i]
@@ -110,13 +101,13 @@ local rebuild_system_views<const> = function(self)
 	self.phase_counts = phase_counts
 end
 
-function ecsystemmanager.new()
-	local self<const> = setmetatable({}, ecsystemmanager)
+function system_manager.new()
+	local self<const> = setmetatable({}, system_manager)
 	self:clear()
 	return self
 end
 
-function ecsystemmanager:replace(system_factories)
+function system_manager:replace(system_factories)
 	local systems<const> = {}
 	local component_types<const> = {}
 	for i = 1, #system_factories do
@@ -135,22 +126,20 @@ function ecsystemmanager:replace(system_factories)
 	rebuild_system_views(self)
 end
 
-function ecsystemmanager:clear()
+function system_manager:clear()
 	self.systems = {}
 	self.component_types = {}
 	self.phase_systems = new_phase_buckets()
 	self.phase_counts = {
-		[tickgroup.input] = 0,
-		[tickgroup.actioneffect] = 0,
-		[tickgroup.moderesolution] = 0,
-		[tickgroup.physics] = 0,
-		[tickgroup.animation] = 0,
-		[tickgroup.presentation] = 0,
-		[tickgroup.eventflush] = 0,
+		[tick_group.input] = 0,
+		[tick_group.action_effects] = 0,
+		[tick_group.gameplay] = 0,
+		[tick_group.physics] = 0,
+		[tick_group.animation] = 0,
 	}
 end
 
-function ecsystemmanager:update_phase(group, dt_ms)
+function system_manager:update_phase(group, dt_ms)
 	-- update_phase is a frame hot path. It must walk a prefiltered phase bucket
 	-- instead of filtering self.systems every time. Keep the bucket layout flat:
 	-- nested records and cached method arrays added more table traffic than they
@@ -163,7 +152,7 @@ function ecsystemmanager:update_phase(group, dt_ms)
 end
 
 return {
-	tickgroup = tickgroup,
-	ecsystem = ecsystem,
-	ecsystemmanager = ecsystemmanager,
+	tick_group = tick_group,
+	system = system,
+	system_manager = system_manager,
 }

@@ -26,7 +26,7 @@ combat_director_fsm_id = 'p3.combat.director.fsm'
 -- use site and `bin.decode` reads the packed bytes (no PICO-style runtime lookup).
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local transition_config<const> = bin.decode(assets.data_transition_config_addr, assets.data_transition_config_len, 'transition_config')
 
 overgang_timeline_id = transition_config.overgang_timeline_id
@@ -217,7 +217,7 @@ combat_results_bg_visible_color = p3_blue_color
 
 function clear_texts(text_ids)
 	for i = 1, #text_ids do
-		world_instance:get(text_ids[i]):clear_text()
+		world:get(text_ids[i]):clear_text()
 	end
 end
 
@@ -225,12 +225,12 @@ function apply_background(id)
 	if id == nil then
 		return
 	end
-	local bg<const> = world_instance:get(bg_id)
+	local bg<const> = world:get(bg_id)
 	bg.surface_component:set_imgid(id)
 end
 
 function show_background(id)
-	local bg<const> = world_instance:get(bg_id)
+	local bg<const> = world:get(bg_id)
 	if id ~= nil then
 		bg.surface_component:set_imgid(id)
 	end
@@ -240,15 +240,15 @@ function show_background(id)
 end
 
 function reset_text_colors()
-	world_instance:get(text_main_id).text_component.color = p3_white_color
-	world_instance:get(text_choice_id).text_component.color = p3_white_color
-	world_instance:get(text_prompt_id).text_component.color = p3_white_color
-	world_instance:get(text_transition_id).text_component.color = p3_ink_color
-	world_instance:get(text_results_id).text_component.color = p3_white_color
+	world:get(text_main_id).text_component.color = p3_white_color
+	world:get(text_choice_id).text_component.color = p3_white_color
+	world:get(text_prompt_id).text_component.color = p3_white_color
+	world:get(text_transition_id).text_component.color = p3_ink_color
+	world:get(text_results_id).text_component.color = p3_white_color
 end
 
 function hide_transition_layers()
-	local director<const> = world_instance:get(director_instance_id)
+	local director<const> = world:get(director_instance_id)
 	local overlay<const> = director.transition_visual.overlay
 	overlay.visible = false
 	overlay.color = 0
@@ -264,9 +264,9 @@ function hide_transition_layers()
 end
 
 function hide_combat_sprites()
-	world_instance:get(combat_monster_id).visible = false
-	world_instance:get(combat_maya_a_id).visible = false
-	world_instance:get(combat_maya_b_id).visible = false
-	world_instance:get(combat_all_out_id).visible = false
-	world_instance:get(combat_all_out_portrait_id).visible = false
+	world:get(combat_monster_id).visible = false
+	world:get(combat_maya_a_id).visible = false
+	world:get(combat_maya_b_id).visible = false
+	world:get(combat_all_out_id).visible = false
+	world:get(combat_all_out_portrait_id).visible = false
 end

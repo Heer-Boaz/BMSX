@@ -18,8 +18,8 @@ import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_p
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
-	GX_TEXTURE_LAYOUT_MODULE_PATH,
-	GX_TEXTURE_LAYOUT_SOURCE_PATH,
+	GX_VRAM_LAYOUT_MODULE_PATH,
+	GX_VRAM_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
@@ -582,11 +582,11 @@ async function main() {
 			if (gx_texture_layout) {
 				const source = buildGxTextureLayoutModuleSource(gx_texture_layout);
 				romAssets.push({
-					resid: GX_TEXTURE_LAYOUT_MODULE_PATH,
+					resid: GX_VRAM_LAYOUT_MODULE_PATH,
 					type: 'lua',
 					buffer: Buffer.from(source),
-					compiled_buffer: compileLuaChunkBuffer(source, GX_TEXTURE_LAYOUT_MODULE_PATH),
-					source_path: GX_TEXTURE_LAYOUT_SOURCE_PATH,
+					compiled_buffer: compileLuaChunkBuffer(source, GX_VRAM_LAYOUT_MODULE_PATH),
+					source_path: GX_VRAM_LAYOUT_SOURCE_PATH,
 					update_timestamp: 0,
 				});
 			}

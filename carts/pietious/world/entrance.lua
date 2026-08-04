@@ -4,7 +4,7 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 
 local world_entrance_sprite_ids<const> = {
@@ -27,14 +27,14 @@ end
 
 function world_entrance:mark_half_open()
 	self:set_entrance_state('opening_2')
-	world_instance:get('c').events:emit('world_entrance.opening_2', {
+	world:get('c').events:emit('world_entrance.opening_2', {
 		target = self.target,
 	})
 end
 
 function world_entrance:finish_opening()
 	self:set_entrance_state('open')
-	world_instance:get('c').events:emit('world_entrance.opened', {
+	world:get('c').events:emit('world_entrance.opened', {
 		target = self.target,
 	})
 end

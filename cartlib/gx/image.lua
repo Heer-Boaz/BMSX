@@ -25,7 +25,7 @@ function image.load(id)
 		u = meta.gx_source_x
 		v = meta.gx_source_y
 	else
-		texture = gx_texture.from_image(resource)
+		texture = gx_texture.resolve(resource)
 		u = meta.texture_u
 		v = meta.texture_v
 	end

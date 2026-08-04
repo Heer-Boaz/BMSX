@@ -1,17 +1,17 @@
 require('globals')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 
 __bmsx_host_test = {
 	frames = 0,
 }
 
 function __bmsx_host_test.ready()
-	return world_instance:get(director_instance_id) ~= nil and world_instance:get(combat_director_instance_id) ~= nil
+	return world:get(director_instance_id) ~= nil and world:get(combat_director_instance_id) ~= nil
 end
 
 function __bmsx_host_test.setup()
-	local director<const> = world_instance:get(director_instance_id)
-	local combat_director<const> = world_instance:get(combat_director_instance_id)
+	local director<const> = world:get(director_instance_id)
+	local combat_director<const> = world:get(combat_director_instance_id)
 	local test<const> = __bmsx_host_test
 	test.combat_round = combat_director.state_machines:bind_state_path('/combat_round')
 	test.combat_idle = combat_director.state_machines:bind_state_path('/idle')
@@ -24,8 +24,8 @@ end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
-	local director<const> = world_instance:get(director_instance_id)
-	local combat_director<const> = world_instance:get(combat_director_instance_id)
+	local director<const> = world:get(director_instance_id)
+	local combat_director<const> = world:get(combat_director_instance_id)
 	test.frames = test.frames + 1
 	assert(test.frames < 8, 'combat intro skip did not enter first round')
 

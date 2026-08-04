@@ -1,7 +1,6 @@
 local texture_residency<const> = {}
-local image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
-local texture_layout<const> = require('bmsx/gx_texture_layout')
+local vram_layout<const> = require('bmsx/gx_vram_layout')
 
 local active_background_texture
 local active_background_destination
@@ -22,55 +21,55 @@ local invalidate_background_residency<const> = function()
 end
 
 function texture_residency.preload_background(imgid)
-	local texture<const> = image.load(imgid).texture
+	local texture<const> = gx_texture.load(imgid)
 	if texture == active_background_texture or texture == in_flight_background_texture then
 		pending_background_texture = nil
 		pending_background_destination = nil
 		return
 	end
 	pending_background_texture = texture
-	if (in_flight_background_destination or active_background_destination) == texture_layout.background_left then
-		pending_background_destination = texture_layout.background_right
+	if (in_flight_background_destination or active_background_destination) == vram_layout.background_left_texture then
+		pending_background_destination = vram_layout.background_right_texture
 	else
-		pending_background_destination = texture_layout.background_left
+		pending_background_destination = vram_layout.background_left_texture
 	end
 end
 
 function texture_residency.replace_background(imgid)
 	pending_background_texture = nil
 	pending_background_destination = nil
-	local texture<const> = image.load(imgid).texture
+	local texture<const> = gx_texture.load(imgid)
 	if font_upload_in_flight then
 		pending_background_texture = texture
-		pending_background_destination = texture_layout.background_left
+		pending_background_destination = vram_layout.background_left_texture
 		return
 	end
-	gx_texture.upload(texture, texture_layout.background_left)
+	gx_texture.upload(texture, vram_layout.background_left_texture)
 	in_flight_background_texture = texture
-	in_flight_background_destination = texture_layout.background_left
+	in_flight_background_destination = vram_layout.background_left_texture
 end
 
 function texture_residency.load_font(imgid)
 	-- The DMA channel accepts one transfer at a time. The initial background is
 	-- queued until this persistent texture has reached its dedicated VRAM slot.
 	font_upload_in_flight = true
-	gx_texture.upload(image.load(imgid).texture, texture_layout.font)
+	gx_texture.upload(gx_texture.load(imgid), vram_layout.font_texture)
 end
 
 function texture_residency.load_combat_workset(monster_imgid)
 	invalidate_background_residency()
 	if not combat_common_submitted then
-		gx_texture.upload(image.load('maya_b').texture, texture_layout.maya_b)
-		gx_texture.upload(image.load('maya_a').texture, texture_layout.maya_a)
-		gx_texture.upload(image.load('maya_v_s').texture, texture_layout.maya_vs)
+		gx_texture.upload(gx_texture.load('maya_b'), vram_layout.maya_b_texture)
+		gx_texture.upload(gx_texture.load('maya_a'), vram_layout.maya_a_texture)
+		gx_texture.upload(gx_texture.load('maya_v_s'), vram_layout.maya_vs_texture)
 		combat_common_submitted = true
 	end
-	gx_texture.upload(image.load(monster_imgid).texture, texture_layout.monster)
+	gx_texture.upload(gx_texture.load(monster_imgid), vram_layout.monster_texture)
 end
 
 function texture_residency.load_all_out()
 	invalidate_background_residency()
-	gx_texture.upload(image.load('all_out').texture, texture_layout.all_out)
+	gx_texture.upload(gx_texture.load('all_out'), vram_layout.all_out_texture)
 end
 
 function texture_residency.submit_pending_background()

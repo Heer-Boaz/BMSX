@@ -80,7 +80,7 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local velocity<const> = require('cartlib/velocity')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
 require('constants')
@@ -553,7 +553,7 @@ function player:apply_presentation_state()
 end
 
 function player:respawn()
-	world_instance:get('d').events:emit('death_done')
+	world:get('d').events:emit('death_done')
 	self:cancel_sword()
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
@@ -760,7 +760,7 @@ function player:collect_item(item_type, item_id)
 end
 
 function player:find_near_shrine()
-	local shrines<const> = world_instance:get('room').shrines
+	local shrines<const> = world:get('room').shrines
 	local player_left<const> = self.x
 	local player_top<const> = self.y
 	local player_right<const> = self.x + self.width
@@ -781,8 +781,8 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local world_entrances<const> = world_instance:get('room').world_entrances
-	local castle<const> = world_instance:get('c')
+	local world_entrances<const> = world:get('room').world_entrances
+	local castle<const> = world:get('c')
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
@@ -799,8 +799,8 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local world_entrances<const> = world_instance:get('room').world_entrances
-	local castle<const> = world_instance:get('c')
+	local world_entrances<const> = world:get('room').world_entrances
+	local castle<const> = world:get('c')
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
@@ -897,7 +897,7 @@ function player:begin_world_emerge_from_door_midpoint()
 end
 
 function player:complete_enter_world_after_banner()
-	local switch<const> = world_instance:get('c'):enter_world(self.enter_leave_world_target)
+	local switch<const> = world:get('c'):enter_world(self.enter_leave_world_target)
 	self:apply_spawn_position(switch)
 	self:zero_motion()
 	self:reset_stairs_lock()
@@ -939,7 +939,7 @@ function player:begin_waiting_halo_banner()
 end
 
 function player:complete_halo_return_after_banner()
-	local switch<const> = world_instance:get('room').last_room_switch
+	local switch<const> = world:get('room').last_room_switch
 	self:apply_halo_teleport_arrival(switch)
 end
 
@@ -959,7 +959,7 @@ function player:try_open_world_entrance_with_key()
 		return false
 	end
 
-	local opened<const> = world_instance:get('c'):begin_open_world_entrance(world_entrance.target)
+	local opened<const> = world:get('c'):begin_open_world_entrance(world_entrance.target)
 	if not opened then
 		return false
 	end
@@ -985,12 +985,12 @@ function player:try_start_world_or_shrine_interaction_from_down()
 		return true
 	end
 
-	local castle<const> = world_instance:get('c')
+	local castle<const> = world:get('c')
 	if castle:has_tag('c.seal.active') then
 		if castle:has_tag('c.seal.sequence') then
 			return false
 		end
-		world_instance:get('d').events:emit('seal_dissolution_start')
+		world:get('d').events:emit('seal_dissolution_start')
 		return true
 	end
 
@@ -1015,7 +1015,7 @@ end
 
 function player:sync_water_state()
 	self.previous_water_state = self.water_state
-	local next_water_state<const> = world_instance:get('room'):player_water_kind_at_world(self.x + room_tile_half, self.y + self.height)
+	local next_water_state<const> = world:get('room'):player_water_kind_at_world(self.x + room_tile_half, self.y + self.height)
 	self.water_state = next_water_state
 	set_tag_flag(self, player_tags.in_water, player_in_water_by_state[next_water_state])
 end
@@ -1090,18 +1090,18 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
-	if world_instance:get('c'):is_current_room_boss_encounter_active() then
+	if world:get('c'):is_current_room_boss_encounter_active() then
 		return false
 	end
 	if keep_stairs_lock then
 		self.x = self.stairs_x
 	end
 
-	local switch<const> = world_instance:get('c'):switch_room(direction, self.y, self.y + self.height)
+	local switch<const> = world:get('c'):switch_room(direction, self.y, self.y + self.height)
 	if switch.outside then
-		local director<const> = world_instance:get('d')
+		local director<const> = world:get('d')
 		director.events:emit('world_leave_transition_start')
-		local leave_switch<const> = world_instance:get('c'):leave_world_to_castle(false)
+		local leave_switch<const> = world:get('c'):leave_world_to_castle(false)
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
 		self:reset_stairs_lock()
@@ -1113,7 +1113,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, leave_switch.direction)
 		return true
 	end
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	if direction == 'left' then
 		self.x = room.world_width - self.width
 	elseif direction == 'right' then
@@ -1140,7 +1140,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 end
 
 function player:try_side_room_switch_from_position()
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	local max_x<const> = room.world_width - self.width
 	if self.x < room.tile_size then
 		if room.room_links.left == 0 then
@@ -1167,7 +1167,7 @@ function player:can_switch_up_from_state()
 end
 
 function player:nearing_room_exit()
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	local max_x<const> = room.world_width - self.width
 	if self.x < 0 then
 		return 'left'
@@ -1188,7 +1188,7 @@ end
 
 function player:clamp_blocked_vertical_room_exit(direction)
 	if direction == 'up' then
-		local room<const> = world_instance:get('room')
+		local room<const> = world:get('room')
 		local up_limit<const> = room.world_top - room.tile_size
 		if self.y < up_limit then
 			self.y = up_limit
@@ -1197,7 +1197,7 @@ function player:clamp_blocked_vertical_room_exit(direction)
 		return
 	end
 
-	local down_limit<const> = world_instance:get('room').world_height - self.height
+	local down_limit<const> = world:get('room').world_height - self.height
 	if self.y > down_limit then
 		self.y = down_limit
 	end
@@ -1210,7 +1210,7 @@ function player:try_vertical_room_switch_from_position()
 			self:clamp_blocked_vertical_room_exit(direction)
 			return false
 		end
-		if world_instance:get('room').room_links[direction] == 0 then
+		if world:get('room').room_links[direction] == 0 then
 			self:clamp_blocked_vertical_room_exit(direction)
 			return false
 		end
@@ -1257,7 +1257,7 @@ function player:get_jump_inertia(default_inertia)
 end
 
 function player:pick_entry_stairs(direction)
-	local stairs<const> = world_instance:get('room').stairs
+	local stairs<const> = world:get('room').stairs
 	local best = nil
 	local best_dx = 0
 
@@ -1286,7 +1286,7 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs<const> = world_instance:get('room').stairs
+	local stairs<const> = world:get('room').stairs
 	local y_bottom<const> = y_probe + self.height
 	for i = 1, #stairs do
 		local stair<const> = stairs[i]
@@ -1308,7 +1308,7 @@ end
 function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
-		probe_y = probe_y + world_instance:get('room').tile_size
+		probe_y = probe_y + world:get('room').tile_size
 	end
 	local stair<const> = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
@@ -1407,7 +1407,7 @@ function player:try_step_off_stairs()
 		return false
 	end
 	local support_probe_y<const> = self.y + self.height + stairs_step_off_probe_extra_y
-	if not world_instance:get('room'):has_collision_flags_at_world(
+	if not world:get('room'):has_collision_flags_at_world(
 	support_probe_x,
 	support_probe_y,
 	collision_flags_solid_mask,
@@ -1453,10 +1453,10 @@ function player:start_stairs(direction, stair, event_name)
 end
 
 function player:collides_with_elevator_probe(x, y)
-	local count<const> = world_instance:get('c').elevator_count
-	local current_room_number<const> = world_instance:get('c').current_room_number
+	local count<const> = world:get('c').elevator_count
+	local current_room_number<const> = world:get('c').current_room_number
 	for i = 1, count do
-		local platform<const> = world_instance:get('e.p' .. tostring(i))
+		local platform<const> = world:get('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
 		and x >= platform.x
 		and x < (platform.x + room_tile_size4)
@@ -1473,12 +1473,12 @@ end
 function player:collides_with_elevator_at(x, y)
 	local old_x<const> = self.x
 	local old_y<const> = self.y
-	local count<const> = world_instance:get('c').elevator_count
-	local current_room_number<const> = world_instance:get('c').current_room_number
+	local count<const> = world:get('c').elevator_count
+	local current_room_number<const> = world:get('c').current_room_number
 	self.x = x
 	self.y = y
 	for i = 1, count do
-		local platform<const> = world_instance:get('e.p' .. tostring(i))
+		local platform<const> = world:get('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
 		and collision2d.collides(self.collider, platform.collider)
 		then
@@ -1503,7 +1503,7 @@ function player:has_feet_over_elevator_top(platform, x)
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
-	if platform.current_room_number ~= world_instance:get('c').current_room_number then
+	if platform.current_room_number ~= world:get('c').current_room_number then
 		return false
 	end
 	if not collision2d.collides(self.collider, platform.collider) then
@@ -1551,10 +1551,10 @@ function player:is_support_below_at(x, y, include_elevator)
 	local player_bottom<const> = y + self.height
 	local left_foot_x<const> = x + room_tile_half
 	local right_foot_x<const> = (x + self.width) - room_tile_half
-	local count<const> = world_instance:get('c').elevator_count
-	local current_room_number<const> = world_instance:get('c').current_room_number
+	local count<const> = world:get('c').elevator_count
+	local current_room_number<const> = world:get('c').current_room_number
 	for i = 1, count do
-		local platform<const> = world_instance:get('e.p' .. tostring(i))
+		local platform<const> = world:get('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number then
 			if player_bottom >= platform.y
 			and player_bottom <= (platform.y + 1)
@@ -1572,7 +1572,7 @@ function player:is_support_below_at(x, y, include_elevator)
 end
 
 function player:collides_at(x, y, include_elevator)
-	local rm<const> = world_instance:get('room')
+	local rm<const> = world:get('room')
 	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, collision_flags_solid_mask, false) then
 		return true
 	end
@@ -1583,7 +1583,7 @@ function player:collides_at(x, y, include_elevator)
 end
 
 function player:collides_at_probe(x, y, include_elevator)
-	local rm<const> = world_instance:get('room')
+	local rm<const> = world:get('room')
 	if rm:has_collision_flags_at_world(x, y, collision_flags_solid_mask, false) then
 		return true
 	end
@@ -1666,7 +1666,7 @@ function player:apply_side_probe_horizontal_move(dx)
 		self.x = self.x + dx
 	end
 
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	local max_x<const> = room.world_width - self.width
 	local room_links<const> = room.room_links
 	if self.x < room.tile_size then
@@ -1703,7 +1703,7 @@ end
 function player:apply_air_move(dx, dy, include_elevator_collision)
 	local old_x<const> = self.x
 	local old_y<const> = self.y
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	local moved_x<const>, collided_x = self:apply_side_probe_horizontal_move(dx)
 
 	local next_y<const> = old_y + dy
@@ -2013,7 +2013,7 @@ function player:update_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == world_entrance_enter_world_midpoint_step then
-		world_instance:get('d'):queue_world_banner_transition(castle_map.world_transitions[self.enter_leave_world_target].world_number)
+		world:get('d'):queue_world_banner_transition(castle_map.world_transitions[self.enter_leave_world_target].world_number)
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
 		return
@@ -2026,7 +2026,7 @@ function player:update_entering_shrine()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > world_entrance_enter_world_total_steps then
-		world_instance:get('d'):open_shrine(self.enter_leave_shrine_text_lines)
+		world:get('d'):open_shrine(self.enter_leave_shrine_text_lines)
 		self.events:emit('shrine_entered')
 		return
 	end
@@ -2363,7 +2363,7 @@ function player:update_down_stairs()
 
 	local moved
 	local next_y
-	local down_exit_threshold<const> = world_instance:get('room').world_height - self.height
+	local down_exit_threshold<const> = world:get('room').world_height - self.height
 	local stairs_reaches_room_exit<const> = self.stairs_bottom_y >= down_exit_threshold
 
 	if self.down_held and not self.up_held then
@@ -2921,9 +2921,9 @@ local define_player_fsm<const> = function()
 						snap_to_start = true,
 					},
 					on_end = function(self)
-						local castle<const> = world_instance:get('c')
+						local castle<const> = world:get('c')
 						self.to_enter_cut = 0
-						world_instance:get('d').events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
+						world:get('d').events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
 						return '/quiet'
 					end,
 				},

@@ -2,7 +2,7 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local sprite_id_by_kind<const> = {
@@ -104,7 +104,7 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 	else
 		self.player_was_right = false
 	end
-	world_instance:get('c').events:emit('rotatedoor')
+	world:get('c').events:emit('rotatedoor')
 	player:start_slow_doorpass()
 end
 
@@ -115,7 +115,7 @@ function draaideur:update_active()
 		return
 	end
 
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	local walking_left<const> = player:has_tag('v.wl')
 	local walking_right<const> = player:has_tag('v.wr')
 	local touches<const> = self:touches_player(player, walking_left, walking_right)

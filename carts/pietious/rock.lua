@@ -4,7 +4,7 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -41,12 +41,12 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	room:mark_rock_destroyed(self.id)
 	if self.item_type == nil then
 		return
 	end
-	if world_instance:get('pietolon').inventory_items[self.item_type] then
+	if world:get('pietolon').inventory_items[self.item_type] then
 		return
 	end
 	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]

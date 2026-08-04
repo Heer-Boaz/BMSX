@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
@@ -45,12 +45,12 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		local rm<const> = world_instance:get('room')
+		local rm<const> = world:get('room')
 		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, collision_flags_solid_mask) then
 			self.direction = 'right'
 		end
 	else
-		local rm<const> = world_instance:get('room')
+		local rm<const> = world:get('room')
 		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, collision_flags_solid_mask) then
 			self.direction = 'left'
 		end
@@ -59,7 +59,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	local noot_ticks = node.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player<const> = world_instance:get('pietolon')
+		local player<const> = world:get('pietolon')
 		local source_x<const> = self.x + 12
 		local source_y<const> = self.y + 8
 		local target_x<const> = player.x

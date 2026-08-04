@@ -1,26 +1,27 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local image<const> = require('cartlib/gx/image')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
-local texture_layout<const> = require('bmsx/gx_texture_layout')
+local vblank<const> = require('cartlib/gx/vblank')
+local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
 local behaviour_tree_system<const> = require('cartlib/ecs/systems/behaviour_tree')
-local boundary_system<const> = require('cartlib/ecs/systems/boundary')
-local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
+local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local overlap_2d_system<const> = require('cartlib/ecs/systems/overlap_2d')
-local previous_position_system<const> = require('cartlib/ecs/systems/previous_position')
+local screen_boundary_capture_system<const> = require('cartlib/ecs/systems/screen_boundary_capture')
+local screen_boundary_system<const> = require('cartlib/ecs/systems/screen_boundary')
 local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
-local input<const> = require('cartlib/input/player')
-input.add_player(1)
+local player_input<const> = require('cartlib/input/player')
+player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
-local render<const> = require('cartlib/render/renderer')
-local world_instance<const> = require('cartlib/world/world').instance
+local world_render<const> = require('cartlib/render/world')
+local world<const> = require('cartlib/world/world')
 require('constants')
 local boekfoe_module<const> = require('enemies/boekfoe')
 local breakablewall_module<const> = require('enemies/breakablewall')
@@ -55,7 +56,7 @@ local rock_module<const> = require('rock')
 local pepernoot_projectile_module<const> = require('pepernoot_projectile')
 local enemy_explosion_module<const> = require('enemy/explosion')
 local elevator_module<const> = require('elevator/elevator')
-local elevator_update_system_module<const> = require('elevator/update_system')
+local elevator_system<const> = require('elevator/system')
 local castle_module<const> = require('castle/castle')
 local world_entrance_module<const> = require('world/entrance')
 local daemon_cloud_module<const> = require('daemon_cloud')
@@ -63,29 +64,32 @@ local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
-local world_systems<const> = {
-	previous_position_system,
+local ecs_systems<const> = {
+	player_input.ecs_system,
+	screen_boundary_capture_system,
 	behaviour_tree_system,
 	input_action_effect_system,
-	object_fsm_system,
-	boundary_system,
+	fsm_system,
+	screen_boundary_system,
 	overlap_2d_system,
 	tile_collision_system,
 	timeline_system,
-	elevator_update_system_module,
+	elevator_system,
 }
 
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_mask_addr<const> = 0x08000008
+local irq_mask_register<const>: *word = 0x08000008
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
-local framebuffer_front<const> = texture_layout.framebuffer_front
-local framebuffer_back<const> = texture_layout.framebuffer_back
+local framebuffer_size<const> = gx_display.size_word()
+local clear_color<const> = 0xff000000
+local front_framebuffer = vram_layout.framebuffer_front
+local back_framebuffer = vram_layout.framebuffer_back
 
 local grant_starting_loadout<const> = function()
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -97,23 +101,23 @@ local grant_starting_loadout<const> = function()
 	player:equip_subweapon('pepernoot')
 	player.weapon_level = hud_weapon_level
 	player:emit_weapon_changed()
-	local castle<const> = world_instance:get('c')
+	local castle<const> = world:get('c')
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)
 end
 
 local create_world<const> = function(director_boot_mode)
-	world_instance.systems:replace(world_systems)
-	world_instance:clear()
-	world_instance:add_space('main')
-	world_instance:add_space('title')
-	world_instance:add_space('transition')
-	world_instance:add_space('shrine')
-	world_instance:add_space('lithograph')
-	world_instance:add_space('item')
-	world_instance:add_space('ui')
-	world_instance:set_space('main')
+	world.systems:replace(ecs_systems)
+	world:clear()
+	world:add_space('main')
+	world:add_space('title')
+	world:add_space('transition')
+	world:add_space('shrine')
+	world:add_space('lithograph')
+	world:add_space('item')
+	world:add_space('ui')
+	world:set_space('main')
 
 	local c<const> = prefab.spawn('castle', { id = 'c', })
 
@@ -145,6 +149,7 @@ function new_game()
 end
 
 local function init<init>()
+	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	aem.reload()
@@ -210,26 +215,28 @@ local function init<init>()
 	pending_title_boot_epoch = init_epoch
 end
 
-mem[irq_mask_addr] = 0
+*irq_mask_register = 0
 init()
-mem[irq_mask_addr] = irq_geo_done_error | irq_apu
-local renderer<const> = render.new_page_flipped(
-	world_instance,
-	framebuffer_front,
-	framebuffer_back,
-	0xff000000)
-gx_texture.upload(image.load('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
+*irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu
+gx_gpu.draw_target(front_framebuffer, framebuffer_size)
+gx_gpu.clear_color(front_framebuffer, framebuffer_size, clear_color)
+gx_gpu.draw_target(back_framebuffer, framebuffer_size)
+gx_gpu.clear_color(back_framebuffer, framebuffer_size, clear_color)
+gx_texture.upload(gx_texture.load('pietolon_stand_r'), vram_layout.sprites_texture, vram_layout.sprites_clut)
 new_game()
-mem[0x08000064] = 0x00000001
-renderer:wait_vblank()
+player_input.arm_vblank_sample()
+vblank.wait()
 
+-- Pietious intentionally advances one gameplay tick across two display frames.
 while true do
-	input.update()
-	world_instance:update()
+	world:update()
 
-	renderer:wait_vblank()
-	renderer:render()
+	vblank.wait()
+	world_render.draw_fenced(world, back_framebuffer, framebuffer_size, clear_color)
 
-	mem[0x08000064] = 0x00000001
-	renderer:present()
+	player_input.arm_vblank_sample()
+	gx_display.origin(back_framebuffer)
+	vblank.wait()
+	front_framebuffer, back_framebuffer = back_framebuffer, front_framebuffer
+	gx_gpu.draw_target(back_framebuffer, framebuffer_size)
 end

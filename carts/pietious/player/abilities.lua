@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local action_effects<const> = require('cartlib/action_effects')
 
@@ -38,7 +38,7 @@ action_effects.register_effect('pepernoot', {
 			return false
 		end
 		local live_count = 0
-		for proj in world_instance:objects_by_type('pepernoot_projectile') do
+		for proj in world:objects_by_type('pepernoot_projectile') do
 			if proj.owner_id == owner.id then
 				live_count = live_count + 1
 			end
@@ -52,7 +52,7 @@ action_effects.register_effect('pepernoot', {
 		return true
 	end,
 	handler = function(owner)
-		local room<const> = world_instance:get('room')
+		local room<const> = world:get('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
@@ -61,7 +61,7 @@ action_effects.register_effect('pepernoot', {
 		prefab.spawn('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
-			room_number = world_instance:get('c').current_room_number,
+			room_number = world:get('c').current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
@@ -75,10 +75,10 @@ action_effects.register_effect('pepernoot', {
 action_effects.register_effect('spyglass', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(owner)
-		return world_instance:get('room'):find_near_lithograph(owner) ~= nil
+		return world:get('room'):find_near_lithograph(owner) ~= nil
 	end,
 	handler = function(owner)
-		local lithograph<const> = world_instance:get('room'):find_near_lithograph(owner)
+		local lithograph<const> = world:get('room'):find_near_lithograph(owner)
 		owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
@@ -88,7 +88,7 @@ action_effects.register_effect('spyglass', {
 action_effects.register_effect('halo', {
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(owner)
-		local castle<const> = world_instance:get('c')
+		local castle<const> = world:get('c')
 		if not owner.inventory_items.halo then
 			return false
 		end
@@ -98,8 +98,8 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(owner)
-		local castle<const> = world_instance:get('c')
-		local from_world<const> = (world_instance:get('room').world_number or 0) ~= 0
+		local castle<const> = world:get('c')
+		local from_world<const> = (world:get('room').world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			owner:begin_waiting_halo_banner()

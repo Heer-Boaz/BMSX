@@ -4,6 +4,7 @@
 -- Edge detection (justpressed/justreleased) is derived here from latched levels.
 
 local action_parser<const> = require('cartlib/input/action_parser')
+local ecs<const> = require('cartlib/ecs')
 local keys<const> = require('cartlib/input/keys')
 
 local input<const> = {}
@@ -11,6 +12,8 @@ local input<const> = {}
 local source_keyboard<const> = 1
 local source_gamepad<const> = 2
 local source_pointer<const> = 3
+local input_control<const>: *word = 0x08000064
+local input_arm_vblank_sample<const> = 0x00000001
 
 local gamepad_bits<const> = {
 	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
@@ -699,12 +702,26 @@ function input.add_player(index)
 	player_list[dense_index] = player
 end
 
-function input.update()
+local player_input_system<const> = {}
+player_input_system.__index = player_input_system
+setmetatable(player_input_system, { __index = ecs.system })
+
+function player_input_system:update()
 	*frame_serial = *frame_serial + 1
 	for index = 1, player_count do
 		sample_player(player_list[index])
 	end
 end
+
+local create_player_input_system<const> = function(priority)
+	return setmetatable(ecs.system.new(ecs.tick_group.input, priority or -200), player_input_system)
+end
+
+function input.arm_vblank_sample()
+	*input_control = input_arm_vblank_sample
+end
+
+input.ecs_system = create_player_input_system
 
 function input.push_context(player_index, id, keyboard, gamepad, pointer, priority, enabled)
 	push_context_record(players[player_index], {

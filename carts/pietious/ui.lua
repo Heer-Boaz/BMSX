@@ -4,7 +4,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
 
@@ -40,7 +40,7 @@ end
 
 function ui:ctor()
 	self:get_component('customvisualcomponent').producer = ui.draw_ui
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
 	self.hud_visible = true
@@ -86,7 +86,7 @@ function ui:draw_ui(draw)
 	if not self.hud_visible then
 		return
 	end
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	image.draw(draw, sources.header, 0, 0, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	for i = 0, (self.hud_health_level - 1) do
 		image.draw(draw, sources.health_stripe, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)

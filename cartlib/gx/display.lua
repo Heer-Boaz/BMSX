@@ -165,7 +165,7 @@ function display.reset_640x512i()
 	program(horizontal_resolution_640, display_mode_vertical_resolution | display_mode_50hz | display_mode_vertical_interlace, vertical_display_range_50hz_start, 640, 512, 256, pcrtc_syncv_50hz_interlaced_low, pcrtc_smode2_interlaced)
 end
 
-function display.size()
+local read_size_word<const> = function()
 	local display_low<const> = *pcrtc_display1_low
 	local display_high<const> = *pcrtc_display1_high
 	local signal_step_x<const> = (*pcrtc_smode1_low >> 21) & 0x0000000f
@@ -175,7 +175,16 @@ function display.size()
 	local right_numerator<const> = signal_right + signal_step_x - 1
 	local left<const> = (left_numerator - left_numerator % signal_step_x) / signal_step_x
 	local right<const> = (right_numerator - right_numerator % signal_step_x) / signal_step_x
-	return right - left, ((display_high >> 12) & 0x000007ff) + 1
+	return (right - left) | ((((display_high >> 12) & 0x000007ff) + 1) << 16)
+end
+
+function display.size()
+	local size_word<const> = read_size_word()
+	return size_word & 0x0000ffff, size_word >> 16
+end
+
+function display.size_word()
+	return read_size_word()
 end
 
 function display.enable()

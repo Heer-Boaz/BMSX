@@ -1,7 +1,7 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -28,7 +28,7 @@ end
 
 function cloud.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	if self.cloud_anim_frame == 2 then
 		self:gfx('cloud_2')
 	else
@@ -86,7 +86,7 @@ function cloud.bt_tick(self, blackboard)
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= world_instance:get('room').world_width then
+		if self.x + 22 >= world:get('room').world_width then
 			self.direction = 'left'
 		end
 	end

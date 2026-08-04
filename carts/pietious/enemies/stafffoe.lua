@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -46,7 +46,7 @@ function stafffoe.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
 	for i = 0, 3 do
@@ -68,7 +68,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	world_instance:get('c').events:emit('staffspawn')
+	world:get('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 	return 'RUNNING'

@@ -1,7 +1,7 @@
-local ecs<const> = require('cartlib/ecs/ecs')
+local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
 local input<const> = require('cartlib/input/player')
-local world<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 
 local input_component_type<const> = component_types.input_action_effect
 
@@ -128,18 +128,18 @@ local evaluate_component<const> = function(component, frame)
 	component.queued_event_count = 0
 end
 
-local inputactioneffectsystem<const> = {}
-inputactioneffectsystem.__index = inputactioneffectsystem
-inputactioneffectsystem.component_types = { input_component_type }
-setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
+local input_action_effect_system<const> = {}
+input_action_effect_system.__index = input_action_effect_system
+input_action_effect_system.component_types = { input_component_type }
+setmetatable(input_action_effect_system, { __index = ecs.system })
 
-function inputactioneffectsystem.new(priority)
-	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 10), inputactioneffectsystem)
+function input_action_effect_system.new(priority)
+	local self<const> = setmetatable(ecs.system.new(ecs.tick_group.input, priority or 10), input_action_effect_system)
 	self.frame = 0
 	return self
 end
 
-function inputactioneffectsystem:update()
+function input_action_effect_system:update()
 	local frame<const> = self.frame + 1
 	self.frame = frame
 	local components<const> = world.active_space.active_components_by_type[input_component_type]
@@ -148,4 +148,4 @@ function inputactioneffectsystem:update()
 	end
 end
 
-return inputactioneffectsystem.new
+return input_action_effect_system.new

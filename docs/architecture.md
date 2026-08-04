@@ -2666,22 +2666,26 @@ directly or through DMA. Draw targets and clear packets take their raw origin
 and size words explicitly. Display queries decode the live PCRTC words rather
 than returning a Lua-side copy.
 
-Cartlib's render owner retains the GP0 word buffer, draw surface, framebuffer
-state and VBlank state. Carts call `render()` and, for page flipping,
-`present()`; they never own command-list begin/submit, a completion counter, a
-GPU IRQ handler or framebuffer rotation. Custom visuals receive only the draw
-surface's primitive operations, not its storage or lifecycle. Single-target
-rendering submits without a GPU fence. The page-flipped renderer alone appends
-the hardware GP0 interrupt packet and completes the physical synchronization
-described below.
+`cartlib/render/world` retains the GP0 word buffer and translates the active
+world's visual components into one command list. Its `draw` and `draw_fenced`
+operations receive the raw framebuffer origin and size words explicitly; they
+do not own display origin, framebuffer selection, IRQ masks, VBlank state or
+frame cadence. The cartridge entry module owns those policies. A single-buffer
+cart submits directly, while a page-flipped cart selects its back page, requests
+the fenced submission, programs the display origin, waits for its chosen VBlank
+edge and rotates its page words explicitly. `cartlib/gx/vblank` owns only the
+retained edge sequence and the wait operation; the cart registers its handler
+and enables its IRQ bit. There is no hidden wait or mandatory double buffering.
+Custom visuals receive only the draw surface's primitive operations, not its
+storage or lifecycle.
 
-The renderer submits painter-ordered 2D work through one retained
+The world render path submits painter-ordered 2D work through one retained
 visual-component list per world space. Sprite, surface, tile, text and custom
 visual components share the same effective depth
 `parent.z + offset_z + draw_offset_z`; lower depths submit first and higher
 depths submit last. Activation sequence is the stable equal-z tie-break.
 Add/remove updates that same list and its indices, while one in-place sort
-accounts for runtime depth changes before the renderer draws the components
+accounts for runtime depth changes before the render path draws the components
 polymorphically. Cart-authored depth alone establishes occlusion; there are no
 kind-priority stages, subsystem draw escape paths, per-frame display-list
 records or backend-facing visual DTOs.
@@ -2776,15 +2780,15 @@ clear an already-pending `IRQ_GPU`; the synchronous guest waiter acknowledges
 that pending bit through `IRQ_ACK`. This keeps the GPU source latch and the
 system interrupt pending latch as two distinct hardware words.
 
-Cartlib's page-flipped renderer uses that ordered GP0 IRQ packet as its
-completion fence. It finishes the back page, appends GP0(1Fh), keeps `IRQ_GPU`
-masked, polls the physical `IRQ_FLAGS` word, and acknowledges both `IRQ_ACK`
-and GP1(02h). It then programs GP1(05h), snapshots its render-owner VBlank
-sequence after that store, and waits through `halt_until_irq` for the next
-sequence edge before reusing the former front page. Missing the current beam
-edge can delay publication by one frame but cannot expose a page still being
-written. Neither cart nor renderer polls GPUSTAT or drains a host queue; the
-entire fence is guest MMIO against the emulated hardware.
+`cartlib/gx/command_list.submit_fenced` uses that ordered GP0 IRQ packet as a
+completion fence. It appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the physical
+`IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). A page-flipped
+cart invokes that fence before programming GP1(05h), then explicitly waits for
+the VBlank edge at which the new display origin becomes visible before reusing
+the former front page. Missing the current beam edge can delay publication by
+one frame but cannot expose a page still being written. Neither cartlib path
+polls GPUSTAT or drains a host queue; the entire fence is guest MMIO against the
+emulated hardware.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
@@ -2981,10 +2985,13 @@ and is not visible to BIOS, cartlib, GPU or DMA.
 
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
 working sets in `gx_texture_layout`. The producer validates the complete layout
-and emits only each packed texture/CLUT slot's physical destination words. The
-cart decides when a compressed texture payload is transferred and which region
-it replaces. Firmware programs IMGDEC's raw destination words and DMA moves the
-compressed ROM words; IMGDEC emits the GP0 transfer packets. A cart may still
+and emits `bmsx/gx_vram_layout`, whose reserved-region words keep their manifest
+names and whose texture-slot destination words use explicit `_texture` and
+`_clut` suffixes. The cart decides when a compressed texture payload is
+transferred and which region it replaces. `cartlib/gx/texture` resolves the
+backing texture resource for an image id and programs IMGDEC with those raw
+destination words; DMA moves the compressed ROM words and IMGDEC emits the GP0
+transfer packets. A cart may still
 DMA a deliberately uncompressed native GP0 stream as the direct bypass.
 Ordinary sprite/tile images stay within one hardware texture page; the
 rectangle primitive therefore emits exactly one native packet. Explicit large
@@ -3569,11 +3576,15 @@ components never lazily mutate shared font descriptors. Screen-boundary
 components receive explicit flat world bounds and do not query the current GX
 display mode during construction.
 
-The cartridge entry module is the hardware-feature
-composition root: it replaces the ECS manager's schedule from an ordered list
-of direct system factories before clearing the world and constructing its
-spaces, samples input in its frame loop, and registers only the device IRQ
-handlers it actually uses. Each selected system publishes its component-query
+The cartridge entry module is the hardware-feature composition root: it
+replaces the ECS manager's schedule from an ordered `ecs_systems` list of direct
+system factories before clearing the world and constructing its spaces, and it
+registers only the device IRQ handlers it actually uses. Normal carts include
+the PlayerInput factory in that schedule, so `world:update()` samples retained
+PlayerInput state in the input tick group before gameplay systems run. The entry
+loop separately arms the ICU's next-VBlank sample latch at the point selected by
+that cart's explicit frame cadence; it does not call a second input-update path.
+Each selected system publishes its component-query
 keys once; space construction seeds those keys with one shared empty bucket and
 the component producer materializes storage on the first attachment.
 AEM and GEO have no import-time application facade; carts with AEM data call

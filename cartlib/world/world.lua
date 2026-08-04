@@ -22,19 +22,19 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    and world:objects_by_tag() all use the current active space by default.
 --    Global/live queries use explicit all_* methods instead of options tables.
 --
--- 4. world_instance IS THE GLOBAL SINGLETON.
---    Access via require('cartlib/world/world').instance. Do not create extra world.new().
+-- 4. THE MODULE RETURNS THE CART WORLD.
+--    Access it via require('cartlib/world/world'); carts do not create another world.
 --
 -- 5. NEVER ITERATE AND MUTATE at the same time.
 --    Do not spawn/despawn while iterating world:objects() or world:all_objects().
 --    If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs<const> = require('cartlib/ecs/ecs')
+local ecs<const> = require('cartlib/ecs')
 local registry<const> = require('cartlib/registry')
 
-local tickgroup<const> = ecs.tickgroup
-local world_instance
+local tick_group<const> = ecs.tick_group
+local world
 local world_id_max<const> = 0x7fffffff
 local empty_component_bucket<const> = {}
 
@@ -337,7 +337,7 @@ function world_class.new()
 	self._pending_active_components = {}
 	self.active_space_id = 'main'
 	self.active_space = nil
-	self.systems = ecs.ecsystemmanager.new()
+	self.systems = ecs.system_manager.new()
 	self.current_phase = nil
 	self._visual_sequence = 0
 	-- id counter for unique id generation
@@ -729,12 +729,11 @@ local run_phase<const> = function(self, group, dt_ms)
 end
 
 function world_class:update()
-	local dt_ms<const> = frame_delta_ms
-	run_phase(self, tickgroup.input, dt_ms)
-	run_phase(self, tickgroup.actioneffect, dt_ms)
-	run_phase(self, tickgroup.moderesolution, dt_ms)
-	run_phase(self, tickgroup.physics, dt_ms)
-	run_phase(self, tickgroup.animation, dt_ms)
+	run_phase(self, tick_group.input, frame_delta_ms)
+	run_phase(self, tick_group.action_effects, frame_delta_ms)
+	run_phase(self, tick_group.gameplay, frame_delta_ms)
+	run_phase(self, tick_group.physics, frame_delta_ms)
+	run_phase(self, tick_group.animation, frame_delta_ms)
 
 	local pending_objects<const> = self._pending_object_disposals
 	for i = 1, #pending_objects do
@@ -751,12 +750,6 @@ function world_class:update()
 		pending_objects[i] = nil
 	end
 
-end
-
-function world_class:update_presentation()
-	local dt_ms<const> = frame_delta_ms
-	run_phase(self, tickgroup.presentation, dt_ms)
-	run_phase(self, tickgroup.eventflush, dt_ms)
 end
 
 function world_class:clear()
@@ -780,12 +773,9 @@ function world_class:clear()
 	self.active_space_id = 'main'
 	self.active_space = self._spaces.main
 end
-world_instance = world_class.new()
-world_instance.id = 'world'
-world_instance.registrypersistent = true
-registry.instance:register(world_instance)
+world = world_class.new()
+world.id = 'world'
+world.registrypersistent = true
+registry.instance:register(world)
 
-return {
-	world = world_class,
-	instance = world_instance,
-}
+return world

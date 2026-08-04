@@ -11,8 +11,8 @@ import {
 	CART_ROM_MAGIC,
 } from '../../machine/ts/spec/bmsx/rom_package';
 import {
-	GX_TEXTURE_LAYOUT_MODULE_PATH,
-	GX_TEXTURE_LAYOUT_SOURCE_PATH,
+	GX_VRAM_LAYOUT_MODULE_PATH,
+	GX_VRAM_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import type {
@@ -113,15 +113,15 @@ function luaEntry(resid: string, sourcePath: string, payloadId: RomImageDomain, 
 test('buildLuaSources registers real Lua assets in one pass', () => {
 	const cartEntry = luaEntry('main', 'cart.lua', 'cart', 11);
 	const activeEntry = luaEntry('main', 'cart.lua', 'cart', 22);
-	const generatedEntry = luaEntry(GX_TEXTURE_LAYOUT_MODULE_PATH, GX_TEXTURE_LAYOUT_SOURCE_PATH, 'cart', 0);
+	const generatedEntry = luaEntry(GX_VRAM_LAYOUT_MODULE_PATH, GX_VRAM_LAYOUT_SOURCE_PATH, 'cart', 0);
 	const systemEntry = luaEntry('sys', 'kernel/interrupts.lua', 'system', 0);
 	const cartSource = new TestRomSource([cartEntry, generatedEntry], {
 		main: 'module<entry>\nreturn 1',
-		[GX_TEXTURE_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
+		[GX_VRAM_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
 	});
 	const activeSource = new TestRomSource([activeEntry, generatedEntry, systemEntry], {
 		main: 'module<entry>\nreturn 2',
-		[GX_TEXTURE_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
+		[GX_VRAM_LAYOUT_MODULE_PATH]: 'return { source_addr = 1 }',
 		sys: 'return 3',
 	});
 
@@ -134,7 +134,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(record.module_path, 'cart');
 	assert.equal(record.update_timestamp, 22);
 	assert.equal(record.generated, false);
-	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].generated, true);
+	assert.equal(registry.module2lua[GX_VRAM_LAYOUT_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua.cart, record);
 	assert.equal(registry.path2lua['kernel/interrupts.lua'], undefined);
@@ -150,7 +150,7 @@ test('release BLua32 images do not synthesize editable Lua source records', () =
 	assert.equal(registry.path2lua['boot/bootrom.lua'], undefined);
 });
 
-test('debug package source boot resolves the persisted GX texture layout module', async () => {
+test('debug package source boot resolves the persisted GX VRAM layout module', async () => {
 	const layout: GxTextureLayout = {
 		reserved: {},
 		slots: {
@@ -165,8 +165,8 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	};
 	const cartSource = [
 		'module<entry>',
-		`local texture_layout<const> = require('${GX_TEXTURE_LAYOUT_MODULE_PATH}')`,
-		'return texture_layout.scene',
+		`local vram_layout<const> = require('${GX_VRAM_LAYOUT_MODULE_PATH}')`,
+		'return vram_layout.scene_texture',
 	].join('\n');
 	const layoutSource = buildGxTextureLayoutModuleSource(layout);
 	const cartBytes = textEncoder.encode(cartSource);
@@ -179,7 +179,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 		end: layoutStart,
 	};
 	const layoutEntry: RomAsset = {
-		...luaEntry(GX_TEXTURE_LAYOUT_MODULE_PATH, GX_TEXTURE_LAYOUT_SOURCE_PATH, 'cart', 0),
+		...luaEntry(GX_VRAM_LAYOUT_MODULE_PATH, GX_VRAM_LAYOUT_SOURCE_PATH, 'cart', 0),
 		start: layoutStart,
 		end: layoutStart + layoutBytes.byteLength,
 	};
@@ -227,7 +227,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
 
-	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);
+	assert.equal(registry.module2lua[GX_VRAM_LAYOUT_MODULE_PATH].src, layoutSource);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [64 | (256 << 16)]);
 });

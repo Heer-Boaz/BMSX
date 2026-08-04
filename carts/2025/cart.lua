@@ -1,24 +1,27 @@
 module<entry>
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local vblank<const> = require('cartlib/gx/vblank')
+local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local object_fsm_system<const> = require('cartlib/ecs/systems/object_fsm')
+local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local input<const> = require('cartlib/input/player')
-input.add_player(1)
+local player_input<const> = require('cartlib/input/player')
+player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local render<const> = require('cartlib/render/renderer')
+local world_render<const> = require('cartlib/render/world')
 local surfacecomponent<const> = require('cartlib/render/surface_component')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 irq = irq_module.dispatch
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()
@@ -28,16 +31,19 @@ local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_mask_register<const>: *word = 0x08000008
-local input_control_register<const>: *word = 0x08000064
 local irq_imgdec<const> = 0x0080
 local irq_apu<const> = 0x0020
+local framebuffer<const> = vram_layout.framebuffer
+local framebuffer_size<const> = gx_display.size_word()
+local clear_color<const> = 0xff000000
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
 
-local world_systems<const> = {
-	object_fsm_system,
+local ecs_systems<const> = {
+	player_input.ecs_system,
+	fsm_system,
 	timeline_system,
 }
 
@@ -303,10 +309,11 @@ local register_director<const> = function()
 end
 
 local function init<init>()
+	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	aem.reload()
-	*irq_mask_register = irq_imgdec | irq_apu
+	*irq_mask_register = vblank.irq_mask | irq_imgdec | irq_apu
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()
@@ -314,8 +321,8 @@ local function init<init>()
 end
 
 function new_game()
-	world_instance.systems:replace(world_systems)
-	world_instance:clear()
+	world.systems:replace(ecs_systems)
+	world:clear()
 	local w<const> = screen_width
 	local h<const> = screen_height
 	local line_height<const> = 16
@@ -407,19 +414,20 @@ function new_game()
 end
 
 init()
-local renderer<const> = render.new(world_instance, 0, 0xff000000)
+gx_gpu.draw_target(framebuffer, framebuffer_size)
+gx_gpu.clear_color(framebuffer, framebuffer_size, clear_color)
 texture_residency.load_font('msx_6b_font_space')
 texture_residency.replace_background(story.title.bg)
 new_game()
-*input_control_register = 0x00000001
+player_input.arm_vblank_sample()
+-- Pietsona intentionally advances one gameplay tick across two display frames.
 while true do
-	renderer:wait_vblank()
+	vblank.wait()
 
-	input.update()
-	world_instance:update()
-	renderer:wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
-	renderer:render()
+	world:update()
+	vblank.wait()
+	world_render.draw(world, framebuffer, framebuffer_size, clear_color)
 	texture_residency.submit_pending_background()
 
-	*input_control_register = 0x00000001
+	player_input.arm_vblank_sample()
 end

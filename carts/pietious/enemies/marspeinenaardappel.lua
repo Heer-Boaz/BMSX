@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -17,7 +17,7 @@ end
 function marspeinenaardappel.bt_tick(self, _blackboard)
 	local speed_x<const> = self.speed_x_num
 	local speed_y<const> = self.speed_y_num
-	local rm<const> = world_instance:get('room')
+	local rm<const> = world:get('room')
 
 	self.x = self.x + speed_x
 	self.y = self.y + speed_y

@@ -9,7 +9,7 @@ local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
-local world<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local player_abilities<const> = require('player/abilities')
 

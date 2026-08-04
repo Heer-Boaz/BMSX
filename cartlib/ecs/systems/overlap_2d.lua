@@ -2,11 +2,11 @@
 -- 2D-overlap ECS system.
 
 --
--- DESIGN PRINCIPLES — collision handling via overlap2dsystem
+-- DESIGN PRINCIPLES — collision handling via the 2D-overlap system
 --
 -- 1. NEVER WRITE CUSTOM COLLISION LOOPS IN CART CODE WHEN YOU WANT
 --    EVENT-STYLE OVERLAPS.
---    overlap2dsystem is an opt-in ECS stage. Carts that want automatic
+--    The 2D-overlap system is an opt-in ECS stage. Carts that want automatic
 --    overlap events add it to their pipeline; carts that do not can stick to
 --    targeted collision queries. When enabled, it detects all overlapping
 --    active+hittable collider pairs in the active world space and emits
@@ -56,12 +56,12 @@
 --    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local ecs<const> = require('cartlib/ecs/ecs')
+local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 
-local tickgroup<const> = ecs.tickgroup
-local ecsystem<const> = ecs.ecsystem
+local tick_group<const> = ecs.tick_group
+local system<const> = ecs.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
@@ -69,10 +69,10 @@ local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
 local overlap_component_type<const> = component_types.collider_2d
 
-local overlap2dsystem<const> = {}
-overlap2dsystem.__index = overlap2dsystem
-overlap2dsystem.component_types = { overlap_component_type }
-setmetatable(overlap2dsystem, { __index = ecsystem })
+local overlap_2d_system<const> = {}
+overlap_2d_system.__index = overlap_2d_system
+overlap_2d_system.component_types = { overlap_component_type }
+setmetatable(overlap_2d_system, { __index = system })
 
 -- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
@@ -132,8 +132,8 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 	end
 end
 
-function overlap2dsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
+function overlap_2d_system.new(priority)
+	local self<const> = setmetatable(system.new(tick_group.physics, priority or 42), overlap_2d_system)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}
@@ -157,7 +157,7 @@ function overlap2dsystem.new(priority)
 	return self
 end
 
-function overlap2dsystem:update()
+function overlap_2d_system:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
 	local overlap_pairs<const> = self.overlap_pairs
@@ -165,7 +165,7 @@ function overlap2dsystem:update()
 	release_pair_rows(self, new_pairs)
 
 	local event_colliders<const> = self.event_colliders
-	local colliders<const> = world_instance.active_space.active_components_by_type[overlap_component_type]
+	local colliders<const> = world.active_space.active_components_by_type[overlap_component_type]
 	local event_collider_count = 0
 	local previous_event_collider_count<const> = self.event_collider_count
 	for i = 1, #colliders do
@@ -229,4 +229,4 @@ function overlap2dsystem:update()
 	self.next_pairs = prev_pairs
 end
 
-return overlap2dsystem.new
+return overlap_2d_system.new

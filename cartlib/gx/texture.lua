@@ -5,7 +5,7 @@ local romdir<const> = require('cartlib/romdir')
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
 
-function gx_texture.from_image(image)
+function gx_texture.resolve(image)
 	local texture_id<const> = image.imgmeta.gx_texture_resid
 	local texture<const> = texture_by_id[texture_id]
 	if texture then
@@ -28,6 +28,10 @@ function gx_texture.from_image(image)
 	}
 	texture_by_id[texture_id] = loaded
 	return loaded
+end
+
+function gx_texture.load(image_id)
+	return gx_texture.resolve(romdir.image(image_id))
 end
 
 function gx_texture.upload(texture, destination, clut_destination)

@@ -2,7 +2,7 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 
 local elevator<const> = {}
@@ -38,8 +38,8 @@ local move_vertical<const> = function(self, target, vertical)
 end
 
 function elevator:update_motion()
-	local player<const> = world_instance:get('pietolon')
-	local current_room_number<const> = world_instance:get('c').current_room_number
+	local player<const> = world:get('pietolon')
+	local current_room_number<const> = world:get('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider:set_enabled(self.visible)
 	local previous_y<const> = self.y

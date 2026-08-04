@@ -4,7 +4,7 @@ local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -29,7 +29,7 @@ function breakablewall:process_damage_result(result)
 		return
 	end
 	if result.destroyed then
-		world_instance:get('c').events:emit('room.condition_set', {
+		world:get('c').events:emit('room.condition_set', {
 			room_number = result.room_number,
 			condition = self.trigger,
 			play_appearance = true,

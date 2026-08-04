@@ -57,7 +57,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
@@ -94,19 +94,19 @@ function director:draw_visual(draw)
 end
 
 function director:activate_spaces()
-	world_instance:add_space('main')
-	world_instance:add_space('title')
-	world_instance:add_space('transition')
-	world_instance:add_space('shrine')
-	world_instance:add_space('lithograph')
-	world_instance:add_space('item')
-	world_instance:add_space('ui')
+	world:add_space('main')
+	world:add_space('title')
+	world:add_space('transition')
+	world:add_space('shrine')
+	world:add_space('lithograph')
+	world:add_space('item')
+	world:add_space('ui')
 end
 
 function director:set_active_space(space_id)
-	world_instance:set_space(space_id)
+	world:set_space(space_id)
 	self:set_space(space_id)
-	world_instance:get('ui'):set_space(space_id)
+	world:get('ui'):set_space(space_id)
 end
 
 -- disable-next-line single_line_method_pattern -- named director state hook enters this transition from data-driven flow.

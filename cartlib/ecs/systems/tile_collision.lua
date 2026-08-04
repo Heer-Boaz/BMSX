@@ -1,21 +1,21 @@
 -- tile_collision.lua
 -- Tile-collision ECS system.
 
-local ecs<const> = require('cartlib/ecs/ecs')
+local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 
-local tickgroup<const> = ecs.tickgroup
-local ecsystem<const> = ecs.ecsystem
+local tick_group<const> = ecs.tick_group
+local system<const> = ecs.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 
 local tile_collision_component_type<const> = component_types.tile_collision
 
-local tilecollisionsystem<const> = {}
-tilecollisionsystem.__index = tilecollisionsystem
-tilecollisionsystem.component_types = { tile_collision_component_type }
-setmetatable(tilecollisionsystem, { __index = ecsystem })
+local tile_collision_system<const> = {}
+tile_collision_system.__index = tile_collision_system
+tile_collision_system.component_types = { tile_collision_component_type }
+setmetatable(tile_collision_system, { __index = system })
 
 local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
 	payload.phase = phase
@@ -25,13 +25,13 @@ local emit_tilecollision_event<const> = function(owner, component, event_type, p
 	owner.events:emit(event_type, payload)
 end
 
-function tilecollisionsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
+function tile_collision_system.new(priority)
+	local self<const> = setmetatable(system.new(tick_group.physics, priority or 45), tile_collision_system)
 	return self
 end
 
-function tilecollisionsystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[tile_collision_component_type]
+function tile_collision_system:update()
+	local components<const> = world.active_space.active_components_by_type[tile_collision_component_type]
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		local obj<const> = component.parent
@@ -61,4 +61,4 @@ function tilecollisionsystem:update()
 	end
 end
 
-return tilecollisionsystem.new
+return tile_collision_system.new

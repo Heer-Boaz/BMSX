@@ -5,10 +5,10 @@ gx_texture_layout:
         framebuffer_back: { x: 256, y: 0, width: 256, height: 192 }
         system: { x: 704, y: 720, width: 320, height: 304 }
     slots:
-        gameplay:
+        sprites:
             texture: { x: 512, y: 256, width: 512, height: 192 }
             clut: { x: 512, y: 448, width: 16, height: 1 }
     groups:
-        0: { mode: palette4, slots: [gameplay], page_local: true }
+        0: { mode: palette4, slots: [sprites], page_local: true }
     working_sets:
-        gameplay: [gameplay]
+        gameplay: [sprites]

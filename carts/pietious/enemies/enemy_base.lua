@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
@@ -79,9 +79,9 @@ function enemy_base.bind(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	local room<const> = world_instance:get('room')
+	local room<const> = world:get('room')
 	prefab.spawn('enemy_explosion', {
-		room_number = world_instance:get('c').current_room_number,
+		room_number = world:get('c').current_room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
@@ -104,7 +104,7 @@ function enemy_base.process_damage_result(self, result)
 	if result.destroyed then
 		self:spawn_death_effect()
 		if self.trigger ~= nil then
-			world_instance:get('c').events:emit('room.condition_set', {
+			world:get('c').events:emit('room.condition_set', {
 				room_number = result.room_number,
 				condition = self.trigger,
 			})
@@ -115,7 +115,7 @@ function enemy_base.process_damage_result(self, result)
 end
 
 function enemy_base.on_overlap(self, event)
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	local contact_kind<const> = combat_overlap.classify_player_contact(event)
 	if contact_kind == nil then
 		return

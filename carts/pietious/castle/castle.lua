@@ -1,7 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
@@ -22,7 +22,7 @@ local castle_tags<const> = {
 }
 
 local current_room<const> = function()
-	return world_instance:get('room')
+	return world:get('room')
 end
 
 local set_tag_flag<const> = function(owner, tag, enabled)
@@ -266,7 +266,7 @@ function castle:spawn_global_elevators()
 	for i = 1, #routes do
 		local route<const> = routes[i]
 		local elevator_id<const> = 'e.p' .. tostring(i)
-		if world_instance:get(elevator_id) == nil then
+		if world:get(elevator_id) == nil then
 			local start<const> = route.path[1]
 			prefab.spawn('elevator_platform', {
 				id = elevator_id,
@@ -287,9 +287,9 @@ function castle:sync_current_room_seal_instance()
 	if seal == nil then
 		return
 	end
-	local active_space<const> = world_instance.active_space_id
+	local active_space<const> = world.active_space_id
 
-	local seal_instance = world_instance:get(seal.id)
+	local seal_instance = world:get(seal.id)
 	local keep_seal_instance = false
 	if self:has_tag(castle_tags.seal_active) then
 		keep_seal_instance = true
@@ -600,7 +600,7 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 end
 
 function castle:initialize(initial_room_number, emit_room_enter_now)
-	local rm<const> = world_instance:get('room')
+	local rm<const> = world:get('room')
 	local room_number<const> = initial_room_number or castle_map.start_room_number
 	rm:reset_rock_drops()
 	self.current_room_number = room_number

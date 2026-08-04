@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -130,7 +130,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player<const> = world_instance:get('pietolon')
+	local player<const> = world:get('pietolon')
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard)
 	end
@@ -156,12 +156,12 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= world_instance:get('room').world_width then
+	elseif self.x + 14 >= world:get('room').world_width then
 		self.horizontal_dir_mod = -1
 	end
-	if self.y <= world_instance:get('room').world_top then
+	if self.y <= world:get('room').world_top then
 		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= world_instance:get('room').world_height then
+	elseif self.y + 14 >= world:get('room').world_height then
 		self.vertical_dir_mod = -1
 	end
 

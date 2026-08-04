@@ -169,8 +169,8 @@ export function buildGxTextureLayoutModuleSource(layout: GxTextureLayout): strin
 	for (let index = 0; index < slotEntries.length; index += 1) {
 		const [name, slot] = slotEntries[index];
 		const texture = slot.texture;
-		declarations.push(`local ${name}<const> = ${(texture.x | (texture.y << 16)) >>> 0}`);
-		exports.push(name);
+		declarations.push(`local ${name}_texture<const> = ${(texture.x | (texture.y << 16)) >>> 0}`);
+		exports.push(`${name}_texture`);
 		if (slot.clut) {
 			declarations.push(`local ${name}_clut<const> = ${(slot.clut.x | (slot.clut.y << 16)) >>> 0}`);
 			exports.push(`${name}_clut`);

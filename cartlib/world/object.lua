@@ -61,7 +61,7 @@
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter<const> = require('cartlib/eventemitter')
 local component<const> = require('cartlib/world/component')
-local world_instance<const> = require('cartlib/world/world').instance
+local world<const> = require('cartlib/world/world')
 local registry_instance<const> = require('cartlib/registry').instance
 
 local worldobject<const> = {}
@@ -71,7 +71,7 @@ function worldobject.new(opts)
 	opts = opts or {}
 	local self<const> = setmetatable({}, worldobject)
 	self.type_name = opts.type_name or 'worldobject'
-	self.id = opts.id or world_instance:next_id(self.type_name)
+	self.id = opts.id or world:next_id(self.type_name)
 	self:set_pos(opts.x or 0, opts.y or 0, opts.z or 0)
 	self.sx = opts.sx or 0
 	self.sy = opts.sy or 0
@@ -111,7 +111,7 @@ end
 --       self:set_space('main')
 --     end)
 function worldobject:set_space(space_id)
-	return world_instance:set_object_space(self, space_id)
+	return world:set_object_space(self, space_id)
 end
 
 -- add_component(comp): attach a component to this object.
@@ -296,7 +296,7 @@ function worldobject:activate()
 	local components<const> = self.components
 	local component_count<const> = #components
 	self.active = true
-	world_instance:activate_object(self)
+	world:activate_object(self)
 	self:bind()
 	for i = 1, component_count do
 		components[i]:on_activate()
@@ -322,7 +322,7 @@ end
 -- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
-	world_instance:deactivate_object(self)
+	world:deactivate_object(self)
 end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.
@@ -349,7 +349,7 @@ end
 --   cleans it up after the current frame finishes.
 --
 --   WRONG — despawning inside update() or an event handler:
---     world_instance:despawn(self)   -- mutates the object list mid-iteration!
+--     world:despawn(self)   -- mutates the object list mid-iteration!
 --
 --   RIGHT:
 --     self:mark_for_disposal()       -- safe, deferred cleanup
@@ -359,11 +359,11 @@ function worldobject:mark_for_disposal()
 	end
 	self.dispose_flag = true
 	self:deactivate()
-	world_instance._by_id[self.id] = nil
-	local space<const> = world_instance._spaces[self.space_id]
+	world._by_id[self.id] = nil
+	local space<const> = world._spaces[self.space_id]
 	space.by_id[self.id] = nil
-	world_instance._obj_to_space[self.id] = nil
-	world_instance:queue_object_disposal(self)
+	world._obj_to_space[self.id] = nil
+	world:queue_object_disposal(self)
 end
 
 function worldobject:dispose()
