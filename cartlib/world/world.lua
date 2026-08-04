@@ -15,7 +15,7 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 -- 2. SPAWN / DESPAWN IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
 --    Never add objects to the internal tables directly.
 --    world:spawn(obj)         — calls obj:onspawn(), adds to active space
---    world:despawn(id_or_obj) — calls obj:ondespawn() + obj:dispose()
+--    world:despawn(obj) — requests the one world-owned despawn transition
 --
 -- 3. QUERY SCOPE IS EXPLICIT.
 --    active_* returns retained dense arrays for the selected space. Unqualified
@@ -226,7 +226,8 @@ function world_class.new()
 	self._objects = {}
 	self._spaces = {}
 	self._space_order = {}
-	self._pending_object_disposals = {}
+	self._pending_despawns = {}
+	self._pending_despawn_count = 0
 	self._pending_active_objects = {}
 	self._pending_active_components = {}
 	self.active_space_id = 'main'
@@ -464,14 +465,6 @@ function world_class:sort_active_visuals()
 	end
 end
 
--- Queue disposal work at mutation time so the frame loop only touches objects
--- that actually requested teardown. Low-end hardware benefits much more from a
--- short dirty list than from proving every frame that almost everything is alive.
-function world_class:queue_object_disposal(obj)
-	local pending<const> = self._pending_object_disposals
-	pending[#pending + 1] = obj
-end
-
 -- world:spawn(obj, pos?)
 --   Registers obj in the world (and in the active space unless obj.space_id is
 --   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
@@ -498,32 +491,57 @@ function world_class:spawn(obj, pos)
 	return obj
 end
 
--- world:despawn(id_or_obj)
---   Removes the object from the world and its space, then calls
---   obj:ondespawn() and obj:dispose(). Does nothing if obj is nil.
---   Do not call during an objects() iteration loop.
-function world_class:despawn(id_or_obj)
-	local obj
-	if type(id_or_obj) ~= 'table' then
-		obj = registry.instance:get(id_or_obj)
-	else
-		obj = id_or_obj
+local commit_despawn<const> = function(self, obj)
+	obj.active = false
+	local components<const> = obj.components
+	for i = 1, #components do
+		reconcile_active_component(self, components[i])
 	end
-
-	if obj._space_object_index ~= nil then
-		local space<const> = self._spaces[obj.space_id]
-		remove_space_object(obj, space)
-	end
+	reconcile_active_object(self, obj)
 
 	registry.instance:deregister(obj)
+	remove_space_object(obj, self._spaces[obj.space_id])
+	remove_world_object(self, obj)
+
 	obj:ondespawn()
 	obj:dispose()
-	remove_world_object(self, obj)
+	obj._despawn_pending = nil
+	obj.world = nil
+end
+
+-- world:despawn(obj)
+--   Requests the object's terminal lifecycle transition. During a tick group
+--   the command commits at the group barrier; outside one it commits directly
+--   through the same operation.
+function world_class:despawn(obj)
+	if obj._despawn_pending then
+		return
+	end
+	obj._despawn_pending = true
+	if self.current_phase == nil then
+		commit_despawn(self, obj)
+		return
+	end
+	local pending_count<const> = self._pending_despawn_count + 1
+	self._pending_despawn_count = pending_count
+	self._pending_despawns[pending_count] = obj
+end
+
+local flush_despawns<const> = function(self)
+	local pending<const> = self._pending_despawns
+	local index = 1
+	while index <= self._pending_despawn_count do
+		local obj<const> = pending[index]
+		pending[index] = nil
+		commit_despawn(self, obj)
+		index = index + 1
+	end
+	self._pending_despawn_count = 0
 end
 
 -- world:get(id): returns the current live object with this id, or nil.
---   Pending-disposal objects are removed from the id map up front, so get()
---   stays a direct lookup instead of re-checking lifecycle flags on every call.
+--   The central Registry owns this direct lookup. A despawn requested during a
+--   tick group remains part of that group's retained snapshot until its barrier.
 function world_class:get(id)
 	return registry.instance:get(id)
 end
@@ -559,9 +577,10 @@ end
 local run_phase<const> = function(self, group, dt_ms)
 	self.current_phase = group
 	self.systems:update_phase(group, dt_ms)
-	self.current_phase = nil
 	self:flush_active_objects()
 	self:flush_active_components()
+	self.current_phase = nil
+	flush_despawns(self)
 end
 
 function world_class:update()
@@ -570,23 +589,6 @@ function world_class:update()
 	run_phase(self, tick_group.gameplay, frame_delta_ms)
 	run_phase(self, tick_group.physics, frame_delta_ms)
 	run_phase(self, tick_group.animation, frame_delta_ms)
-
-	local pending_objects<const> = self._pending_object_disposals
-	for i = 1, #pending_objects do
-		local obj<const> = pending_objects[i]
-		if obj.dispose_flag then
-			local space_object_index<const> = obj._space_object_index
-			if space_object_index ~= nil then
-				remove_space_object(obj, self._spaces[obj.space_id])
-			end
-			registry.instance:deregister(obj)
-			obj:ondespawn()
-			obj:dispose()
-			remove_world_object(self, obj)
-		end
-		pending_objects[i] = nil
-	end
-
 end
 
 function world_class:render()
@@ -594,23 +596,26 @@ function world_class:render()
 end
 
 function world_class:clear()
-	for i = #self._objects, 1, -1 do
-		local obj<const> = self._objects[i]
-		if obj.active then
-			obj:deactivate()
-		end
-		obj:dispose()
+	local objects<const> = self._objects
+	while #objects > 0 do
+		self:despawn(objects[#objects])
 	end
-	self._objects = {}
-	self._spaces = {}
-	self._space_order = {}
-	self._pending_object_disposals = {}
-	self._pending_active_objects = {}
-	self._pending_active_components = {}
-	self._visual_sequence = 0
-	self.current_phase = nil
 	registry.instance:clear()
-	self:add_space('main')
+
+	local component_types<const> = self.systems.component_types
+	local spaces<const> = self._spaces
+	local space_order<const> = self._space_order
+	for space_index = 1, #space_order do
+		local buckets<const> = spaces[space_order[space_index]].active_components_by_type
+		for type_index = 1, #component_types do
+			local type_name<const> = component_types[type_index]
+			if buckets[type_name] == nil then
+				buckets[type_name] = empty_component_bucket
+			end
+		end
+	end
+
+	self._visual_sequence = 0
 	self.active_space_id = 'main'
 	self.active_space = self._spaces.main
 end

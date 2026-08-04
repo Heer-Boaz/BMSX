@@ -31,7 +31,7 @@ function enemy_base.setup_projectile_boundary(self)
 		event = 'screen.leave',
 		subscriber = self,
 		handler = function()
-			self:mark_for_disposal()
+			self:despawn()
 		end,
 	})
 	self.events:on({
@@ -39,7 +39,7 @@ function enemy_base.setup_projectile_boundary(self)
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function()
-			self:mark_for_disposal()
+			self:despawn()
 		end,
 	})
 end
@@ -65,7 +65,7 @@ function enemy_base.bind(self)
 		emitter = 'd',
 		subscriber = self,
 		handler = function()
-			self:mark_for_disposal()
+			self:despawn()
 		end,
 	})
 	self.events:on({
@@ -109,7 +109,7 @@ function enemy_base.process_damage_result(self, result)
 				condition = self.trigger,
 			})
 		end
-		self:mark_for_disposal()
+		self:despawn()
 		return
 	end
 end

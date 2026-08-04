@@ -68,7 +68,7 @@ function pepernoot_projectile:update_motion()
 	self:refresh_tile_aligned_sprite_offset()
 
 	if self.x <= 0 or self.x >= room.world_width then
-		self:mark_for_disposal()
+		self:despawn()
 		return
 	end
 end
@@ -77,16 +77,16 @@ local define_pepernoot_projectile_fsm<const> = function()
 	fsmlibrary.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
-			['tilecollision.begin'] = worldobject.mark_for_disposal,
+			['tilecollision.begin'] = worldobject.despawn,
 			['overlap.begin'] = function(self, _state, event)
 				if event.other_layer ~= collision_enemy_layer then
 					return
 				end
-				self:mark_for_disposal()
+				self:despawn()
 			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.mark_for_disposal,
+				go = worldobject.despawn,
 			},
 			['seal_dissolution'] = '/freeze',
 		},

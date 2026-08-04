@@ -40,7 +40,7 @@ local define_world_item_fsm<const> = function()
 				elseif world_item_inventory[self.item_type] then
 					progression.set(world:get('c'), 'item_picked_' .. item_id, true)
 				end
-				self:mark_for_disposal()
+				self:despawn()
 			end,
 		},
 		states = {

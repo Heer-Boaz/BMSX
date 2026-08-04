@@ -40,12 +40,12 @@ local define_loot_drop_fsm<const> = function()
 				end
 				local player<const> = world:get(event.other_id)
 				if player:collect_loot(self.loot_type, self.loot_value, self.loot_type) then
-					self:mark_for_disposal()
+					self:despawn()
 				end
 			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.mark_for_disposal,
+				go = worldobject.despawn,
 			},
 		},
 		states = {

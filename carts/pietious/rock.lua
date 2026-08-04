@@ -107,7 +107,7 @@ local define_rock_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_end = function(self)
-							self:mark_for_disposal()
+							self:despawn()
 						end,
 					},
 				},

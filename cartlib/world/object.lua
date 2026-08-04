@@ -47,13 +47,9 @@
 --    let the other object respond, or use component activation for
 --    initialisation that must happen on activate.
 --
--- 4. DESTROY VIA mark_for_disposal(), NEVER via world:despawn() from update/events.
---    world:despawn() is only safe to call outside of the world's update loop
---    (e.g. during a room transition that stops the world first). From inside
---    an object's event handler, always use:
---      self:mark_for_disposal()
---    This deactivates the object immediately and defers the actual world removal
---    to the end-of-frame cleanup pass, which is safe.
+-- 4. DESPAWN THROUGH THE OBJECT'S WORLD.
+--    self:despawn() is the only public destruction command. The world commits
+--    it at the current tick-group barrier, or directly when no group is active.
 --
 -- 5. set_space() IS NOT despawn. Use it only to temporarily hide/show objects.
 --    Moving an object to a non-active space hides it from gameplay queries
@@ -84,7 +80,6 @@ function worldobject.new(opts)
 	self.components = {}
 	self.component_map = {}
 	self.space_id = opts.space_id
-	self.dispose_flag = false
 	self.events = eventemitter.events_of(self)
 	return self
 end
@@ -111,7 +106,7 @@ end
 --       self:set_space('main')
 --     end)
 function worldobject:set_space(space_id)
-	return world:set_object_space(self, space_id)
+	return self.world:set_object_space(self, space_id)
 end
 
 -- add_component(comp): attach a component to this object.
@@ -312,7 +307,7 @@ function worldobject:activate()
 	local components<const> = self.components
 	local component_count<const> = #components
 	self.active = true
-	world:activate_object(self)
+	self.world:activate_object(self)
 	self:bind()
 	for i = 1, component_count do
 		components[i]:on_activate()
@@ -334,11 +329,12 @@ end
 
 -- deactivate(): removes the object and its components from active scheduling
 -- without removing it from the world. Component state and event subscriptions
--- are preserved. Called automatically by mark_for_disposal() and ondespawn().
+-- are preserved. Despawn commits remove the same membership directly before
+-- the object's despawn callback runs.
 -- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
-	world:deactivate_object(self)
+	self.world:deactivate_object(self)
 end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.
@@ -348,34 +344,15 @@ end
 function worldobject:onspawn(pos)
 end
 
--- ondespawn(): called when the object is removed from the world.  Deactivates
--- and emits 'despawn'.  Override for despawn-specific cleanup; always call
--- the supermethod so that deactivation and the 'despawn' emission still happen.
+-- ondespawn(): called after world, space, Registry, and active membership have
+-- been removed, while components and event state are still intact. Override
+-- for despawn-specific cleanup; call the supermethod to emit 'despawn'.
 function worldobject:ondespawn()
-	if self.active then
-		self:deactivate()
-	end
 	self.events:emit('despawn')
 end
 
--- mark_for_disposal(): schedules the object for removal at end-of-frame.
---   This is the CORRECT way to destroy an object from inside its own update()
---   or an event handler (where calling world:despawn() directly is unsafe).
---   Sets dispose_flag=true and deactivates the object immediately; the world
---   cleans it up after the current frame finishes.
---
---   WRONG — despawning inside update() or an event handler:
---     world:despawn(self)   -- mutates the object list mid-iteration!
---
---   RIGHT:
---     self:mark_for_disposal()       -- safe, deferred cleanup
-function worldobject:mark_for_disposal()
-	if self.dispose_flag then
-		return
-	end
-	self.dispose_flag = true
-	self:deactivate()
-	world:queue_object_disposal(self)
+function worldobject:despawn()
+	self.world:despawn(self)
 end
 
 function worldobject:dispose()
