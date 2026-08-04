@@ -333,7 +333,7 @@ function castle:sync_current_room_seal_instance()
 		seal_instance.visible = true
 		seal_instance.x = seal.x
 		seal_instance.y = seal.y
-		seal_instance.z = 23
+		seal_instance:set_z(23)
 	end
 
 	seal_instance:gfx(sprite_id)

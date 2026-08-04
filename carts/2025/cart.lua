@@ -7,7 +7,7 @@ local aem<const> = require('cartlib/aem')
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local render_system<const> = require('cartlib/ecs/systems/render')
+local renderer<const> = require('cartlib/render/renderer')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmcomponent<const> = require('cartlib/fsm/component')
 local fsmlibrary<const> = require('cartlib/fsm/library')
@@ -41,7 +41,6 @@ local ecs_systems<const> = {
 	player_input_system,
 	fsm_system,
 	timeline_system,
-	render_system,
 }
 
 local surface_object_class<const> = {}
@@ -118,7 +117,7 @@ end
 
 function director:ctor()
 	local transition_rc<const> = self:get_component('customvisualcomponent')
-	transition_rc.offset_z = director_visual_z
+	transition_rc:set_offset_z(director_visual_z)
 	transition_rc.producer = draw_director_visual
 end
 
@@ -420,6 +419,6 @@ while true do
 
 	world:update()
 	vblank.wait()
-	world:render()
+	renderer:draw()
 	texture_residency.submit_pending_background()
 end

@@ -9,6 +9,7 @@ import {
 	GX_SYSTEM_VRAM_Y,
 } from './system_texture';
 import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/spec/gx/gp0';
+import { packLowHigh16 } from '../../machine/ts/machine/common/word';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';
@@ -190,36 +191,17 @@ export function buildGxVramLayoutModuleSource(layout: GxVramLayout): string {
 	const reservedEntries = Object.entries(layout.reserved).sort(([left], [right]) => left.localeCompare(right));
 	for (let index = 0; index < reservedEntries.length; index += 1) {
 		const [name, rect] = reservedEntries[index];
-		declarations.push(`local ${name}<const> = ${(rect.x | (rect.y << 16)) >>> 0}`);
+		declarations.push(`local ${name}<const> = ${packLowHigh16(rect.x, rect.y)}`);
 		exports.push(name);
-	}
-	const framebuffers = layout.framebuffers;
-	if (framebuffers.length === 1) {
-		const framebuffer = framebuffers[0];
-		declarations.push(`local framebuffer<const> = ${(framebuffer.x | (framebuffer.y << 16)) >>> 0}`);
-		declarations.push('local framebuffer_front<const> = framebuffer');
-		declarations.push('local framebuffer_back<const> = framebuffer');
-		declarations.push(`local framebuffer_size<const> = ${(framebuffer.width | (framebuffer.height << 16)) >>> 0}`);
-		declarations.push('local framebuffer_count<const> = 1');
-		exports.push('framebuffer', 'framebuffer_front', 'framebuffer_back', 'framebuffer_size', 'framebuffer_count');
-	} else if (framebuffers.length === 2) {
-		const framebufferFront = framebuffers[0];
-		const framebufferBack = framebuffers[1];
-		declarations.push(`local framebuffer_front<const> = ${(framebufferFront.x | (framebufferFront.y << 16)) >>> 0}`);
-		declarations.push(`local framebuffer_back<const> = ${(framebufferBack.x | (framebufferBack.y << 16)) >>> 0}`);
-		declarations.push('local framebuffer<const> = framebuffer_front');
-		declarations.push(`local framebuffer_size<const> = ${(framebufferFront.width | (framebufferFront.height << 16)) >>> 0}`);
-		declarations.push('local framebuffer_count<const> = 2');
-		exports.push('framebuffer', 'framebuffer_front', 'framebuffer_back', 'framebuffer_size', 'framebuffer_count');
 	}
 	const slotEntries = Object.entries(layout.slots).sort(([left], [right]) => left.localeCompare(right));
 	for (let index = 0; index < slotEntries.length; index += 1) {
 		const [name, slot] = slotEntries[index];
 		const texture = slot.texture;
-		declarations.push(`local ${name}_texture<const> = ${(texture.x | (texture.y << 16)) >>> 0}`);
+		declarations.push(`local ${name}_texture<const> = ${packLowHigh16(texture.x, texture.y)}`);
 		exports.push(`${name}_texture`);
 		if (slot.clut) {
-			declarations.push(`local ${name}_clut<const> = ${(slot.clut.x | (slot.clut.y << 16)) >>> 0}`);
+			declarations.push(`local ${name}_clut<const> = ${packLowHigh16(slot.clut.x, slot.clut.y)}`);
 			exports.push(`${name}_clut`);
 		}
 	}
@@ -230,4 +212,19 @@ export function buildGxVramLayoutModuleSource(layout: GxVramLayout): string {
 	}
 	lines.push('}', '');
 	return lines.join('\n');
+}
+
+export function buildRendererConfigModuleSource(layout: GxVramLayout): string {
+	const displayPage = layout.framebuffers[0];
+	const drawPage = layout.framebuffers[1] ?? displayPage;
+	return [
+		'module<const>',
+		'',
+		'return {',
+		`\tdisplay_page = ${packLowHigh16(displayPage.x, displayPage.y)},`,
+		`\tdraw_page = ${packLowHigh16(drawPage.x, drawPage.y)},`,
+		`\tpage_size = ${packLowHigh16(displayPage.width, displayPage.height)},`,
+		'}',
+		'',
+	].join('\n');
 }

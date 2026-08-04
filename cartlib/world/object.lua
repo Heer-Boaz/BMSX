@@ -89,7 +89,16 @@ end
 function worldobject:set_pos(x, y, z)
 	self.x = x or self.x
 	self.y = y or self.y
-	self.z = z or self.z
+	if z ~= nil then
+		self:set_z(z)
+	end
+end
+
+function worldobject:set_z(z)
+	self.z = z
+	if self.world ~= nil then
+		self.world:visual_depth_changed()
+	end
 end
 
 -- set_space(space_id): moves this object into the named world space.

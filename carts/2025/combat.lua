@@ -355,7 +355,7 @@ function combat.define_fsm()
 	local finish_combat_results_fade_out<const> = function(self)
 		local maya_b<const> = world:get(combat_maya_b_id)
 		maya_b.visible = false
-		maya_b.z = combat_maya_z
+		maya_b:set_z(combat_maya_z)
 		world:get(text_results_id):clear_text()
 		local director<const> = world:get(director_instance_id)
 		local bg<const> = director.combat_results_visual
@@ -465,7 +465,7 @@ function combat.define_fsm()
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
-			monster.z = 200
+			monster:set_z(200)
 			monster.sprite_component.scale_x = 1
 			monster.sprite_component.scale_y = 1
 
@@ -483,7 +483,7 @@ function combat.define_fsm()
 			maya_a.visible = false
 			maya_a.x = 0
 			maya_a.y = screen_height - maya_a.sy
-			maya_a.z = combat_maya_z
+			maya_a:set_z(combat_maya_z)
 			self.combat_maya_a_base_x = maya_a.x
 			self.combat_maya_a_base_y = maya_a.y
 			self.combat_maya_a_start_x = screen_width
@@ -493,7 +493,7 @@ function combat.define_fsm()
 			all_out.visible = false
 			all_out.x = 0
 			all_out.y = 0
-			all_out.z = 800
+			all_out:set_z(800)
 
 			local maya_b<const> = world:get(combat_maya_b_id)
 			maya_b:gfx('maya_b')
@@ -501,7 +501,7 @@ function combat.define_fsm()
 			maya_b.sprite_component.color = p3_white_color
 			maya_b.x = screen_width - maya_b.sx
 			maya_b.y = screen_height - maya_b.sy
-			maya_b.z = combat_maya_z
+			maya_b:set_z(combat_maya_z)
 			self.combat_maya_b_start_x = maya_b.x
 			self.combat_maya_b_base_y = maya_b.y
 			self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
@@ -997,7 +997,7 @@ function combat.define_fsm()
 			local portrait<const> = world:get(combat_all_out_portrait_id)
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
-			portrait.z = 750
+			portrait:set_z(750)
 			portrait.sprite_component.scale_x = 1
 			portrait.sprite_component.scale_y = 1
 			local target_x<const> = (screen_width * 0.08) // 1
@@ -1088,7 +1088,7 @@ function combat.define_fsm()
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
-			all_out.z = 800
+			all_out:set_z(800)
 			local monster<const> = world:get(combat_monster_id)
 			local maya_a<const> = world:get(combat_maya_a_id)
 			local maya_b<const> = world:get(combat_maya_b_id)
@@ -1227,7 +1227,7 @@ function combat.define_fsm()
 			local maya_b<const> = world:get(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
-			maya_b.z = combat_results_maya_z
+			maya_b:set_z(combat_results_maya_z)
 			self.combat_results_maya_target_x = screen_width - maya_b.sx
 			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x

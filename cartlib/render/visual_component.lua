@@ -19,4 +19,20 @@ function visualcomponent.new(opts, type_name)
 	return self
 end
 
+function visualcomponent:set_offset_z(offset_z)
+	self.offset_z = offset_z
+	local parent<const> = self.parent
+	if parent ~= nil and parent.world ~= nil then
+		parent.world:visual_depth_changed()
+	end
+end
+
+function visualcomponent:set_draw_offset_z(draw_offset_z)
+	self.draw_offset_z = draw_offset_z
+	local parent<const> = self.parent
+	if parent ~= nil and parent.world ~= nil then
+		parent.world:visual_depth_changed()
+	end
+end
+
 return visualcomponent

@@ -26,7 +26,7 @@ function shrine:ctor()
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
 	text.offset_y = shrine_text_y
-	text.offset_z = 1
+	text:set_offset_z(1)
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_shrine_visual
 end

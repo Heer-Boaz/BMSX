@@ -33,7 +33,7 @@ import {
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { buildGxVramLayoutModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
+import { buildRendererConfigModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -175,7 +175,7 @@ test('GX layout validation rejects overlapping slots in one cart-authored workin
 	);
 });
 
-test('GX VRAM module emits one standardized framebuffer contract for a single display page', () => {
+test('renderer config emits one physical page as both display and draw page', () => {
 	const layout: GxVramLayout = {
 		framebuffers: [
 			{ x: 32, y: 16, width: 320, height: 240 },
@@ -186,14 +186,14 @@ test('GX VRAM module emits one standardized framebuffer contract for a single di
 		working_sets: {},
 	};
 	validateGxVramLayout(layout);
-	const source = buildGxVramLayoutModuleSource(layout);
-	assert.match(source, /local framebuffer_front<const> = framebuffer/);
-	assert.match(source, /local framebuffer_back<const> = framebuffer/);
-	assert.match(source, /local framebuffer_size<const> = 15728960/);
-	assert.match(source, /local framebuffer_count<const> = 1/);
+	const source = buildRendererConfigModuleSource(layout);
+	assert.match(source, /display_page = 1048608/);
+	assert.match(source, /draw_page = 1048608/);
+	assert.match(source, /page_size = 15728960/);
+	assert.doesNotMatch(source, /framebuffer|page_count/);
 });
 
-test('GX VRAM module emits one standardized framebuffer contract for two display pages', () => {
+test('renderer config emits distinct physical display and draw pages', () => {
 	const layout: GxVramLayout = {
 		framebuffers: [
 			{ x: 0, y: 0, width: 256, height: 192 },
@@ -205,10 +205,11 @@ test('GX VRAM module emits one standardized framebuffer contract for two display
 		working_sets: {},
 	};
 	validateGxVramLayout(layout);
-	const source = buildGxVramLayoutModuleSource(layout);
-	assert.match(source, /local framebuffer<const> = framebuffer_front/);
-	assert.match(source, /local framebuffer_size<const> = 12583168/);
-	assert.match(source, /local framebuffer_count<const> = 2/);
+	const source = buildRendererConfigModuleSource(layout);
+	assert.match(source, /display_page = 0/);
+	assert.match(source, /draw_page = 256/);
+	assert.match(source, /page_size = 12583168/);
+	assert.doesNotMatch(source, /framebuffer|page_count/);
 });
 
 test('GX layout validation rejects excessive or differently sized display page sets', () => {

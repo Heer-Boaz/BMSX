@@ -129,7 +129,7 @@ end
 function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:gfx('title_screen')
-	self.z = 350
+	self:set_z(350)
 	self.sparkle_sprite = spritecomponent.new({
 		id_local = 'sparkle',
 		offset_z = 1,

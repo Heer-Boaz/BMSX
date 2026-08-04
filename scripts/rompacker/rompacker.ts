@@ -13,13 +13,15 @@ import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
-import { buildGxVramLayoutModuleSource } from './gx_vram_layout';
+import { buildGxVramLayoutModuleSource, buildRendererConfigModuleSource } from './gx_vram_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	GX_VRAM_LAYOUT_MODULE_PATH,
 	GX_VRAM_LAYOUT_SOURCE_PATH,
+	RENDERER_CONFIG_MODULE_PATH,
+	RENDERER_CONFIG_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
@@ -589,6 +591,17 @@ async function main() {
 					source_path: GX_VRAM_LAYOUT_SOURCE_PATH,
 					update_timestamp: 0,
 				});
+				if (gx_vram_layout.framebuffers.length > 0) {
+					const rendererConfigSource = buildRendererConfigModuleSource(gx_vram_layout);
+					romAssets.push({
+						resid: RENDERER_CONFIG_MODULE_PATH,
+						type: 'lua',
+						buffer: Buffer.from(rendererConfigSource),
+						compiled_buffer: compileLuaChunkBuffer(rendererConfigSource, RENDERER_CONFIG_MODULE_PATH),
+						source_path: RENDERER_CONFIG_SOURCE_PATH,
+						update_timestamp: 0,
+					});
+				}
 			}
 			const biosImports = decodeBlua32BiosImports(readFileSync(biosImportsPath));
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);

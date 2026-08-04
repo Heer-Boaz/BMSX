@@ -11,7 +11,6 @@
 --      gameplay       (30) — update state machines and game-specific systems
 --      physics        (40) — movement, collision, position integration
 --      animation      (50) — advance timelines, sprite frame selection
---      presentation   (60) — submit retained visual components
 --
 -- 2. USE ECS SYSTEMS FOR SHARED PER-FRAME WORK.
 --    Logic that runs the same way for every object of a given type (e.g.
@@ -40,7 +39,6 @@ local tick_group<const> = {
 	gameplay = 30,
 	physics = 40,
 	animation = 50,
-	presentation = 60,
 }
 
 local system<const> = {}
@@ -63,7 +61,6 @@ local new_phase_buckets<const> = function()
 		[tick_group.gameplay] = {},
 		[tick_group.physics] = {},
 		[tick_group.animation] = {},
-		[tick_group.presentation] = {},
 	}
 end
 
@@ -91,7 +88,6 @@ local rebuild_system_views<const> = function(self)
 		[tick_group.gameplay] = 0,
 		[tick_group.physics] = 0,
 		[tick_group.animation] = 0,
-		[tick_group.presentation] = 0,
 	}
 	for i = 1, #self.systems do
 		local sys<const> = self.systems[i]
@@ -140,7 +136,6 @@ function system_manager:clear()
 		[tick_group.gameplay] = 0,
 		[tick_group.physics] = 0,
 		[tick_group.animation] = 0,
-		[tick_group.presentation] = 0,
 	}
 end
 

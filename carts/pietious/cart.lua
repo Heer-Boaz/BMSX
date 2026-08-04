@@ -14,7 +14,7 @@ local screen_boundary_capture_system<const> = require('cartlib/ecs/systems/scree
 local screen_boundary_system<const> = require('cartlib/ecs/systems/screen_boundary')
 local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local render_system<const> = require('cartlib/ecs/systems/render')
+local renderer<const> = require('cartlib/render/renderer')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
@@ -75,7 +75,6 @@ local ecs_systems<const> = {
 	tile_collision_system,
 	timeline_system,
 	elevator_system,
-	render_system,
 }
 
 local init_epoch = 0
@@ -224,6 +223,6 @@ while true do
 	world:update()
 
 	vblank.wait()
-	world:render()
+	renderer:draw()
 	vblank.wait()
 end

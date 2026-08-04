@@ -409,7 +409,7 @@ function player:ctor()
 	self.sprite_component.scale_x = 1
 	self.sprite_component.scale_y = 1
 	self.sprite_component.offset_x = 0
-	self.sprite_component.offset_z = 110
+	self.sprite_component:set_offset_z(110)
 
 end
 

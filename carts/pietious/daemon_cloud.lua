@@ -18,7 +18,7 @@ end
 function daemon_cloud:play_once_at(x, y)
 	self.x = x
 	self.y = y
-	self.z = 23
+	self:set_z(23)
 	self.visible = true
 	self:gfx('daemon_smoke_small')
 	self.collider:set_enabled(true)

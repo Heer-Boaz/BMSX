@@ -14,7 +14,7 @@ local damaging_contact_kinds<const> = {
 function enemy_base.ctor(self)
 	self.collider.layer = collision_enemy_layer
 	self.collider.mask = collision_enemy_mask
-	self.sprite_component.offset_z = 110
+	self.sprite_component:set_offset_z(110)
 end
 
 -- Attaches a screenboundarycomponent with room bounds and subscribes to

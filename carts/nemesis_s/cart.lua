@@ -7,7 +7,7 @@ gx_display.reset_256x192()
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local timeline_system<const> = require('cartlib/ecs/systems/timeline')
-local render_system<const> = require('cartlib/ecs/systems/render')
+local renderer<const> = require('cartlib/render/renderer')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
@@ -23,7 +23,6 @@ local ecs_systems<const> = {
 	player_input_system,
 	fsm_system,
 	timeline_system,
-	render_system,
 }
 
 local function init<init>()
@@ -64,5 +63,5 @@ vblank.wait()
 while true do
 	world:update()
 	vblank.wait()
-	world:render()
+	renderer:draw()
 end
