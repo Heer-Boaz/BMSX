@@ -1,0 +1,2091 @@
+{
+	"version": 1,
+	"state": "pre_core_baseline",
+	"cart_projects": [
+		"2025",
+		"cartlib_test",
+		"cartridge_conformance",
+		"cpu_soak",
+		"emptycart",
+		"fade_probe",
+		"hot_resume_test",
+		"monitor_fault_probe",
+		"nemesis_s",
+		"pietious",
+		"renderhwtest",
+		"system_print_test",
+		"vblanktest"
+	],
+	"modules": [
+		{
+			"current_path": "cartlib/action_effects.lua",
+			"final_owner": "ActionEffects",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "effect ids, compiled input bindings, component keys, event ids and integer cooldown time",
+			"hot_functions": [
+				{
+					"name": "actioneffectcomponent:trigger",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/aem.lua",
+			"final_owner": "AudioEventManager",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": [
+					"ide/runtime/aem.ts"
+				]
+			},
+			"representation": "audio ids, ROM or sample-RAM addresses, and raw fixed-point APU parameter words",
+			"hot_functions": [
+				{
+					"name": "handle_event",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "on_apu_irq",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/aem_biquad.lua",
+			"final_owner": "AudioEventManager",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/aem_biquad.test.ts"
+				]
+			},
+			"representation": "audio ids, ROM or sample-RAM addresses, and raw fixed-point APU parameter words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/aem_biquad.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/apu.lua",
+			"final_owner": "APU programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartridge_conformance",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/aem_biquad.test.ts"
+				]
+			},
+			"representation": "audio ids, ROM or sample-RAM addresses, and raw fixed-point APU parameter words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/aem_biquad.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/behaviourtree.lua",
+			"final_owner": "BehaviourTree",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "behaviour-tree root ids, node definitions, component keys and retained blackboards",
+			"hot_functions": [
+				{
+					"name": "action:tick",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				},
+				{
+					"name": "condition:tick",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "selector:tick",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "sequence:tick",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/behaviourtree/component.lua",
+			"final_owner": "BehaviourTree",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "behaviour-tree root ids, node definitions, component keys and retained blackboards",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/bin.lua",
+			"final_owner": "Binary decoder",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "raw ROM addresses, lengths, tokens and decoded asset records",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/clock.lua",
+			"final_owner": "Cart clock",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "integer milliseconds",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/collision/collider_2d_component.lua",
+			"final_owner": "Collision2D",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [
+				{
+					"name": "collider2dcomponent:prepare_overlap",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/collision/sprite_shape.lua",
+			"final_owner": "Collision2D",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [
+				{
+					"name": "select_sprite_shape_ref",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/collision/tile_collision_component.lua",
+			"final_owner": "TileCollision",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/collision2d.lua",
+			"final_owner": "Collision2D",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [
+				{
+					"name": "collision2d.collect_overlaps",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/color.lua",
+			"final_owner": "Color",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025"
+				],
+				"tooling": []
+			},
+			"representation": "packed ARGB color words",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/components/types.lua",
+			"final_owner": "Feature owners",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/dma.lua",
+			"final_owner": "DMA programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"cartridge_conformance",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/aem_biquad.test.ts"
+				]
+			},
+			"representation": "raw source or target addresses and DMA word counts",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/aem_biquad.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/easing.lua",
+			"final_owner": "Easing",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/module_export_lowering.test.ts"
+				]
+			},
+			"representation": "scalar interpolation values",
+			"hot_functions": [
+				{
+					"name": "arc01",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/module_export_lowering.test.ts"
+					]
+				},
+				{
+					"name": "ease_in_out_quad",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "ease_in_quad",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "ease_out_back",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "ease_out_quad",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "linear",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "pingpong01",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "smoothstep",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/module_export_lowering.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/ecs.lua",
+			"final_owner": "Schedule",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [
+				{
+					"name": "system_manager:update_phase",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			]
+		},
+		{
+			"current_path": "cartlib/ecs/systems/action_effect_runtime.lua",
+			"final_owner": "ActionEffects",
+			"disposition": "move",
+			"consumers": {
+				"carts": [],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "action_effect_runtime_system:update",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [],
+			"target_path": "cartlib/action_effects/system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/behaviour_tree.lua",
+			"final_owner": "BehaviourTree",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "behaviour_tree_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/behaviourtree/system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/fsm.lua",
+			"final_owner": "FSM",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "fsm_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/fsm/system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/overlap_2d.lua",
+			"final_owner": "Collision2D",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "overlap_2d_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/collision/overlap_2d_system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/player_input.lua",
+			"final_owner": "PlayerInput",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "player_input_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/input/player_system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/render.lua",
+			"final_owner": "WorldRenderer and Presentation",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "build_visual_commands",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "double_buffer_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "single_buffer_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			]
+		},
+		{
+			"current_path": "cartlib/ecs/systems/screen_boundary.lua",
+			"final_owner": "ScreenBoundary",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "screen_boundary_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/physics/screen_boundary_system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/screen_boundary_capture.lua",
+			"final_owner": "ScreenBoundary",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "screen_boundary_capture_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/physics/screen_boundary_capture_system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/tile_collision.lua",
+			"final_owner": "TileCollision",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "tile_collision_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/collision/tile_collision_system.lua"
+		},
+		{
+			"current_path": "cartlib/ecs/systems/timeline.lua",
+			"final_owner": "Timeline",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, retained dense component references, integer frame time and feature-owned state",
+			"hot_functions": [
+				{
+					"name": "timeline_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			],
+			"target_path": "cartlib/timeline/system.lua"
+		},
+		{
+			"current_path": "cartlib/event_matcher.lua",
+			"final_owner": "EventMatcher",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "event ids, emitter references, listener records and payload references",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/eventemitter.lua",
+			"final_owner": "EventBus",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "event ids, emitter references, listener records and payload references",
+			"hot_functions": [
+				{
+					"name": "eventemitter:emit",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/font.lua",
+			"final_owner": "Font",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/fsm/component.lua",
+			"final_owner": "FSM",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "state-machine ids, compiled definitions, bound state paths and retained instance state",
+			"hot_functions": [
+				{
+					"name": "fsmcomponent:dispatch",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				},
+				{
+					"name": "fsmcomponent:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/fsm/fsm.lua",
+			"final_owner": "FSM",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "state-machine ids, compiled definitions, bound state paths and retained instance state",
+			"hot_functions": [
+				{
+					"name": "state:dispatch_event",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				},
+				{
+					"name": "state:handle_event",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				},
+				{
+					"name": "state:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/fsm_hot_resume.test.ts"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/fsm/library.lua",
+			"final_owner": "FSM",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"scripts/lint/rules/lua_cart/impl/support/require_aliases.ts",
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "state-machine ids, compiled definitions, bound state paths and retained instance state",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/fsm/trace.lua",
+			"final_owner": "none",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [],
+				"tooling": []
+			},
+			"representation": "state-machine ids, compiled definitions, bound state paths and retained instance state",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/command_list.lua",
+			"final_owner": "GX command list",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "raw GP0 command words, packed coordinates, colors, texture-page words and CLUT words",
+			"hot_functions": [
+				{
+					"name": "commandlist.submit",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "commandlist.submit_fenced",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "drawlist:direct16_quad",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "drawlist:direct16_rect",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "drawlist:palette4_quad",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "drawlist:palette4_rect",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/display.lua",
+			"final_owner": "GX display programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"cpu_soak",
+					"emptycart",
+					"fade_probe",
+					"hot_resume_test",
+					"monitor_fault_probe",
+					"nemesis_s",
+					"pietious",
+					"renderhwtest",
+					"system_print_test",
+					"vblanktest"
+				],
+				"tooling": [
+					"tests/lua/gx_gpu_lua.test.ts"
+				]
+			},
+			"representation": "raw display origin, size and PCRTC register words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/gx_gpu_lua.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/gx/gp0.lua",
+			"final_owner": "GX GP0 encoding",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"cpu_soak",
+					"emptycart",
+					"fade_probe",
+					"hot_resume_test",
+					"monitor_fault_probe",
+					"nemesis_s",
+					"pietious",
+					"renderhwtest",
+					"system_print_test",
+					"vblanktest"
+				],
+				"tooling": [
+					"tests/lua/gx_gpu_lua.test.ts",
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "raw GP0 command words, packed coordinates, colors, texture-page words and CLUT words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/gx_gpu_lua.test.ts",
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/gx/gpu.lua",
+			"final_owner": "GX GPU programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"cpu_soak",
+					"emptycart",
+					"fade_probe",
+					"hot_resume_test",
+					"monitor_fault_probe",
+					"nemesis_s",
+					"pietious",
+					"renderhwtest",
+					"system_print_test",
+					"vblanktest"
+				],
+				"tooling": [
+					"tests/lua/gx_gpu_lua.test.ts",
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "raw GP0 command words, packed coordinates, colors, texture-page words and CLUT words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/gx_gpu_lua.test.ts",
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/gx/gte.lua",
+			"final_owner": "GX GTE programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"cartlib_test"
+				],
+				"tooling": []
+			},
+			"representation": "raw GTE register words and packed signed coordinate words",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/image.lua",
+			"final_owner": "GX image binding",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid and retained raw texture binding words",
+			"hot_functions": [
+				{
+					"name": "image.draw",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "image.draw_affine",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "image.draw_tiles",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/imgdec.lua",
+			"final_owner": "GX IMGDEC programming",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"scripts/core_parity_manifest.json",
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "ROM addresses, word counts and raw VRAM destination words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/gx/primitives.lua",
+			"final_owner": "GX primitive geometry",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"renderhwtest"
+				],
+				"tooling": []
+			},
+			"representation": "integer destination coordinates",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/texture.lua",
+			"final_owner": "GX texture binding",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "imgid and retained raw texture binding words",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/gx/upload.lua",
+			"final_owner": "GX raw upload",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"renderhwtest"
+				],
+				"tooling": []
+			},
+			"representation": "RAM addresses, integer source rectangles and raw VRAM coordinates",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/gx/vblank.lua",
+			"final_owner": "GX VBlank",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "raw VBlank IRQ edge sequence",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/input/action_effect/compiler.lua",
+			"final_owner": "InputActionEffects",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/input/action_effect/component.lua",
+			"final_owner": "InputActionEffects",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/input/action_effect/system.lua",
+			"final_owner": "InputActionEffects",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [
+				{
+					"name": "evaluate_component",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "input_action_effect_system:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			]
+		},
+		{
+			"current_path": "cartlib/input/action_parser.lua",
+			"final_owner": "Input action parser",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [
+				{
+					"name": "action_eval",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "eval_function",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/input/keys.lua",
+			"final_owner": "PlayerInput",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/input/player.lua",
+			"final_owner": "PlayerInput",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "player index, compiled input tokens, latched integer or boolean action state, and component keys",
+			"hot_functions": [
+				{
+					"name": "evaluate_action_state",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "input.advance_frame",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "input.is_active",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "sample_player",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua",
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/irq.lua",
+			"final_owner": "IRQ dispatch",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"cartridge_conformance",
+					"cpu_soak",
+					"emptycart",
+					"fade_probe",
+					"hot_resume_test",
+					"monitor_fault_probe",
+					"nemesis_s",
+					"pietious",
+					"renderhwtest",
+					"system_print_test",
+					"vblanktest"
+				],
+				"tooling": []
+			},
+			"representation": "raw IRQ mask and pending-bit words",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/memory.lua",
+			"final_owner": "Memory access",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartridge_conformance",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/aem_biquad.test.ts",
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "raw ROM addresses, lengths, tokens and decoded asset records",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/aem_biquad.test.ts",
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/physics/prohibit_leaving_screen_component.lua",
+			"final_owner": "none",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/physics/screen_boundary_component.lua",
+			"final_owner": "ScreenBoundary",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "component keys, integer bounds, raw GEO buffers, contacts and event ids",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/prefab.lua",
+			"final_owner": "Prefab definitions",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"scripts/lint/rules/lua_cart/impl/support/require_aliases.ts",
+					"toolchain/ts/lua/semantic/model.ts"
+				]
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/progression.lua",
+			"final_owner": "Pietious progression",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "Pietious progression keys, values, rule definitions and event ids",
+			"hot_functions": [],
+			"contract_tests": [],
+			"target_path": "carts/pietious/progression.lua"
+		},
+		{
+			"current_path": "cartlib/registry.lua",
+			"final_owner": "World, EventBus, FSM and BehaviourTree",
+			"disposition": "delete",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts",
+					"toolchain/ts/lua/semantic/model.ts"
+				]
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/render/custom_visual_component.lua",
+			"final_owner": "WorldRenderer",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "customvisualcomponent:draw",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/render/sprite_component.lua",
+			"final_owner": "WorldRenderer",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "spritecomponent:draw",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/render/surface_component.lua",
+			"final_owner": "WorldRenderer",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "surfacecomponent:draw",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/render/tile_layer_component.lua",
+			"final_owner": "WorldRenderer",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "tilelayercomponent:draw",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/render/visual_component.lua",
+			"final_owner": "VisualComponent",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/romdir.lua",
+			"final_owner": "ROM directory",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/rompacker/gx_texture_contract.test.ts"
+				]
+			},
+			"representation": "raw ROM addresses, lengths, tokens and decoded asset records",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/rompacker/gx_texture_contract.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/sprite.lua",
+			"final_owner": "Sprite",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/text/component.lua",
+			"final_owner": "Text",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "textcomponent:draw",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "textcomponent:render_glyphs",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/text/object.lua",
+			"final_owner": "Text",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [
+				{
+					"name": "textobject:advance_typing",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "textobject:submit_highlight",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "textobject:submit_text_background_lines",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/text/text.lua",
+			"final_owner": "Text",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "imgid, integer positions and dimensions, visual component handles, glyph data and raw draw commands",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/timeline/apply.lua",
+			"final_owner": "Timeline",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "timeline ids, integer frame/time state, compiled tracks and component keys",
+			"hot_functions": [
+				{
+					"name": "timeline_apply.compile_frames",
+					"evidence": "missing",
+					"tests": []
+				},
+				{
+					"name": "timeline_apply.compile_tracks",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/timeline/component.lua",
+			"final_owner": "Timeline",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "timeline ids, integer frame/time state, compiled tracks and component keys",
+			"hot_functions": [
+				{
+					"name": "timelinecomponent:tick_active",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/timeline/dispatch.lua",
+			"final_owner": "Timeline",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "timeline ids, integer frame/time state, compiled tracks and component keys",
+			"hot_functions": [
+				{
+					"name": "timeline_dispatch.process_instance_events",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/timeline/timeline.lua",
+			"final_owner": "Timeline",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "timeline ids, integer frame/time state, compiled tracks and component keys",
+			"hot_functions": [
+				{
+					"name": "timeline:update",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/bool01.lua",
+			"final_owner": "Nemesis S",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"nemesis_s"
+				],
+				"tooling": [
+					"tests/lua/const_function_module.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/const_function_module.test.ts"
+			],
+			"target_path": "carts/nemesis_s/util/bool01.lua"
+		},
+		{
+			"current_path": "cartlib/util/clamp.lua",
+			"final_owner": "Shared scalar utility",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/const_function_module.test.ts",
+					"tests/lua/fsm_hot_resume.test.ts",
+					"tests/lua/module_export_lowering.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [
+				{
+					"name": "clamp",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/const_function_module.test.ts"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/lua/const_function_module.test.ts",
+				"tests/lua/fsm_hot_resume.test.ts",
+				"tests/lua/module_export_lowering.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/clear_map.lua",
+			"final_owner": "Shared scalar utility",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/div_toward_zero.lua",
+			"final_owner": "Shared scalar utility",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/const_function_module.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [
+				{
+					"name": "div_toward_zero",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/const_function_module.test.ts"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/lua/const_function_module.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/rect_overlaps.lua",
+			"final_owner": "Shared scalar utility",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/const_function_module.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [
+				{
+					"name": "rect_overlaps",
+					"evidence": "covered",
+					"tests": [
+						"tests/lua/const_function_module.test.ts"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/lua/const_function_module.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/rol8.lua",
+			"final_owner": "Nemesis S",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"nemesis_s"
+				],
+				"tooling": [
+					"tests/lua/const_function_module.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/const_function_module.test.ts"
+			],
+			"target_path": "carts/nemesis_s/util/rol8.lua"
+		},
+		{
+			"current_path": "cartlib/util/scratchrecordbatch.lua",
+			"final_owner": "Scratch records",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/util/swap_remove.lua",
+			"final_owner": "Dense indexes",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"nemesis_s"
+				],
+				"tooling": []
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [
+				{
+					"name": "swap_remove",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/util/wrap_text_lines.lua",
+			"final_owner": "Shared scalar utility",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "raw scalar values or retained dense-array and scratch-record references",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/velocity.lua",
+			"final_owner": "Pietious movement",
+			"disposition": "move",
+			"consumers": {
+				"carts": [
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "Pietious integer speed numerators, denominator and retained axis accumulators",
+			"hot_functions": [
+				{
+					"name": "move_with_velocity",
+					"evidence": "missing",
+					"tests": []
+				}
+			],
+			"contract_tests": [],
+			"target_path": "carts/pietious/velocity.lua"
+		},
+		{
+			"current_path": "cartlib/world/component.lua",
+			"final_owner": "World",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/lua/fsm_hot_resume.test.ts"
+				]
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [],
+			"contract_tests": [
+				"tests/lua/fsm_hot_resume.test.ts"
+			]
+		},
+		{
+			"current_path": "cartlib/world/object.lua",
+			"final_owner": "World",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": []
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [],
+			"contract_tests": []
+		},
+		{
+			"current_path": "cartlib/world/world.lua",
+			"final_owner": "World",
+			"disposition": "keep",
+			"consumers": {
+				"carts": [
+					"2025",
+					"cartlib_test",
+					"nemesis_s",
+					"pietious"
+				],
+				"tooling": [
+					"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+					"tests/carts/pietious/pietious_enter_world_assert.lua",
+					"toolchain/ts/lua/semantic/model.ts"
+				]
+			},
+			"representation": "object ids, Space ids, component keys and retained dense object or component references",
+			"hot_functions": [
+				{
+					"name": "world_class:flush_active_components",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "world_class:flush_active_objects",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "world_class:render",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "world_class:sort_active_visuals",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				},
+				{
+					"name": "world_class:update",
+					"evidence": "covered",
+					"tests": [
+						"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+						"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+						"tests/carts/pietious/pietious_enter_world_assert.lua"
+					]
+				}
+			],
+			"contract_tests": [
+				"tests/carts/2025/2025_combat_intro_skip_assert.lua",
+				"tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua",
+				"tests/carts/pietious/pietious_enter_world_assert.lua"
+			]
+		}
+	]
+}
