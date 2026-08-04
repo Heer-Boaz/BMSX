@@ -37,8 +37,8 @@ Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
   `renderer`.
 - Intern geproduceerde data wordt direct geconsumeerd. Geen DTO-validatie,
   fallbacks, guards of wrappers rond eigen runtime- of producerrepresentaties.
-- Hot paths maken geen tijdelijke tables, closures of iteratorstate. Ze scannen
-  geen globale registry en sorteren niet zonder dirty revision.
+- Hot paths maken geen tijdelijke tables, closures of iteratorstate. Ze filteren
+  geen Registry-buckets en sorteren niet zonder dirty revision.
 - `imgid` is het normale imagecontract, niet een beperking van geavanceerde
   carts.
 - Raw UV's, absolute texturecoördinaten, CLUT-woorden, GP0 en MMIO blijven
@@ -61,8 +61,9 @@ De zichtbare lelijkheid komt niet vooral door namen, maar door verkeerde owners:
 1. `world:update()` schrijft zelf de tick-groupvolgorde uit en `world:render()`
    behandelt tekenen als een ECS-tick. Daardoor liggen systeemuitvoering,
    structurele commits en tekenen in dezelfde owner.
-2. Lifecycle heeft meerdere waarheden: `world`-tabellen, Registry,
-   `dispose_flag`, immediate despawn en een apart end-of-framepad.
+2. Identity en lifecycle hebben meerdere waarheden: Registry concurreert met
+   `world._by_id`, per-`space` `by_id`, `_obj_to_space`, `dispose_flag`, immediate
+   despawn en een apart end-of-framepad.
 3. Queries lekken private `active_space`-tabellen of bouwen iteratorstate en
    filteren Registry-buckets in framewerk.
 4. Rendering, clear, draw target, fence, display origin en page rotation zitten
@@ -107,10 +108,21 @@ overlapcontrole. Hij genereert statische data in de representatie die cartlib
 nodig heeft. Hij genereert geen breed runtime-DTO met aliases voor iedere
 mogelijke consumer.
 
+### `registry`
+
+`registry` is de enige cart-brede authority voor entity-id, type- en
+tagmembership. World objects, componenten en persistente cartservices zoals de
+event emitter registreren daar via hun owning lifecyclegrens. Registry levert
+retained dense buckets; consumers filteren of kopiëren die niet per frame.
+
+Registry bezit geen `space`, active state, tick groups of objectteardown.
+
 ### `world`
 
-`world` is de enige owner van levende objecten, ids, `space`-partities,
-lifecycle en alle object-, tag-, type-, component- en visualindexen.
+`world` bezit de lifecycle van levende world objects, `space`-partities,
+structurele commits en de actieve object-, component- en visualviews per
+`space`. Het bezit geen tweede id-, type- of tagregistry. `world:get(id)` gebruikt
+de centrale Registry.
 
 ### `system_manager`
 
@@ -152,11 +164,15 @@ active views systems lezen.
 
 `world` onderhoudt minimaal:
 
-- één dense lijst van alle levende objecten en een directe id-index;
-- globale en per-`space` type- en tagbuckets;
+- één dense lifecyclelijst van alle levende world objects;
 - de actieve objectlijst van de geselecteerde `space`;
+- actieve type- en tagviews per `space`;
 - actieve componentbuckets per feature-owned componentkey;
 - één actieve visualbucket plus een visual revision.
+
+Registry onderhoudt de directe id-index en de cart-brede retained type- en
+tagbuckets. `world` maakt geen `_by_id`, per-`space` `by_id`, `_obj_to_space` of
+globale kopie van die buckets.
 
 Een `world_object` bewaart gameplaydata en callbacks, maar schrijft nooit in die
 indexen. Het gebruikt zijn toegewezen `world`. `world_object` en componenten
@@ -232,9 +248,10 @@ Een `space`-switch wijzigt de backing bucket van die view bij de barrier; het
 system wordt niet herbouwd en zoekt niet iedere frame opnieuw in
 `world.active_space`.
 
-Tag- en typebuckets zijn echte `world`-indexen. Zij worden niet uit een globale
-Registry gefilterd. Hot cartcode die een lijst nodig heeft, loopt direct over de
-dense array met een numerieke loop.
+Ongekwalificeerde type- en tagqueries gebruiken de retained Registry-buckets.
+`active_*` gebruikt de door `world` onderhouden actieve `space`-views. Hot
+cartcode loopt de ontvangen dense array direct met een numerieke loop; er is
+geen registryscan, filter of resultaatkopie.
 
 ### `world_module` en systeemuitvoering
 
@@ -352,7 +369,9 @@ encodinghelpers.
 - Verplaats ieder system naar zijn feature-owner en bind retained views bij
   composition.
 - Migreer alle live callers van de gewijzigde API.
-- Verwijder Registry, cart-facing toegang tot `world.systems`, `world:render()`,
+- Maak Registry-buckets retained en dense; verwijder de schaduwindexen
+  `world._by_id`, per-`space` `by_id` en `_obj_to_space`.
+- Verwijder cart-facing toegang tot `world.systems`, `world:render()`,
   allocationqueries en het dubbele disposalpad. `world:update()` blijft de
   argumentloze updategrens maar bevat zelf geen uitgeschreven tick groups.
 
@@ -408,7 +427,7 @@ Een implementatie is fout wanneer zij:
 - raw GX-authoring verstopt achter een high-level capabilitiesysteem;
 - rendering op transfercompletion laat wachten;
 - een runtime VRAM-allocator toevoegt;
-- Registry naast nieuwe `world`-indexen laat bestaan;
+- naast Registry een cart-brede id-, type- of tagschaduwindex in `world` bouwt;
 - oude APIs met aliases of forwarding modules bewaart;
 - de interne `system_manager` of tick groups naar cartcode lekt;
 - tekenen terugbrengt als ECS-tick;
