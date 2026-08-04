@@ -333,9 +333,7 @@ Iedere owner reserveert een unieke semantische order binnen zijn stage.
 `registration_index` is uitsluitend een deterministische total-order
 tiebreaker, nooit een semantisch orderingcontract. De surface-inventaris en
 compositietests bewijzen dat orders uniek zijn; de framehotpath valideert dit
-niet. Schedule sorteert eenmaal bij boot op
-`(stage, order, registration_index)` en bewaart flat stagearrays plus counts.
-De framehotpath doet geen sort, filter, tableconstructie of dependencylookup.
+niet. De framehotpath doet geen sort, filter, tableconstructie of dependencylookup.
 
 Een `WorldModule` is een plain cart-owned compositietable met deze concrete
 shape en bootroute:
@@ -344,7 +342,7 @@ shape en bootroute:
 local world_module<const> = {
 	spaces = { 'main' },
 	initial_space = 'main',
-	features = {
+	systems = {
 		player_input,
 		screen_boundary,
 		behaviour_tree,
@@ -354,18 +352,17 @@ local world_module<const> = {
 		collision_2d,
 		timeline,
 	},
-	systems = { elevator_system }, -- alleen echte cart-owned extensions
+	extensions = { elevator_system }, -- alleen echte cart-owned extensions
 }
 
-local world<const> = World.new()
-world:configure_spaces(world_module.spaces, world_module.initial_space)
-local game_schedule<const> = Schedule.new(world, world_module)
+local w<const> = new world()
+w:configure_spaces(world_module.spaces, world_module.initial_space)
 
 -- Op de door de cart gekozen gameplaycadans:
-game_schedule:update(frame_delta_ms)
+w:update()
 ```
 
-Er komt geen `Game`-facade om deze drie owners. Cartlib-featuremodules leveren
+Cartlib-featuremodules leveren
 hun complete interne systemset; de cart kiest semantische modules, niet
 `cartlib/ecs/systems/*`-factories of cartlib-priorities. Voorbeelden:
 
@@ -392,27 +389,6 @@ teruggeschreven.
 
 ### Rendering, presentatie en visual order
 
-`cartlib/render/world_renderer.lua` bezit:
-
-- de ene retained BSS commandbuffer;
-- de gebonden active-visualview;
-- een eigen retained ordered visual projection;
-- visual visibility en visual -> GP0-dispatch;
-- de draw-order-sort wanneer de visual revision werkelijk veranderde.
-
-World/Space bezit de **ongeordende** dense visualmembership, de swap-remove-
-indices, een monotone retained visual sequence en een revision. Membership,
-`WorldObject`-z en visual depthwijzigingen verhogen die revision. Alle 27 live
-directe z/offset-writeplaatsen migreren naar de owning setters. Bij een nieuwe
-revision of Spacewissel kopieert WorldRenderer alleen de componentreferenties
-naar zijn herbruikte projection en sorteert die op de bestaande effectieve depth
-`parent.z + offset_z + draw_offset_z`, daarna op visual sequence. Op een
-onveranderde revision vindt geen kopie of sort plaats. De
-renderer herschikt nooit World-membership en muteert nooit World-removalindices;
-er wordt ook geen tijdelijke sortkeytable gebouwd.
-
-`cartlib/gx/presentation.lua` bezit twee expliciete constructieroutes:
-
 - single-page: unfenced submit, vaste display/draw page;
 - double-page: fenced submit, originwijziging na fence en page swap.
 
@@ -421,25 +397,6 @@ policy: een retained clear color of geen clear. De constructor bindt de passende
 begin-/submitroute; er is geen hardcoded zwart, per-frame policybranch,
 `framebuffer_count`-branch of allocatie en er zijn geen single/double
 ECS-subclasses.
-
-De dependencyrichting is expliciet van high-level naar low-level:
-
-```lua
-function WorldRenderer:render(presentation)
-	local commands<const> = self.commands
-	command_list.begin(commands, self.draw_mode)
-	presentation:begin(commands) -- draw target + geconfigureerde clear
-	self:emit_visuals(commands)
-	presentation:submit(commands) -- submit/fence/origin/swap/next target
-end
-```
-
-`Presentation` importeert of roept de renderlaag nooit aan. De cart-loop roept
-`world_renderer:render(presentation)` en blijft expliciet bepalen waar
-`vblank.wait()` staat. `Presentation:begin` programmeert de huidige draw page en
-voegt volgens zijn eenmaal gekozen policy eventueel clearcommands toe.
-`Presentation:submit` bezit de gekozen submitroute, fence, display-origin,
-pageswap en het programmeren van het volgende draw target.
 
 De exacte double-page boot- en pagevolgorde is:
 
@@ -866,129 +823,7 @@ regressiegates waar hieronder genoemd.
 4. Verwijder oude tests in plaats van ze als compatibilitytests te behouden.
 5. Run de volledige debug-, native-, parity-, heap- en profiler-validatie.
 
-## Performancegates
-
-### Statische hot-surface- en allocationgate
-
-De huidige `strict_lua_no_heap_functions`-controle in
-`scripts/core_parity_manifest.json` inspecteert rechtstreeks benoemde Lua-
-functies; zij is **geen callgraphanalyse**. Deze slice mag dat bewijs niet groter
-voorstellen dan het is.
-
-Voeg daarom `scripts/cartlib_hot_paths.json` toe als exhaustieve hot-function-
-inventaris. Die noemt de roots, iedere concrete statische callee, ieder concreet
-dynamisch methodtarget en de kleine allowlist van bestaande niet-allocerende
-machine-/commandlistprimitives. De roots omvatten:
-
-- Schedule stage-executor en World commit/queryaccess;
-- PlayerInput sampling/evaluation en alle built-in systemupdates;
-- WorldRenderer steady commandbouw en iedere visual draw;
-- Presentation single-/double-page begin/submit;
-- image full/rect/quad draw.
-
-De uitgebreide tooling-audit faalt wanneer een benoemde functie niet bestaat,
-een statisch oplosbare call uit een hot function niet zelf geïnventariseerd of
-expliciet als bestaande nonallocating primitive toegestaan is, of een dynamisch
-methodtarget niet concreet is opgesomd. Op iedere als steady/no-allocation
-gemarkeerde functie blijft de directe source-AST-gate tableconstructie,
-iteratorstate, closures en stringbouw verbieden.
-
-`WorldRenderer:rebuild_visual_projection` is afzonderlijk `dirty_only`: het mag
-de retained projection met `table.sort` ordenen en valt niet onder de bewering
-dat steady render nooit sorteert. Een revisionprobe eist nul rebuilds over een
-onveranderde frame-run en exact één rebuild na één depth/membershiprevision.
-Daarmee is de steady renderroot apart bewezen zonder het legitieme dirty werk
-te verbergen.
-
-### Guest-heapprobe
-
-Voeg `tests/ide/cartlib_steady_state_heap.idetest.js` toe met een vaste topologie
-in `cartlib_test`:
-
-1. 120 frames warm-up;
-2. `t.debugStats()` verzamelt werkelijk de tracked guest heap;
-3. 600 frames input + schedule + render + presentation zonder structurele
-   mutaties;
-4. nogmaals `t.debugStats()`;
-5. `tracked`, `objectBytes` en `stringBytes` moeten exact gelijk zijn.
-
-Beide `t.debugStats()`-meetpunten gebruiken de bestaande
-`collectTrackedHeapBytes()`-collection vóór zij de bytes rapporteren. Gelijkheid
-bewijst geen behouden heapgroei/leak; zij bewijst nadrukkelijk **niet** dat er
-tussendoor geen tijdelijke churn was. Dat laatste wordt door de statische hot-
-inventaris en allocation-sourceaudit afgedwongen. Een aparte mutationprobe mag
-groei door echte spawn/attach aantonen, maar na despawn + collection moet de live
-heap terugkeren naar zijn vastgelegde baseline.
-
-### CPU-profiel
-
-De huidige human-readable profiler print alleen top-N-rijen. Voeg aan dezelfde
-`CpuProfilerSnapshot`-owner een `--cpu-profile-json <path>` toolingoutput toe die
-zonder tekstparsing iedere functie uit `scripts/cartlib_hot_paths.json`
-normaliseert, ook met nul counts wanneer een workload die functie niet raakt.
-De wijziging hoort
-concreet in `scripts/bootrom/cpu_profiler.ts` en de bestaande
-`platforms/node_tooling_options.ts`/`node_tooling_entry.ts` CLI-owner, niet in
-cartlib of de CPU-machine. Het outputcontract is:
-
-```json
-{
-  "workload": "pietious",
-  "presentation_frames": 2132,
-  "total_instructions": 0,
-  "total_base_cycles": 0,
-  "hot_functions": {
-    "cartlib/path.lua::function_id": { "instructions": 0, "base_cycles": 0 }
-  }
-}
-```
-
-De waarden zijn de bestaande profilerwaarden `count` en opcode-`BASE_CYCLES`;
-wallclock komt niet in het contract. Timelinecompletion is `lastFrame + 1`, dus
-de huidige vaste workloads beslaan 21 presentation frames voor `cartlib_test`
-en 2132 voor Pietious. Bouw eerst de debugtooling/BIOS/carts en verzamel beide
-workloads:
-
-```sh
-npm run build:product:node-headless-tooling -- --debug --force
-npm run build:toolchain:bios -- --debug --force
-npm run build:toolchain:cart -- cartlib_test --debug --force
-npm run build:toolchain:cart -- pietious --debug --force
-npm run headless:tooling -- --cpu-profile --cpu-profile-json /tmp/cartlib_test.cpu.json \
-	--input-timeline tests/carts/cartlib_test/cartlib_test_demo.json cartlib_test
-npm run headless:tooling -- --cpu-profile --cpu-profile-json /tmp/pietious.cpu.json \
-	--input-timeline tests/carts/pietious/pietious_demo.json pietious
-npx tsx scripts/perf/check_cartlib_cpu_profile.ts \
-	--baseline tests/performance/cartlib_cpu_baseline.json \
-	/tmp/cartlib_test.cpu.json /tmp/pietious.cpu.json
-```
-
-`tests/performance/cartlib_cpu_baseline.json` bevat dezelfde twee genormaliseerde
-workloads en alle functions uit `scripts/cartlib_hot_paths.json`. De checker
-eist eerst exact dezelfde workload-id en presentation count en rapporteert de
-hot-functiontotalen ook per presentation. Hij faalt zonder tolerantie als per
-workload de integersom van instructions of base cycles over die hot functions
-stijgt, of als een individueel bestaande hot function stijgt. Een vóór de
-refactor bewaard rapport blijft reviewbewijs, maar wordt
-geen correctnessbaseline: de huidige ontbrekende action-effectruntime mag niet
-als 'sneller' tegen het complete feature-set worden gerekend. Nadat de correcte
-core-slice is gereviewd, wordt precies dat complete feature-set de ingecheckte
-baseline voor Surface en Final.
-
 ## Validatiecommando's
-
-### Compile, unit en architectuuraudits
-
-```sh
-npm run compile:machine
-npm run compile:toolchain
-npm run test:lua
-npm run test:rompacker
-npm run audit:architecture-boundaries:strict
-npm run audit:core-parity
-```
-
-### Debugbuilds en echte headless cartruns
 
 ```sh
 npm run build:product:node-headless-tooling -- --debug --force
@@ -1061,32 +896,6 @@ leveren het semantische beeldbewijs. `bare_metal_cart` en `renderhwtest` zijn de
 onafhankelijke capabilitygates die bewijzen dat de high-level migratie raw GX
 niet heeft ingeperkt.
 
-## Afwezigheidsgates
-
-De eindstate moet onderstaande commands succesvol uitvoeren. De `if rg`-vorm
-maakt 'geen match' expliciet tot succes; tests worden niet blind doorzocht omdat
-absence-tests de oude strings juist legitiem als fixtures kunnen noemen.
-
-```sh
-set -eu
-
-test ! -e cartlib/registry.lua
-test ! -e cartlib/components/types.lua
-test ! -e cartlib/ecs.lua
-test ! -d cartlib/ecs/systems
-test ! -e cartlib/render/world.lua
-
-if rg -n 'cartlib/registry|registrypersistent|dispose_flag|mark_for_disposal' cartlib carts; then exit 1; fi
-if rg -n 'world\.systems|update_phase|world:update\(|world:render\(' cartlib carts; then exit 1; fi
-if rg -n 'prefab\.spawn|world:despawn\(|world:add_space\(|function [^ ]*:add_space\(' cartlib carts; then exit 1; fi
-if rg -n 'active_space\.active_components_by_type|objects_with_components|find_by_|find_any_by|all_objects' cartlib carts; then exit 1; fi
-if rg -n 'cartlib/ecs/systems|tick_group\.presentation' cartlib carts; then exit 1; fi
-if rg -n 'image\.load|gx_texture\.load' cartlib carts; then exit 1; fi
-if rg -n 'framebuffer_count|sprites_texture|sprites_clut|stage_texture' cartlib carts; then exit 1; fi
-if rg -n 'GX_VRAM_LAYOUT_|buildGxVramLayoutModuleSource|bmsx/gx_vram_layout' cartlib carts scripts toolchain; then exit 1; fi
-if rg -n '@atlas=|_atlas_[0-9]' cartlib carts scripts toolchain; then exit 1; fi
-```
-
 De generated-module-export-/pathtests bewijzen bovendien dat de oude modulepaden
 niet meer door een cart gedefinieerd of via een forwarding stub geïmporteerd
 kunnen worden en dat alleen de twee nieuwe owner-private paths gereserveerd zijn.
@@ -1111,19 +920,3 @@ kunnen worden en dat alleen de twee nieuwe owner-private paths gereserveerd zijn
   migreren;
 - alleen build/typecheck rapporteren als bewijs van correcte runtime of
   performance.
-
-## Oplevervolgorde per slice
-
-Voor iedere implementatieslice is de vaste volgorde:
-
-1. live owners/diff opnieuw auditen;
-2. bij mirrored machinewerk eerst een TS/C++ representation table maken; de
-   geplande cartlib-slices horen normaal geen machinecontract te wijzigen;
-3. doelcontract en alle hot callsites in de slicebeschrijving afvinken;
-4. alle geraakte live consumers atomair migreren; de vier high-level carts
-   krijgen daarnaast de volledige runtime-/renderprobes;
-5. oude surface fysiek verwijderen;
-6. focused unit + headless runtime uitvoeren;
-7. no-heap/heap/profilebewijs verzamelen;
-8. native/parity en raw capabilitygates uitvoeren;
-9. pas daarna docs en open-slice-status bijwerken.
