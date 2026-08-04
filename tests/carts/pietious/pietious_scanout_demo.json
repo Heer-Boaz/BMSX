@@ -14,8 +14,8 @@
 		}
 	},
 	{
-		"description": "release start",
-		"frame": 103,
+		"description": "release start after a complete cart input interval",
+		"frame": 105,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

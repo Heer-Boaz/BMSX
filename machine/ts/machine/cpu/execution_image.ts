@@ -1,5 +1,5 @@
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
-import { OpCode } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { Closure } from './closure';
 import type { Table } from './table';
 import { ValueTag } from './value';
@@ -16,9 +16,37 @@ export const DECODED_PAGE_SHIFT = 8;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
 export const DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1;
 
+export const enum DecodedDispatchOp {
+	FusedShlBxor = OPCODE_COUNT,
+	FusedAddShl = OPCODE_COUNT + 1,
+	FusedShrBxor = OPCODE_COUNT + 2,
+}
+
+export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 3;
+
+export const DECODED_DISPATCH_BASE_CYCLES = new Uint8Array(DECODED_DISPATCH_OP_COUNT);
+DECODED_DISPATCH_BASE_CYCLES.set(BASE_CYCLES);
+DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShlBxor] = BASE_CYCLES[OpCode.SHL];
+DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedAddShl] = BASE_CYCLES[OpCode.ADD];
+DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShrBxor] = BASE_CYCLES[OpCode.SHR];
+
+export function decodedDispatchOp(first: OpCode, second: OpCode): number {
+	switch (first) {
+		case OpCode.SHL:
+			return second === OpCode.BXOR ? DecodedDispatchOp.FusedShlBxor : first;
+		case OpCode.ADD:
+			return second === OpCode.SHL ? DecodedDispatchOp.FusedAddShl : first;
+		case OpCode.SHR:
+			return second === OpCode.BXOR ? DecodedDispatchOp.FusedShrBxor : first;
+		default:
+			return first;
+	}
+}
+
 export type DecodedInstructionPage = {
 	widths: Uint8Array;
 	ops: Uint8Array;
+	dispatchOps: Uint8Array;
 	a: Uint16Array;
 	b: Uint16Array;
 	c: Uint16Array;
@@ -63,6 +91,7 @@ export function createDecodedInstructionPage(): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
 		ops: new Uint8Array(DECODED_PAGE_WORDS),
+		dispatchOps: new Uint8Array(DECODED_PAGE_WORDS),
 		a: new Uint16Array(DECODED_PAGE_WORDS),
 		b: new Uint16Array(DECODED_PAGE_WORDS),
 		c: new Uint16Array(DECODED_PAGE_WORDS),
@@ -76,5 +105,6 @@ export function createDecodedInstructionPage(): DecodedInstructionPage {
 	};
 	page.widths.fill(1);
 	page.ops.fill(OpCode.WIDE);
+	page.dispatchOps.fill(OpCode.WIDE);
 	return page;
 }

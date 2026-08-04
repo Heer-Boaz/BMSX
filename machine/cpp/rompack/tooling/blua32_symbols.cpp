@@ -76,12 +76,57 @@ auto encodeI32Array(const std::vector<i32>& values) -> BinValue {
 	return BinValue(std::move(result));
 }
 
+auto decodeU32Array(const BinValue& value) -> std::vector<u32> {
+	const BinArray& values = value.asArray();
+	std::vector<u32> result;
+	result.reserve(values.size());
+	for (const BinValue& entry : values) {
+		result.push_back(static_cast<u32>(entry.toNumber()));
+	}
+	return result;
+}
+
+auto encodeU32Array(const std::vector<u32>& values) -> BinValue {
+	BinArray result;
+	result.reserve(values.size());
+	for (u32 value : values) {
+		result.emplace_back(static_cast<i64>(value));
+	}
+	return BinValue(std::move(result));
+}
+
+auto decodeInlineCallSites(const BinValue& value) -> std::vector<Blua32InlineCallSite> {
+	const BinArray& values = value.asArray();
+	std::vector<Blua32InlineCallSite> result;
+	result.reserve(values.size());
+	for (const BinValue& entry : values) {
+		result.push_back(Blua32InlineCallSite{
+			entry.require("calleeFunctionId").asString(),
+			decodeSourceRange(entry.require("callRange")),
+		});
+	}
+	return result;
+}
+
+auto encodeInlineCallSites(const std::vector<Blua32InlineCallSite>& callSites) -> BinValue {
+	BinArray result;
+	result.reserve(callSites.size());
+	for (const Blua32InlineCallSite& callSite : callSites) {
+		BinObject value;
+		value["calleeFunctionId"] = BinValue(callSite.calleeFunctionId);
+		value["callRange"] = encodeSourceRange(callSite.callRange);
+		result.emplace_back(std::move(value));
+	}
+	return BinValue(std::move(result));
+}
+
 auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
 	return Blua32LocalSlotDebug{
 		value.require("name").asString(),
 		value.require("registerIndex").toI32(),
 		decodeSourceRange(value.require("definition")),
 		decodeSourceRange(value.require("scope")),
+		decodeInlineCallSites(value.require("inlineCallSites")),
 	};
 }
 
@@ -91,22 +136,23 @@ auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	value["registerIndex"] = BinValue(slot.registerIndex);
 	value["definition"] = encodeSourceRange(slot.definition);
 	value["scope"] = encodeSourceRange(slot.scope);
+	value["inlineCallSites"] = encodeInlineCallSites(slot.inlineCallSites);
 	return BinValue(std::move(value));
 }
 
 auto decodeStatementPoint(const BinValue& value) -> Blua32StatementPoint {
 	return Blua32StatementPoint{
 		value.require("wordOffset").toI32(),
-		value.require("inlineDepth").toI32(),
 		decodeSourceRange(value.require("range")),
+		decodeInlineCallSites(value.require("inlineCallSites")),
 	};
 }
 
 auto encodeStatementPoint(const Blua32StatementPoint& point) -> BinValue {
 	BinObject value;
 	value["wordOffset"] = BinValue(point.wordOffset);
-	value["inlineDepth"] = BinValue(point.inlineDepth);
 	value["range"] = encodeSourceRange(point.range);
+	value["inlineCallSites"] = encodeInlineCallSites(point.inlineCallSites);
 	return BinValue(std::move(value));
 }
 
@@ -118,6 +164,7 @@ auto decodeResumePoint(const BinValue& value) -> Blua32ResumePoint {
 		decodeI32Array(value.require("liveRegisters")),
 		decodeI32Array(value.require("uses")),
 		decodeI32Array(value.require("defs")),
+		decodeInlineCallSites(value.require("inlineCallSites")),
 	};
 }
 
@@ -129,6 +176,7 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 	value["liveRegisters"] = encodeI32Array(point.liveRegisters);
 	value["uses"] = encodeI32Array(point.uses);
 	value["defs"] = encodeI32Array(point.defs);
+	value["inlineCallSites"] = encodeInlineCallSites(point.inlineCallSites);
 	return BinValue(std::move(value));
 }
 
@@ -150,6 +198,14 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 			metadata.debugRanges.push_back(decodeSourceRange(range));
 		}
 	}
+	const BinArray& debugInlineCallSiteChains = value.require("debugInlineCallSiteChains").asArray();
+	metadata.debugInlineCallSiteChains.reserve(debugInlineCallSiteChains.size());
+	for (const BinValue& callSites : debugInlineCallSiteChains) {
+		metadata.debugInlineCallSiteChains.push_back(decodeInlineCallSites(callSites));
+	}
+	metadata.debugInlineCallSiteChainIds = decodeU32Array(
+		value.require("debugInlineCallSiteChainIds")
+	);
 
 	const BinArray& statementPoints = value.require("statementPointsByFunction").asArray();
 	metadata.statementPointsByFunction.resize(statementPoints.size());
@@ -215,6 +271,14 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["debugRanges"] = BinValue(std::move(debugRanges));
 
+	BinArray debugInlineCallSiteChains;
+	debugInlineCallSiteChains.reserve(metadata.debugInlineCallSiteChains.size());
+	for (const std::vector<Blua32InlineCallSite>& callSites : metadata.debugInlineCallSiteChains) {
+		debugInlineCallSiteChains.push_back(encodeInlineCallSites(callSites));
+	}
+	value["debugInlineCallSiteChains"] = BinValue(std::move(debugInlineCallSiteChains));
+	value["debugInlineCallSiteChainIds"] = encodeU32Array(metadata.debugInlineCallSiteChainIds);
+
 	BinArray statementPoints;
 	statementPoints.reserve(metadata.statementPointsByFunction.size());
 	for (const std::vector<Blua32StatementPoint>& functionPoints : metadata.statementPointsByFunction) {
@@ -258,25 +322,6 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["upvalueNamesByFunction"] = BinValue(std::move(upvalueNames));
 	return BinValue(std::move(value));
-}
-
-auto decodeU32Array(const BinValue& value) -> std::vector<u32> {
-	const BinArray& values = value.asArray();
-	std::vector<u32> result;
-	result.reserve(values.size());
-	for (const BinValue& entry : values) {
-		result.push_back(static_cast<u32>(entry.toNumber()));
-	}
-	return result;
-}
-
-auto encodeU32Array(const std::vector<u32>& values) -> BinValue {
-	BinArray result;
-	result.reserve(values.size());
-	for (u32 value : values) {
-		result.emplace_back(static_cast<i64>(value));
-	}
-	return BinValue(std::move(result));
 }
 
 } // namespace
@@ -351,6 +396,16 @@ auto blua32SourceRangeAtPc(
 ) -> std::optional<SourceRange> {
 	const size_t wordIndex = static_cast<size_t>((pc - textAddress) / INSTRUCTION_BYTES);
 	return symbols.metadata.debugRanges[wordIndex];
+}
+
+auto blua32InlineCallSitesAtPc(
+	const Blua32SymbolsImage& symbols,
+	u32 textAddress,
+	u32 pc
+) -> std::span<const Blua32InlineCallSite> {
+	const size_t wordIndex = static_cast<size_t>((pc - textAddress) / INSTRUCTION_BYTES);
+	const u32 chainId = symbols.metadata.debugInlineCallSiteChainIds[wordIndex];
+	return symbols.metadata.debugInlineCallSiteChains[chainId];
 }
 
 } // namespace bmsx

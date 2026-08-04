@@ -206,7 +206,7 @@ export function buildRuntimeBreakpointPcs(
 						target.set(
 							image.layout.functions[functionIndex].codeAddress
 							+ point.wordOffset * INSTRUCTION_BYTES,
-							point.inlineDepth,
+							point.inlineCallSites.length,
 						);
 					}
 				}
@@ -247,7 +247,10 @@ function rebuildRuntimeStepPcs(state: RuntimeDebuggerState): void {
 			const points = image.symbols!.metadata.statementPointsByFunction[functionIndex];
 			for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
 				const point = points[pointIndex];
-				target.set(codeAddress + point.wordOffset * INSTRUCTION_BYTES, point.inlineDepth);
+				target.set(
+					codeAddress + point.wordOffset * INSTRUCTION_BYTES,
+					point.inlineCallSites.length,
+				);
 			}
 		}
 	}

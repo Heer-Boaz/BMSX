@@ -13,12 +13,6 @@
 #include <stdexcept>
 #include <unordered_set>
 
-#if defined(__GNUC__) || defined(__clang__)
-#define BMSX_USE_COMPUTED_GOTO 1
-#else
-#define BMSX_USE_COMPUTED_GOTO 0
-#endif
-
 namespace bmsx {
 
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
@@ -760,9 +754,11 @@ void CPU::decodeImageText(Blua32ExecutionImage& image) {
 	for (DecodedInstructionPage& page : image.decodedPages) {
 		for (DecodedInstruction& decoded : page.words) {
 			decoded.op = static_cast<uint8_t>(OpCode::WIDE);
+			decoded.dispatchOp = static_cast<uint8_t>(OpCode::WIDE);
 			decoded.width = 1;
 		}
 	}
+	size_t previousInstructionWordIndex = image.decodedWordCount;
 	for (size_t wordIndex = 0; wordIndex < image.decodedWordCount;) {
 		int width = 1;
 		uint8_t wideA = 0;
@@ -801,6 +797,7 @@ void CPU::decodeImageText(Blua32ExecutionImage& image) {
 		DecodedInstruction decoded;
 		decoded.word = instr;
 		decoded.op = op;
+		decoded.dispatchOp = op;
 		decoded.width = static_cast<uint8_t>(width);
 		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
 		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
@@ -832,6 +829,11 @@ void CPU::decodeImageText(Blua32ExecutionImage& image) {
 			image.tableLoadCaches.push_back(TableLoadInlineCache{});
 		}
 		decodedSlotForWrite(image, wordIndex) = decoded;
+		if (previousInstructionWordIndex != image.decodedWordCount) {
+			DecodedInstruction& previous = decodedSlotForWrite(image, previousInstructionWordIndex);
+			previous.dispatchOp = decodedDispatchOp(previous.op, op);
+		}
+		previousInstructionWordIndex = wordIndex;
 		wordIndex += static_cast<size_t>(width);
 	}
 }
@@ -1977,102 +1979,100 @@ RunResult CPU::runLoop(
 	int rkC = 0;
 	int disp = 0;
 	Value* registers = nullptr;
-#if BMSX_USE_COMPUTED_GOTO
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[OPCODE_COUNT] = {
-#define OP(name) &&dispatch_##name,
-#include "spec/blua32/opcode_list.inl"
-#undef OP
-	};
-#pragma GCC diagnostic pop
-#endif
 	for (;;) {
 		try {
-dispatch_loop_check:
-	if constexpr (RootBoundary) {
-		if (frames.empty()) {
-			return RunResult::Halted;
-		}
-	} else {
-		if (static_cast<int>(frames.size()) <= targetDepth) {
-			return RunResult::Halted;
-		}
-	}
-	if (m_hardHalted
-		|| m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())
-		|| m_memoryWriteBlocked) {
-		return RunResult::Halted;
-	}
-	if (m_yieldRequested) {
-		m_yieldRequested = false;
-		return RunResult::Yielded;
-	}
-	if (instructionBudgetRemaining <= 0) {
-		return RunResult::Yielded;
-	}
-	if constexpr (Instrumented) {
-		if (m_nonMaskableInterruptPending) {
-			enterPendingInterrupt();
-			goto dispatch_loop_check;
-		}
-		if ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& m_irqController.hasAssertedMaskableInterruptLine()) {
-			CallFrame* interruptedFrame = frames.back().get();
-			Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
-			if ((hookBinding.preMaskableInterruptDomainMask
-				& executionDomainBit(interruptedImage->executionDomainId)) != 0u
-				&& hookBinding.hook(
-					hookBinding.context,
-					interruptedImage->executionDomainId,
-					interruptedFrame->pc
-				)) {
-				return RunResult::ExecutionStopped;
+			if constexpr (RootBoundary) {
+				if (frames.empty()) {
+					return RunResult::Halted;
+				}
+			} else {
+				if (static_cast<int>(frames.size()) <= targetDepth) {
+					return RunResult::Halted;
+				}
 			}
-			enterPendingInterrupt();
-			goto dispatch_loop_check;
-		}
-	} else {
-		if (m_nonMaskableInterruptPending
-			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-				&& m_irqController.hasAssertedMaskableInterruptLine())) {
-			enterPendingInterrupt();
-			goto dispatch_loop_check;
-		}
-	}
-		frame = frames.back().get();
-		image = frame->executionImage;
-		registers = frame->registers;
-		pc = frame->pc;
-		wordIndex = (pc - image->textAddress) / INSTRUCTION_BYTES;
-		if (wordIndex >= image->decodedWordCount) {
-			hardHalt();
-			return RunResult::Halted;
-		}
-		if constexpr (Instrumented) {
-			if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
-				&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
-				return RunResult::ExecutionStopped;
+			if (m_hardHalted
+				|| m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())
+				|| m_memoryWriteBlocked) {
+				return RunResult::Halted;
 			}
-		}
-		decoded = &decodedAtWordIndex(*image, wordIndex);
-		m_currentInstructionPc = pc;
-		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
-		m_lastExecutionDomainId = image->executionDomainId;
-		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
-	a = decoded->a;
-	b = decoded->b;
-	c = decoded->c;
-	bx = decoded->bx;
-	sbx = decoded->sbx;
-	rkB = decoded->rkB;
-	rkC = decoded->rkC;
-	disp = decoded->disp;
+			if (m_yieldRequested) {
+				m_yieldRequested = false;
+				return RunResult::Yielded;
+			}
+			if (instructionBudgetRemaining <= 0) {
+				return RunResult::Yielded;
+			}
+			if constexpr (Instrumented) {
+				if (m_nonMaskableInterruptPending) {
+					enterPendingInterrupt();
+					continue;
+				}
+				if ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+					&& m_irqController.hasAssertedMaskableInterruptLine()) {
+					CallFrame* interruptedFrame = frames.back().get();
+					Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
+					if ((hookBinding.preMaskableInterruptDomainMask
+						& executionDomainBit(interruptedImage->executionDomainId)) != 0u
+						&& hookBinding.hook(
+							hookBinding.context,
+							interruptedImage->executionDomainId,
+							interruptedFrame->pc
+						)) {
+						return RunResult::ExecutionStopped;
+					}
+					enterPendingInterrupt();
+					continue;
+				}
+			} else {
+				if (m_nonMaskableInterruptPending
+					|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+						&& m_irqController.hasAssertedMaskableInterruptLine())) {
+					enterPendingInterrupt();
+					continue;
+				}
+			}
+			frame = frames.back().get();
+			image = frame->executionImage;
+			registers = frame->registers;
+			pc = frame->pc;
+			wordIndex = (pc - image->textAddress) / INSTRUCTION_BYTES;
+			if (wordIndex >= image->decodedWordCount) {
+				hardHalt();
+				return RunResult::Halted;
+			}
+			if constexpr (Instrumented) {
+				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
+					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
+					return RunResult::ExecutionStopped;
+				}
+			}
+			decoded = &decodedAtWordIndex(*image, wordIndex);
+			m_currentInstructionPc = pc;
+			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+			m_lastExecutionDomainId = image->executionDomainId;
+			lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
+			uint8_t dispatchOp;
+			if constexpr (Instrumented) {
+				dispatchOp = decoded->op;
+				instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[dispatchOp]);
+			} else {
+				dispatchOp = decoded->dispatchOp;
+				instructionBudgetRemaining -= static_cast<int>(
+					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
+				);
+			}
+			a = decoded->a;
+			b = decoded->b;
+			c = decoded->c;
+			bx = decoded->bx;
+			sbx = decoded->sbx;
+			rkB = decoded->rkB;
+			rkC = decoded->rkC;
+			disp = decoded->disp;
 
-	#define FRAME (*frame)
-	#define IMAGE (*image)
-	#define REG(index) registers[static_cast<size_t>(index)]
+#define FRAME (*frame)
+#define IMAGE (*image)
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	REG(index) = (valueExpr); \
@@ -2085,65 +2085,134 @@ dispatch_loop_check:
 	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
+#define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 
-#if BMSX_USE_COMPUTED_GOTO
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-	goto *kDispatchTargets[decoded->op];
-#pragma GCC diagnostic pop
-#else
-	switch (static_cast<OpCode>(decoded->op)) {
-#define DISPATCH_LABEL(name) case OpCode::name:
+			if constexpr (Instrumented) {
+				switch (dispatchOp) {
 #include "machine/cpu/cpu_dispatch.inl"
-#undef DISPATCH_LABEL
-	}
-#endif
+				}
+			} else {
+				switch (dispatchOp) {
+				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor): {
+					const Value& shiftLeftValue = readRK(FRAME, rkB);
+					const Value& shiftRightValue = readRK(FRAME, rkC);
+					const uint32_t shifted = toU32(shiftLeftValue)
+						<< (toU32(shiftRightValue) & 31u);
+					SET_REGISTER_FAST(
+						a,
+						valueNumber(static_cast<double>(static_cast<int32_t>(shifted)))
+					);
+					if (instructionBudgetRemaining <= 0) {
+						DISPATCH_CONTINUE();
+					}
+					const u32 successorPc = FRAME.pc;
+					const size_t successorWordIndex =
+						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
+					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
+					m_currentInstructionPc = successorPc;
+					FRAME.pc = successorPc
+						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+					m_lastExecutionDomainId = IMAGE.executionDomainId;
+					lastPc = successorPc
+						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
+					instructionBudgetRemaining -= static_cast<int>(
+						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
+					);
+					const Value& xorLeftValue = readRK(FRAME, decoded->rkB);
+					const Value& xorRightValue = readRK(FRAME, decoded->rkC);
+					const int32_t xorResult = static_cast<int32_t>(
+						toU32(xorLeftValue) ^ toU32(xorRightValue)
+					);
+					SET_REGISTER_FAST(
+						decoded->a,
+						valueNumber(static_cast<double>(xorResult))
+					);
+					DISPATCH_CONTINUE();
+				}
+				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
+					const Value& addLeftValue = readRK(FRAME, rkB);
+					const Value& addRightValue = readRK(FRAME, rkC);
+					SET_REGISTER_FAST(
+						a,
+						valueNumber(asNumber(addLeftValue) + asNumber(addRightValue))
+					);
+					if (instructionBudgetRemaining <= 0) {
+						DISPATCH_CONTINUE();
+					}
+					const u32 successorPc = FRAME.pc;
+					const size_t successorWordIndex =
+						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
+					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
+					m_currentInstructionPc = successorPc;
+					FRAME.pc = successorPc
+						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+					m_lastExecutionDomainId = IMAGE.executionDomainId;
+					lastPc = successorPc
+						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
+					instructionBudgetRemaining -= static_cast<int>(
+						BASE_CYCLES[static_cast<size_t>(OpCode::SHL)]
+					);
+					const Value& shiftLeftValue = readRK(FRAME, decoded->rkB);
+					const Value& shiftRightValue = readRK(FRAME, decoded->rkC);
+					const uint32_t shifted = toU32(shiftLeftValue)
+						<< (toU32(shiftRightValue) & 31u);
+					SET_REGISTER_FAST(
+						decoded->a,
+						valueNumber(static_cast<double>(static_cast<int32_t>(shifted)))
+					);
+					DISPATCH_CONTINUE();
+				}
+				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
+					const Value& shiftLeftValue = readRK(FRAME, rkB);
+					const Value& shiftRightValue = readRK(FRAME, rkC);
+					const int32_t shifted = toI32(shiftLeftValue)
+						>> (toU32(shiftRightValue) & 31u);
+					SET_REGISTER_FAST(a, valueNumber(static_cast<double>(shifted)));
+					if (instructionBudgetRemaining <= 0) {
+						DISPATCH_CONTINUE();
+					}
+					const u32 successorPc = FRAME.pc;
+					const size_t successorWordIndex =
+						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
+					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
+					m_currentInstructionPc = successorPc;
+					FRAME.pc = successorPc
+						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+					m_lastExecutionDomainId = IMAGE.executionDomainId;
+					lastPc = successorPc
+						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
+					instructionBudgetRemaining -= static_cast<int>(
+						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
+					);
+					const Value& xorLeftValue = readRK(FRAME, decoded->rkB);
+					const Value& xorRightValue = readRK(FRAME, decoded->rkC);
+					const int32_t xorResult = static_cast<int32_t>(
+						toU32(xorLeftValue) ^ toU32(xorRightValue)
+					);
+					SET_REGISTER_FAST(
+						decoded->a,
+						valueNumber(static_cast<double>(xorResult))
+					);
+					DISPATCH_CONTINUE();
+				}
+#include "machine/cpu/cpu_dispatch.inl"
+				}
+			}
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
-#undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
-#undef SET_REGISTER_FAST
-#undef CYCLES_ADD
-	#undef REG
-	#undef IMAGE
-	#undef FRAME
-	goto dispatch_loop_check;
-
-#if BMSX_USE_COMPUTED_GOTO
-	#define FRAME (*frame)
-	#define IMAGE (*image)
-	#define REG(index) registers[static_cast<size_t>(index)]
-#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
-#define SET_REGISTER_FAST(index, valueExpr) do { \
-	REG(index) = (valueExpr); \
-	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.top) { \
-		FRAME.top = nextTop; \
-	} \
-} while (0)
-#define SKIP_NEXT_INSTRUCTION() do { \
-	skipNextInstruction(FRAME); \
-} while (0)
-#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
-#define DISPATCH_LABEL(name) dispatch_##name:
-#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
-#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
-#include "machine/cpu/cpu_dispatch.inl"
-#undef DISPATCH_BLOCKED
-#undef DISPATCH_CONTINUE
-#undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
 #undef DISPATCH_LABEL
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
-	#undef REG
-	#undef IMAGE
-	#undef FRAME
-#endif
+#undef REG
+#undef IMAGE
+#undef FRAME
+			continue;
 		} catch (const LuaOutOfMemorySignal&) {
 			if (!handleProtectedCallError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
 				enterLuaFaultException(

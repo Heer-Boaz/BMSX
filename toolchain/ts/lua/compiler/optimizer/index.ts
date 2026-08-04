@@ -1,7 +1,15 @@
 import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
-import type { ProgramConstant, ProgramFunctionSymbol, Proto, UpvalueDesc } from '../program';
-import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import type {
+	InlineCallSite,
+	LocalSlotDebug,
+	ProgramConstant,
+	ProgramFunctionSymbol,
+	Proto,
+	UpvalueDesc,
+} from '../program';
+import { inlineCallChainContainsFunction, ROOT_INLINE_CALL_SITES } from '../inline_debug';
+import { MAX_EXT_CONST, MAX_EXT_REGISTER_A } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import {
 	cloneDuplicatedInstruction,
@@ -11,7 +19,12 @@ import {
 	isPureInstruction,
 } from './instructions';
 import { applyGlobalOptimizations } from './ssa';
-import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
+import {
+	collectInstructionDefs,
+	collectInstructionUses,
+	computeBlockLiveOut,
+	computeInstructionLiveOutAt,
+} from './liveness';
 import {
 	ConstValueKind,
 	constValueForOptimization,
@@ -43,8 +56,8 @@ export type Instruction = {
 		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
 		| { kind: 'bios_function'; importIndex: number };
 	statementRange?: SourceRange;
-	inlineDepth?: number;
 	resumeRange?: SourceRange;
+	inlineCallSites?: ReadonlyArray<InlineCallSite>;
 };
 
 export type OptimizationLevel = 0 | 1 | 2 | 3;
@@ -52,11 +65,14 @@ export type OptimizationLevel = 0 | 1 | 2 | 3;
 type OptimizationProtoMeta = Pick<Proto, 'numParams' | 'isVararg' | 'maxStack' | 'upvalueDescs'>;
 
 export type OptimizationContext = {
+	currentFunctionId: string;
 	constPool: ReadonlyArray<ProgramConstant>;
 	constIndex: (value: ProgramConstant) => number;
 	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
+	getProtoFunctionId: (protoIndex: number) => string;
+	getProtoLocalSlots: (protoIndex: number) => ReadonlyArray<LocalSlotDebug>;
 	relocatedConstIndices: ReadonlySet<number>;
 	closureWrittenRegisters: ReadonlySet<number>;
 };
@@ -64,6 +80,7 @@ export type OptimizationContext = {
 export type InstructionSet = {
 	instructions: Instruction[];
 	ranges: Array<SourceRange | null>;
+	inlineLocalSlots?: LocalSlotDebug[];
 };
 
 type InstructionRegisterOperand = 'a' | 'b' | 'c';
@@ -1298,13 +1315,39 @@ const cleanupControlFlow = (set: InstructionSet): InstructionSet => {
 };
 
 type InlineCallee = {
+	functionId: string;
+	localSlots: ReadonlyArray<LocalSlotDebug>;
 	meta: OptimizationProtoMeta;
 	set: InstructionSet;
 };
 
 const MAX_INLINE_CALLEE_INSTRUCTIONS = 48;
+const MAX_INLINE_LOOP_CALLEE_INSTRUCTIONS = 96;
 const MAX_INLINE_GROWTH = 256;
 const MAX_INLINE_CALLS_PER_FUNCTION = 64;
+
+const computeInlineLoopDepth = (instructions: Instruction[]): Uint16Array => {
+	const depthDeltas = new Int32Array(instructions.length + 1);
+	for (let index = 0; index < instructions.length; index += 1) {
+		const instruction = instructions[index];
+		if (!isJump(instruction)) {
+			continue;
+		}
+		const target = getJumpTarget(instruction);
+		if (target > index) {
+			continue;
+		}
+		depthDeltas[target] += 1;
+		depthDeltas[index + 1] -= 1;
+	}
+	const loopDepth = new Uint16Array(instructions.length);
+	let depth = 0;
+	for (let index = 0; index < instructions.length; index += 1) {
+		depth += depthDeltas[index];
+		loopDepth[index] = depth;
+	}
+	return loopDepth;
+};
 
 const hasDynamicTopUsage = (instructions: Instruction[]): boolean => {
 	for (let i = 0; i < instructions.length; i += 1) {
@@ -1331,16 +1374,30 @@ const equalClosureMaps = (left: Map<number, number>, right: Map<number, number>)
 	return true;
 };
 
-const intersectClosureMaps = (maps: Array<Map<number, number>>): Map<number, number> => {
-	if (maps.length === 0) {
-		return new Map<number, number>();
+const mergeInitializedClosurePredecessors = (
+	predecessors: ReadonlyArray<number>,
+	outMaps: ReadonlyArray<Map<number, number>>,
+	outInitialized: Uint8Array,
+): Map<number, number> | null => {
+	let firstPredecessor = -1;
+	for (let index = 0; index < predecessors.length; index += 1) {
+		const predecessor = predecessors[index];
+		if (outInitialized[predecessor] !== 0) {
+			firstPredecessor = predecessor;
+			break;
+		}
 	}
-	const [first, ...rest] = maps;
+	if (firstPredecessor < 0) {
+		return null;
+	}
 	const result = new Map<number, number>();
-	for (const [reg, protoIndex] of first) {
+	for (const [reg, protoIndex] of outMaps[firstPredecessor]) {
 		let same = true;
-		for (let i = 0; i < rest.length; i += 1) {
-			if (rest[i].get(reg) !== protoIndex) {
+		for (let index = 0; index < predecessors.length; index += 1) {
+			const predecessor = predecessors[index];
+			if (predecessor !== firstPredecessor
+				&& outInitialized[predecessor] !== 0
+				&& outMaps[predecessor].get(reg) !== protoIndex) {
 				same = false;
 				break;
 			}
@@ -1352,30 +1409,18 @@ const intersectClosureMaps = (maps: Array<Map<number, number>>): Map<number, num
 	return result;
 };
 
-const computeCapturedRegistersForInlining = (instructions: Instruction[], context: OptimizationContext): number[] => {
-	if (instructions.length === 0) {
-		return [];
-	}
-	const maxRegister = computeMaxRegister(instructions);
-	const registerCount = maxRegister + 1;
-	const captured = new Uint8Array(registerCount);
-	markCapturedClosureRegisters(captured, instructions, context, registerCount);
-	const capturedRegisters: number[] = [];
-	for (let reg = 0; reg < registerCount; reg += 1) {
-		if (captured[reg] !== 0) {
-			capturedRegisters.push(reg);
-		}
-	}
-	return capturedRegisters;
-};
-
 const applyClosureTransferForInlining = (
 	closures: Map<number, number>,
 	instruction: Instruction,
-	capturedRegisters: ReadonlyArray<number>,
+	closureWrittenRegisters: ReadonlySet<number>,
 ): void => {
 	switch (instruction.op) {
 		case OpCode.MOV: {
+			if (closureWrittenRegisters.has(instruction.a)
+				|| closureWrittenRegisters.has(instruction.b)) {
+				closures.delete(instruction.a);
+				return;
+			}
 			const source = closures.get(instruction.b);
 			if (source !== undefined) {
 				closures.set(instruction.a, source);
@@ -1385,7 +1430,11 @@ const applyClosureTransferForInlining = (
 			return;
 		}
 		case OpCode.CLOSURE:
-			closures.set(instruction.a, instruction.b);
+			if (closureWrittenRegisters.has(instruction.a)) {
+				closures.delete(instruction.a);
+			} else {
+				closures.set(instruction.a, instruction.b);
+			}
 			return;
 		case OpCode.LOADNIL:
 			clearRegisterRange(closures, instruction.a, instruction.b);
@@ -1398,12 +1447,19 @@ const applyClosureTransferForInlining = (
 		case OpCode.CALL: {
 			const countValue = instruction.c === 0 ? null : instruction.c;
 			clearRegisterRange(closures, instruction.a, countValue);
-			for (let i = 0; i < capturedRegisters.length; i += 1) {
-				closures.delete(capturedRegisters[i]);
+			for (const register of closureWrittenRegisters) {
+				closures.delete(register);
 			}
 			return;
 		}
 		case OpCode.LOADK:
+		case OpCode.KNIL:
+		case OpCode.KFALSE:
+		case OpCode.KTRUE:
+		case OpCode.K0:
+		case OpCode.K1:
+		case OpCode.KM1:
+		case OpCode.KSMI:
 		case OpCode.LOADKR:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
@@ -1450,14 +1506,34 @@ const computeClosureInForInlining = (
 ): {
 	blocks: Block[];
 	inMaps: Array<Map<number, number>>;
-	capturedRegisters: number[];
+	callLiveOut: Map<number, Uint8Array>;
+	capturedRegisters: Uint8Array;
+	loopDepth: Uint16Array;
 } => {
 	const blocks = buildBasicBlocks(instructions);
 	const { predecessors } = buildBlockGraph(instructions, blocks);
 	const blockCount = blocks.length;
 	const inMaps: Array<Map<number, number>> = new Array(blockCount);
 	const outMaps: Array<Map<number, number>> = new Array(blockCount);
-	const capturedRegisters = computeCapturedRegistersForInlining(instructions, context);
+	const outInitialized = new Uint8Array(blockCount);
+	const callIndices: number[] = [];
+	for (let index = 0; index < instructions.length; index += 1) {
+		if (instructions[index].op === OpCode.CALL) {
+			callIndices.push(index);
+		}
+	}
+	const maxRegister = computeMaxRegister(instructions);
+	const callLiveOutSets = computeInstructionLiveOutAt(
+		instructions,
+		maxRegister,
+		callIndices,
+	);
+	const capturedRegisters = new Uint8Array(maxRegister + 1);
+	markCapturedClosureRegisters(capturedRegisters, instructions, context, maxRegister + 1);
+	const callLiveOut = new Map<number, Uint8Array>();
+	for (let index = 0; index < callIndices.length; index += 1) {
+		callLiveOut.set(callIndices[index], callLiveOutSets[index]);
+	}
 	for (let i = 0; i < blockCount; i += 1) {
 		inMaps[i] = new Map<number, number>();
 		outMaps[i] = new Map<number, number>();
@@ -1467,9 +1543,16 @@ const computeClosureInForInlining = (
 		changed = false;
 		for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
 			const preds = predecessors[blockIndex];
-			const nextIn = preds.length === 0
-				? new Map<number, number>()
-				: intersectClosureMaps(preds.map(pred => outMaps[pred]));
+			let nextIn: Map<number, number>;
+			if (blockIndex === 0 || preds.length === 0) {
+				nextIn = new Map<number, number>();
+			} else {
+				const merged = mergeInitializedClosurePredecessors(preds, outMaps, outInitialized);
+				if (merged === null) {
+					continue;
+				}
+				nextIn = merged;
+			}
 			if (!equalClosureMaps(nextIn, inMaps[blockIndex])) {
 				inMaps[blockIndex] = nextIn;
 				changed = true;
@@ -1477,20 +1560,51 @@ const computeClosureInForInlining = (
 			const closures = new Map(inMaps[blockIndex]);
 			const block = blocks[blockIndex];
 			for (let i = block.start; i < block.end; i += 1) {
-				applyClosureTransferForInlining(closures, instructions[i], capturedRegisters);
+				applyClosureTransferForInlining(closures, instructions[i], context.closureWrittenRegisters);
 			}
-			if (!equalClosureMaps(closures, outMaps[blockIndex])) {
+			if (outInitialized[blockIndex] === 0 || !equalClosureMaps(closures, outMaps[blockIndex])) {
 				outMaps[blockIndex] = closures;
+				outInitialized[blockIndex] = 1;
 				changed = true;
 			}
 		}
 	}
-	return { blocks, inMaps, capturedRegisters };
+	return {
+		blocks,
+		inMaps,
+		callLiveOut,
+		capturedRegisters,
+		loopDepth: computeInlineLoopDepth(instructions),
+	};
+};
+
+const inlineFrameFitsCaller = (
+	call: Instruction,
+	callee: InlineCallee,
+	liveOut: Uint8Array,
+	capturedRegisters: Uint8Array,
+): boolean => {
+	const frameEnd = call.a + callee.meta.maxStack;
+	if (frameEnd > MAX_EXT_REGISTER_A + 1) {
+		return false;
+	}
+	for (let register = call.a + call.c; register < frameEnd && register < liveOut.length; register += 1) {
+		if (liveOut[register] !== 0 || capturedRegisters[register] !== 0) {
+			return false;
+		}
+	}
+	for (let index = 0; index < callee.meta.upvalueDescs.length; index += 1) {
+		const upvalue = callee.meta.upvalueDescs[index];
+		if (upvalue.inStack && upvalue.index >= call.a && upvalue.index < frameEnd) {
+			return false;
+		}
+	}
+	return true;
 };
 
 const buildInlineExpansion = (
 	callInstruction: Instruction,
-	callRange: SourceRange | null,
+	callRange: SourceRange,
 	callee: InlineCallee,
 ): InstructionSet | null => {
 	const argCount = decodeCallArgCount(callInstruction.b, 0);
@@ -1498,6 +1612,7 @@ const buildInlineExpansion = (
 	const callBase = callInstruction.a;
 	const { instructions, ranges } = callee.set;
 	const calleeCount = instructions.length;
+	const calleeEntryRange = ranges[0];
 	const mapRegister = (register: number): number => callBase + register;
 	const remapRkOperand = (operand: number): number => (operand >= 0 ? mapRegister(operand) : operand);
 	const generatedInstructions: Instruction[] = [];
@@ -1506,6 +1621,30 @@ const buildInlineExpansion = (
 	const pendingCalleeJumps: Array<{ localIndex: number; target: number }> = [];
 	const pendingExitJumps: number[] = [];
 	const statementRanges = new Map<SourceRange, SourceRange>();
+	const callerInlineCallSites = callInstruction.inlineCallSites ?? ROOT_INLINE_CALL_SITES;
+	const inlineCallSite: InlineCallSite = {
+		calleeFunctionId: callee.functionId,
+		callRange,
+	};
+	const inlinePrefix: ReadonlyArray<InlineCallSite> = [...callerInlineCallSites, inlineCallSite];
+	let mappedInlineCallSites: Map<ReadonlyArray<InlineCallSite>, ReadonlyArray<InlineCallSite>> | undefined;
+	const mapInlineCallSites = (
+		inner: ReadonlyArray<InlineCallSite> | undefined,
+	): ReadonlyArray<InlineCallSite> => {
+		if (inner === undefined || inner.length === 0) {
+			return inlinePrefix;
+		}
+		const existing = mappedInlineCallSites?.get(inner);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const mapped = [...inlinePrefix, ...inner];
+		if (mappedInlineCallSites === undefined) {
+			mappedInlineCallSites = new Map();
+		}
+		mappedInlineCallSites.set(inner, mapped);
+		return mapped;
+	};
 	const appendInstruction = (instruction: Instruction, range: SourceRange | null): number => {
 		const index = generatedInstructions.length;
 		generatedInstructions.push(instruction);
@@ -1523,7 +1662,8 @@ const buildInlineExpansion = (
 			format: 'ABC',
 			rkMask: 0,
 			target: null,
-		}, callRange);
+			inlineCallSites: inlinePrefix,
+		}, calleeEntryRange);
 	}
 
 	if (callee.meta.numParams > argCount) {
@@ -1535,19 +1675,23 @@ const buildInlineExpansion = (
 			format: 'ABC',
 			rkMask: 0,
 			target: null,
-		}, callRange);
+			inlineCallSites: inlinePrefix,
+		}, calleeEntryRange);
 	}
 
 	for (let i = 0; i < calleeCount; i += 1) {
 		const mappedStart = generatedInstructions.length;
 		oldToNewStart[i] = mappedStart;
 		const instruction = instructions[i];
-		const range = ranges[i] ?? callRange;
+		const range = ranges[i];
 		if (instruction.op === OpCode.RET) {
 			const statementRange = instruction.statementRange === undefined
 				? undefined
 				: duplicateStatementRange(instruction.statementRange, statementRanges);
-			const inlineDepth = (instruction.inlineDepth ?? 0) + 1;
+			const resumeRange = instruction.resumeRange === undefined
+				? undefined
+				: duplicateStatementRange(instruction.resumeRange, statementRanges);
+			const inlineCallSites = mapInlineCallSites(instruction.inlineCallSites);
 			const copied = Math.min(instruction.b, resultCount);
 			const retBase = mapRegister(instruction.a);
 			for (let offset = 0; offset < copied; offset += 1) {
@@ -1560,7 +1704,8 @@ const buildInlineExpansion = (
 					rkMask: 0,
 					target: null,
 					statementRange,
-					inlineDepth,
+					resumeRange,
+					inlineCallSites,
 				}, range);
 			}
 			if (resultCount > copied) {
@@ -1573,7 +1718,8 @@ const buildInlineExpansion = (
 					rkMask: 0,
 					target: null,
 					statementRange,
-					inlineDepth,
+					resumeRange,
+					inlineCallSites,
 				}, range);
 			}
 			const jumpIndex = appendInstruction({
@@ -1585,15 +1731,15 @@ const buildInlineExpansion = (
 				rkMask: 0,
 				target: null,
 				statementRange,
-				inlineDepth,
+				resumeRange,
+				inlineCallSites,
 			}, range);
 			pendingExitJumps.push(jumpIndex);
 			continue;
 		}
 
 		const mapped = cloneDuplicatedInstruction(instruction, statementRanges);
-		mapped.inlineDepth = (mapped.inlineDepth ?? 0) + 1;
-		delete mapped.resumeRange;
+		mapped.inlineCallSites = mapInlineCallSites(instruction.inlineCallSites);
 		switch (mapped.op) {
 			case OpCode.MOV:
 			case OpCode.LOADKR:
@@ -1604,6 +1750,13 @@ const buildInlineExpansion = (
 				mapped.a = mapRegister(mapped.a);
 				mapped.b = mapRegister(mapped.b);
 				break;
+			case OpCode.KNIL:
+			case OpCode.KFALSE:
+			case OpCode.KTRUE:
+			case OpCode.K0:
+			case OpCode.K1:
+			case OpCode.KM1:
+			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
@@ -1773,10 +1926,20 @@ const buildInlineExpansion = (
 		generatedInstructions[pending.localIndex].target = mappedTarget;
 	}
 
-	return {
+	const expansion: InstructionSet = {
 		instructions: generatedInstructions,
 		ranges: generatedRanges,
 	};
+	if (callee.localSlots.length !== 0) {
+		expansion.inlineLocalSlots = callee.localSlots.map(slot => ({
+			name: slot.name,
+			registerIndex: mapRegister(slot.registerIndex),
+			definition: slot.definition,
+			scope: slot.scope,
+			inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
+		}));
+	}
+	return expansion;
 };
 
 const inlineCallAtIndex = (
@@ -1841,6 +2004,7 @@ const inlineFunctionCalls = (
 	}
 	const initialCount = set.instructions.length;
 	const maxCount = initialCount + MAX_INLINE_GROWTH;
+	const inlineLocalSlots: LocalSlotDebug[] = [];
 	const calleeCache = new Map<number, InlineCallee | null>();
 	const getInlineCallee = (protoIndex: number): InlineCallee | null => {
 		const cached = calleeCache.get(protoIndex);
@@ -1853,7 +2017,7 @@ const inlineFunctionCalls = (
 			return null;
 		}
 		const meta = context.getProtoMeta(protoIndex);
-		if (meta.isVararg || instructionSet.instructions.length === 0 || instructionSet.instructions.length > MAX_INLINE_CALLEE_INSTRUCTIONS) {
+		if (meta.isVararg || instructionSet.instructions.length === 0 || instructionSet.instructions.length > MAX_INLINE_LOOP_CALLEE_INSTRUCTIONS) {
 			calleeCache.set(protoIndex, null);
 			return null;
 		}
@@ -1872,7 +2036,11 @@ const inlineFunctionCalls = (
 				hasReturn = true;
 				continue;
 			}
-			if (instruction.op === OpCode.CLOSURE || instruction.op === OpCode.VARARG || instruction.op === OpCode.RFE) {
+			// HALT latches the current physical frame depth; inlining it would change machine state.
+			if (instruction.op === OpCode.CLOSURE
+				|| instruction.op === OpCode.VARARG
+				|| instruction.op === OpCode.HALT
+				|| instruction.op === OpCode.RFE) {
 				calleeCache.set(protoIndex, null);
 				return null;
 			}
@@ -1885,7 +2053,12 @@ const inlineFunctionCalls = (
 			calleeCache.set(protoIndex, null);
 			return null;
 		}
-		const callee: InlineCallee = { meta, set: instructionSet };
+		const callee: InlineCallee = {
+			functionId: context.getProtoFunctionId(protoIndex),
+			localSlots: context.getProtoLocalSlots(protoIndex),
+			meta,
+			set: instructionSet,
+		};
 		calleeCache.set(protoIndex, callee);
 		return callee;
 	};
@@ -1906,16 +2079,31 @@ const inlineFunctionCalls = (
 					const protoIndex = instruction.callProtoIndex ?? closureProtoIndex;
 					if (protoIndex !== undefined) {
 						const callee = getInlineCallee(protoIndex);
+						const callRange = ranges[index];
+						const inlineCallSites = instruction.inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 						// A linked proto identifies the code, not the closure instance that owns its upvalues.
 						if (callee
+							&& callRange !== null
+							&& callee.functionId !== context.currentFunctionId
+							&& !inlineCallChainContainsFunction(inlineCallSites, callee.functionId)
 							&& (closureProtoIndex === protoIndex || callee.meta.upvalueDescs.length === 0)
-							&& decodeCallArgCount(instruction.b, 0) <= callee.meta.numParams
-							&& callee.meta.maxStack <= Math.max(instruction.b, instruction.c)) {
-							const expansion = buildInlineExpansion(instruction, ranges[index], callee);
+							&& callee.set.instructions.length <= (analysis.loopDepth[index] === 0
+								? MAX_INLINE_CALLEE_INSTRUCTIONS
+								: MAX_INLINE_LOOP_CALLEE_INSTRUCTIONS)
+							&& inlineFrameFitsCaller(
+								instruction,
+								callee,
+								analysis.callLiveOut.get(index)!,
+								analysis.capturedRegisters,
+							)) {
+							const expansion = buildInlineExpansion(instruction, callRange, callee);
 							if (expansion) {
 								const nextCount = instructions.length - 1 + expansion.instructions.length;
 								if (nextCount <= maxCount) {
 									current = inlineCallAtIndex(current, index, expansion);
+									if (expansion.inlineLocalSlots !== undefined) {
+										inlineLocalSlots.push(...expansion.inlineLocalSlots);
+									}
 									inlinedCalls += 1;
 									inlined = true;
 									break;
@@ -1924,7 +2112,7 @@ const inlineFunctionCalls = (
 						}
 					}
 				}
-				applyClosureTransferForInlining(closures, instruction, analysis.capturedRegisters);
+				applyClosureTransferForInlining(closures, instruction, context.closureWrittenRegisters);
 			}
 			if (inlined) {
 				break;
@@ -1934,7 +2122,9 @@ const inlineFunctionCalls = (
 			break;
 		}
 	}
-	return current;
+	return inlineLocalSlots.length === 0
+		? current
+		: { ...current, inlineLocalSlots };
 };
 
 const runMidLevelOptimizations = (
@@ -1976,10 +2166,14 @@ export const optimizeInstructions = (
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 3.');
 		}
 		current = inlineFunctionCalls(current, context);
+		const inlineLocalSlots = current.inlineLocalSlots;
 		current = cleanupControlFlow(current);
 		current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
 		current = runMidLevelOptimizations(current, context);
+		if (inlineLocalSlots !== undefined) {
+			current.inlineLocalSlots = inlineLocalSlots;
+		}
 	}
 	return current;
 };

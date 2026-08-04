@@ -13,13 +13,19 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 2u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 3u;
+
+struct Blua32InlineCallSite {
+	std::string calleeFunctionId;
+	SourceRange callRange;
+};
 
 struct Blua32LocalSlotDebug {
 	std::string name;
 	i32 registerIndex = 0;
 	SourceRange definition;
 	SourceRange scope;
+	std::vector<Blua32InlineCallSite> inlineCallSites;
 };
 
 struct Blua32ResumePoint {
@@ -29,12 +35,13 @@ struct Blua32ResumePoint {
 	std::vector<i32> liveRegisters;
 	std::vector<i32> uses;
 	std::vector<i32> defs;
+	std::vector<Blua32InlineCallSite> inlineCallSites;
 };
 
 struct Blua32StatementPoint {
 	i32 wordOffset = 0;
-	i32 inlineDepth = 0;
 	SourceRange range;
+	std::vector<Blua32InlineCallSite> inlineCallSites;
 };
 
 struct Blua32DebugMetadata {
@@ -43,6 +50,8 @@ struct Blua32DebugMetadata {
 	std::vector<std::string> systemGlobalNames;
 	std::unordered_map<std::string, std::string> staticFunctionIdBySlot;
 	std::vector<std::optional<SourceRange>> debugRanges;
+	std::vector<std::vector<Blua32InlineCallSite>> debugInlineCallSiteChains;
+	std::vector<u32> debugInlineCallSiteChainIds;
 	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
@@ -83,5 +92,10 @@ auto blua32SourceRangeAtPc(
 	u32 textAddress,
 	u32 pc
 ) -> std::optional<SourceRange>;
+auto blua32InlineCallSitesAtPc(
+	const Blua32SymbolsImage& symbols,
+	u32 textAddress,
+	u32 pc
+) -> std::span<const Blua32InlineCallSite>;
 
 } // namespace bmsx

@@ -7,6 +7,8 @@ import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	registerLuaSourceRecord,
@@ -133,12 +135,12 @@ function parseLuaChunk(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function createIntellisenseRuntime(source: string) {
+function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0) {
 	const sourcePath = 'cart.lua';
 	const modulePath = 'cart';
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), [], {
 		entrySource: source,
-		optLevel: 0,
+		optLevel,
 		programDomain: 'system',
 	});
 	const image = linkTestSystemBlua32(compiled);
@@ -302,6 +304,62 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	assert.equal(definition.path, sourcePath);
 	assert.equal(definition.range.startLine, 1);
 	assert.equal(definition.range.startColumn, counterColumn);
+});
+
+test('inline debugger exposes virtual frames and physical caller locals', async () => {
+	const { resolveLuaChainValue } = await intellisenseEngineModulePromise;
+	const source = [
+		'local inspect<const> = function(value)',
+		'\tlocal copy<const> = value + 1',
+		'\treturn copy',
+		'end',
+		'local run<const> = function(seed, ...)',
+		'\tlocal caller_value = seed',
+		'\tlocal result = inspect(caller_value)',
+		'\treturn result + seed',
+		'end',
+		'return run(41)',
+	].join('\n');
+	const { bridge, image, runtime, sourcePath } = createIntellisenseRuntime(source, 3);
+	const runFunctionIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:run'));
+	const runPoints = image.symbols.metadata.statementPointsByFunction[runFunctionIndex];
+	const inlinePoint = runPoints.find(point => point.inlineCallSites.length === 1)!;
+	const pointAfterInline = runPoints.find(point =>
+		point.wordOffset > inlinePoint.wordOffset
+		&& point.inlineCallSites.length === 0
+	)!;
+	const stopPc = image.image.functions[runFunctionIndex].codeAddress
+		+ pointAfterInline.wordOffset * INSTRUCTION_BYTES;
+	runtime.machine.cpu.setExecutionHook(
+		(_executionDomainId, pc) => pc === stopPc,
+		SYSTEM_EXECUTION_DOMAIN_MASK,
+		0,
+	);
+	runtime.machine.cpu.reset();
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
+	const fault = createRuntimeFaultState();
+	recordLuaError(fault, bridge.sources, runtime, new Error('inline stop'));
+	assert.equal(fault.lastLuaCallStack[0].functionName, 'inspect');
+	assert.equal(fault.lastLuaCallStack[0].line, 2);
+	assert.equal(fault.lastLuaCallStack[1].functionName, 'run');
+	assert.equal(fault.lastLuaCallStack[1].line, 7);
+
+	const callerLine = source.split('\n')[7];
+	const resolved = resolveLuaChainValue(
+		bridge,
+		fault,
+		runtime,
+		['seed'],
+		SYSTEM_RESOURCE_DOMAIN,
+		sourcePath,
+		8,
+		callerLine.indexOf('seed') + 1,
+	);
+	assert.ok(resolved);
+	assert.equal(resolved.kind, 'value');
+	if (resolved.kind === 'value') {
+		assert.equal(resolved.value, 41);
+	}
 });
 
 test('intellisense resolves captured fault upvalues after the CPU stack is replaced', async () => {

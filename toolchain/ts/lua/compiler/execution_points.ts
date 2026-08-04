@@ -1,9 +1,11 @@
 import type { SourceRange } from '../source_range';
 import type {
+	InlineCallSite,
 	LocalSlotDebug,
 	ProgramResumePoint,
 	ProgramStatementPoint,
 } from './program';
+import { resolveInlineLocalContextRange, ROOT_INLINE_CALL_SITES } from './inline_debug';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';
 import {
@@ -16,14 +18,20 @@ function collectNamedLiveRegisters(
 	live: Uint8Array,
 	named: Uint8Array,
 	localSlots: ReadonlyArray<LocalSlotDebug>,
-	path: string,
-	line: number,
-	column: number,
+	currentRange: SourceRange,
+	currentInlineCallSites: ReadonlyArray<InlineCallSite>,
 ): number[] | null {
 	named.fill(0);
 	for (let index = 0; index < localSlots.length; index += 1) {
 		const slot = localSlots[index];
-		if (slot.scope.path === path && sourcePositionInRange(line, column, slot.scope)) {
+		const contextRange = resolveInlineLocalContextRange(
+			slot,
+			currentRange,
+			currentInlineCallSites,
+		);
+		if (contextRange !== null
+			&& slot.scope.path === contextRange.path
+			&& sourcePositionInRange(contextRange.start.line, contextRange.start.column, slot.scope)) {
 			named[slot.registerIndex] = 1;
 		}
 	}
@@ -52,10 +60,11 @@ export function buildProgramStatementPoints(
 			continue;
 		}
 		emittedRanges.add(range);
+		const inlineCallSites = instructions[index].inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 		points.push({
 			wordOffset: instructionWordOffsets[index],
-			inlineDepth: instructions[index].inlineDepth ?? 0,
 			range,
+			inlineCallSites,
 		});
 	}
 	return points;
@@ -92,13 +101,13 @@ export function buildProgramResumePoints(
 		const instructionIndex = candidateIndices[candidateIndex];
 		const instruction = instructions[instructionIndex];
 		const range = instruction.resumeRange!;
+		const inlineCallSites = instruction.inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 		const liveRegisters = collectNamedLiveRegisters(
 			liveByCandidate[candidateIndex],
 			named,
 			localSlots,
-			range.path,
-			range.start.line,
-			range.start.column,
+			range,
+			inlineCallSites,
 		);
 		if (liveRegisters === null) {
 			continue;
@@ -110,6 +119,7 @@ export function buildProgramResumePoints(
 			liveRegisters,
 			uses: collectInstructionUses(instruction, maxRegister),
 			defs: collectInstructionDefs(instruction, maxRegister),
+			inlineCallSites,
 		});
 	}
 	return points;

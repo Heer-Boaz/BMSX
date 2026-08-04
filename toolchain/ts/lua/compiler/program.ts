@@ -20,6 +20,11 @@ export type ProgramRuntimeSymbols = {
 	initParticipants: ProgramInitParticipant[];
 };
 
+export type InlineCallSite = {
+	calleeFunctionId: string;
+	callRange: SourceRange;
+};
+
 export type ProgramResumePoint = {
 	wordOffset: number;
 	range: SourceRange;
@@ -27,12 +32,13 @@ export type ProgramResumePoint = {
 	liveRegisters: number[];
 	uses: number[];
 	defs: number[];
+	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
 export type ProgramStatementPoint = {
 	wordOffset: number;
-	inlineDepth: number;
 	range: SourceRange;
+	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
 export type LocalSlotDebug = {
@@ -40,10 +46,12 @@ export type LocalSlotDebug = {
 	registerIndex: number;
 	definition: SourceRange;
 	scope: SourceRange;
+	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	debugInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>;
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;

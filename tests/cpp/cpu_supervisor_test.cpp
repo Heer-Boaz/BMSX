@@ -120,6 +120,30 @@ auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	return image;
 }
 
+auto makeDecodedPairSystemImage() -> bmsx::test::Blua32TestImage {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(10u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::SHL), 2, 0, 1);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::BXOR), 3, 2, 1);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::ADD), 4, 3, 1);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::SHL), 5, 4, 1);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::SHR), 6, 5, 1);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::BXOR), 7, 6, 1);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 9u, .maxStack = 8u},
+		{.firstWord = 9u, .wordCount = 1u},
+	};
+	image.startupFunctionIndex = 0u;
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+	return image;
+}
+
 struct CpuTestMachine {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::test::Blua32TestRom cartRom;
@@ -455,6 +479,112 @@ bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32) {
 
 bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32) {
 	throw std::runtime_error("execution hook failure");
+}
+
+void testDecodedSuperinstructionsPreserveGuestBoundaries() {
+	require(
+		bmsx::decodedDispatchOp(
+			static_cast<uint8_t>(bmsx::OpCode::SHL),
+			static_cast<uint8_t>(bmsx::OpCode::BXOR)
+		) == static_cast<uint8_t>(bmsx::DecodedDispatchOp::FusedShlBxor),
+		"decoded dispatch recognizes SHL+BXOR"
+	);
+	require(
+		bmsx::decodedDispatchOp(
+			static_cast<uint8_t>(bmsx::OpCode::ADD),
+			static_cast<uint8_t>(bmsx::OpCode::SHL)
+		) == static_cast<uint8_t>(bmsx::DecodedDispatchOp::FusedAddShl),
+		"decoded dispatch recognizes ADD+SHL"
+	);
+	require(
+		bmsx::decodedDispatchOp(
+			static_cast<uint8_t>(bmsx::OpCode::SHR),
+			static_cast<uint8_t>(bmsx::OpCode::BXOR)
+		) == static_cast<uint8_t>(bmsx::DecodedDispatchOp::FusedShrBxor),
+		"decoded dispatch recognizes SHR+BXOR"
+	);
+	require(
+		bmsx::decodedDispatchOp(
+			static_cast<uint8_t>(bmsx::OpCode::SHL),
+			static_cast<uint8_t>(bmsx::OpCode::ADD)
+		) == static_cast<uint8_t>(bmsx::OpCode::SHL),
+		"decoded dispatch preserves an unfused opcode"
+	);
+
+	CpuTestMachine fused(makeDecodedPairSystemImage());
+	const bmsx::u32 entryPc = fused.systemRom.textAddress;
+	require(
+		fused.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded,
+		"fused pair consumes the exact guest budget"
+	);
+	require(
+		fused.cpu.readFramePc(0) == entryPc + 4u * bmsx::INSTRUCTION_BYTES,
+		"fused pair advances the physical frame PC through its second instruction"
+	);
+	require(
+		fused.cpu.lastPc == entryPc + 3u * bmsx::INSTRUCTION_BYTES,
+		"fused pair publishes its second guest PC"
+	);
+	require(
+		bmsx::asNumber(fused.cpu.readFrameRegister(0, 3)) == 3.0,
+		"fused pair commits its second numeric result"
+	);
+
+	CpuTestMachine budgeted(makeDecodedPairSystemImage());
+	require(
+		budgeted.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded,
+		"budget exhaustion stops between fused guest instructions"
+	);
+	require(
+		budgeted.cpu.readFramePc(0) == entryPc + 3u * bmsx::INSTRUCTION_BYTES,
+		"budget exhaustion retains the second guest instruction as continuation"
+	);
+	require(
+		budgeted.cpu.lastPc == entryPc + 2u * bmsx::INSTRUCTION_BYTES,
+		"budget exhaustion retains the first guest PC"
+	);
+	require(
+		bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 2)) == 2.0,
+		"budget exhaustion commits the first numeric result"
+	);
+	require(
+		budgeted.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"normal execution completes all decoded pairs"
+	);
+	require(
+		bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 3)) == 3.0
+			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 4)) == 4.0
+			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 5)) == 8.0
+			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 6)) == 4.0
+			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 7)) == 5.0,
+		"decoded pairs preserve the raw arithmetic results"
+	);
+
+	CpuTestMachine instrumented(makeDecodedPairSystemImage());
+	InstrumentedExecutionProbe probe{
+		.expectedDomain = bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+		.stopPc = entryPc + 3u * bmsx::INSTRUCTION_BYTES,
+		.pcs = {},
+	};
+	instrumented.cpu.setExecutionHook({
+		.hook = stopInstrumentedExecution,
+		.context = &probe,
+		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
+		.preMaskableInterruptDomainMask = 0u,
+	});
+	require(
+		instrumented.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped,
+		"instrumented dispatch stops at the second normally fused instruction"
+	);
+	require(
+		probe.pcs == std::vector<bmsx::u32>{
+			entryPc,
+			entryPc + bmsx::INSTRUCTION_BYTES,
+			entryPc + 2u * bmsx::INSTRUCTION_BYTES,
+			entryPc + 3u * bmsx::INSTRUCTION_BYTES,
+		},
+		"instrumented dispatch observes every raw guest instruction"
+	);
 }
 
 void testExecutionHookReconfigurationAppliesAtTheNextCpuBurst() {
@@ -998,6 +1128,7 @@ int main() {
 	testInvalidClosureTargetHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
+	testDecodedSuperinstructionsPreserveGuestBoundaries();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();

@@ -100,6 +100,7 @@ function makeMetadata(
 ): ProgramMetadata {
 	return {
 		debugRanges: new Array(instructionCount).fill(null),
+		debugInlineCallSites: new Array(instructionCount).fill([]),
 		protoIds,
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
@@ -219,6 +220,46 @@ test('BLua32 linker emits one self-describing physical image', () => {
 		address: image.functions[0].address,
 	}]);
 	assert.equal(linked.startupFunctionAddress, image.functions[0].address);
+});
+
+test('BLua32 linker structurally interns word-aligned inline call-site chains', () => {
+	const { object, metadata } = makeSystemObject([
+		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
+		{ op: OpCode.K1, a: 0, b: 0, c: 0 },
+		{ op: OpCode.KNIL, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	]);
+	const callRange: SourceRange = {
+		path: 'entry.lua',
+		start: { line: 3, column: 2 },
+		end: { line: 3, column: 12 },
+	};
+	metadata.debugInlineCallSites = [
+		[{ calleeFunctionId: 'entry/inline', callRange }],
+		[{
+			calleeFunctionId: 'entry/inline',
+			callRange: {
+				path: 'entry.lua',
+				start: { line: 3, column: 2 },
+				end: { line: 3, column: 12 },
+			},
+		}],
+		[],
+		[],
+	];
+
+	const linked = linkSystemBlua32Image(
+		object,
+		metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+	);
+
+	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChainIds, [1, 1, 0, 0]);
+	assert.equal(linked.symbols.metadata.debugInlineCallSiteChains.length, 2);
+	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChains[0], []);
+	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChains[1], metadata.debugInlineCallSites[0]);
 });
 
 test('BLua32 static layout token changes when an equal-sized storage symbol moves', () => {
@@ -676,6 +717,7 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 		liveRegisters: [],
 		uses: [],
 		defs: [],
+		inlineCallSites: [],
 	}]];
 	const previous = linkSystemBlua32Image(
 		previousObject.object,
@@ -696,6 +738,7 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 		liveRegisters: [],
 		uses: [],
 		defs: [],
+		inlineCallSites: [],
 	}]];
 	const fresh = linkSystemBlua32Image(
 		freshObject.object,
@@ -733,8 +776,8 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 	]);
 	initial.metadata.debugRanges = [firstRange, oldResumeRange];
 	initial.metadata.resumePointsByProto = [[
-		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
-		{ wordOffset: 1, range: oldResumeRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
+		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0], inlineCallSites: [] },
+		{ wordOffset: 1, range: oldResumeRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [] },
 	]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
@@ -750,8 +793,8 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 		freshRange,
 	];
 	changed.metadata.resumePointsByProto = [[
-		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
-		{ wordOffset: 2, range: freshRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
+		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0], inlineCallSites: [] },
+		{ wordOffset: 2, range: freshRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [] },
 	]];
 	const linked = linkSystemBlua32Image(
 		changed.object,
@@ -776,6 +819,117 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 	);
 });
 
+test('BLua32 hot revision keeps distinct inlined call-site continuations distinct', () => {
+	const initialSource = [
+		'local transform<const> = function(value)',
+		'\tlocal shifted<const> = value << 1',
+		'\treturn shifted ~ 3',
+		'end',
+		'local run<const> = function(seed, ...)',
+		'\tlocal value = seed',
+		'\tlocal round = 0',
+		'\twhile round < 2 do',
+		'\t\tvalue = transform(value)',
+		'\t\tvalue = transform(value)',
+		'\t\tround = round + 1',
+		'\tend',
+		'\treturn value',
+		'end',
+		'return run(7)',
+	].join('\n');
+	const compile = (source: string) => compileLuaChunkToProgram(
+		parseLuaChunk(source, 'entry.lua'),
+		[],
+		{ entrySource: source, programDomain: 'system', optLevel: 3 },
+	);
+	const initialCompiled = compile(initialSource);
+	const previous = linkSystemBlua32Image(
+		encodeCompiledProgramObject(initialCompiled),
+		initialCompiled.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+	);
+
+	const freshSource = [
+		'local transform<const> = function(value)',
+		'\tlocal shifted<const> = value << 1',
+		'\treturn shifted ~ 3',
+		'end',
+		'local run<const> = function(seed, ...)',
+		'\tlocal value = seed',
+		'\tlocal round = 0',
+		'\tvalue = transform(value)',
+		'\twhile round < 2 do',
+		'\t\tvalue = transform(value)',
+		'\t\tvalue = transform(value)',
+		'\t\tround = round + 1',
+		'\tend',
+		'\treturn value',
+		'end',
+		'return run(7)',
+	].join('\n');
+	const freshCompiled = compile(freshSource);
+	const fresh = linkSystemBlua32Image(
+		encodeCompiledProgramObject(freshCompiled),
+		freshCompiled.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		LINK_TARGET_RAM_BYTES,
+		[],
+		{ image: previous.layout, symbols: previous.symbols },
+	);
+	const revision = buildBlua32ExecutionRevision(
+		previous.layout,
+		previous.symbols,
+		new Map([['entry.lua', initialSource]]),
+		fresh,
+		new Map([['entry.lua', freshSource]]),
+	);
+
+	const runFunctionId = initialCompiled.metadata.protoIds.find(id => id.endsWith('/local:run'))!;
+	const previousFunctionIndex = previous.symbols.metadata.functionIds.indexOf(runFunctionId);
+	const freshFunctionIndex = fresh.symbols.metadata.functionIds.indexOf(runFunctionId);
+	const previousPoints = previous.symbols.metadata.resumePointsByFunction[previousFunctionIndex];
+	const freshPoints = fresh.symbols.metadata.resumePointsByFunction[freshFunctionIndex];
+	const firstInlinePoint = previousPoints.find(point =>
+		point.inlineCallSites.length === 1
+		&& point.inlineCallSites[0].callRange.start.line === 9
+		&& point.range.start.line === 3
+	)!;
+	const secondInlinePoint = previousPoints.find(point =>
+		point.inlineCallSites.length === 1
+		&& point.inlineCallSites[0].callRange.start.line === 10
+		&& point.range.start.line === firstInlinePoint.range.start.line
+	)!;
+	const firstFreshPoint = freshPoints.find(point =>
+		point.inlineCallSites.length === 1
+		&& point.inlineCallSites[0].callRange.start.line === 10
+		&& point.range.start.line === firstInlinePoint.range.start.line
+	)!;
+	const secondFreshPoint = freshPoints.find(point =>
+		point.inlineCallSites.length === 1
+		&& point.inlineCallSites[0].callRange.start.line === 11
+		&& point.range.start.line === secondInlinePoint.range.start.line
+	)!;
+	const previousFunction = previous.layout.functions[previousFunctionIndex];
+	const freshFunction = fresh.layout.functions[freshFunctionIndex];
+	const relocatedPointPc = (point: typeof firstInlinePoint): number => revision.pcAddresses[
+		(previousFunction.codeAddress
+			+ point.wordOffset * INSTRUCTION_BYTES
+			- previous.layout.header.textAddress) / INSTRUCTION_BYTES
+	];
+
+	assert.equal(
+		relocatedPointPc(firstInlinePoint),
+		freshFunction.codeAddress + firstFreshPoint.wordOffset * INSTRUCTION_BYTES,
+	);
+	assert.equal(
+		relocatedPointPc(secondInlinePoint),
+		freshFunction.codeAddress + secondFreshPoint.wordOffset * INSTRUCTION_BYTES,
+	);
+	assert.notEqual(relocatedPointPc(firstInlinePoint), relocatedPointPc(secondInlinePoint));
+});
+
 test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', () => {
 	const oldRange: SourceRange = { path: 'entry', start: { line: 1, column: 1 }, end: { line: 3, column: 4 } };
 	const initial = makeSystemObject([
@@ -784,7 +938,7 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 	]);
 	initial.metadata.debugRanges = [oldRange, oldRange];
 	initial.metadata.resumePointsByProto = [[
-		{ wordOffset: 0, range: oldRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+		{ wordOffset: 0, range: oldRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0], inlineCallSites: [] },
 	]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
@@ -796,7 +950,7 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 	]);
 	changed.metadata.debugRanges = [freshRange, freshRange, freshRange];
 	changed.metadata.resumePointsByProto = [[
-		{ wordOffset: 0, range: freshRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+		{ wordOffset: 0, range: freshRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0], inlineCallSites: [] },
 	]];
 	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 	const revision = buildBlua32ExecutionRevision(
@@ -886,6 +1040,8 @@ test('BLua32 hot revision preserves removed function records while leaving their
 
 	assert.equal(revision.functionAddresses[1], linked.symbols.functionAddresses[1]);
 	assert.equal(revision.pcAddresses[1], -1);
+	assert.equal(linked.symbols.metadata.debugRanges.length, 2);
+	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChainIds, [0, 0]);
 });
 
 test('BLua32 Hot Resume rejects a static-closure identity change at a stable function address', () => {

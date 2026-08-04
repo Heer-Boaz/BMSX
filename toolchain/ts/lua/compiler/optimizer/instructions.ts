@@ -22,8 +22,8 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	callProtoIndex: instruction.callProtoIndex,
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
-	inlineDepth: instruction.inlineDepth,
 	resumeRange: instruction.resumeRange,
+	inlineCallSites: instruction.inlineCallSites,
 });
 
 export function duplicateStatementRange(
@@ -49,6 +49,12 @@ export function cloneDuplicatedInstruction(
 			statementRanges,
 		);
 	}
+	if (duplicate.resumeRange !== undefined) {
+		duplicate.resumeRange = duplicateStatementRange(
+			duplicate.resumeRange,
+			statementRanges,
+		);
+	}
 	return duplicate;
 }
 
@@ -69,7 +75,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.KM1:
 			case OpCode.KSMI:
 			case OpCode.LOADK:
-			case OpCode.LOADNIL:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.GETI:
@@ -79,6 +84,10 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.GETUP:
 			case OpCode.MFC0:
 				updateMax(instruction.a);
+				break;
+			case OpCode.LOADNIL:
+				updateMax(instruction.a);
+				updateMax(lastRegisterInRange(instruction.a, instruction.b));
 				break;
 			case OpCode.SETSYS:
 			case OpCode.SETGL:

@@ -8,8 +8,37 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/blua32/opcode.h"
 
 namespace bmsx {
+
+enum class DecodedDispatchOp : uint8_t {
+	FusedShlBxor = OPCODE_COUNT,
+	FusedAddShl,
+	FusedShrBxor,
+};
+
+inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 3u;
+extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
+
+inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
+	switch (static_cast<OpCode>(first)) {
+		case OpCode::SHL:
+			return second == static_cast<uint8_t>(OpCode::BXOR)
+				? static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor)
+				: first;
+		case OpCode::ADD:
+			return second == static_cast<uint8_t>(OpCode::SHL)
+				? static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl)
+				: first;
+		case OpCode::SHR:
+			return second == static_cast<uint8_t>(OpCode::BXOR)
+				? static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor)
+				: first;
+		default:
+			return first;
+	}
+}
 
 struct DecodedInstruction {
 	uint32_t word = 0;
@@ -22,6 +51,7 @@ struct DecodedInstruction {
 	uint16_t b = 0;
 	uint16_t c = 0;
 	uint8_t op = 0;
+	uint8_t dispatchOp = 0;
 	uint8_t width = 0;
 	uint8_t disp = 0;
 };

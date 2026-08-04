@@ -344,3 +344,38 @@ export function computeInstructionLiveInAt(
 	}
 	return liveIn;
 }
+
+export function computeInstructionLiveOutAt(
+	instructions: Instruction[],
+	maxRegister: number,
+	instructionIndices: ReadonlyArray<number>,
+): Uint8Array[] {
+	if (instructionIndices.length === 0) {
+		return [];
+	}
+	const blocks = buildBasicBlocks(instructions);
+	const { successors } = buildBlockGraph(instructions, blocks);
+	const blockLiveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
+	const liveOut: Uint8Array[] = new Array(instructionIndices.length);
+	let candidateStart = 0;
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const block = blocks[blockIndex];
+		let candidateEnd = candidateStart;
+		while (candidateEnd < instructionIndices.length && instructionIndices[candidateEnd] < block.end) {
+			candidateEnd += 1;
+		}
+		let candidateIndex = candidateEnd - 1;
+		const live = blockLiveOut[blockIndex].slice();
+		for (let index = block.end - 1; index >= block.start; index -= 1) {
+			if (candidateIndex >= candidateStart && instructionIndices[candidateIndex] === index) {
+				liveOut[candidateIndex] = live.slice();
+				candidateIndex -= 1;
+			}
+			const instruction = instructions[index];
+			visitInstructionDefs(instruction, maxRegister, live, clearLiveRegister);
+			visitInstructionUses(instruction, maxRegister, live, markLiveRegister);
+		}
+		candidateStart = candidateEnd;
+	}
+	return liveOut;
+}

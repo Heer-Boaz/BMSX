@@ -15,10 +15,12 @@ import {
 	type SuspendedGuestValue,
 } from '../../../../tooling/ts/runtime/suspended_guest';
 import {
+	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
 } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
+import { resolveInlineLocalContextRange } from '../../../../toolchain/ts/lua/compiler/inline_debug';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import { buildLuaSemanticFrontend } from '../../../../toolchain/ts/lua/semantic/frontend';
@@ -138,10 +140,6 @@ function definitionSymbolPath(info: LuaDefinitionInfo): string {
 		return info.namePath.join('.');
 	}
 	return info.name;
-}
-
-function isFrameRangeForPath(range: SourceRange | null, path: string): range is SourceRange {
-	return range !== null && range.path === path;
 }
 
 function resolveTableChain(table: LuaTable): LuaTable[] {
@@ -1728,9 +1726,13 @@ function resolveRuntimeLocalChainValue(
 		}
 		const symbols = image.symbols;
 		const frameRange = blua32SourceRangeAtPc(symbols, textAddress, tracePc);
-		if (!isFrameRangeForPath(frameRange, requestedPath)) {
+		if (frameRange === null) {
 			continue;
 		}
+		const frameInlineCallSites = blua32InlineCallSitesAtPc(symbols, textAddress, tracePc);
+		const physicalFrameRange = frameInlineCallSites.length === 0
+			? frameRange
+			: frameInlineCallSites[0].callRange;
 		const slots = symbols.metadata.localSlotsByFunction[functionIndex];
 		let frameBest: Blua32LocalSlotDebug = null;
 		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
@@ -1738,9 +1740,17 @@ function resolveRuntimeLocalChainValue(
 			if (slot.name !== rootName) {
 				continue;
 			}
+			const slotFrameRange = resolveInlineLocalContextRange(
+				slot,
+				frameRange,
+				frameInlineCallSites,
+			);
+			if (slotFrameRange === null || slotFrameRange.path !== requestedPath) {
+				continue;
+			}
 			const slotScope = slot.scope;
-			const frameRow = frameRange.start.line;
-			const frameColumn = frameRange.start.column;
+			const frameRow = slotFrameRange.start.line;
+			const frameColumn = slotFrameRange.start.column;
 			const usageInScope = positionWithinRange(usageRow, usageColumn, slotScope);
 			const usageAfterDef = positionAfterOrEqual(usageRow, usageColumn, slot.definition.start);
 			const frameInScope = positionWithinRange(frameRow, frameColumn, slotScope);
@@ -1758,7 +1768,7 @@ function resolveRuntimeLocalChainValue(
 			selectedSlot = frameBest;
 			break;
 		}
-		if (!upvalueFound) {
+		if (!upvalueFound && physicalFrameRange.path === requestedPath) {
 			const frameUpvalueNames = symbols.metadata.upvalueNamesByFunction[functionIndex];
 			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
 			const upvalueCount = useFaultSnapshot

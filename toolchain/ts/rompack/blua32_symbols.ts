@@ -4,7 +4,7 @@ import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 2;
+export const BLUA32_SYMBOLS_VERSION = 3;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -22,11 +22,17 @@ export type Blua32InitParticipant = {
 	system: boolean;
 };
 
+export type Blua32InlineCallSite = {
+	calleeFunctionId: string;
+	callRange: SourceRange;
+};
+
 export type Blua32LocalSlotDebug = {
 	name: string;
 	registerIndex: number;
 	definition: SourceRange;
 	scope: SourceRange;
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
 export type Blua32ResumePoint = {
@@ -36,12 +42,13 @@ export type Blua32ResumePoint = {
 	liveRegisters: number[];
 	uses: number[];
 	defs: number[];
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
 export type Blua32StatementPoint = {
 	wordOffset: number;
-	inlineDepth: number;
 	range: SourceRange;
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
 export type Blua32DebugMetadata = {
@@ -50,6 +57,8 @@ export type Blua32DebugMetadata = {
 	systemGlobalNames: string[];
 	staticFunctionIdBySlot: { [slotName: string]: string };
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	debugInlineCallSiteChains: ReadonlyArray<ReadonlyArray<Blua32InlineCallSite>>;
+	debugInlineCallSiteChainIds: ReadonlyArray<number>;
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
@@ -85,4 +94,15 @@ export function blua32SourceRangeAtPc(
 	pc: number,
 ): SourceRange | null {
 	return symbols.metadata.debugRanges[(pc - textAddress) / INSTRUCTION_BYTES];
+}
+
+export function blua32InlineCallSitesAtPc(
+	symbols: Blua32SymbolsImage,
+	textAddress: number,
+	pc: number,
+): ReadonlyArray<Blua32InlineCallSite> {
+	const wordIndex = (pc - textAddress) / INSTRUCTION_BYTES;
+	return symbols.metadata.debugInlineCallSiteChains[
+		symbols.metadata.debugInlineCallSiteChainIds[wordIndex]
+	];
 }

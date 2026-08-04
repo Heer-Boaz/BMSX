@@ -1,5 +1,6 @@
 import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type {
+	Blua32InlineCallSite,
 	Blua32LocalSlotDebug,
 	Blua32ResumePoint,
 	Blua32SymbolsImage,
@@ -13,6 +14,7 @@ import {
 } from '../lua/semantic/source_range';
 import type { SourcePosition, SourceRange } from '../lua/source_range';
 import type { LinkedBlua32Image } from './blua32_linker';
+import { resolveInlineLocalContextRange } from '../lua/compiler/inline_debug';
 
 type PreparedSourceRevision = {
 	oldChangeStart: SourcePosition;
@@ -117,6 +119,41 @@ function resumePointShapeMatches(previous: Blua32ResumePoint, fresh: Blua32Resum
 		&& numberArraysEqual(previous.defs, fresh.defs);
 }
 
+function resumePointLocationKey(
+	range: SourceRange,
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
+): string {
+	let key = `${range.path}\0${sourceRangeKey(range)}`;
+	for (let index = 0; index < inlineCallSites.length; index += 1) {
+		const callSite = inlineCallSites[index];
+		key += `\0${callSite.calleeFunctionId}\0${callSite.callRange.path}`
+			+ `\0${sourceRangeKey(callSite.callRange)}`;
+	}
+	return key;
+}
+
+function translateInlineCallSites(
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
+	revisions: ReadonlyMap<string, PreparedSourceRevision>,
+): ReadonlyArray<Blua32InlineCallSite> | null {
+	if (inlineCallSites.length === 0) {
+		return inlineCallSites;
+	}
+	const translated = new Array<Blua32InlineCallSite>(inlineCallSites.length);
+	for (let index = 0; index < inlineCallSites.length; index += 1) {
+		const callSite = inlineCallSites[index];
+		const callRange = translateSourceRange(callSite.callRange, revisions);
+		if (callRange === null) {
+			return null;
+		}
+		translated[index] = {
+			calleeFunctionId: callSite.calleeFunctionId,
+			callRange,
+		};
+	}
+	return translated;
+}
+
 function numberArraysEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
 	if (a.length !== b.length) return false;
 	for (let index = 0; index < a.length; index += 1) {
@@ -130,22 +167,44 @@ function activeLocalLayoutMatches(
 	freshSlots: ReadonlyArray<Blua32LocalSlotDebug>,
 	previousRange: SourceRange,
 	freshRange: SourceRange,
+	previousInlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
+	freshInlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
 ): boolean {
 	let previousIndex = 0;
 	let freshIndex = 0;
 	while (true) {
 		while (previousIndex < previousSlots.length) {
-			const scope = previousSlots[previousIndex].scope;
-			if (scope.path === previousRange.path
-				&& sourcePositionInRange(previousRange.start.line, previousRange.start.column, scope)) {
+			const slot = previousSlots[previousIndex];
+			const contextRange = resolveInlineLocalContextRange(
+				slot,
+				previousRange,
+				previousInlineCallSites,
+			);
+			if (contextRange !== null
+				&& slot.scope.path === contextRange.path
+				&& sourcePositionInRange(
+					contextRange.start.line,
+					contextRange.start.column,
+					slot.scope,
+				)) {
 				break;
 			}
 			previousIndex += 1;
 		}
 		while (freshIndex < freshSlots.length) {
-			const scope = freshSlots[freshIndex].scope;
-			if (scope.path === freshRange.path
-				&& sourcePositionInRange(freshRange.start.line, freshRange.start.column, scope)) {
+			const slot = freshSlots[freshIndex];
+			const contextRange = resolveInlineLocalContextRange(
+				slot,
+				freshRange,
+				freshInlineCallSites,
+			);
+			if (contextRange !== null
+				&& slot.scope.path === contextRange.path
+				&& sourcePositionInRange(
+					contextRange.start.line,
+					contextRange.start.column,
+					slot.scope,
+				)) {
 				break;
 			}
 			freshIndex += 1;
@@ -219,11 +278,14 @@ function mapChangedFunctionProgramCounters(
 	freshFunctionIndex: number,
 	sourceRevisions: ReadonlyMap<string, PreparedSourceRevision>,
 ): void {
-	const freshPointsByRange = new Map<string, Blua32ResumePoint>();
+	const freshPointsByLocation = new Map<string, Blua32ResumePoint>();
 	const freshPoints = freshSymbols.metadata.resumePointsByFunction[freshFunctionIndex];
 	for (let index = 0; index < freshPoints.length; index += 1) {
 		const point = freshPoints[index];
-		freshPointsByRange.set(`${point.range.path}\0${sourceRangeKey(point.range)}`, point);
+		freshPointsByLocation.set(
+			resumePointLocationKey(point.range, point.inlineCallSites),
+			point,
+		);
 	}
 
 	const previousFunction = previousImage.functions[previousFunctionIndex];
@@ -235,7 +297,16 @@ function mapChangedFunctionProgramCounters(
 		if (freshRange === null) {
 			continue;
 		}
-		const freshPoint = freshPointsByRange.get(`${freshRange.path}\0${sourceRangeKey(freshRange)}`);
+		const freshInlineCallSites = translateInlineCallSites(
+			previousPoint.inlineCallSites,
+			sourceRevisions,
+		);
+		if (freshInlineCallSites === null) {
+			continue;
+		}
+		const freshPoint = freshPointsByLocation.get(
+			resumePointLocationKey(freshRange, freshInlineCallSites),
+		);
 		if (freshPoint === undefined
 			|| !resumePointShapeMatches(previousPoint, freshPoint)
 			|| !activeLocalLayoutMatches(
@@ -243,6 +314,8 @@ function mapChangedFunctionProgramCounters(
 				freshSymbols.metadata.localSlotsByFunction[freshFunctionIndex],
 				previousPoint.range,
 				freshPoint.range,
+				previousPoint.inlineCallSites,
+				freshPoint.inlineCallSites,
 			)) {
 			continue;
 		}

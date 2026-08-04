@@ -5,6 +5,7 @@
 #include "rompack/format.h"
 #include "rompack/image.h"
 #include "rompack/tooling/blua32_image.h"
+#include "rompack/tooling/blua32_symbols.h"
 #include "support/blua32_test_rom.h"
 
 #include <algorithm>
@@ -24,6 +25,49 @@ int main() {
 	}
 	if (bmsx::readInstructionWord(instructionBytes, 0) != instructionWord) {
 		throw std::runtime_error("BLua32 instruction word did not round-trip");
+	}
+
+	const bmsx::SourceRange outerCallRange{"cart.lua", {4, 2}, {4, 14}};
+	const bmsx::SourceRange innerCallRange{"cart.lua", {11, 3}, {11, 18}};
+	const std::vector<bmsx::Blua32InlineCallSite> inlineCallSites{
+		{"outer", outerCallRange},
+		{"inner", innerCallRange},
+	};
+	bmsx::Blua32SymbolsImage symbols;
+	symbols.version = bmsx::BLUA32_SYMBOLS_VERSION;
+	symbols.metadata.debugRanges = {outerCallRange, std::nullopt};
+	symbols.metadata.debugInlineCallSiteChains = {{}, inlineCallSites};
+	symbols.metadata.debugInlineCallSiteChainIds = {1, 0};
+	symbols.metadata.statementPointsByFunction = {{
+		{2, innerCallRange, inlineCallSites},
+	}};
+	symbols.metadata.resumePointsByFunction = {{
+		{3, innerCallRange, bmsx::OpCode::MOV, {0, 1}, {0}, {1}, inlineCallSites},
+	}};
+	symbols.metadata.localSlotsByFunction = {{
+		{"value", 1, innerCallRange, outerCallRange, inlineCallSites},
+	}};
+
+	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
+	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	if (decodedSymbols.version != bmsx::BLUA32_SYMBOLS_VERSION
+		|| decodedSymbols.metadata.debugRanges.size() != 2u
+		|| decodedSymbols.metadata.debugInlineCallSiteChains.size() != 2u
+		|| !decodedSymbols.metadata.debugInlineCallSiteChains[0].empty()
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1].size() != 2u
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][0].calleeFunctionId != "outer"
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][0].callRange.start.column != 2
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][1].calleeFunctionId != "inner"
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][1].callRange.end.column != 18
+		|| decodedSymbols.metadata.debugInlineCallSiteChainIds
+			!= std::vector<bmsx::u32>{1u, 0u}
+		|| decodedSymbols.metadata.statementPointsByFunction[0][0].inlineCallSites[1].calleeFunctionId
+			!= "inner"
+		|| decodedSymbols.metadata.resumePointsByFunction[0][0].inlineCallSites[0].calleeFunctionId
+			!= "outer"
+		|| decodedSymbols.metadata.localSlotsByFunction[0][0].inlineCallSites[1].callRange.path
+			!= "cart.lua") {
+		throw std::runtime_error("BLua32 inline call-site symbols did not round-trip");
 	}
 
 	std::array<bmsx::u8, bmsx::CART_ROM_HEADER_SIZE - 1u> truncated{};

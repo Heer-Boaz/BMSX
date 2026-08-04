@@ -907,8 +907,15 @@ only the guest constant registerfile and immutable instruction-operand-to-global
 slot maps. String payloads are interned from their physical ROM addresses. It
 binds the complete physical text span once and derives dense decoded instruction
 pages directly from those instruction words; no copied raw instruction buffer
-remains. It scans physical function records to create canonical static
-closures. Merely inserting or replacing an unexecuted second cartridge
+remains. Every decoded entry retains the raw guest opcode and a host-only normal
+dispatch opcode derived once during activation. The normal executor may map a
+selected adjacent straight-line numeric pair to one dispatch opcode while still
+advancing the physical PC and cycle budget at both guest-instruction boundaries.
+The instrumented executor always consumes the raw opcode, so breakpoints and
+single-instruction execution observe every physical guest instruction. Dispatch
+opcodes are derived CPU state: they are neither guest words nor save-state or
+tooling metadata. The CPU scans physical function records to create canonical
+static closures. Merely inserting or replacing an unexecuted second cartridge
 therefore cannot consume guest string or object identities or change table
 iteration. A call frame retains its physical function-record address, physical
 PC, execution domain, and the raw code bounds latched from that function
@@ -1377,6 +1384,17 @@ lanes through registers, constants, globals, upvalues, completion values, table
 storage, and builtin transport. A host `Value` object/union exists only while
 marshalling at an explicit cold runtime or tooling boundary, in either
 direction; it is never guest identity or hot-path transport.
+
+At `-O3`, the compiler may inline a statically resolved `<const>` function call
+only when closure dataflow proves the exact target and the caller register frame
+can hold the callee without overwriting live or captured slots. Variadic functions,
+recursive inline chains, dynamic-top operations, nested closure creation,
+exception return, and functions containing `HALT` retain a physical call frame.
+Inlining rewrites ordinary BLua32 instructions before linking; the CPU has no
+inline opcode or compiler-policy branch. Tooling metadata records the complete
+outer-to-inner source call-site chain for each emitted word and for inlined local
+slots, so source stacks, stepping, IntelliSense inspection, and Hot Resume
+relocation consume source lineage without placing it in the machine.
 
 Lua tables are VM-owned data structures, not host collection wrappers. Their
 representation follows the usual array-part/hash-part split: integer sequence
@@ -3701,7 +3719,9 @@ raw function pointer and TypeScript a shared prototype-method reference, so a
 binding update allocates nothing. There is one indirect dispatch per bulk CPU
 burst, never per instruction. C++ compiles the interpreter loops as template
 specializations; TypeScript retains separate normal and instrumented loops. The
-scheduler contains no hook-presence branch or callback argument bundle, has one
+opcode handlers use ordinary compiler-owned `switch` lowering; the C++ source
+does not retain a hand-written computed-goto label table. The scheduler contains
+no hook-presence branch or callback argument bundle, has one
 hand-written implementation in each runtime, and requires no generated
 duplicate.
 
@@ -3719,9 +3739,12 @@ points and owns breakpoint matching, resume suppression and source-level
 stepping. Each one-shot resume suppression is bound to the exact physical frame
 depth that was stopped, and nested stopped calls retain those identities in
 LIFO order; another invocation of the same domain/PC cannot consume the wrong
-frame's suppression. Statement points retain optimizer inline depth without
-changing the physical CPU stack. Step-in stops at the next point; step-over and
-step-out compare the logical `(physical frame depth, inline depth)` position.
+frame's suppression. Statement points retain the optimizer's complete source
+call-site chain without changing the physical CPU stack. Step-in stops at the
+next point; step-over and step-out compare the logical `(physical frame depth,
+inline call-site chain length)` position. The full chain, rather than only its
+length, owns virtual inlined stack frames, local-variable context and Hot Resume
+continuation identity.
 The frame loop stops at the selected boundary. The CPU owns no source paths,
 symbols, editor state, or stepping policy. The uninstrumented specialization
 contains no hook test, domain-mask test, callback, or debugger-induced CALL/RET

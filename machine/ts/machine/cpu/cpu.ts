@@ -103,10 +103,13 @@ import { Table } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
+	DECODED_DISPATCH_BASE_CYCLES,
 	DECODED_PAGE_MASK,
 	DECODED_PAGE_SHIFT,
 	DECODED_PAGE_WORDS,
 	createDecodedInstructionPage,
+	decodedDispatchOp,
+	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
@@ -1228,6 +1231,7 @@ export class CPU {
 			decodedPages[pageIndex] = createDecodedInstructionPage();
 		}
 		const tableLoadCaches: TableLoadInlineCache[] = [];
+		let previousInstructionWordIndex = -1;
 		for (let wordIndex = 0; wordIndex < instructionCount;) {
 			const page = this.decodedPageForWrite(decodedPages, wordIndex);
 			const pageOffset = wordIndex & DECODED_PAGE_MASK;
@@ -1265,6 +1269,7 @@ export class CPU {
 			page.widths[pageOffset] = width;
 			page.words[pageOffset] = instr;
 			page.ops[pageOffset] = op;
+			page.dispatchOps[pageOffset] = op;
 			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
 			page.b[pageOffset] = rawB;
 			page.c[pageOffset] = rawC;
@@ -1295,6 +1300,18 @@ export class CPU {
 					valueReference: null,
 				});
 			}
+			if (previousInstructionWordIndex >= 0) {
+				const previousPage = this.decodedPageForWrite(
+					decodedPages,
+					previousInstructionWordIndex,
+				);
+				const previousPageOffset = previousInstructionWordIndex & DECODED_PAGE_MASK;
+				previousPage.dispatchOps[previousPageOffset] = decodedDispatchOp(
+					previousPage.ops[previousPageOffset],
+					op,
+				);
+			}
+			previousInstructionWordIndex = wordIndex;
 			wordIndex += width;
 		}
 		return { pages: decodedPages, tableLoadCaches };
@@ -1609,7 +1626,7 @@ export class CPU {
 	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
-		const baseCycles = BASE_CYCLES;
+		const dispatchBaseCycles = DECODED_DISPATCH_BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
@@ -1644,16 +1661,16 @@ export class CPU {
 					const page = image.decodedPages[pageIndex];
 					const pageOffset = wordIndex & DECODED_PAGE_MASK;
 					const width = page.widths[pageOffset];
-					const op = page.ops[pageOffset];
+					const dispatchOp = page.dispatchOps[pageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					this.instructionBudgetRemaining -= baseCycles[op];
+					this.instructionBudgetRemaining -= dispatchBaseCycles[dispatchOp];
 					this.executeInstruction(
 						frame,
 						page.tableCacheIndexes[pageOffset],
-						op,
+						dispatchOp,
 						page.a[pageOffset],
 						page.b[pageOffset],
 						page.c[pageOffset],
@@ -2032,6 +2049,87 @@ export class CPU {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		switch (op) {
+				case DecodedDispatchOp.FusedShlBxor: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
+					if (this.instructionBudgetRemaining <= 0) {
+						return;
+					}
+					const pc = frame.pc;
+					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
+					const page = this.decodedPageAt(image, wordIndex);
+					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const width = page.widths[pageOffset];
+					this.currentInstructionPc = pc;
+					frame.pc = pc + width * INSTRUCTION_BYTES;
+					this.lastExecutionDomainId = image.executionDomainId;
+					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.BXOR];
+					const xorLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
+					const xorRight = this.readRKNumber(frame, page.rkC[pageOffset]);
+					this.setRegisterNumberFast(
+						frame,
+						registers,
+						page.a[pageOffset],
+						xorLeft ^ xorRight,
+					);
+					return;
+				}
+				case DecodedDispatchOp.FusedAddShl: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left + right);
+					if (this.instructionBudgetRemaining <= 0) {
+						return;
+					}
+					const pc = frame.pc;
+					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
+					const page = this.decodedPageAt(image, wordIndex);
+					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const width = page.widths[pageOffset];
+					this.currentInstructionPc = pc;
+					frame.pc = pc + width * INSTRUCTION_BYTES;
+					this.lastExecutionDomainId = image.executionDomainId;
+					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.SHL];
+					const shiftLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
+					const shiftRight = this.readRKNumber(frame, page.rkC[pageOffset]);
+					this.setRegisterNumberFast(
+						frame,
+						registers,
+						page.a[pageOffset],
+						shiftLeft << (shiftRight & 31),
+					);
+					return;
+				}
+				case DecodedDispatchOp.FusedShrBxor: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
+					if (this.instructionBudgetRemaining <= 0) {
+						return;
+					}
+					const pc = frame.pc;
+					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
+					const page = this.decodedPageAt(image, wordIndex);
+					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const width = page.widths[pageOffset];
+					this.currentInstructionPc = pc;
+					frame.pc = pc + width * INSTRUCTION_BYTES;
+					this.lastExecutionDomainId = image.executionDomainId;
+					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.BXOR];
+					const xorLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
+					const xorRight = this.readRKNumber(frame, page.rkC[pageOffset]);
+					this.setRegisterNumberFast(
+						frame,
+						registers,
+						page.a[pageOffset],
+						xorLeft ^ xorRight,
+					);
+					return;
+				}
 				case OpCode.WIDE:
 					this.hardHalt();
 					return;
@@ -2251,7 +2349,8 @@ export class CPU {
 				case OpCode.BOR:
 				case OpCode.BXOR:
 				case OpCode.SHL:
-				case OpCode.SHR: {
+				case OpCode.SHR:
+				{
 					const left = this.readRKNumber(frame, rkB);
 					const right = this.readRKNumber(frame, rkC);
 					switch (op) {

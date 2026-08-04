@@ -42,6 +42,7 @@ import {
 import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from './source_range';
 import type {
+	InlineCallSite,
 	LocalSlotDebug,
 	Program,
 	ProgramConstant,
@@ -56,8 +57,10 @@ import type {
 	UpvalueDesc,
 } from './compiler/program';
 import { buildInitParticipantSlotName, programModuleExportKey } from './compiler/program';
+import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
+import { computeMaxRegister } from './compiler/optimizer/instructions';
 import {
 	buildModuleCompileContext,
 	type ConstExportValue,
@@ -485,6 +488,7 @@ class ProgramBuilder {
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
+	public readonly protoInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>[] = [];
 	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
 	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
@@ -790,6 +794,7 @@ class ProgramBuilder {
 		proto: Proto,
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
+		inlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>,
 		constRelocs: ReadonlyArray<ProgramCompilerConstReloc>,
 		statementPoints: ReadonlyArray<ProgramStatementPoint>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
@@ -806,6 +811,7 @@ class ProgramBuilder {
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
+		this.protoInlineCallSites.push(inlineCallSites);
 		this.protoConstRelocs.push(constRelocs);
 		this.protoStatementPoints.push(statementPoints);
 		this.protoResumePoints.push(resumePoints);
@@ -980,6 +986,7 @@ class ProgramBuilder {
 		const fullCode = new Uint8Array(totalBytes);
 		const protos: Proto[] = new Array(this.protos.length);
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords).fill(null);
+		const fullInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(totalWords).fill(ROOT_INLINE_CALL_SITES);
 		const imageConstRelocs: ProgramImageConstReloc[] = [];
 		const biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[] = [];
 		let appendOffsetBytes = 0;
@@ -1007,6 +1014,10 @@ class ProgramBuilder {
 			fullCode.set(chunk, targetOffsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
 				fullRanges[targetOffsetWords + j] = ranges[j];
+			}
+			const inlineCallSites = this.protoInlineCallSites[i];
+			for (let j = 0; j < inlineCallSites.length; j += 1) {
+				fullInlineCallSites[targetOffsetWords + j] = inlineCallSites[j];
 			}
 			const relocs = this.protoConstRelocs[i];
 			for (let j = 0; j < relocs.length; j += 1) {
@@ -1054,6 +1065,7 @@ class ProgramBuilder {
 		}
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
+			debugInlineCallSites: fullInlineCallSites,
 			protoIds: this.protoIds,
 			statementPointsByProto: this.protoStatementPoints,
 			resumePointsByProto: this.protoResumePoints,
@@ -1209,6 +1221,7 @@ class FunctionBuilder {
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
+	private finalizedInlineCallSites: Array<ReadonlyArray<InlineCallSite>> | null = null;
 	private finalizedConstRelocs: ProgramCompilerConstReloc[] | null = null;
 	private finalizedStatementPoints: ProgramStatementPoint[] | null = null;
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
@@ -1755,6 +1768,11 @@ class FunctionBuilder {
 		return this.finalizedRanges!;
 	}
 
+	public getInlineCallSites(): ReadonlyArray<ReadonlyArray<InlineCallSite>> {
+		this.finalizeCode();
+		return this.finalizedInlineCallSites!;
+	}
+
 	public getConstRelocs(): ReadonlyArray<ProgramCompilerConstReloc> {
 		this.finalizeCode();
 		return this.finalizedConstRelocs!;
@@ -1784,6 +1802,7 @@ class FunctionBuilder {
 		}
 		if (this.program.optLevel > 0) {
 			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
+				currentFunctionId: this.protoId,
 				constPool: this.program.constPool,
 				relocatedConstIndices: this.program.relocatedConstIndexSet(),
 				constIndex: (value: ProgramConstant) => this.program.constIndex(value),
@@ -1808,6 +1827,8 @@ class FunctionBuilder {
 					}
 					return instructionSet;
 				},
+				getProtoFunctionId: (protoIndex: number) => this.program.protoIds[protoIndex],
+				getProtoLocalSlots: (protoIndex: number) => this.program.protoLocalSlots[protoIndex],
 				closureWrittenRegisters: this.closureWrittenRegisters,
 			});
 			if (optimized.instructions !== this.code) {
@@ -1818,6 +1839,10 @@ class FunctionBuilder {
 				this.ranges.length = 0;
 				this.ranges.push(...optimized.ranges);
 			}
+			if (optimized.inlineLocalSlots !== undefined) {
+				this.localDebugSlots.push(...optimized.inlineLocalSlots);
+			}
+			this.maxStack = Math.max(this.maxStack, computeMaxRegister(this.code) + 1);
 		}
 		const instructions = this.code;
 		const ranges = this.ranges;
@@ -1920,6 +1945,7 @@ class FunctionBuilder {
 
 		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
 		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
+		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(totalInstr).fill(ROOT_INLINE_CALL_SITES);
 		const constRelocs: ProgramCompilerConstReloc[] = [];
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
@@ -2038,9 +2064,18 @@ class FunctionBuilder {
 			finalRanges[cursor] = range;
 			cursor += 1;
 		}
+		for (let index = 0; index < instructions.length; index += 1) {
+			const inlineCallSites = instructions[index].inlineCallSites ?? ROOT_INLINE_CALL_SITES;
+			const start = instrStartIndex[index];
+			finalInlineCallSites[start] = inlineCallSites;
+			if (wideFlags[index]) {
+				finalInlineCallSites[start + 1] = inlineCallSites;
+			}
+		}
 
 		this.finalizedCode = code;
 		this.finalizedRanges = finalRanges;
+		this.finalizedInlineCallSites = finalInlineCallSites;
 		this.finalizedConstRelocs = constRelocs;
 		this.finalizedStatementPoints = buildProgramStatementPoints(
 			instructions,
@@ -2063,6 +2098,7 @@ class FunctionBuilder {
 	}
 
 	public getLocalDebugSlots(): ReadonlyArray<LocalSlotDebug> {
+		this.finalizeCode();
 		return this.localDebugSlots;
 	}
 
@@ -2162,6 +2198,7 @@ class FunctionBuilder {
 			registerIndex: reg,
 			definition: definitionRange,
 			scope: effectiveScopeRange,
+			inlineCallSites: ROOT_INLINE_CALL_SITES,
 		});
 		return reg;
 	}
@@ -5578,7 +5615,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, instructionSet);
 	return protoIndex;
 }
 
@@ -5604,7 +5641,7 @@ function compileSectionInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5634,7 +5671,7 @@ function compileStartupProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5662,7 +5699,7 @@ function compileInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5689,7 +5726,7 @@ function compileInterruptProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5716,7 +5753,7 @@ function compileExceptionProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), [], [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5890,7 +5927,7 @@ export function compileLuaChunkToProgram(
 				maxStack: entryBuilder.getMaxStack(),
 				upvalueDescs: entryBuilder.getUpvalueDescs(),
 				staticClosure: false,
-			}, entryCode, entryRanges, entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
+			}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -5930,7 +5967,7 @@ export function compileLuaChunkToProgram(
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
 				staticClosure: false,
-			}, code, ranges, constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({

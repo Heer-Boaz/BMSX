@@ -1,5 +1,6 @@
 import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
 import {
+	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -11,6 +12,8 @@ import {
 	type RuntimeSourceState,
 } from './sources';
 import type { ResourceIdentity } from '../common/resource';
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 
 export type StackTraceFrame = {
 	resource: ResourceIdentity;
@@ -22,15 +25,7 @@ export type StackTraceFrame = {
 	workspacePath?: string;
 };
 
-function resolveLuaFunctionName(
-	symbols: Blua32SymbolsImage | null,
-	functionIndex: number,
-	functionAddress: number,
-): string {
-	if (symbols === null) {
-		return `function@${functionAddress.toString(16)}`;
-	}
-	const protoId = symbols.metadata.functionIds[functionIndex];
+function luaFunctionNameFromId(protoId: string): string {
 	const slashIndex = protoId.lastIndexOf('/');
 	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
 	const colonIndex = hint.indexOf(':');
@@ -54,6 +49,42 @@ function resolveLuaFunctionName(
 	}
 }
 
+function resolveLuaFunctionName(
+	symbols: Blua32SymbolsImage | null,
+	functionIndex: number,
+	functionAddress: number,
+): string {
+	return symbols === null
+		? `function@${functionAddress.toString(16)}`
+		: luaFunctionNameFromId(symbols.metadata.functionIds[functionIndex]);
+}
+
+function buildLuaSourceStackFrame(
+	sources: RuntimeSourceState,
+	executionDomainId: ExecutionDomainId,
+	range: SourceRange | null,
+	functionName: string,
+): StackTraceFrame {
+	const source = range
+		? range.path
+		: runtimeLuaSourceRegistry(sources, executionDomainId)!.entrySourcePath;
+	const sourceRecord = resolveRuntimeLuaSource(sources, {
+		domain: executionDomainId,
+		path: source,
+	})!.record;
+	return {
+		resource: {
+			domain: executionDomainId,
+			path: sourceRecord.source_path,
+		},
+		functionName,
+		source,
+		line: range ? range.start.line : 0,
+		column: range ? range.start.column : 0,
+		raw: buildLuaFrameRawLabel(functionName, source),
+	};
+}
+
 export function buildLuaStackFrames(
 	sources: RuntimeSourceState,
 	faultFrames: readonly RuntimeCpuFaultFrame[],
@@ -67,31 +98,42 @@ export function buildLuaStackFrames(
 		const range = symbols === null
 			? null
 			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.tracePc);
-		const source = range
-			? range.path
-			: runtimeLuaSourceRegistry(sources, entry.executionDomainId)!.entrySourcePath;
-		const sourceRecord = resolveRuntimeLuaSource(sources, {
-			domain: entry.executionDomainId,
-			path: source,
-		})!.record;
-		const line = range ? range.start.line : 0;
-		const column = range ? range.start.column : 0;
-		const functionName = resolveLuaFunctionName(
+		const physicalFunctionName = resolveLuaFunctionName(
 			symbols,
 			entry.functionIndex,
 			entry.functionAddress,
 		);
-		frames.push({
-			resource: {
-				domain: entry.executionDomainId,
-				path: sourceRecord.source_path,
-			},
-			functionName,
-			source,
-			line,
-			column,
-			raw: buildLuaFrameRawLabel(functionName, source),
-		});
+		if (symbols !== null && range !== null) {
+			const inlineCallSites = blua32InlineCallSitesAtPc(
+				symbols,
+				entry.textAddress,
+				entry.tracePc,
+			);
+			for (let inlineIndex = inlineCallSites.length - 1; inlineIndex >= 0; inlineIndex -= 1) {
+				const inlineRange = inlineIndex === inlineCallSites.length - 1
+					? range
+					: inlineCallSites[inlineIndex + 1].callRange;
+				frames.push(buildLuaSourceStackFrame(
+					sources,
+					entry.executionDomainId,
+					inlineRange,
+					luaFunctionNameFromId(inlineCallSites[inlineIndex].calleeFunctionId),
+				));
+			}
+			frames.push(buildLuaSourceStackFrame(
+				sources,
+				entry.executionDomainId,
+				inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange,
+				physicalFunctionName,
+			));
+		} else {
+			frames.push(buildLuaSourceStackFrame(
+				sources,
+				entry.executionDomainId,
+				range,
+				physicalFunctionName,
+			));
+		}
 	}
 	return frames;
 }

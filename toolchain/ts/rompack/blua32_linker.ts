@@ -64,6 +64,7 @@ import {
 import {
 	BLUA32_SYMBOLS_VERSION,
 	type Blua32DebugMetadata,
+	type Blua32InlineCallSite,
 	type Blua32ModuleFunction,
 	type Blua32StaticLayoutToken,
 	type Blua32SymbolsImage,
@@ -88,6 +89,7 @@ import { programModuleExportKey } from '../lua/compiler/program';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { fmix32 } from '../../../machine/ts/common/hash';
+import { hashText } from '../../../machine/ts/common/byte_hex_string';
 import { hashAssetId } from '../../../machine/ts/rompack/tokens';
 import type {
 	Blua32BiosFunctionExport,
@@ -165,6 +167,97 @@ type StringRecord = {
 };
 
 const stringEncoder = new TextEncoder();
+
+function inlineCallSiteChainsEqual(
+	left: ReadonlyArray<Blua32InlineCallSite>,
+	right: ReadonlyArray<Blua32InlineCallSite>,
+): boolean {
+	if (left.length !== right.length) return false;
+	for (let index = 0; index < left.length; index += 1) {
+		const leftSite = left[index];
+		const rightSite = right[index];
+		if (leftSite.calleeFunctionId !== rightSite.calleeFunctionId
+			|| leftSite.callRange.path !== rightSite.callRange.path
+			|| leftSite.callRange.start.line !== rightSite.callRange.start.line
+			|| leftSite.callRange.start.column !== rightSite.callRange.start.column
+			|| leftSite.callRange.end.line !== rightSite.callRange.end.line
+			|| leftSite.callRange.end.column !== rightSite.callRange.end.column) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function hashInlineCallSiteChain(
+	chain: ReadonlyArray<Blua32InlineCallSite>,
+	textHashes: Map<string, number>,
+): number {
+	let hash = fmix32(chain.length);
+	for (let index = 0; index < chain.length; index += 1) {
+		const callSite = chain[index];
+		let functionHash = textHashes.get(callSite.calleeFunctionId);
+		if (functionHash === undefined) {
+			functionHash = hashText(callSite.calleeFunctionId);
+			textHashes.set(callSite.calleeFunctionId, functionHash);
+		}
+		let pathHash = textHashes.get(callSite.callRange.path);
+		if (pathHash === undefined) {
+			pathHash = hashText(callSite.callRange.path);
+			textHashes.set(callSite.callRange.path, pathHash);
+		}
+		hash = fmix32(hash ^ functionHash);
+		hash = fmix32(hash ^ pathHash);
+		hash = fmix32(hash ^ callSite.callRange.start.line);
+		hash = fmix32(hash ^ callSite.callRange.start.column);
+		hash = fmix32(hash ^ callSite.callRange.end.line);
+		hash = fmix32(hash ^ callSite.callRange.end.column);
+	}
+	return hash;
+}
+
+function buildDebugInlineCallSiteTable(
+	chainsByWord: ReadonlyArray<ReadonlyArray<Blua32InlineCallSite>>,
+): Pick<Blua32DebugMetadata, 'debugInlineCallSiteChains' | 'debugInlineCallSiteChainIds'> {
+	const rootChain: readonly [] = [];
+	const debugInlineCallSiteChains: Array<ReadonlyArray<Blua32InlineCallSite>> = [rootChain];
+	const debugInlineCallSiteChainIds = new Array<number>(chainsByWord.length);
+	const chainIdByIdentity = new WeakMap<ReadonlyArray<Blua32InlineCallSite>, number>();
+	const chainIdsByHash = new Map<number, number[]>();
+	const textHashes = new Map<string, number>();
+	for (let wordIndex = 0; wordIndex < chainsByWord.length; wordIndex += 1) {
+		const chain = chainsByWord[wordIndex];
+		if (chain.length === 0) {
+			debugInlineCallSiteChainIds[wordIndex] = 0;
+			continue;
+		}
+		let chainId = chainIdByIdentity.get(chain);
+		if (chainId === undefined) {
+			const hash = hashInlineCallSiteChain(chain, textHashes);
+			const candidateIds = chainIdsByHash.get(hash);
+			if (candidateIds !== undefined) {
+				for (let index = 0; index < candidateIds.length; index += 1) {
+					const candidateId = candidateIds[index];
+					if (inlineCallSiteChainsEqual(chain, debugInlineCallSiteChains[candidateId])) {
+						chainId = candidateId;
+						break;
+					}
+				}
+			}
+			if (chainId === undefined) {
+				chainId = debugInlineCallSiteChains.length;
+				debugInlineCallSiteChains.push(chain);
+				if (candidateIds === undefined) {
+					chainIdsByHash.set(hash, [chainId]);
+				} else {
+					candidateIds.push(chainId);
+				}
+			}
+			chainIdByIdentity.set(chain, chainId);
+		}
+		debugInlineCallSiteChainIds[wordIndex] = chainId;
+	}
+	return { debugInlineCallSiteChains, debugInlineCallSiteChainIds };
+}
 
 function alignImageOffset(offset: number, imageAddress: number, alignment: number): number {
 	const address = imageAddress + offset;
@@ -890,6 +983,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		upvalueNamesByFunction[slot] = input.metadata.upvalueNamesByProto[protoIndex];
 	}
+	const debugInlineCallSiteTable = buildDebugInlineCallSiteTable(
+		input.metadata.debugInlineCallSites,
+	);
 	const metadata: Blua32DebugMetadata = {
 		functionIds: functionLayout.functionIds,
 		globalNames: globalNameLayout.names,
@@ -898,6 +994,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		debugRanges: functionLayout.hasTombstones
 			? [...input.metadata.debugRanges, null]
 			: input.metadata.debugRanges,
+		debugInlineCallSiteChains: debugInlineCallSiteTable.debugInlineCallSiteChains,
+		debugInlineCallSiteChainIds: functionLayout.hasTombstones
+			? [...debugInlineCallSiteTable.debugInlineCallSiteChainIds, 0]
+			: debugInlineCallSiteTable.debugInlineCallSiteChainIds,
 		statementPointsByFunction,
 		resumePointsByFunction,
 		localSlotsByFunction,

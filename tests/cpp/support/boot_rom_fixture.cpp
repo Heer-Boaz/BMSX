@@ -70,6 +70,8 @@ std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 		SourcePosition{3, 5},
 		SourcePosition{3, 9},
 	});
+	symbols.metadata.debugInlineCallSiteChains.emplace_back();
+	symbols.metadata.debugInlineCallSiteChainIds.push_back(0u);
 	symbols.metadata.resumePointsByFunction.resize(image.functions.size());
 	symbols.metadata.localSlotsByFunction.resize(image.functions.size());
 	symbols.metadata.upvalueNamesByFunction.resize(image.functions.size());
