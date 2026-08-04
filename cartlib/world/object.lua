@@ -259,7 +259,7 @@ function worldobject:remove_component_instance(comp)
 	if self.active then
 		self.world:reconcile_component(comp)
 	end
-	registry_instance:deregister(comp, true)
+	registry_instance:deregister(comp)
 end
 
 function worldobject:remove_all_components()
@@ -277,15 +277,31 @@ function worldobject:has_tag(tag)
 end
 
 function worldobject:add_tag(tag)
-	self.tags[tag] = true
+	if not self.tags[tag] then
+		if self.world then
+			self.world:add_object_tag(self, tag)
+		else
+			self.tags[tag] = true
+		end
+	end
 end
 
 function worldobject:remove_tag(tag)
-	self.tags[tag] = nil
+	if self.tags[tag] then
+		if self.world then
+			self.world:remove_object_tag(self, tag)
+		else
+			self.tags[tag] = nil
+		end
+	end
 end
 
 function worldobject:toggle_tag(tag)
-	self.tags[tag] = not self.tags[tag]
+	if self.tags[tag] then
+		self:remove_tag(tag)
+	else
+		self:add_tag(tag)
+	end
 end
 
 -- activate(): called by world:spawn() after onspawn(). Sets active = true,
@@ -359,17 +375,12 @@ function worldobject:mark_for_disposal()
 	end
 	self.dispose_flag = true
 	self:deactivate()
-	world._by_id[self.id] = nil
-	local space<const> = world._spaces[self.space_id]
-	space.by_id[self.id] = nil
-	world._obj_to_space[self.id] = nil
 	world:queue_object_disposal(self)
 end
 
 function worldobject:dispose()
 	self:remove_all_components()
 	self:unbind()
-	registry_instance:deregister(self, true)
 end
 
 return worldobject

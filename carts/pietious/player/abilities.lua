@@ -38,7 +38,9 @@ action_effects.register_effect('pepernoot', {
 			return false
 		end
 		local live_count = 0
-		for proj in world:objects_by_type('pepernoot_projectile') do
+		local projectiles<const> = world:active_objects_by_type('pepernoot_projectile')
+		for i = 1, #projectiles do
+			local proj<const> = projectiles[i]
 			if proj.owner_id == owner.id then
 				live_count = live_count + 1
 			end

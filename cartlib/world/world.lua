@@ -17,155 +17,33 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    world:spawn(obj)         — calls obj:onspawn(), adds to active space
 --    world:despawn(id_or_obj) — calls obj:ondespawn() + obj:dispose()
 --
--- 3. ACTIVE IS THE DEFAULT QUERY MODE.
---    world:objects(), world:objects_with_components(), world:objects_by_type(),
---    and world:objects_by_tag() all use the current active space by default.
---    Global/live queries use explicit all_* methods instead of options tables.
+-- 3. QUERY SCOPE IS EXPLICIT.
+--    active_* returns retained dense arrays for the selected space. Unqualified
+--    objects* uses the cart-wide Registry or the world's lifecycle list.
 --
 -- 4. THE MODULE RETURNS THE CART WORLD.
 --    Access it via require('cartlib/world/world'); carts do not create another world.
 --
--- 5. NEVER ITERATE AND MUTATE at the same time.
---    Do not spawn/despawn while iterating world:objects() or world:all_objects().
---    If you need to
---    defer a spawn/despawn, use a queue and process it after the loop.
+-- 5. STRUCTURAL MUTATIONS COMMIT AT TICK-GROUP BOUNDARIES.
+--    Systems iterate retained dense arrays directly; world keeps active
+--    membership stable until the current group completes.
 
 local ecs<const> = require('cartlib/ecs')
 local registry<const> = require('cartlib/registry')
+local dense_set<const> = require('cartlib/util/dense_set')
 
 local tick_group<const> = ecs.tick_group
 local world
 local world_id_max<const> = 0x7fffffff
 local empty_component_bucket<const> = {}
+local empty_object_bucket<const> = {}
 
 local world_class<const> = {}
 world_class.__index = world_class
 
--- Active-space iteration is the dominant gameplay path, so it runs directly
--- over the current space object list. The object itself is the control value,
--- which keeps objects() allocation-free and avoids per-iterator state tables.
-local iter_active_objects<const> = function(list, obj)
-	local index = 1
-	if obj ~= nil then
-		index = obj._active_object_index + 1
-	end
-	return list[index]
-end
-
--- All-scope iteration still needs to skip end-of-frame disposals, but it keeps
--- that rule inside its own iterator instead of routing every yielded object
--- through a generic scope helper.
-local iter_live_objects<const> = function(list, obj)
-	local index = 1
-	if obj ~= nil then
-		index = obj._world_object_index + 1
-	end
-	while true do
-		local obj<const> = list[index]
-		if obj == nil then
-			return nil
-		end
-		if not obj.dispose_flag then
-			return obj
-		end
-		index = index + 1
-	end
-end
-
--- objects_with_components(...) is also a frame hot path.
--- The fast path runs over a dense active component list for the current space,
--- so ECS systems do not pay registry bucket traversal and parent/scope
--- filtering cost every frame.
-local iter_active_objects_with_components<const> = function(state, _)
-	local list<const> = state.list
-	local index<const> = state.index + 1
-	if index == state.stop then
-		return nil
-	end
-	local entity<const> = list[index]
-	state.index = index
-	return entity.parent, entity
-end
-
-local iter_live_objects_with_components<const> = function(state, _)
-	local bucket<const> = state.bucket
-	local next_key, entity = next(bucket, state.reg_key)
-	while next_key do
-		local parent<const> = entity.parent
-		if not parent.dispose_flag then
-			state.reg_key = next_key
-			return parent, entity
-		end
-		next_key, entity = next(bucket, next_key)
-	end
-	state.reg_key = nil
-	return nil
-end
-
-local iter_active_world_by_type<const> = function(state, _)
-	local bucket<const> = state.bucket
-	local by_id<const> = state.by_id
-	local active_space_id<const> = state.active_space_id
-	local next_key, entity = next(bucket, state.reg_key)
-	while next_key do
-		if by_id[entity.id] and entity.active and entity.space_id == active_space_id then
-			state.reg_key = next_key
-			return entity
-		end
-		next_key, entity = next(bucket, next_key)
-	end
-	state.reg_key = nil
-	return nil
-end
-
-local iter_live_world_by_type<const> = function(state, _)
-	local bucket<const> = state.bucket
-	local by_id<const> = state.by_id
-	local next_key, entity = next(bucket, state.reg_key)
-	while next_key do
-		if by_id[entity.id] then
-			state.reg_key = next_key
-			return entity
-		end
-		next_key, entity = next(bucket, next_key)
-	end
-	state.reg_key = nil
-	return nil
-end
-
-local iter_active_world_by_tag<const> = function(state, _)
-	local reg_table<const> = state.reg
-	local tag<const> = state.tag
-	local by_id<const> = state.by_id
-	local active_space_id<const> = state.active_space_id
-	local next_key, entity = next(reg_table, state.reg_key)
-	while next_key do
-		local tags<const> = entity.tags
-		if tags and tags[tag] and by_id[entity.id] and entity.active and entity.space_id == active_space_id then
-			state.reg_key = next_key
-			return entity
-		end
-		next_key, entity = next(reg_table, next_key)
-	end
-	state.reg_key = nil
-	return nil
-end
-
-local iter_live_world_by_tag<const> = function(state, _)
-	local reg_table<const> = state.reg
-	local tag<const> = state.tag
-	local by_id<const> = state.by_id
-	local next_key, entity = next(reg_table, state.reg_key)
-	while next_key do
-		local tags<const> = entity.tags
-		if tags and tags[tag] and by_id[entity.id] then
-			state.reg_key = next_key
-			return entity
-		end
-		next_key, entity = next(reg_table, next_key)
-	end
-	state.reg_key = nil
-	return nil
+local active_bucket_items<const> = function(buckets, key)
+	local bucket<const> = buckets[key]
+	return bucket and bucket.items or empty_object_bucket
 end
 
 local add_space_object<const> = function(obj, space)
@@ -226,9 +104,27 @@ local add_active_object<const> = function(obj, space)
 	tick_bucket[tick_index] = obj
 	obj._active_object_tick_order = tick_order
 	obj._active_object_tick_order_index = tick_index
+	local type_bucket = space.active_objects_by_type[obj.type_name]
+	if type_bucket == nil then
+		type_bucket = dense_set.new()
+		space.active_objects_by_type[obj.type_name] = type_bucket
+	end
+	dense_set.add(type_bucket, obj)
+	for tag in pairs(obj.tags) do
+		local tag_bucket = space.active_objects_by_tag[tag]
+		if tag_bucket == nil then
+			tag_bucket = dense_set.new()
+			space.active_objects_by_tag[tag] = tag_bucket
+		end
+		dense_set.add(tag_bucket, obj)
+	end
 end
 
 local remove_active_object<const> = function(obj, space)
+	dense_set.remove(space.active_objects_by_type[obj.type_name], obj)
+	for tag in pairs(obj.tags) do
+		dense_set.remove(space.active_objects_by_tag[tag], obj)
+	end
 	local objects<const> = space.active_objects
 	local index<const> = obj._active_object_index
 	local last_index<const> = #objects
@@ -328,10 +224,8 @@ end
 function world_class.new()
 	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
-	self._by_id = {}
 	self._spaces = {}
 	self._space_order = {}
-	self._obj_to_space = {}
 	self._pending_object_disposals = {}
 	self._pending_active_objects = {}
 	self._pending_active_components = {}
@@ -355,7 +249,7 @@ function world_class:next_id(type_name)
 	end
 
 	local result = baseid .. '_' .. tostring(uniquenumber)
-	while self._by_id[result] ~= nil do
+	while registry.instance:get(result) ~= nil do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1
@@ -383,13 +277,14 @@ function world_class:add_space(space_id)
 		id = space_id,
 		objects = {},
 		active_objects = {},
+		active_objects_by_type = {},
+		active_objects_by_tag = {},
 		active_visual_components = {},
 		active_objects_by_tick_order = {
 			early = {},
 			normal = {},
 			late = {},
 		},
-		by_id = {},
 		active_components_by_type = active_components_by_type,
 	}
 	self._space_order[#self._space_order + 1] = space_id
@@ -398,41 +293,57 @@ end
 
 -- world:set_space(space_id): makes space_id the active space.
 --   Objects subsequently spawned without an explicit .space_id go here.
---   Affects the default world query helpers (objects(), objects_with_components()).
+--   Affects active_* query helpers and component views.
 function world_class:set_space(space_id)
 	self.active_space_id = space_id
 	self.active_space = self._spaces[space_id]
 	return self.active_space_id
 end
 
+function world_class:add_object_tag(obj, tag)
+	registry.instance:add_tag(obj, tag)
+	local active_space_id<const> = obj._active_object_space_id
+	if active_space_id ~= nil then
+		local buckets<const> = self._spaces[active_space_id].active_objects_by_tag
+		local bucket = buckets[tag]
+		if bucket == nil then
+			bucket = dense_set.new()
+			buckets[tag] = bucket
+		end
+		dense_set.add(bucket, obj)
+	end
+end
+
+function world_class:remove_object_tag(obj, tag)
+	local active_space_id<const> = obj._active_object_space_id
+	if active_space_id ~= nil then
+		dense_set.remove(self._spaces[active_space_id].active_objects_by_tag[tag], obj)
+	end
+	registry.instance:remove_tag(obj, tag)
+end
+
 function world_class:set_object_space(obj, space_id)
 	local target_space<const> = self._spaces[space_id]
-
-	local object_id<const> = obj.id
-	if self._by_id[object_id] == nil then
+	if registry.instance:get(obj.id) ~= obj then
 		obj.space_id = space_id
 		return space_id
 	end
 
-	local current_space_id<const> = self._obj_to_space[object_id]
-	if current_space_id == space_id then
-		obj.space_id = space_id
+	local current_space_id<const> = obj.space_id
+	if obj._space_object_index ~= nil and current_space_id == space_id then
 		return space_id
 	end
 
-	if current_space_id ~= nil then
+	if obj._space_object_index ~= nil then
 		local current_space<const> = self._spaces[current_space_id]
 		if obj.active then
 			self:deactivate_object(obj)
 		end
-		current_space.by_id[object_id] = nil
 		remove_space_object(obj, current_space)
 	end
 
-	add_space_object(obj, target_space)
-	target_space.by_id[object_id] = obj
-	self._obj_to_space[object_id] = space_id
 	obj.space_id = space_id
+	add_space_object(obj, target_space)
 	if obj.active then
 		self:activate_object(obj)
 	end
@@ -453,7 +364,7 @@ end
 -- active list directly instead of relying on reverse-loop/remove workarounds.
 local reconcile_active_object<const> = function(world, obj)
 	local target_space_id = nil
-	if obj.active and world._by_id[obj.id] == obj then
+	if obj.active and registry.instance:get(obj.id) == obj then
 		target_space_id = obj.space_id
 	end
 	local active_space_id<const> = obj._active_object_space_id
@@ -567,16 +478,15 @@ end
 --   the object and emits the 'spawn' event.
 --   obj.id must be unique. Returns obj.
 function world_class:spawn(obj, pos)
-	local existing<const> = self._by_id[obj.id]
+	local existing<const> = registry.instance:get(obj.id)
 	if existing ~= nil and existing ~= obj then
 		error('world.spawn duplicate id "' .. obj.id .. '".')
 	end
 	local space_id<const> = obj.space_id or self.active_space_id
 	obj.world = self
-	self._by_id[obj.id] = obj
+	registry.instance:register(obj)
 	add_world_object(self, obj)
 	self:set_object_space(obj, space_id)
-	registry.instance:register(obj)
 	if pos then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y
@@ -595,24 +505,19 @@ end
 function world_class:despawn(id_or_obj)
 	local obj
 	if type(id_or_obj) ~= 'table' then
-		obj = self._by_id[id_or_obj]
+		obj = registry.instance:get(id_or_obj)
 	else
 		obj = id_or_obj
 	end
 
-	local object_id<const> = obj.id
-	local space_id<const> = self._obj_to_space[object_id]
-	if space_id ~= nil then
-		local space<const> = self._spaces[space_id]
-		space.by_id[object_id] = nil
+	if obj._space_object_index ~= nil then
+		local space<const> = self._spaces[obj.space_id]
 		remove_space_object(obj, space)
-		self._obj_to_space[object_id] = nil
 	end
 
-	registry.instance:deregister(object_id, true)
+	registry.instance:deregister(obj)
 	obj:ondespawn()
 	obj:dispose()
-	self._by_id[object_id] = nil
 	remove_world_object(self, obj)
 end
 
@@ -620,104 +525,35 @@ end
 --   Pending-disposal objects are removed from the id map up front, so get()
 --   stays a direct lookup instead of re-checking lifecycle flags on every call.
 function world_class:get(id)
-	return self._by_id[id]
+	return registry.instance:get(id)
 end
 
--- world:objects()
---   Iterator over active objects in the current active space.
---   Do NOT spawn or despawn inside this loop.
+function world_class:active_objects()
+	return self.active_space.active_objects
+end
+
 function world_class:objects()
-	return iter_active_objects, self.active_space.active_objects, nil
+	return self._objects
 end
 
--- world:all_objects()
---   Iterator over all live objects regardless of active space or active flag.
---   Use this for diagnostics, serialization, and leak checks, not gameplay hot loops.
-function world_class:all_objects()
-	return iter_live_objects, self._objects, nil
+function world_class:active_objects_by_type(type_name)
+	return active_bucket_items(self.active_space.active_objects_by_type, type_name)
 end
 
--- world:objects_with_components(type_name)
---   Iterator that yields (obj, component_handle) for every active component of
---   the given type in the current active space.
-function world_class:objects_with_components(type_name)
-	-- Active component queries combine registry type bucketing with direct dense
-	-- active component sets. The goal is to keep ECS system iteration on the
-	-- smallest useful set instead of re-filtering registry buckets every frame.
-	local components<const> = self.active_space.active_components_by_type[type_name] or empty_component_bucket
-	return iter_active_objects_with_components,
-		{ list = components, index = 0, stop = #components + 1 },
-			nil
+function world_class:objects_by_type(type_name)
+	return registry.instance:entities_by_type(type_name)
 end
 
-function world_class:all_objects_with_components(type_name)
-	local bucket<const> = registry.instance:get_registered_entities_by_type(type_name)
-	return iter_live_objects_with_components,
-		{ bucket = bucket, reg_key = nil },
-			nil
+function world_class:active_objects_by_tag(tag)
+	return active_bucket_items(self.active_space.active_objects_by_tag, tag)
 end
 
--- World query iterators stay lazy and never materialize result arrays.
--- The common active-object paths are allocation-free; the registry-
--- backed type/tag queries still keep a tiny iterator state table.
-
--- world:objects_by_type(type_name)
---   Iterator over active objects whose type_name matches a prefab definition id.
-function world_class:objects_by_type(obj_type_name)
-	local state<const> = { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, reg_key = nil }
-	state.active_space_id = self.active_space_id
-	return iter_active_world_by_type, state, nil
-end
-
-function world_class:all_objects_by_type(obj_type_name)
-	local state<const> = { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, reg_key = nil }
-	return iter_live_world_by_type, state, nil
-end
-
--- world:objects_by_tag(tag)
---   Iterator over active objects carrying the given tag.
---   Like UE5 GetAllActorsWithTag.
 function world_class:objects_by_tag(tag)
-	local state<const> = { reg = registry.instance._registry, tag = tag, by_id = self._by_id, reg_key = nil }
-	state.active_space_id = self.active_space_id
-	return iter_active_world_by_tag, state, nil
+	return registry.instance:entities_by_tag(tag)
 end
 
-function world_class:all_objects_by_tag(tag)
-	local state<const> = { reg = registry.instance._registry, tag = tag, by_id = self._by_id, reg_key = nil }
-	return iter_live_world_by_tag, state, nil
-end
-
--- world:find_by_type(type_name)
---   Returns the first active object matching type_name (or nil).
-function world_class:find_by_type(obj_type_name)
-	for entity in self:objects_by_type(obj_type_name) do
-		return entity
-	end
-	return nil
-end
-
-function world_class:find_any_by_type(obj_type_name)
-	for entity in self:all_objects_by_type(obj_type_name) do
-		return entity
-	end
-	return nil
-end
-
--- world:find_by_tag(tag)
---   Returns the first active object carrying the given tag (or nil).
-function world_class:find_by_tag(tag)
-	for entity in self:objects_by_tag(tag) do
-		return entity
-	end
-	return nil
-end
-
-function world_class:find_any_by_tag(tag)
-	for entity in self:all_objects_by_tag(tag) do
-		return entity
-	end
-	return nil
+function world_class:active_components(type_name)
+	return self.active_space.active_components_by_type[type_name] or empty_component_bucket
 end
 
 local run_phase<const> = function(self, group, dt_ms)
@@ -743,8 +579,9 @@ function world_class:update()
 			if space_object_index ~= nil then
 				remove_space_object(obj, self._spaces[obj.space_id])
 			end
+			registry.instance:deregister(obj)
 			obj:ondespawn()
-			obj:dispose() -- Also removes from registry, but we need to do the above cleanup first to avoid iterating over a half-destroyed object in the registry's tables.
+			obj:dispose()
 			remove_world_object(self, obj)
 		end
 		pending_objects[i] = nil
@@ -765,10 +602,10 @@ function world_class:clear()
 		obj:dispose()
 	end
 	self._objects = {}
-	self._by_id = {}
 	self._spaces = {}
 	self._space_order = {}
-	self._obj_to_space = {}
+	self._pending_object_disposals = {}
+	self._pending_active_objects = {}
 	self._pending_active_components = {}
 	self._visual_sequence = 0
 	self.current_phase = nil

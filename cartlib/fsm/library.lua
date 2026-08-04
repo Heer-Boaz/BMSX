@@ -31,8 +31,9 @@ function fsmlibrary.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	statedefinitions[machine_name] = replacement
-	local components<const> = registry_instance:get_registered_entities_by_type(component_types.state_machine)
-	for _, state_machines in pairs(components) do
+	local components<const> = registry_instance:entities_by_type(component_types.state_machine)
+	for i = 1, #components do
+		local state_machines<const> = components[i]
 		state_machines:rebind_statemachine(machine_name, replacement)
 	end
 end

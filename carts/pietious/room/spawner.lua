@@ -206,7 +206,9 @@ local spawn_rock_drops<const> = function(room)
 end
 
 function room_spawner.spawn_all_for_room(room)
-	for obj in world:all_objects_by_tag('rs') do
+	local room_objects<const> = world:objects_by_tag('rs')
+	for i = 1, #room_objects do
+		local obj<const> = room_objects[i]
 		if obj.rs_room_number ~= room.room_number then
 			obj:mark_for_disposal()
 		end
@@ -223,10 +225,9 @@ function room_spawner.spawn_all_for_room(room)
 end
 
 function room_spawner.despawn_previous()
-	local i = 0
-	for obj in world:all_objects_by_tag('rs') do
-		obj:mark_for_disposal()
-		i = i + 1
+	local room_objects<const> = world:objects_by_tag('rs')
+	for i = 1, #room_objects do
+		room_objects[i]:mark_for_disposal()
 	end
 end
 

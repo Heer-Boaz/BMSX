@@ -10,8 +10,9 @@ function elevator_system:update()
 	local player<const> = world:get('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
-	for elevator in world:objects_by_type('elevator_platform') do
-		elevator:update_motion()
+	local elevators<const> = world:active_objects_by_type('elevator_platform')
+	for i = 1, #elevators do
+		elevators[i]:update_motion()
 	end
 	player.on_vertical_elevator = player.next_vertical_elevator
 	player.vertical_elevator_id = player.next_vertical_elevator_id

@@ -1,205 +1,122 @@
--- registry.lua
--- Lightweight registry for cart entities.
---
--- DESIGN PRINCIPLES
---
--- 1. registrypersistent = true MEANS 'survives world.clear()'.
---    Objects with this flag are NOT removed on clear() and NOT serialized as
---    part of the savegame snapshot. Use it for global singletons that must
---    persist across room/level transitions (HUD, audio managers, etc.).
---
---      WRONG — marking a per-room enemy as persistent:
---        enemy.registrypersistent = true   -- it will leak across reloads
---
---      RIGHT — only mark long-lived singletons:
---        hud.registrypersistent = true
---
--- 2. DO NOT STORE REFERENCES OUTSIDE the registry.
---    Always look up entities via registry:get(id) or iterate(). Never cache
---    a reference across frames — the entity may have been deregistered.
---
--- 3. registry.instance IS THE GLOBAL SINGLETON.
---    Access it via require('cartlib/registry').instance — do not create additional
---    registry.new() instances unless you have an explicit separate scope.
+local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {}
 registry.__index = registry
 
 local empty_bucket<const> = {}
 
-local add_to_type_bucket<const> = function(self, entity)
+local add_entity_type<const> = function(self, entity)
 	local type_name<const> = entity.type_name
-	if type_name == nil then
-		return
+	if type_name ~= nil then
+		local bucket = self._by_type[type_name]
+		if bucket == nil then
+			bucket = dense_set.new()
+			self._by_type[type_name] = bucket
+		end
+		dense_set.add(bucket, entity)
 	end
-	local bucket = self._by_type[type_name]
-	if bucket == nil then
-		bucket = {}
-		self._by_type[type_name] = bucket
-	end
-	bucket[entity.id] = entity
 end
 
-local remove_from_type_bucket<const> = function(self, entity)
+local remove_entity_type<const> = function(self, entity)
 	local type_name<const> = entity.type_name
-	if type_name == nil then
-		return
+	if type_name ~= nil then
+		dense_set.remove(self._by_type[type_name], entity)
 	end
-	local bucket<const> = self._by_type[type_name]
-	if bucket == nil then
-		return
+end
+
+local add_entity_tags<const> = function(self, entity)
+	local tags<const> = entity.tags
+	if tags ~= nil then
+		for tag in pairs(tags) do
+			local bucket = self._by_tag[tag]
+			if bucket == nil then
+				bucket = dense_set.new()
+				self._by_tag[tag] = bucket
+			end
+			dense_set.add(bucket, entity)
+		end
 	end
-	bucket[entity.id] = nil
-	if next(bucket) == nil then
-		self._by_type[type_name] = nil
+end
+
+local remove_entity_tags<const> = function(self, entity)
+	local tags<const> = entity.tags
+	if tags ~= nil then
+		for tag in pairs(tags) do
+			dense_set.remove(self._by_tag[tag], entity)
+		end
 	end
 end
 
 function registry.new()
 	local self<const> = setmetatable({}, registry)
-	self._registry = {}
+	self._by_id = {}
 	self._by_type = {}
+	self._by_tag = {}
+	self._entities = dense_set.new()
 	return self
 end
 
--- registry:get(id): returns entity or nil (does not error on missing ids).
 function registry:get(id)
-	return self._registry[id]
+	return self._by_id[id]
 end
 
--- registry:has(id): returns true if an entity with this id is currently registered.
 function registry:has(id)
-	return self._registry[id] ~= nil
+	return self._by_id[id] ~= nil
 end
 
--- registry:register(entity): adds entity to the registry keyed by entity.id.
---   entity.id must be set before calling this.
 function registry:register(entity)
-	local existing<const> = self._registry[entity.id]
+	local existing<const> = self._by_id[entity.id]
 	if existing ~= nil and existing ~= entity then
 		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
-	self._registry[entity.id] = entity
-	add_to_type_bucket(self, entity)
+	self._by_id[entity.id] = entity
+	dense_set.add(self._entities, entity)
+	add_entity_type(self, entity)
+	add_entity_tags(self, entity)
 end
 
--- registry:deregister(id_or_entity, remove_persistent?)
---   Removes the entity. If the entity has registrypersistent=true, removal is
---   a no-op unless remove_persistent is explicitly true. Returns false when
---   removal was blocked, true otherwise.
-function registry:deregister(id_or_entity, remove_persistent)
-	local id<const> = type(id_or_entity) == 'string' and id_or_entity or id_or_entity.id
-	local entity<const> = self._registry[id]
-	if entity and entity.registrypersistent and not remove_persistent then
-		return false
-	end
-	if entity ~= nil then
-		remove_from_type_bucket(self, entity)
-	end
-	self._registry[id] = nil
-	return true
+function registry:deregister(entity)
+	remove_entity_tags(self, entity)
+	remove_entity_type(self, entity)
+	dense_set.remove(self._entities, entity)
+	self._by_id[entity.id] = nil
 end
 
-function registry:get_persistent_entities()
-	local out<const> = {}
-	for _, entity in pairs(self._registry) do
-		if entity.registrypersistent then
-			out[#out + 1] = entity
-		end
+function registry:add_tag(entity, tag)
+	entity.tags[tag] = true
+	local bucket = self._by_tag[tag]
+	if bucket == nil then
+		bucket = dense_set.new()
+		self._by_tag[tag] = bucket
 	end
-	return out
+	dense_set.add(bucket, entity)
 end
 
--- registry:clear(): removes all non-persistent entities from the registry.
---   Persistent entities (registrypersistent=true) are left untouched.
---   Called automatically on world.clear() / room transitions.
+function registry:remove_tag(entity, tag)
+	dense_set.remove(self._by_tag[tag], entity)
+	entity.tags[tag] = nil
+end
+
 function registry:clear()
-	for id, entity in pairs(self._registry) do
+	local entities<const> = self._entities.items
+	local index = #entities
+	while index > 0 do
+		local entity<const> = entities[index]
 		if not entity.registrypersistent then
-			remove_from_type_bucket(self, entity)
-			self._registry[id] = nil
+			self:deregister(entity)
 		end
+		index = index - 1
 	end
 end
 
-function registry:get_registered_entities()
-	return self._registry
+function registry:entities_by_type(type_name)
+	local bucket<const> = self._by_type[type_name]
+	return bucket and bucket.items or empty_bucket
 end
 
-function registry:get_registered_entities_by_type(type_name)
-	return self._by_type[type_name] or empty_bucket
-end
-
-local iter_registry<const> = function(state, key)
-	local entries<const> = state.entries
-	local persistent_only<const> = state.persistent_only
-	local next_key, entity = next(entries, key)
-	while next_key do
-		if not persistent_only or entity.registrypersistent then
-			return next_key, entity
-		end
-		next_key, entity = next(entries, next_key)
-	end
-	return nil
-end
-
--- registry:iterate(type_name?, persistent_only?): returns an iterator over
---   registered entities. Both arguments are optional filters.
---     type_name      — only yield entities whose .type_name matches
---     persistent_only — when true, only yield persistent entities
-function registry:iterate(type_name, persistent_only)
-	local entries<const> = type_name and self:get_registered_entities_by_type(type_name) or self._registry
-	return iter_registry, { entries = entries, persistent_only = persistent_only }, nil
-end
-
-local iter_by_tag<const> = function(state, key)
-	local reg<const> = state.registry
-	local tag<const> = state.tag
-	local next_key, entity = next(reg._registry, key)
-	while next_key do
-		local tags<const> = entity.tags
-		if tags and tags[tag] then
-			return next_key, entity
-		end
-		next_key, entity = next(reg._registry, next_key)
-	end
-	return nil
-end
-
--- registry:iterate_by_tag(tag): returns an iterator over registered entities
---   that carry the given tag in their .tags set (entity.tags[tag] == true).
-function registry:iterate_by_tag(tag)
-	return iter_by_tag, { registry = self, tag = tag }, nil
-end
-
-local iter_by_tags<const> = function(state, key)
-	local reg<const> = state.registry
-	local wanted<const> = state.tags
-	local wanted_n<const> = state.tags_n
-	local next_key, entity = next(reg._registry, key)
-	while next_key do
-		local tags<const> = entity.tags
-		if tags then
-			local match = true
-			for i = 1, wanted_n do
-				if not tags[wanted[i]] then
-					match = false
-					break
-				end
-			end
-			if match then
-				return next_key, entity
-			end
-		end
-		next_key, entity = next(reg._registry, next_key)
-	end
-	return nil
-end
-
--- registry:iterate_by_tags(tags): returns an iterator over registered entities
---   that carry ALL of the given tags. tags is an array of tag strings.
-function registry:iterate_by_tags(tags)
-	return iter_by_tags, { registry = self, tags = tags, tags_n = #tags }, nil
+function registry:entities_by_tag(tag)
+	local bucket<const> = self._by_tag[tag]
+	return bucket and bucket.items or empty_bucket
 end
 
 return {

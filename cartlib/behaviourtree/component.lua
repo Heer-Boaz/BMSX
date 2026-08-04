@@ -14,8 +14,9 @@ function behaviourtreecomponent.new(opts)
 end
 
 function behaviourtreecomponent.factory(root)
-	local components<const> = registry_instance:get_registered_entities_by_type(component_types.behaviour_tree)
-	for _, behaviour_tree in pairs(components) do
+	local components<const> = registry_instance:entities_by_type(component_types.behaviour_tree)
+	for i = 1, #components do
+		local behaviour_tree<const> = components[i]
 		if behaviour_tree.id_local == root.id then
 			behaviour_tree.root = root
 		end
