@@ -3,7 +3,7 @@
 	"state": "pre_core_baseline",
 	"closure": {
 		"status": "blocked",
-		"reason": "The current ECS, FSM, event, tile-query, action-effect and timeline owners retain anonymous or runtime-selected callbacks, while current render and query paths still sort or allocate. This baseline therefore makes no transitive steady-state or no-allocation claim."
+		"reason": "The current ECS, FSM, event, tile-query, action-effect and timeline owners retain anonymous or runtime-selected callbacks, while current render and query paths still sort or allocate. Observed target arrays are a reviewed snapshot of the audited carts; the tooling does not derive producer-side target-set completeness. This baseline therefore makes no transitive steady-state or no-allocation claim."
 	},
 	"audited_carts": [
 		"2025",
@@ -156,7 +156,7 @@
 			"caller": "cartlib/behaviourtree.lua::action:tick",
 			"call": "self.action",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"carts/pietious/enemies/boekfoe.lua::boekfoe.bt_tick",
 				"carts/pietious/enemies/cloud.lua::cloud.bt_tick",
@@ -178,7 +178,7 @@
 			"caller": "cartlib/ecs/systems/behaviour_tree.lua::behaviour_tree_system:update",
 			"call": "component.root:tick",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/behaviourtree.lua::action:tick"
 			]
@@ -188,7 +188,7 @@
 			"caller": "cartlib/render/custom_visual_component.lua::customvisualcomponent:draw",
 			"call": "self.producer",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"carts/2025/cart.lua::draw_director_visual",
 				"carts/2025/combat.lua::draw_combat_slash",
@@ -208,7 +208,7 @@
 			"caller": "cartlib/ecs.lua::system_manager:update_phase",
 			"call": "systems[]:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/ecs/systems/behaviour_tree.lua::behaviour_tree_system:update",
 				"cartlib/ecs/systems/fsm.lua::fsm_system:update",
@@ -247,7 +247,7 @@
 			"caller": "cartlib/ecs/systems/fsm.lua::fsm_system:update",
 			"call": "components[]:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/fsm/component.lua::fsmcomponent:update"
 			]
@@ -257,7 +257,7 @@
 			"caller": "cartlib/fsm/fsm.lua::state:update",
 			"call": "child:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/fsm/fsm.lua::state:update"
 			]
@@ -267,7 +267,7 @@
 			"caller": "cartlib/fsm/fsm.lua::state:update",
 			"call": "current:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/fsm/fsm.lua::state:update"
 			]
@@ -277,7 +277,7 @@
 			"caller": "cartlib/fsm/component.lua::fsmcomponent:update",
 			"call": "machine:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/fsm/fsm.lua::state:update"
 			]
@@ -332,7 +332,7 @@
 			"caller": "cartlib/timeline/dispatch.lua::dispatch_frame",
 			"call": "on_frame_payload",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/timeline/component.lua::process_timeline_frame_payload"
 			]
@@ -342,7 +342,7 @@
 			"caller": "cartlib/timeline/component.lua::timelinecomponent:tick_active",
 			"call": "entry.instance:update",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/timeline/timeline.lua::timeline:update"
 			]
@@ -352,7 +352,7 @@
 			"caller": "cartlib/ecs/systems/timeline.lua::timeline_system:update",
 			"call": "component:tick_active",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/timeline/component.lua::timelinecomponent:tick_active"
 			]
@@ -371,7 +371,7 @@
 			"caller": "cartlib/ecs/systems/render.lua::build_visual_commands",
 			"call": "component:draw",
 			"count": 1,
-			"coverage": "complete",
+			"coverage": "observed",
 			"targets": [
 				"cartlib/render/custom_visual_component.lua::customvisualcomponent:draw",
 				"cartlib/render/sprite_component.lua::spritecomponent:draw",

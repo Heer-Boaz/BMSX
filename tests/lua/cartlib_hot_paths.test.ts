@@ -35,7 +35,7 @@ test('cartlib hot-path audit rejects stale function identities and surface omiss
 	));
 });
 
-test('cartlib hot-path audit rejects stale dispatch anchors and target inventories', () => {
+test('cartlib hot-path audit rejects stale dispatch anchors and un-inventoried observed targets', () => {
 	const staleCall = structuredClone(manifest);
 	staleCall.dispatch_boundaries.find(boundary => boundary.id === 'ecs-system-update')!.call = 'systems[]:tick';
 	assert.ok(auditCartlibHotPaths(repoRoot, staleCall).some(

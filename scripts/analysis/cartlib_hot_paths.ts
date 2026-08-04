@@ -10,12 +10,12 @@ import {
 	luaFunctionSyntaxCount,
 } from './lua_hot_paths';
 
-type CompleteDispatchBoundary = {
+type ObservedDispatchBoundary = {
 	id: string;
 	caller: string;
 	call: string;
 	count: number;
-	coverage: 'complete';
+	coverage: 'observed';
 	targets: string[];
 };
 
@@ -55,7 +55,7 @@ export type CartlibHotPathManifest = {
 	roots: string[];
 	cartlib_functions: string[];
 	cart_functions: string[];
-	dispatch_boundaries: Array<CompleteDispatchBoundary | BlockedDispatchBoundary>;
+	dispatch_boundaries: Array<ObservedDispatchBoundary | BlockedDispatchBoundary>;
 	known_blockers: HotPathBlocker[];
 	pipeline_gaps: PipelineGap[];
 };
@@ -202,10 +202,10 @@ export function auditCartlibHotPaths(repoRoot: string, manifest: CartlibHotPathM
 		if (actualCount !== boundary.count) {
 			errors.push(`${boundary.id}: call ${boundary.call} expected ${boundary.count}, found ${actualCount}`);
 		}
-		const targets = boundary.coverage === 'complete' ? boundary.targets : boundary.known_targets;
+		const targets = boundary.coverage === 'observed' ? boundary.targets : boundary.known_targets;
 		errors.push(...auditSortedUnique(`${boundary.id} targets`, targets));
-		if (boundary.coverage === 'complete' && targets.length === 0) {
-			errors.push(`${boundary.id}: complete dispatch has no targets`);
+		if (boundary.coverage === 'observed' && targets.length === 0) {
+			errors.push(`${boundary.id}: observed dispatch has no targets`);
 		}
 		if (boundary.coverage === 'blocked' && boundary.reason.length === 0) {
 			errors.push(`${boundary.id}: blocked dispatch needs a reason`);
