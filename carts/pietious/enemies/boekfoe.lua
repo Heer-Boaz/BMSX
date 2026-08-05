@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local boekfoe<const> = {}
@@ -16,7 +16,7 @@ function boekfoe:ctor()
 end
 
 function boekfoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.nodedata
+	local node<const> = blackboard.node_data
 	if self.boek_state == 'closed' then
 		local closed_ticks = node.boek_state_ticks or enemy_boek_wait_open_steps
 		closed_ticks = closed_ticks - 1
@@ -88,7 +88,7 @@ function boekfoe.register()
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
 		base = spriteobject,
-		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_boekfoe', boekfoe.bt_tick)) },
+		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_boekfoe', boekfoe.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 4,

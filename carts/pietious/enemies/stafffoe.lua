@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local stafffoe<const> = {}
@@ -19,7 +19,7 @@ function stafffoe:ctor()
 end
 
 function stafffoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.nodedata
+	local node<const> = blackboard.node_data
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks or enemy_staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1
@@ -85,7 +85,7 @@ function stafffoe.register()
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		base = spriteobject,
-		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_stafffoe', stafffoe.bt_tick)) },
+		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_stafffoe', stafffoe.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 4,

@@ -31,8 +31,8 @@ const CART_MODULE_FILES = [
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/component', 'cartlib/fsm/component.lua'],
-	['cartlib/behaviourtree', 'cartlib/behaviourtree.lua'],
-	['cartlib/behaviourtree/component', 'cartlib/behaviourtree/component.lua'],
+	['cartlib/behaviour_tree', 'cartlib/behaviour_tree.lua'],
+	['cartlib/behaviour_tree/component', 'cartlib/behaviour_tree/component.lua'],
 ] as const;
 
 const SYSTEM_STUB_MODULES = [
@@ -74,8 +74,8 @@ local events<const> = require('cartlib/eventemitter')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local timeline_component<const> = require('cartlib/timeline/component')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 
 local target<const> = {
 	id = 'hot_target',
@@ -263,26 +263,26 @@ assert(compatible == false)
 assert(fsm_library.get('hot_machine') == published_definition)
 assert(machine.definition == published_definition)
 
-local old_root<const> = behaviourtree.action.new('enemy_hot', function(_, blackboard)
-	blackboard.nodedata.ticks = (blackboard.nodedata.ticks or 0) + 1
+local old_root<const> = behaviour_tree.action_node.new('enemy_hot', function(_, blackboard)
+	blackboard.node_data.ticks = (blackboard.node_data.ticks or 0) + 1
 	return 'SUCCESS'
 end)
-local make_old_tree<const> = behaviourtreecomponent.factory(old_root)
-local behaviour_tree<const> = make_old_tree({ parent = target })
-behaviour_tree.id = 'hot_target_bt'
-registry:register(behaviour_tree)
-behaviour_tree.root:tick(target, behaviour_tree)
-local node_data<const> = behaviour_tree.nodedata
+local make_old_tree<const> = behaviour_tree_component.factory(old_root)
+local behaviour_tree_instance<const> = make_old_tree({ parent = target })
+behaviour_tree_instance.id = 'hot_target_bt'
+registry:register(behaviour_tree_instance)
+behaviour_tree_instance.root:tick(target, behaviour_tree_instance)
+local node_data<const> = behaviour_tree_instance.node_data
 node_data.retained = 91
 
-local new_root<const> = behaviourtree.action.new('enemy_hot', function(_, blackboard)
-	blackboard.nodedata.ticks = blackboard.nodedata.ticks + 10
+local new_root<const> = behaviour_tree.action_node.new('enemy_hot', function(_, blackboard)
+	blackboard.node_data.ticks = blackboard.node_data.ticks + 10
 	return 'SUCCESS'
 end)
-local make_new_tree<const> = behaviourtreecomponent.factory(new_root)
-assert(behaviour_tree.root == new_root)
-assert(behaviour_tree.nodedata == node_data and node_data.retained == 91)
-behaviour_tree.root:tick(target, behaviour_tree)
+local make_new_tree<const> = behaviour_tree_component.factory(new_root)
+assert(behaviour_tree_instance.root == new_root)
+assert(behaviour_tree_instance.node_data == node_data and node_data.retained == 91)
+behaviour_tree_instance.root:tick(target, behaviour_tree_instance)
 local future_tree<const> = make_new_tree({ parent = target })
 assert(future_tree.root == new_root)
 

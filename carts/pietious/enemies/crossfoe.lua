@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local crossfoe<const> = {}
@@ -43,7 +43,7 @@ end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
 	local player<const> = world:get('pietolon')
-	local node<const> = blackboard.nodedata
+	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks or enemy_cross_wait_before_fly_steps
 	wait_ticks = wait_ticks - 1
@@ -67,7 +67,7 @@ end
 
 function crossfoe.bt_tick_flying(self, blackboard)
 	local player<const> = world:get('pietolon')
-	local node<const> = blackboard.nodedata
+	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
 	local next_x<const> = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
@@ -140,7 +140,7 @@ function crossfoe.register()
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		base = spriteobject,
-		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_crossfoe', crossfoe.bt_tick)) },
+		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_crossfoe', crossfoe.bt_tick)) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

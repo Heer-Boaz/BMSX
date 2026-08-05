@@ -1,12 +1,12 @@
 -- behaviour_tree_system.lua
 -- Behaviour-tree ECS system.
 
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
-local behaviour_tree_component_type<const> = behaviourtreecomponent.type_name
+local behaviour_tree_component_type<const> = behaviour_tree_component.type_name
 
 local behaviour_tree_system<const> = {}
 behaviour_tree_system.__index = behaviour_tree_system

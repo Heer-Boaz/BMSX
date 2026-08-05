@@ -3,8 +3,8 @@ local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 
@@ -34,7 +34,7 @@ function muziekfoe:ctor()
 end
 
 function muziekfoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.nodedata
+	local node<const> = blackboard.node_data
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum or 0
 	move_accum = move_accum + enemy_muziek_horizontal_speed_num
@@ -103,7 +103,7 @@ function muziekfoe.register()
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		base = spriteobject,
-		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_muziekfoe', muziekfoe.bt_tick)) },
+		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 4,

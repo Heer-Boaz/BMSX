@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree')
-local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
+local behaviour_tree<const> = require('cartlib/behaviour_tree')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local vlokspawner<const> = {}
@@ -15,10 +15,10 @@ function vlokspawner:ctor()
 end
 
 function vlokspawner.bt_tick(self, blackboard)
-	local spawn_ticks = blackboard.nodedata.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
+	local spawn_ticks = blackboard.node_data.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
-		blackboard.nodedata.vlok_spawn_ticks = spawn_ticks
+		blackboard.node_data.vlok_spawn_ticks = spawn_ticks
 		return 'RUNNING'
 	end
 
@@ -37,7 +37,7 @@ function vlokspawner.bt_tick(self, blackboard)
 			z = 140,
 		},
 	})
-	blackboard.nodedata.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
+	blackboard.node_data.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
 	return 'RUNNING'
 end
 
@@ -52,7 +52,7 @@ function vlokspawner.register()
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		base = spriteobject,
-		components = { behaviourtreecomponent.factory(behaviourtree.action.new('enemy_vlokspawner', vlokspawner.bt_tick)) },
+		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_vlokspawner', vlokspawner.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 0,

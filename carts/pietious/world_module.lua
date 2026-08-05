@@ -1,5 +1,5 @@
 local action_effect_system<const> = require('cartlib/action_effects/action_effect_system')
-local behaviour_tree_system<const> = require('cartlib/behaviourtree/behaviour_tree_system')
+local behaviour_tree_system<const> = require('cartlib/behaviour_tree/behaviour_tree_system')
 local elevator_system<const> = require('elevator/system')
 local state_machine_system<const> = require('cartlib/fsm/state_machine_system')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
