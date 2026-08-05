@@ -1,4 +1,4 @@
--- Pietious integer-remainder movement.
+-- Shared integer-remainder movement for cart entities.
 
 local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	accum = accum + speed_num
