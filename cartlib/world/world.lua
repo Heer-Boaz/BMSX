@@ -88,6 +88,7 @@ function world_class.new()
 	self._space_order = {}
 	self._pending_despawns = {}
 	self._pending_despawn_count = 0
+	self._flushing_despawns = false
 	self._pending_spawns = {}
 	self._pending_spawn_count = 0
 	self._pending_objects = {}
@@ -100,6 +101,7 @@ function world_class.new()
 	self._pending_tag_names = {}
 	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
+	self._clear_pending = false
 	self._active_component_views_by_class = {}
 	self._active_component_view_list = {}
 	self.active_space_id = nil
@@ -487,6 +489,13 @@ end
 -- A spawn is fully constructed before Registry, space and system views publish
 -- it. During a tick group that publication happens at the group barrier.
 function world_class:spawn(obj, pos)
+	local deferred<const> = self._current_tick_group ~= nil
+	if deferred then
+		local index<const> = self._pending_spawn_count + 1
+		self._pending_spawn_count = index
+		self._pending_spawns[index] = obj
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_spawn
+	end
 	if pos then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y
@@ -499,13 +508,8 @@ function world_class:spawn(obj, pos)
 		registry:reserve(components[i])
 	end
 	obj._spawn_position = pos
-	if self._current_tick_group == nil then
+	if not deferred then
 		self:_commit_spawn(obj)
-	else
-		local index<const> = self._pending_spawn_count + 1
-		self._pending_spawn_count = index
-		self._pending_spawns[index] = obj
-		self._pending_mutation_mask = self._pending_mutation_mask | mutation_spawn
 	end
 	return obj
 end
@@ -554,6 +558,7 @@ end
 
 function world_class:_flush_despawns()
 	local pending<const> = self._pending_despawns
+	self._flushing_despawns = true
 	local index = 1
 	while index <= self._pending_despawn_count do
 		local obj<const> = pending[index]
@@ -562,6 +567,7 @@ function world_class:_flush_despawns()
 		index = index + 1
 	end
 	self._pending_despawn_count = 0
+	self._flushing_despawns = false
 end
 
 -- world:get(id): returns the current live object with this id, or nil.
@@ -640,6 +646,10 @@ function world_class:_commit_tick_group()
 	if self._pending_despawn_count ~= 0 then
 		self:_flush_despawns()
 	end
+	if self._clear_pending then
+		self._clear_pending = false
+		self._system_manager:reset()
+	end
 end
 
 function world_class:update()
@@ -695,7 +705,7 @@ function world_class:_render_double_page()
 	gx_gpu.draw_target(self._draw_page, self._page_size)
 end
 
-function world_class:clear()
+function world_class:_commit_clear()
 	local objects<const> = self._objects
 	while #objects > 0 do
 		self:despawn(objects[#objects])
@@ -703,6 +713,24 @@ function world_class:clear()
 	self._system_manager:reset()
 	self._visual_sequence = 0
 	self:set_space(self._initial_space_id)
+end
+
+function world_class:clear()
+	if self._current_tick_group ~= nil or self._flushing_despawns then
+		local objects<const> = self._objects
+		for i = #objects, 1, -1 do
+			self:despawn(objects[i])
+		end
+		local pending_spawns<const> = self._pending_spawns
+		for i = 1, self._pending_spawn_count do
+			self:despawn(pending_spawns[i])
+		end
+		self._clear_pending = true
+		self._visual_sequence = 0
+		self:set_space(self._initial_space_id)
+		return
+	end
+	self:_commit_clear()
 end
 world = world_class.new()
 world.id = 'world'
