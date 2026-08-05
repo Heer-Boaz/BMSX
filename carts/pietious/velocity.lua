@@ -1,4 +1,4 @@
--- Shared integer-remainder 2D velocity integration for cart entities.
+-- Pietious integer-remainder movement.
 
 local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	accum = accum + speed_num
@@ -14,14 +14,6 @@ local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	return delta, accum
 end
 
-local set_velocity<const> = function(target, speed_x_num, speed_y_num, speed_den)
-	target.speed_x_num = speed_x_num
-	target.speed_y_num = speed_y_num
-	target.speed_den = speed_den
-	target.speed_accum_x = 0
-	target.speed_accum_y = 0
-end
-
 local move_with_velocity<const> = function(target)
 	local dx<const>, next_accum_x<const> = consume_axis_accum(target.speed_accum_x, target.speed_x_num, target.speed_den)
 	local dy<const>, next_accum_y<const> = consume_axis_accum(target.speed_accum_y, target.speed_y_num, target.speed_den)
@@ -33,6 +25,5 @@ end
 
 return {
 	consume_axis_accum = consume_axis_accum,
-	set_velocity = set_velocity,
 	move_with_velocity = move_with_velocity,
 }

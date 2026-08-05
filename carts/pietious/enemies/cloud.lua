@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
-local velocity<const> = require('cartlib/velocity')
+local velocity<const> = require('velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
