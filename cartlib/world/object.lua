@@ -1,4 +1,4 @@
--- worldobject.lua
+-- world_object.lua
 -- base class for all world objects (game entities)
 --
 -- DESIGN PRINCIPLES — object lifecycle and event subscription
@@ -58,11 +58,11 @@
 local event_emitter<const> = require('cartlib/event_emitter')
 local component<const> = require('cartlib/world/component')
 
-local worldobject<const> = {}
-worldobject.__index = worldobject
+local world_object<const> = {}
+world_object.__index = world_object
 
-function worldobject.new(opts)
-	local self<const> = setmetatable({}, worldobject)
+function world_object.new(opts)
+	local self<const> = setmetatable({}, world_object)
 	self.type_name = opts.type_name
 	self.id = opts.id
 	self:set_pos(opts.x or 0, opts.y or 0, opts.z or 0)
@@ -82,7 +82,7 @@ end
 
 -- set_pos(x, y, z?): sets world position. Each component falls back to the
 -- current value when nil, so set_pos(x, y) preserves the current z.
-function worldobject:set_pos(x, y, z)
+function world_object:set_pos(x, y, z)
 	self.x = x or self.x
 	self.y = y or self.y
 	if z ~= nil then
@@ -90,7 +90,7 @@ function worldobject:set_pos(x, y, z)
 	end
 end
 
-function worldobject:set_z(z)
+function world_object:set_z(z)
 	self.z = z
 	if self._published then
 		self.world:visual_depth_changed()
@@ -110,7 +110,7 @@ end
 --     self.events:on('shrine_transition_exit', function()
 --       self:set_space('main')
 --     end)
-function worldobject:set_space(space_id)
+function world_object:set_space(space_id)
 	return self.world:set_object_space(self, space_id)
 end
 
@@ -118,7 +118,7 @@ end
 -- comp.bind() is called immediately; comp.on_attach() fires after binding.
 -- Returns the component for chaining.  Components are updated by ECS systems,
 -- as the object lacks its own update() method.
-function worldobject:add_component(comp)
+function world_object:add_component(comp)
 	comp.parent = self
 	if not comp.id then
 		comp.id = component.generate_id(comp)
@@ -147,16 +147,16 @@ function worldobject:add_component(comp)
 	return comp
 end
 
-function worldobject:get_component(type_name)
+function world_object:get_component(type_name)
 	local list<const> = self.component_map[type_name]
 	return list and list[1]
 end
 
-function worldobject:get_components(type_name)
+function world_object:get_components(type_name)
 	return self.component_map[type_name]
 end
 
-function worldobject:get_unique_component(type_name)
+function world_object:get_unique_component(type_name)
 	local list<const> = self.component_map[type_name]
 	if not list or #list == 0 then
 		return nil
@@ -167,12 +167,12 @@ function worldobject:get_unique_component(type_name)
 	return list[1]
 end
 
-function worldobject:has_component(type_name)
+function world_object:has_component(type_name)
 	local list<const> = self.component_map[type_name]
 	return list and #list > 0
 end
 
-function worldobject:get_component_by_id(id)
+function world_object:get_component_by_id(id)
 	for _, c in ipairs(self.components) do
 		if c.id == id or c.id_local == id then
 			return c
@@ -181,7 +181,7 @@ function worldobject:get_component_by_id(id)
 	return nil
 end
 
-function worldobject:get_component_by_local_id(type_name, id_local)
+function world_object:get_component_by_local_id(type_name, id_local)
 	for _, c in ipairs(self.components) do
 		if c.id_local == id_local and c.type_name == type_name then
 			return c
@@ -190,12 +190,12 @@ function worldobject:get_component_by_local_id(type_name, id_local)
 	return nil
 end
 
-function worldobject:get_component_at(type_name, index)
+function world_object:get_component_at(type_name, index)
 	local list<const> = self.component_map[type_name]
 	return list and list[index + 1]
 end
 
-function worldobject:find_component(predicate, type_name)
+function world_object:find_component(predicate, type_name)
 	local list<const> = type_name and self:get_components(type_name) or self.components
 	if not list then
 		return nil
@@ -209,7 +209,7 @@ function worldobject:find_component(predicate, type_name)
 	return nil
 end
 
-function worldobject:find_components(predicate, type_name)
+function world_object:find_components(predicate, type_name)
 	local list<const> = type_name and self:get_components(type_name) or self.components
 	local out<const> = {}
 	if not list then
@@ -224,7 +224,7 @@ function worldobject:find_components(predicate, type_name)
 	return out
 end
 
-function worldobject:remove_components(type_name)
+function world_object:remove_components(type_name)
 	local list<const> = self.component_map[type_name]
 	if not list then
 		return
@@ -234,7 +234,7 @@ function worldobject:remove_components(type_name)
 	end
 end
 
-function worldobject:remove_component_instance(comp)
+function world_object:remove_component_instance(comp)
 	comp._attached = false
 	if self._published then
 		self.world:detach_component(comp)
@@ -243,7 +243,7 @@ function worldobject:remove_component_instance(comp)
 	end
 end
 
-function worldobject:_commit_component_detach(comp)
+function world_object:_commit_component_detach(comp)
 	local key<const> = comp.type_name
 	local list<const> = self.component_map[key]
 	if list then
@@ -267,7 +267,7 @@ function worldobject:_commit_component_detach(comp)
 	comp:unbind()
 end
 
-function worldobject:remove_all_components()
+function world_object:remove_all_components()
 	for i = #self.components, 1, -1 do
 		self:remove_component_instance(self.components[i])
 	end
@@ -277,11 +277,11 @@ end
 -- has_tag(tag): returns true if this object currently carries the given tag.
 -- Tags are plain-string keys set on self.tags.  The FSM also manages tags
 -- automatically through state `tags` declarations and timeline windows.
-function worldobject:has_tag(tag)
+function world_object:has_tag(tag)
 	return (self.tags[tag])
 end
 
-function worldobject:add_tag(tag)
+function world_object:add_tag(tag)
 	if not self.tags[tag] then
 		self.tags[tag] = true
 		if self._published then
@@ -290,7 +290,7 @@ function worldobject:add_tag(tag)
 	end
 end
 
-function worldobject:remove_tag(tag)
+function world_object:remove_tag(tag)
 	if self.tags[tag] then
 		self.tags[tag] = nil
 		if self._published then
@@ -299,7 +299,7 @@ function worldobject:remove_tag(tag)
 	end
 end
 
-function worldobject:toggle_tag(tag)
+function world_object:toggle_tag(tag)
 	if self.tags[tag] then
 		self:remove_tag(tag)
 	else
@@ -311,7 +311,7 @@ end
 -- calls bind(), then activates the components that were already attached.
 -- Components added during bind activate through add_component() exactly once.
 -- Do not call directly; spawn the object through the world instead.
-function worldobject:activate()
+function world_object:activate()
 	local components<const> = self.components
 	local component_count<const> = #components
 	self.active = true
@@ -327,13 +327,13 @@ end
 -- bind(): override in subclasses to register event subscriptions.
 -- Called once by activate() before attached components activate. Always set
 -- `subscriber = self` on every subscription so unbind() cleans them up.
-function worldobject:bind()
+function world_object:bind()
 end
 
 -- unbind(): removes all event subscriptions whose subscriber == self.
 -- Called by dispose().  Override only if you need extra teardown beyond
 -- event unsubscription; in that case call the base implementation first.
-function worldobject:unbind()
+function world_object:unbind()
 	event_emitter:remove_subscriber(self)
 end
 
@@ -342,7 +342,7 @@ end
 -- are preserved. Despawn commits remove the same membership directly before
 -- the object's despawn callback runs.
 -- Do not override; instead react to the 'despawn' event.
-function worldobject:deactivate()
+function world_object:deactivate()
 	self.active = false
 	if self._published then
 		self.world:reconcile_object(self)
@@ -353,23 +353,23 @@ end
 -- Override for spawn-time setup.  Position (x, y, z) is already applied.
 -- activate(), bind(), component activation, and the 'spawn' event are handled
 -- automatically by world:spawn() after this returns — no super call needed.
-function worldobject:onspawn(pos)
+function world_object:onspawn(pos)
 end
 
 -- ondespawn(): called after world, space, Registry, and active membership have
 -- been removed, while components and event state are still intact. Override
 -- for despawn-specific cleanup; call the supermethod to emit 'despawn'.
-function worldobject:ondespawn()
+function world_object:ondespawn()
 	self.events:emit('despawn')
 end
 
-function worldobject:despawn()
+function world_object:despawn()
 	self.world:despawn(self)
 end
 
-function worldobject:dispose()
+function world_object:dispose()
 	self:remove_all_components()
 	self:unbind()
 end
 
-return worldobject
+return world_object

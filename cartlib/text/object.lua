@@ -1,7 +1,7 @@
--- textobject.lua
+-- text_object.lua
 -- Text object with typewriter effect for carts.
 
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 local text_component<const> = require('cartlib/text/component')
 local timeline_component<const> = require('cartlib/timeline/component')
 local state_machine_component<const> = require('cartlib/fsm/component')
@@ -12,19 +12,19 @@ local gx_display<const> = require('cartlib/gx/display')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 
-local textobject<const> = {}
-textobject.__index = textobject
-setmetatable(textobject, { __index = worldobject })
+local text_object<const> = {}
+text_object.__index = text_object
+setmetatable(text_object, { __index = world_object })
 
-local textobjectcomponent<const> = {}
-textobjectcomponent.__index = textobjectcomponent
-setmetatable(textobjectcomponent, { __index = text_component })
+local text_object_component<const> = {}
+text_object_component.__index = text_object_component
+setmetatable(text_object_component, { __index = text_component })
 
-function textobjectcomponent.new(opts)
-	return setmetatable(text_component.new(opts), textobjectcomponent)
+function text_object_component.new(opts)
+	return setmetatable(text_component.new(opts), text_object_component)
 end
 
-function textobjectcomponent:render(draw, x, y)
+function text_object_component:render(draw, x, y)
 	local owner<const> = self.parent
 	owner:submit_highlight(draw)
 	if self.background_color ~= nil then
@@ -35,9 +35,9 @@ end
 
 local highlight_move_timeline_id<const> = 'hmove'
 local highlight_vibe_timeline_id<const> = 'hvibe'
-local textobject_fsm_id<const> = 'textobject'
-local textobject_state_idle<const> = 'idle'
-local textobject_state_typing<const> = 'typing'
+local text_object_fsm_id<const> = 'text_object'
+local text_object_state_idle<const> = 'idle'
+local text_object_state_typing<const> = 'typing'
 local typing_command_start<const> = 'type.start'
 local typing_command_step<const> = 'type.step'
 local typing_command_reveal<const> = 'type.reveal'
@@ -186,8 +186,8 @@ local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 	end
 end
 
-fsm_library.register(textobject_fsm_id, {
-	initial = textobject_state_idle,
+fsm_library.register(text_object_fsm_id, {
+	initial = text_object_state_idle,
 	tag_derivations = {
 		[state_tags.group.typing] = { state_tags.variant.typing },
 	},
@@ -243,25 +243,25 @@ fsm_library.register(textobject_fsm_id, {
 		},
 	},
 	on = {
-		[typing_command_start] = '/' .. textobject_state_typing,
+		[typing_command_start] = '/' .. text_object_state_typing,
 		[typing_command_reveal] = function(self, state)
 			self:apply_full_text()
-			if state.current_id ~= textobject_state_idle then
-				return '/' .. textobject_state_idle
+			if state.current_id ~= text_object_state_idle then
+				return '/' .. text_object_state_idle
 			end
 		end,
 	},
 	states = {
-		[textobject_state_idle] = {
+		[text_object_state_idle] = {
 			tags = { state_tags.variant.idle },
 		},
-		[textobject_state_typing] = {
+		[text_object_state_typing] = {
 			tags = { state_tags.variant.typing },
 			on = {
 				[typing_command_step] = function(self)
 					if self:advance_typing() then
 						self:finish_typing()
-						return '/' .. textobject_state_idle
+						return '/' .. text_object_state_idle
 					end
 				end,
 			},
@@ -269,16 +269,16 @@ fsm_library.register(textobject_fsm_id, {
 	},
 })
 
-function textobject.new(opts)
+function text_object.new(opts)
 	opts = opts or {}
-	opts.type_name = 'textobject'
-	local self<const> = setmetatable(worldobject.new(opts), textobject)
+	opts.type_name = 'text_object'
+	local self<const> = setmetatable(world_object.new(opts), text_object)
 	self:add_component(timeline_component.new({ parent = self }))
 	self:add_component(state_machine_component.new({
 		parent = self,
-		definition = fsm_library.get(textobject_fsm_id),
+		definition = fsm_library.get(text_object_fsm_id),
 	}))
-	self.is_textobject = true
+	self.is_text_object = true
 	self.text = { '' }
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
@@ -312,7 +312,7 @@ function textobject.new(opts)
 	self.char_width = opts.char_width or font.items[0x61].width
 	self.blank_lines = opts.blank_lines or 0
 	local line_height<const> = line_advance(font, self.blank_lines)
-	self.text_component = textobjectcomponent.new({
+	self.text_component = text_object_component.new({
 		text = nil,
 		font = font,
 		line_height = line_height,
@@ -330,11 +330,11 @@ function textobject.new(opts)
 	return self
 end
 
-function textobject:onspawn(_pos)
+function text_object:onspawn(_pos)
 	self:position_text_component()
 end
 
-function textobject:set_dimensions(rect)
+function text_object:set_dimensions(rect)
 	self.dimensions = rect
 	self.maximum_characters_per_line = (rect.right - rect.left) // self.char_width
 	self:rebuild_text_layout()
@@ -345,7 +345,7 @@ function textobject:set_dimensions(rect)
 	end
 end
 
-function textobject:position_text_component()
+function text_object:position_text_component()
 	local longest = 0
 	local widths<const> = self.full_text_line_widths
 	for i = 1, #self.full_text_lines do
@@ -359,7 +359,7 @@ function textobject:position_text_component()
 	self.text_component.offset_y = dimensions.top - self.y
 end
 
-function textobject:rebuild_text_layout()
+function text_object:rebuild_text_layout()
 	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(self.text, self.maximum_characters_per_line)
 	write_glyph_lines(self.text_component.font, self.full_text_lines, self.full_glyph_lines, self.full_text_line_widths)
 	self.wrapped_line_y_offsets = build_wrapped_line_y_offsets(self.text_component.font, self.blank_lines, self.wrapped_line_to_logical_line)
@@ -368,7 +368,7 @@ function textobject:rebuild_text_layout()
 	self:update_highlight_animation()
 end
 
-function textobject:compute_highlight_block()
+function text_object:compute_highlight_block()
 	local highlighted<const> = self.highlighted_line_index
 	if highlighted == nil then
 		return nil
@@ -396,7 +396,7 @@ function textobject:compute_highlight_block()
 	return y, h
 end
 
-function textobject:update_highlight_animation()
+function text_object:update_highlight_animation()
 	if self.highlighted_line_index == nil then
 		self.highlight_last_line_index = nil
 		self.highlight_anim_y = nil
@@ -443,7 +443,7 @@ function textobject:update_highlight_animation()
 	end
 end
 
-function textobject:set_highlighted_line(index)
+function text_object:set_highlighted_line(index)
 	if self.highlighted_line_index == index then
 		return
 	end
@@ -451,7 +451,7 @@ function textobject:set_highlighted_line(index)
 	self:update_highlight_animation()
 end
 
-function textobject:set_text(text_or_lines, opts)
+function text_object:set_text(text_or_lines, opts)
 	local typed = true
 	local snap
 	if opts ~= nil then
@@ -470,7 +470,7 @@ function textobject:set_text(text_or_lines, opts)
 	self:reveal_text()
 end
 
-function textobject:set_font(font)
+function text_object:set_font(font)
 	self.text_component.font = font
 	self.text_component.line_height = line_advance(font, self.blank_lines)
 	if self.char_width_uses_font then
@@ -485,12 +485,12 @@ function textobject:set_font(font)
 	end
 end
 
-function textobject:clear_text()
+function text_object:clear_text()
 	self:set_text(empty_text, immediate_text_opts)
 	self:set_highlighted_line(nil)
 end
 
-function textobject:reset_typing_buffer()
+function text_object:reset_typing_buffer()
 	local glyph_lines<const> = self.display_glyph_lines
 	local line_widths<const> = self.displayed_line_widths
 	for i = 1, #self.full_text_lines do
@@ -511,7 +511,7 @@ function textobject:reset_typing_buffer()
 	self.text_component.glyph_line_count = #self.full_text_lines
 end
 
-function textobject:apply_full_text()
+function text_object:apply_full_text()
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
 	self.text_component.glyph_lines = self.full_glyph_lines
@@ -519,11 +519,11 @@ function textobject:apply_full_text()
 	self.text_component.glyph_line_count = #self.full_text_lines
 end
 
-function textobject:reveal_text()
+function text_object:reveal_text()
 	self.state_machines:dispatch(typing_command_reveal)
 end
 
-function textobject:advance_typing()
+function text_object:advance_typing()
 	local line_index = self.current_line_index
 	if line_index == 0 then
 		line_index = 1
@@ -544,20 +544,20 @@ function textobject:advance_typing()
 	return self.current_line_index > #self.full_text_lines
 end
 
-function textobject:finish_typing()
+function text_object:finish_typing()
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
 end
 
-function textobject:is_typing()
+function text_object:is_typing()
 	return self:has_tag(state_tags.group.typing)
 end
 
-function textobject:type_next()
+function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
 end
 
-function textobject:submit_text_background_lines(draw, x, y)
+function text_object:submit_text_background_lines(draw, x, y)
 	local tc<const> = self.text_component
 	local glyphs<const> = tc.glyph_lines
 	local highlighted_logical_line<const> = self.highlighted_line_index
@@ -586,7 +586,7 @@ function textobject:submit_text_background_lines(draw, x, y)
 	end
 end
 
-function textobject:submit_highlight(draw)
+function text_object:submit_highlight(draw)
 	local dims<const> = self.dimensions
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
@@ -600,4 +600,4 @@ function textobject:submit_highlight(draw)
 	end
 end
 
-return textobject
+return text_object

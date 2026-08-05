@@ -13,11 +13,11 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -77,7 +77,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 	fsm_library.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
-			['tilecollision.begin'] = worldobject.despawn,
+			['tilecollision.begin'] = world_object.despawn,
 			['overlap.begin'] = function(self, _state, event)
 				if event.other_layer ~= collision_enemy_layer then
 					return
@@ -86,7 +86,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.despawn,
+				go = world_object.despawn,
 			},
 			['seal_dissolution'] = '/freeze',
 		},
@@ -110,7 +110,7 @@ local register_pepernoot_projectile_definition<const> = function()
 	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
-		base = spriteobject,
+		base = sprite_object,
 		components = { state_machine_component.factory({ 'pepernoot_projectile' }) },
 		defaults = {
 			owner_id = 'pietolon',

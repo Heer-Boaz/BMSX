@@ -1,4 +1,4 @@
--- spriteobject built atop worldobject
+-- sprite_object built atop world_object
 --
 -- DESIGN PRINCIPLES — image suffixes and collision geometry
 --
@@ -32,17 +32,17 @@
 --      self.collider.layer = collision_enemy_layer
 --      self.collider.mask = collision_enemy_mask
 
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_component<const> = require('cartlib/render/sprite_component')
 local romdir<const> = require('cartlib/romdir')
 
-local spriteobject<const> = {}
-spriteobject.__index = spriteobject
-setmetatable(spriteobject, { __index = worldobject })
+local sprite_object<const> = {}
+sprite_object.__index = sprite_object
+setmetatable(sprite_object, { __index = world_object })
 
-spriteobject.base_sprite_id = 'base_sprite'
-spriteobject.primary_collider_id = 'primary'
+sprite_object.base_sprite_id = 'base_sprite'
+sprite_object.primary_collider_id = 'primary'
 
 local apply_image_metadata<const> = function(self, id)
 	local record<const> = romdir.image(id)
@@ -54,19 +54,19 @@ local apply_image_metadata<const> = function(self, id)
 	self.sy = meta.height
 end
 
-function spriteobject.new(opts)
+function sprite_object.new(opts)
 	opts = opts or {}
-	opts.type_name = 'spriteobject'
-	local self<const> = setmetatable(worldobject.new(opts), spriteobject)
+	opts.type_name = 'sprite_object'
+	local self<const> = setmetatable(world_object.new(opts), sprite_object)
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = opts.imgid
 
 	self.sprite_component = sprite_component.new({
 		imgid = self.imgid,
-		id_local = spriteobject.base_sprite_id,
+		id_local = sprite_object.base_sprite_id,
 	})
-	self.collider = collider_2d_component.new({ id_local = spriteobject.primary_collider_id })
+	self.collider = collider_2d_component.new({ id_local = sprite_object.primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
@@ -78,14 +78,14 @@ function spriteobject.new(opts)
 	return self
 end
 
--- spriteobject:gfx(id, meta?)
+-- sprite_object:gfx(id, meta?)
 --   Sets this object's sprite to the image with the given ROM id.
 --   id should be the base name WITHOUT the @cx/@cc suffix (rombuilder strips it).
 --   meta is optional; when omitted, imgmeta is read from the mapped ROM TOC.
 --   After loading, the linked collider_2d_component (if one exists) will read the
 --   current imgmeta lazily when collision code asks for shape data.
 --   Must be called AFTER the object is spawned and has a collider_2d_component.
-function spriteobject:gfx(id, meta)
+function sprite_object:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component:set_imgid(id)
 	if id == nil then
@@ -99,4 +99,4 @@ function spriteobject:gfx(id, meta)
 	end
 end
 
-return spriteobject
+return sprite_object

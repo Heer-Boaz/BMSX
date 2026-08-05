@@ -6,7 +6,7 @@ require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 
 local castle<const> = {}
 
@@ -532,7 +532,7 @@ function castle:ctor()
 end
 
 function castle:unbind()
-	worldobject.unbind(self)
+	world_object.unbind(self)
 	progression.unmount(self)
 end
 

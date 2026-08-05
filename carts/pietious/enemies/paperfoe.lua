@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local behaviour_tree<const> = require('cartlib/behaviour_tree')
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
@@ -29,7 +29,7 @@ function paperfoe.register()
 	prefab.define({
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
-		base = spriteobject,
+		base = sprite_object,
 		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_paperfoe', paperfoe.bt_tick)) },
 		defaults = {
 			trigger = nil,

@@ -1,5 +1,5 @@
 local world<const> = require('cartlib/world/world')
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -47,7 +47,7 @@ local construct<const> = function(definition, addons)
 end
 
 function prefab.define(definition)
-	local prototype<const> = definition.base or worldobject
+	local prototype<const> = definition.base or world_object
 	local class<const> = definition.class
 	local class_metatable<const> = getmetatable(class)
 	if class_metatable then

@@ -77,7 +77,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
@@ -3184,7 +3184,7 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = 'player',
 		class = player,
-		base = spriteobject,
+		base = sprite_object,
 		components = {
 			timeline_component.new,
 			state_machine_component.factory({ 'player' }),

@@ -7,7 +7,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local text_component<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
@@ -81,7 +81,7 @@ local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
-		base = spriteobject,
+		base = sprite_object,
 		defaults = {
 		},
 	})

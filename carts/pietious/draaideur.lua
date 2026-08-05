@@ -1,7 +1,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
@@ -181,7 +181,7 @@ local register_draaideur_definition<const> = function()
 	prefab.define({
 		def_id = 'draaideur',
 		class = draaideur,
-		base = spriteobject,
+		base = sprite_object,
 		components = { state_machine_component.factory({ 'draaideur' }) },
 		defaults = {
 			kind = 1,

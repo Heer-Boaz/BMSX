@@ -151,7 +151,7 @@ function state_machine_component:auto_dispatch(event_type, emitter, payload, emi
 end
 
 -- state_machine_component:start(): start all managed FSMs from their initial
--- state.  Called automatically by worldobject:activate(); do not call
+-- state.  Called automatically by world_object:activate(); do not call
 -- manually in normal cart code.
 function state_machine_component:start()
 	if self._started then

@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
@@ -102,7 +102,7 @@ function muziekfoe.register()
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
-		base = spriteobject,
+		base = sprite_object,
 		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)) },
 		defaults = {
 			conditions = {},

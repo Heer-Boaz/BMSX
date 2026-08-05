@@ -183,7 +183,7 @@ end
 
 -- event_emitter:remove_subscriber(subscriber, force_persistent): remove all
 -- listeners whose `subscriber` field equals the given object.  This is the
--- standard cleanup path called from worldobject:unbind().  Pass
+-- standard cleanup path called from world_object:unbind().  Pass
 -- force_persistent = true to also remove persistent subscriptions.
 function event_emitter:remove_subscriber(subscriber, force_persistent)
 	for _, list in pairs(self.listeners) do

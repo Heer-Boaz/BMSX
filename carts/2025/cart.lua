@@ -14,8 +14,8 @@ local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
 local surface_component<const> = require('cartlib/render/surface_component')
-local spriteobject<const> = require('cartlib/sprite')
-local textobject<const> = require('cartlib/text/object')
+local sprite_object<const> = require('cartlib/sprite')
+local text_object<const> = require('cartlib/text/object')
 local timeline_component<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
@@ -247,43 +247,43 @@ local register_director<const> = function()
 	})
 	prefab.define({
 		def_id = 'p3.text.main',
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 		def_id = 'p3.text.choice',
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 		def_id = 'p3.text.prompt',
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 		def_id = 'p3.text.transition',
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 		def_id = 'p3.text.results',
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 		def_id = 'p3.combat.monster',
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 		def_id = 'p3.combat.maya_a',
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 		def_id = 'p3.combat.maya_b',
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out',
@@ -292,8 +292,8 @@ local register_director<const> = function()
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out_portrait',
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 end
 

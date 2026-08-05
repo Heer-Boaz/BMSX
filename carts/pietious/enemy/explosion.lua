@@ -1,10 +1,10 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline_component<const> = require('cartlib/timeline/component')
 require('constants')
-local worldobject<const> = require('cartlib/world/object')
+local world_object<const> = require('cartlib/world/object')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
@@ -81,7 +81,7 @@ local define_enemy_explosion_fsm<const> = function()
 		on = {
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.despawn,
+				go = world_object.despawn,
 			},
 		},
 		states = {
@@ -98,7 +98,7 @@ local register_enemy_explosion_definition<const> = function()
 	prefab.define({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
-		base = spriteobject,
+		base = sprite_object,
 		components = { timeline_component.new, state_machine_component.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,

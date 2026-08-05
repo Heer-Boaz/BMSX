@@ -2698,7 +2698,7 @@ scalar component fields. The draw, depth-sort and collision paths consume those
 fields directly; component construction and combat transitions do not allocate
 coordinate or scale subtables.
 
-Text layout is retained component state. Text, font, wrap or textobject-dimension
+Text layout is retained component state. Text, font, wrap or text-object dimension
 mutation rebuilds wrapped lines, glyph references and widths. Typewriter state
 reveals those retained glyph references by index; neither typing nor steady
 presentation rescans strings. Image IDs resolve to retained texture-region

@@ -1,7 +1,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -53,7 +53,7 @@ local register_world_item_definition<const> = function()
 	prefab.define({
 		def_id = 'world_item',
 		class = world_item,
-		base = spriteobject,
+		base = sprite_object,
 		components = { state_machine_component.factory({ 'world_item' }) },
 		defaults = {
 			item_id = nil,

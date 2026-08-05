@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local lithograph<const> = {}
 lithograph.__index = lithograph
 
@@ -12,7 +12,7 @@ local register_lithograph_definition<const> = function()
 	prefab.define({
 		def_id = 'lithograph',
 		class = lithograph,
-		base = spriteobject,
+		base = sprite_object,
 		defaults = {
 			text = nil,
 			room_number = 0,

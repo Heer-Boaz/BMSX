@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviour_tree<const> = require('cartlib/behaviour_tree')
@@ -139,7 +139,7 @@ function crossfoe.register()
 	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
-		base = spriteobject,
+		base = sprite_object,
 		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_crossfoe', crossfoe.bt_tick)) },
 		defaults = {
 			trigger = nil,

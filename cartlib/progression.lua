@@ -46,7 +46,7 @@
 -- 5. DO NOT USE progression FOR FRAME-BY-FRAME GAME LOGIC.
 --    Progression is for persistent cross-room, cross-session state transitions
 --    driven by named gameplay events.  Transient per-frame state belongs in the
---    object FSM or in worldobject fields directly.
+--    object FSM or in world_object fields directly.
 
 local event_emitter<const> = require('cartlib/event_emitter')
 local event_matcher<const> = require('cartlib/event_matcher')
@@ -454,7 +454,7 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 end
 
 -- progression.mount(ctx, program_or_rule_defs)
---   Attaches a progression runtime to ctx (typically a worldobject).
+--   Attaches a progression runtime to ctx (typically a world_object).
 --   ctx.id is used as the runtime key; it must be unique.
 --   program_or_rule_defs may be:
 --     • a pre-compiled program from progression.compile_program()
