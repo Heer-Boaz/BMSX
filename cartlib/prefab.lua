@@ -57,7 +57,7 @@ function prefab.define(definition)
 	else
 		setmetatable(class, { __index = prototype })
 	end
-	definition.ctor = class.ctor or class.constructor
+	definition.ctor = class.ctor
 	definition.instance_metatable = { __index = class }
 	definition.base = prototype
 	definitions[definition.def_id] = definition
