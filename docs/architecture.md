@@ -3542,7 +3542,11 @@ does not interpret parallel feature lists. There is no string component
 registry, universal component module, prebuilt-instance branch, or
 compatibility lookup. Component ids are materialized by the object at the
 attachment boundary, after the constructor has supplied its component-local
-identity. The world component base owns only attachment state, activation
+identity. Prefab obtains generated object ids from `world`, reserves the base
+object there before attaching components or running the prefab constructor, and
+publishes it only through `world:spawn()` after construction. The world-object
+base does not import a global world to allocate its own identity. The world
+component base owns only attachment state, activation
 reconciliation, event unbinding, IDs, and enabled state. Rendering, text,
 timeline, collision, boundary, and input-effect components live at their
 focused owners and are linked only when a cart selects them. Timelines are an

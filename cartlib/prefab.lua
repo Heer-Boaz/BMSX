@@ -31,10 +31,11 @@ local construct<const> = function(definition, addons)
 	local options<const> = {}
 	apply_values(options, definition.defaults, skip_position)
 	apply_values(options, addons, skip_position)
-	options.id = options.id or definition.class.id
+	options.type_name = definition.def_id
+	options.id = options.id or world:next_id(definition.def_id)
 	local instance<const> = definition.base.new(options)
+	world:_reserve_object(instance)
 	apply_values(instance, options, skip_position)
-	instance.type_name = definition.def_id
 	setmetatable(instance, definition.instance_metatable)
 	attach_components(instance, definition.components)
 	local ctor<const> = definition.ctor

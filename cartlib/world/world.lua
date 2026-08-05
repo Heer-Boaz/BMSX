@@ -435,6 +435,12 @@ function world_class:visual_depth_changed()
 	self._visual_revision = self._visual_revision + 1
 end
 
+function world_class:_reserve_object(obj)
+	registry.instance:reserve(obj)
+	obj.world = self
+	obj.space_id = obj.space_id or self.active_space_id
+end
+
 function world_class:_commit_spawn(obj)
 	registry.instance:register(obj)
 	local components<const> = obj.components
@@ -464,9 +470,6 @@ end
 -- A spawn is fully constructed before Registry, space and system views publish
 -- it. During a tick group that publication happens at the group barrier.
 function world_class:spawn(obj, pos)
-	registry.instance:reserve(obj)
-	obj.world = self
-	obj.space_id = obj.space_id or self.active_space_id
 	if pos then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y
