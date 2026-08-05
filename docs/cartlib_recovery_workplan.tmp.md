@@ -118,9 +118,10 @@ kopiëren die niet per frame.
 
 Registry bezit geen `space`, active state, tick groups of objectteardown.
 Registry classificeert ook geen savegame-persistence. De machine-save-state
-legt de volledige guest-runtime vast, inclusief Registry en Lua-heap. Een
-eventueel compact game-saveformaat is expliciete cartdata en geen tweede
-objectgraafserializer in cartlib.
+legt de volledige guest-runtime vast, inclusief Registry en Lua-heap. De
+host/frontend bezit saveslots, opslag en transport van die machine-snapshot;
+cartlib krijgt geen eigen game-savecontract, objectgraafserializer of
+persistenceclassificatie.
 
 ### `world`
 

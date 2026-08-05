@@ -3601,8 +3601,9 @@ single owner directly, not a constructible class plus `instance` facade.
 
 Registry lifecycle is not a savegame classification boundary. Machine save-state
 captures the complete guest runtime graph, including Registry tables and the Lua
-heap. A future compact game-save format is explicit cartridge data rather than a
-second cartlib object-graph serializer or a `registry_persistent` flag.
+heap. The host/frontend owns save slots, storage and transport of that machine
+snapshot. Cartlib has no separate game-save contract, object-graph serializer or
+`registry_persistent` classification.
 
 `world` owns lifecycle and the fixed map of spaces; each `space` object owns its
 own dense object, active-object, definition, tag, component and visual storage
