@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
@@ -35,7 +35,7 @@ function disappearingwall:ctor()
 end
 
 function disappearingwall.register()
-	fsmlibrary.register('disappearingwall', {
+	fsm_library.register('disappearingwall', {
 		initial = 'active',
 		on = {
 			['room.condition_set'] = function(self, _state, event)
@@ -54,7 +54,7 @@ function disappearingwall.register()
 		components = {
 			collider2dcomponent.new,
 			tilelayercomponent.new,
-			fsmcomponent.factory({ 'disappearingwall' }),
+			state_machine_component.factory({ 'disappearingwall' }),
 		},
 		defaults = {
 			trigger = nil,

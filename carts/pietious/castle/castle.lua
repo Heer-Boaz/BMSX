@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -736,7 +736,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 end
 
 local define_castle_fsm<const> = function()
-	fsmlibrary.register('castle', {
+	fsm_library.register('castle', {
 		initial = 'active',
 		on = {
 			['seal_dissolution'] = {
@@ -818,7 +818,7 @@ local register_castle_definition<const> = function()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,
-		components = { fsmcomponent.factory({ 'castle' }) },
+		components = { state_machine_component.factory({ 'castle' }) },
 		defaults = {
 			id = 'c',
 			current_room_number = 0,

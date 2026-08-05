@@ -10,8 +10,8 @@
 -- This is the same pattern the player uses — temporary interruption with
 -- automatic state restoration.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
@@ -74,7 +74,7 @@ function pepernoot_projectile:update_motion()
 end
 
 local define_pepernoot_projectile_fsm<const> = function()
-	fsmlibrary.register('pepernoot_projectile', {
+	fsm_library.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
 			['tilecollision.begin'] = worldobject.despawn,
@@ -111,7 +111,7 @@ local register_pepernoot_projectile_definition<const> = function()
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		base = spriteobject,
-		components = { fsmcomponent.factory({ 'pepernoot_projectile' }) },
+		components = { state_machine_component.factory({ 'pepernoot_projectile' }) },
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,

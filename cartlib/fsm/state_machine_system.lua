@@ -1,12 +1,12 @@
 -- state_machine_system.lua
 -- Finite-state-machine ECS system.
 
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
-local state_machine_component_type<const> = fsmcomponent.type_name
+local state_machine_component_type<const> = state_machine_component.type_name
 
 local state_machine_system<const> = {}
 state_machine_system.__index = state_machine_system

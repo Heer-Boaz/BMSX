@@ -1,7 +1,7 @@
 local combat<const> = {}
 require('globals')
-local fsmcomponent<const> = require('cartlib/fsm/component')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/prefab')
@@ -1397,7 +1397,7 @@ function combat.define_fsm()
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_end  — transition or action when the timeline finishes.
 	--   on_frame  — action fired on every timeline frame update.
-	fsmlibrary.register(combat_director_fsm_id, {
+	fsm_library.register(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
@@ -1538,7 +1538,7 @@ function combat.register_director()
 		class = combat_director,
 		components = {
 			timelinecomponent.new,
-			fsmcomponent.factory({ combat_director_fsm_id }),
+			state_machine_component.factory({ combat_director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,

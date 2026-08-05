@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
@@ -167,7 +167,7 @@ function draaideur:ctor()
 end
 
 local define_draaideur_fsm<const> = function()
-	fsmlibrary.register('draaideur', {
+	fsm_library.register('draaideur', {
 		initial = 'active',
 		states = {
 			active = {
@@ -182,7 +182,7 @@ local register_draaideur_definition<const> = function()
 		def_id = 'draaideur',
 		class = draaideur,
 		base = spriteobject,
-		components = { fsmcomponent.factory({ 'draaideur' }) },
+		components = { state_machine_component.factory({ 'draaideur' }) },
 		defaults = {
 			kind = 1,
 			state = 0,

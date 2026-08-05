@@ -6,8 +6,8 @@ gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
 local renderer<const> = require('cartlib/render/renderer')
 local eventemitter<const> = require('cartlib/eventemitter')
-local fsmcomponent<const> = require('cartlib/fsm/component')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
@@ -192,7 +192,7 @@ local build_director_fsm<const> = function()
 	transition_module.register_states(states)
 	dialogue_module.register_states(states)
 
-	fsmlibrary.register(director_fsm_id, {
+	fsm_library.register(director_fsm_id, {
 		initial = 'boot',
 		states = states,
 	})
@@ -204,7 +204,7 @@ local register_director<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsmcomponent.factory({ director_fsm_id }),
+			state_machine_component.factory({ director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,

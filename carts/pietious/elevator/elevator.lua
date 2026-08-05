@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
@@ -95,7 +95,7 @@ function elevator:update_motion()
 end
 
 local define_elevator_fsm<const> = function()
-	fsmlibrary.register('elevator_platform', {
+	fsm_library.register('elevator_platform', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -108,7 +108,7 @@ local register_elevator_definition<const> = function()
 		def_id = 'elevator_platform',
 		class = elevator,
 		base = spriteobject,
-		components = { fsmcomponent.factory({ 'elevator_platform' }) },
+		components = { state_machine_component.factory({ 'elevator_platform' }) },
 		defaults = {
 			path = nil,
 			vertical_to_point = nil,

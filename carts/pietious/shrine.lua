@@ -1,8 +1,8 @@
 -- shrine.lua
 -- shrine overlay renderer — displays text on the shrine screen.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -40,7 +40,7 @@ function room_shrine:ctor()
 end
 
 local define_shrine_fsm<const> = function()
-	fsmlibrary.register('shrine', {
+	fsm_library.register('shrine', {
 		initial = 'active',
 		on = {
 			['shrine'] = {
@@ -69,7 +69,7 @@ local register_shrine_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			textcomponent.new,
-			fsmcomponent.factory({ 'shrine' }),
+			state_machine_component.factory({ 'shrine' }),
 		},
 		defaults = {
 			id = 'shrine',

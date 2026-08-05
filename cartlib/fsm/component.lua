@@ -1,56 +1,56 @@
 local component<const> = require('cartlib/world/component')
 local fsm<const> = require('cartlib/fsm/fsm')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_library<const> = require('cartlib/fsm/library')
 local state<const> = fsm.state
 local bind_machine_state_path<const> = fsm.bind_state_path
 local machine_matches_state_path<const> = fsm.matches_state_path
 local transition_machine_state_path<const> = fsm.transition_state_path
 
-local fsmcomponent<const> = {}
-fsmcomponent.__index = fsmcomponent
-fsmcomponent.type_name = fsmlibrary.component_type
-setmetatable(fsmcomponent, { __index = component })
+local state_machine_component<const> = {}
+state_machine_component.__index = state_machine_component
+state_machine_component.type_name = fsm_library.state_machine_component_type
+setmetatable(state_machine_component, { __index = component })
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
-function fsmcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, fsmcomponent.type_name, true), fsmcomponent)
-	self.statemachines = {}
-	self.statemachine_list = {}
-	self.statemachine_count = 0
+function state_machine_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, state_machine_component.type_name, true), state_machine_component)
+	self._machines_by_id = {}
+	self._machines = {}
+	self._machine_count = 0
 	self._started = false
-	self.state_paths = nil
+	self._state_paths = nil
 	if opts.definition then
 		local def<const> = opts.definition
-		self:add_statemachine(def.id, def)
+		self:add_state_machine(def.id, def)
 	end
 	return self
 end
 
-function fsmcomponent.factory(machine_ids)
+function state_machine_component.factory(machine_ids)
 	local definitions<const> = {}
 	for i = 1, #machine_ids do
-		definitions[i] = fsmlibrary.get(machine_ids[i])
+		definitions[i] = fsm_library.get(machine_ids[i])
 	end
 	return function(opts)
-		local self<const> = fsmcomponent.new(opts)
+		local self<const> = state_machine_component.new(opts)
 		for i = 1, #machine_ids do
-			self:add_statemachine(machine_ids[i], definitions[i])
+			self:add_state_machine(machine_ids[i], definitions[i])
 		end
 		return self
 	end
 end
 
-function fsmcomponent:on_attach()
+function state_machine_component:on_attach()
 	self.parent.state_machines = self
 end
 
-function fsmcomponent:on_detach()
+function state_machine_component:on_detach()
 	self:dispose()
 	self.parent.state_machines = nil
 end
 
-function fsmcomponent:on_activate()
+function state_machine_component:on_activate()
 	self:start()
 end
 
@@ -61,13 +61,13 @@ local append_bound_machine<const> = function(bound, machine, path)
 	bound[count * 2] = bind_machine_state_path(machine.definition, path)
 end
 
-function fsmcomponent:add_statemachine(id, definition)
+function state_machine_component:add_state_machine(id, definition)
 	local machine<const> = state.new(definition, self.parent)
-	local index<const> = self.statemachine_count + 1
-	self.statemachine_count = index
-	self.statemachine_list[index] = machine
-	self.statemachines[id] = machine
-	local paths<const> = self.state_paths
+	local index<const> = self._machine_count + 1
+	self._machine_count = index
+	self._machines[index] = machine
+	self._machines_by_id[id] = machine
+	local paths<const> = self._state_paths
 	if paths then
 		for path, bound in pairs(paths) do
 			if not string.find(path, ':/', 1, true) then
@@ -80,8 +80,8 @@ end
 
 local bind_machines<const> = function(self)
 	local filters_by_event<const> = {}
-	local list<const> = self.statemachine_list
-	for i = 1, self.statemachine_count do
+	local list<const> = self._machines
+	for i = 1, self._machine_count do
 		local machine<const> = list[i]
 		local events<const> = machine.definition.event_list
 		for j = 1, #events do
@@ -129,20 +129,20 @@ local bind_machines<const> = function(self)
 	end
 end
 
-function fsmcomponent:rebind_statemachine(id, definition)
-	local machine<const> = self.statemachines[id]
+function state_machine_component:rebind_state_machine(id, definition)
+	local machine<const> = self._machines_by_id[id]
 	if machine == nil then
 		return
 	end
 	machine:rebind_definition(definition)
-	self.state_paths = nil
+	self._state_paths = nil
 	if self._started then
 		self:unbind()
 		bind_machines(self)
 	end
 end
 
-function fsmcomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
+function state_machine_component:auto_dispatch(event_type, emitter, payload, emitter_id)
 	local parent<const> = self.parent
 	if not self.enabled or not parent.active then
 		return
@@ -150,26 +150,26 @@ function fsmcomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
 	self:dispatch(event_type, payload, emitter, emitter_id)
 end
 
--- fsmcomponent:start(): start all managed FSMs from their initial
+-- state_machine_component:start(): start all managed FSMs from their initial
 -- state.  Called automatically by worldobject:activate(); do not call
 -- manually in normal cart code.
-function fsmcomponent:start()
+function state_machine_component:start()
 	if self._started then
 		return
 	end
 	bind_machines(self)
-	local list<const> = self.statemachine_list
-	for i = 1, self.statemachine_count do
+	local list<const> = self._machines
+	for i = 1, self._machine_count do
 		list[i]:start()
 	end
 	self._started = true
 end
 
-function fsmcomponent:update()
-	local list<const> = self.statemachine_list
+function state_machine_component:update()
+	local list<const> = self._machines
 	-- Components only tick machines whose active subtree can actually do frame
 	-- work. That keeps event-only and dormant FSMs out of the per-frame loop.
-	for i = 1, self.statemachine_count do
+	for i = 1, self._machine_count do
 		local machine<const> = list[i]
 		if machine.active_frame_work then
 			machine:update()
@@ -177,19 +177,19 @@ function fsmcomponent:update()
 	end
 end
 
--- fsmcomponent:dispatch(event_name, payload): deliver an event
+-- state_machine_component:dispatch(event_name, payload): deliver an event
 -- to all FSMs managed by this controller.  The active state's `on` table and
 -- `input_event_handlers` are consulted.  Returns true if any state handled it.
 -- In cart code, call self.state_machines:dispatch() or use the FSM `on` table
 -- instead of raw dispatch where possible.
-function fsmcomponent:dispatch(event_name, payload, emitter, emitter_id)
+function state_machine_component:dispatch(event_name, payload, emitter, emitter_id)
 	if emitter_id == nil then
 		emitter = self.parent
 		emitter_id = self.parent.id
 	end
 	local handled
-	local list<const> = self.statemachine_list
-	for i = 1, self.statemachine_count do
+	local list<const> = self._machines
+	for i = 1, self._machine_count do
 		if list[i]:dispatch_event(event_name, payload, emitter, emitter_id) then
 			handled = true
 		end
@@ -197,8 +197,8 @@ function fsmcomponent:dispatch(event_name, payload, emitter, emitter_id)
 	return handled
 end
 
-function fsmcomponent:bind_state_path(path)
-	local paths = self.state_paths
+function state_machine_component:bind_state_path(path)
+	local paths = self._state_paths
 	if paths then
 		local bound<const> = paths[path]
 		if bound then
@@ -206,7 +206,7 @@ function fsmcomponent:bind_state_path(path)
 		end
 	else
 		paths = {}
-		self.state_paths = paths
+		self._state_paths = paths
 	end
 	local separator<const> = string.find(path, ':/', 1, true)
 	local machine_id
@@ -217,14 +217,14 @@ function fsmcomponent:bind_state_path(path)
 	end
 	local bound<const> = { count = 0 }
 	if machine_id then
-		local machine<const> = self.statemachines[machine_id]
+		local machine<const> = self._machines_by_id[machine_id]
 		if not machine then
 			error('no machine with id "' .. machine_id .. '"')
 		end
 		append_bound_machine(bound, machine, machine_path)
 	else
-		local machines<const> = self.statemachine_list
-		local count<const> = self.statemachine_count
+		local machines<const> = self._machines
+		local count<const> = self._machine_count
 		for i = 1, count do
 			append_bound_machine(bound, machines[i], machine_path)
 		end
@@ -233,7 +233,7 @@ function fsmcomponent:bind_state_path(path)
 	return bound
 end
 
-function fsmcomponent:matches_state(bound)
+function state_machine_component:matches_state(bound)
 	for i = 1, bound.count do
 		if machine_matches_state_path(bound[i * 2 - 1], bound[i * 2]) then
 			return true
@@ -242,25 +242,25 @@ function fsmcomponent:matches_state(bound)
 	return false
 end
 
--- fsmcomponent:transition_to(path): directly navigate to a state
+-- state_machine_component:transition_to(path): directly navigate to a state
 -- by absolute path, bypassing guard conditions and without requiring an event.
 -- In cart code, prefer returning a path string from an `on`-handler or
 -- `entering_state`; only call transition_to() for imperative external control
 -- (e.g. a debug command or test harness).
 -- Path format: 'machine_id:/state/substate' or just '/state' for the default
 -- machine.
-function fsmcomponent:transition_to(path)
+function state_machine_component:transition_to(path)
 	local bound<const> = self:bind_state_path(path)
 	transition_machine_state_path(bound[1], bound[2])
 end
 
-function fsmcomponent:dispose()
+function state_machine_component:dispose()
 	self._started = false
-	local list<const> = self.statemachine_list
-	for i = 1, self.statemachine_count do
+	local list<const> = self._machines
+	for i = 1, self._machine_count do
 		list[i]:dispose()
 	end
 end
 
 
-return fsmcomponent
+return state_machine_component

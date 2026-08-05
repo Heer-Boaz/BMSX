@@ -1,7 +1,7 @@
 local action_effects<const> = require('cartlib/action_effects')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
@@ -825,7 +825,7 @@ local register_player_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsmcomponent.factory({ ids_player_fsm }),
+			state_machine_component.factory({ ids_player_fsm }),
 			action_effects.actioneffectcomponent.factory({ player_abilities.effect_ids.fire_salvo }),
 		},
 		defaults = {

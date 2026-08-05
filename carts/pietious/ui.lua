@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -101,7 +101,7 @@ function ui:draw_ui(draw)
 end
 
 local define_ui_fsm<const> = function()
-	fsmlibrary.register('ui', {
+	fsm_library.register('ui', {
 		initial = 'active',
 		on = {
 			['room'] = {
@@ -145,7 +145,7 @@ local register_ui_definition<const> = function()
 	prefab.define({
 		def_id = 'ui',
 		class = ui,
-		components = { customvisualcomponent.new, fsmcomponent.factory({ 'ui' }) },
+		components = { customvisualcomponent.new, state_machine_component.factory({ 'ui' }) },
 		defaults = {
 			hud_health_level = hud_health_level,
 			hud_health_target = hud_health_level,

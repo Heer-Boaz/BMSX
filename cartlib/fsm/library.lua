@@ -1,10 +1,10 @@
--- fsmlibrary.lua
+-- fsm_library.lua
 -- Registry of FSM definitions for carts.
 --
 -- DESIGN PRINCIPLES — FSM definitions
 --
 -- 1. PUBLISH ONCE PER EXPLICIT CART INITIALIZATION, ATTACH MANY TIMES.
---    A 'machine_name' maps to a single compiled statedefinition. The cart's
+--    A 'machine_name' maps to a single compiled state_definition. The cart's
 --    explicit init function registers each blueprint. A replacement rebinds
 --    retained runtime trees without resetting their live state. Prefabs attach
 --    the runtime component only to objects that list the definition in `fsms`.
@@ -16,30 +16,30 @@
 local fsm<const> = require('cartlib/fsm/fsm')
 local registry<const> = require('cartlib/registry')
 
-local statedefinitions<const> = {}
+local state_definitions<const> = {}
 
-local fsmlibrary<const> = {}
-fsmlibrary.component_type = 'fsmcomponent'
+local fsm_library<const> = {}
+fsm_library.state_machine_component_type = 'state_machine_component'
 
--- fsmlibrary.register(machine_name, blueprint)
+-- fsm_library.register(machine_name, blueprint)
 --   Compiles a state-definition from blueprint and stores it under machine_name.
 --   Replaces any previously registered definition with the same name.
-function fsmlibrary.register(machine_name, blueprint)
-	local replacement<const> = fsm.statedefinition.new(machine_name, blueprint)
-	local previous<const> = statedefinitions[machine_name]
+function fsm_library.register(machine_name, blueprint)
+	local replacement<const> = fsm.state_definition.new(machine_name, blueprint)
+	local previous<const> = state_definitions[machine_name]
 	if previous then
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
-	statedefinitions[machine_name] = replacement
-	local components<const> = registry:entities_by_type(fsmlibrary.component_type)
+	state_definitions[machine_name] = replacement
+	local components<const> = registry:entities_by_type(fsm_library.state_machine_component_type)
 	for i = 1, #components do
 		local state_machines<const> = components[i]
-		state_machines:rebind_statemachine(machine_name, replacement)
+		state_machines:rebind_state_machine(machine_name, replacement)
 	end
 end
 
-function fsmlibrary.get(machine_name)
-	return statedefinitions[machine_name]
+function fsm_library.get(machine_name)
+	return state_definitions[machine_name]
 end
 
-return fsmlibrary
+return fsm_library

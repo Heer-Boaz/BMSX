@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -199,7 +199,7 @@ local define_item_screen_fsm<const> = function()
 			go = '/closed',
 		}
 	end
-	fsmlibrary.register('item_screen', {
+	fsm_library.register('item_screen', {
 		initial = 'closed',
 		states = {
 			closed = {
@@ -256,7 +256,7 @@ local register_item_screen_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsmcomponent.factory({ 'item_screen' }),
+			state_machine_component.factory({ 'item_screen' }),
 		},
 		defaults = {
 			player_index = 1,

@@ -71,8 +71,8 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 const CART_ENTRY_SOURCE = `
 local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/eventemitter')
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
@@ -95,7 +95,7 @@ timelines.id = 'hot_target_timelines'
 timelines:on_attach()
 registry:register(timelines)
 
-fsmlibrary.register('hot_machine', {
+fsm_library.register('hot_machine', {
 	initial = 'idle',
 	states = {
 		idle = {
@@ -131,14 +131,14 @@ fsmlibrary.register('hot_machine', {
 	},
 })
 
-local make_fsm<const> = fsmcomponent.factory({ 'hot_machine' })
+local make_fsm<const> = state_machine_component.factory({ 'hot_machine' })
 local state_machines<const> = make_fsm({ parent = target })
 state_machines.id = 'hot_target_fsm'
 state_machines:on_attach()
 registry:register(state_machines)
 state_machines:start()
 
-local machine<const> = state_machines.statemachines.hot_machine
+local machine<const> = state_machines._machines_by_id.hot_machine
 local idle<const> = machine.states.idle
 local active<const> = machine.states.active
 state_machines:update()
@@ -159,7 +159,7 @@ local history_before<const> = machine:get_history_snapshot()
 assert(#history_before == 1 and history_before[1] == 'idle')
 local bound_before<const> = state_machines:bind_state_path('/active')
 
-fsmlibrary.register('hot_machine', {
+fsm_library.register('hot_machine', {
 	initial = 'idle',
 	states = {
 		idle = {
@@ -201,7 +201,7 @@ fsmlibrary.register('hot_machine', {
 	},
 })
 
-assert(state_machines.statemachines.hot_machine == machine)
+assert(state_machines._machines_by_id.hot_machine == machine)
 assert(machine.states.idle == idle and machine.states.active == active)
 assert(machine.states.bonus ~= nil)
 assert(active.data == active_data and active_data.retained == 73)
@@ -214,7 +214,7 @@ assert(timelines.active_entries[1] == timeline_entry_before)
 assert(timeline_before.head == timeline_head_before and timeline_before.time_ms == timeline_time_before)
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)
-assert(state_machines.state_paths == nil)
+assert(state_machines._state_paths == nil)
 assert(#events.listeners.activate == 0)
 assert(#events.listeners.deactivate == 1)
 assert(#events.listeners.bonus == 1)
@@ -236,9 +236,9 @@ assert(target.value == 1021)
 target.events:emit('restore')
 assert(machine.current_id == 'active')
 
-local published_definition<const> = fsmlibrary.get('hot_machine')
+local published_definition<const> = fsm_library.get('hot_machine')
 local concurrent_compatible<const> = pcall(function()
-	fsmlibrary.register('hot_machine', {
+	fsm_library.register('hot_machine', {
 		initial = 'idle',
 		states = {
 			idle = {},
@@ -249,9 +249,9 @@ local concurrent_compatible<const> = pcall(function()
 	})
 end)
 assert(concurrent_compatible == false)
-assert(fsmlibrary.get('hot_machine') == published_definition)
+assert(fsm_library.get('hot_machine') == published_definition)
 local compatible<const> = pcall(function()
-	fsmlibrary.register('hot_machine', {
+	fsm_library.register('hot_machine', {
 		initial = 'idle',
 		states = {
 			idle = {},
@@ -260,7 +260,7 @@ local compatible<const> = pcall(function()
 	})
 end)
 assert(compatible == false)
-assert(fsmlibrary.get('hot_machine') == published_definition)
+assert(fsm_library.get('hot_machine') == published_definition)
 assert(machine.definition == published_definition)
 
 local old_root<const> = behaviourtree.action.new('enemy_hot', function(_, blackboard)

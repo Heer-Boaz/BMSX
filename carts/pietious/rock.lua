@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -74,7 +74,7 @@ function rock:begin_break()
 end
 
 local define_rock_fsm<const> = function()
-		fsmlibrary.register('rock', {
+		fsm_library.register('rock', {
 				initial = 'idle',
 				on = {
 						['overlap.begin'] = function(self, _state, event)
@@ -129,7 +129,7 @@ local register_rock_definition<const> = function()
 		def_id = 'rock',
 		class = rock,
 		base = spriteobject,
-		components = { timelinecomponent.new, fsmcomponent.factory({ 'rock' }) },
+		components = { timelinecomponent.new, state_machine_component.factory({ 'rock' }) },
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,

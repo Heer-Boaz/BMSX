@@ -1,5 +1,5 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -32,7 +32,7 @@ function daemon_cloud:stop_and_hide()
 end
 
 local define_daemon_cloud_fsm<const> = function()
-	fsmlibrary.register('daemon_cloud', {
+	fsm_library.register('daemon_cloud', {
 		initial = 'active',
 		states = {
 			active = {
@@ -68,7 +68,7 @@ local register_daemon_cloud_definition<const> = function()
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
 		base = spriteobject,
-		components = { timelinecomponent.new, fsmcomponent.factory({ 'daemon_cloud' }) },
+		components = { timelinecomponent.new, state_machine_component.factory({ 'daemon_cloud' }) },
 		defaults = {
 			daemon_cloud_fx = true,
 		},

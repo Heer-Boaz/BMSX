@@ -1,5 +1,5 @@
 local bool01<const> = require('cartlib/util/bool01')
-local fsmcomponent<const> = require('cartlib/fsm/component')
+local state_machine_component<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
@@ -122,7 +122,7 @@ local register_director_definition<const> = function()
 	prefab.define({
 		def_id = ids_director_def,
 		class = director,
-		components = { fsmcomponent.factory({ ids_director_fsm }) },
+		components = { state_machine_component.factory({ ids_director_fsm }) },
 		defaults = {
 			frame = 0,
 		},
