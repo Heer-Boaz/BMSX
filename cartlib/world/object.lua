@@ -74,7 +74,6 @@ function worldobject.new(opts)
 	self.sz = opts.sz or 0
 	self.visible = opts.visible == nil or opts.visible
 	self.active = false
-	self.tick_order = opts.tick_order or 'normal'
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
 	self.components = {}

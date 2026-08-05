@@ -124,6 +124,10 @@ structurele commits en de actieve object-, component- en visualviews per
 `space`. Het bezit geen tweede id-, type- of tagregistry. `world:get(id)` gebruikt
 de centrale Registry.
 
+Iedere `space` bezit de concrete dense storage en bijbehorende mutatie-indexen
+van zijn partitie. `world` coördineert lifecycle en barriers via methods op die
+owner; het manipuleert geen naamloze `space`-backingtables van buitenaf.
+
 ### `system_manager`
 
 De bestaande `system_manager` blijft een interne uitvoeringsowner. Hij bezit de

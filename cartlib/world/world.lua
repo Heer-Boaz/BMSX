@@ -27,7 +27,7 @@
 --    membership stable until the current group completes.
 
 local registry<const> = require('cartlib/registry')
-local dense_set<const> = require('cartlib/util/dense_set')
+local space_class<const> = require('cartlib/world/space')
 local system_manager<const> = require('cartlib/world/system_manager')
 
 local world
@@ -36,33 +36,6 @@ local empty_object_bucket<const> = {}
 
 local world_class<const> = {}
 world_class.__index = world_class
-
-local active_bucket_items<const> = function(buckets, key)
-	local bucket<const> = buckets[key]
-	return bucket and bucket.items or empty_object_bucket
-end
-
-function world_class:_add_space_object(obj)
-	local space<const> = self._spaces[obj.space_id]
-	local objects<const> = space.objects
-	local index<const> = #objects + 1
-	objects[index] = obj
-	obj._space_object_index = index
-end
-
-function world_class:_remove_space_object(obj)
-	local space<const> = self._spaces[obj.space_id]
-	local objects<const> = space.objects
-	local index<const> = obj._space_object_index
-	local last_index<const> = #objects
-	if index < last_index then
-		local moved<const> = objects[last_index]
-		objects[index] = moved
-		moved._space_object_index = index
-	end
-	objects[last_index] = nil
-	obj._space_object_index = nil
-end
 
 function world_class:_add_world_object(obj)
 	local objects<const> = self._objects
@@ -82,134 +55,6 @@ function world_class:_remove_world_object(obj)
 	end
 	objects[last_index] = nil
 	obj._world_object_index = nil
-end
-
-function world_class:_add_active_object(obj)
-	local space<const> = self._spaces[obj.space_id]
-	local objects<const> = space.active_objects
-	local index = #objects + 1
-	while index > 1 and objects[index - 1].z > obj.z do
-		local moved<const> = objects[index - 1]
-		objects[index] = moved
-		moved._active_object_index = index
-		index = index - 1
-	end
-	objects[index] = obj
-	obj._active_object_index = index
-	obj._active_object_space_id = space.id
-	local tick_order<const> = obj.tick_order
-	local tick_bucket<const> = space.active_objects_by_tick_order[tick_order]
-	local tick_index<const> = #tick_bucket + 1
-	tick_bucket[tick_index] = obj
-	obj._active_object_tick_order = tick_order
-	obj._active_object_tick_order_index = tick_index
-	local type_bucket = space.active_objects_by_type[obj.type_name]
-	if type_bucket == nil then
-		type_bucket = dense_set.new()
-		space.active_objects_by_type[obj.type_name] = type_bucket
-	end
-	dense_set.add(type_bucket, obj)
-	for tag in pairs(obj.tags) do
-		local tag_bucket = space.active_objects_by_tag[tag]
-		if tag_bucket == nil then
-			tag_bucket = dense_set.new()
-			space.active_objects_by_tag[tag] = tag_bucket
-		end
-		dense_set.add(tag_bucket, obj)
-	end
-end
-
-function world_class:_remove_active_object(obj)
-	local space<const> = self._spaces[obj._active_object_space_id]
-	dense_set.remove(space.active_objects_by_type[obj.type_name], obj)
-	for tag in pairs(obj.tags) do
-		dense_set.remove(space.active_objects_by_tag[tag], obj)
-	end
-	local objects<const> = space.active_objects
-	local index<const> = obj._active_object_index
-	local last_index<const> = #objects
-	for moved_index = index + 1, last_index do
-		local moved<const> = objects[moved_index]
-		objects[moved_index - 1] = moved
-		moved._active_object_index = moved_index - 1
-	end
-	objects[last_index] = nil
-	obj._active_object_index = nil
-	obj._active_object_space_id = nil
-	local tick_order<const> = obj._active_object_tick_order
-	local tick_bucket<const> = space.active_objects_by_tick_order[tick_order]
-	local tick_index<const> = obj._active_object_tick_order_index
-	local tick_last_index<const> = #tick_bucket
-	if tick_index < tick_last_index then
-		local moved<const> = tick_bucket[tick_last_index]
-		tick_bucket[tick_index] = moved
-		moved._active_object_tick_order_index = tick_index
-	end
-	tick_bucket[tick_last_index] = nil
-	obj._active_object_tick_order = nil
-	obj._active_object_tick_order_index = nil
-end
-
-function world_class:_add_active_visual(comp)
-	local space<const> = self._spaces[comp._active_component_space_id]
-	local visuals<const> = space.active_visual_components
-	self._visual_sequence = self._visual_sequence + 1
-	comp._visual_sequence = self._visual_sequence
-	local index<const> = #visuals + 1
-	visuals[index] = comp
-	comp._active_visual_index = index
-	self._visual_revision = self._visual_revision + 1
-end
-
-function world_class:_remove_active_visual(comp)
-	local space<const> = self._spaces[comp._active_component_space_id]
-	local visuals<const> = space.active_visual_components
-	local index<const> = comp._active_visual_index
-	local last_index<const> = #visuals
-	if index < last_index then
-		local moved<const> = visuals[last_index]
-		visuals[index] = moved
-		moved._active_visual_index = index
-	end
-	visuals[last_index] = nil
-	comp._active_visual_index = nil
-	comp._visual_sequence = nil
-	self._visual_revision = self._visual_revision + 1
-end
-
-function world_class:_add_active_component(comp)
-	local space<const> = self._spaces[comp.parent.space_id]
-	local component_type<const> = comp.type_name
-	local bucket = space.active_components_by_type[component_type]
-	if bucket == nil then
-		bucket = {}
-		space.active_components_by_type[component_type] = bucket
-	end
-	local index<const> = #bucket + 1
-	bucket[index] = comp
-	comp._active_component_index = index
-	comp._active_component_space_id = space.id
-	if comp.is_visual then
-		self:_add_active_visual(comp)
-	end
-end
-
-function world_class:_remove_active_component(comp)
-	local space<const> = self._spaces[comp._active_component_space_id]
-	if comp.is_visual then
-		self:_remove_active_visual(comp)
-	end
-	local bucket<const> = space.active_components_by_type[comp.type_name]
-	local index<const> = comp._active_component_index
-	local last_index<const> = #bucket
-	if index < last_index then
-		local moved<const> = bucket[last_index]
-		bucket[index] = moved
-		moved._active_component_index = index
-	end
-	bucket[last_index] = nil
-	comp._active_component_index = nil
-	comp._active_component_space_id = nil
 end
 
 function world_class.new()
@@ -257,35 +102,22 @@ function world_class:next_id(type_name)
 end
 
 function world_class:_add_space(space_id)
-	local active_components_by_type<const> = {}
+	local created<const> = space_class.new(space_id)
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
-		active_components_by_type[component_views[view_index].type_name] = {}
+		created:register_component_type(component_views[view_index].type_name)
 	end
-	self._spaces[space_id] = {
-		id = space_id,
-		objects = {},
-		active_objects = {},
-		active_objects_by_type = {},
-		active_objects_by_tag = {},
-		active_visual_components = {},
-		active_objects_by_tick_order = {
-			early = {},
-			normal = {},
-			late = {},
-		},
-		active_components_by_type = active_components_by_type,
-	}
+	self._spaces[space_id] = created
 	self._space_order[#self._space_order + 1] = space_id
 end
 
 function world_class:_commit_active_space(space_id)
-	local space<const> = self._spaces[space_id]
-	self._active_space = space
+	local active_space<const> = self._spaces[space_id]
+	self._active_space = active_space
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
 		local view<const> = component_views[view_index]
-		view.items = space.active_components_by_type[view.type_name]
+		view.items = active_space:component_bucket(view.type_name)
 	end
 	self._visual_revision = self._visual_revision + 1
 end
@@ -318,15 +150,11 @@ function world_class:_active_component_view(type_name)
 	local spaces<const> = self._spaces
 	local space_order<const> = self._space_order
 	for space_index = 1, #space_order do
-		local space<const> = spaces[space_order[space_index]]
-		local bucket = space.active_components_by_type[type_name]
-		if bucket == nil then
-			bucket = {}
-			space.active_components_by_type[type_name] = bucket
-		end
+		local partition<const> = spaces[space_order[space_index]]
+		partition:register_component_type(type_name)
 	end
 	if self._active_space ~= nil then
-		created.items = self._active_space.active_components_by_type[type_name]
+		created.items = self._active_space:component_bucket(type_name)
 	end
 	return created
 end
@@ -348,22 +176,16 @@ end
 
 function world_class:add_object_tag(obj, tag)
 	registry.instance:add_tag(obj, tag)
-	local active_space_id<const> = obj._active_object_space_id
-	if active_space_id ~= nil then
-		local buckets<const> = self._spaces[active_space_id].active_objects_by_tag
-		local bucket = buckets[tag]
-		if bucket == nil then
-			bucket = dense_set.new()
-			buckets[tag] = bucket
-		end
-		dense_set.add(bucket, obj)
+	local active_space<const> = obj._active_space
+	if active_space ~= nil then
+		active_space:add_active_tag(obj, tag)
 	end
 end
 
 function world_class:remove_object_tag(obj, tag)
-	local active_space_id<const> = obj._active_object_space_id
-	if active_space_id ~= nil then
-		dense_set.remove(self._spaces[active_space_id].active_objects_by_tag[tag], obj)
+	local active_space<const> = obj._active_space
+	if active_space ~= nil then
+		active_space:remove_active_tag(obj, tag)
 	end
 	registry.instance:remove_tag(obj, tag)
 end
@@ -374,20 +196,20 @@ function world_class:set_object_space(obj, space_id)
 		return space_id
 	end
 
-	local current_space_id<const> = obj.space_id
-	if obj._space_object_index ~= nil and current_space_id == space_id then
+	local current_space<const> = obj._space
+	if current_space ~= nil and current_space.id == space_id then
 		return space_id
 	end
 
-	if obj._space_object_index ~= nil then
+	if current_space ~= nil then
 		if obj.active then
 			self:deactivate_object(obj)
 		end
-		self:_remove_space_object(obj)
+		current_space:remove_object(obj)
 	end
 
 	obj.space_id = space_id
-	self:_add_space_object(obj)
+	self._spaces[space_id]:add_object(obj)
 	if obj.active then
 		self:activate_object(obj)
 	end
@@ -407,17 +229,17 @@ end
 -- are deferred to the phase boundary so gameplay systems can iterate the dense
 -- active list directly instead of relying on reverse-loop/remove workarounds.
 function world_class:_reconcile_active_object(obj)
-	local target_space_id = nil
+	local target_space = nil
 	if obj.active and registry.instance:get(obj.id) == obj then
-		target_space_id = obj.space_id
+		target_space = self._spaces[obj.space_id]
 	end
-	local active_space_id<const> = obj._active_object_space_id
-	if active_space_id ~= target_space_id then
-		if active_space_id ~= nil then
-			self:_remove_active_object(obj)
+	local active_space<const> = obj._active_space
+	if active_space ~= target_space then
+		if active_space ~= nil then
+			active_space:deactivate_object(obj)
 		end
-		if target_space_id ~= nil then
-			self:_add_active_object(obj)
+		if target_space ~= nil then
+			target_space:activate_object(obj)
 		end
 	end
 end
@@ -457,17 +279,26 @@ end
 
 function world_class:_reconcile_active_component(comp)
 	local parent<const> = comp.parent
-	local target_space_id = nil
+	local target_space = nil
 	if comp._attached and comp.enabled and parent.active then
-		target_space_id = parent.space_id
+		target_space = self._spaces[parent.space_id]
 	end
-	local active_space_id<const> = comp._active_component_space_id
-	if active_space_id ~= target_space_id then
-		if active_space_id ~= nil then
-			self:_remove_active_component(comp)
+	local active_space<const> = comp._active_space
+	if active_space ~= target_space then
+		if active_space ~= nil then
+			active_space:deactivate_component(comp)
+			if comp.is_visual and active_space == self._active_space then
+				self._visual_revision = self._visual_revision + 1
+			end
 		end
-		if target_space_id ~= nil then
-			self:_add_active_component(comp)
+		if target_space ~= nil then
+			if comp.is_visual then
+				self._visual_sequence = self._visual_sequence + 1
+			end
+			target_space:activate_component(comp, self._visual_sequence)
+			if comp.is_visual and target_space == self._active_space then
+				self._visual_revision = self._visual_revision + 1
+			end
 		end
 	end
 end
@@ -539,7 +370,7 @@ function world_class:_commit_despawn(obj)
 	self:_reconcile_active_object(obj)
 
 	registry.instance:deregister(obj)
-	self:_remove_space_object(obj)
+	obj._space:remove_object(obj)
 	self:_remove_world_object(obj)
 
 	obj:ondespawn()
@@ -586,7 +417,7 @@ function world_class:get(id)
 end
 
 function world_class:active_objects()
-	return self._active_space.active_objects
+	return self._active_space:active_objects()
 end
 
 function world_class:objects()
@@ -594,7 +425,7 @@ function world_class:objects()
 end
 
 function world_class:active_objects_by_type(type_name)
-	return active_bucket_items(self._active_space.active_objects_by_type, type_name)
+	return self._active_space:active_objects_by_type(type_name) or empty_object_bucket
 end
 
 function world_class:objects_by_type(type_name)
@@ -602,7 +433,7 @@ function world_class:objects_by_type(type_name)
 end
 
 function world_class:active_objects_by_tag(tag)
-	return active_bucket_items(self._active_space.active_objects_by_tag, tag)
+	return self._active_space:active_objects_by_tag(tag) or empty_object_bucket
 end
 
 function world_class:objects_by_tag(tag)
@@ -610,7 +441,7 @@ function world_class:objects_by_tag(tag)
 end
 
 function world_class:active_visuals()
-	return self._active_space.active_visual_components, self._visual_revision
+	return self._active_space:active_visuals(), self._visual_revision
 end
 
 function world_class:_begin_tick_group(group)

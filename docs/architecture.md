@@ -3582,6 +3582,13 @@ component key every frame. Cartlib does not prewarm a hardcoded list of built-in
 component kinds, and neither extension path requires modifying a cartlib
 registry.
 
+`world` owns lifecycle and the fixed map of spaces; each `space` object owns its
+own dense object, active-object, tag, type, component and visual storage plus the
+indices required to mutate those arrays. `world` selects spaces and coordinates
+barriers but does not reach into their backing tables. Component storage is
+materialized only for component types selected by configured systems; visuals
+retain their separate renderer-facing dense list.
+
 Sprite collision association is explicit: a collider owns the selected
 image/flip raw GEO shape reference, while the sprite only holds render state.
 Carts program raw collider layer and mask words; there is no named profile
