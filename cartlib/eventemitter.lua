@@ -179,10 +179,12 @@ function eventemitter.events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
 		local emitter_id = emitter
+		local subscriber
 		if type(emitter) == 'table' then
 			emitter_id = emitter.id
+			subscriber = emitter
 		end
-		port = setmetatable({ emitter = emitter, emitter_id = emitter_id }, event_port)
+		port = setmetatable({ emitter = emitter, emitter_id = emitter_id, subscriber = subscriber }, event_port)
 		port_cache[emitter] = port
 	end
 	return port
@@ -197,17 +199,25 @@ end
 --                                    remove_subscriber() for cleanup.
 --   emitter             (string|object) — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
-function eventemitter:on(spec)
+function eventemitter:on(spec, default_subscriber, default_emitter)
 	local name<const> = spec.event
 	local list = self.listeners[name]
 	if not list then
 		list = {}
 		self.listeners[name] = list
 	end
+	local subscriber = spec.subscriber
+	if subscriber == nil then
+		subscriber = default_subscriber
+	end
+	local emitter = spec.emitter
+	if emitter == nil then
+		emitter = default_emitter
+	end
 	append_listener(self, list, {
 		handler = spec.handler,
-		subscriber = spec.subscriber,
-		emitter = spec.emitter,
+		subscriber = subscriber,
+		emitter = emitter,
 	})
 end
 
@@ -282,17 +292,11 @@ function eventemitter:remove_subscriber(subscriber)
 end
 
 -- event_port:on(spec): preferred cart API for subscribing to events.
--- Identical to eventemitter:on() but automatically sets spec.emitter to the
--- port's owner if not supplied. Always supply subscriber = <owning_object> for
--- lifecycle cleanup through remove_subscriber().
+-- Identical to eventemitter:on() but defaults the retained emitter filter and
+-- subscriber to the port owner. The caller's declarative spec is not retained
+-- or modified.
 function event_port:on(spec)
-	if spec.subscriber == nil and type(self.emitter) == 'table' then
-		spec.subscriber = self.emitter
-	end
-	if spec.emitter == nil then
-		spec.emitter = self.emitter_id
-	end
-	eventemitter:on(spec)
+	eventemitter:on(spec, self.subscriber, self.emitter_id)
 end
 
 -- event_port:emit(event_name, payload): preferred cart API for emitting events.
