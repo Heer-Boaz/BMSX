@@ -141,7 +141,7 @@ local state_definition<const> = {}
 state_definition.__index = state_definition
 
 local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
-local no_op_aliases<const> = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
+local no_op<const> = 'no_op'
 local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
 local input_eval_modes<const> = { ['first'] = true, ['all'] = true }
 local default_event_filter<const> = {}
@@ -289,31 +289,12 @@ local validate_optional_state_function<const> = function(def_id, field_name, val
 	end
 end
 
-local validate_no_op_alias_value<const> = function(def_id, field_name, value)
-	if type(value) ~= 'string' then
-		return
-	end
-	if no_op_aliases[value] then
-		return
-	end
-	local lowered<const> = string.lower(value)
-	if no_op_aliases[lowered] then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '" uses invalid no-op alias "' .. tostring(value)
-				.. '". use lowercase "' .. lowered .. '".'
-		)
-	end
-end
-
 local validate_transition_spec<const> = function(def_id, field_name, spec)
 	if spec == nil then
 		return
 	end
 	local kind<const> = type(spec)
 	if kind == 'string' then
-		validate_no_op_alias_value(def_id, field_name, spec)
 		return
 	end
 	if kind == 'function' then
@@ -336,7 +317,6 @@ local validate_transition_spec<const> = function(def_id, field_name, spec)
 	end
 	local go_kind<const> = type(go)
 	if go_kind == 'string' then
-		validate_no_op_alias_value(def_id, field_name .. '.go', go)
 		return
 	end
 	if go_kind ~= 'function' then
@@ -569,7 +549,7 @@ local reset_state_data<const> = function(data, defaults)
 end
 
 local is_no_op_string<const> = function(value)
-	return type(value) == 'string' and no_op_aliases[value] ~= nil
+	return value == no_op
 end
 
 local resolve_state_key<const> = function(definition, state_id)
