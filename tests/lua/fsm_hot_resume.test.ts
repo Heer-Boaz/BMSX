@@ -27,7 +27,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/component', 'cartlib/timeline/component.lua'],
 	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
-	['cartlib/util/scratchrecordbatch', 'cartlib/util/scratchrecordbatch.lua'],
+	['cartlib/util/scratch_record_batch', 'cartlib/util/scratch_record_batch.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/component', 'cartlib/fsm/component.lua'],

@@ -63,7 +63,7 @@ local tick_group<const> = require('cartlib/world/tick_group')
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local collision_2d<const> = require('cartlib/collision_2d')
-local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
+local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
 local collider_2d_component_type<const> = collider_2d_component.type_name
 
@@ -150,7 +150,7 @@ function overlap_2d_system.new(world)
 		phase = false,
 	}
 	self.event_colliders = {}
-	self.overlap_pairs = scratchrecordbatch.new(64)
+	self.overlap_pairs = scratch_record_batch.new(64)
 	self.event_collider_count = 0
 	return self
 end

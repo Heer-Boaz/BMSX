@@ -1,4 +1,4 @@
-local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
+local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
 local timeline_dispatch<const> = {}
 
@@ -71,7 +71,7 @@ function timeline_dispatch.init_entry(entry)
 	local state = entry.timeline_dispatch_state
 	local timeline_id<const> = entry.instance.id
 	if state == nil then
-		local frame_payloads<const> = scratchrecordbatch.new(1)
+		local frame_payloads<const> = scratch_record_batch.new(1)
 		local frame_payload<const> = frame_payloads.items[1]
 		frame_payload.timeline_id = timeline_id
 		frame_payload.frame_index = 0
@@ -81,7 +81,7 @@ function timeline_dispatch.init_entry(entry)
 		frame_payload.direction = 0
 		frame_payload.dt = 0
 		frame_payload.time_ms = 0
-		local end_payloads<const> = scratchrecordbatch.new(1)
+		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
 		end_payload.timeline_id = timeline_id
 		end_payload.mode = false
