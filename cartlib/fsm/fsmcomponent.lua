@@ -29,14 +29,11 @@ function fsm_component.new(opts)
 end
 
 function fsm_component.factory(machine_ids)
-	local definitions<const> = {}
-	for i = 1, #machine_ids do
-		definitions[i] = definitions_by_id[machine_ids[i]]
-	end
 	return function(opts)
 		local self<const> = fsm_component.new(opts)
 		for i = 1, #machine_ids do
-			self:add_state_machine(machine_ids[i], definitions[i])
+			local machine_id<const> = machine_ids[i]
+			self:add_state_machine(machine_id, definitions_by_id[machine_id])
 		end
 		return self
 	end
