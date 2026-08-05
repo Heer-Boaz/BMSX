@@ -22,12 +22,15 @@ function input_actioneffect_component.new(opts)
 end
 
 function input_actioneffect_component:on_activate()
-	local owner<const> = self.parent
-	local program<const>, uses_effect_triggers<const> = compiler.compile_program(owner, self.source_program)
-	if uses_effect_triggers and not owner.actioneffects then
-		error('input effects on "' .. owner.id .. '" trigger an action-effect component that is not attached.')
+	if self.program == nil then
+		local owner<const> = self.parent
+		local program<const>, uses_effect_triggers<const> = compiler.compile_program(owner, self.source_program)
+		if uses_effect_triggers and not owner.actioneffects then
+			error('input effects on "' .. owner.id .. '" trigger an action-effect component that is not attached.')
+		end
+		self.program = program
 	end
-	self.program = program
+	local program<const> = self.program
 	for i = 1, #program.bindings do
 		self.binding_latch[i] = false
 		self.binding_touched[i] = 0
@@ -45,6 +48,10 @@ function input_actioneffect_component:on_activate()
 	self.queued_command_count = 0
 	self.queued_event_count = 0
 	self.last_frame = 0
+end
+
+function input_actioneffect_component:on_detach()
+	self.program = nil
 end
 
 return input_actioneffect_component
