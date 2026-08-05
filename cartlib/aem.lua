@@ -23,18 +23,22 @@ bss music_request_seq: word
 bss current_music_source_addr: word
 bss current_music_slot: word
 bss pending_music_seq: word
-local pending_music_record
 local pending_music_transition
 bss stinger_seq: word
 bss stinger_source_addr: word
 bss stinger_slot: word
-local stinger_music_record
 local stinger_music_transition
 bss slot_active_source_addr: word[4]
 bss slot_active_priority: word[4]
 local slot_play_queue
 local slot_queue_head
 local slot_queue_tail
+
+local action_kind_play<const> = 1
+local action_kind_stop_music<const> = 2
+local action_kind_sequence<const> = 3
+local action_kind_music_transition<const> = 4
+local action_kind_random<const> = 5
 
 local actor_key_for_payload<const> = function(payload)
 	if type(payload) == 'table' then
@@ -43,130 +47,189 @@ local actor_key_for_payload<const> = function(payload)
 	return global_actor_key
 end
 
-local compile_apu_defaults<const> = function(action)
-	action.__aem_priority = action.priority
-	action.__apu_pitch_delta = 0
-	action.__apu_pitch_range_min = 0
-	action.__apu_pitch_range_span = 0
-	action.__apu_volume_delta = 0
-	action.__apu_volume_range_min = 0
-	action.__apu_volume_range_span = 0
-	action.__apu_start_sample = 0
-	action.__apu_start_range_min = 0
-	action.__apu_start_range_span = 0
-	action.__apu_rate = 1
-	action.__apu_rate_range_min = 0
-	action.__apu_rate_range_span = 0
-	action.__apu_filter_control = 0x00000000
-	action.__apu_filter_b0_b1 = apu.filter_coefficient_one
-	action.__apu_filter_b2_a1 = 0x00000000
-	action.__apu_filter_a2 = 0x00000000
+local resolve_audio<const> = function(audio_cache, audio_id)
+	local audio = audio_cache[audio_id]
+	if audio ~= nil then
+		return audio
+	end
+	local record<const> = romdir.audio(audio_id)
+	local meta<const> = record.audiometa
+	audio = {
+		source = apu.source(record),
+		priority = meta.priority,
+		slot = route_slot[meta.audiotype],
+	}
+	audio_cache[audio_id] = audio
+	return audio
 end
 
-local compile_modulation<const> = function(action, params)
-	action.__apu_pitch_delta = params['pitchDelta'] or 0
+local compile_modulation<const> = function(compiled, params)
+	compiled.pitch_delta = params['pitchDelta'] or 0
 	local pitch_range<const> = params['pitchRange']
 	if pitch_range ~= nil then
-		action.__apu_pitch_range_min = pitch_range[1]
-		action.__apu_pitch_range_span = pitch_range[2] - pitch_range[1]
+		compiled.pitch_range_min = pitch_range[1]
+		compiled.pitch_range_span = pitch_range[2] - pitch_range[1]
 	end
 
-	action.__apu_volume_delta = params['volumeDelta'] or 0
+	compiled.volume_delta = params['volumeDelta'] or 0
 	local volume_range<const> = params['volumeRange']
 	if volume_range ~= nil then
-		action.__apu_volume_range_min = volume_range[1]
-		action.__apu_volume_range_span = volume_range[2] - volume_range[1]
+		compiled.volume_range_min = volume_range[1]
+		compiled.volume_range_span = volume_range[2] - volume_range[1]
 	end
 
-	action.__apu_start_sample = (params.offset or 0) * 0x0000ac44
+	compiled.start_sample = (params.offset or 0) * 0x0000ac44
 	local offset_range<const> = params['offsetRange']
 	if offset_range ~= nil then
-		action.__apu_start_range_min = offset_range[1] * 0x0000ac44
-		action.__apu_start_range_span = (offset_range[2] - offset_range[1]) * 0x0000ac44
+		compiled.start_range_min = offset_range[1] * 0x0000ac44
+		compiled.start_range_span = (offset_range[2] - offset_range[1]) * 0x0000ac44
 	end
 
-	action.__apu_rate = params['playbackRate'] or 1
+	compiled.rate = params['playbackRate'] or 1
 	local rate_range<const> = params['playbackRateRange']
 	if rate_range ~= nil then
-		action.__apu_rate_range_min = rate_range[1]
-		action.__apu_rate_range_span = rate_range[2] - rate_range[1]
+		compiled.rate_range_min = rate_range[1]
+		compiled.rate_range_span = rate_range[2] - rate_range[1]
 	end
 
 	local filter<const> = params.filter
 	if filter ~= nil then
-		action.__apu_filter_control,
-			action.__apu_filter_b0_b1,
-			action.__apu_filter_b2_a1,
-			action.__apu_filter_a2 = aem_biquad.design(filter)
+		compiled.filter_control,
+			compiled.filter_b0_b1,
+			compiled.filter_b2_a1,
+			compiled.filter_a2 = aem_biquad.design(filter)
 	end
 end
 
-local compile_transition<const> = function(transition)
-	transition.__apu_fade_samples = apu.ms_to_samples(transition.fade_ms or 0)
-	transition.__apu_crossfade_samples = apu.ms_to_samples(transition.crossfade_ms or 0)
-	transition.__apu_wait_for_current = transition.sync == 'loop'
-	transition.__apu_start_at_loop = transition.start_at_loop_start or false
-	transition.__apu_start_fresh = transition.start_fresh or false
-end
-
-local compile_action<const> = function(action)
-	if action.audio_id ~= nil or action.modulation_params ~= nil or action.modulation_preset ~= nil then
-		compile_apu_defaults(action)
-		if action.modulation_params ~= nil then
-			compile_modulation(action, action.modulation_params)
-		elseif action.modulation_preset ~= nil then
-			error('AEM modulation_preset is not supported; put modulation_params in the AEM action.')
-		end
-	end
-	if action.music_transition ~= nil then
-		compile_transition(action.music_transition)
-	end
+local compile_play_action<const> = function(action, audio_cache)
+	local audio<const> = resolve_audio(audio_cache, action.audio_id)
+	local compiled<const> = {
+		kind = action_kind_play,
+		source = audio.source,
+		priority = action.priority or audio.priority,
+		cooldown_ms = action.cooldown_ms,
+		pitch_delta = 0,
+		pitch_range_min = 0,
+		pitch_range_span = 0,
+		volume_delta = 0,
+		volume_range_min = 0,
+		volume_range_span = 0,
+		start_sample = 0,
+		start_range_min = 0,
+		start_range_span = 0,
+		rate = 1,
+		rate_range_min = 0,
+		rate_range_span = 0,
+		filter_control = 0x00000000,
+		filter_b0_b1 = apu.filter_coefficient_one,
+		filter_b2_a1 = 0x00000000,
+		filter_a2 = 0x00000000,
+	}
 	if action.cooldown_ms ~= nil and action.cooldown_ms > 0 then
-		action.__cooldown_by_actor = {}
+		compiled.cooldown_by_actor = {}
 	end
-	local seq<const> = action.sequence
-	if seq ~= nil then
-		for i = 1, #seq do
-			compile_action(seq[i])
-		end
+	if action.modulation_params ~= nil then
+		compile_modulation(compiled, action.modulation_params)
 	end
+	return compiled
 end
 
-local compile_rules<const> = function(rules)
+local compile_music_transition<const> = function(transition, audio_cache)
+	local sync<const> = transition.sync
+	local target_id = transition.audio_id
+	local has_stinger<const> = sync ~= nil and type(sync) ~= 'string'
+	if has_stinger then
+		target_id = sync.return_to or target_id
+	end
+	local target<const> = resolve_audio(audio_cache, target_id)
+	local start_sample = 0
+	if transition.start_at_loop_start then
+		start_sample = target.source.loop_start_sample
+	end
+	local compiled<const> = {
+		kind = action_kind_music_transition,
+		target_source = target.source,
+		target_priority = target.priority,
+		start_sample = start_sample,
+		fade_samples = apu.ms_to_samples(transition.fade_ms or 0),
+		crossfade_samples = apu.ms_to_samples(transition.crossfade_ms or 0),
+		wait_for_current = sync == 'loop',
+		start_fresh = transition.start_fresh or false,
+	}
+	if has_stinger then
+		local stinger<const> = resolve_audio(audio_cache, sync.stinger)
+		compiled.stinger_source = stinger.source
+		compiled.stinger_priority = stinger.priority
+		compiled.stinger_slot = stinger.slot
+	end
+	return compiled
+end
+
+local compile_action
+compile_action = function(action, audio_cache)
+	if action.audio_id ~= nil then
+		return compile_play_action(action, audio_cache)
+	end
+	if action.stop_music ~= nil then
+		return {
+			kind = action_kind_stop_music,
+			fade_samples = apu.ms_to_samples(action.stop_music.fade_ms or 0),
+		}
+	end
+	if action.sequence ~= nil then
+		local source_actions<const> = action.sequence
+		local actions<const> = {}
+		for i = 1, #source_actions do
+			actions[i] = compile_action(source_actions[i], audio_cache)
+		end
+		return {
+			kind = action_kind_sequence,
+			actions = actions,
+		}
+	end
+	if action.one_of ~= nil then
+		local source_actions<const> = action.one_of
+		local actions<const> = {}
+		local weights<const> = {}
+		local has_weights
+		local weight_total = 0
+		for i = 1, #source_actions do
+			local source_action<const> = source_actions[i]
+			actions[i] = compile_action(source_action, audio_cache)
+			local weight<const> = source_action.weight or 1
+			weights[i] = weight
+			weight_total = weight_total + weight
+			if weight ~= 1 then
+				has_weights = true
+			end
+		end
+		local weighted = action.pick == 'weighted'
+		if action.pick == nil and has_weights then
+			weighted = true
+		end
+		local compiled<const> = {
+			kind = action_kind_random,
+			actions = actions,
+			weights = weights,
+			weight_total = weight_total,
+			weighted = weighted,
+		}
+		if action.avoid_repeat then
+			compiled.last_pick_by_actor = {}
+		end
+		return compiled
+	end
+	return compile_music_transition(action.music_transition, audio_cache)
+end
+
+local compile_rules<const> = function(rules, audio_cache)
 	local compiled<const> = {}
 	for i = 1, #rules do
 		local rule<const> = rules[i]
-		local compiled_rule<const> = {}
-		for key, value in pairs(rule) do
-			compiled_rule[key] = value
-		end
-		compiled_rule.__predicate = compile_matcher(rule.when)
-		local spec<const> = rule.go
-		if spec.one_of ~= nil then
-			local actions<const> = {}
-			local weights<const> = {}
-			local has_weights
-			local one_of<const> = spec.one_of
-			for j = 1, #one_of do
-				local item<const> = one_of[j]
-				compile_action(item)
-				actions[#actions + 1] = item
-				local weight<const> = item.weight or 1
-				if weight ~= 1 then
-					has_weights = true
-				end
-				weights[#weights + 1] = weight
-			end
-			compiled_rule.__oneof_actions = actions
-			compiled_rule.__oneof_weights = weights
-			compiled_rule.__oneof_has_weights = has_weights
-			if spec.avoid_repeat then
-				compiled_rule.__last_random_pick_by_actor = {}
-			end
-		else
-			compile_action(spec)
-		end
-		compiled[#compiled + 1] = compiled_rule
+		compiled[i] = {
+			predicate = compile_matcher(rule.when),
+			action = compile_action(rule.go, audio_cache),
+		}
 	end
 	return compiled
 end
@@ -175,24 +238,23 @@ local pick_uniform_index<const> = function(count, avoid_index)
 	if count <= 1 then
 		return 1
 	end
-	local idx = math.random(count)
-	if avoid_index and idx == avoid_index then
-		idx = (idx % count) + 1
+	if avoid_index then
+		local idx<const> = math.random(count - 1)
+		if idx >= avoid_index then
+			return idx + 1
+		end
+		return idx
 	end
-	return idx
+	return math.random(count)
 end
 
-local pick_weighted_index<const> = function(weights, avoid_index)
+local pick_weighted_index<const> = function(weights, total, avoid_index)
 	local count<const> = #weights
 	if count <= 1 then
 		return 1
 	end
-	local total = 0
-	for i = 1, count do
-		local weight<const> = (avoid_index and avoid_index == i) and 0 or weights[i]
-		if weight > 0 then
-			total = total + weight
-		end
+	if avoid_index then
+		total = total - weights[avoid_index]
 	end
 	if total <= 0 then
 		return pick_uniform_index(count, avoid_index)
@@ -210,37 +272,13 @@ local pick_weighted_index<const> = function(weights, avoid_index)
 	return count
 end
 
-local resolve_action_spec<const> = function(rule, payload)
-	local spec<const> = rule.go
-	if spec.one_of == nil then
-		return spec
-	end
-	local actions<const> = rule.__oneof_actions
-	local pick_mode = spec.pick
-	if not pick_mode then
-		pick_mode = rule.__oneof_has_weights and 'weighted' or 'uniform'
-	end
-	local by_actor<const> = rule.__last_random_pick_by_actor
-	local actor_key<const> = by_actor and actor_key_for_payload(payload)
-	local avoid<const> = by_actor and by_actor[actor_key]
-	local idx
-	if pick_mode == 'weighted' then
-		idx = pick_weighted_index(rule.__oneof_weights, avoid)
-	else
-		idx = pick_uniform_index(#actions, avoid)
-	end
-	if by_actor then
-		by_actor[actor_key] = idx
-	end
-	return actions[idx]
-end
-
 local merge_events<const> = function(event_maps)
 	local merged<const> = {}
+	local audio_cache<const> = {}
 
 	local add_or_merge<const> = function(event_name, entry)
 		local slot<const> = route_slot[entry.channel]
-		local compiled_rules<const> = compile_rules(entry.rules)
+		local compiled_rules<const> = compile_rules(entry.rules, audio_cache)
 		local cur<const> = merged[event_name]
 		if not cur then
 			merged[event_name] = {
@@ -272,7 +310,7 @@ local merge_events<const> = function(event_maps)
 end
 
 local apply_cooldown<const> = function(action, payload)
-	local by_actor<const> = action and action.__cooldown_by_actor
+	local by_actor<const> = action.cooldown_by_actor
 	if not by_actor then
 		return true
 	end
@@ -449,56 +487,49 @@ local submit_play<const> = function(
 	)
 end
 
-local dispatch_audio_play<const> = function(entry, audio_record, action, payload)
+local dispatch_audio_play<const> = function(entry, action, payload)
 	if not apply_cooldown(action, payload) then
 		return
 	end
-	local pitch_delta = action.__apu_pitch_delta
-	local pitch_range_span<const> = action.__apu_pitch_range_span
+	local pitch_delta = action.pitch_delta
+	local pitch_range_span<const> = action.pitch_range_span
 	if pitch_range_span ~= 0 then
-		pitch_delta = pitch_delta + action.__apu_pitch_range_min + (pitch_range_span * math.random())
+		pitch_delta = pitch_delta + action.pitch_range_min + (pitch_range_span * math.random())
 	end
 
-	local volume_delta = action.__apu_volume_delta
-	local volume_range_span<const> = action.__apu_volume_range_span
+	local volume_delta = action.volume_delta
+	local volume_range_span<const> = action.volume_range_span
 	if volume_range_span ~= 0 then
-		volume_delta = volume_delta + action.__apu_volume_range_min + (volume_range_span * math.random())
+		volume_delta = volume_delta + action.volume_range_min + (volume_range_span * math.random())
 	end
 	local gain_q12<const> = (10 ^ (volume_delta / 20)) * 0x00001000
 
-	local start_sample = action.__apu_start_sample
-	local start_range_span<const> = action.__apu_start_range_span
+	local start_sample = action.start_sample
+	local start_range_span<const> = action.start_range_span
 	if start_range_span ~= 0 then
-		start_sample = start_sample + action.__apu_start_range_min + (start_range_span * math.random())
+		start_sample = start_sample + action.start_range_min + (start_range_span * math.random())
 	end
 
-	local rate = action.__apu_rate
-	local rate_range_span<const> = action.__apu_rate_range_span
+	local rate = action.rate
+	local rate_range_span<const> = action.rate_range_span
 	if rate_range_span ~= 0 then
-		rate = rate + action.__apu_rate_range_min + (rate_range_span * math.random())
+		rate = rate + action.rate_range_min + (rate_range_span * math.random())
 	end
 	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * 0x00010000
 
 	submit_play(
-		apu.source(audio_record),
+		action.source,
 		entry.slot,
-		action.__aem_priority or audio_record.audiometa.priority,
+		action.priority,
 		entry.queued,
 		rate_step_q16,
 		gain_q12,
 		start_sample,
-		action.__apu_filter_control,
-		action.__apu_filter_b0_b1,
-		action.__apu_filter_b2_a1,
-		action.__apu_filter_a2
+		action.filter_control,
+		action.filter_b0_b1,
+		action.filter_b2_a1,
+		action.filter_a2
 	)
-end
-
-local transition_start_sample<const> = function(audio_record, transition)
-	if transition.__apu_start_at_loop then
-		return apu.loop_start_sample(audio_record)
-	end
-	return 0
 end
 
 local alternate_music_slot<const> = function()
@@ -510,7 +541,6 @@ end
 
 local clear_pending_music<const> = function()
 	*pending_music_seq = 0
-	pending_music_record = nil
 	pending_music_transition = nil
 end
 
@@ -518,7 +548,6 @@ local clear_stinger<const> = function()
 	*stinger_seq = 0
 	*stinger_source_addr = 0
 	*stinger_slot = 0
-	stinger_music_record = nil
 	stinger_music_transition = nil
 end
 
@@ -534,42 +563,51 @@ local begin_music_request<const> = function()
 	return *music_request_seq
 end
 
-local play_music_now<const> = function(audio_record, transition, gain_q12, slot)
+local play_music_now<const> = function(transition, gain_q12, slot)
 	local target_slot = slot or *current_music_slot
 	if target_slot == 0 then
 		target_slot = slot_music_a
 	end
-	local source<const> = apu.source(audio_record)
+	local source<const> = transition.target_source
 	*current_music_source_addr = source.source_addr
 	*current_music_slot = target_slot
-	mark_slot_active(target_slot, source.source_addr, audio_record.audiometa.priority)
-	apu.play(source, target_slot, 0x00010000, gain_q12 or 0x00001000, transition_start_sample(audio_record, transition), 0x00000000, apu.filter_coefficient_one, 0x00000000, 0x00000000)
+	mark_slot_active(target_slot, source.source_addr, transition.target_priority)
+	apu.play(
+		source,
+		target_slot,
+		0x00010000,
+		gain_q12 or 0x00001000,
+		transition.start_sample,
+		0x00000000,
+		apu.filter_coefficient_one,
+		0x00000000,
+		0x00000000
+	)
 end
 
-local queue_music_after_current<const> = function(request_seq, audio_record, transition)
+local queue_music_after_current<const> = function(request_seq, transition)
 	*pending_music_seq = request_seq
-	pending_music_record = audio_record
 	pending_music_transition = transition
 end
 
-local play_transition_apu<const> = function(audio_record, transition)
-	if transition.__apu_wait_for_current and *current_music_source_addr ~= 0 then
-		queue_music_after_current(*music_request_seq, audio_record, transition)
+local play_transition_apu<const> = function(transition)
+	if transition.wait_for_current and *current_music_source_addr ~= 0 then
+		queue_music_after_current(*music_request_seq, transition)
 		return
 	end
 
-	local crossfade_samples<const> = transition.__apu_crossfade_samples
+	local crossfade_samples<const> = transition.crossfade_samples
 	if crossfade_samples > 0 and *current_music_source_addr ~= 0 then
 		local old_slot<const> = *current_music_slot
 		local new_slot<const> = alternate_music_slot()
 		apu.stop_slot(old_slot, crossfade_samples)
-		play_music_now(audio_record, transition, 0x00001000, new_slot)
+		play_music_now(transition, 0x00001000, new_slot)
 		return
 	end
 
-	local fade_samples<const> = transition.__apu_fade_samples
+	local fade_samples<const> = transition.fade_samples
 	if fade_samples > 0 and *current_music_source_addr ~= 0 then
-		queue_music_after_current(*music_request_seq, audio_record, transition)
+		queue_music_after_current(*music_request_seq, transition)
 		apu.stop_slot(*current_music_slot, fade_samples)
 		return
 	end
@@ -577,77 +615,75 @@ local play_transition_apu<const> = function(audio_record, transition)
 	if *current_music_source_addr ~= 0 then
 		apu.stop_slot(*current_music_slot, 0)
 	end
-	play_music_now(audio_record, transition)
-end
-
-local transition_target_record<const> = function(transition, sync)
-	local target_id = transition.audio_id
-	if sync ~= nil and type(sync) ~= 'string' and sync.return_to ~= nil then
-		target_id = sync.return_to
-	end
-	if target_id == nil then
-		error('aem music_transition missing audio_id target')
-	end
-	return romdir.audio(target_id)
+	play_music_now(transition)
 end
 
 local dispatch_music_transition<const> = function(transition)
 	local request_seq<const> = begin_music_request()
-	local sync<const> = transition.sync
-	local target_record<const> = transition_target_record(transition, sync)
-	if sync == nil or type(sync) == 'string' then
-		if not transition.__apu_start_fresh and *current_music_source_addr == apu.source(target_record).source_addr then
-			return
-		end
+	local target_source<const> = transition.target_source
+	local stinger_source<const> = transition.stinger_source
+	if stinger_source == nil
+		and not transition.start_fresh
+		and *current_music_source_addr == target_source.source_addr then
+		return
 	end
-	if sync ~= nil and type(sync) ~= 'string' then
-		local stinger_id<const> = sync.stinger
-		local stinger_record<const> = romdir.audio(stinger_id)
-		local stinger_type<const> = stinger_record.audiometa.audiotype
+	if stinger_source ~= nil then
 		if *current_music_source_addr ~= 0 then
 			apu.stop_slot(*current_music_slot, 0)
 		end
 		*current_music_source_addr = 0
 		*current_music_slot = 0
 		*stinger_seq = request_seq
-		local stinger_source<const> = apu.source(stinger_record)
 		*stinger_source_addr = stinger_source.source_addr
-		local stinger_slot_value<const> = route_slot[stinger_type]
-		if stinger_slot_value == nil then
-			error('aem invalid stinger audio record type: ' .. tostring(stinger_type))
-		end
-		*stinger_slot = stinger_slot_value
-		stinger_music_record = target_record
+		*stinger_slot = transition.stinger_slot
 		stinger_music_transition = transition
-		mark_slot_active(*stinger_slot, *stinger_source_addr, stinger_record.audiometa.priority)
+		mark_slot_active(*stinger_slot, *stinger_source_addr, transition.stinger_priority)
 		apu.play_plain(stinger_source, *stinger_slot)
 		return
 	end
-	play_transition_apu(target_record, transition)
+	play_transition_apu(transition)
 end
 
-local dispatch_action<const> = function(entry, action, payload)
-	if action.stop_music then
+local dispatch_action
+dispatch_action = function(entry, action, payload)
+	local kind<const> = action.kind
+	if kind == action_kind_play then
+		dispatch_audio_play(entry, action, payload)
+		return
+	end
+	if kind == action_kind_stop_music then
 		begin_music_request()
 		*current_music_source_addr = 0
 		*current_music_slot = 0
-		local fade_samples<const> = apu.ms_to_samples(action.stop_music.fade_ms or 0)
-		apu.stop_slot(slot_music_a, fade_samples)
-		apu.stop_slot(slot_music_b, fade_samples)
+		apu.stop_slot(slot_music_a, action.fade_samples)
+		apu.stop_slot(slot_music_b, action.fade_samples)
 		return
 	end
-	if action.sequence then
-		local seq<const> = action.sequence
-		for i = 1, #seq do
-			dispatch_action(entry, seq[i], payload)
+	if kind == action_kind_sequence then
+		local actions<const> = action.actions
+		for i = 1, #actions do
+			dispatch_action(entry, actions[i], payload)
 		end
 		return
 	end
-	if action.music_transition then
-		dispatch_music_transition(action.music_transition)
+	if kind == action_kind_random then
+		local actions<const> = action.actions
+		local by_actor<const> = action.last_pick_by_actor
+		local actor_key<const> = by_actor and actor_key_for_payload(payload)
+		local avoid<const> = by_actor and by_actor[actor_key]
+		local index
+		if action.weighted then
+			index = pick_weighted_index(action.weights, action.weight_total, avoid)
+		else
+			index = pick_uniform_index(#actions, avoid)
+		end
+		if by_actor then
+			by_actor[actor_key] = index
+		end
+		dispatch_action(entry, actions[index], payload)
 		return
 	end
-	dispatch_audio_play(entry, romdir.audio(action.audio_id), action, payload)
+	dispatch_music_transition(action)
 end
 
 local handle_event<const> = function(event_type, emitter, payload)
@@ -658,12 +694,9 @@ local handle_event<const> = function(event_type, emitter, payload)
 	local rules<const> = entry.rules
 	for i = 1, #rules do
 		local rule<const> = rules[i]
-		if rule.__predicate(payload) then
-			local action<const> = resolve_action_spec(rule, payload)
-			if action then
-				dispatch_action(entry, action, payload)
-				return
-			end
+		if rule.predicate(payload) then
+			dispatch_action(entry, rule.action, payload)
+			return
 		end
 	end
 end
@@ -683,12 +716,11 @@ local rebind<const> = function()
 	eventemitter:remove_subscriber(handle_event)
 	events = merge_events(romdir.aem_event_maps())
 	eventemitter:on_any(handle_event, handle_event)
-	return events
 end
 
 local reload_from_rom<const> = function()
 	romdir.reload_cartridge_directory()
-	return rebind()
+	rebind()
 end
 
 local on_apu_irq<const> = function()
@@ -703,11 +735,10 @@ local on_apu_irq<const> = function()
 	if *stinger_source_addr == source_addr
 		and *stinger_slot == slot
 		and *stinger_seq == *music_request_seq then
-		local target_record<const> = stinger_music_record
 		local transition<const> = stinger_music_transition
 		complete_slot_play(slot, source_addr, slot ~= *current_music_slot)
 		clear_stinger()
-		play_transition_apu(target_record, transition)
+		play_transition_apu(transition)
 		return
 	end
 
@@ -724,11 +755,10 @@ local on_apu_irq<const> = function()
 	complete_slot_play(slot, source_addr, false)
 	*current_music_source_addr = 0
 	*current_music_slot = 0
-	if *pending_music_seq == *music_request_seq and pending_music_record ~= nil then
-		local target_record<const> = pending_music_record
+	if *pending_music_seq == *music_request_seq and pending_music_transition ~= nil then
 		local transition<const> = pending_music_transition
 		clear_pending_music()
-		play_music_now(target_record, transition)
+		play_music_now(transition)
 		return
 	end
 	play_next_queued(slot)
