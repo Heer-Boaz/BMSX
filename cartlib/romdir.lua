@@ -435,7 +435,7 @@ function romdir.audio(id)
 end
 
 
-function romdir.aem_documents()
+function romdir.aem_event_maps()
 	local entries<const> = list_entries(active_roms, kind_aem)
 	local out<const> = {}
 	for index = 1, #entries do

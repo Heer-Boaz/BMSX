@@ -243,7 +243,7 @@ local resolve_action_spec<const> = function(rule, payload)
 	return actions[idx]
 end
 
-local merge_events<const> = function(documents)
+local merge_events<const> = function(event_maps)
 	local merged<const> = {}
 
 	local add_or_merge<const> = function(event_name, entry)
@@ -270,9 +270,8 @@ local merge_events<const> = function(documents)
 		end
 	end
 
-	for document_index = 1, #documents do
-		local document_events<const> = documents[document_index].events
-		for event_name, entry in pairs(document_events) do
+	for map_index = 1, #event_maps do
+		for event_name, entry in pairs(event_maps[map_index]) do
 			add_or_merge(event_name, entry)
 		end
 	end
@@ -707,7 +706,7 @@ reset_audio_state()
 
 local rebind<const> = function()
 	eventemitter:remove_subscriber(handle_event)
-	events = merge_events(romdir.aem_documents())
+	events = merge_events(romdir.aem_event_maps())
 	eventemitter:on_any(handle_event, handle_event)
 	return events
 end

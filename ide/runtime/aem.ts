@@ -45,13 +45,14 @@ export function applyAemSourceToRuntime(
 	const assetId = resource.source.resid;
 	const doc = parseStructuredTextDocument(source, aemDocumentFormat(resource.path), `AEM file '${resource.path}'`);
 	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(sources), resource.path);
+	const eventMap = doc.events;
 	const revision = buildBlua32Revision(
 		sources,
 		luaTooling,
 		runtime,
 		resource.domain === SYSTEM_RESOURCE_DOMAIN,
 		[resource.domain === 0, resource.domain === 1],
-		[resource.domain, ['aem', assetId, encodeBinary(doc)]],
+		[resource.domain, ['aem', assetId, encodeBinary(eventMap)]],
 	);
 	const relocation = buildHotResumeRelocation(
 		runtime.machine.cpu,
@@ -62,7 +63,7 @@ export function applyAemSourceToRuntime(
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;
-	runtimePackage.audioevents[assetId] = doc as Record<string, unknown>;
+	runtimePackage.audioevents[assetId] = eventMap;
 	const suspendedGuest = luaTooling.suspendedGuest;
 	const aemResource = suspendedGuest.global(
 		buildModuleExportSlotName('cartlib/aem', []),

@@ -70,7 +70,7 @@ export interface DataResource extends BaseResource<'data'> {
 
 export interface AemResource extends BaseResource<'aem'> {
 	id: number;
-	datatype: datatype;
+	datatype: 'json' | 'yaml';
 }
 
 export interface ModelResource extends BaseResource<'model'> {

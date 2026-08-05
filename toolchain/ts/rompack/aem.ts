@@ -6,6 +6,10 @@ import { APU_SAMPLE_RATE_HZ } from '../../../machine/ts/spec/audio/apu';
 // but it is not the machine audio device or a host-side shortcut around MMIO.
 export type StructuredTextDocumentFormat = 'yaml' | 'json';
 
+export type AemDocument = {
+	events: Record<string, unknown>;
+};
+
 export function aemDocumentFormat(path: string): StructuredTextDocumentFormat {
 	if (path.endsWith('.json')) {
 		return 'json';
@@ -672,7 +676,7 @@ export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, f
 	return { errors, warnings };
 }
 
-export function assertValidAemDocument(doc: unknown, lookup: AemValidationLookup, fileTag: string): void {
+export function assertValidAemDocument(doc: unknown, lookup: AemValidationLookup, fileTag: string): asserts doc is AemDocument {
 	const result = validateAemDocument(doc, lookup, fileTag);
 	if (result.warnings.length > 0) {
 		for (let index = 0; index < result.warnings.length; index += 1) {
