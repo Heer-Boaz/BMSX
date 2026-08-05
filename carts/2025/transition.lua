@@ -251,7 +251,7 @@ function transition.register_states(states)
 				start_x = w,
 				end_x = -w,
 			}
-			self.timelines:define(timeline.new({
+			self.timelines:define({
 				id = overgang_timelineid,
 				frames = timeline.range(self.transition_finish_frame + 1),
 				ticks_per_frame = overgang_ticks_per_frame,
@@ -262,7 +262,7 @@ function transition.register_states(states)
 				markers = {
 					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
 				},
-			}))
+			})
 			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
 			-- Snapping here consumes that frame during state entry and shifts the authored cadence.
 			self.timelines:play(overgang_timelineid, { rewind = true, snap_to_start = false })
@@ -309,14 +309,14 @@ function transition.register_states(states)
 			hide_transition_layers(self.transition_visual)
 			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
-			self.timelines:define(timeline.new({
+			self.timelines:define({
 				id = overgang_post_fade_in_timelineid,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
 				target = background,
 				apply = true,
-			}))
+			})
 			self.timelines:play(overgang_post_fade_in_timelineid, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
@@ -382,7 +382,7 @@ function transition.register_states(states)
 				hold_black = self.fade_hold_black,
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})
-			self.timelines:define(timeline.new({
+			self.timelines:define({
 				id = fade_timelineid,
 				frames = frames,
 				ticks_per_frame = fade_ticks_per_frame,
@@ -392,7 +392,7 @@ function transition.register_states(states)
 				markers = {
 					{ frame = fade_out_frames - 1, event = 'fade.swap_bg' },
 				},
-			}))
+			})
 			self.timelines:play(fade_timelineid, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',

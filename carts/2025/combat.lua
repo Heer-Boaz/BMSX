@@ -1254,15 +1254,6 @@ function combat.define_fsm()
 	states.combat_results_fade_in = {
 		timelines = {
 			[combat_results_fade_in_timelineid] = {
-				create = function()
-			return timeline.new({
-				id = combat_results_fade_in_timelineid,
-				frames = timelinebuilders.build_combat_results_fade_in_frames,
-				ticks_per_frame = combat_results_fade_in_ticks_per_frame,
-				playback_mode = 'once',
-				apply = true,
-			})
-		end,
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {

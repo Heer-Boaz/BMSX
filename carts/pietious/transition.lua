@@ -51,11 +51,11 @@ function transition:ctor()
 	text.center_block_width = screen_width
 	self.text_component = text
 	self:get_component(custom_visual_component).producer = draw_transition_visual
-	self.timelines:define(timeline.new({
+	self.timelines:define({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
 		playback_mode = 'once',
-	}))
+	})
 end
 
 local define_transition_fsm<const> = function()

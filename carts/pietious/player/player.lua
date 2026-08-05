@@ -304,7 +304,7 @@ function player:apply_color(color)
 end
 
 function player:define_runtime_timelines()
-	self.timelines:define(timeline.new({
+	self.timelines:define({
 		id = 'p.tl.d',
 		frames = timeline.build_frame_sequence({
 			{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
@@ -314,49 +314,49 @@ function player:define_runtime_timelines()
 			{ value = { imgid = 'pietolon_dying_5' }, hold = 8 },
 		}),
 		playback_mode = 'once',
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.tl.hf',
 		frames = player_hit_fall_frames,
 		playback_mode = 'once',
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.tl.hr',
 		frames = timeline.build_frame_sequence({
 			{ value = { imgid = 'pietolon_recover_r' }, hold = damage_hit_recovery_frames },
 		}),
 		playback_mode = 'once',
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.seq.s',
 		frames = timeline.range(sword_duration_frames + 1),
 		playback_mode = 'once',
 		autotick = false,
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.seq.hi',
 		frames = timeline.range(damage_hit_invulnerability_frames),
 		playback_mode = 'once',
 		autotick = false,
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.seq.hb',
 		frames = timeline.range(damage_hit_blink_switch_frames),
 		playback_mode = 'loop',
 		autotick = false,
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = 'p.seq.f',
 		frames = timeline.range(12),
 		playback_mode = 'once',
 		autotick = false,
-	}))
-	self.timelines:define(timeline.new({
+	})
+	self.timelines:define({
 		id = player_shrine_exit_timelineid,
 		frames = build_shrine_exit_transition_frames(),
 		playback_mode = 'once',
 		apply = true,
-	}))
+	})
 end
 
 function player:ctor()

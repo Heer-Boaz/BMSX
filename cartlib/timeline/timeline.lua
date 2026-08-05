@@ -40,7 +40,6 @@ local timelinestart_index<const> = -1
 
 local timeline<const> = {}
 timeline.__index = timeline
-timeline.__is_timeline = true
 
 local ensure_timelinehas_frames<const> = function(id, length)
 	if length <= 0 then
@@ -535,7 +534,6 @@ end
 return {
 	timelinestart_index = timelinestart_index,
 	timeline = timeline,
-	new = timeline.new,
 	range = range,
 	expand_timelinewindows = expand_timelinewindows,
 	compile_timelinemarkers = compile_timelinemarkers,

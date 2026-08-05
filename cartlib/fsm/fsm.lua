@@ -597,7 +597,7 @@ local build_timelinebindings<const> = function(owner, definitions)
 			if definition.id == nil then
 				definition.id = id
 			end
-			owner.timelines:define(timelinemodule.new(definition))
+			owner.timelines:define(definition)
 		end
 		bindings[#bindings + 1] = {
 			id = id,

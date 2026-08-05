@@ -71,7 +71,7 @@ function timelinecomponent:on_detach()
 end
 
 function timelinecomponent:define(definition)
-	local replacement<const> = definition.__is_timeline and definition or timeline.new(definition)
+	local replacement<const> = timeline.new(definition)
 	local entry = self._entries_by_id[replacement.id]
 	local instance = replacement
 	local active = false

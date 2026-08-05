@@ -147,7 +147,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 		return timelineid
 	end
 	local total<const> = cfg.text_start + cfg.text_duration
-	owner.timelines:define(timeline.new({
+	owner.timelines:define({
 		id = timelineid,
 		continuous = true,
 		playback_mode = 'once',
@@ -155,7 +155,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 		tracks = {
 			stagger_track,
 		},
-	}))
+	})
 	return timelineid
 end
 
