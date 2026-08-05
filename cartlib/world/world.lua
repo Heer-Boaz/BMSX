@@ -640,7 +640,7 @@ function world_class:clear()
 end
 world = world_class.new()
 world.id = 'world'
-world.registrypersistent = true
+world.registry_persistent = true
 registry:register(world)
 
 return world

@@ -109,7 +109,7 @@ function registry:clear()
 	local index = #entities
 	while index > 0 do
 		local entity<const> = entities[index]
-		if not entity.registrypersistent then
+		if not entity.registry_persistent then
 			self:deregister(entity)
 		end
 		index = index - 1

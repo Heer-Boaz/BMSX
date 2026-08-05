@@ -1,4 +1,4 @@
--- eventemitter.lua
+-- event_emitter.lua
 -- lightweight event emitter + per-emitter event port
 --
 -- DESIGN PRINCIPLES — event usage contracts
@@ -73,39 +73,39 @@
 --    object lifecycle resets.
 --
 -- 7. EVENTPORT VS EVENTEMITTER.
---    Cart code should use eventport (self.events) not eventemitter directly.
---    eventport:on() auto-fills the emitter filter from the port owner.
---    eventport:emit() auto-fills the emitter identity.
+--    Cart code should use event_port (self.events) not event_emitter directly.
+--    event_port:on() auto-fills the emitter filter from the port owner.
+--    event_port:emit() auto-fills the emitter identity.
 --    This prevents accidentally omitting the emitter and creating
 --    subscriptions that fire for unrelated sources.
 
-local eventemitter<const> = {
-	id = 'eventemitter',
-	type_name = 'eventemitter',
-	registrypersistent = true,
+local event_emitter<const> = {
+	id = 'event_emitter',
+	type_name = 'event_emitter',
+	registry_persistent = true,
 	listeners = {},
 	any_listeners = {},
 }
 
-local eventport<const> = {}
-eventport.__index = eventport
+local event_port<const> = {}
+event_port.__index = event_port
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
-function eventemitter.events_of(emitter)
+function event_emitter.events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
 		local emitter_id = emitter
 		if type(emitter) == 'table' then
 			emitter_id = emitter.id
 		end
-		port = setmetatable({ emitter = emitter, emitter_id = emitter_id }, eventport)
+		port = setmetatable({ emitter = emitter, emitter_id = emitter_id }, event_port)
 		port_cache[emitter] = port
 	end
 	return port
 end
 
--- eventemitter:on(spec): register a listener.
+-- event_emitter:on(spec): register a listener.
 -- spec fields:
 --   event               (string)  — required; event type to listen for.
 --   handler             (function)— required; called with event type, emitter
@@ -115,7 +115,7 @@ end
 --   emitter             (string|object) — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
 --   persistent          (bool)    — if true, survives clear() calls.
-function eventemitter:on(spec)
+function event_emitter:on(spec)
 	local name<const> = spec.event
 	local list = self.listeners[name]
 	if not list then
@@ -130,10 +130,10 @@ function eventemitter:on(spec)
 	}
 end
 
--- eventemitter:off(event_name, handler, emitter): remove a specific listener
+-- event_emitter:off(event_name, handler, emitter): remove a specific listener
 -- by exact handler reference + emitter.  Prefer remove_subscriber() for bulk
 -- cleanup of all subscriptions owned by a subscriber.
-function eventemitter:off(event_name, handler, emitter)
+function event_emitter:off(event_name, handler, emitter)
 	local list<const> = self.listeners[event_name]
 	if not list then
 		return
@@ -146,14 +146,14 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
--- eventemitter:on_any(handler, persistent, subscriber): listen to ALL events
+-- event_emitter:on_any(handler, persistent, subscriber): listen to ALL events
 -- regardless of type.  Use sparingly (e.g. debugging, event logging).  For
 -- normal game logic always subscribe to a specific event name via on().
-function eventemitter:on_any(handler, persistent, subscriber)
+function event_emitter:on_any(handler, persistent, subscriber)
 	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent, subscriber = subscriber }
 end
 
-function eventemitter:off_any(handler, force_persistent)
+function event_emitter:off_any(handler, force_persistent)
 	for i = #self.any_listeners, 1, -1 do
 		local entry<const> = self.any_listeners[i]
 		if entry.handler == handler and (force_persistent or not entry.persistent) then
@@ -162,9 +162,9 @@ function eventemitter:off_any(handler, force_persistent)
 	end
 end
 
--- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
+-- event_emitter:emit(): synchronously dispatch direct event values. emitter_id
 -- is retained by the owning event port for filtering and downstream FSMs.
-function eventemitter:emit(event_type, emitter, payload, emitter_id)
+function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	local list<const> = self.listeners[event_type]
 	if list then
 		for i = 1, #list do
@@ -181,11 +181,11 @@ function eventemitter:emit(event_type, emitter, payload, emitter_id)
 	end
 end
 
--- eventemitter:remove_subscriber(subscriber, force_persistent): remove all
+-- event_emitter:remove_subscriber(subscriber, force_persistent): remove all
 -- listeners whose `subscriber` field equals the given object.  This is the
 -- standard cleanup path called from worldobject:unbind().  Pass
 -- force_persistent = true to also remove persistent subscriptions.
-function eventemitter:remove_subscriber(subscriber, force_persistent)
+function event_emitter:remove_subscriber(subscriber, force_persistent)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			local entry<const> = list[i]
@@ -202,7 +202,7 @@ function eventemitter:remove_subscriber(subscriber, force_persistent)
 	end
 end
 
-function eventemitter:clear()
+function event_emitter:clear()
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			if not list[i].persistent then
@@ -217,11 +217,11 @@ function eventemitter:clear()
 	end
 end
 
--- eventport:on(spec): preferred cart API for subscribing to events.
--- Identical to eventemitter:on() but automatically sets spec.emitter to the
+-- event_port:on(spec): preferred cart API for subscribing to events.
+-- Identical to event_emitter:on() but automatically sets spec.emitter to the
 -- port's owner if not supplied. Always supply subscriber = <owning_object> for
 -- lifecycle cleanup through remove_subscriber().
-function eventport:on(spec)
+function event_port:on(spec)
 	if spec.subscriber == nil and type(self.emitter) == 'table' then
 		spec.subscriber = self.emitter
 	end
@@ -230,15 +230,15 @@ function eventport:on(spec)
 	elseif not spec.emitter then
 		spec.emitter = nil
 	end
-	eventemitter:on(spec)
+	event_emitter:on(spec)
 end
 
--- eventport:emit(event_name, payload): preferred cart API for emitting events.
+-- event_port:emit(event_name, payload): preferred cart API for emitting events.
 -- Payload identity is preserved exactly, including nil and false.
-function eventport:emit(event_name, payload)
-	eventemitter:emit(event_name, self.emitter, payload, self.emitter_id)
+function event_port:emit(event_name, payload)
+	event_emitter:emit(event_name, self.emitter, payload, self.emitter_id)
 end
 
-require('cartlib/registry'):register(eventemitter)
+require('cartlib/registry'):register(event_emitter)
 
-return eventemitter
+return event_emitter

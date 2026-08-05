@@ -5,7 +5,7 @@ local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
 local renderer<const> = require('cartlib/render/renderer')
-local eventemitter<const> = require('cartlib/eventemitter')
+local event_emitter<const> = require('cartlib/event_emitter')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local player_input<const> = require('cartlib/input/player')
@@ -48,7 +48,7 @@ local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
 }
-local world_events<const> = eventemitter.events_of('world')
+local world_events<const> = event_emitter.events_of('world')
 
 local director_def_id<const> = 'p3.director'
 local director_fsm_id<const> = 'p3.director.fsm'

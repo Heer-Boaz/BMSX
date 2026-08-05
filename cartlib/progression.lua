@@ -21,7 +21,7 @@
 --    Unmount it from the context's unbind() teardown.
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
---    for events emitted to the global eventemitter; progression subscribes to
+--    for events emitted to the global event_emitter; progression subscribes to
 --    the exact event names referenced by mounted programs).
 --
 --    STEP 3 — query state:
@@ -48,7 +48,7 @@
 --    driven by named gameplay events.  Transient per-frame state belongs in the
 --    object FSM or in worldobject fields directly.
 
-local eventemitter<const> = require('cartlib/eventemitter')
+local event_emitter<const> = require('cartlib/event_emitter')
 local event_matcher<const> = require('cartlib/event_matcher')
 
 local progression<const> = {
@@ -426,7 +426,7 @@ local add_runtime_subscription<const> = function(rt, event_name)
 	if runtimes == nil then
 		runtimes = {}
 		progression._runtimes_by_event[event_name] = runtimes
-		eventemitter:on({
+		event_emitter:on({
 			event = event_name,
 			handler = progression.dispatch_event,
 			subscriber = progression,
@@ -449,7 +449,7 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 	if #runtimes == 0 then
 		progression._runtimes_by_event[event_name] = nil
-		eventemitter:off(event_name, progression.dispatch_event, nil)
+		event_emitter:off(event_name, progression.dispatch_event, nil)
 	end
 end
 

@@ -37,7 +37,7 @@
 --    unsubscription (e.g. releasing external resources).  Always call
 --    super's unbind via remove_subscriber if you do override it:
 --      function myobj:unbind()
---          eventemitter:remove_subscriber(self)  -- base
+--          event_emitter:remove_subscriber(self)  -- base
 --          -- additional cleanup ...
 --      end
 --
@@ -55,7 +55,7 @@
 --    Moving an object to a non-active space hides it from gameplay queries
 --    without destroying it (components and subscriptions persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
-local eventemitter<const> = require('cartlib/eventemitter')
+local event_emitter<const> = require('cartlib/event_emitter')
 local component<const> = require('cartlib/world/component')
 
 local worldobject<const> = {}
@@ -76,7 +76,7 @@ function worldobject.new(opts)
 	self.components = {}
 	self.component_map = {}
 	self.space_id = opts.space_id
-	self.events = eventemitter.events_of(self)
+	self.events = event_emitter.events_of(self)
 	return self
 end
 
@@ -334,7 +334,7 @@ end
 -- Called by dispose().  Override only if you need extra teardown beyond
 -- event unsubscription; in that case call the base implementation first.
 function worldobject:unbind()
-	eventemitter:remove_subscriber(self)
+	event_emitter:remove_subscriber(self)
 end
 
 -- deactivate(): removes the object and its components from active scheduling

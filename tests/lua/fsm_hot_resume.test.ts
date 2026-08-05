@@ -19,7 +19,7 @@ const SYSTEM_MODULE_FILES = [
 const CART_MODULE_FILES = [
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
-	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
+	['cartlib/event_emitter', 'cartlib/event_emitter.lua'],
 	['cartlib/world/component', 'cartlib/world/component.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
@@ -70,7 +70,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 
 const CART_ENTRY_SOURCE = `
 local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/eventemitter')
+local events<const> = require('cartlib/event_emitter')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local timeline_component<const> = require('cartlib/timeline/component')
