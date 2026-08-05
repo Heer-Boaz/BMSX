@@ -1,4 +1,5 @@
 local component<const> = require('cartlib/component/basecomponent')
+local registry<const> = require('cartlib/registry')
 
 local actioneffects<const> = {}
 local definitions<const> = {}
@@ -13,23 +14,6 @@ actioneffects.effect_type = {
 	play_animation = 'play_animation',
 	emit_event = 'emit_event',
 }
-
-function actioneffects.register_effect(id, definition)
-	definitions[id] = definition
-end
-
-actioneffects.register_effect(actioneffects.effect_type.move, {
-	handler = function(owner, _payload, dx, dy)
-		owner.x = owner.x + dx
-		owner.y = owner.y + dy
-	end,
-})
-
-actioneffects.register_effect(actioneffects.effect_type.play_animation, {
-	handler = function(owner, _payload, animation_id, options)
-		owner.timelines:play(animation_id, options)
-	end,
-})
 
 local bind_state_paths<const> = function(owner, paths)
 	if not paths then
@@ -119,6 +103,14 @@ function actioneffect_component:grant_effect(id)
 	}
 end
 
+function actioneffect_component:rebind_effect(id, definition)
+	local effect<const> = self.effects[id]
+	local owner<const> = self.parent
+	effect.definition = definition
+	effect.required_states = bind_state_paths(owner, definition.required_state_paths)
+	effect.blocked_states = bind_state_paths(owner, definition.blocked_state_paths)
+end
+
 function actioneffect_component:revoke_effect(id)
 	self.effects[id] = nil
 end
@@ -178,6 +170,30 @@ function actioneffect_component:cooldown_remaining(id)
 	end
 	return nil
 end
+
+function actioneffects.register_effect(id, definition)
+	definitions[id] = definition
+	local components<const> = registry:components(actioneffect_component)
+	for i = 1, #components do
+		local actioneffect<const> = components[i]
+		if actioneffect.effects[id] ~= nil then
+			actioneffect:rebind_effect(id, definition)
+		end
+	end
+end
+
+actioneffects.register_effect(actioneffects.effect_type.move, {
+	handler = function(owner, _payload, dx, dy)
+		owner.x = owner.x + dx
+		owner.y = owner.y + dy
+	end,
+})
+
+actioneffects.register_effect(actioneffects.effect_type.play_animation, {
+	handler = function(owner, _payload, animation_id, options)
+		owner.timelines:play(animation_id, options)
+	end,
+})
 
 actioneffects.actioneffect_component = actioneffect_component
 
