@@ -73,8 +73,8 @@ function world_object.new(opts)
 	self.active = false
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
-	self.components = {}
-	self.component_map = {}
+	self._components = {}
+	self._components_by_type = {}
 	self.space_id = opts.space_id
 	self.events = event_emitter.events_of(self)
 	return self
@@ -124,16 +124,17 @@ function world_object:add_component(comp)
 		comp.id = component.generate_id(comp)
 	end
 	local key<const> = comp.type_name
-	local bucket = self.component_map[key]
+	local bucket = self._components_by_type[key]
 	if not bucket then
 		bucket = {}
-		self.component_map[key] = bucket
+		self._components_by_type[key] = bucket
 	end
 	if comp.unique and #bucket > 0 then
 		error('component "' .. (comp.type_name or key) .. '" is unique and already attached to "' .. self.id .. '"')
 	end
 	comp._attached = true
-	table.insert(self.components, comp)
+	local components<const> = self._components
+	components[#components + 1] = comp
 	bucket[#bucket + 1] = comp
 	comp:bind()
 	comp:on_attach()
@@ -148,93 +149,11 @@ function world_object:add_component(comp)
 end
 
 function world_object:get_component(type_name)
-	local list<const> = self.component_map[type_name]
+	local list<const> = self._components_by_type[type_name]
 	return list and list[1]
 end
 
-function world_object:get_components(type_name)
-	return self.component_map[type_name]
-end
-
-function world_object:get_unique_component(type_name)
-	local list<const> = self.component_map[type_name]
-	if not list or #list == 0 then
-		return nil
-	end
-	if #list > 1 then
-		error('multiple "' .. type_name .. '" components attached to "' .. self.id .. '"')
-	end
-	return list[1]
-end
-
-function world_object:has_component(type_name)
-	local list<const> = self.component_map[type_name]
-	return list and #list > 0
-end
-
-function world_object:get_component_by_id(id)
-	for _, c in ipairs(self.components) do
-		if c.id == id or c.id_local == id then
-			return c
-		end
-	end
-	return nil
-end
-
-function world_object:get_component_by_local_id(type_name, id_local)
-	for _, c in ipairs(self.components) do
-		if c.id_local == id_local and c.type_name == type_name then
-			return c
-		end
-	end
-	return nil
-end
-
-function world_object:get_component_at(type_name, index)
-	local list<const> = self.component_map[type_name]
-	return list and list[index + 1]
-end
-
-function world_object:find_component(predicate, type_name)
-	local list<const> = type_name and self:get_components(type_name) or self.components
-	if not list then
-		return nil
-	end
-	for i = 1, #list do
-		local c<const> = list[i]
-		if predicate(c, i) then
-			return c
-		end
-	end
-	return nil
-end
-
-function world_object:find_components(predicate, type_name)
-	local list<const> = type_name and self:get_components(type_name) or self.components
-	local out<const> = {}
-	if not list then
-		return out
-	end
-	for i = 1, #list do
-		local c<const> = list[i]
-		if predicate(c, i) then
-			out[#out + 1] = c
-		end
-	end
-	return out
-end
-
-function world_object:remove_components(type_name)
-	local list<const> = self.component_map[type_name]
-	if not list then
-		return
-	end
-	for i = #list, 1, -1 do
-		self:remove_component_instance(list[i])
-	end
-end
-
-function world_object:remove_component_instance(comp)
+function world_object:remove_component(comp)
 	comp._attached = false
 	if self._published then
 		self.world:detach_component(comp)
@@ -245,7 +164,8 @@ end
 
 function world_object:_commit_component_detach(comp)
 	local key<const> = comp.type_name
-	local list<const> = self.component_map[key]
+	local components_by_type<const> = self._components_by_type
+	local list<const> = components_by_type[key]
 	if list then
 		for i = #list, 1, -1 do
 			if list[i] == comp then
@@ -254,12 +174,13 @@ function world_object:_commit_component_detach(comp)
 			end
 		end
 		if #list == 0 then
-			self.component_map[key] = nil
+			components_by_type[key] = nil
 		end
 	end
-	for i = #self.components, 1, -1 do
-		if self.components[i] == comp then
-			table.remove(self.components, i)
+	local components<const> = self._components
+	for i = #components, 1, -1 do
+		if components[i] == comp then
+			table.remove(components, i)
 			break
 		end
 	end
@@ -267,9 +188,10 @@ function world_object:_commit_component_detach(comp)
 	comp:unbind()
 end
 
-function world_object:remove_all_components()
-	for i = #self.components, 1, -1 do
-		self:remove_component_instance(self.components[i])
+function world_object:_remove_all_components()
+	local components<const> = self._components
+	for i = #components, 1, -1 do
+		self:remove_component(components[i])
 	end
 end
 
@@ -312,7 +234,7 @@ end
 -- Components added during bind activate through add_component() exactly once.
 -- Do not call directly; spawn the object through the world instead.
 function world_object:activate()
-	local components<const> = self.components
+	local components<const> = self._components
 	local component_count<const> = #components
 	self.active = true
 	if self._published then
@@ -368,7 +290,7 @@ function world_object:despawn()
 end
 
 function world_object:dispose()
-	self:remove_all_components()
+	self:_remove_all_components()
 	self:unbind()
 end
 

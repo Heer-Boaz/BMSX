@@ -257,7 +257,7 @@ function world_class:_reconcile_object(obj)
 		if active_space ~= nil then
 			active_space:deactivate_object(obj)
 		end
-		local components<const> = obj.components
+		local components<const> = obj._components
 		for i = 1, #components do
 			local comp<const> = components[i]
 			local component_space<const> = comp._active_space
@@ -276,7 +276,7 @@ function world_class:_reconcile_object(obj)
 		end
 	end
 	self:_reconcile_active_object(obj)
-	local components<const> = obj.components
+	local components<const> = obj._components
 	for i = 1, #components do
 		self:_reconcile_active_component(components[i])
 	end
@@ -443,7 +443,7 @@ end
 
 function world_class:_commit_spawn(obj)
 	registry:register(obj)
-	local components<const> = obj.components
+	local components<const> = obj._components
 	for i = 1, #components do
 		registry:register(components[i])
 		components[i]._published = true
@@ -477,7 +477,7 @@ function world_class:spawn(obj, pos)
 	end
 	obj:onspawn(pos)
 	obj:activate()
-	local components<const> = obj.components
+	local components<const> = obj._components
 	for i = 1, #components do
 		registry:reserve(components[i])
 	end
@@ -495,7 +495,7 @@ end
 
 function world_class:_commit_despawn(obj)
 	obj.active = false
-	local components<const> = obj.components
+	local components<const> = obj._components
 	for i = 1, #components do
 		self:_reconcile_active_component(components[i])
 	end
