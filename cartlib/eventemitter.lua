@@ -79,28 +79,20 @@
 --    This prevents accidentally omitting the emitter and creating
 --    subscriptions that fire for unrelated sources.
 
-local eventemitter<const> = {}
-eventemitter.__index = eventemitter
+local eventemitter<const> = {
+	id = 'eventemitter',
+	type_name = 'eventemitter',
+	registrypersistent = true,
+	listeners = {},
+	any_listeners = {},
+}
 
 local eventport<const> = {}
 eventport.__index = eventport
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
-function eventemitter.new()
-	return setmetatable({
-		listeners = {},
-		any_listeners = {},
-	}, eventemitter)
-end
-
-eventemitter.instance = eventemitter.new()
-eventemitter.instance.id = 'eventemitter'
-eventemitter.instance.type_name = 'eventemitter'
-eventemitter.instance.registrypersistent = true
-require('cartlib/registry'):register(eventemitter.instance)
-
-function eventemitter:events_of(emitter)
+function eventemitter.events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
 		local emitter_id = emitter
@@ -115,7 +107,7 @@ end
 
 -- eventemitter:on(spec): register a listener.
 -- spec fields:
---   event / event_name  (string)  — required; event type to listen for.
+--   event               (string)  — required; event type to listen for.
 --   handler             (function)— required; called with event type, emitter
 --                                    and payload as direct Lua values.
 --   subscriber          (object)  — strongly recommended; used by
@@ -124,7 +116,7 @@ end
 --                                    Always supply for non-unique event names.
 --   persistent          (bool)    — if true, survives clear() calls.
 function eventemitter:on(spec)
-	local name<const> = spec.event_name or spec.event
+	local name<const> = spec.event
 	local list = self.listeners[name]
 	if not list then
 		list = {}
@@ -227,8 +219,8 @@ end
 
 -- eventport:on(spec): preferred cart API for subscribing to events.
 -- Identical to eventemitter:on() but automatically sets spec.emitter to the
--- port's owner if not supplied.  Returns a function that unsubscribes when
--- called.  Always supply subscriber = <owning_object> for lifecycle cleanup.
+-- port's owner if not supplied. Always supply subscriber = <owning_object> for
+-- lifecycle cleanup through remove_subscriber().
 function eventport:on(spec)
 	if spec.subscriber == nil and type(self.emitter) == 'table' then
 		spec.subscriber = self.emitter
@@ -238,23 +230,15 @@ function eventport:on(spec)
 	elseif not spec.emitter then
 		spec.emitter = nil
 	end
-	eventemitter.instance:on(spec)
-	local name<const> = spec.event_name or spec.event
-	return function()
-		eventemitter.instance:off(name, spec.handler, spec.emitter)
-	end
+	eventemitter:on(spec)
 end
 
 -- eventport:emit(event_name, payload): preferred cart API for emitting events.
 -- Payload identity is preserved exactly, including nil and false.
 function eventport:emit(event_name, payload)
-	eventemitter.instance:emit(event_name, self.emitter, payload, self.emitter_id)
+	eventemitter:emit(event_name, self.emitter, payload, self.emitter_id)
 end
 
-return {
-	eventemitter = eventemitter,
-	eventport = eventport,
-	events_of = function(emitter)
-		return eventemitter.instance:events_of(emitter)
-	end,
-}
+require('cartlib/registry'):register(eventemitter)
+
+return eventemitter

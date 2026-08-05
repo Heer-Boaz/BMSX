@@ -3,7 +3,7 @@
 
 local apu<const> = require('cartlib/apu')
 local aem_biquad<const> = require('cartlib/aem_biquad')
-local eventemitter<const> = require('cartlib/eventemitter').eventemitter
+local eventemitter<const> = require('cartlib/eventemitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
 local romdir<const> = require('cartlib/romdir')
 
@@ -725,11 +725,11 @@ end
 reset_audio_state()
 
 local rebind<const> = function()
-	eventemitter.instance:remove_subscriber(handle_event, true)
+	eventemitter:remove_subscriber(handle_event, true)
 	events = merge_events(romdir.audioevents())
 	for event_name in pairs(events) do
-		eventemitter.instance:on({
-			event_name = event_name,
+		eventemitter:on({
+			event = event_name,
 			handler = handle_event,
 			subscriber = handle_event,
 		})

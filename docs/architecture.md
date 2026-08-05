@@ -3553,7 +3553,10 @@ focused owners and are linked only when a cart selects them. Timelines are an
 explicit component capability rather than an allocation on every world object,
 and callers operate on that retained component directly.
 
-Cart events are synchronous direct-value dispatch. `eventport:emit` passes the
+The event-emitter module exports its one persistent Registry-owned dispatcher
+directly. Per-owner event ports retain emitter identity but do not create a
+second dispatcher or expose a class-plus-`instance` facade. Cart events are
+synchronous direct-value dispatch. `eventport:emit` passes the
 event name, emitter and exact payload value to listeners without constructing
 an event envelope or payload metatable; `nil`, `false` and table identity are
 preserved. FSM event callbacks receive the payload as their third argument,

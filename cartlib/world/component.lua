@@ -1,5 +1,5 @@
 local component_types<const> = require('cartlib/components/types')
-local eventemitter<const> = require('cartlib/eventemitter').eventemitter
+local eventemitter<const> = require('cartlib/eventemitter')
 
 local empty_options<const> = {}
 
@@ -52,7 +52,7 @@ function component:bind()
 end
 
 function component:unbind()
-	eventemitter.instance:remove_subscriber(self)
+	eventemitter:remove_subscriber(self)
 end
 
 return component

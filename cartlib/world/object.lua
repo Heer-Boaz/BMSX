@@ -37,7 +37,7 @@
 --    unsubscription (e.g. releasing external resources).  Always call
 --    super's unbind via remove_subscriber if you do override it:
 --      function myobj:unbind()
---          eventemitter.eventemitter.instance:remove_subscriber(self)  -- base
+--          eventemitter:remove_subscriber(self)  -- base
 --          -- additional cleanup ...
 --      end
 --
@@ -334,7 +334,7 @@ end
 -- Called by dispose().  Override only if you need extra teardown beyond
 -- event unsubscription; in that case call the base implementation first.
 function worldobject:unbind()
-	eventemitter.eventemitter.instance:remove_subscriber(self)
+	eventemitter:remove_subscriber(self)
 end
 
 -- deactivate(): removes the object and its components from active scheduling
