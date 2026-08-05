@@ -13,16 +13,16 @@ local castle_map<const> = require('castle/map')
 local item_screen<const> = {}
 item_screen.__index = item_screen
 local sources<const> = {
-	screen_background = image.load('f1_screen'),
-	selector = image.load('f1_selector_white'),
-	map_title = image.load('f1_map_title'),
-	room_proxy = image.load('room_proxy'),
-	room_proxy_red = image.load('room_proxy_red'),
-	room_proxy_blue = image.load('room_proxy_blue'),
+	screen_background = image.resolve('f1_screen'),
+	selector = image.resolve('f1_selector_white'),
+	map_title = image.resolve('f1_map_title'),
+	room_proxy = image.resolve('room_proxy'),
+	room_proxy_red = image.resolve('room_proxy_red'),
+	room_proxy_blue = image.resolve('room_proxy_blue'),
 	items = {},
 }
 for item_type, id in pairs(world_item_sprite) do
-	sources.items[item_type] = image.load(id)
+	sources.items[item_type] = image.resolve(id)
 end
 
 local item_offset_x<const> = 11

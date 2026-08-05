@@ -2,7 +2,6 @@ module<entry>
 local gx_display<const> = require('cartlib/gx/display')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
-local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
@@ -214,7 +213,7 @@ end
 *irq_mask_register = 0
 init()
 *irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu
-gx_texture.upload(gx_texture.load('pietolon_stand_r'), vram_layout.sprites_texture, vram_layout.sprites_clut)
+gx_texture.upload('pietolon_stand_r')
 new_game()
 vblank.wait()
 

@@ -22,7 +22,7 @@ local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
-		local source<const> = image.load(imgid)
+		local source<const> = image.resolve(imgid)
 		items[byte(glyph)] = {
 			image = source,
 			width = source.w,

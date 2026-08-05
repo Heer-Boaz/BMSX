@@ -21,7 +21,7 @@ function disappearingwall:ctor()
 	self:update_wall_size()
 	local tile_layer<const> = self:get_component('tilelayercomponent')
 	local tile_count<const> = self.width_tiles * self.height_tiles
-	local tile_source<const> = image.load(self.tiletype)
+	local tile_source<const> = image.resolve(self.tiletype)
 	local sources<const> = {}
 	for index = 1, tile_count do
 		sources[index] = tile_source

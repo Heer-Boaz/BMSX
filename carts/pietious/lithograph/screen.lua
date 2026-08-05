@@ -21,7 +21,7 @@ local font_module<const> = require('cartlib/font')
 
 local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
-lithograph_screen.background = image.load('lithograph_mode')
+lithograph_screen.background = image.resolve('lithograph_mode')
 
 local draw_lithograph_visual<const> = function(parent, draw)
 	image.draw(draw, parent.background, room_tile_size4, room_tile_origin_y + room_tile_size2, 0xffffffff, 0, gp0.draw_mode_blend_half)

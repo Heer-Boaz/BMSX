@@ -14,7 +14,7 @@ local font_module<const> = require('cartlib/font')
 
 local shrine<const> = {}
 shrine.__index = shrine
-shrine.background = image.load('shrine_inside')
+shrine.background = image.resolve('shrine_inside')
 
 local draw_shrine_visual<const> = function(parent, draw)
 	image.draw(draw, parent.background, 0, room_tile_origin_y, 0xffffffff, 0, gp0.draw_mode_blend_half)

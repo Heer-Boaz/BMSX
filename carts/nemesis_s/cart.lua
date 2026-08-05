@@ -2,7 +2,6 @@ module<entry>
 local gx_display<const> = require('cartlib/gx/display')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
-local vram_layout<const> = require('bmsx/gx_vram_layout')
 gx_display.reset_256x192()
 local fsm_system<const> = require('cartlib/ecs/systems/fsm')
 local player_input_system<const> = require('cartlib/ecs/systems/player_input')
@@ -56,7 +55,7 @@ function new_game()
 end
 
 init()
-gx_texture.upload(gx_texture.load('ground'), vram_layout.stage_texture)
+gx_texture.upload('ground')
 new_game()
 vblank.wait()
 

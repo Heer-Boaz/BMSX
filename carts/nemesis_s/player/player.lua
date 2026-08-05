@@ -20,18 +20,18 @@ local option_animation_timeline_id<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
 local sources<const> = {
-	player_neutral = { id = assets_player_n, image = image.load(assets_player_n) },
-	player_up = { id = assets_player_u, image = image.load(assets_player_u) },
-	player_down = { id = assets_player_d, image = image.load(assets_player_d) },
+	player_neutral = { id = assets_player_n, image = image.resolve(assets_player_n) },
+	player_up = { id = assets_player_u, image = image.resolve(assets_player_u) },
+	player_down = { id = assets_player_d, image = image.resolve(assets_player_d) },
 	options = {
-		image.load(assets_option1),
-		image.load(assets_option2),
-		image.load(assets_option3),
-		image.load(assets_option4),
+		image.resolve(assets_option1),
+		image.resolve(assets_option2),
+		image.resolve(assets_option3),
+		image.resolve(assets_option4),
 	},
-	laser = image.load(assets_laser),
-	missile_falling = image.load(assets_missile1),
-	missile_flying = image.load(assets_missile2),
+	laser = image.resolve(assets_laser),
+	missile_falling = image.resolve(assets_missile1),
+	missile_flying = image.resolve(assets_missile2),
 }
 
 function player:emit_event(name, extra)

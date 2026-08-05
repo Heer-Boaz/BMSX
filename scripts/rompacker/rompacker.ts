@@ -13,17 +13,17 @@ import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
-import { buildGxVramLayoutModuleSource, buildRendererConfigModuleSource } from './gx_vram_layout';
+import { buildRendererConfigModuleSource, buildTextureBindingsModuleSource } from './gx_vram_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
-	GX_VRAM_LAYOUT_MODULE_PATH,
-	GX_VRAM_LAYOUT_SOURCE_PATH,
 	RENDERER_CONFIG_MODULE_PATH,
 	RENDERER_CONFIG_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+	TEXTURE_BINDINGS_MODULE_PATH,
+	TEXTURE_BINDINGS_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { resolveCartridgeHeaderWords } from '../../toolchain/ts/rompack/manifest';
 import { LuaError } from '../../toolchain/ts/lua/errors';
@@ -582,13 +582,13 @@ async function main() {
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			if (gx_vram_layout) {
-				const source = buildGxVramLayoutModuleSource(gx_vram_layout);
+				const source = buildTextureBindingsModuleSource(gx_vram_layout);
 				romAssets.push({
-					resid: GX_VRAM_LAYOUT_MODULE_PATH,
+					resid: TEXTURE_BINDINGS_MODULE_PATH,
 					type: 'lua',
 					buffer: Buffer.from(source),
-					compiled_buffer: compileLuaChunkBuffer(source, GX_VRAM_LAYOUT_MODULE_PATH),
-					source_path: GX_VRAM_LAYOUT_SOURCE_PATH,
+					compiled_buffer: compileLuaChunkBuffer(source, TEXTURE_BINDINGS_MODULE_PATH),
+					source_path: TEXTURE_BINDINGS_SOURCE_PATH,
 					update_timestamp: 0,
 				});
 				if (gx_vram_layout.framebuffers.length > 0) {

@@ -33,7 +33,7 @@ import {
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { buildRendererConfigModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
+import { buildRendererConfigModuleSource, buildTextureBindingsModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -55,6 +55,7 @@ import {
 	GX_SYSTEM_VRAM_Y,
 } from '../../scripts/rompacker/system_texture';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { TEXTURE_BINDINGS_MODULE_PATH } from '../../toolchain/ts/rompack/generated_modules';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
@@ -351,7 +352,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 		framebuffers: [],
 		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
-			main: { texture: { x: 0, y: 0, width: 256, height: 256 } },
+			main: { texture: { x: 64, y: 256, width: 256, height: 256 } },
 		},
 		groups: {
 			0: { mode: 'direct16', slots: ['main'], page_local: true },
@@ -445,13 +446,15 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 
 		const cartEntrySource = `module<entry>
 local texture<const> = require('cartlib/gx/texture')
+local image<const> = require('cartlib/gx/image')
 local imgdec<const> = require('cartlib/gx/imgdec')
-local first_texture<const> = texture.load('first')
-local second_texture<const> = texture.load('second')
-texture.upload(first_texture, 0x00200040, 0)
-return first_texture == second_texture and 1 or 0, imgdec.last_upload()
+local first_image<const> = image.resolve('first')
+local second_image<const> = image.resolve('second')
+texture.upload('first')
+return first_image.texture == second_image.texture and 1 or 0, imgdec.last_upload()
 `;
 		const cartModuleSources = [
+			[TEXTURE_BINDINGS_MODULE_PATH, buildTextureBindingsModuleSource(layout)],
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
@@ -476,6 +479,7 @@ end
 return imgdec
 `],
 			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
+			['cartlib/gx/image', readFileSync('cartlib/gx/image.lua', 'utf8')],
 		] as const;
 		const cartExecutableSources: RomAsset[] = [{
 			type: 'lua',
@@ -538,22 +542,22 @@ return imgdec
 		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
 
-			const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
-			const executionAddressSpace = new ExecutionAddressSpace(memory);
-			const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-			cpu.reset();
-			cpu.installBootPrimitives();
-			assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-			assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
-				1,
+		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
+		const executionAddressSpace = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
+		cpu.reset();
+		cpu.installBootPrimitives();
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
+			1,
 			CART_ROM_BASE + loadedTexture.start!,
 			(loadedTexture.end! - loadedTexture.start!) >> 2,
 			loadedTexture.texturemeta!.texture_word_count,
 			loadedTexture.texturemeta!.clut_word_count,
-			0x00200040,
+			0x01000040,
 			loadedTexture.texturemeta!.word_width | (loadedTexture.texturemeta!.height << 16),
-				0,
-			]);
+			0,
+		]);
 		} finally {
 			await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 		}

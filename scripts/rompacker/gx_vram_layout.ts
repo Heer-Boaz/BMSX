@@ -10,7 +10,7 @@ import {
 } from './system_texture';
 import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/spec/gx/gp0';
 import { packLowHigh16 } from '../../machine/ts/machine/common/word';
-import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
+import { GX_CART_TEXTURE_GROUP_ID_LIMIT, textureGroupResourceName } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';
 
@@ -185,30 +185,47 @@ export function validateGxVramLayout(layout: GxVramLayout): void {
 	}
 }
 
-export function buildGxVramLayoutModuleSource(layout: GxVramLayout): string {
-	const declarations: string[] = [];
-	const exports: string[] = [];
-	const reservedEntries = Object.entries(layout.reserved).sort(([left], [right]) => left.localeCompare(right));
-	for (let index = 0; index < reservedEntries.length; index += 1) {
-		const [name, rect] = reservedEntries[index];
-		declarations.push(`local ${name}<const> = ${packLowHigh16(rect.x, rect.y)}`);
-		exports.push(name);
-	}
-	const slotEntries = Object.entries(layout.slots).sort(([left], [right]) => left.localeCompare(right));
-	for (let index = 0; index < slotEntries.length; index += 1) {
-		const [name, slot] = slotEntries[index];
-		const texture = slot.texture;
-		declarations.push(`local ${name}_texture<const> = ${packLowHigh16(texture.x, texture.y)}`);
-		exports.push(`${name}_texture`);
-		if (slot.clut) {
-			declarations.push(`local ${name}_clut<const> = ${packLowHigh16(slot.clut.x, slot.clut.y)}`);
-			exports.push(`${name}_clut`);
+export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
+	const pools = new Map<string, { name: string; words: number[] }>();
+	const bindings: Array<{ textureId: string; poolName: string }> = [];
+	const groupEntries = Object.entries(layout.groups).sort(([left], [right]) => Number(left) - Number(right));
+	for (let groupIndex = 0; groupIndex < groupEntries.length; groupIndex += 1) {
+		const [groupId, group] = groupEntries[groupIndex];
+		const poolKey = JSON.stringify(group.slots);
+		let pool = pools.get(poolKey);
+		if (!pool) {
+			const words: number[] = [];
+			for (let slotIndex = 0; slotIndex < group.slots.length; slotIndex += 1) {
+				const slot = layout.slots[group.slots[slotIndex]];
+				words.push(
+					packLowHigh16(slot.texture.x, slot.texture.y),
+					slot.clut ? packLowHigh16(slot.clut.x, slot.clut.y) : 0,
+				);
+			}
+			pool = {
+				name: `placement_words_${pools.size + 1}`,
+				words,
+			};
+			pools.set(poolKey, pool);
 		}
+		bindings.push({
+			textureId: textureGroupResourceName(Number(groupId)),
+			poolName: pool.name,
+		});
 	}
-	const lines = ['module<const>', '', ...declarations];
-	lines.push('', 'return {');
-	for (let index = 0; index < exports.length; index += 1) {
-		lines.push(`\t${exports[index]} = ${exports[index]},`);
+
+	const lines: string[] = [];
+	for (const pool of pools.values()) {
+		lines.push(`local ${pool.name}<const> = {`);
+		for (let wordIndex = 0; wordIndex < pool.words.length; wordIndex += 2) {
+			lines.push(`\t${pool.words[wordIndex]}, ${pool.words[wordIndex + 1]},`);
+		}
+		lines.push('}', '');
+	}
+	lines.push('return {');
+	for (let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex += 1) {
+		const binding = bindings[bindingIndex];
+		lines.push(`\t${binding.textureId} = ${binding.poolName},`);
 	}
 	lines.push('}', '');
 	return lines.join('\n');

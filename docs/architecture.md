@@ -2666,22 +2666,22 @@ directly or through DMA. Draw targets and clear packets take their raw origin
 and size words explicitly. Display queries decode the live PCRTC words rather
 than returning a Lua-side copy.
 
-`cartlib/ecs/systems/render` is the ECS render system. It retains
-the GP0 word buffer and translates the active world's visual components into one
-command list when the cart invokes `world:render()`. The ROM producer emits the
-framebuffer origin, dimensions and buffer count as raw constants in
-`bmsx/gx_vram_layout`; the system consumes those constants once when the ECS
-graph is composed. A one-page layout selects the single-buffer implementation
-and a two-page layout selects the double-buffer implementation. The frame hot
-path has no framebuffer-mode branch, display-size query or per-frame allocation.
+`cartlib/render/renderer` owns presentation. It retains the GP0 word buffer and
+the ordered projection of the active world's visual components, and translates
+that projection into one command list when the cart invokes `renderer:draw()`.
+The ROM producer emits only the configured display page, draw page and page
+size in `bmsx/renderer_config`. The renderer consumes those words once at
+module initialization and selects its one-page or two-page draw method there.
+The frame hot path has no framebuffer-mode branch, display-size query,
+allocation or sort unless the world's visual revision changed.
 
-The presentation system owns its draw page, display page, GPU target and page
-rotation. Double-buffered submission uses the ordered GPU fence before staging
-the next display origin; single-buffered submission does not pay that fence.
-Neither implementation waits for VBlank. `cartlib/gx/vblank` owns only the
-retained edge sequence and wait operation, while each cart keeps its one- or
-two-edge pacing visible in the entry loop. Custom visuals receive only the
-command list's primitive operations, not framebuffer storage or lifecycle.
+The renderer owns its draw page, display page, GPU target and page rotation.
+Two-page submission uses the ordered GPU fence before staging the next display
+origin; one-page submission does not pay that fence. The renderer does not wait
+for VBlank. `cartlib/gx/vblank` owns only the retained edge sequence and wait
+operation, while each cart keeps its one- or two-edge pacing visible in the
+entry loop. Custom visuals receive only the command list's primitive
+operations, not framebuffer storage or lifecycle.
 
 The world render path submits painter-ordered 2D work through one retained
 visual-component list per world space. Sprite, surface, tile, text and custom
@@ -2787,7 +2787,7 @@ system interrupt pending latch as two distinct hardware words.
 `cartlib/gx/command_list.submit_fenced` uses that ordered GP0 IRQ packet as a
 completion fence. It appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the physical
 `IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). The
-double-buffered visual-render system invokes that fence before programming
+two-page renderer invokes that fence before programming
 GP1(05h), rotates its retained page words, and leaves the publication edge to
 the cart's following explicit `vblank.wait()`. The former front page is not
 drawn again until that wait has completed. Missing the current beam edge can
@@ -2989,14 +2989,18 @@ packing-group directive: its numeric value is not serialized into the image ABI
 and is not visible to BIOS, cartlib, GPU or DMA.
 
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
-working sets in `gx_vram_layout`. The producer validates the complete layout
-and emits `bmsx/gx_vram_layout`, whose reserved-region words keep their manifest
-names and whose texture-slot destination words use explicit `_texture` and
-`_clut` suffixes. The cart decides when a compressed texture payload is
-transferred and which region it replaces. `cartlib/gx/texture` resolves the
-backing texture resource for an image id and programs IMGDEC with those raw
-destination words; DMA moves the compressed ROM words and IMGDEC emits the GP0
-transfer packets. A cart may still
+working sets in `gx_vram_layout`. The producer validates the complete layout.
+It emits framebuffer words only to `bmsx/renderer_config` and emits shared
+texture-placement pools only to the internal `bmsx/texture_bindings` consumer.
+Neither generated module exposes manifest slot names to cart code. An ordinary
+cart chooses when a compressed texture payload is transferred by passing its
+semantic image id to `gx_texture.upload(imgid)`; the texture owner resolves the
+shared texture resource, advances its producer-defined placement pool,
+publishes the new raw binding immediately and programs IMGDEC. It does not wait
+for DMA or IMGDEC completion, so commands may deliberately sample old, partial
+or uninitialized VRAM through that new binding. DMA moves the compressed ROM
+words and IMGDEC emits the GP0 transfer packets. A low-level cart may instead
+call `upload_raw` with explicit destination and CLUT words, and may still
 DMA a deliberately uncompressed native GP0 stream as the direct bypass.
 Ordinary sprite/tile images stay within one hardware texture page; the
 rectangle primitive therefore emits exactly one native packet. Explicit large

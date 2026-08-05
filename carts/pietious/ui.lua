@@ -11,12 +11,12 @@ require('constants')
 local ui<const> = {}
 ui.__index = ui
 local sources<const> = {
-	header = image.load('game_header'),
-	health_stripe = image.load('energybar_stripe_blue'),
-	weapon_stripe = image.load('energybar_stripe_red'),
+	header = image.resolve('game_header'),
+	health_stripe = image.resolve('energybar_stripe_blue'),
+	weapon_stripe = image.resolve('energybar_stripe_red'),
 	secondary_weapon = {
-		pepernoot = image.load('pepernoot_16'),
-		spyglass = image.load('spyglass'),
+		pepernoot = image.resolve('pepernoot_16'),
+		spyglass = image.resolve('spyglass'),
 	},
 }
 

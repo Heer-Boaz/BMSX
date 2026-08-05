@@ -1,19 +1,33 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local romdir<const> = require('cartlib/romdir')
+local texture_bindings<const> = require('bmsx/texture_bindings')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
+local binding_pool_by_words<const> = {}
 
-function gx_texture.resolve(image)
-	local texture_id<const> = image.imgmeta.gx_texture_resid
+local resolve_binding_pool<const> = function(placement_words)
+	local pool<const> = binding_pool_by_words[placement_words]
+	if pool then
+		return pool
+	end
+	local created<const> = {
+		placement_words = placement_words,
+		next_index = 1,
+	}
+	binding_pool_by_words[placement_words] = created
+	return created
+end
+
+function gx_texture.resolve(texture_id)
 	local texture<const> = texture_by_id[texture_id]
 	if texture then
 		return texture
 	end
 	local resource<const> = romdir.texture(texture_id)
 	local meta<const> = resource.texturemeta
-	local loaded<const> = {
+	local resolved<const> = {
 		source_addr = resource.addr,
 		stream_word_count = resource.len >> 2,
 		texture_word_count = meta.texture_word_count,
@@ -25,20 +39,19 @@ function gx_texture.resolve(image)
 		y = 0,
 		clut_x = 0,
 		clut_y = 0,
+		binding_pool = resolve_binding_pool(texture_bindings[texture_id]),
 	}
-	texture_by_id[texture_id] = loaded
-	return loaded
+	texture_by_id[texture_id] = resolved
+	return resolved
 end
 
-function gx_texture.load(image_id)
-	return gx_texture.resolve(romdir.image(image_id))
+local resolve_image_texture<const> = function(imgid)
+	return gx_texture.resolve(romdir.image(imgid).imgmeta.gx_texture_resid)
 end
 
-function gx_texture.upload(texture, destination, clut_destination)
-	local x<const> = destination & 0x0000ffff
-	local y<const> = destination >> 16
-	texture.x = x
-	texture.y = y
+local upload_texture<const> = function(texture, destination, clut_destination)
+	texture.x = destination & 0x0000ffff
+	texture.y = destination >> 16
 	local clut = 0
 	if texture.mode == gp0.texture_mode_palette4 then
 		texture.clut_x = clut_destination & 0x0000ffff
@@ -53,6 +66,20 @@ function gx_texture.upload(texture, destination, clut_destination)
 		destination,
 		texture.word_width | (texture.height << 16),
 		clut)
+end
+
+function gx_texture.upload(imgid)
+	local texture<const> = resolve_image_texture(imgid)
+	local pool<const> = texture.binding_pool
+	local placement_words<const> = pool.placement_words
+	local placement_index<const> = pool.next_index
+	local next_index<const> = placement_index + 2
+	pool.next_index = next_index > #placement_words and 1 or next_index
+	upload_texture(texture, placement_words[placement_index], placement_words[placement_index + 1])
+end
+
+function gx_texture.upload_raw(imgid, destination, clut_destination)
+	upload_texture(resolve_image_texture(imgid), destination, clut_destination)
 end
 
 return gx_texture

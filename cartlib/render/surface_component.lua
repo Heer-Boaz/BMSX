@@ -17,7 +17,7 @@ end
 function surfacecomponent:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self.image = image.load(imgid)
+		self.image = image.resolve(imgid)
 	else
 		self.image = nil
 	end

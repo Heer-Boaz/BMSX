@@ -93,11 +93,11 @@ local tile_source_by_key<const> = {
 	snowtree21 = assets_snowtree21,
 }
 for key, id in pairs(tile_source_by_key) do
-	tile_source_by_key[key] = image.load(id)
+	tile_source_by_key[key] = image.resolve(id)
 end
 local star_sources<const> = {
-	yellow = image.load(assets_star_yellow),
-	blue = image.load(assets_star_blue),
+	yellow = image.resolve(assets_star_yellow),
+	blue = image.resolve(assets_star_blue),
 }
 
 local new_rows<const> = function(width, height, default_value)

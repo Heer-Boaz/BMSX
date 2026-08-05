@@ -874,9 +874,9 @@ function room_object:ctor()
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = image.load(water_surface_frame_imgids[i])
+		self.water_surface_sources[i] = image.resolve(water_surface_frame_imgids[i])
 	end
-	self.water_body_source = image.load('water_body_msx')
+	self.water_body_source = image.resolve('water_body_msx')
 	self.room_tile_layer = tilelayercomponent.new({
 		id_local = 'room',
 		sources = self.room_tile_sources,
@@ -957,7 +957,7 @@ function room_object:rebuild_room_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = image.load(tile_id)
+			room_tile_sources[tile_index] = image.resolve(tile_id)
 			::continue::
 		end
 	end

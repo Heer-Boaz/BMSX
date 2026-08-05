@@ -10,7 +10,7 @@ local fixed_direct16_texture<const> = {
 	y = 0,
 }
 
-function image.load(id)
+function image.resolve(id)
 	local cached<const> = image_by_id[id]
 	if cached then
 		return cached
@@ -25,7 +25,7 @@ function image.load(id)
 		u = meta.gx_source_x
 		v = meta.gx_source_y
 	else
-		texture = gx_texture.resolve(resource)
+		texture = gx_texture.resolve(meta.gx_texture_resid)
 		u = meta.texture_u
 		v = meta.texture_v
 	end
@@ -45,6 +45,21 @@ function image.load(id)
 	end
 	image_by_id[id] = rect
 	return rect
+end
+
+function image.draw_source_rect(draw, source, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
+	local texture<const> = source.texture
+	local rectangle_flip_mode<const> = flip_flags << 12
+	if texture.mode == gp0.texture_mode_palette4 then
+		draw:palette4_rect(
+			texture.x, texture.clut_x, texture.clut_y,
+			source.u + source_x, texture.y + source.v + source_y,
+			x, y, width, height, color, rectangle_flip_mode, blend_mode)
+		return
+	end
+	draw:direct16_rect(
+		texture.x + source.u + source_x, texture.y + source.v + source_y,
+		x, y, width, height, color, rectangle_flip_mode, blend_mode)
 end
 
 function image.draw(draw, source, x, y, color, flip_flags, blend_mode)
@@ -137,6 +152,63 @@ function image.draw_affine(
 		origin_x + axis_xx, origin_y + axis_xy,
 		origin_x + axis_yx, origin_y + axis_yy,
 		origin_x + axis_xx + axis_yx, origin_y + axis_xy + axis_yy,
+		color,
+		blend_mode)
+end
+
+function image.draw_quad(
+	draw,
+	source,
+	source_x0, source_y0,
+	source_x1, source_y1,
+	source_x2, source_y2,
+	source_x3, source_y3,
+	x0, y0,
+	x1, y1,
+	x2, y2,
+	x3, y3,
+	color,
+	blend_mode)
+	local texture<const> = source.texture
+	local source_x = source.u
+	if texture.mode ~= gp0.texture_mode_palette4 then
+		source_x = texture.x + source_x
+	end
+	local source_y<const> = texture.y + source.v
+	local u0<const> = source_x + source_x0
+	local v0<const> = source_y + source_y0
+	local u1<const> = source_x + source_x1
+	local v1<const> = source_y + source_y1
+	local u2<const> = source_x + source_x2
+	local v2<const> = source_y + source_y2
+	local u3<const> = source_x + source_x3
+	local v3<const> = source_y + source_y3
+	if texture.mode == gp0.texture_mode_palette4 then
+		draw:palette4_quad(
+			texture.x, texture.clut_x, texture.clut_y,
+			source_x, source_y,
+			u0, v0,
+			u1, v1,
+			u2, v2,
+			u3, v3,
+			x0, y0,
+			x1, y1,
+			x2, y2,
+			x3, y3,
+			color,
+			blend_mode)
+		return
+	end
+	draw:direct16_quad(
+		source_x, source_y,
+		u0, v0,
+		u1, v1,
+		u2, v2,
+		u3, v3,
+		x0, y0,
+		x1, y1,
+		x2, y2,
+		x3, y3,
 		color,
 		blend_mode)
 end
