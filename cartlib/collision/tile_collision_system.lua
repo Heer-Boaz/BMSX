@@ -24,12 +24,12 @@ end
 
 function tile_collision_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 45), tile_collision_system)
-	self.components = world:_active_component_view(tile_collision_component_type)
+	self._component_view = world:_active_component_view(tile_collision_component_type)
 	return self
 end
 
 function tile_collision_system:update()
-	local components<const> = self.components.items
+	local components<const> = self._component_view.items
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		local obj<const> = component.parent

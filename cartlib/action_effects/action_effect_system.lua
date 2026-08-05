@@ -14,12 +14,12 @@ setmetatable(action_effect_system, { __index = system })
 
 function action_effect_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.action_effects, 0), action_effect_system)
-	self.components = world:_active_component_view(action_effect_runtime_component_type)
+	self._component_view = world:_active_component_view(action_effect_runtime_component_type)
 	return self
 end
 
 function action_effect_system:update(dt_ms)
-	local components<const> = self.components.items
+	local components<const> = self._component_view.items
 	for i = 1, #components do
 		local component<const> = components[i]
 		component.time_ms = component.time_ms + dt_ms

@@ -135,7 +135,7 @@ setmetatable(input_action_effect_system, { __index = system })
 
 function input_action_effect_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.input, 10), input_action_effect_system)
-	self.components = world:_active_component_view(input_component_type)
+	self._component_view = world:_active_component_view(input_component_type)
 	self.frame = 0
 	return self
 end
@@ -143,7 +143,7 @@ end
 function input_action_effect_system:update()
 	local frame<const> = self.frame + 1
 	self.frame = frame
-	local components<const> = self.components.items
+	local components<const> = self._component_view.items
 	for i = 1, #components do
 		evaluate_component(components[i], frame)
 	end

@@ -131,7 +131,7 @@ end
 
 function overlap_2d_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap_2d_system)
-	self.components = world:_active_component_view(collider_2d_component_type)
+	self._component_view = world:_active_component_view(collider_2d_component_type)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}
@@ -163,7 +163,7 @@ function overlap_2d_system:update()
 	release_pair_rows(self, new_pairs)
 
 	local event_colliders<const> = self.event_colliders
-	local colliders<const> = self.components.items
+	local colliders<const> = self._component_view.items
 	local event_collider_count = 0
 	local previous_event_collider_count<const> = self.event_collider_count
 	for i = 1, #colliders do

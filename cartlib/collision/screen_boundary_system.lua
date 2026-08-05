@@ -16,8 +16,8 @@ setmetatable(screen_boundary_system, { __index = system })
 
 function screen_boundary_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 30), screen_boundary_system)
-	self.boundary_components = world:_active_component_view(boundary_component_type)
-	self.prohibit_components = world:_active_component_view(prohibit_leaving_component_type)
+	self._boundary_component_view = world:_active_component_view(boundary_component_type)
+	self._prohibit_leaving_component_view = world:_active_component_view(prohibit_leaving_component_type)
 	return self
 end
 
@@ -73,13 +73,13 @@ local emit_boundary_events<const> = function(obj, component, prohibit_leaving)
 end
 
 function screen_boundary_system:update()
-	local screen_boundary_components<const> = self.boundary_components.items
+	local screen_boundary_components<const> = self._boundary_component_view.items
 	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent
 		emit_boundary_events(obj, component, false)
 	end
-	local prohibit_leave_components<const> = self.prohibit_components.items
+	local prohibit_leave_components<const> = self._prohibit_leaving_component_view.items
 	for i = #prohibit_leave_components, 1, -1 do
 		local component<const> = prohibit_leave_components[i]
 		local obj<const> = component.parent
