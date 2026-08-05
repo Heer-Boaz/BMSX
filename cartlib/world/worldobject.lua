@@ -9,10 +9,10 @@
 --    onspawn()    — called by world:spawn() after position is set from pos.
 --                   Override for spawn-time setup.  No super call needed.
 --    activate()   — called by world:spawn() after onspawn().  Sets
---                   active = true, calls bind(), then activates the attached
---                   components.
+--                   active = true, binds a new object once, then activates
+--                   the attached components.
 --    bind()       — override this in subclasses to subscribe to events.
---                   Called exactly once per activation.
+--                   Called exactly once during the object's lifetime.
 --    ondespawn()  — called when removed from the world; deactivates the object.
 --    dispose()    — final teardown; calls unbind() which removes all event
 --                   subscriptions whose `subscriber` field is this object.
@@ -75,6 +75,7 @@ function worldobject.new(opts)
 	self._components = {}
 	self._components_by_class = {}
 	self._component_sequence = 0
+	self._bound = false
 	self.space_id = opts.space_id
 	self.events = eventemitter.events_of(self)
 	return self
@@ -239,7 +240,7 @@ function worldobject:toggle_tag(tag)
 end
 
 -- activate(): called by world:spawn() after onspawn(). Sets active = true,
--- calls bind(), then activates the components that were already attached.
+-- binds a new object once, then activates the components that were already attached.
 -- Components added during bind activate through add_component() exactly once.
 -- Do not call directly; spawn the object through the world instead.
 function worldobject:activate()
@@ -249,14 +250,17 @@ function worldobject:activate()
 	if self._published then
 		self.world:reconcile_object(self)
 	end
-	self:bind()
+	if not self._bound then
+		self._bound = true
+		self:bind()
+	end
 	for i = 1, component_count do
 		components[i]:on_activate()
 	end
 end
 
 -- bind(): override in subclasses to register event subscriptions.
--- Called once by activate() before attached components activate. Always set
+-- Called once by the first activate() before attached components activate. Always set
 -- `subscriber = self` on every subscription so unbind() cleans them up.
 function worldobject:bind()
 end
