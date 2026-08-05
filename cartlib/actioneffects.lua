@@ -77,15 +77,24 @@ end
 function actioneffect_component.factory(effect_ids)
 	return function(opts)
 		local self<const> = actioneffect_component.new(opts)
-		for i = 1, #effect_ids do
-			self:grant_effect(effect_ids[i])
-		end
+		self._initial_effect_ids = effect_ids
 		return self
 	end
 end
 
 function actioneffect_component:on_attach()
 	self.parent.actioneffects = self
+	local initial_effect_ids<const> = self._initial_effect_ids
+	if initial_effect_ids ~= nil then
+		self._initial_effect_ids = nil
+		for i = 1, #initial_effect_ids do
+			self:grant_effect(initial_effect_ids[i])
+		end
+		return
+	end
+	for id in pairs(self.effects) do
+		self:rebind_effect(id, definitions[id])
+	end
 end
 
 function actioneffect_component:on_detach()
