@@ -1,5 +1,6 @@
 local component<const> = require('cartlib/component/basecomponent')
 local definitions_by_id<const> = require('cartlib/fsm/definitions')
+local eventemitter<const> = require('cartlib/eventemitter')
 local fsm<const> = require('cartlib/fsm/fsm')
 local state<const> = fsm.state
 local bind_machine_state_path<const> = fsm.bind_state_path
@@ -102,9 +103,8 @@ local bind_machines<const> = function(self)
 	end
 	for event_name, filters in pairs(filters_by_event) do
 		if filters == unfiltered_emitter then
-			self.parent.events:on({
+			eventemitter:on({
 				event = event_name,
-				emitter = false,
 				handler = function(dispatched_type, emitter, payload, emitter_id)
 					self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
 				end,
@@ -112,13 +112,13 @@ local bind_machines<const> = function(self)
 			})
 		else
 			for _, emitter in pairs(filters) do
-				local eventemitter = emitter
-				if eventemitter == default_emitter then
-					eventemitter = nil
+				local emitter_filter = emitter
+				if emitter_filter == default_emitter then
+					emitter_filter = nil
 				end
 				self.parent.events:on({
 					event = event_name,
-					emitter = eventemitter,
+					emitter = emitter_filter,
 					handler = function(dispatched_type, emitter, payload, emitter_id)
 						self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
 					end,

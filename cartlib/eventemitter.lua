@@ -193,8 +193,6 @@ function event_port:on(spec)
 	end
 	if spec.emitter == nil then
 		spec.emitter = self.emitter_id
-	elseif not spec.emitter then
-		spec.emitter = nil
 	end
 	eventemitter:on(spec)
 end
