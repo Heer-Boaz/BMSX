@@ -33,7 +33,7 @@ import {
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { buildRendererConfigModuleSource, buildTextureBindingsModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
+import { buildPresentationConfigModuleSource, buildTextureBindingsModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -176,7 +176,7 @@ test('GX layout validation rejects overlapping slots in one cart-authored workin
 	);
 });
 
-test('renderer config emits one physical page as both display and draw page', () => {
+test('presentation config emits one physical page as both display and draw page', () => {
 	const layout: GxVramLayout = {
 		framebuffers: [
 			{ x: 32, y: 16, width: 320, height: 240 },
@@ -187,14 +187,14 @@ test('renderer config emits one physical page as both display and draw page', ()
 		working_sets: {},
 	};
 	validateGxVramLayout(layout);
-	const source = buildRendererConfigModuleSource(layout);
+	const source = buildPresentationConfigModuleSource(layout);
 	assert.match(source, /display_page = 1048608/);
 	assert.match(source, /draw_page = 1048608/);
 	assert.match(source, /page_size = 15728960/);
 	assert.doesNotMatch(source, /framebuffer|page_count/);
 });
 
-test('renderer config emits distinct physical display and draw pages', () => {
+test('presentation config emits distinct physical display and draw pages', () => {
 	const layout: GxVramLayout = {
 		framebuffers: [
 			{ x: 0, y: 0, width: 256, height: 192 },
@@ -206,7 +206,7 @@ test('renderer config emits distinct physical display and draw pages', () => {
 		working_sets: {},
 	};
 	validateGxVramLayout(layout);
-	const source = buildRendererConfigModuleSource(layout);
+	const source = buildPresentationConfigModuleSource(layout);
 	assert.match(source, /display_page = 0/);
 	assert.match(source, /draw_page = 256/);
 	assert.match(source, /page_size = 12583168/);

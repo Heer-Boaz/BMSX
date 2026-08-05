@@ -1,9 +1,9 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local world<const> = require('cartlib/world/world')
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
@@ -39,7 +39,7 @@ function ui:set_weapon_target(value)
 end
 
 function ui:ctor()
-	self:get_component(custom_visual_component.type_name).producer = ui.draw_ui
+	self:get_component(custom_visual_component).producer = ui.draw_ui
 	local player<const> = world:get('pietolon')
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
@@ -145,7 +145,7 @@ local register_ui_definition<const> = function()
 	prefab.define({
 		def_id = 'ui',
 		class = ui,
-		components = { custom_visual_component.new, state_machine_component.factory({ 'ui' }) },
+		components = { custom_visual_component.new, fsm_component.factory({ 'ui' }) },
 		defaults = {
 			hud_health_level = hud_health_level,
 			hud_health_target = hud_health_level,

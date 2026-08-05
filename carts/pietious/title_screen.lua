@@ -1,17 +1,17 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
-local sprite_component<const> = require('cartlib/render/sprite_component')
+local sprite_component<const> = require('cartlib/component/spritecomponent')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
 
-local sparkle_timeline_id<const> = 'title_screen.sparkle'
-local start_timeline_id<const> = 'title_screen.start'
+local sparkle_timelineid<const> = 'title_screen.sparkle'
+local start_timelineid<const> = 'title_screen.start'
 
 local title_exit_events<const> = {
 	'title_wait',
@@ -166,7 +166,7 @@ local define_title_screen_fsm<const> = function()
 					self:gfx('title_screen')
 				end,
 				timelines = {
-					[sparkle_timeline_id] = {
+					[sparkle_timelineid] = {
 						def = {
 							frames = build_title_sparkle_frames(),
 							playback_mode = 'once',
@@ -193,7 +193,7 @@ local define_title_screen_fsm<const> = function()
 			},
 			starting = {
 				timelines = {
-					[start_timeline_id] = {
+					[start_timelineid] = {
 						def = {
 							frames = build_title_start_frames(),
 							playback_mode = 'once',
@@ -205,7 +205,7 @@ local define_title_screen_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_frame = function(self)
-							self:gfx(self.timelines:get(start_timeline_id):value().sprite_id)
+							self:gfx(self.timelines:get(start_timelineid):value().sprite_id)
 						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')
@@ -223,7 +223,7 @@ local register_title_screen_definition<const> = function()
 		def_id = 'title_screen',
 		class = title_screen,
 		base = sprite_object,
-		components = { timeline_component.new, state_machine_component.factory({ 'title_screen' }) },
+		components = { timelinecomponent.new, fsm_component.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})
 end

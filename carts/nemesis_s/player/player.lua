@@ -1,13 +1,13 @@
-local action_effects<const> = require('cartlib/action_effects')
+local actioneffects<const> = require('cartlib/actioneffects')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local timeline_component<const> = require('cartlib/timeline/component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -16,7 +16,7 @@ local player_abilities<const> = require('player/abilities')
 local player<const> = {}
 player.__index = player
 
-local option_animation_timeline_id<const> = 'player_option_animation'
+local option_animation_timelineid<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
 local sources<const> = {
@@ -680,7 +680,7 @@ function player:update_runtime()
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
-		self.action_effects:trigger(player_abilities.effect_ids.fire_salvo)
+		self.actioneffects:trigger(player_abilities.effect_ids.fire_salvo)
 	end
 	self:update_weapons()
 	self:emit_metric()
@@ -689,7 +689,7 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc<const> = self:get_component(custom_visual_component.type_name)
+	local rc<const> = self:get_component(custom_visual_component)
 	rc.producer = player.draw_visual
 end
 
@@ -794,7 +794,7 @@ local define_player_fsm<const> = function()
 					},
 					},
 				timelines = {
-					[option_animation_timeline_id] = {
+					[option_animation_timelineid] = {
 						def = {
 							frames = {
 								{ option_anim_index = 1 },
@@ -824,9 +824,9 @@ local register_player_definition<const> = function()
 		class = player,
 		components = {
 			custom_visual_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ ids_player_fsm }),
-			action_effects.action_effect_component.factory({ player_abilities.effect_ids.fire_salvo }),
+			timelinecomponent.new,
+			fsm_component.factory({ ids_player_fsm }),
+			actioneffects.actioneffect_component.factory({ player_abilities.effect_ids.fire_salvo }),
 		},
 		defaults = {
 			player_index = 1,

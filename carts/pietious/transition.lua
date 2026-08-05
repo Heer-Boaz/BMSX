@@ -16,12 +16,12 @@
 -- transition mode, so presentation performs no director-state polling.
 
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local text_component<const> = require('cartlib/text/component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local text_component<const> = require('cartlib/text/textcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -42,7 +42,7 @@ local transition_mode_events<const> = {
 }
 
 function transition:ctor()
-	local text<const> = self:get_component(text_component.type_name)
+	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(custom_visual_component.type_name).producer = draw_transition_visual
+	self:get_component(custom_visual_component).producer = draw_transition_visual
 	self.timelines:define(timeline.new({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
@@ -103,8 +103,8 @@ local register_transition_definition<const> = function()
 		components = {
 			custom_visual_component.new,
 			text_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ 'transition' }),
+			timelinecomponent.new,
+			fsm_component.factory({ 'transition' }),
 		},
 		defaults = {
 			id = 'transition',

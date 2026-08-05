@@ -93,7 +93,7 @@ target-specific host facilities are not a file-for-file parity surface; the
 shared machine contract starts at the raw ICU snapshot and supervisor request
 line.
 
-Gameplay carts use `cartlib/input/player_input.lua` and
+Gameplay carts use `cartlib/input/input.lua` and
 `cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and
 owns explicitly configured players, mapping contexts, retained action/button
 state and MMIO sampling plans, consume state, guarded/repeat state, cached parser

@@ -3,7 +3,7 @@
 --
 local clamp<const> = require('cartlib/util/clamp')
 local clock<const> = require('cartlib/clock')
-local timeline_apply<const> = require('cartlib/timeline/apply')
+local timelineapply<const> = require('cartlib/timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring
 --
@@ -36,13 +36,13 @@ local timeline_apply<const> = require('cartlib/timeline/apply')
 --    also add/remove tags for their duration; declare them in `windows` to
 --    avoid writing the start/end markers manually.
 
-local timeline_start_index<const> = -1
+local timelinestart_index<const> = -1
 
 local timeline<const> = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
-local ensure_timeline_has_frames<const> = function(id, length)
+local ensure_timelinehas_frames<const> = function(id, length)
 	if length <= 0 then
 		error('timeline "' .. tostring(id) .. '" requires at least one frame.')
 	end
@@ -83,7 +83,7 @@ local write_end_event<const> = function(self, frame, mode, wrapped, time_ms)
 	event.time_ms = time_ms or self.time_ms
 end
 
-local expand_timeline_windows<const> = function(markers, windows)
+local expand_timelinewindows<const> = function(markers, windows)
 	if not windows or #windows == 0 then
 		return markers or {}
 	end
@@ -127,9 +127,9 @@ local clamp_marker_frame<const> = function(at, length)
 	return clamp((normalized * (length - 1)) // 1, 0, length - 1)
 end
 
-local compile_timeline_markers<const> = function(def, length)
+local compile_timelinemarkers<const> = function(def, length)
 	local cache<const> = { by_frame = {}, controlled_tags = {} }
-	local markers<const> = expand_timeline_windows(def.markers or {}, def.windows or {})
+	local markers<const> = expand_timelinewindows(def.markers or {}, def.windows or {})
 	local controlled<const> = {}
 	for i = 1, #markers do
 		local marker<const> = markers[i]
@@ -168,12 +168,12 @@ local compile_timeline_markers<const> = function(def, length)
 end
 
 local expand_frames<const> = function(frames, repetitions)
-	if frames.__timeline_range then
+	if frames.__timelinerange then
 		if repetitions <= 1 then
 			return frames
 		end
 		return {
-			__timeline_range = true,
+			__timelinerange = true,
 			length = frames.length * repetitions,
 			source_length = frames.source_length,
 		}
@@ -230,7 +230,7 @@ end
 -- out the list manually.  Example: timeline.range(30) = 30-frame once timer.
 local range<const> = function(frame_count)
 	return {
-		__timeline_range = true,
+		__timelinerange = true,
 		length = frame_count,
 		source_length = frame_count,
 	}
@@ -246,10 +246,10 @@ local frame_value_at<const> = function(self, index)
 	return self.frames[index + 1]
 end
 
-local compile_timeline_runtime<const> = function(self)
+local compile_timelineruntime<const> = function(self)
 	local apply<const> = self.def.apply
 	if apply ~= nil and type(apply) ~= 'function' then
-		self.compiled_apply_frames = timeline_apply.compile_frames(self.frames)
+		self.compiled_apply_frames = timelineapply.compile_frames(self.frames)
 	else
 		self.compiled_apply_frames = nil
 	end
@@ -281,13 +281,13 @@ function timeline.new(def)
 		self.built = false
 	elseif source_type == 'table' then
 		self.frames = expand_frames(frame_source, self.repetitions)
-		if self.frames.__timeline_range then
+		if self.frames.__timelinerange then
 			self.range_source_length = self.frames.source_length
 			self.length = self.frames.length
 		else
 			self.length = #self.frames
 		end
-		ensure_timeline_has_frames(self.id, self.length)
+		ensure_timelinehas_frames(self.id, self.length)
 		self.built = true
 	elseif frame_source ~= nil then
 		error('timeline "' .. tostring(def.id) .. '" requires a frames table or builder function.')
@@ -307,7 +307,7 @@ function timeline.new(def)
 		autotick = self.continuous or self.ticks_per_frame ~= 0
 	end
 	self.auto_tick = autotick
-	self.head = timeline_start_index
+	self.head = timelinestart_index
 	self.ticks = 0
 	self.time_ms = 0
 	self.duration_ms = def.duration_ms or (def.duration_seconds and (def.duration_seconds * 1000))
@@ -316,12 +316,12 @@ function timeline.new(def)
 	self.step_events = {}
 	self.step_event_count = 0
 	if self.tracks ~= nil then
-		self.compiled_track_runner = timeline_apply.compile_tracks(self.tracks)
+		self.compiled_track_runner = timelineapply.compile_tracks(self.tracks)
 	else
 		self.compiled_track_runner = nil
 	end
 	if self.built then
-		compile_timeline_runtime(self)
+		compile_timelineruntime(self)
 	else
 		self.compiled_apply_frames = nil
 	end
@@ -358,16 +358,16 @@ function timeline:build(params)
 		error('timeline "' .. tostring(self.id) .. '" frame builder must return a table.')
 	end
 	self.frames = expand_frames(frames, self.repetitions)
-	if self.frames.__timeline_range then
+	if self.frames.__timelinerange then
 		self.range_source_length = self.frames.source_length
 		self.length = self.frames.length
 	else
 		self.range_source_length = nil
 		self.length = #self.frames
 	end
-	ensure_timeline_has_frames(self.id, self.length)
+	ensure_timelinehas_frames(self.id, self.length)
 	self.built = true
-	compile_timeline_runtime(self)
+	compile_timelineruntime(self)
 	self:rewind()
 end
 
@@ -376,7 +376,7 @@ function timeline:value()
 end
 
 function timeline:rewind()
-	self.head = timeline_start_index
+	self.head = timelinestart_index
 	self.ticks = 0
 	self.time_ms = 0
 	self.ended = false
@@ -443,7 +443,7 @@ end
 
 function timeline:force_seek(frame)
 	clear_step_events(self)
-	local clamped<const> = clamp(frame, timeline_start_index, self.length - 1)
+	local clamped<const> = clamp(frame, timelinestart_index, self.length - 1)
 	self.head = clamped
 	self.ticks = 0
 	if self.playback_mode ~= 'pingpong' then
@@ -455,7 +455,7 @@ end
 
 function timeline:advance_internal(reason, event_time_ms, preserve_ticks)
 	local delta<const> = self.playback_mode == 'pingpong' and self.direction or 1
-	local target<const> = self.head + (self.head == timeline_start_index and 1 or delta)
+	local target<const> = self.head + (self.head == timelinestart_index and 1 or delta)
 	return self:apply_frame(target, reason, event_time_ms, preserve_ticks)
 end
 
@@ -533,12 +533,12 @@ function timeline:apply_frame(target, reason, event_time_ms, preserve_ticks)
 end
 
 return {
-	timeline_start_index = timeline_start_index,
+	timelinestart_index = timelinestart_index,
 	timeline = timeline,
 	new = timeline.new,
 	range = range,
-	expand_timeline_windows = expand_timeline_windows,
-	compile_timeline_markers = compile_timeline_markers,
+	expand_timelinewindows = expand_timelinewindows,
+	compile_timelinemarkers = compile_timelinemarkers,
 	expand_frames = expand_frames,
 	build_frame_sequence = build_frame_sequence,
 	build_pingpong_frames = build_pingpong_frames,

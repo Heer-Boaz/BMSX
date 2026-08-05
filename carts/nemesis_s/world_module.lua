@@ -1,16 +1,16 @@
-local action_effect_system<const> = require('cartlib/action_effects/action_effect_system')
-local state_machine_system<const> = require('cartlib/fsm/state_machine_system')
-local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
-local player_input_system<const> = require('cartlib/input/player_input_system')
-local timeline_system<const> = require('cartlib/timeline/timeline_system')
+local actioneffectsystem<const> = require('cartlib/actioneffects/actioneffectsystem')
+local fsmsystem<const> = require('cartlib/fsm/fsmsystem')
+local input_actioneffectsystem<const> = require('cartlib/input/actioneffect/system')
+local inputsystem<const> = require('cartlib/input/inputsystem')
+local timelinesystem<const> = require('cartlib/timeline/timelinesystem')
 
 return {
 	spaces = { 'main' },
 	systems = {
-		player_input_system,
-		input_action_effect_system,
-		action_effect_system,
-		state_machine_system,
-		timeline_system,
+		inputsystem,
+		input_actioneffectsystem,
+		actioneffectsystem,
+		fsmsystem,
+		timelinesystem,
 	},
 }

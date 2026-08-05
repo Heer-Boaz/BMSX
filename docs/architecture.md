@@ -2666,18 +2666,18 @@ directly or through DMA. Draw targets and clear packets take their raw origin
 and size words explicitly. Display queries decode the live PCRTC words rather
 than returning a Lua-side copy.
 
-`cartlib/render/renderer` owns presentation. It retains the GP0 word buffer and
-the ordered projection of the active world's visual components, and translates
-that projection into one command list when the cart invokes `renderer:draw()`.
+`world` owns presentation. It retains the GP0 word buffer and the ordered
+projection of the active space's visual components, and translates that
+projection into one command list when the cart invokes `world:render()`.
 The ROM producer emits only the configured display page, draw page and page
-size in `bmsx/renderer_config`. The renderer consumes those words once at
-module initialization and selects its one-page or two-page draw method there.
+size in `bmsx/presentation_config`. The world consumes those words once at
+module initialization and selects its one-page or two-page render method there.
 The frame hot path has no framebuffer-mode branch, display-size query,
 allocation or sort unless the world's visual revision changed.
 
-The renderer owns its draw page, display page, GPU target and page rotation.
+The world render boundary owns its draw page, display page, GPU target and page rotation.
 Two-page submission uses the ordered GPU fence before staging the next display
-origin; one-page submission does not pay that fence. The renderer does not wait
+origin; one-page submission does not pay that fence. `world:render()` does not wait
 for VBlank. `cartlib/gx/vblank` owns only the retained edge sequence and wait
 operation, while each cart keeps its one- or two-edge pacing visible in the
 entry loop. Custom visuals receive only the command list's primitive
@@ -2784,10 +2784,10 @@ clear an already-pending `IRQ_GPU`; the synchronous guest waiter acknowledges
 that pending bit through `IRQ_ACK`. This keeps the GPU source latch and the
 system interrupt pending latch as two distinct hardware words.
 
-`cartlib/gx/command_list.submit_fenced` uses that ordered GP0 IRQ packet as a
+`cartlib/gx/commandlist.submit_fenced` uses that ordered GP0 IRQ packet as a
 completion fence. It appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the physical
 `IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). The
-two-page renderer invokes that fence before programming
+two-page world render path invokes that fence before programming
 GP1(05h), rotates its retained page words, and leaves the publication edge to
 the cart's following explicit `vblank.wait()`. The former front page is not
 drawn again until that wait has completed. Missing the current beam edge can
@@ -2990,7 +2990,7 @@ and is not visible to BIOS, cartlib, GPU or DMA.
 
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
 working sets in `gx_vram_layout`. The producer validates the complete layout.
-It emits framebuffer words only to `bmsx/renderer_config` and emits shared
+It emits framebuffer words only to `bmsx/presentation_config` and emits shared
 texture-placement pools only to the internal `bmsx/texture_bindings` consumer.
 Neither generated module exposes manifest slot names to cart code. An ordinary
 cart chooses when a compressed texture payload is transferred by passing its
@@ -3468,7 +3468,7 @@ raw ICU source-port contract—snapshot input, supervisor line and vibration
 output—is mirrored machine semantics. Host repeat timing never flows back
 through `Runtime` or a machine input interface.
 
-Gameplay/cart `player_input` semantics live in `cartlib/input/player_input.lua` and
+Gameplay/cart input semantics live in `cartlib/input/input.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
 owns the explicitly configured players, mapping contexts, retained action and
 button state, MMIO sampling plans, consume state, guarded/repeat evaluation,
@@ -3579,10 +3579,11 @@ non-object orchestration from their own components and systems rather than
 through a parallel cartlib subsystem lifecycle.
 
 Carts remain the extension owner: a cart may derive a component directly from
-`cartlib/world/component`, use its own component key, and select its own system
-class in its `world_module`. Every concrete component class owns its `type_name`;
-the systems for that domain bind the class-owned key and retain the views that
-implement their capability. There is no central built-in component-type table.
+`cartlib/component/basecomponent`; its concrete module table is already the
+instance metatable and therefore its class identity. A cart selects its own
+system class in `world_module`; systems bind that same component table and
+retain the views that implement their capability.
+There are no component type-name strings or central built-in component-type table.
 During configuration a system binds retained component views to `world`;
 changing the active space redirects those views at
 the structural barrier. Systems therefore read their retained dense arrays
@@ -3591,18 +3592,24 @@ component key every frame. Cartlib does not prewarm a hardcoded list of built-in
 component kinds, and neither extension path requires modifying a cartlib
 registry.
 
-The central Registry is the only cart-wide id, type and tag index. It owns
-retained dense buckets for published world objects, components and persistent
-cart services. Its module exports that single owner directly, not a constructible
-class plus `instance` facade. `world:get()` and unqualified type/tag queries read
-those buckets directly; `world` has no shadow identity index.
+The central Registry is the only cart-wide id, prefab-definition,
+component-class and tag index. It owns retained dense buckets for published
+world objects, components and persistent cart services. Its module exports that
+single owner directly, not a constructible class plus `instance` facade.
+`world:get()` and unqualified definition/tag queries read those buckets directly;
+`world` has no shadow identity index.
+
+Registry lifecycle is not a savegame classification boundary. Machine save-state
+captures the complete guest runtime graph, including Registry tables and the Lua
+heap. A future compact game-save format is explicit cartridge data rather than a
+second cartlib object-graph serializer or a `registry_persistent` flag.
 
 `world` owns lifecycle and the fixed map of spaces; each `space` object owns its
-own dense object, active-object, tag, type, component and visual storage plus the
-indices required to mutate those arrays. `world` selects spaces and coordinates
-barriers but does not reach into their backing tables. Component storage is
-materialized only for component types selected by configured systems; visuals
-retain their separate renderer-facing dense list. Spawn admission reserves ids
+own dense object, active-object, definition, tag, component and visual storage
+plus the indices required to mutate those arrays. `world` selects spaces and
+coordinates barriers but does not reach into their backing tables. Component storage is
+materialized only for component classes selected by configured systems; visuals
+retain their separate render-facing dense list. Spawn admission reserves ids
 before publication, and Registry, space and system views receive only complete
 objects and their attached components.
 
@@ -3630,9 +3637,9 @@ iterate the stable group snapshot without per-item pending-state checks.
 `world:clear()` retains the topology, component views and composed system
 manager.
 
-The input system samples retained `player_input` state before gameplay systems
+The input system samples retained `input` state before gameplay systems
 run and arms the ICU's next-VBlank sample latch after consuming the current
-snapshot. Cart code neither updates `player_input` separately nor programs the ICU
+snapshot. Cart code neither updates `input` separately nor programs the ICU
 latch. Carts using action effects select both their input-evaluation and
 cooldown-time systems in `world_module`.
 The entry loop still owns every explicit `vblank.wait()` and therefore keeps

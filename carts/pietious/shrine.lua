@@ -2,13 +2,13 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local sprite_object<const> = require('cartlib/sprite')
-local text_component<const> = require('cartlib/text/component')
+local text_component<const> = require('cartlib/text/textcomponent')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -21,14 +21,14 @@ local draw_shrine_visual<const> = function(parent, draw)
 end
 
 function shrine:ctor()
-	local text<const> = self:get_component(text_component.type_name)
+	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
 	text.offset_y = shrine_text_y
 	text:set_offset_z(1)
 	self.text_component = text
-	self:get_component(custom_visual_component.type_name).producer = draw_shrine_visual
+	self:get_component(custom_visual_component).producer = draw_shrine_visual
 end
 
 local room_shrine<const> = {}
@@ -69,7 +69,7 @@ local register_shrine_definition<const> = function()
 		components = {
 			custom_visual_component.new,
 			text_component.new,
-			state_machine_component.factory({ 'shrine' }),
+			fsm_component.factory({ 'shrine' }),
 		},
 		defaults = {
 			id = 'shrine',

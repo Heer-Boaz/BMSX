@@ -75,7 +75,7 @@
 --    exit animation timeline completes.
 
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -85,15 +85,15 @@ local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
-local action_effects<const> = require('cartlib/action_effects')
+local actioneffects<const> = require('cartlib/actioneffects')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local input_action_effect_component<const> = require('cartlib/input/action_effect/component')
-local sprite_component<const> = require('cartlib/render/sprite_component')
-local timeline_component<const> = require('cartlib/timeline/component')
+local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
+local sprite_component<const> = require('cartlib/component/spritecomponent')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local collision_2d<const> = require('cartlib/collision_2d')
 local player_abilities<const> = require('player/abilities')
 
-local input<const> = require('cartlib/input/player_input')
+local input<const> = require('cartlib/input/input')
 
 local player<const> = {}
 player.__index = player
@@ -163,7 +163,7 @@ local player_hit_fall_frames<const> = {
 	{ imgid = 'pietolon_hit_r' },
 }
 local player_sword_end_event<const> = 'sword.end'
-local player_shrine_exit_timeline_id<const> = 'p.tl.sx'
+local player_shrine_exit_timelineid<const> = 'p.tl.sx'
 local player_tags<const> = {
 	in_water = 'p.w',
 }
@@ -352,7 +352,7 @@ function player:define_runtime_timelines()
 		autotick = false,
 	}))
 	self.timelines:define(timeline.new({
-		id = player_shrine_exit_timeline_id,
+		id = player_shrine_exit_timelineid,
 		frames = build_shrine_exit_transition_frames(),
 		playback_mode = 'once',
 		apply = true,
@@ -360,12 +360,12 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(action_effects.action_effect_component.new({}))
-	self.action_effects:grant_effect('halo')
-	self.action_effects:grant_effect('pepernoot')
-	self.action_effects:grant_effect('spyglass')
-	self:add_component(input_action_effect_component.new({
-		program = player_abilities.build_input_action_effect_program(),
+	self:add_component(actioneffects.actioneffect_component.new({}))
+	self.actioneffects:grant_effect('halo')
+	self.actioneffects:grant_effect('pepernoot')
+	self.actioneffects:grant_effect('spyglass')
+	self:add_component(input_actioneffect_component.new({
+		program = player_abilities.build_input_actioneffect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
 	self.width = player_width
@@ -2913,7 +2913,7 @@ local define_player_fsm<const> = function()
 				state_tags.group.damage_lock,
 			},
 			timelines = {
-				[player_shrine_exit_timeline_id] = {
+				[player_shrine_exit_timelineid] = {
 					autoplay = true,
 					stop_on_exit = true,
 					play_options = {
@@ -3150,7 +3150,7 @@ local define_player_fsm<const> = function()
 			['player.halo_trigger'] = {
 				emitter = 'd',
 				go = function(self)
-					local result<const> = self.action_effects:trigger('halo')
+					local result<const> = self.actioneffects:trigger('halo')
 					if result ~= 'ok' then
 						self.events:emit('halo_trigger_cancelled')
 					end
@@ -3186,8 +3186,8 @@ local register_player_definition<const> = function()
 		class = player,
 		base = sprite_object,
 		components = {
-			timeline_component.new,
-			state_machine_component.factory({ 'player' }),
+			timelinecomponent.new,
+			fsm_component.factory({ 'player' }),
 		},
 		defaults = {
 			imgid = 'pietolon_stand_r',

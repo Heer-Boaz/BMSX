@@ -1,5 +1,5 @@
 local world<const> = require('cartlib/world/world')
-local world_object<const> = require('cartlib/world/object')
+local worldobject<const> = require('cartlib/world/worldobject')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -31,7 +31,7 @@ local construct<const> = function(definition, addons)
 	local options<const> = {}
 	apply_values(options, definition.defaults, skip_position)
 	apply_values(options, addons, skip_position)
-	options.type_name = definition.def_id
+	options.definition_id = definition.def_id
 	options.id = options.id or world:next_id(definition.def_id)
 	local instance<const> = definition.base.new(options)
 	world:_reserve_object(instance)
@@ -47,7 +47,7 @@ local construct<const> = function(definition, addons)
 end
 
 function prefab.define(definition)
-	local prototype<const> = definition.base or world_object
+	local prototype<const> = definition.base or worldobject
 	local class<const> = definition.class
 	local class_metatable<const> = getmetatable(class)
 	if class_metatable then

@@ -3,8 +3,8 @@ local sprite_object<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviour_tree<const> = require('cartlib/behaviour_tree')
-local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
+local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_component<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 
@@ -132,7 +132,7 @@ function cloud.register()
 		def_id = 'enemy.cloud',
 		class = cloud,
 		base = sprite_object,
-		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_cloud', cloud.bt_tick)) },
+		components = { bt_component.factory(behaviourtree.action_node.new('enemy_cloud', cloud.bt_tick)) },
 		defaults = {
 			conditions = {},
 			damage = 2,

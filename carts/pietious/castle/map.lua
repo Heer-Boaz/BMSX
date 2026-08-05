@@ -1,5 +1,5 @@
 require('constants')
-local text<const> = require('cartlib/text/text')
+local text<const> = require('cartlib/util/text')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 

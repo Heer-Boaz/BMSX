@@ -4,11 +4,11 @@ local gp0<const> = require('cartlib/gx/gp0')
 local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_builders<const> = require('timeline_builders')
+local timelinebuilders<const> = require('timelinebuilders')
 local world<const> = require('cartlib/world/world')
-local apply_transition_frame<const> = timeline_builders.apply_transition_frame
-local build_transition_fade_in_frames<const> = timeline_builders.build_transition_fade_in_frames
-local build_fade_frames<const> = timeline_builders.build_fade_frames
+local apply_transition_frame<const> = timelinebuilders.apply_transition_frame
+local build_transition_fade_in_frames<const> = timelinebuilders.build_transition_fade_in_frames
+local build_fade_frames<const> = timelinebuilders.build_fade_frames
 
 function transition.register_states(states)
 	local fade_hold_black_kinds<const> = {
@@ -252,7 +252,7 @@ function transition.register_states(states)
 				end_x = -w,
 			}
 			self.timelines:define(timeline.new({
-				id = overgang_timeline_id,
+				id = overgang_timelineid,
 				frames = timeline.range(self.transition_finish_frame + 1),
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
@@ -265,7 +265,7 @@ function transition.register_states(states)
 			}))
 			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
 			-- Snapping here consumes that frame during state entry and shifts the authored cadence.
-			self.timelines:play(overgang_timeline_id, { rewind = true, snap_to_start = false })
+			self.timelines:play(overgang_timelineid, { rewind = true, snap_to_start = false })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -285,14 +285,14 @@ function transition.register_states(states)
 					apply_background(self.transition_target_bg)
 				end,
 			},
-			['timeline.end.' .. overgang_timeline_id] = {
+			['timeline.end.' .. overgang_timelineid] = {
 				go = function(self)
 					return finish_transition(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self.timelines:stop(overgang_timeline_id)
+			self.timelines:stop(overgang_timelineid)
 			world:get(text_transition_id):clear_text()
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
 				hide_transition_layers(self.transition_visual)
@@ -310,14 +310,14 @@ function transition.register_states(states)
 			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
 			self.timelines:define(timeline.new({
-				id = overgang_post_fade_in_timeline_id,
+				id = overgang_post_fade_in_timelineid,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
 				target = background,
 				apply = true,
 			}))
-			self.timelines:play(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
+			self.timelines:play(overgang_post_fade_in_timelineid, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -329,14 +329,14 @@ function transition.register_states(states)
 			},
 		},
 		on = {
-			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
+			['timeline.end.' .. overgang_post_fade_in_timelineid] = {
 				go = function(self)
 					return finish_transition_fade_in(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self.timelines:stop(overgang_post_fade_in_timeline_id)
+			self.timelines:stop(overgang_post_fade_in_timelineid)
 			world:get(bg_id).surface_component.color = p3_white_color
 			hide_transition_layers(self.transition_visual)
 		end,
@@ -383,7 +383,7 @@ function transition.register_states(states)
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})
 			self.timelines:define(timeline.new({
-				id = fade_timeline_id,
+				id = fade_timelineid,
 				frames = frames,
 				ticks_per_frame = fade_ticks_per_frame,
 				playback_mode = 'once',
@@ -393,7 +393,7 @@ function transition.register_states(states)
 					{ frame = fade_out_frames - 1, event = 'fade.swap_bg' },
 				},
 			}))
-			self.timelines:play(fade_timeline_id, { rewind = true, snap_to_start = true })
+			self.timelines:play(fade_timelineid, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -413,14 +413,14 @@ function transition.register_states(states)
 					apply_background(self.fade_target_bg)
 				end,
 			},
-			['timeline.end.' .. fade_timeline_id] = {
+			['timeline.end.' .. fade_timelineid] = {
 				go = function(self)
 					return finish_fade(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self.timelines:stop(fade_timeline_id)
+			self.timelines:stop(fade_timelineid)
 			hide_transition_layers(self.transition_visual)
 			self.fade_hold_black = false
 		end,

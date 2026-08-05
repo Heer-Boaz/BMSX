@@ -50,20 +50,20 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
-local halo_teleport_timeline_id<const> = 'director.halo.transition'
-local banner_world_timeline_id<const> = 'director.banner.world'
-local banner_castle_timeline_id<const> = 'director.banner.castle'
-local banner_pre_delay_timeline_id<const> = 'director.banner.prewait'
+local halo_teleport_timelineid<const> = 'director.halo.transition'
+local banner_world_timelineid<const> = 'director.banner.world'
+local banner_castle_timelineid<const> = 'director.banner.castle'
+local banner_pre_delay_timelineid<const> = 'director.banner.prewait'
 local banner_prewait_cue_event<const> = 'd.bp.c'
 local banner_world_show_event<const> = 'd.bw.s'
 local banner_castle_show_event<const> = 'd.bc.s'
@@ -71,16 +71,16 @@ local room_switch_passthrough_dirs<const> = {
 	world_enter = true,
 	halo = true,
 }
-local room_switch_wait_timeline_id<const> = 'director.wait.room_switch'
-local title_start_wait_timeline_id<const> = 'director.wait.title_start'
-local item_screen_open_timeline_id<const> = 'director.wait.item.open'
-local item_screen_close_timeline_id<const> = 'director.wait.item.close'
-local item_screen_halo_request_timeline_id<const> = 'director.item.halo.request'
+local room_switch_wait_timelineid<const> = 'director.wait.room_switch'
+local title_start_wait_timelineid<const> = 'director.wait.title_start'
+local item_screen_open_timelineid<const> = 'director.wait.item.open'
+local item_screen_close_timelineid<const> = 'director.wait.item.close'
+local item_screen_halo_request_timelineid<const> = 'director.item.halo.request'
 local item_screen_halo_request_event<const> = 'd.ih.r'
-local lithograph_open_timeline_id<const> = 'director.wait.lithograph.open'
-local lithograph_close_timeline_id<const> = 'director.wait.lithograph.close'
-local seal_timeline_id<const> = 'director.seal'
-local daemon_timeline_id<const> = 'director.daemon'
+local lithograph_open_timelineid<const> = 'director.wait.lithograph.open'
+local lithograph_close_timelineid<const> = 'director.wait.lithograph.close'
+local seal_timelineid<const> = 'director.seal'
+local daemon_timelineid<const> = 'director.daemon'
 
 local director<const> = {}
 director.__index = director
@@ -221,7 +221,7 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component(custom_visual_component.type_name).producer = director.draw_visual
+	self:get_component(custom_visual_component).producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end
 
@@ -275,12 +275,12 @@ local define_director_fsm<const> = function()
 	end
 
 	fsm_library.register('director', {
-		-- daemon_timeline_id is shared between daemon_appearance and
+		-- daemon_timelineid is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
 		-- (autoplay = false = registration only).  Each state configures behaviour
 		-- via on_frame (cloud spawning) and on_end (completion + transition).
 		timelines = {
-			[banner_pre_delay_timeline_id] = {
+			[banner_pre_delay_timelineid] = {
 				def = {
 					frames = timeline.range(flow_banner_prewait_frames),
 					playback_mode = 'once',
@@ -290,7 +290,7 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
-			[banner_world_timeline_id] = {
+			[banner_world_timelineid] = {
 				def = {
 					frames = timeline.range(flow_world_banner_frames),
 					playback_mode = 'once',
@@ -300,7 +300,7 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
-			[banner_castle_timeline_id] = {
+			[banner_castle_timelineid] = {
 				def = {
 					frames = timeline.range(flow_castle_banner_frames),
 					playback_mode = 'once',
@@ -310,21 +310,21 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
-			[title_start_wait_timeline_id] = {
+			[title_start_wait_timelineid] = {
 				def = {
 					frames = timeline.range(flow_title_start_wait_frames),
 					playback_mode = 'once',
 				},
 				autoplay = false,
 			},
-			[room_switch_wait_timeline_id] = {
+			[room_switch_wait_timelineid] = {
 				def = {
 					frames = timeline.range(flow_room_switch_wait_frames),
 					playback_mode = 'once',
 				},
 				autoplay = false,
 			},
-			[daemon_timeline_id] = {
+			[daemon_timelineid] = {
 				def = {
 					frames = timeline.range(126),
 					playback_mode = 'once',
@@ -418,7 +418,7 @@ local define_director_fsm<const> = function()
 			},
 			room_switch_wait = {
 				timelines = {
-					[room_switch_wait_timeline_id] = {
+					[room_switch_wait_timelineid] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -432,7 +432,7 @@ local define_director_fsm<const> = function()
 			},
 			room_switch_wait_visible = {
 				timelines = {
-					[room_switch_wait_timeline_id] = {
+					[room_switch_wait_timelineid] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -521,7 +521,7 @@ local define_director_fsm<const> = function()
 					idle = {},
 					world_prewait = {
 						timelines = {
-							[banner_pre_delay_timeline_id] = {
+							[banner_pre_delay_timelineid] = {
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
@@ -539,7 +539,7 @@ local define_director_fsm<const> = function()
 							end,
 						},
 						timelines = {
-							[banner_world_timeline_id] = {
+							[banner_world_timelineid] = {
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
@@ -553,7 +553,7 @@ local define_director_fsm<const> = function()
 					},
 					castle_prewait = {
 						timelines = {
-							[banner_pre_delay_timeline_id] = {
+							[banner_pre_delay_timelineid] = {
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
@@ -571,7 +571,7 @@ local define_director_fsm<const> = function()
 							end,
 						},
 						timelines = {
-							[banner_castle_timeline_id] = {
+							[banner_castle_timelineid] = {
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
@@ -590,7 +590,7 @@ local define_director_fsm<const> = function()
 							end,
 						},
 						timelines = {
-							[banner_castle_timeline_id] = {
+							[banner_castle_timelineid] = {
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
@@ -609,7 +609,7 @@ local define_director_fsm<const> = function()
 				states = {
 					opening = {
 						timelines = {
-							[item_screen_open_timeline_id] = {
+							[item_screen_open_timelineid] = {
 								def = {
 									frames = timeline.range(flow_item_screen_wait_frames),
 									playback_mode = 'once',
@@ -637,7 +637,7 @@ local define_director_fsm<const> = function()
 						},
 						halo = {
 							timelines = {
-								[item_screen_halo_request_timeline_id] = {
+								[item_screen_halo_request_timelineid] = {
 									def = {
 										frames = timeline.range(2),
 										playback_mode = 'once',
@@ -670,7 +670,7 @@ local define_director_fsm<const> = function()
 					},
 					closing = {
 						timelines = {
-							[item_screen_close_timeline_id] = {
+							[item_screen_close_timelineid] = {
 								def = {
 									frames = timeline.range(flow_item_screen_wait_frames),
 									playback_mode = 'once',
@@ -690,7 +690,7 @@ local define_director_fsm<const> = function()
 			},
 			halo_teleport = {
 				timelines = {
-					[halo_teleport_timeline_id] = {
+					[halo_teleport_timelineid] = {
 						def = {
 							frames = timeline.range(1),
 							playback_mode = 'once',
@@ -715,7 +715,7 @@ local define_director_fsm<const> = function()
 					end,
 				},
 				timelines = {
-					[banner_castle_timeline_id] = {
+					[banner_castle_timelineid] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -740,7 +740,7 @@ local define_director_fsm<const> = function()
 				-- projectiles.  No separate 'seal_breaking' event.
 				seal_dissolution = {
 					timelines = {
-						[seal_timeline_id] = {
+						[seal_timelineid] = {
 							def = {
 								frames = timeline.range(95),
 								playback_mode = 'once',
@@ -797,7 +797,7 @@ local define_director_fsm<const> = function()
 			-- Cloud spawning and completion are handled by timeline on_frame/on_end.
 			daemon_appearance = {
 				timelines = {
-					[daemon_timeline_id] = {
+					[daemon_timelineid] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
@@ -813,7 +813,7 @@ local define_director_fsm<const> = function()
 			-- Navigated to from death_resolve when restart_daemon is true.
 			daemon_appearance_post_death = {
 				timelines = {
-					[daemon_timeline_id] = {
+					[daemon_timelineid] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
@@ -830,7 +830,7 @@ local define_director_fsm<const> = function()
 				states = {
 					opening = {
 						timelines = {
-							[lithograph_open_timeline_id] = {
+							[lithograph_open_timelineid] = {
 								def = {
 									frames = timeline.range(1),
 									playback_mode = 'once',
@@ -848,7 +848,7 @@ local define_director_fsm<const> = function()
 					},
 					closing = {
 						timelines = {
-							[lithograph_close_timeline_id] = {
+							[lithograph_close_timelineid] = {
 								def = {
 									frames = timeline.range(1),
 									playback_mode = 'once',
@@ -875,7 +875,7 @@ local define_director_fsm<const> = function()
 				},
 				title_start_wait = {
 					timelines = {
-						[title_start_wait_timeline_id] = {
+						[title_start_wait_timelineid] = {
 							autoplay = true,
 							stop_on_exit = true,
 							play_options = {
@@ -937,8 +937,8 @@ local register_director_definition<const> = function()
 		class = director,
 		components = {
 			custom_visual_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ 'director' }),
+			timelinecomponent.new,
+			fsm_component.factory({ 'director' }),
 		},
 		defaults = {
 			id = 'd',

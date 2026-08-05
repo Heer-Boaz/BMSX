@@ -231,7 +231,7 @@ export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
 	return lines.join('\n');
 }
 
-export function buildRendererConfigModuleSource(layout: GxVramLayout): string {
+export function buildPresentationConfigModuleSource(layout: GxVramLayout): string {
 	const displayPage = layout.framebuffers[0];
 	const drawPage = layout.framebuffers[1] ?? displayPage;
 	return [

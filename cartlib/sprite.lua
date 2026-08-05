@@ -1,4 +1,4 @@
--- sprite_object built atop world_object
+-- sprite_object built atop worldobject
 --
 -- DESIGN PRINCIPLES — image suffixes and collision geometry
 --
@@ -32,14 +32,14 @@
 --      self.collider.layer = collision_enemy_layer
 --      self.collider.mask = collision_enemy_mask
 
-local world_object<const> = require('cartlib/world/object')
+local worldobject<const> = require('cartlib/world/worldobject')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local sprite_component<const> = require('cartlib/render/sprite_component')
+local sprite_component<const> = require('cartlib/component/spritecomponent')
 local romdir<const> = require('cartlib/romdir')
 
 local sprite_object<const> = {}
 sprite_object.__index = sprite_object
-setmetatable(sprite_object, { __index = world_object })
+setmetatable(sprite_object, { __index = worldobject })
 
 sprite_object.base_sprite_id = 'base_sprite'
 sprite_object.primary_collider_id = 'primary'
@@ -56,8 +56,7 @@ end
 
 function sprite_object.new(opts)
 	opts = opts or {}
-	opts.type_name = 'sprite_object'
-	local self<const> = setmetatable(world_object.new(opts), sprite_object)
+	local self<const> = setmetatable(worldobject.new(opts), sprite_object)
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = opts.imgid

@@ -3,12 +3,9 @@
 
 local prohibit_leaving_screen_component<const> = require('cartlib/physics/prohibit_leaving_screen_component')
 local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
-local system<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
 
-
-local boundary_component_type<const> = screen_boundary_component.type_name
-local prohibit_leaving_component_type<const> = prohibit_leaving_screen_component.type_name
 
 local screen_boundary_system<const> = {}
 screen_boundary_system.__index = screen_boundary_system
@@ -16,8 +13,8 @@ setmetatable(screen_boundary_system, { __index = system })
 
 function screen_boundary_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 30), screen_boundary_system)
-	self._boundary_component_view = world:_active_component_view(boundary_component_type)
-	self._prohibit_leaving_component_view = world:_active_component_view(prohibit_leaving_component_type)
+	self._boundary_component_view = world:_active_component_view(screen_boundary_component)
+	self._prohibit_leaving_component_view = world:_active_component_view(prohibit_leaving_screen_component)
 	return self
 end
 

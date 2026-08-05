@@ -11,13 +11,13 @@
 -- automatic state restoration.
 
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
-local world_object<const> = require('cartlib/world/object')
+local tilecollisioncomponent<const> = require('cartlib/collision/tilecollisioncomponent')
+local worldobject<const> = require('cartlib/world/worldobject')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -29,7 +29,7 @@ local state_tags<const> = {
 function pepernoot_projectile:ctor()
 	self.collider.layer = collision_projectile_layer
 	self.collider.mask = collision_projectile_mask
-	self:add_component(tile_collision_component.new({
+	self:add_component(tilecollisioncomponent.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
 			local collision_flags<const> = world:get('room'):collision_flags_at_world(owner.x, owner.y)
@@ -77,7 +77,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 	fsm_library.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
-			['tilecollision.begin'] = world_object.despawn,
+			['tilecollision.begin'] = worldobject.despawn,
 			['overlap.begin'] = function(self, _state, event)
 				if event.other_layer ~= collision_enemy_layer then
 					return
@@ -86,7 +86,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = world_object.despawn,
+				go = worldobject.despawn,
 			},
 			['seal_dissolution'] = '/freeze',
 		},
@@ -111,7 +111,7 @@ local register_pepernoot_projectile_definition<const> = function()
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		base = sprite_object,
-		components = { state_machine_component.factory({ 'pepernoot_projectile' }) },
+		components = { fsm_component.factory({ 'pepernoot_projectile' }) },
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,

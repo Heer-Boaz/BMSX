@@ -1,11 +1,11 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -28,7 +28,7 @@ end
 local item_offset_x<const> = 11
 local item_offset_y<const> = 6
 local selector_blink_frames<const> = 5
-local selector_blink_timeline_id<const> = 'item_screen.blink'
+local selector_blink_timelineid<const> = 'item_screen.blink'
 local map_title_x<const> = 49
 
 local secondary_weapon_order<const> = {
@@ -74,7 +74,7 @@ local item_screen_mode_exit_events<const> = {
 }
 
 function item_screen:ctor()
-	self:get_component(custom_visual_component.type_name).producer = item_screen.draw_screen
+	self:get_component(custom_visual_component).producer = item_screen.draw_screen
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
@@ -213,7 +213,7 @@ local define_item_screen_fsm<const> = function()
 			open = {
 				entering_state = item_screen.reset_for_open,
 				timelines = {
-					[selector_blink_timeline_id] = {
+					[selector_blink_timelineid] = {
 						def = {
 							frames = timeline.range(selector_blink_frames),
 							playback_mode = 'loop',
@@ -255,8 +255,8 @@ local register_item_screen_definition<const> = function()
 		class = item_screen,
 		components = {
 			custom_visual_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ 'item_screen' }),
+			timelinecomponent.new,
+			fsm_component.factory({ 'item_screen' }),
 		},
 		defaults = {
 			player_index = 1,

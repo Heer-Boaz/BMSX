@@ -1,9 +1,9 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
@@ -14,7 +14,7 @@ local world_entrance_sprite_ids<const> = {
 	open = 'world_entrance_open',
 }
 
-local opening_timeline_id<const> = 'world_entrance.opening'
+local opening_timelineid<const> = 'world_entrance.opening'
 local opening_half_event<const> = 'world_entrance.opening.half'
 
 local world_entrance<const> = {}
@@ -65,7 +65,7 @@ local define_world_entrance_fsm<const> = function()
 					self:set_entrance_state('opening_1')
 				end,
 				timelines = {
-					[opening_timeline_id] = {
+					[opening_timelineid] = {
 						def = {
 							frames = timeline.range(world_entrance_open_step_frames * 2),
 							playback_mode = 'once',
@@ -101,7 +101,7 @@ local register_world_entrance_definition<const> = function()
 		def_id = 'world_entrance',
 		class = world_entrance,
 		base = sprite_object,
-		components = { timeline_component.new, state_machine_component.factory({ 'world_entrance' }) },
+		components = { timelinecomponent.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
 			target = nil,
 			entrance_state = 'closed',

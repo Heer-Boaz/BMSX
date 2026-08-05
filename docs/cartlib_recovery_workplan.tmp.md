@@ -22,9 +22,9 @@ teruggedraaid alleen omdat oudere code anders werkte.
 ## Taal- en naamregel
 
 De Lua-dialect accepteert geen hoofdletters in identifiers. Alle Lua-modules,
-locals, tabellen, methods en componentkeys gebruiken daarom `snake_case`.
-Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
-`world_object` en `world_module`.
+Lua-identifiers blijven lower-case. Historische class-/modulenamen worden als
+één lower-case ownernaam geschreven (`worldobject`, `basecomponent`); methods,
+velden en gewone locals gebruiken `snake_case`.
 
 ## Niet-onderhandelbare besluiten
 
@@ -33,8 +33,8 @@ Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
 - Geen gedrag-behoudende verhuizing van code waarvan ownership of representatie
   fout is. Contract en callers veranderen samen.
 - Geen extra `game`-/`host`facade, service-locator, dependency-DAG of multi-world-
-  laag rond de concrete cartowners. Eén cartridge gebruikt één `world` en één
-  `renderer`.
+  laag rond de concrete cartowners. Eén cartridge gebruikt één `world`; dat
+  object bezit ook zijn presentatiepad.
 - Intern geproduceerde data wordt direct geconsumeerd. Geen DTO-validatie,
   fallbacks, guards of wrappers rond eigen runtime- of producerrepresentaties.
 - Hot paths maken geen tijdelijke tables, closures of iteratorstate. Ze filteren
@@ -50,9 +50,9 @@ Dat geldt ook voor de historische namen die bruikbaar blijven: `world`,
   VRAM-allocator.
 
 De historische TypeScript-engine levert hier alleen de bruikbare domeinnamen en
-de compositiegrens: `world`, `world_object`, `space` en `world_module`. Voor
+de compositiegrens: `world`, `worldobject`, `space` en `world_module`. Voor
 rendering blijft alleen de les dat een sprite zijn `imgid` tot aan de
-renderer-/texturegrens behoudt; de historische `game_view` keert niet terug.
+presentatie-/texturegrens behoudt; de historische `game_view` keert niet terug.
 
 ## Waarom de huidige architectuur fout is
 
@@ -94,11 +94,11 @@ De cart entry bezit:
 - displaymodus;
 - IRQ-registratie en maskers;
 - de exacte volgorde van gameplay, VBlank, draw, transfers en display;
-- keuze van `world_module` en de configuratie van `renderer`.
+- keuze van `world_module` en de zichtbare framecadans.
 
 De entry importeert geen interne systemfactorylijst en geen generated fysieke
 VRAM-layoutmodule. In de frame-loop roept hij alleen de cart-facing
-`world:update()` en `renderer:draw()` aan; tick groups, frame timing, commandbouw,
+`world:update()` en `world:render()` aan; tick groups, commandbouw,
 fences en page advancement zijn geen losse entry-callers.
 
 ### ROM-producer
@@ -110,19 +110,24 @@ mogelijke consumer.
 
 ### `registry`
 
-`registry` is de enige cart-brede authority voor entity-id, type- en
-tagmembership. World objects, componenten en persistente cartservices zoals de
-event emitter registreren daar via hun owning lifecyclegrens. Registry levert
-retained dense buckets; consumers filteren of kopiëren die niet per frame.
+`registry` is de enige cart-brede authority voor entity-id, membership per
+prefabdefinition, componentklasse en tags. World objects, componenten en
+persistente cartservices zoals de event emitter registreren daar via hun owning
+lifecyclegrens. Registry levert retained dense buckets; consumers filteren of
+kopiëren die niet per frame.
 
 Registry bezit geen `space`, active state, tick groups of objectteardown.
+Registry classificeert ook geen savegame-persistence. De machine-save-state
+legt de volledige guest-runtime vast, inclusief Registry en Lua-heap. Een
+eventueel compact game-saveformaat is expliciete cartdata en geen tweede
+objectgraafserializer in cartlib.
 
 ### `world`
 
 `world` bezit de lifecycle van levende world objects, `space`-partities,
 structurele commits en de actieve object-, component- en visualviews per
-`space`. Het bezit geen tweede id-, type- of tagregistry. `world:get(id)` gebruikt
-de centrale Registry.
+`space`. Het bezit geen tweede id-, definition-, componentklasse- of tagregistry.
+`world:get(id)` gebruikt de centrale Registry.
 
 Iedere `space` bezit de concrete dense storage en bijbehorende mutatie-indexen
 van zijn partitie. `world` coördineert lifecycle en barriers via methods op die
@@ -140,18 +145,21 @@ VBlank en wordt niet door cartcode aangeroepen of vervangen.
 `world_module` is een plain cart-owned compositietable. Hij declareert de vaste
 `space`-topologie en kiest concrete systemklassen uit hun domeinmodules plus
 echte cart-owned systems. Een systemklasse bezit zijn tick group, interne
-priority, componentkey, retained queryviews en eventuele domeinindexen.
+priority, componentklasse, retained queryviews en eventuele domeinindexen.
+De concrete componentmodule-table is via de instancemetatable al de
+klasse-identiteit. Registry, spaces en systems gebruiken die table rechtstreeks;
+componentinstanties dragen geen parallel typeveld of `type_name`-string.
 Voorbeelden zijn input, FSM, behaviour tree, timelines, action effects en
 collision. Er is geen generieke `cartlib/ecs/systems/*`-bak en de cart geeft
 geen cartlib-priorities door.
 
-### `renderer`
+### Presentatie
 
-`renderer` bezit de retained draw-commandbuffer, de geordende projectie van
-actieve visuals, visual-naar-GX-commandbouw, draw/display pages, clearbeleid,
-submit/fence en page advancement. Het is geen ECS-system en geen
-hardwaredevice. Een cart configureert deze owner eenmaal; hij
-krijgt geen afzonderlijke commandbouwer en page-owner.
+`world:render()` bezit de retained draw-commandbuffer, de geordende projectie
+van actieve visuals, visual-naar-GX-commandbouw, draw/display pages,
+clearbeleid, submit/fence en page advancement. Dit is geen ECS-system en geen
+hardwaredevice. De cart krijgt geen afzonderlijke renderer, commandbouwer of
+page-owner.
 
 ### Image- en texture-owner
 
@@ -171,16 +179,16 @@ active views systems lezen.
 
 - één dense lifecyclelijst van alle levende world objects;
 - de actieve objectlijst van de geselecteerde `space`;
-- actieve type- en tagviews per `space`;
+- actieve definition- en tagviews per `space`;
 - actieve componentbuckets per systemquery;
 - één actieve visualbucket plus een visual revision.
 
-Registry onderhoudt de directe id-index en de cart-brede retained type- en
-tagbuckets. `world` maakt geen `_by_id`, per-`space` `by_id`, `_obj_to_space` of
-globale kopie van die buckets.
+Registry onderhoudt de directe id-index en de cart-brede retained definition-,
+componentklasse- en tagbuckets. `world` maakt geen `_by_id`, per-`space` `by_id`,
+`_obj_to_space` of globale kopie van die buckets.
 
-Een `world_object` bewaart gameplaydata en callbacks, maar schrijft nooit in die
-indexen. Het gebruikt zijn toegewezen `world`. `world_object` en componenten
+Een `worldobject` bewaart gameplaydata en callbacks, maar schrijft nooit in die
+indexen. Het gebruikt zijn toegewezen `world`. `worldobject` en componenten
 importeren geen globale world-singleton om lifecycle te omzeilen.
 
 Prefabdefinitions blijven cart-wide constructiedata. De live spawnroute loopt
@@ -216,7 +224,7 @@ direct. Er bestaan dus geen twee lifecycle-implementaties.
 Een despawncommit doet in deze volgorde:
 
 1. verwijder actieve object-, component- en visualmembership;
-2. verwijder tag-, type-, `space`- en id-membership;
+2. verwijder tag-, definition-, componentklasse-, `space`- en id-membership;
 3. voer despawncallback en event uit op nog intacte objectstate;
 4. detach componenten en domeinindexen;
 5. unbind en finaliseer het object.
@@ -233,10 +241,10 @@ contract. Ze maken geen iteratorobject of resultaatkopie. De basisvorm is:
 
 ```text
 world:active_objects()
-world:active_objects_by_type(type_key)
+world:active_objects_by_definition(definition_id)
 world:active_objects_by_tag(tag)
 world:objects()
-world:objects_by_type(type_key)
+world:objects_by_definition(definition_id)
 world:objects_by_tag(tag)
 world:get(id)
 ```
@@ -253,7 +261,7 @@ Een `space`-switch wijzigt de backing bucket van die view bij de barrier; het
 system wordt niet herbouwd en zoekt niet iedere frame opnieuw in
 `world.active_space`.
 
-Ongekwalificeerde type- en tagqueries gebruiken de retained Registry-buckets.
+Ongekwalificeerde definition- en tagqueries gebruiken de retained Registry-buckets.
 `active_*` gebruikt de door `world` onderhouden actieve `space`-views. Hot
 cartcode loopt de ontvangen dense array direct met een numerieke loop; er is
 geen registryscan, filter of resultaatkopie.
@@ -264,7 +272,7 @@ De vaste tick groups zijn semantisch:
 
 ```text
 input
-action_effects
+actioneffects
 gameplay
 physics
 animation
@@ -285,32 +293,32 @@ system op een benoemde tick group en interne priority.
 
 Een action-effectcomponent zonder system dat zijn cooldowntijd bijwerkt is niet
 toegestaan. Input sampling hoort bij het inputsystem; de cart declareert alleen
-mappings en leest `player_input`.
+mappings en leest `input`.
 
 ## Render- en GX-contract
 
-### Visuals en `renderer`
+### Visuals en presentatie
 
 Een visualcomponent bevat alleen retained authoringstate: owner, zichtbaarheid,
 depth/offsets, `imgid` en de scalars die zijn visualtype nodig heeft. Hij bezit
 geen framebuffer of pagepolicy.
 
 `world` verhoogt de visual revision bij membership- of depthwijzigingen.
-`renderer` rebuildt en sorteert zijn retained visualprojection alleen als die
+`world` rebuildt en sorteert zijn retained visualprojection alleen als die
 revision verandert. Een onveranderd frame loopt de bestaande geordende
 projection af en bouwt commands zonder allocatie of sort.
 
-`renderer` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
+`world:render()` gebruikt één retained BSS-commandbuffer. Custom visuals mogen
 in diezelfde commandroute image-local of absolute raw commands schrijven.
 
 ### Pages, submit en display
 
-`renderer` wordt eenmaal geconfigureerd met de door de producer geplaatste
+De world-renderstate wordt eenmaal geconfigureerd met de door de producer geplaatste
 framebufferpage of -pages. Het gekozen pagebeleid verandert niet tijdens de
 framehotpath.
 
-Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
-`renderer` expliciet front en back bij:
+Bij één page zijn draw en display dezelfde page. Bij twee pages houdt de
+renderstate van `world` expliciet front en back bij:
 
 - render schrijft naar back;
 - submit is fenced;
@@ -321,18 +329,18 @@ Bij één page zijn draw en display dezelfde page. Bij twee pages houdt
 Initial clear en per-frame clear volgen één expliciet clearbeleid. Er is geen
 per-frame branch die opnieuw moet ontdekken hoeveel pages bestaan.
 
-`renderer:draw()` wacht niet zelf op VBlank. De cart entry behoudt zijn
+`world:render()` wacht niet zelf op VBlank. De cart entry behoudt zijn
 bestaande volgorde. Een cart met twee displayframes per gameplay-tick blijft dat
 doen; een cart met één VBlank tussen update en draw blijft dat doen.
 
-De renderer consumeert de producerwoorden voor page en size rechtstreeks. Er komt
+De world-rendergrens consumeert de producerwoorden voor page en size rechtstreeks. Er komt
 geen frame-DTO of tweede object dat dezelfde pagestate spiegelt.
 
 ### `imgid`, bindings en uploads
 
 Generated output wordt gesplitst naar de twee consumers die de data bezitten:
 
-1. `renderer`-configuratie met de fysieke framebufferpages en grootte;
+1. interne presentatieconfiguratie met de fysieke framebufferpages en grootte;
 2. semantische image-/texturebindings voor de assets die de producer plaatste.
 
 Cartcode kent semantische ids, geen fysieke slotnamen. Een normale upload is in
@@ -341,7 +349,7 @@ verdwijnen omdat zij geen runtime load uitvoeren.
 
 `image.resolve(imgid)` en de texture-owner mogen retained records cachen. Een
 sprite behoudt publiek zijn `imgid` en source-scalars; resolution gebeurt
-éénmaal bij de image-/renderergrens, niet via een hashlookup en allocatie per
+éénmaal bij de image-/rendergrens, niet via een hashlookup en allocatie per
 frame.
 
 Wanneer meerdere `imgid`s dezelfde atlastexture delen, delen zij één retained
@@ -376,8 +384,8 @@ encodinghelpers.
 - Migreer alle live callers van de gewijzigde API.
 - Maak Registry-buckets retained en dense; verwijder de schaduwindexen
   `world._by_id`, per-`space` `by_id` en `_obj_to_space`.
-- Verwijder cart-facing toegang tot `world.systems`, `world:render()`,
-  allocationqueries en het dubbele disposalpad. `world:update()` blijft de
+- Verwijder cart-facing toegang tot `world.systems`, allocationqueries en het
+  dubbele disposalpad. `world:update()` blijft de
   argumentloze updategrens maar bevat zelf geen uitgeschreven tick groups.
 
 Deze stap is niet klaar zolang een system private `world`-/`space`-tabellen
@@ -385,9 +393,9 @@ leest of oud en nieuw lifecyclecontract naast elkaar bestaan.
 
 ### Stap 2: render- en GX-owner herstellen
 
-- Implementeer `renderer` op de retained visualview/revision en laat dezelfde
+- Implementeer `world:render()` op de retained visualview/revision en laat die
   owner commandbouw, clear, submit/fence en page advancement bezitten.
-- Splits produceroutput in rendererconfiguratie en semantische bindings.
+- Splits produceroutput in presentatieconfiguratie en semantische bindings.
 - Migreer componenten en cart entries naar `imgid` en scalar source/quad APIs.
 - Behoud per cart de bestaande IRQ-, VBlank-, upload- en displaycadans.
 - Verwijder het render-ECS-system en de generated layout-API volledig.
@@ -432,7 +440,8 @@ Een implementatie is fout wanneer zij:
 - raw GX-authoring verstopt achter een high-level capabilitiesysteem;
 - rendering op transfercompletion laat wachten;
 - een runtime VRAM-allocator toevoegt;
-- naast Registry een cart-brede id-, type- of tagschaduwindex in `world` bouwt;
+- naast Registry een cart-brede id-, definition-, componentklasse- of
+  tagschaduwindex in `world` bouwt;
 - oude APIs met aliases of forwarding modules bewaart;
 - de interne `system_manager` of tick groups naar cartcode lekt;
 - tekenen terugbrengt als ECS-tick;

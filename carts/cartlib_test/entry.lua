@@ -4,7 +4,6 @@ local gx_gte<const> = require('cartlib/gx/gte')
 local vblank<const> = require('cartlib/gx/vblank')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_display.reset_320x240()
-local renderer<const> = require('cartlib/render/renderer')
 local irq_module<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
@@ -62,5 +61,5 @@ cartlib_test_ready = true
 while true do
 	world:update()
 	vblank.wait()
-	renderer:draw()
+	world:render()
 end

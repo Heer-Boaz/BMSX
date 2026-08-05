@@ -4,19 +4,18 @@ local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local renderer<const> = require('cartlib/render/renderer')
-local event_emitter<const> = require('cartlib/event_emitter')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local eventemitter<const> = require('cartlib/eventemitter')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local fsm_library<const> = require('cartlib/fsm/library')
-local player_input<const> = require('cartlib/input/player_input')
-player_input.add_player(1)
+local input<const> = require('cartlib/input/input')
+input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local surface_component<const> = require('cartlib/render/surface_component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local surface_component<const> = require('cartlib/component/surfacecomponent')
 local sprite_object<const> = require('cartlib/sprite')
-local text_object<const> = require('cartlib/text/object')
-local timeline_component<const> = require('cartlib/timeline/component')
+local text_object<const> = require('cartlib/text/textobject')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -39,7 +38,7 @@ local transition_module<const> = require('transition')
 local surface_object_class<const> = {}
 
 function surface_object_class:ctor()
-	self.surface_component = self:get_component(surface_component.type_name)
+	self.surface_component = self:get_component(surface_component)
 	if self.imgid then
 		self.surface_component:set_imgid(self.imgid)
 	end
@@ -48,7 +47,7 @@ local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
 }
-local world_events<const> = event_emitter.events_of('world')
+local world_events<const> = eventemitter.events_of('world')
 
 local director_def_id<const> = 'p3.director'
 local director_fsm_id<const> = 'p3.director.fsm'
@@ -109,7 +108,7 @@ local draw_director_visual<const> = function(parent, draw)
 end
 
 function director:ctor()
-	local transition_rc<const> = self:get_component(custom_visual_component.type_name)
+	local transition_rc<const> = self:get_component(custom_visual_component)
 	transition_rc:set_offset_z(director_visual_z)
 	transition_rc.producer = draw_director_visual
 end
@@ -203,8 +202,8 @@ local register_director<const> = function()
 		class = director,
 		components = {
 			custom_visual_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ director_fsm_id }),
+			timelinecomponent.new,
+			fsm_component.factory({ director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,
@@ -411,6 +410,6 @@ while true do
 
 	world:update()
 	vblank.wait()
-	renderer:draw()
+	world:render()
 	texture_residency.submit_pending_background()
 end

@@ -13,13 +13,12 @@
 --    In TypeScript/annotated Lua, @build_fsm on a function auto-registers the
 --    result. Prefer that over explicit registration in cart code.
 
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local state_definitions<const> = require('cartlib/fsm/definitions')
 local fsm<const> = require('cartlib/fsm/fsm')
 local registry<const> = require('cartlib/registry')
 
-local state_definitions<const> = {}
-
 local fsm_library<const> = {}
-fsm_library.state_machine_component_type = 'state_machine_component'
 
 -- fsm_library.register(machine_name, blueprint)
 --   Compiles a state-definition from blueprint and stores it under machine_name.
@@ -31,7 +30,7 @@ function fsm_library.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	state_definitions[machine_name] = replacement
-	local components<const> = registry:entities_by_type(fsm_library.state_machine_component_type)
+	local components<const> = registry:components(fsm_component)
 	for i = 1, #components do
 		local state_machines<const> = components[i]
 		state_machines:rebind_state_machine(machine_name, replacement)

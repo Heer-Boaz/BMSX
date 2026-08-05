@@ -26,11 +26,18 @@
 --    Systems iterate retained dense arrays directly; world keeps active
 --    membership stable until the current group completes.
 
+local commandlist<const> = require('cartlib/gx/commandlist')
+local gx_display<const> = require('cartlib/gx/display')
+local gx_gpu<const> = require('cartlib/gx/gpu')
+local gp0<const> = require('cartlib/gx/gp0')
+local presentation_config<const> = require('bmsx/presentation_config')
 local registry<const> = require('cartlib/registry')
 local space_class<const> = require('cartlib/world/space')
 local system_manager<const> = require('cartlib/world/system_manager')
 
 local world
+local clear_color<const> = 0xff000000
+local render_command_capacity<const> = 4096
 local world_id_max<const> = 0x7fffffff
 local empty_object_bucket<const> = {}
 local mutation_spawn<const> = 0x01
@@ -41,27 +48,38 @@ local mutation_tag<const> = 0x10
 local mutation_component_detach<const> = 0x20
 local mutation_active_space<const> = 0x40
 
+bss cartlib_render_commands: word[render_command_capacity]
+
 local world_class<const> = {}
 world_class.__index = world_class
 
-function world_class:_add_world_object(obj)
+local visual_depth_less<const> = function(a, b)
+	local a_depth<const> = a.parent.z + a.offset_z + a.draw_offset_z
+	local b_depth<const> = b.parent.z + b.offset_z + b.draw_offset_z
+	if a_depth ~= b_depth then
+		return a_depth < b_depth
+	end
+	return a._visual_sequence < b._visual_sequence
+end
+
+function world_class:_add_worldobject(obj)
 	local objects<const> = self._objects
 	local index<const> = #objects + 1
 	objects[index] = obj
-	obj._world_object_index = index
+	obj._worldobject_index = index
 end
 
-function world_class:_remove_world_object(obj)
+function world_class:_remove_worldobject(obj)
 	local objects<const> = self._objects
-	local index<const> = obj._world_object_index
+	local index<const> = obj._worldobject_index
 	local last_index<const> = #objects
 	if index < last_index then
 		local moved<const> = objects[last_index]
 		objects[index] = moved
-		moved._world_object_index = index
+		moved._worldobject_index = index
 	end
 	objects[last_index] = nil
-	obj._world_object_index = nil
+	obj._worldobject_index = nil
 end
 
 function world_class.new()
@@ -83,7 +101,7 @@ function world_class.new()
 	self._pending_tag_names = {}
 	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
-	self._active_component_views = {}
+	self._active_component_views_by_class = {}
 	self._active_component_view_list = {}
 	self.active_space_id = nil
 	self._active_space = nil
@@ -93,13 +111,35 @@ function world_class.new()
 	self._current_tick_group = nil
 	self._visual_sequence = 0
 	self._visual_revision = 0
+	self._draw_commands = commandlist.new(cartlib_render_commands)
+	self._render_visuals = {}
+	self._render_visual_count = 0
+	self._render_visual_revision = -1
+	self._page_size = presentation_config.page_size
+	local display_page<const> = presentation_config.display_page
+	local draw_page<const> = presentation_config.draw_page
+	self._draw_page = draw_page
+	if display_page == draw_page then
+		self.render = world_class._render_single_page
+		gx_display.origin(draw_page)
+		gx_gpu.draw_target(draw_page, self._page_size)
+		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
+	else
+		self.render = world_class._render_double_page
+		self._display_page = display_page
+		gx_display.origin(display_page)
+		gx_gpu.draw_target(display_page, self._page_size)
+		gx_gpu.clear_color(display_page, self._page_size, clear_color)
+		gx_gpu.draw_target(draw_page, self._page_size)
+		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
+	end
 	-- id counter for unique id generation
 	self.idcounter = 0
 	return self
 end
 
-function world_class:next_id(type_name)
-	local baseid<const> = type_name
+function world_class:next_id(definition_id)
+	local baseid<const> = definition_id
 	local uniquenumber = self.idcounter + 1
 	if uniquenumber >= world_id_max then
 		uniquenumber = 1
@@ -122,7 +162,7 @@ function world_class:_add_space(space_id)
 	local created<const> = space_class.new(space_id)
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
-		created:register_component_type(component_views[view_index].type_name)
+		created:register_component_class(component_views[view_index].component_class)
 	end
 	self._spaces[space_id] = created
 	self._space_order[#self._space_order + 1] = space_id
@@ -134,7 +174,7 @@ function world_class:_commit_active_space(space_id)
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
 		local view<const> = component_views[view_index]
-		view.items = active_space:component_bucket(view.type_name)
+		view.items = active_space:component_bucket(view.component_class)
 	end
 	self._visual_revision = self._visual_revision + 1
 end
@@ -151,27 +191,27 @@ function world_class:configure(world_module)
 	self:_commit_active_space(initial_space_id)
 end
 
-function world_class:_active_component_view(type_name)
-	local views<const> = self._active_component_views
-	local view<const> = views[type_name]
+function world_class:_active_component_view(component_class)
+	local views<const> = self._active_component_views_by_class
+	local view<const> = views[component_class]
 	if view then
 		return view
 	end
 	local created<const> = {
-		type_name = type_name,
+		component_class = component_class,
 		items = empty_object_bucket,
 	}
-	views[type_name] = created
+	views[component_class] = created
 	local view_list<const> = self._active_component_view_list
 	view_list[#view_list + 1] = created
 	local spaces<const> = self._spaces
 	local space_order<const> = self._space_order
 	for space_index = 1, #space_order do
 		local partition<const> = spaces[space_order[space_index]]
-		partition:register_component_type(type_name)
+		partition:register_component_class(component_class)
 	end
 	if self._active_space ~= nil then
-		created.items = self._active_space:component_bucket(type_name)
+		created.items = self._active_space:component_bucket(component_class)
 	end
 	return created
 end
@@ -335,7 +375,7 @@ function world_class:reconcile_component(comp)
 end
 
 function world_class:_commit_component_attach(comp)
-	registry:register(comp)
+	registry:register_component(comp)
 	comp._published = true
 	self:_reconcile_active_component(comp)
 end
@@ -355,7 +395,7 @@ end
 function world_class:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
 	comp.parent:_commit_component_detach(comp)
-	registry:deregister(comp)
+	registry:deregister_component(comp)
 	comp._published = nil
 end
 
@@ -442,14 +482,14 @@ function world_class:_reserve_object(obj)
 end
 
 function world_class:_commit_spawn(obj)
-	registry:register(obj)
+	registry:register_object(obj)
 	local components<const> = obj._components
 	for i = 1, #components do
-		registry:register(components[i])
+		registry:register_component(components[i])
 		components[i]._published = true
 	end
 	obj._published = true
-	self:_add_world_object(obj)
+	self:_add_worldobject(obj)
 	self:_reconcile_object(obj)
 	obj.events:emit('spawn', { pos = obj._spawn_position })
 	obj._spawn_position = nil
@@ -501,9 +541,14 @@ function world_class:_commit_despawn(obj)
 	end
 	self:_reconcile_active_object(obj)
 
-	registry:deregister(obj)
+	for i = 1, #components do
+		local comp<const> = components[i]
+		registry:deregister_component(comp)
+		comp._published = nil
+	end
+	registry:deregister_object(obj)
 	obj._space:remove_object(obj)
-	self:_remove_world_object(obj)
+	self:_remove_worldobject(obj)
 	obj._published = nil
 
 	obj:ondespawn()
@@ -557,12 +602,12 @@ function world_class:objects()
 	return self._objects
 end
 
-function world_class:active_objects_by_type(type_name)
-	return self._active_space:active_objects_by_type(type_name) or empty_object_bucket
+function world_class:active_objects_by_definition(definition_id)
+	return self._active_space:active_objects_by_definition(definition_id) or empty_object_bucket
 end
 
-function world_class:objects_by_type(type_name)
-	return registry:entities_by_type(type_name)
+function world_class:objects_by_definition(definition_id)
+	return registry:objects_by_definition(definition_id)
 end
 
 function world_class:active_objects_by_tag(tag)
@@ -571,10 +616,6 @@ end
 
 function world_class:objects_by_tag(tag)
 	return registry:entities_by_tag(tag)
-end
-
-function world_class:active_visuals()
-	return self._active_space:active_visuals(), self._visual_revision
 end
 
 function world_class:_begin_tick_group(group)
@@ -628,19 +669,66 @@ function world_class:update()
 	self._system_manager:update()
 end
 
+function world_class:_rebuild_render_visuals()
+	local revision<const> = self._visual_revision
+	if revision == self._render_visual_revision then
+		return
+	end
+
+	local active_visuals<const> = self._active_space:active_visuals()
+	local visuals<const> = self._render_visuals
+	local visual_count<const> = #active_visuals
+	for i = 1, visual_count do
+		visuals[i] = active_visuals[i]
+	end
+	for i = visual_count + 1, self._render_visual_count do
+		visuals[i] = nil
+	end
+	table.sort(visuals, visual_depth_less)
+	self._render_visual_count = visual_count
+	self._render_visual_revision = revision
+end
+
+function world_class:_build_render_commands(draw_page)
+	local draw_commands<const> = self._draw_commands
+	commandlist.begin(draw_commands, gp0.draw_mode_blend_half)
+	draw_commands:clear(draw_page, self._page_size, clear_color)
+	self:_rebuild_render_visuals()
+	local visuals<const> = self._render_visuals
+	for i = 1, self._render_visual_count do
+		local visual<const> = visuals[i]
+		if visual.parent.visible and visual.visible then
+			visual:draw(draw_commands)
+		end
+	end
+end
+
+function world_class:_render_single_page()
+	self:_build_render_commands(self._draw_page)
+	commandlist.submit(self._draw_commands)
+end
+
+function world_class:_render_double_page()
+	local draw_page<const> = self._draw_page
+	self:_build_render_commands(draw_page)
+	commandlist.submit_fenced(self._draw_commands)
+	gx_display.origin(draw_page)
+	self._draw_page = self._display_page
+	self._display_page = draw_page
+	gx_gpu.draw_target(self._draw_page, self._page_size)
+end
+
 function world_class:clear()
 	local objects<const> = self._objects
 	while #objects > 0 do
 		self:despawn(objects[#objects])
 	end
-	registry:clear()
 	self._system_manager:reset()
 	self._visual_sequence = 0
 	self:set_space(self._initial_space_id)
 end
 world = world_class.new()
 world.id = 'world'
-world.registry_persistent = true
 registry:register(world)
 
 return world

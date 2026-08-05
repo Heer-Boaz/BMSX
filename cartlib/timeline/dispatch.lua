@@ -1,12 +1,12 @@
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
-local timeline_dispatch<const> = {}
+local timelinedispatch<const> = {}
 
 local acquire_payload<const> = function(state, payloads)
 	local depth<const> = state.depth + 1
 	state.depth = depth
 	local payload<const> = payloads:get(depth)
-	payload.timeline_id = state.timeline_id
+	payload.timelineid = state.timelineid
 	return payload
 end
 
@@ -36,7 +36,7 @@ local apply_markers<const> = function(entry, owner, frame_index)
 end
 
 local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payload, context)
-	local state<const> = entry.timeline_dispatch_state
+	local state<const> = entry.timelinedispatch_state
 	local payload<const> = acquire_payload(state, state.frame_payloads)
 	local scoped_event_type<const> = state.scoped_frame_event_type
 	payload.frame_index = evt.current
@@ -55,7 +55,7 @@ local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payloa
 end
 
 local dispatch_end<const> = function(entry, owner, evt)
-	local state<const> = entry.timeline_dispatch_state
+	local state<const> = entry.timelinedispatch_state
 	local payload<const> = acquire_payload(state, state.end_payloads)
 	local scoped_event_type<const> = state.scoped_end_event_type
 	payload.mode = evt.mode
@@ -67,13 +67,13 @@ local dispatch_end<const> = function(entry, owner, evt)
 	return evt.mode == 'once'
 end
 
-function timeline_dispatch.init_entry(entry)
-	local state = entry.timeline_dispatch_state
-	local timeline_id<const> = entry.instance.id
+function timelinedispatch.init_entry(entry)
+	local state = entry.timelinedispatch_state
+	local timelineid<const> = entry.instance.id
 	if state == nil then
 		local frame_payloads<const> = scratch_record_batch.new(1)
 		local frame_payload<const> = frame_payloads.items[1]
-		frame_payload.timeline_id = timeline_id
+		frame_payload.timelineid = timelineid
 		frame_payload.frame_index = 0
 		frame_payload.frame_value = false
 		frame_payload.rewound = false
@@ -83,26 +83,26 @@ function timeline_dispatch.init_entry(entry)
 		frame_payload.time_ms = 0
 		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
-		end_payload.timeline_id = timeline_id
+		end_payload.timelineid = timelineid
 		end_payload.mode = false
 		end_payload.wrapped = false
 		state = {
 			frame_payloads = frame_payloads,
 			end_payloads = end_payloads,
 			depth = 0,
-			timeline_id = timeline_id,
-			scoped_frame_event_type = 'timeline.frame.' .. timeline_id,
-			scoped_end_event_type = 'timeline.end.' .. timeline_id,
+			timelineid = timelineid,
+			scoped_frame_event_type = 'timeline.frame.' .. timelineid,
+			scoped_end_event_type = 'timeline.end.' .. timelineid,
 		}
-		entry.timeline_dispatch_state = state
+		entry.timelinedispatch_state = state
 	else
-		state.timeline_id = timeline_id
-		state.scoped_frame_event_type = 'timeline.frame.' .. timeline_id
-		state.scoped_end_event_type = 'timeline.end.' .. timeline_id
+		state.timelineid = timelineid
+		state.scoped_frame_event_type = 'timeline.frame.' .. timelineid
+		state.scoped_end_event_type = 'timeline.end.' .. timelineid
 	end
 end
 
-function timeline_dispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)
+function timelinedispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)
 	local instance<const> = entry.instance
 	local stop = false
 	for i = 1, instance.step_event_count do
@@ -119,4 +119,4 @@ function timeline_dispatch.process_instance_events(entry, owner, dt_ms, on_frame
 	return stop
 end
 
-return timeline_dispatch
+return timelinedispatch

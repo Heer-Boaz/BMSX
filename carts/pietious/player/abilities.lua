@@ -1,7 +1,7 @@
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local action_effects<const> = require('cartlib/action_effects')
+local actioneffects<const> = require('cartlib/actioneffects')
 
 local player_abilities<const> = {}
 
@@ -31,14 +31,14 @@ function player_abilities.activate_sword(owner)
 	return true
 end
 
-action_effects.register_effect('pepernoot', {
+actioneffects.register_effect('pepernoot', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(owner)
 		if not owner:has_tag(player_abilities.tags.stairs_action_allowed) then
 			return false
 		end
 		local live_count = 0
-		local projectiles<const> = world:active_objects_by_type('pepernoot_projectile')
+		local projectiles<const> = world:active_objects_by_definition('pepernoot_projectile')
 		for i = 1, #projectiles do
 			local proj<const> = projectiles[i]
 			if proj.owner_id == owner.id then
@@ -74,7 +74,7 @@ action_effects.register_effect('pepernoot', {
 	end,
 })
 
-action_effects.register_effect('spyglass', {
+actioneffects.register_effect('spyglass', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(owner)
 		return world:get('room'):find_near_lithograph(owner) ~= nil
@@ -87,7 +87,7 @@ action_effects.register_effect('spyglass', {
 	end,
 })
 
-action_effects.register_effect('halo', {
+actioneffects.register_effect('halo', {
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(owner)
 		local castle<const> = world:get('c')
@@ -114,7 +114,7 @@ action_effects.register_effect('halo', {
 	end,
 })
 
-function player_abilities.build_input_action_effect_program()
+function player_abilities.build_input_actioneffect_program()
 	return {
 		eval = 'all',
 		bindings = {

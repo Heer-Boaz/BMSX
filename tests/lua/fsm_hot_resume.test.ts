@@ -19,20 +19,21 @@ const SYSTEM_MODULE_FILES = [
 const CART_MODULE_FILES = [
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
-	['cartlib/event_emitter', 'cartlib/event_emitter.lua'],
-	['cartlib/world/component', 'cartlib/world/component.lua'],
+	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
+	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
 	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
-	['cartlib/timeline/component', 'cartlib/timeline/component.lua'],
+	['cartlib/timeline/timelinecomponent', 'cartlib/timeline/timelinecomponent.lua'],
 	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
 	['cartlib/util/scratch_record_batch', 'cartlib/util/scratch_record_batch.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
+	['cartlib/fsm/definitions', 'cartlib/fsm/definitions.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
-	['cartlib/fsm/component', 'cartlib/fsm/component.lua'],
-	['cartlib/behaviour_tree', 'cartlib/behaviour_tree.lua'],
-	['cartlib/behaviour_tree/component', 'cartlib/behaviour_tree/component.lua'],
+	['cartlib/fsm/fsmcomponent', 'cartlib/fsm/fsmcomponent.lua'],
+	['cartlib/behaviourtree/bt', 'cartlib/behaviourtree/bt.lua'],
+	['cartlib/behaviourtree/btcomponent', 'cartlib/behaviourtree/btcomponent.lua'],
 ] as const;
 
 const SYSTEM_STUB_MODULES = [
@@ -44,7 +45,7 @@ const SYSTEM_STUB_MODULES = [
 
 const CART_STUB_MODULES = [
 	{
-		path: 'cartlib/input/player_input',
+		path: 'cartlib/input/input',
 		source: `return {
 			bind = function(_, pattern) return pattern end,
 			is_active = function() return false end,
@@ -70,12 +71,12 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 
 const CART_ENTRY_SOURCE = `
 local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+local events<const> = require('cartlib/eventemitter')
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
-local timeline_component<const> = require('cartlib/timeline/component')
-local behaviour_tree<const> = require('cartlib/behaviour_tree')
-local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
+local state_machine_component<const> = require('cartlib/fsm/fsmcomponent')
+local timeline_component<const> = require('cartlib/timeline/timelinecomponent')
+local behaviour_tree<const> = require('cartlib/behaviourtree/bt')
+local behaviour_tree_component<const> = require('cartlib/behaviourtree/btcomponent')
 
 local target<const> = {
 	id = 'hot_target',
@@ -93,7 +94,7 @@ target.events = events.events_of(target)
 local timelines<const> = timeline_component.new({ parent = target })
 timelines.id = 'hot_target_timelines'
 timelines:on_attach()
-registry:register(timelines)
+registry:register_component(timelines)
 
 fsm_library.register('hot_machine', {
 	initial = 'idle',
@@ -135,7 +136,7 @@ local make_fsm<const> = state_machine_component.factory({ 'hot_machine' })
 local state_machines<const> = make_fsm({ parent = target })
 state_machines.id = 'hot_target_fsm'
 state_machines:on_attach()
-registry:register(state_machines)
+registry:register_component(state_machines)
 state_machines:start()
 
 local machine<const> = state_machines._machines_by_id.hot_machine
@@ -270,7 +271,7 @@ end)
 local make_old_tree<const> = behaviour_tree_component.factory(old_root)
 local behaviour_tree_instance<const> = make_old_tree({ parent = target })
 behaviour_tree_instance.id = 'hot_target_bt'
-registry:register(behaviour_tree_instance)
+registry:register_component(behaviour_tree_instance)
 behaviour_tree_instance.root:tick(target, behaviour_tree_instance)
 local node_data<const> = behaviour_tree_instance.node_data
 node_data.retained = 91

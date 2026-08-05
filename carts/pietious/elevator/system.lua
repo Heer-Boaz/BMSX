@@ -1,4 +1,4 @@
-local system<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 
@@ -11,7 +11,7 @@ function elevator_system:update()
 	local player<const> = world:get('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
-	local elevators<const> = world:active_objects_by_type('elevator_platform')
+	local elevators<const> = world:active_objects_by_definition('elevator_platform')
 	for i = 1, #elevators do
 		elevators[i]:update_motion()
 	end

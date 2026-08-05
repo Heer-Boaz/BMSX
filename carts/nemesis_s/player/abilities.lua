@@ -1,4 +1,4 @@
-local action_effects<const> = require('cartlib/action_effects')
+local actioneffects<const> = require('cartlib/actioneffects')
 
 local player_abilities<const> = {}
 
@@ -6,7 +6,7 @@ player_abilities.effect_ids = {
 	fire_salvo = 'fire_salvo',
 }
 
-action_effects.register_effect(player_abilities.effect_ids.fire_salvo, {
+actioneffects.register_effect(player_abilities.effect_ids.fire_salvo, {
 	handler = function(owner)
 		owner:fire_weapon_salvo()
 	end,

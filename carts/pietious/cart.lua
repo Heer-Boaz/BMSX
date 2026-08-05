@@ -5,9 +5,8 @@ local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision_2d<const> = require('cartlib/collision_2d')
-local renderer<const> = require('cartlib/render/renderer')
-local player_input<const> = require('cartlib/input/player_input')
-player_input.add_player(1)
+local input<const> = require('cartlib/input/input')
+input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
@@ -192,6 +191,6 @@ while true do
 	world:update()
 
 	vblank.wait()
-	renderer:draw()
+	world:render()
 	vblank.wait()
 end

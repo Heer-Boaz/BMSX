@@ -1,9 +1,9 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local tile_layer_component<const> = require('cartlib/render/tile_layer_component')
+local tile_layer_component<const> = require('cartlib/component/tilelayercomponent')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -40,12 +40,12 @@ function breakablewall:process_damage_result(result)
 end
 
 function breakablewall:ctor()
-	local collider<const> = self:get_component(collider_2d_component.type_name)
+	local collider<const> = self:get_component(collider_2d_component)
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
 	self.sy = self.height_tiles * room_tile_size
-	local tile_layer<const> = self:get_component(tile_layer_component.type_name)
+	local tile_layer<const> = self:get_component(tile_layer_component)
 	local tile_count<const> = self.width_tiles * self.height_tiles
 	local tile_source<const> = image.resolve(self.tiletype)
 	local sources<const> = {}
@@ -83,7 +83,7 @@ function breakablewall.register()
 		components = {
 			collider_2d_component.new,
 			tile_layer_component.new,
-			state_machine_component.factory({ 'breakablewall' }),
+			fsm_component.factory({ 'breakablewall' }),
 		},
 		defaults = {
 			trigger = nil,

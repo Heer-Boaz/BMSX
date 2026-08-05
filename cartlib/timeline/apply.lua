@@ -1,4 +1,4 @@
-local timeline_apply<const> = {}
+local timelineapply<const> = {}
 local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = math.sin
 local pi<const> = math.pi
@@ -82,9 +82,9 @@ local compile_frame_shape_apply<const> = function(frame, shape_cache)
 	return apply_fn
 end
 
-function timeline_apply.compile_frames(frames)
-	if frames.__timeline_range then
-		error('[timeline_apply] apply=true requires table frames, not timeline.range().')
+function timelineapply.compile_frames(frames)
+	if frames.__timelinerange then
+		error('[timelineapply] apply=true requires table frames, not timeline.range().')
 	end
 	local compiled<const> = {}
 	local cache<const> = {}
@@ -92,7 +92,7 @@ function timeline_apply.compile_frames(frames)
 	for i = 1, #frames do
 		local frame<const> = frames[i]
 		if type(frame) ~= 'table' then
-			error('[timeline_apply] apply=true requires table frames.')
+			error('[timelineapply] apply=true requires table frames.')
 		end
 		local apply_fn = cache[frame]
 		if apply_fn == nil then
@@ -107,7 +107,7 @@ end
 local compile_target_setter<const> = function(path)
 	local count<const> = #path
 	if count == 0 then
-		error('[timeline_apply] track path must not be empty.')
+		error('[timelineapply] track path must not be empty.')
 	end
 	if count == 1 then
 		local key1<const> = path[1]
@@ -165,12 +165,12 @@ local compile_track_runner<const> = function(track)
 				set_value(target, base_value + ((eased - 0.5) * 2 * amp))
 			end
 		end
-		error('[timeline_apply] unknown wave "' .. tostring(track.wave) .. '".')
+		error('[timelineapply] unknown wave "' .. tostring(track.wave) .. '".')
 	end
-	error('[timeline_apply] unknown track kind "' .. tostring(kind) .. '".')
+	error('[timelineapply] unknown track kind "' .. tostring(kind) .. '".')
 end
 
-function timeline_apply.compile_tracks(tracks)
+function timelineapply.compile_tracks(tracks)
 	local runners<const> = {}
 	for i = 1, #tracks do
 		runners[i] = compile_track_runner(tracks[i])
@@ -184,4 +184,4 @@ function timeline_apply.compile_tracks(tracks)
 	end
 end
 
-return timeline_apply
+return timelineapply

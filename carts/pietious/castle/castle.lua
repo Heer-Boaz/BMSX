@@ -1,12 +1,12 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
-local world_object<const> = require('cartlib/world/object')
+local worldobject<const> = require('cartlib/world/worldobject')
 
 local castle<const> = {}
 
@@ -397,12 +397,12 @@ function castle:begin_seal_dissolution()
 	room.seal_dissolve_step = 0
 	room:rebuild_room_tiles()
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:apply_seal_timeline_frame(1)
+	self:apply_seal_timelineframe(1)
 	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end
 
-function castle:apply_seal_timeline_frame(frame)
+function castle:apply_seal_timelineframe(frame)
 	local room<const> = current_room()
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
@@ -532,7 +532,7 @@ function castle:ctor()
 end
 
 function castle:unbind()
-	world_object.unbind(self)
+	worldobject.unbind(self)
 	progression.unmount(self)
 end
 
@@ -766,7 +766,7 @@ local define_castle_fsm<const> = function()
 			[director_seal_frame_event] = {
 				emitter = 'd',
 				go = function(self, _state, event)
-					self:apply_seal_timeline_frame(event.frame_value + 1)
+					self:apply_seal_timelineframe(event.frame_value + 1)
 				end,
 			},
 			['world_entrance.opening_2'] = {
@@ -818,7 +818,7 @@ local register_castle_definition<const> = function()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,
-		components = { state_machine_component.factory({ 'castle' }) },
+		components = { fsm_component.factory({ 'castle' }) },
 		defaults = {
 			id = 'c',
 			current_room_number = 0,

@@ -1,6 +1,6 @@
 local combat<const> = {}
 require('globals')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
@@ -8,13 +8,13 @@ local prefab<const> = require('cartlib/prefab')
 local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_builders<const> = require('timeline_builders')
+local timelinebuilders<const> = require('timelinebuilders')
 local world<const> = require('cartlib/world/world')
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
-local input<const> = require('cartlib/input/player_input')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local timeline_component<const> = require('cartlib/timeline/component')
+local input<const> = require('cartlib/input/input')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = math.sin
@@ -38,8 +38,8 @@ local stat_label<const> = function(stat_id)
 	end
 end
 
-combat.all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
-local combat_all_out_prompt_timeline_id<const> = 'combat_all_out_prompt'
+combat.all_out_shake = timelinebuilders.build_all_out_shake(combat_all_out_frame_count)
+local combat_all_out_prompt_timelineid<const> = 'combat_all_out_prompt'
 
 local build_all_out_prompt_portrait_frames<const> = function(params)
 	local frames<const> = {}
@@ -385,7 +385,7 @@ function combat.define_fsm()
 
 	states.combat_fade_in = {
 		timelines = {
-			[combat_fade_timeline_id] = {
+			[combat_fade_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_init'
@@ -405,7 +405,7 @@ function combat.define_fsm()
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
-			self.timelines:play(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
+			self.timelines:play(combat_fade_timelineid, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -421,7 +421,7 @@ function combat.define_fsm()
 
 	states.combat_fade_out = {
 		timelines = {
-			[combat_fade_timeline_id] = {
+			[combat_fade_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_done'
@@ -440,7 +440,7 @@ function combat.define_fsm()
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
-			self.timelines:play(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
+			self.timelines:play(combat_fade_timelineid, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -518,7 +518,7 @@ function combat.define_fsm()
 
 	states.combat_intro = {
 		timelines = {
-				[combat_intro_timeline_id] = {
+				[combat_intro_timelineid] = {
 					autoplay = false,
 					stop_on_exit = true,
 					on_end = '/combat_round',
@@ -533,7 +533,7 @@ function combat.define_fsm()
 				maya_a = maya_a,
 				maya_b = maya_b,
 			}
-			self.timelines:play(combat_intro_timeline_id, {
+			self.timelines:play(combat_intro_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -606,7 +606,7 @@ function combat.define_fsm()
 			local maya_b<const> = world:get(combat_maya_b_id)
 			maya_b.visible = false
 			self:apply_combat_round(node)
-			self.timelines:play(combat_hover_timeline_id, {
+			self.timelines:play(combat_hover_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = self,
@@ -683,7 +683,7 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			self.timelines:stop(combat_hover_timeline_id)
+			self.timelines:stop(combat_hover_timelineid)
 			self:clear_combat_parallax_transform()
 			refresh_combat_parallax(self)
 		end,
@@ -691,7 +691,7 @@ function combat.define_fsm()
 
 	states.combat_hit = {
 		timelines = {
-			[combat_hit_timeline_id] = {
+			[combat_hit_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -715,7 +715,7 @@ function combat.define_fsm()
 				monster = monster,
 				slash_frame = self.combat_hit_slash_frame,
 			}
-			self.timelines:play(combat_hit_timeline_id, {
+			self.timelines:play(combat_hit_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -744,7 +744,7 @@ function combat.define_fsm()
 
 	states.combat_dodge = {
 		timelines = {
-			[combat_dodge_timeline_id] = {
+			[combat_dodge_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -762,7 +762,7 @@ function combat.define_fsm()
 				monster.sprite_component.scale_x = 1
 				monster.sprite_component.scale_y = 1
 				self.combat_dodge_dir = -self.combat_dodge_dir
-				self.timelines:play(combat_dodge_timeline_id, {
+				self.timelines:play(combat_dodge_timelineid, {
 					rewind = true,
 					snap_to_start = true,
 					target = monster,
@@ -786,7 +786,7 @@ function combat.define_fsm()
 
 	states.combat_exchange_hit = {
 		timelines = {
-			[combat_exchange_hit_timeline_id] = {
+			[combat_exchange_hit_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -827,7 +827,7 @@ function combat.define_fsm()
 				maya_a = maya_a,
 				overlay = overlay,
 			}
-			self.timelines:play(combat_exchange_hit_timeline_id, {
+			self.timelines:play(combat_exchange_hit_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -888,7 +888,7 @@ function combat.define_fsm()
 
 	states.combat_exchange_miss = {
 		timelines = {
-			[combat_exchange_miss_timeline_id] = {
+			[combat_exchange_miss_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -928,7 +928,7 @@ function combat.define_fsm()
 				maya_a = maya_a,
 				overlay = overlay,
 			}
-			self.timelines:play(combat_exchange_miss_timeline_id, {
+			self.timelines:play(combat_exchange_miss_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -1004,7 +1004,7 @@ function combat.define_fsm()
 			portrait.sprite_component.scale_y = 1
 			local target_x<const> = (screen_width * 0.08) // 1
 			local target_y<const> = (screen_height - portrait.sy) // 1
-			self.timelines:play(combat_all_out_prompt_timeline_id, {
+			self.timelines:play(combat_all_out_prompt_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = portrait,
@@ -1021,7 +1021,7 @@ function combat.define_fsm()
 					settle_bob = 6,
 				},
 			})
-			self.timelines:play(combat_hover_timeline_id, {
+			self.timelines:play(combat_hover_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = self,
@@ -1063,8 +1063,8 @@ function combat.define_fsm()
 				},
 		},
 		leaving_state = function(self)
-			self.timelines:stop(combat_hover_timeline_id)
-			self.timelines:stop(combat_all_out_prompt_timeline_id)
+			self.timelines:stop(combat_hover_timelineid)
+			self.timelines:stop(combat_all_out_prompt_timelineid)
 			self:clear_combat_parallax_transform()
 			local portrait<const> = world:get(combat_all_out_portrait_id)
 			portrait.visible = false
@@ -1076,7 +1076,7 @@ function combat.define_fsm()
 
 	states.combat_all_out = {
 		timelines = {
-			[combat_all_out_timeline_id] = {
+			[combat_all_out_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_focus',
@@ -1108,7 +1108,7 @@ function combat.define_fsm()
 			monster.visible = false
 			maya_a.visible = false
 			maya_b.visible = false
-			self.timelines:play(combat_all_out_timeline_id, {
+			self.timelines:play(combat_all_out_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
@@ -1164,7 +1164,7 @@ function combat.define_fsm()
 			local monster<const> = world:get(combat_monster_id)
 			monster.visible = true
 
-			self.timelines:play(combat_focus_timeline_id, {
+			self.timelines:play(combat_focus_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = monster,
@@ -1253,11 +1253,11 @@ function combat.define_fsm()
 
 	states.combat_results_fade_in = {
 		timelines = {
-			[combat_results_fade_in_timeline_id] = {
+			[combat_results_fade_in_timelineid] = {
 				create = function()
 			return timeline.new({
-				id = combat_results_fade_in_timeline_id,
-				frames = timeline_builders.build_combat_results_fade_in_frames,
+				id = combat_results_fade_in_timelineid,
+				frames = timelinebuilders.build_combat_results_fade_in_frames,
 				ticks_per_frame = combat_results_fade_in_ticks_per_frame,
 				playback_mode = 'once',
 				apply = true,
@@ -1273,7 +1273,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			self.timelines:play(combat_results_fade_in_timeline_id, {
+			self.timelines:play(combat_results_fade_in_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
@@ -1316,7 +1316,7 @@ function combat.define_fsm()
 
 	states.combat_results_fade_out = {
 		timelines = {
-			[combat_results_fade_out_timeline_id] = {
+			[combat_results_fade_out_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1328,7 +1328,7 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			clear_texts(text_ids_core)
-			self.timelines:play(combat_results_fade_out_timeline_id, {
+			self.timelines:play(combat_results_fade_out_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
@@ -1351,7 +1351,7 @@ function combat.define_fsm()
 
 	states.combat_exit_fade_in = {
 		timelines = {
-			[combat_exit_fade_in_timeline_id] = {
+			[combat_exit_fade_in_timelineid] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1364,7 +1364,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			local bg<const> = show_background(self.combat_exit_target_bg)
 			bg.surface_component.color = p3_black_color
-			self.timelines:play(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
+			self.timelines:play(combat_exit_fade_in_timelineid, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1401,7 +1401,7 @@ function combat.define_fsm()
 		initial = 'boot',
 		timelines = {
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
-			[combat_hover_timeline_id] = {
+			[combat_hover_timelineid] = {
 				def = {
 					playback_mode = 'loop',
 					tracks = {
@@ -1413,9 +1413,9 @@ function combat.define_fsm()
 			-- Frame-driven applied animation timelines (frames built by builder fns)
 			-- These require a `target` and optional `params` at play time, so
 			-- individual states use autoplay = false + entering_state play calls.
-			[combat_focus_timeline_id] = {
+			[combat_focus_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_focus_frames,
+					frames = timelinebuilders.build_combat_focus_frames,
 					ticks_per_frame = combat_focus_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
@@ -1426,43 +1426,43 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			[combat_intro_timeline_id] = {
+			[combat_intro_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_intro_frames,
+					frames = timelinebuilders.build_combat_intro_frames,
 					ticks_per_frame = combat_intro_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_hit_timeline_id] = {
+			[combat_hit_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_hit_frames,
+					frames = timelinebuilders.build_combat_hit_frames,
 					ticks_per_frame = combat_hit_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_exchange_hit_timeline_id] = {
+			[combat_exchange_hit_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_exchange_frames,
+					frames = timelinebuilders.build_combat_exchange_frames,
 					ticks_per_frame = combat_exchange_hit_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_exchange_miss_timeline_id] = {
+			[combat_exchange_miss_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_exchange_frames,
+					frames = timelinebuilders.build_combat_exchange_frames,
 					ticks_per_frame = combat_exchange_miss_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_all_out_prompt_timeline_id] = {
+			[combat_all_out_prompt_timelineid] = {
 				def = {
 					frames = build_all_out_prompt_portrait_frames,
 					ticks_per_frame = 16,
@@ -1471,16 +1471,16 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			[combat_dodge_timeline_id] = {
+			[combat_dodge_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_dodge_frames,
+					frames = timelinebuilders.build_combat_dodge_frames,
 					ticks_per_frame = combat_dodge_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_all_out_timeline_id] = {
+			[combat_all_out_timelineid] = {
 				def = {
 					frames = build_all_out_screen_shake_frames,
 					ticks_per_frame = combat_all_out_ticks_per_frame,
@@ -1491,36 +1491,36 @@ function combat.define_fsm()
 			},
 			-- Fade timelines. These use a fixed target (bg_id / etc.) that is only
 			-- valid at runtime, so individual states call play_timeline manually.
-			[combat_fade_timeline_id] = {
+			[combat_fade_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_fade_frames(),
+					frames = timelinebuilders.build_combat_fade_frames(),
 					ticks_per_frame = combat_fade_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_results_fade_in_timeline_id] = {
+			[combat_results_fade_in_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_results_fade_in_frames,
+					frames = timelinebuilders.build_combat_results_fade_in_frames,
 					ticks_per_frame = combat_results_fade_in_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_results_fade_out_timeline_id] = {
+			[combat_results_fade_out_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_results_fade_out_frames(),
+					frames = timelinebuilders.build_combat_results_fade_out_frames(),
 					ticks_per_frame = combat_results_fade_out_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[combat_exit_fade_in_timeline_id] = {
+			[combat_exit_fade_in_timelineid] = {
 				def = {
-					frames = timeline_builders.build_combat_exit_fade_in_frames(),
+					frames = timelinebuilders.build_combat_exit_fade_in_frames(),
 					ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
@@ -1537,8 +1537,8 @@ function combat.register_director()
 		def_id = combat_director_def_id,
 		class = combat_director,
 		components = {
-			timeline_component.new,
-			state_machine_component.factory({ combat_director_fsm_id }),
+			timelinecomponent.new,
+			fsm_component.factory({ combat_director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,

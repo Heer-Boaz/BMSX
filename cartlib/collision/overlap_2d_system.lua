@@ -57,15 +57,13 @@
 --    Carts program these raw bitmasks when constructing each collider.
 
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local system<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local collision_2d<const> = require('cartlib/collision_2d')
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
-
-local collider_2d_component_type<const> = collider_2d_component.type_name
 
 local overlap_2d_system<const> = {}
 overlap_2d_system.__index = overlap_2d_system
@@ -131,7 +129,7 @@ end
 
 function overlap_2d_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap_2d_system)
-	self._component_view = world:_active_component_view(collider_2d_component_type)
+	self._component_view = world:_active_component_view(collider_2d_component)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}

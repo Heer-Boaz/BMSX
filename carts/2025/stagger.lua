@@ -7,7 +7,7 @@ local smoothstep<const> = require('cartlib/easing').smoothstep
 local color<const> = require('cartlib/color')
 local timeline<const> = require('cartlib/timeline/timeline')
 local round_number<const> = math.round
-local stagger_timeline_prefix<const> = 'p3.stagger.'
+local stagger_timelineprefix<const> = 'p3.stagger.'
 local immediate_text_opts<const> = { typed = false, snap = true }
 
 local presets<const> = {
@@ -142,13 +142,13 @@ local stagger_track<const> = function(target, params, event)
 end
 
 local ensure_timeline<const> = function(owner, preset_id, cfg)
-	local timeline_id<const> = stagger_timeline_prefix .. preset_id
-	if owner.timelines:get(timeline_id) then
-		return timeline_id
+	local timelineid<const> = stagger_timelineprefix .. preset_id
+	if owner.timelines:get(timelineid) then
+		return timelineid
 	end
 	local total<const> = cfg.text_start + cfg.text_duration
 	owner.timelines:define(timeline.new({
-		id = timeline_id,
+		id = timelineid,
 		continuous = true,
 		playback_mode = 'once',
 		duration_seconds = total,
@@ -156,7 +156,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 			stagger_track,
 		},
 	}))
-	return timeline_id
+	return timelineid
 end
 
 local build_pose_targets<const> = function(pose_targets)
@@ -179,7 +179,7 @@ end
 function stagger.play(owner, preset_id, opts)
 	local cfg<const> = presets[preset_id]
 	opts = opts or {}
-	local timeline_cfg<const> = {
+	local timelinecfg<const> = {
 		bg_start = 0,
 		bg_duration = cfg.bg_duration,
 		pose_start = cfg.offset,
@@ -193,7 +193,7 @@ function stagger.play(owner, preset_id, opts)
 		text_from = 0,
 		text_to = 1,
 	}
-	local timeline_id<const> = ensure_timeline(owner, preset_id, timeline_cfg)
+	local timelineid<const> = ensure_timeline(owner, preset_id, timelinecfg)
 	local bg<const> = opts.bg
 	local text_main<const> = opts.text_main
 	local text_choice<const> = opts.text_choice
@@ -204,12 +204,12 @@ function stagger.play(owner, preset_id, opts)
 
 	if bg then
 		local base<const> = bg.surface_component.color
-		timeline_cfg.bg_base_color = base
-		timeline_cfg.bg_from = 1
+		timelinecfg.bg_base_color = base
+		timelinecfg.bg_from = 1
 		if opts.bg_dim ~= nil and not opts.bg_dim then
-			timeline_cfg.bg_to = 1
+			timelinecfg.bg_to = 1
 		elseif opts.bg_brightness ~= nil then
-			timeline_cfg.bg_to = opts.bg_brightness
+			timelinecfg.bg_to = opts.bg_brightness
 		end
 		bg.surface_component.color = base
 	end
@@ -233,15 +233,15 @@ function stagger.play(owner, preset_id, opts)
 		text_main:set_highlighted_line(nil)
 	end
 
-	owner.stagger_blocked = timeline_cfg.text_start > 0
-	owner.timelines:stop(timeline_id)
-	owner.timelines:play(timeline_id, {
+	owner.stagger_blocked = timelinecfg.text_start > 0
+	owner.timelines:stop(timelineid)
+	owner.timelines:play(timelineid, {
 		rewind = true,
 		snap_to_start = true,
 		params = {
-			cfg = timeline_cfg,
+			cfg = timelinecfg,
 			bg = bg,
-			bg_base_color = timeline_cfg.bg_base_color,
+			bg_base_color = timelinecfg.bg_base_color,
 			pose_targets = build_pose_targets(opts.pose_targets),
 			text_main = text_main,
 			text_choice = text_choice,

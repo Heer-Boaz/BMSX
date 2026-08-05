@@ -1,10 +1,10 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
-local world_object<const> = require('cartlib/world/object')
+local worldobject<const> = require('cartlib/world/worldobject')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
@@ -21,7 +21,7 @@ local explosion_frames<const> = {
 }
 
 local loot_spawn_sequence = 0
-local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
+local explosion_timelineid<const> = 'enemy_explosion.timeline.explosion'
 
 local loot_value_for_type<const> = function(loot_type)
 	if loot_type == 'life' then
@@ -61,7 +61,7 @@ end
 local define_enemy_explosion_fsm<const> = function()
 	fsm_library.register('enemy_explosion', {
 		timelines = {
-			[explosion_timeline_id] = {
+			[explosion_timelineid] = {
 				def = {
 					frames = explosion_frames,
 					ticks_per_frame = enemy_explosion_frame_steps,
@@ -81,13 +81,13 @@ local define_enemy_explosion_fsm<const> = function()
 		on = {
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = world_object.despawn,
+				go = worldobject.despawn,
 			},
 		},
 		states = {
 			animating = {
 				entering_state = function(self)
-					self.timelines:play(explosion_timeline_id, { rewind = true, snap_to_start = true })
+					self.timelines:play(explosion_timelineid, { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -99,7 +99,7 @@ local register_enemy_explosion_definition<const> = function()
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
 		base = sprite_object,
-		components = { timeline_component.new, state_machine_component.factory({ 'enemy_explosion' }) },
+		components = { timelinecomponent.new, fsm_component.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,
 		},

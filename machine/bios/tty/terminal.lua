@@ -1,7 +1,7 @@
 local assets<const> = require('bmsx/system_assets')
 local dma_transfer<const> = require('kernel/dma')
 local gx_gpu<const> = require('gpu/gpu')
-local gx_command_list<const> = require('gpu/command_list')
+local gx_commandlist<const> = require('gpu/commandlist')
 local layout<const> = require('tty/layout')
 
 local byte<const> = __bmsx_string_byte
@@ -601,7 +601,7 @@ function terminal.flush()
 			end
 			command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 0)
 			if last_dirty_row < last_batch_row then
-				gx_command_list.submit(command_words, command_word_count)
+				gx_commandlist.submit(command_words, command_word_count)
 			else
 				dma_transfer.copy_to_gp0(command_words, command_word_count)
 			end

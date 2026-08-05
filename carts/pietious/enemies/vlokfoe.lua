@@ -1,8 +1,8 @@
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
-local behaviour_tree<const> = require('cartlib/behaviour_tree')
-local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
+local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_component<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local vlokfoe<const> = {}
@@ -29,7 +29,7 @@ function vlokfoe.register()
 		def_id = 'enemy.vlokfoe',
 		class = vlokfoe,
 		base = sprite_object,
-		components = { behaviour_tree_component.factory(behaviour_tree.action_node.new('enemy_vlokfoe', vlokfoe.bt_tick)) },
+		components = { bt_component.factory(behaviourtree.action_node.new('enemy_vlokfoe', vlokfoe.bt_tick)) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

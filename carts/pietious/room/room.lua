@@ -1,5 +1,5 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -8,22 +8,22 @@ local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
-local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
-local tile_layer_component<const> = require('cartlib/render/tile_layer_component')
-local timeline_component<const> = require('cartlib/timeline/component')
+local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local tile_layer_component<const> = require('cartlib/component/tilelayercomponent')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 
 local room<const> = {}
-local water_surface_timeline_id<const> = 'r.ws'
+local water_surface_timelineid<const> = 'r.ws'
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
-local water_surface_timeline_frame_defs<const> = {
+local water_surface_timelineframe_defs<const> = {
 	{ value = 1, hold = 1 },
 }
 for i = 1, 63 do
 	local suffix<const> = string.format('%02d', i)
 	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
-	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
+	water_surface_timelineframe_defs[i + 1] = { value = i + 1, hold = 1 }
 end
 local tile_chars<const> = {
 	wall = string.byte('#'),
@@ -900,7 +900,7 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-	local room_effect<const> = self:get_component(custom_visual_component.type_name)
+	local room_effect<const> = self:get_component(custom_visual_component)
 	room_effect:set_offset_z(draw_z_room_effect)
 	room_effect.producer = room_object.render_room
 end
@@ -1167,15 +1167,15 @@ local define_room_fsm<const> = function()
 				states = {
 					active = {
 						timelines = {
-							[water_surface_timeline_id] = {
+							[water_surface_timelineid] = {
 								def = {
 									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
-									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
+									frames = timeline.build_frame_sequence(water_surface_timelineframe_defs),
 									playback_mode = 'loop',
 								},
 								autoplay = true,
 								on_frame = function(self)
-									self:sync_water_surface_frame(self.timelines:get(water_surface_timeline_id):value())
+									self:sync_water_surface_frame(self.timelines:get(water_surface_timelineid):value())
 								end,
 							},
 						},
@@ -1205,8 +1205,8 @@ local register_room_definition<const> = function()
 		class = room_object,
 		components = {
 			custom_visual_component.new,
-			timeline_component.new,
-			state_machine_component.factory({ 'room' }),
+			timelinecomponent.new,
+			fsm_component.factory({ 'room' }),
 		},
 		defaults = {
 		},

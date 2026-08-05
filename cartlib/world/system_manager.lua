@@ -3,14 +3,14 @@ local tick_group<const> = require('cartlib/world/tick_group')
 
 local tick_group_order<const> = {
 	tick_group.input,
-	tick_group.action_effects,
+	tick_group.actioneffects,
 	tick_group.gameplay,
 	tick_group.physics,
 	tick_group.animation,
 }
 local tick_group_index_by_id<const> = {
 	[tick_group.input] = 1,
-	[tick_group.action_effects] = 2,
+	[tick_group.actioneffects] = 2,
 	[tick_group.gameplay] = 3,
 	[tick_group.physics] = 4,
 	[tick_group.animation] = 5,

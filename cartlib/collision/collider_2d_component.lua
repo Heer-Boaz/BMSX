@@ -1,9 +1,8 @@
-local select_sprite_shape_ref<const> = require('cartlib/collision/sprite_shape')
-local component<const> = require('cartlib/world/component')
+local select_spriteshaperef<const> = require('cartlib/collision/spriteshape')
+local component<const> = require('cartlib/component/basecomponent')
 
 local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component
-collider_2d_component.type_name = 'collider_2d_component'
 setmetatable(collider_2d_component, { __index = component })
 
 local invalidate_overlap_shape<const> = function(collider)
@@ -22,7 +21,7 @@ function collider_2d_component:prepare_overlap()
 	local local_area<const> = collider.local_area
 	local geo_shape_ref
 	if sprite then
-		geo_shape_ref = select_sprite_shape_ref(collider, sprite)
+		geo_shape_ref = select_spriteshaperef(collider, sprite)
 		shape_offset_x = sprite.offset_x
 		shape_offset_y = sprite.offset_y
 	end
@@ -46,7 +45,7 @@ function collider_2d_component:prepare_overlap()
 end
 
 function collider_2d_component.new(opts)
-	local self<const> = setmetatable(component.new(opts, collider_2d_component.type_name), collider_2d_component)
+	local self<const> = setmetatable(component.new(opts), collider_2d_component)
 	self.hittable = opts.hittable == nil or opts.hittable
 	self.layer = opts.layer or 1
 	self.mask = opts.mask or 0xffffffff
@@ -75,13 +74,13 @@ function collider_2d_component:set_sprite(sprite)
 		local previous_collider<const> = sprite._collider
 		if previous_collider then
 			previous_collider.sprite = nil
-			previous_collider._sprite_shape_image_id = nil
+			previous_collider._spriteshapeimage_id = nil
 			invalidate_overlap_shape(previous_collider)
 		end
 		sprite._collider = self
 	end
 	self.sprite = sprite
-	self._sprite_shape_image_id = nil
+	self._spriteshapeimage_id = nil
 	invalidate_overlap_shape(self)
 end
 

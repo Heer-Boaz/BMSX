@@ -2,31 +2,32 @@ local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {
 	_by_id = {},
-	_by_type = {},
+	_objects_by_definition = {},
+	_components_by_class = {},
 	_by_tag = {},
 	_reservations = {},
-	_entities = dense_set.new(),
 }
 
 local empty_bucket<const> = {}
 
-local add_entity_type<const> = function(self, entity)
-	local type_name<const> = entity.type_name
-	if type_name ~= nil then
-		local bucket = self._by_type[type_name]
-		if bucket == nil then
-			bucket = dense_set.new()
-			self._by_type[type_name] = bucket
-		end
-		dense_set.add(bucket, entity)
+local add_object_definition<const> = function(self, obj)
+	local definition_id<const> = obj.definition_id
+	local bucket = self._objects_by_definition[definition_id]
+	if bucket == nil then
+		bucket = dense_set.new()
+		self._objects_by_definition[definition_id] = bucket
 	end
+	dense_set.add(bucket, obj)
 end
 
-local remove_entity_type<const> = function(self, entity)
-	local type_name<const> = entity.type_name
-	if type_name ~= nil then
-		dense_set.remove(self._by_type[type_name], entity)
+local add_component_class<const> = function(self, comp)
+	local component_class<const> = getmetatable(comp)
+	local bucket = self._components_by_class[component_class]
+	if bucket == nil then
+		bucket = dense_set.new()
+		self._components_by_class[component_class] = bucket
 	end
+	dense_set.add(bucket, comp)
 end
 
 local add_entity_tag<const> = function(self, entity, tag)
@@ -79,9 +80,17 @@ function registry:register(entity)
 	end
 	self._reservations[entity.id] = nil
 	self._by_id[entity.id] = entity
-	dense_set.add(self._entities, entity)
-	add_entity_type(self, entity)
 	add_entity_tags(self, entity)
+end
+
+function registry:register_object(obj)
+	self:register(obj)
+	add_object_definition(self, obj)
+end
+
+function registry:register_component(comp)
+	self:register(comp)
+	add_component_class(self, comp)
 end
 
 function registry:reconcile_tag(entity, tag)
@@ -99,25 +108,26 @@ end
 
 function registry:deregister(entity)
 	remove_entity_tags(self, entity)
-	remove_entity_type(self, entity)
-	dense_set.remove(self._entities, entity)
 	self._by_id[entity.id] = nil
 end
 
-function registry:clear()
-	local entities<const> = self._entities.items
-	local index = #entities
-	while index > 0 do
-		local entity<const> = entities[index]
-		if not entity.registry_persistent then
-			self:deregister(entity)
-		end
-		index = index - 1
-	end
+function registry:deregister_object(obj)
+	dense_set.remove(self._objects_by_definition[obj.definition_id], obj)
+	self:deregister(obj)
 end
 
-function registry:entities_by_type(type_name)
-	local bucket<const> = self._by_type[type_name]
+function registry:deregister_component(comp)
+	dense_set.remove(self._components_by_class[getmetatable(comp)], comp)
+	self:deregister(comp)
+end
+
+function registry:objects_by_definition(definition_id)
+	local bucket<const> = self._objects_by_definition[definition_id]
+	return bucket and bucket.items or empty_bucket
+end
+
+function registry:components(component_class)
+	local bucket<const> = self._components_by_class[component_class]
 	return bucket and bucket.items or empty_bucket
 end
 

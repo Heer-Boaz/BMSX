@@ -1,16 +1,16 @@
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/component')
+local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timeline_component<const> = require('cartlib/timeline/component')
+local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 local rock<const> = {}
 rock.__index = rock
-local rock_break_timeline_id<const> = 'rock.tl.break'
+local rock_break_timelineid<const> = 'rock.tl.break'
 
 function rock:ctor()
 	self.collider.layer = collision_enemy_layer
@@ -95,7 +95,7 @@ local define_rock_fsm<const> = function()
 						},
 			breaking = {
 				timelines = {
-					[rock_break_timeline_id] = {
+					[rock_break_timelineid] = {
 						def = {
 							frames = timeline.range(rock_break_steps),
 							playback_mode = 'once',
@@ -129,7 +129,7 @@ local register_rock_definition<const> = function()
 		def_id = 'rock',
 		class = rock,
 		base = sprite_object,
-		components = { timeline_component.new, state_machine_component.factory({ 'rock' }) },
+		components = { timelinecomponent.new, fsm_component.factory({ 'rock' }) },
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,
