@@ -14,7 +14,7 @@ local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local input<const> = require('cartlib/input/player')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = math.sin
@@ -1537,7 +1537,7 @@ function combat.register_director()
 		def_id = combat_director_def_id,
 		class = combat_director,
 		components = {
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ combat_director_fsm_id }),
 		},
 		defaults = {

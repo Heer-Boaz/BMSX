@@ -7,7 +7,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -824,7 +824,7 @@ local register_player_definition<const> = function()
 		class = player,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ ids_player_fsm }),
 			action_effects.actioneffectcomponent.factory({ player_abilities.effect_ids.fire_salvo }),
 		},

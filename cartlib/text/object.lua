@@ -3,7 +3,7 @@
 
 local worldobject<const> = require('cartlib/world/object')
 local textcomponent<const> = require('cartlib/text/component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
@@ -273,7 +273,7 @@ function textobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textobject'
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
-	self:add_component(timelinecomponent.new({ parent = self }))
+	self:add_component(timeline_component.new({ parent = self }))
 	self:add_component(state_machine_component.new({
 		parent = self,
 		definition = fsm_library.get(textobject_fsm_id),

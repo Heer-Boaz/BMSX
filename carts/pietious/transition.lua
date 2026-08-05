@@ -21,7 +21,7 @@ local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local textcomponent<const> = require('cartlib/text/component')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -103,7 +103,7 @@ local register_transition_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			textcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ 'transition' }),
 		},
 		defaults = {

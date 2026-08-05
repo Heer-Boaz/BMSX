@@ -5,7 +5,7 @@ local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -255,7 +255,7 @@ local register_item_screen_definition<const> = function()
 		class = item_screen,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ 'item_screen' }),
 		},
 		defaults = {

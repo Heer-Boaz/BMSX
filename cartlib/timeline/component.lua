@@ -3,35 +3,35 @@ local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local timeline<const> = timeline_module.timeline
 
-local timelinecomponent<const> = {}
-timelinecomponent.__index = timelinecomponent
-timelinecomponent.type_name = 'timelinecomponent'
-setmetatable(timelinecomponent, { __index = component })
+local timeline_component<const> = {}
+timeline_component.__index = timeline_component
+timeline_component.type_name = 'timeline_component'
+setmetatable(timeline_component, { __index = component })
 
 local activate_timeline_entry<const> = function(self, entry)
 	local id<const> = entry.instance.id
-	if self.active_index_by_id[id] ~= nil then
+	if self._active_index_by_id[id] ~= nil then
 		return
 	end
-	local count<const> = self.active_count + 1
-	self.active_count = count
-	self.active_entries[count] = entry
-	self.active_index_by_id[id] = count
+	local count<const> = self._active_count + 1
+	self._active_count = count
+	self._active_entries[count] = entry
+	self._active_index_by_id[id] = count
 end
 
 local deactivate_timeline_entry<const> = function(self, id)
-	local index<const> = self.active_index_by_id[id]
+	local index<const> = self._active_index_by_id[id]
 	if index == nil then
 		return
 	end
-	local last_index<const> = self.active_count
-	local last_entry<const> = self.active_entries[last_index]
-	self.active_entries[last_index] = nil
-	self.active_count = last_index - 1
-	self.active_index_by_id[id] = nil
+	local last_index<const> = self._active_count
+	local last_entry<const> = self._active_entries[last_index]
+	self._active_entries[last_index] = nil
+	self._active_count = last_index - 1
+	self._active_index_by_id[id] = nil
 	if index < last_index then
-		self.active_entries[index] = last_entry
-		self.active_index_by_id[last_entry.instance.id] = index
+		self._active_entries[index] = last_entry
+		self._active_index_by_id[last_entry.instance.id] = index
 	end
 end
 
@@ -51,32 +51,32 @@ local process_timeline_frame_payload<const> = function(_, entry, owner, payload)
 	end
 end
 
-function timelinecomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, timelinecomponent.type_name, true), timelinecomponent)
-	self.registry = {}
-	self.active_entries = {}
-	self.active_count = 0
-	self.active_index_by_id = {}
+function timeline_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, timeline_component.type_name, true), timeline_component)
+	self._entries_by_id = {}
+	self._active_entries = {}
+	self._active_count = 0
+	self._active_index_by_id = {}
 	return self
 end
 
-function timelinecomponent:on_attach()
+function timeline_component:on_attach()
 	self.parent.timelines = self
 end
 
-function timelinecomponent:on_detach()
+function timeline_component:on_detach()
 	if self.parent.timelines == self then
 		self.parent.timelines = nil
 	end
 end
 
-function timelinecomponent:define(definition)
+function timeline_component:define(definition)
 	local replacement<const> = definition.__is_timeline and definition or timeline.new(definition)
-	local entry = self.registry[replacement.id]
+	local entry = self._entries_by_id[replacement.id]
 	local instance = replacement
 	local active = false
 	if entry ~= nil then
-		active = self.active_index_by_id[replacement.id] ~= nil
+		active = self._active_index_by_id[replacement.id] ~= nil
 		if active and replacement.frame_builder then
 			replacement:build(entry.params)
 		end
@@ -88,7 +88,7 @@ function timelinecomponent:define(definition)
 			target = instance.def.target,
 			params = instance.def.params,
 		}
-		self.registry[instance.id] = entry
+		self._entries_by_id[instance.id] = entry
 	end
 	local markers<const> = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	local apply_function
@@ -108,24 +108,24 @@ function timelinecomponent:define(definition)
 	timeline_dispatch.init_entry(entry)
 end
 
-function timelinecomponent:get(id)
-	local entry<const> = self.registry[id]
+function timeline_component:get(id)
+	local entry<const> = self._entries_by_id[id]
 	return entry and entry.instance
 end
 
-function timelinecomponent:seek(id, frame)
-	local entry<const> = self.registry[id]
+function timeline_component:seek(id, frame)
+	local entry<const> = self._entries_by_id[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
+		error('[timeline_component] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	entry.instance:force_seek(frame)
 	return entry.instance
 end
 
-function timelinecomponent:advance(id)
-	local entry<const> = self.registry[id]
+function timeline_component:advance(id)
+	local entry<const> = self._entries_by_id[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
+		error('[timeline_component] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	local instance<const> = entry.instance
 	if instance:advance() ~= nil then
@@ -136,10 +136,10 @@ function timelinecomponent:advance(id)
 	return instance
 end
 
-function timelinecomponent:play(id, opts)
-	local entry<const> = self.registry[id]
+function timeline_component:play(id, opts)
+	local entry<const> = self._entries_by_id[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
+		error('[timeline_component] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	local instance<const> = entry.instance
 	local owner<const> = self.parent
@@ -199,8 +199,8 @@ function timelinecomponent:play(id, opts)
 	return instance
 end
 
-function timelinecomponent:stop(id)
-	local entry<const> = self.registry[id]
+function timeline_component:stop(id)
+	local entry<const> = self._entries_by_id[id]
 	if entry then
 		local owner<const> = self.parent
 		local controlled<const> = entry.markers.controlled_tags
@@ -211,10 +211,10 @@ function timelinecomponent:stop(id)
 	deactivate_timeline_entry(self, id)
 end
 
-function timelinecomponent:tick_active(dt_ms)
+function timeline_component:tick_active(dt_ms)
 	local index = 1
-	while index <= self.active_count do
-		local entry<const> = self.active_entries[index]
+	while index <= self._active_count do
+		local entry<const> = self._active_entries[index]
 		if entry.instance:update(dt_ms) ~= nil then
 			if timeline_dispatch.process_instance_events(entry, self.parent, dt_ms, process_timeline_frame_payload) then
 				deactivate_timeline_entry(self, entry.instance.id)
@@ -227,4 +227,4 @@ function timelinecomponent:tick_active(dt_ms)
 	end
 end
 
-return timelinecomponent
+return timeline_component

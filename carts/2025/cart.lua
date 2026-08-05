@@ -16,7 +16,7 @@ local customvisualcomponent<const> = require('cartlib/render/custom_visual_compo
 local surfacecomponent<const> = require('cartlib/render/surface_component')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -203,7 +203,7 @@ local register_director<const> = function()
 		class = director,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ director_fsm_id }),
 		},
 		defaults = {

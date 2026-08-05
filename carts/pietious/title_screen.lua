@@ -3,7 +3,7 @@ local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 require('constants')
 local spritecomponent<const> = require('cartlib/render/sprite_component')
 
@@ -223,7 +223,7 @@ local register_title_screen_definition<const> = function()
 		def_id = 'title_screen',
 		class = title_screen,
 		base = spriteobject,
-		components = { timelinecomponent.new, state_machine_component.factory({ 'title_screen' }) },
+		components = { timeline_component.new, state_machine_component.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})
 end

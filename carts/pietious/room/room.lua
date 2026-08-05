@@ -10,7 +10,7 @@ local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
 local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
 local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -1205,7 +1205,7 @@ local register_room_definition<const> = function()
 		class = room_object,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ 'room' }),
 		},
 		defaults = {

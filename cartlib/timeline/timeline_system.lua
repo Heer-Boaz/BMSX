@@ -1,13 +1,13 @@
 -- timeline_system.lua
 -- Timeline ECS system.
 
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
-local timeline_component_type<const> = timelinecomponent.type_name
+local timeline_component_type<const> = timeline_component.type_name
 
 local timeline_system<const> = {}
 timeline_system.__index = timeline_system
@@ -23,7 +23,7 @@ function timeline_system:update(dt_ms)
 	local components<const> = self.components.items
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
-		if component.active_count ~= 0 then
+		if component._active_count ~= 0 then
 			component:tick_active(dt_ms)
 		end
 	end

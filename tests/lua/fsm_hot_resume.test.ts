@@ -73,7 +73,7 @@ local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/eventemitter')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local behaviourtreecomponent<const> = require('cartlib/behaviourtree/component')
 
@@ -90,7 +90,7 @@ function target:remove_tag(tag)
 	self.tags[tag] = nil
 end
 target.events = events.events_of(target)
-local timelines<const> = timelinecomponent.new({ parent = target })
+local timelines<const> = timeline_component.new({ parent = target })
 timelines.id = 'hot_target_timelines'
 timelines:on_attach()
 registry:register(timelines)
@@ -149,7 +149,7 @@ assert(target.tags.old_active == true)
 timelines:tick_active(1)
 assert(target.timeline_value == 101)
 local timeline_before<const> = timelines:get('hot_timeline')
-local timeline_entry_before<const> = timelines.active_entries[1]
+local timeline_entry_before<const> = timelines._active_entries[1]
 local timeline_head_before<const> = timeline_before.head
 local timeline_time_before<const> = timeline_before.time_ms
 
@@ -210,7 +210,7 @@ local history_after<const> = machine:get_history_snapshot()
 assert(#history_after == 1 and history_after[1] == 'idle')
 assert(target.tags.old_active == nil and target.tags.new_active == true)
 assert(timelines:get('hot_timeline') == timeline_before)
-assert(timelines.active_entries[1] == timeline_entry_before)
+assert(timelines._active_entries[1] == timeline_entry_before)
 assert(timeline_before.head == timeline_head_before and timeline_before.time_ms == timeline_time_before)
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)

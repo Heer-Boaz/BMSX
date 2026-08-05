@@ -3,7 +3,7 @@ local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -129,7 +129,7 @@ local register_rock_definition<const> = function()
 		def_id = 'rock',
 		class = rock,
 		base = spriteobject,
-		components = { timelinecomponent.new, state_machine_component.factory({ 'rock' }) },
+		components = { timeline_component.new, state_machine_component.factory({ 'rock' }) },
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,

@@ -89,7 +89,7 @@ local action_effects<const> = require('cartlib/action_effects')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local inputactioneffectcomponent<const> = require('cartlib/input/action_effect/component')
 local spritecomponent<const> = require('cartlib/render/sprite_component')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local collision2d<const> = require('cartlib/collision2d')
 local player_abilities<const> = require('player/abilities')
 
@@ -3186,7 +3186,7 @@ local register_player_definition<const> = function()
 		class = player,
 		base = spriteobject,
 		components = {
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ 'player' }),
 		},
 		defaults = {

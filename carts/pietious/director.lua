@@ -56,7 +56,7 @@ local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/component')
+local timeline_component<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
@@ -937,7 +937,7 @@ local register_director_definition<const> = function()
 		class = director,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			state_machine_component.factory({ 'director' }),
 		},
 		defaults = {
