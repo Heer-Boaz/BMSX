@@ -77,7 +77,6 @@
 local eventemitter<const> = {
 	id = 'eventemitter',
 	listeners = {},
-	any_listeners = {},
 }
 
 local event_port<const> = {}
@@ -137,22 +136,6 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
--- eventemitter:on_any(handler, subscriber): listen to ALL events
--- regardless of type.  Use sparingly (e.g. debugging, event logging).  For
--- normal game logic always subscribe to a specific event name via on().
-function eventemitter:on_any(handler, subscriber)
-	self.any_listeners[#self.any_listeners + 1] = { handler = handler, subscriber = subscriber }
-end
-
-function eventemitter:off_any(handler)
-	for i = #self.any_listeners, 1, -1 do
-		local entry<const> = self.any_listeners[i]
-		if entry.handler == handler then
-			table.remove(self.any_listeners, i)
-		end
-	end
-end
-
 -- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
 -- is retained by the owning event port for filtering and downstream FSMs.
 function eventemitter:emit(event_type, emitter, payload, emitter_id)
@@ -166,10 +149,6 @@ function eventemitter:emit(event_type, emitter, payload, emitter_id)
 			end
 		end
 	end
-
-	for i = 1, #self.any_listeners do
-		self.any_listeners[i].handler(event_type, emitter, payload, emitter_id)
-	end
 end
 
 -- eventemitter:remove_subscriber(subscriber): remove all
@@ -182,12 +161,6 @@ function eventemitter:remove_subscriber(subscriber)
 			if entry.subscriber == subscriber then
 				table.remove(list, i)
 			end
-		end
-	end
-	for i = #self.any_listeners, 1, -1 do
-		local entry<const> = self.any_listeners[i]
-		if entry.subscriber == subscriber then
-			table.remove(self.any_listeners, i)
 		end
 	end
 end
