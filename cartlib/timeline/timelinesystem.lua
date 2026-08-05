@@ -16,12 +16,12 @@ function timelinesystem.new(world)
 	return self
 end
 
-function timelinesystem:update(dt_ms)
+function timelinesystem:update(delta_time)
 	local components<const> = self._component_view.items
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		if component._active_count ~= 0 then
-			component:tick_active(dt_ms)
+			component:tick_active(delta_time)
 		end
 	end
 end

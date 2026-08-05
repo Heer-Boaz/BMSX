@@ -21,7 +21,7 @@ function system_manager.new(world)
 		_systems_by_tick_group = {},
 		_system_counts = {},
 		_tick_group_count = 0,
-		_frame_delta_ms = clock.frame_milliseconds(),
+		_delta_time = clock.frame_milliseconds(),
 	}, system_manager)
 end
 
@@ -62,7 +62,7 @@ function system_manager:update()
 		world:_begin_tick_group(self._tick_groups[tick_group_index])
 		local systems<const> = self._systems_by_tick_group[tick_group_index]
 		for system_index = 1, self._system_counts[tick_group_index] do
-			systems[system_index]:update(self._frame_delta_ms)
+			systems[system_index]:update(self._delta_time)
 		end
 		world:_commit_tick_group()
 	end

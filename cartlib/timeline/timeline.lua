@@ -383,13 +383,13 @@ function timeline:rewind()
 	clear_step_events(self)
 end
 
-function timeline:update(dt)
+function timeline:update(delta_time)
 	if not self.auto_tick or self.ended then
 		return nil
 	end
 	clear_step_events(self)
-	self.ticks = self.ticks + dt
-	self.time_ms = self.time_ms + dt
+	self.ticks = self.ticks + delta_time
+	self.time_ms = self.time_ms + delta_time
 	if self.continuous then
 		local head = self.head
 		if head < 0 then

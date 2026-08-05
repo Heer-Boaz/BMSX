@@ -211,12 +211,12 @@ function timelinecomponent:stop(id)
 	deactivate_timelineentry(self, id)
 end
 
-function timelinecomponent:tick_active(dt_ms)
+function timelinecomponent:tick_active(delta_time)
 	local index = 1
 	while index <= self._active_count do
 		local entry<const> = self._active_entries[index]
-		if entry.instance:update(dt_ms) ~= nil then
-			if timelinedispatch.process_instance_events(entry, self.parent, dt_ms, process_timelineframe_payload) then
+		if entry.instance:update(delta_time) ~= nil then
+			if timelinedispatch.process_instance_events(entry, self.parent, delta_time, process_timelineframe_payload) then
 				deactivate_timelineentry(self, entry.instance.id)
 			else
 				index = index + 1

@@ -35,7 +35,7 @@ local apply_markers<const> = function(entry, owner, frame_index)
 	end
 end
 
-local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payload, context)
+local dispatch_frame<const> = function(entry, owner, evt, delta_time, on_frame_payload, context)
 	local state<const> = entry.timelinedispatch_state
 	local payload<const> = acquire_payload(state, state.frame_payloads)
 	local scoped_event_type<const> = state.scoped_frame_event_type
@@ -44,7 +44,7 @@ local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payloa
 	payload.rewound = evt.rewound
 	payload.reason = evt.reason
 	payload.direction = evt.direction
-	payload.dt = dt_ms
+	payload.delta_time = delta_time
 	payload.time_ms = evt.time_ms
 	apply_markers(entry, owner, evt.current)
 	on_frame_payload(context, entry, owner, payload)
@@ -79,7 +79,7 @@ function timelinedispatch.init_entry(entry)
 		frame_payload.rewound = false
 		frame_payload.reason = false
 		frame_payload.direction = 0
-		frame_payload.dt = 0
+		frame_payload.delta_time = 0
 		frame_payload.time_ms = 0
 		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
@@ -102,13 +102,13 @@ function timelinedispatch.init_entry(entry)
 	end
 end
 
-function timelinedispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)
+function timelinedispatch.process_instance_events(entry, owner, delta_time, on_frame_payload, context)
 	local instance<const> = entry.instance
 	local stop = false
 	for i = 1, instance.step_event_count do
 		local evt<const> = instance.step_events[i]
 		if evt.kind == 'frame' then
-			dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, context)
+			dispatch_frame(entry, owner, evt, delta_time, on_frame_payload, context)
 		else
 			if dispatch_end(entry, owner, evt) then
 				stop = true

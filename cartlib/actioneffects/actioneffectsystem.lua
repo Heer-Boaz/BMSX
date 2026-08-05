@@ -15,11 +15,11 @@ function actioneffectsystem.new(world)
 	return self
 end
 
-function actioneffectsystem:update(dt_ms)
+function actioneffectsystem:update(delta_time)
 	local components<const> = self._component_view.items
 	for i = 1, #components do
 		local component<const> = components[i]
-		component.time_ms = component.time_ms + dt_ms
+		component.time_ms = component.time_ms + delta_time
 	end
 end
 

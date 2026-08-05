@@ -19,7 +19,7 @@
 --    Subscribe in bind(), not in update():
 --
 --      WRONG — manual loop every frame:
---        function hero:update(dt)
+--        function hero:update(delta_time)
 --          for enemy in objects_by_tag('enemy') do
 --            if collision_2d.collides(self.collider, enemy.collider) then ...
 --

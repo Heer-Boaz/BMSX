@@ -15,10 +15,10 @@ function fsmsystem.new(world)
 	return self
 end
 
-function fsmsystem:update(dt_ms)
+function fsmsystem:update(delta_time)
 	local components<const> = self._component_view.items
 	for i = 1, #components do
-		components[i]:update(dt_ms)
+		components[i]:update(delta_time)
 	end
 end
 
