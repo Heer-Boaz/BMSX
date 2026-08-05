@@ -198,38 +198,31 @@
 				"one_of": {
 					"type": "array",
 					"items": {
-						"any_of": [
-							{
+						"type": "object",
+						"properties": {
+							"audio_id": {
 								"$ref": "#/definitions/asset_id"
 							},
-							{
-								"type": "object",
-								"properties": {
-									"audio_id": {
-										"$ref": "#/definitions/asset_id"
-									},
-									"modulation_preset": {
-										"type": "string"
-									},
-									"priority": {
-										"type": "number",
-										"minimum": 0
-									},
-									"cooldown_ms": {
-										"type": "number",
-										"minimum": 0
-									},
-									"weight": {
-										"type": "number",
-										"minimum": 0
-									}
-								},
-								"required": [
-									"audio_id"
-								],
-								"additionalProperties": false
+							"modulation_preset": {
+								"type": "string"
+							},
+							"priority": {
+								"type": "number",
+								"minimum": 0
+							},
+							"cooldown_ms": {
+								"type": "number",
+								"minimum": 0
+							},
+							"weight": {
+								"type": "number",
+								"minimum": 0
 							}
-						]
+						},
+						"required": [
+							"audio_id"
+						],
+						"additionalProperties": false
 					}
 				},
 				"pick": {
@@ -331,25 +324,12 @@
 				},
 				"return_to": {
 					"$ref": "#/definitions/asset_id"
-				},
-				"return_to_previous": {
-					"type": "boolean"
 				}
 			},
 			"required": [
 				"stinger"
 			],
-			"additionalProperties": false,
-			"allOf": [
-				{
-					"not": {
-						"required": [
-							"return_to",
-							"return_to_previous"
-						]
-					}
-				}
-			]
+			"additionalProperties": false
 		},
 		"stringArray": {
 			"type": "array",

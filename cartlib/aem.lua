@@ -127,10 +127,7 @@ local compile_action<const> = function(action)
 	local seq<const> = action.sequence
 	if seq ~= nil then
 		for i = 1, #seq do
-			local item<const> = seq[i]
-			if type(item) ~= 'string' then
-				compile_action(item)
-			end
+			compile_action(seq[i])
 		end
 	end
 end
@@ -145,25 +142,20 @@ local compile_rules<const> = function(rules)
 		end
 		compiled_rule.__predicate = compile_matcher(rule.when)
 		local spec<const> = rule.go
-		if type(spec) ~= 'string' and spec.one_of ~= nil then
+		if spec.one_of ~= nil then
 			local actions<const> = {}
 			local weights<const> = {}
 			local has_weights
 			local one_of<const> = spec.one_of
 			for j = 1, #one_of do
 				local item<const> = one_of[j]
-				if type(item) == 'string' then
-					actions[#actions + 1] = item
-					weights[#weights + 1] = 1
-				else
-					compile_action(item)
-					actions[#actions + 1] = item
-					local weight<const> = item.weight or 1
-					if weight ~= 1 then
-						has_weights = true
-					end
-					weights[#weights + 1] = weight
+				compile_action(item)
+				actions[#actions + 1] = item
+				local weight<const> = item.weight or 1
+				if weight ~= 1 then
+					has_weights = true
 				end
+				weights[#weights + 1] = weight
 			end
 			compiled_rule.__oneof_actions = actions
 			compiled_rule.__oneof_weights = weights
@@ -171,7 +163,7 @@ local compile_rules<const> = function(rules)
 			if spec.avoid_repeat then
 				compiled_rule.__last_random_pick_by_actor = {}
 			end
-		elseif type(spec) ~= 'string' then
+		else
 			compile_action(spec)
 		end
 		compiled[#compiled + 1] = compiled_rule
@@ -220,7 +212,7 @@ end
 
 local resolve_action_spec<const> = function(rule, payload)
 	local spec<const> = rule.go
-	if type(spec) == 'string' or spec.one_of == nil then
+	if spec.one_of == nil then
 		return spec
 	end
 	local actions<const> = rule.__oneof_actions
@@ -635,28 +627,11 @@ local dispatch_music_transition<const> = function(transition)
 end
 
 local dispatch_action<const> = function(entry, action, payload)
-	if type(action) == 'string' then
-		local audio_record<const> = romdir.audio(action)
-		submit_play(
-			apu.source(audio_record),
-			entry.slot,
-			audio_record.audiometa.priority,
-			entry.queued,
-			0x00010000,
-			0x00001000,
-			0,
-			0x00000000,
-			apu.filter_coefficient_one,
-			0x00000000,
-			0x00000000
-		)
-		return
-	end
 	if action.stop_music then
 		begin_music_request()
 		*current_music_source_addr = 0
 		*current_music_slot = 0
-		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or apu.ms_to_samples(action.stop_music.fade_ms or 0)
+		local fade_samples<const> = apu.ms_to_samples(action.stop_music.fade_ms or 0)
 		apu.stop_slot(slot_music_a, fade_samples)
 		apu.stop_slot(slot_music_b, fade_samples)
 		return

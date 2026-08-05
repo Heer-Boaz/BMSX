@@ -41,7 +41,8 @@ events:
         channel: music
         rules:
             - go:
-                  stop_music: true
+                  stop_music:
+                      fade_ms: 0
 
     story:
         channel: music
@@ -84,9 +85,10 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music: true
-                      - pickupkey
-                      - danceofjoy
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: pickupkey
+                      - audio_id: danceofjoy
 
     # Seal breakdown -> daemon appears (music).
     # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
@@ -156,30 +158,34 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music: true
-                      - dying
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: dying
 
     enter_world_start:
         channel: sfx
         rules:
             - go:
                   sequence:
-                      - stop_music: true
-                      - enterleave
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: enterleave
 
     enter_shrine_start:
         channel: sfx
         rules:
             - go:
                   sequence:
-                      - stop_music: true
-                      - enterleave
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: enterleave
 
     player.shrine_overlay_exit:
         channel: music
         rules:
             - go:
-                  stop_music: true
+                  stop_music:
+                      fade_ms: 0
 
     leave_shrine_overlay:
         channel: sfx
@@ -192,8 +198,9 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music: true
-                      - enterleave
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: enterleave
 
     world_emerge_done:
         channel: music

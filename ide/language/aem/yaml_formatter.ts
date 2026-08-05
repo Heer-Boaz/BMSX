@@ -43,7 +43,6 @@ const MUSIC_TRANSITION_KEYS = new Set([
 const SYNC_KEYS = new Set([
 	'stinger',
 	'return_to',
-	'return_to_previous',
 	'delay_ms',
 ]);
 

@@ -26,13 +26,12 @@ type AudioAction = {
 };
 
 type AudioActionOneOfSpec = {
-	one_of?: Array<string | (AudioAction & { weight?: number })>;
+	one_of?: Array<AudioAction & { weight?: number }>;
 };
 
 type AudioStingerSpec = {
 	stinger?: string;
 	return_to?: string;
-	return_to_previous?: boolean;
 };
 
 type MusicTransitionSpec = {
@@ -99,7 +98,7 @@ const ACTION_KEYS = new Set(['audio_id', 'modulation_preset', 'modulation_params
 const AUDIO_ACTION_KEYS = new Set(['audio_id', 'modulation_preset', 'modulation_params', 'priority', 'cooldown_ms', 'weight']);
 const STOP_MUSIC_KEYS = new Set(['fade_ms']);
 const MUSIC_TRANSITION_KEYS = new Set(['audio_id', 'sync', 'fade_ms', 'crossfade_ms', 'start_at_loop_start', 'start_fresh']);
-const STINGER_SYNC_KEYS = new Set(['stinger', 'return_to', 'return_to_previous']);
+const STINGER_SYNC_KEYS = new Set(['stinger', 'return_to']);
 const MODULATION_KEYS = new Set(['pitchDelta', 'volumeDelta', 'offset', 'playbackRate', 'pitchRange', 'volumeRange', 'offsetRange', 'playbackRateRange', 'filter']);
 const FILTER_KEYS = new Set(['type', 'frequency', 'q', 'gain']);
 
@@ -449,11 +448,7 @@ function validateActionSpec(
 		return;
 	}
 	if (typeof action !== 'object') {
-		if (typeof action === 'string') {
-			checkAction({ audio_id: action }, { file, eventName, ruleIndex, sequenceIndex }, lookup, errors, musicTransitionsWithFallback);
-			return;
-		}
-		errors.push(`Invalid action at ${where}`);
+		errors.push(`Invalid action at ${where}: expected object`);
 		return;
 	}
 	const actionObject = action as Record<string, unknown>;
@@ -469,11 +464,8 @@ function validateActionSpec(
 	}
 	const stopMusic = actionObject.stop_music;
 	if (stopMusic !== undefined) {
-		if (stopMusic && typeof stopMusic === 'boolean') {
-			return;
-		}
 		if (!stopMusic || typeof stopMusic !== 'object' || Array.isArray(stopMusic)) {
-			errors.push(`Invalid stop_music at ${where}: expected true or object`);
+			errors.push(`Invalid stop_music at ${where}: expected object`);
 			return;
 		}
 		checkUnknownKeys(stopMusic as Record<string, unknown>, STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
@@ -538,9 +530,6 @@ function validateActionSpec(
 			if (hasStinger) {
 				const syncObject = sync as AudioStingerSpec;
 				checkAction({ audio_id: syncObject.stinger }, { file, eventName, ruleIndex, sequenceIndex }, lookup, errors, musicTransitionsWithFallback);
-				if (syncObject.return_to_previous !== undefined) {
-					errors.push(`Unsupported music_transition at ${where}: return_to_previous is runtime-state dependent; use explicit audio_id or return_to`);
-				}
 				if (syncObject.return_to !== undefined) {
 					checkAction({ audio_id: syncObject.return_to }, { file, eventName, ruleIndex, sequenceIndex }, lookup, errors, musicTransitionsWithFallback);
 				}
@@ -577,10 +566,6 @@ function validateActionSpec(
 		}
 		for (let index = 0; index < oneOf.length; index += 1) {
 			const item = oneOf[index];
-			if (typeof item === 'string') {
-				checkAction({ audio_id: item }, { file, eventName, ruleIndex, sequenceIndex, choiceIndex: index }, lookup, errors, musicTransitionsWithFallback);
-				continue;
-			}
 			if (item && typeof item === 'object') {
 				checkAction(item, { file, eventName, ruleIndex, sequenceIndex, choiceIndex: index }, lookup, errors, musicTransitionsWithFallback);
 				const weight = item.weight;
