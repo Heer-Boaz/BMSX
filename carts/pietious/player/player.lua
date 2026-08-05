@@ -93,7 +93,7 @@ local timeline_component<const> = require('cartlib/timeline/component')
 local collision_2d<const> = require('cartlib/collision_2d')
 local player_abilities<const> = require('player/abilities')
 
-local input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player_input')
 
 local player<const> = {}
 player.__index = player

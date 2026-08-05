@@ -285,7 +285,7 @@ system op een benoemde tick group en interne priority.
 
 Een action-effectcomponent zonder system dat zijn cooldowntijd bijwerkt is niet
 toegestaan. Input sampling hoort bij het inputsystem; de cart declareert alleen
-mappings en leest playerinput.
+mappings en leest `player_input`.
 
 ## Render- en GX-contract
 

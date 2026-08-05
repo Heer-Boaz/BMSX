@@ -135,7 +135,7 @@
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player_input')
 
 local state_definition<const> = {}
 state_definition.__index = state_definition

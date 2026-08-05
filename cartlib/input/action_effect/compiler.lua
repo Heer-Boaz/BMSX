@@ -1,4 +1,4 @@
-local input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player_input')
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}

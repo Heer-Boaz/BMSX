@@ -44,7 +44,7 @@ const SYSTEM_STUB_MODULES = [
 
 const CART_STUB_MODULES = [
 	{
-		path: 'cartlib/input/player',
+		path: 'cartlib/input/player_input',
 		source: `return {
 			bind = function(_, pattern) return pattern end,
 			is_active = function() return false end,

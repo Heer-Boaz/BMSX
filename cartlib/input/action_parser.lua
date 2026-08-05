@@ -617,29 +617,29 @@ local mod_matches<const> = function(state, spec)
 	elseif kind == mod_kind_r then
 		result = not state.pressed
 	elseif kind == mod_kind_jp then
-		result = state.justpressed
+		result = state.just_pressed
 	elseif kind == mod_kind_all_jp then
-		result = state.alljustpressed
+		result = state.all_just_pressed
 	elseif kind == mod_kind_jr then
-		result = state.justreleased
+		result = state.just_released
 	elseif kind == mod_kind_all_jr then
-		result = state.alljustreleased
+		result = state.all_just_released
 	elseif kind == mod_kind_gp then
-		result = state.guardedjustpressed
+		result = state.guarded_just_pressed
 	elseif kind == mod_kind_rp then
-		result = state.repeatpressed
+		result = state.repeat_pressed
 	elseif kind == mod_kind_c then
 		result = state.consumed
 	elseif kind == mod_kind_h then
-		result = state.presstime >= 1
+		result = state.press_time >= 1
 	elseif kind == mod_kind_wp then
 		result = state.min_press_delta < spec.window
 	elseif kind == mod_kind_wr then
 		result = state.min_release_delta < spec.window
 	elseif kind == mod_kind_t then
-		result = compare_number(spec.op, state.presstime, spec.value)
+		result = compare_number(spec.op, state.press_time, spec.value)
 	elseif kind == mod_kind_rc then
-		result = compare_number(spec.op, state.repeatcount, spec.value)
+		result = compare_number(spec.op, state.repeat_count, spec.value)
 	else
 		error('invalid compiled action modifier')
 	end
@@ -670,10 +670,10 @@ local eval_node
 local collect_edge_state
 
 local edge_state_matches<const> = function(state, kind, win)
-	if kind == edge_state_jp then return state.justpressed end
-	if kind == edge_state_jr then return state.justreleased end
-	if kind == edge_state_gp then return state.guardedjustpressed end
-	if kind == edge_state_rp then return state.repeatpressed end
+	if kind == edge_state_jp then return state.just_pressed end
+	if kind == edge_state_jr then return state.just_released end
+	if kind == edge_state_gp then return state.guarded_just_pressed end
+	if kind == edge_state_rp then return state.repeat_pressed end
 	if kind == edge_state_wp then return state.min_press_delta < win end
 	if kind == edge_state_wr then return state.min_release_delta < win end
 	error('invalid compiled action edge state')

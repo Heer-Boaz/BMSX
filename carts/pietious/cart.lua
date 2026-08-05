@@ -6,7 +6,7 @@ gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision_2d<const> = require('cartlib/collision_2d')
 local renderer<const> = require('cartlib/render/renderer')
-local player_input<const> = require('cartlib/input/player')
+local player_input<const> = require('cartlib/input/player_input')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch

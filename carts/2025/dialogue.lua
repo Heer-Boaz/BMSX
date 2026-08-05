@@ -3,7 +3,7 @@ require('globals')
 local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
-local input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player_input')
 local world<const> = require('cartlib/world/world')
 local immediate_text_opts<const> = { typed = false, snap = true }
 

@@ -1,5 +1,5 @@
 local input_action_effect_component<const> = require('cartlib/input/action_effect/component')
-local input<const> = require('cartlib/input/player')
+local input<const> = require('cartlib/input/player_input')
 local system<const> = require('cartlib/world/system')
 local tick_group<const> = require('cartlib/world/tick_group')
 

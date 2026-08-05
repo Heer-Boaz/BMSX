@@ -3468,7 +3468,7 @@ raw ICU source-port contract—snapshot input, supervisor line and vibration
 output—is mirrored machine semantics. Host repeat timing never flows back
 through `Runtime` or a machine input interface.
 
-Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
+Gameplay/cart `player_input` semantics live in `cartlib/input/player_input.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
 owns the explicitly configured players, mapping contexts, retained action and
 button state, MMIO sampling plans, consume state, guarded/repeat evaluation,
@@ -3630,9 +3630,9 @@ iterate the stable group snapshot without per-item pending-state checks.
 `world:clear()` retains the topology, component views and composed system
 manager.
 
-The input system samples retained PlayerInput state before gameplay systems
+The input system samples retained `player_input` state before gameplay systems
 run and arms the ICU's next-VBlank sample latch after consuming the current
-snapshot. Cart code neither updates PlayerInput separately nor programs the ICU
+snapshot. Cart code neither updates `player_input` separately nor programs the ICU
 latch. Carts using action effects select both their input-evaluation and
 cooldown-time systems in `world_module`.
 The entry loop still owns every explicit `vblank.wait()` and therefore keeps

@@ -1,8 +1,8 @@
 -- Player-input frame system. The system owns when the ICU snapshots the next
--- host input frame; carts consume PlayerInput actions and never program the
+-- host input frame; carts consume player_input actions and never program the
 -- controller latch themselves.
 
-local player_input<const> = require('cartlib/input/player')
+local player_input<const> = require('cartlib/input/player_input')
 local system<const> = require('cartlib/world/system')
 local tick_group<const> = require('cartlib/world/tick_group')
 

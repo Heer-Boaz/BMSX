@@ -1,12 +1,12 @@
--- cartlib/input/player.lua
--- Cart-owned PlayerInput: action mappings and action-expression state built from
+-- cartlib/input/player_input.lua
+-- Cart-owned player input: action mappings and action-expression state built from
 -- raw ICU snapshot reads (keyboard bitmap, pad button/axis words, pointer words).
--- Edge detection (justpressed/justreleased) is derived here from latched levels.
+-- Edge detection (just_pressed/just_released) is derived here from latched levels.
 
 local action_parser<const> = require('cartlib/input/action_parser')
 local keys<const> = require('cartlib/input/keys')
 
-local input<const> = {}
+local player_input<const> = {}
 
 local source_keyboard<const> = 1
 local source_gamepad<const> = 2
@@ -108,8 +108,8 @@ local new_button_state<const> = function()
 		prev_x_q16 = 0,
 		prev_y_q16 = 0,
 		pressed = false,
-		justpressed = false,
-		justreleased = false,
+		just_pressed = false,
+		just_released = false,
 		consumed = false,
 		press_id = 0,
 		press_start_frame = 0,
@@ -175,20 +175,20 @@ local new_action_state<const> = function(player, action)
 			[source_pointer] = {},
 		},
 		pressed = false,
-		justpressed = false,
-		justreleased = false,
-		alljustpressed = false,
-		alljustreleased = false,
+		just_pressed = false,
+		just_released = false,
+		all_just_pressed = false,
+		all_just_released = false,
 		consumed = false,
-		guardedjustpressed = false,
-		repeatpressed = false,
-		repeatcount = 0,
-		presstime = 0,
+		guarded_just_pressed = false,
+		repeat_pressed = false,
+		repeat_count = 0,
+		press_time = 0,
 		value_q16 = 0,
 		value_x_q16 = 0,
 		value_y_q16 = 0,
 		press_id = 0,
-		has_presstime = false,
+		has_press_time = false,
 		-- Cached frame deltas; was* derives from these per window.
 		min_press_delta = huge_delta,
 		min_release_delta = huge_delta,
@@ -330,7 +330,7 @@ local new_player<const> = function(index)
 			[source_gamepad] = {},
 			[source_pointer] = {},
 		},
-		-- Buttons whose justpressed/justreleased was set this frame; cleared next
+		-- Buttons whose just_pressed/just_released was set this frame; cleared next
 		-- frame so unchanged buttons cost nothing.
 		edge_buttons = {},
 		edge_count = 0,
@@ -362,15 +362,15 @@ end
 -- frame. Called only when a tracked bit actually flipped.
 local apply_digital_edge<const> = function(player, state, pressed_now)
 	if pressed_now then
-		state.justpressed = true
-		state.justreleased = false
+		state.just_pressed = true
+		state.just_released = false
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
 		state.press_start_frame = *frame_serial
 		state.last_press_frame = *frame_serial
 	else
-		state.justpressed = false
-		state.justreleased = true
+		state.just_pressed = false
+		state.just_released = true
 		state.last_release_frame = *frame_serial
 	end
 	state.consumed = false
@@ -408,11 +408,11 @@ local sample_value_button<const> = function(player, state)
 	elseif state.is_pointer_delta then
 		pressed = state.value_x_q16 ~= 0 or state.value_y_q16 ~= 0
 	end
-	local justpressed<const> = pressed and not state.pressed
-	local justreleased<const> = (not pressed) and state.pressed
-	state.justpressed = justpressed
-	state.justreleased = justreleased
-	if justpressed then
+	local just_pressed<const> = pressed and not state.pressed
+	local just_released<const> = (not pressed) and state.pressed
+	state.just_pressed = just_pressed
+	state.just_released = just_released
+	if just_pressed then
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
 		state.press_start_frame = *frame_serial
@@ -421,7 +421,7 @@ local sample_value_button<const> = function(player, state)
 	elseif not pressed then
 		state.consumed = false
 	end
-	if justreleased then
+	if just_released then
 		state.last_release_frame = *frame_serial
 	end
 	state.pressed = pressed
@@ -446,8 +446,8 @@ local sample_player<const> = function(player)
 	local edge_count<const> = player.edge_count
 	for i = 1, edge_count do
 		local state<const> = edges[i]
-		state.justpressed = false
-		state.justreleased = false
+		state.just_pressed = false
+		state.just_released = false
 	end
 	player.edge_count = 0
 	-- 2. Digital pass: diff one MMIO word per group; touch only changed buttons.
@@ -503,15 +503,15 @@ local merge_binding<const> = function(agg, state)
 		press_delta = -1
 	end
 	local release_delta = *frame_serial - state.last_release_frame
-	if state.justreleased then
+	if state.just_released then
 		release_delta = -1
 	end
 	agg.any_pressed = agg.any_pressed or state.pressed
 	agg.all_pressed = agg.all_pressed and state.pressed
-	agg.any_justpressed = agg.any_justpressed or state.justpressed
-	agg.all_justpressed = agg.all_justpressed and state.justpressed
-	agg.any_justreleased = agg.any_justreleased or state.justreleased
-	agg.all_justreleased = agg.all_justreleased and state.justreleased
+	agg.any_just_pressed = agg.any_just_pressed or state.just_pressed
+	agg.all_just_pressed = agg.all_just_pressed and state.just_pressed
+	agg.any_just_released = agg.any_just_released or state.just_released
+	agg.all_just_released = agg.all_just_released and state.just_released
 	agg.any_consumed = agg.any_consumed or state.consumed
 	if press_delta < agg.min_press_delta then
 		agg.min_press_delta = press_delta
@@ -520,10 +520,10 @@ local merge_binding<const> = function(agg, state)
 		agg.min_release_delta = release_delta
 	end
 	if state.pressed then
-		local presstime<const> = *frame_serial - state.press_start_frame
-		if not agg.has_presstime or presstime < agg.presstime then
-			agg.presstime = presstime
-			agg.has_presstime = true
+		local press_time<const> = *frame_serial - state.press_start_frame
+		if not agg.has_press_time or press_time < agg.press_time then
+			agg.press_time = press_time
+			agg.has_press_time = true
 		end
 		if state.press_id >= agg.press_id then
 			agg.press_id = state.press_id
@@ -541,13 +541,13 @@ end
 local reset_aggregation<const> = function(agg)
 	agg.any_pressed = false
 	agg.all_pressed = true
-	agg.any_justpressed = false
-	agg.all_justpressed = true
-	agg.any_justreleased = false
-	agg.all_justreleased = true
+	agg.any_just_pressed = false
+	agg.all_just_pressed = true
+	agg.any_just_released = false
+	agg.all_just_released = true
 	agg.any_consumed = false
-	agg.has_presstime = false
-	agg.presstime = 0
+	agg.has_press_time = false
+	agg.press_time = 0
 	agg.press_id = 0
 	agg.min_press_delta = huge_delta
 	agg.min_release_delta = huge_delta
@@ -613,14 +613,14 @@ end
 -- per-source aggregation produced).
 local fold_source<const> = function(state, agg)
 	state.pressed = state.pressed or agg.any_pressed
-	state.justpressed = state.justpressed or agg.any_justpressed
-	state.justreleased = state.justreleased or agg.any_justreleased
-	state.alljustpressed = state.alljustpressed or agg.all_justpressed
-	state.alljustreleased = state.alljustreleased or agg.all_justreleased
+	state.just_pressed = state.just_pressed or agg.any_just_pressed
+	state.just_released = state.just_released or agg.any_just_released
+	state.all_just_pressed = state.all_just_pressed or agg.all_just_pressed
+	state.all_just_released = state.all_just_released or agg.all_just_released
 	state.consumed = state.consumed or agg.any_consumed
-	if agg.has_presstime and (not state.has_presstime or agg.presstime < state.presstime) then
-		state.has_presstime = true
-		state.presstime = agg.presstime
+	if agg.has_press_time and (not state.has_press_time or agg.press_time < state.press_time) then
+		state.has_press_time = true
+		state.press_time = agg.press_time
 	end
 	if agg.press_id > state.press_id then
 		state.press_id = agg.press_id
@@ -641,7 +641,7 @@ local fold_source<const> = function(state, agg)
 end
 
 local evaluate_guard<const> = function(state)
-	if not state.justpressed then
+	if not state.just_pressed then
 		return false
 	end
 	if state.guard_last_press_id == state.press_id then
@@ -661,7 +661,7 @@ local evaluate_repeat<const> = function(state)
 		return state.repeat_last_result, state.repeat_count
 	end
 	local result = false
-	if state.justpressed then
+	if state.just_pressed then
 		state.repeat_active = true
 		state.repeat_count = 0
 		state.repeat_press_start_frame = *frame_serial
@@ -690,7 +690,7 @@ local evaluate_repeat<const> = function(state)
 	return result, state.repeat_count
 end
 
-function input.add_player(index)
+function player_input.add_player(index)
 	local player<const> = new_player(index)
 	players[index] = player
 	local dense_index<const> = player_count + 1
@@ -698,14 +698,14 @@ function input.add_player(index)
 	player_list[dense_index] = player
 end
 
-function input.advance_frame()
+function player_input.advance_frame()
 	*frame_serial = *frame_serial + 1
 	for index = 1, player_count do
 		sample_player(player_list[index])
 	end
 end
 
-function input.push_context(player_index, id, keyboard, gamepad, pointer, priority, enabled)
+function player_input.push_context(player_index, id, keyboard, gamepad, pointer, priority, enabled)
 	push_context_record(players[player_index], {
 		id = id,
 		priority = priority or 100,
@@ -716,7 +716,7 @@ function input.push_context(player_index, id, keyboard, gamepad, pointer, priori
 	})
 end
 
-function input.clear_context(player_index, id)
+function player_input.clear_context(player_index, id)
 	local player<const> = players[player_index]
 	for i = #player.contexts, 1, -1 do
 		if player.contexts[i].id == id then
@@ -730,13 +730,13 @@ end
 -- reads this frame reuse the retained result and numeric edge deltas.
 local refresh_action_state<const> = function(player, state)
 	state.pressed = false
-	state.justpressed = false
-	state.justreleased = false
-	state.alljustpressed = false
-	state.alljustreleased = false
+	state.just_pressed = false
+	state.just_released = false
+	state.all_just_pressed = false
+	state.all_just_released = false
 	state.consumed = false
-	state.has_presstime = false
-	state.presstime = 0
+	state.has_press_time = false
+	state.press_time = 0
 	state.press_id = 0
 	state.value_q16 = 0
 	state.value_x_q16 = 0
@@ -756,10 +756,10 @@ local refresh_action_state<const> = function(player, state)
 			fold_source(state, agg)
 		end
 	end
-	state.guardedjustpressed = evaluate_guard(state)
-	local repeatpressed<const>, repeatcount<const> = evaluate_repeat(state)
-	state.repeatpressed = repeatpressed
-	state.repeatcount = repeatcount
+	state.guarded_just_pressed = evaluate_guard(state)
+	local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state)
+	state.repeat_pressed = repeat_pressed
+	state.repeat_count = repeat_count
 	state.eval_frame = *frame_serial
 	state.eval_gen = player.eval_generation
 end
@@ -773,7 +773,7 @@ local evaluate_action_state<const> = function(states, action_key)
 	return state
 end
 
-function input.bind(player_index, pattern)
+function player_input.bind(player_index, pattern)
 	local player<const> = players[player_index]
 	local binding = player.expression_bindings[pattern]
 	if not binding then
@@ -789,39 +789,39 @@ function input.bind(player_index, pattern)
 	return binding
 end
 
-function input.is_active(binding)
+function player_input.is_active(binding)
 	sample_player(binding.player)
 	return action_parser.evaluate(binding.expression, evaluate_action_state, binding.states, buffer_frame_retention)
 end
 
-function input.is_action_pressed(player_index, action)
+function player_input.is_action_pressed(player_index, action)
 	local player<const> = players[player_index]
 	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
 	return state.pressed and not state.consumed
 end
 
-function input.is_action_just_pressed(player_index, action)
+function player_input.is_action_just_pressed(player_index, action)
 	local player<const> = players[player_index]
 	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
-	return state.justpressed and not state.consumed
+	return state.just_pressed and not state.consumed
 end
 
-function input.is_action_just_released(player_index, action)
+function player_input.is_action_just_released(player_index, action)
 	local player<const> = players[player_index]
 	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
-	return state.justreleased and not state.consumed
+	return state.just_released and not state.consumed
 end
 
-function input.get_action_value(player_index, action)
+function player_input.get_action_value(player_index, action)
 	local player<const> = players[player_index]
 	sample_player(player)
 	return evaluate_action_state(player.actions, action).value_q16
 end
 
-function input.get_vector(player_index, action)
+function player_input.get_vector(player_index, action)
 	local player<const> = players[player_index]
 	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
@@ -841,7 +841,7 @@ local consume_action<const> = function(state)
 	end
 end
 
-function input.consume(player_index, actions)
+function player_input.consume(player_index, actions)
 	local player<const> = players[player_index]
 	sample_player(player)
 	player.eval_generation = player.eval_generation + 1
@@ -854,4 +854,4 @@ function input.consume(player_index, actions)
 	consume_action(player.actions[actions])
 end
 
-return input
+return player_input
