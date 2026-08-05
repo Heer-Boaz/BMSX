@@ -4,6 +4,7 @@ local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local behaviourtree_library<const> = require('cartlib/behaviourtree/library')
 local bt_component<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
@@ -99,11 +100,13 @@ end
 enemy_base.extend(muziekfoe, 'muziekfoe')
 
 function muziekfoe.register()
+	local root<const> = behaviourtree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)
+	behaviourtree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		base = sprite_object,
-		components = { bt_component.factory(behaviourtree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)) },
+		components = { bt_component.factory(root.id) },
 		defaults = {
 			conditions = {},
 			damage = 4,

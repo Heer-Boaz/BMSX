@@ -33,7 +33,9 @@ const CART_MODULE_FILES = [
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsmcomponent', 'cartlib/fsm/fsmcomponent.lua'],
 	['cartlib/behaviourtree/bt', 'cartlib/behaviourtree/bt.lua'],
+	['cartlib/behaviourtree/definitions', 'cartlib/behaviourtree/definitions.lua'],
 	['cartlib/behaviourtree/btcomponent', 'cartlib/behaviourtree/btcomponent.lua'],
+	['cartlib/behaviourtree/library', 'cartlib/behaviourtree/library.lua'],
 ] as const;
 
 const SYSTEM_STUB_MODULES = [
@@ -77,6 +79,7 @@ local state_machine_component<const> = require('cartlib/fsm/fsmcomponent')
 local timeline_component<const> = require('cartlib/timeline/timelinecomponent')
 local behaviour_tree<const> = require('cartlib/behaviourtree/bt')
 local behaviour_tree_component<const> = require('cartlib/behaviourtree/btcomponent')
+local behaviour_tree_library<const> = require('cartlib/behaviourtree/library')
 
 local target<const> = {
 	id = 'hot_target',
@@ -268,7 +271,8 @@ local old_root<const> = behaviour_tree.action_node.new('enemy_hot', function(_, 
 	blackboard.node_data.ticks = (blackboard.node_data.ticks or 0) + 1
 	return 'SUCCESS'
 end)
-local make_old_tree<const> = behaviour_tree_component.factory(old_root)
+behaviour_tree_library.register(old_root)
+local make_old_tree<const> = behaviour_tree_component.factory(old_root.id)
 local behaviour_tree_instance<const> = make_old_tree({ parent = target })
 behaviour_tree_instance.id = 'hot_target_bt'
 registry:register_component(behaviour_tree_instance)
@@ -280,11 +284,11 @@ local new_root<const> = behaviour_tree.action_node.new('enemy_hot', function(_, 
 	blackboard.node_data.ticks = blackboard.node_data.ticks + 10
 	return 'SUCCESS'
 end)
-local make_new_tree<const> = behaviour_tree_component.factory(new_root)
+behaviour_tree_library.register(new_root)
 assert(behaviour_tree_instance.root == new_root)
 assert(behaviour_tree_instance.node_data == node_data and node_data.retained == 91)
 behaviour_tree_instance.root:tick(target, behaviour_tree_instance)
-local future_tree<const> = make_new_tree({ parent = target })
+local future_tree<const> = make_old_tree({ parent = target })
 assert(future_tree.root == new_root)
 
 return target.value, active_data.retained, node_data.ticks, node_data.retained,

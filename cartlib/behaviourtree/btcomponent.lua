@@ -1,31 +1,26 @@
 local component<const> = require('cartlib/component/basecomponent')
-local registry<const> = require('cartlib/registry')
+local definitions_by_id<const> = require('cartlib/behaviourtree/definitions')
 
 local bt_component<const> = {}
 bt_component.__index = bt_component
 setmetatable(bt_component, { __index = component })
 
-function bt_component.new(opts)
+function bt_component.new(opts, tree_id)
 	local self<const> = setmetatable(component.new(opts), bt_component)
-	self.root = opts.root
+	self.tree_id = tree_id
+	self.root = definitions_by_id[tree_id]
 	self.node_data = {}
 	return self
 end
 
-function bt_component.factory(root)
-	local components<const> = registry:components(bt_component)
-	for i = 1, #components do
-		local behaviourtree<const> = components[i]
-		if behaviourtree.id_local == root.id then
-			behaviourtree.root = root
-		end
-	end
+function bt_component.factory(tree_id)
 	return function(opts)
-		local self<const> = bt_component.new(opts)
-		self.root = root
-		self.id_local = root.id
-		return self
+		return bt_component.new(opts, tree_id)
 	end
+end
+
+function bt_component:rebind_root(root)
+	self.root = root
 end
 
 return bt_component
