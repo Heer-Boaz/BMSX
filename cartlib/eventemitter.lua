@@ -67,12 +67,7 @@
 --    no role in dispatch filtering.  Always populate it so that subscriptions
 --    are cleaned up when the subscriber object is removed.
 --
--- 6. PERSISTENT FLAG.
---    persistent = true keeps the subscription alive across clear() calls.
---    Use only for long-lived system-level listeners that must outlive normal
---    object lifecycle resets.
---
--- 7. EVENTPORT VS EVENTEMITTER.
+-- 6. EVENTPORT VS EVENTEMITTER.
 --    Cart code should use event_port (self.events) not eventemitter directly.
 --    event_port:on() auto-fills the emitter filter from the port owner.
 --    event_port:emit() auto-fills the emitter identity.
@@ -112,7 +107,6 @@ end
 --                                    remove_subscriber() for cleanup.
 --   emitter             (string|object) — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
---   persistent          (bool)    — if true, survives clear() calls.
 function eventemitter:on(spec)
 	local name<const> = spec.event
 	local list = self.listeners[name]
@@ -124,7 +118,6 @@ function eventemitter:on(spec)
 		handler = spec.handler,
 		subscriber = spec.subscriber,
 		emitter = spec.emitter,
-		persistent = spec.persistent,
 	}
 end
 
@@ -144,17 +137,17 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
--- eventemitter:on_any(handler, persistent, subscriber): listen to ALL events
+-- eventemitter:on_any(handler, subscriber): listen to ALL events
 -- regardless of type.  Use sparingly (e.g. debugging, event logging).  For
 -- normal game logic always subscribe to a specific event name via on().
-function eventemitter:on_any(handler, persistent, subscriber)
-	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent, subscriber = subscriber }
+function eventemitter:on_any(handler, subscriber)
+	self.any_listeners[#self.any_listeners + 1] = { handler = handler, subscriber = subscriber }
 end
 
-function eventemitter:off_any(handler, force_persistent)
+function eventemitter:off_any(handler)
 	for i = #self.any_listeners, 1, -1 do
 		local entry<const> = self.any_listeners[i]
-		if entry.handler == handler and (force_persistent or not entry.persistent) then
+		if entry.handler == handler then
 			table.remove(self.any_listeners, i)
 		end
 	end
@@ -179,37 +172,21 @@ function eventemitter:emit(event_type, emitter, payload, emitter_id)
 	end
 end
 
--- eventemitter:remove_subscriber(subscriber, force_persistent): remove all
+-- eventemitter:remove_subscriber(subscriber): remove all
 -- listeners whose `subscriber` field equals the given object.  This is the
--- standard cleanup path called from worldobject:unbind().  Pass
--- force_persistent = true to also remove persistent subscriptions.
-function eventemitter:remove_subscriber(subscriber, force_persistent)
+-- standard cleanup path called from worldobject:unbind().
+function eventemitter:remove_subscriber(subscriber)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			local entry<const> = list[i]
-			if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
+			if entry.subscriber == subscriber then
 				table.remove(list, i)
 			end
 		end
 	end
 	for i = #self.any_listeners, 1, -1 do
 		local entry<const> = self.any_listeners[i]
-		if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
-			table.remove(self.any_listeners, i)
-		end
-	end
-end
-
-function eventemitter:clear()
-	for _, list in pairs(self.listeners) do
-		for i = #list, 1, -1 do
-			if not list[i].persistent then
-				table.remove(list, i)
-			end
-		end
-	end
-	for i = #self.any_listeners, 1, -1 do
-		if not self.any_listeners[i].persistent then
+		if entry.subscriber == subscriber then
 			table.remove(self.any_listeners, i)
 		end
 	end

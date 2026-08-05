@@ -430,7 +430,6 @@ local add_runtime_subscription<const> = function(rt, event_name)
 			event = event_name,
 			handler = progression.dispatch_event,
 			subscriber = progression,
-			persistent = true,
 		})
 	end
 	runtimes[#runtimes + 1] = rt

@@ -725,7 +725,7 @@ end
 reset_audio_state()
 
 local rebind<const> = function()
-	eventemitter:remove_subscriber(handle_event, true)
+	eventemitter:remove_subscriber(handle_event)
 	events = merge_events(romdir.audioevents())
 	for event_name in pairs(events) do
 		eventemitter:on({
