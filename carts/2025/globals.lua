@@ -247,18 +247,17 @@ function reset_text_colors()
 	world:get(text_results_id).text_component.color = p3_white_color
 end
 
-function hide_transition_layers()
-	local director<const> = world:get(director_instance_id)
-	local overlay<const> = director.transition_visual.overlay
+function hide_transition_layers(transition_visual)
+	local overlay<const> = transition_visual.overlay
 	overlay.visible = false
 	overlay.color = 0
 	overlay.blend_color = 0
-	for i = 1, #director.transition_visual.panels do
-		local panel<const> = director.transition_visual.panels[i]
+	for i = 1, #transition_visual.panels do
+		local panel<const> = transition_visual.panels[i]
 		panel.visible = false
 		panel.color = 0
 	end
-	local accent<const> = director.transition_visual.accent
+	local accent<const> = transition_visual.accent
 	accent.visible = false
 	accent.color = 0
 end

@@ -80,7 +80,7 @@ function dialogue.register_states(states)
 	states.bg_only = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			show_background(node.bg)
 			local next_background<const> = background_at_or_after(node.next)
 			if next_background ~= node.bg then
@@ -106,7 +106,7 @@ function dialogue.register_states(states)
 	states.dialogue = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			show_background(node.bg)
 			if node.kind ~= 'dialogue_inline' then
 				local next_background<const> = background_at_or_after(node.next)
@@ -179,7 +179,7 @@ function dialogue.register_states(states)
 	states.ending = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			show_background(node.bg)
 			reset_text_colors()
 			world:get(text_transition_id):clear_text()
@@ -267,7 +267,7 @@ function dialogue.register_states(states)
 	states.choice = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			show_background(node.bg)
 			reset_text_colors()
 			world:get(text_prompt_id):clear_text()

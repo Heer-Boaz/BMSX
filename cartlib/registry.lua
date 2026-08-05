@@ -52,8 +52,17 @@ function registry.new()
 	self._by_id = {}
 	self._by_type = {}
 	self._by_tag = {}
+	self._reservations = {}
 	self._entities = dense_set.new()
 	return self
+end
+
+function registry:reserve(entity)
+	local id<const> = entity.id
+	if self._by_id[id] ~= nil or self._reservations[id] ~= nil then
+		error('registry.reserve duplicate id "' .. id .. '"')
+	end
+	self._reservations[id] = entity
 end
 
 function registry:get(id)
@@ -64,15 +73,33 @@ function registry:has(id)
 	return self._by_id[id] ~= nil
 end
 
+function registry:is_id_claimed(id)
+	return self._by_id[id] ~= nil or self._reservations[id] ~= nil
+end
+
 function registry:register(entity)
 	local existing<const> = self._by_id[entity.id]
 	if existing ~= nil and existing ~= entity then
 		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
+	self._reservations[entity.id] = nil
 	self._by_id[entity.id] = entity
 	dense_set.add(self._entities, entity)
 	add_entity_type(self, entity)
 	add_entity_tags(self, entity)
+end
+
+function registry:reconcile_tag(entity, tag)
+	local bucket<const> = self._by_tag[tag]
+	if entity.tags[tag] then
+		if bucket == nil then
+			self:add_tag(entity, tag)
+		elseif bucket.indices[entity] == nil then
+			dense_set.add(bucket, entity)
+		end
+	elseif bucket ~= nil and bucket.indices[entity] ~= nil then
+		dense_set.remove(bucket, entity)
+	end
 end
 
 function registry:deregister(entity)

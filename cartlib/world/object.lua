@@ -58,7 +58,6 @@
 local eventemitter<const> = require('cartlib/eventemitter')
 local component<const> = require('cartlib/world/component')
 local world<const> = require('cartlib/world/world')
-local registry_instance<const> = require('cartlib/registry').instance
 
 local worldobject<const> = {}
 worldobject.__index = worldobject
@@ -95,7 +94,7 @@ end
 
 function worldobject:set_z(z)
 	self.z = z
-	if self.world ~= nil then
+	if self._published then
 		self.world:visual_depth_changed()
 	end
 end
@@ -140,9 +139,10 @@ function worldobject:add_component(comp)
 	bucket[#bucket + 1] = comp
 	comp:bind()
 	comp:on_attach()
-	registry_instance:register(comp)
+	if self._published then
+		self.world:attach_component(comp)
+	end
 	if self.active then
-		self.world:reconcile_component(comp)
 		comp:on_activate()
 	end
 
@@ -238,6 +238,14 @@ end
 
 function worldobject:remove_component_instance(comp)
 	comp._attached = false
+	if self._published then
+		self.world:detach_component(comp)
+	else
+		self:_commit_component_detach(comp)
+	end
+end
+
+function worldobject:_commit_component_detach(comp)
 	local key<const> = comp.type_name
 	local list<const> = self.component_map[key]
 	if list then
@@ -259,10 +267,6 @@ function worldobject:remove_component_instance(comp)
 	end
 	comp:on_detach()
 	comp:unbind()
-	if self.active then
-		self.world:reconcile_component(comp)
-	end
-	registry_instance:deregister(comp)
 end
 
 function worldobject:remove_all_components()
@@ -281,20 +285,18 @@ end
 
 function worldobject:add_tag(tag)
 	if not self.tags[tag] then
-		if self.world then
-			self.world:add_object_tag(self, tag)
-		else
-			self.tags[tag] = true
+		self.tags[tag] = true
+		if self._published then
+			self.world:reconcile_object_tag(self, tag)
 		end
 	end
 end
 
 function worldobject:remove_tag(tag)
 	if self.tags[tag] then
-		if self.world then
-			self.world:remove_object_tag(self, tag)
-		else
-			self.tags[tag] = nil
+		self.tags[tag] = nil
+		if self._published then
+			self.world:reconcile_object_tag(self, tag)
 		end
 	end
 end
@@ -315,7 +317,9 @@ function worldobject:activate()
 	local components<const> = self.components
 	local component_count<const> = #components
 	self.active = true
-	self.world:activate_object(self)
+	if self._published then
+		self.world:reconcile_object(self)
+	end
 	self:bind()
 	for i = 1, component_count do
 		components[i]:on_activate()
@@ -342,7 +346,9 @@ end
 -- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
-	self.world:deactivate_object(self)
+	if self._published then
+		self.world:reconcile_object(self)
+	end
 end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.

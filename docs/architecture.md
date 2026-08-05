@@ -3582,12 +3582,19 @@ component key every frame. Cartlib does not prewarm a hardcoded list of built-in
 component kinds, and neither extension path requires modifying a cartlib
 registry.
 
+The central Registry is the only cart-wide id, type and tag index. It owns
+retained dense buckets for published world objects, components and persistent
+cart services. `world:get()` and unqualified type/tag queries read those buckets
+directly; `world` has no shadow identity index.
+
 `world` owns lifecycle and the fixed map of spaces; each `space` object owns its
 own dense object, active-object, tag, type, component and visual storage plus the
 indices required to mutate those arrays. `world` selects spaces and coordinates
 barriers but does not reach into their backing tables. Component storage is
 materialized only for component types selected by configured systems; visuals
-retain their separate renderer-facing dense list.
+retain their separate renderer-facing dense list. Spawn admission reserves ids
+before publication, and Registry, space and system views receive only complete
+objects and their attached components.
 
 Sprite collision association is explicit: a collider owns the selected
 image/flip raw GEO shape reference, while the sprite only holds render state.
@@ -3606,8 +3613,12 @@ factory descriptors or cart-supplied numeric priorities. The internal
 and retains flat arrays for the non-empty
 input, action-effects, gameplay, physics and animation groups. `world:update()`
 delegates to that owner; `world` only commits structural mutations at each group
-boundary. `world:clear()` retains the topology, component views and composed
-system manager.
+boundary. Spawn, despawn, space moves, activation, tag changes, component
+attachment and enabled-state changes alter retained membership only at that
+boundary. Their direct semantic values may change earlier; systems continue to
+iterate the stable group snapshot without per-item pending-state checks.
+`world:clear()` retains the topology, component views and composed system
+manager.
 
 The input system samples retained PlayerInput state before gameplay systems
 run and arms the ICU's next-VBlank sample latch after consuming the current

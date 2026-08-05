@@ -25,7 +25,7 @@ function component:set_enabled(enabled)
 	end
 	self.enabled = enabled
 	local parent<const> = self.parent
-	if parent and parent.active then
+	if self._published and parent.active then
 		parent.world:reconcile_component(self)
 	end
 	return self

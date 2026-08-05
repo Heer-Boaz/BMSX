@@ -123,7 +123,7 @@ function transition.register_states(states)
 
 	local finish_transition_fade_in<const> = function(self)
 		world:get(bg_id).surface_component.color = p3_white_color
-		hide_transition_layers()
+		hide_transition_layers(self.transition_visual)
 		return '/run_node'
 	end
 
@@ -295,10 +295,10 @@ function transition.register_states(states)
 			self.timelines:stop(overgang_timeline_id)
 			world:get(text_transition_id):clear_text()
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
-				hide_transition_layers()
+				hide_transition_layers(self.transition_visual)
 				return
 			end
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 		end,
 	}
 
@@ -306,7 +306,7 @@ function transition.register_states(states)
 		entering_state = function(self)
 			world:get(text_transition_id):clear_text()
 			local background<const> = show_background(nil)
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
 			self.timelines:define(timeline.new({
@@ -338,7 +338,7 @@ function transition.register_states(states)
 		leaving_state = function(self)
 			self.timelines:stop(overgang_post_fade_in_timeline_id)
 			world:get(bg_id).surface_component.color = p3_white_color
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 		end,
 	}
 
@@ -365,7 +365,7 @@ function transition.register_states(states)
 				texture_residency.preload_background(self.fade_target_bg)
 			end
 			show_background(nil)
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = world:get(bg_id)
 			overlay.visible = true
@@ -421,7 +421,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self.timelines:stop(fade_timeline_id)
-			hide_transition_layers()
+			hide_transition_layers(self.transition_visual)
 			self.fade_hold_black = false
 		end,
 	}

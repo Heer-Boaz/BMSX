@@ -84,6 +84,7 @@ function space:activate_object(obj)
 		self._active_objects_by_type[obj.type_name] = type_bucket
 	end
 	dense_set.add(type_bucket, obj)
+	obj._active_tag_count = 0
 	for tag in pairs(obj.tags) do
 		self:add_active_tag(obj, tag)
 	end
@@ -91,9 +92,13 @@ end
 
 function space:deactivate_object(obj)
 	dense_set.remove(self._active_objects_by_type[obj.type_name], obj)
-	for tag in pairs(obj.tags) do
-		self:remove_active_tag(obj, tag)
+	local active_tags<const> = obj._active_tags
+	for index = 1, obj._active_tag_count do
+		local tag<const> = active_tags[index]
+		dense_set.remove(self._active_objects_by_tag[tag], obj)
+		active_tags[index] = nil
 	end
+	obj._active_tag_count = 0
 
 	local objects<const> = self._active_objects
 	local index<const> = obj._active_object_index
@@ -115,10 +120,41 @@ function space:add_active_tag(obj, tag)
 		self._active_objects_by_tag[tag] = bucket
 	end
 	dense_set.add(bucket, obj)
+	local active_tags = obj._active_tags
+	if active_tags == nil then
+		active_tags = {}
+		obj._active_tags = active_tags
+	end
+	local index<const> = obj._active_tag_count + 1
+	obj._active_tag_count = index
+	active_tags[index] = tag
 end
 
 function space:remove_active_tag(obj, tag)
 	dense_set.remove(self._active_objects_by_tag[tag], obj)
+	local active_tags<const> = obj._active_tags
+	local last_index<const> = obj._active_tag_count
+	for index = 1, last_index do
+		if active_tags[index] == tag then
+			active_tags[index] = active_tags[last_index]
+			active_tags[last_index] = nil
+			obj._active_tag_count = last_index - 1
+			return
+		end
+	end
+end
+
+function space:reconcile_active_tag(obj, tag)
+	local bucket<const> = self._active_objects_by_tag[tag]
+	if obj.tags[tag] then
+		if bucket == nil then
+			self:add_active_tag(obj, tag)
+		elseif bucket.indices[obj] == nil then
+			self:add_active_tag(obj, tag)
+		end
+	elseif bucket ~= nil and bucket.indices[obj] ~= nil then
+		self:remove_active_tag(obj, tag)
+	end
 end
 
 function space:activate_component(comp, visual_sequence)

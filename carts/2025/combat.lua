@@ -394,8 +394,9 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_all)
 			hide_combat_sprites()
-			hide_transition_layers()
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
+			local transition_visual<const> = world:get(director_instance_id).transition_visual
+			hide_transition_layers(transition_visual)
+			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
@@ -428,8 +429,9 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			clear_texts(text_ids_core)
-			hide_transition_layers()
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
+			local transition_visual<const> = world:get(director_instance_id).transition_visual
+			hide_transition_layers(transition_visual)
+			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
@@ -451,7 +453,7 @@ function combat.define_fsm()
 			local node<const> = story[self.node_id]
 			clear_texts(text_ids_transition_results)
 			reset_text_colors()
-			hide_transition_layers()
+			hide_transition_layers(world:get(director_instance_id).transition_visual)
 
 			local bg<const> = world:get(bg_id)
 			bg.visible = false

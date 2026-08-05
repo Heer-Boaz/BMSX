@@ -33,6 +33,13 @@ local system_manager<const> = require('cartlib/world/system_manager')
 local world
 local world_id_max<const> = 0x7fffffff
 local empty_object_bucket<const> = {}
+local mutation_spawn<const> = 0x01
+local mutation_component_attach<const> = 0x02
+local mutation_object<const> = 0x04
+local mutation_component<const> = 0x08
+local mutation_tag<const> = 0x10
+local mutation_component_detach<const> = 0x20
+local mutation_active_space<const> = 0x40
 
 local world_class<const> = {}
 world_class.__index = world_class
@@ -64,8 +71,18 @@ function world_class.new()
 	self._space_order = {}
 	self._pending_despawns = {}
 	self._pending_despawn_count = 0
-	self._pending_active_objects = {}
-	self._pending_active_components = {}
+	self._pending_spawns = {}
+	self._pending_spawn_count = 0
+	self._pending_objects = {}
+	self._pending_components = {}
+	self._pending_component_attaches = {}
+	self._pending_component_attach_count = 0
+	self._pending_component_detaches = {}
+	self._pending_component_detach_count = 0
+	self._pending_tag_objects = {}
+	self._pending_tag_names = {}
+	self._pending_tag_count = 0
+	self._pending_mutation_mask = 0
 	self._active_component_views = {}
 	self._active_component_view_list = {}
 	self.active_space_id = nil
@@ -89,7 +106,7 @@ function world_class:next_id(type_name)
 	end
 
 	local result = baseid .. '_' .. tostring(uniquenumber)
-	while registry.instance:get(result) ~= nil do
+	while registry.instance:is_id_claimed(result) do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1
@@ -168,70 +185,55 @@ function world_class:set_space(space_id)
 	self.active_space_id = space_id
 	if self._current_tick_group ~= nil then
 		self._pending_space_id = space_id
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_active_space
 	else
 		self:_commit_active_space(space_id)
 	end
 	return space_id
 end
 
-function world_class:add_object_tag(obj, tag)
-	registry.instance:add_tag(obj, tag)
-	local active_space<const> = obj._active_space
-	if active_space ~= nil then
-		active_space:add_active_tag(obj, tag)
+function world_class:reconcile_object_tag(obj, tag)
+	if self._current_tick_group ~= nil then
+		local index<const> = self._pending_tag_count + 1
+		self._pending_tag_count = index
+		self._pending_tag_objects[index] = obj
+		self._pending_tag_names[index] = tag
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_tag
+	else
+		registry.instance:reconcile_tag(obj, tag)
+		local active_space<const> = obj._active_space
+		if active_space ~= nil then
+			active_space:reconcile_active_tag(obj, tag)
+		end
 	end
-end
-
-function world_class:remove_object_tag(obj, tag)
-	local active_space<const> = obj._active_space
-	if active_space ~= nil then
-		active_space:remove_active_tag(obj, tag)
-	end
-	registry.instance:remove_tag(obj, tag)
 end
 
 function world_class:set_object_space(obj, space_id)
-	if registry.instance:get(obj.id) ~= obj then
-		obj.space_id = space_id
+	if obj.space_id == space_id then
 		return space_id
 	end
-
-	local current_space<const> = obj._space
-	if current_space ~= nil and current_space.id == space_id then
-		return space_id
-	end
-
-	if current_space ~= nil then
-		if obj.active then
-			self:deactivate_object(obj)
-		end
-		current_space:remove_object(obj)
-	end
-
 	obj.space_id = space_id
-	self._spaces[space_id]:add_object(obj)
-	if obj.active then
-		self:activate_object(obj)
-	end
+	self:reconcile_object(obj)
 	return space_id
 end
 
-function world_class:_queue_active_object(obj)
-	if obj._active_object_pending then
+function world_class:_queue_object_reconcile(obj)
+	if obj._object_reconcile_pending then
 		return
 	end
-	local pending<const> = self._pending_active_objects
+	local pending<const> = self._pending_objects
 	pending[#pending + 1] = obj
-	obj._active_object_pending = true
+	obj._object_reconcile_pending = true
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_object
 end
 
--- Keep active_objects stable for the whole ECS phase. Structural mutations
--- are deferred to the phase boundary so gameplay systems can iterate the dense
+-- Keep active_objects stable for the whole tick group. Structural mutations
+-- are deferred to the tick-group boundary so gameplay systems can iterate the dense
 -- active list directly instead of relying on reverse-loop/remove workarounds.
 function world_class:_reconcile_active_object(obj)
 	local target_space = nil
-	if obj.active and registry.instance:get(obj.id) == obj then
-		target_space = self._spaces[obj.space_id]
+	if obj._published and obj.active then
+		target_space = obj._space
 	end
 	local active_space<const> = obj._active_space
 	if active_space ~= target_space then
@@ -244,44 +246,65 @@ function world_class:_reconcile_active_object(obj)
 	end
 end
 
-function world_class:activate_object(obj)
+function world_class:_reconcile_object(obj)
+	local target_space = nil
+	if obj._published then
+		target_space = self._spaces[obj.space_id]
+	end
+	local current_space<const> = obj._space
+	if current_space ~= target_space then
+		local active_space<const> = obj._active_space
+		if active_space ~= nil then
+			active_space:deactivate_object(obj)
+		end
+		local components<const> = obj.components
+		for i = 1, #components do
+			local comp<const> = components[i]
+			local component_space<const> = comp._active_space
+			if component_space ~= nil then
+				component_space:deactivate_component(comp)
+				if comp.is_visual and component_space == self._active_space then
+					self._visual_revision = self._visual_revision + 1
+				end
+			end
+		end
+		if current_space ~= nil then
+			current_space:remove_object(obj)
+		end
+		if target_space ~= nil then
+			target_space:add_object(obj)
+		end
+	end
+	self:_reconcile_active_object(obj)
 	local components<const> = obj.components
 	for i = 1, #components do
-		self:reconcile_component(components[i])
-	end
-	if self._current_tick_group ~= nil then
-		self:_queue_active_object(obj)
-	else
-		self:_reconcile_active_object(obj)
+		self:_reconcile_active_component(components[i])
 	end
 end
 
-function world_class:deactivate_object(obj)
-	local components<const> = obj.components
-	for i = 1, #components do
-		self:reconcile_component(components[i])
-	end
+function world_class:reconcile_object(obj)
 	if self._current_tick_group ~= nil then
-		self:_queue_active_object(obj)
+		self:_queue_object_reconcile(obj)
 	else
-		self:_reconcile_active_object(obj)
+		self:_reconcile_object(obj)
 	end
 end
 
-function world_class:_queue_active_component(comp)
-	if comp._active_component_pending then
+function world_class:_queue_component_reconcile(comp)
+	if comp._component_reconcile_pending then
 		return
 	end
-	local pending<const> = self._pending_active_components
+	local pending<const> = self._pending_components
 	pending[#pending + 1] = comp
-	comp._active_component_pending = true
+	comp._component_reconcile_pending = true
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component
 end
 
 function world_class:_reconcile_active_component(comp)
 	local parent<const> = comp.parent
 	local target_space = nil
-	if comp._attached and comp.enabled and parent.active then
-		target_space = self._spaces[parent.space_id]
+	if comp._attached and comp.enabled and parent._published and parent.active then
+		target_space = parent._space
 	end
 	local active_space<const> = comp._active_space
 	if active_space ~= target_space then
@@ -305,51 +328,145 @@ end
 
 function world_class:reconcile_component(comp)
 	if self._current_tick_group ~= nil then
-		self:_queue_active_component(comp)
+		self:_queue_component_reconcile(comp)
 	else
 		self:_reconcile_active_component(comp)
 	end
 end
 
-function world_class:_flush_active_components()
-	local pending<const> = self._pending_active_components
+function world_class:_commit_component_attach(comp)
+	registry.instance:register(comp)
+	comp._published = true
+	self:_reconcile_active_component(comp)
+end
+
+function world_class:attach_component(comp)
+	registry.instance:reserve(comp)
+	if self._current_tick_group == nil then
+		self:_commit_component_attach(comp)
+		return
+	end
+	local index<const> = self._pending_component_attach_count + 1
+	self._pending_component_attach_count = index
+	self._pending_component_attaches[index] = comp
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_attach
+end
+
+function world_class:_commit_component_detach(comp)
+	self:_reconcile_active_component(comp)
+	comp.parent:_commit_component_detach(comp)
+	registry.instance:deregister(comp)
+	comp._published = nil
+end
+
+function world_class:detach_component(comp)
+	if self._current_tick_group == nil then
+		self:_commit_component_detach(comp)
+		return
+	end
+	local index<const> = self._pending_component_detach_count + 1
+	self._pending_component_detach_count = index
+	self._pending_component_detaches[index] = comp
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_detach
+end
+
+function world_class:_flush_component_attaches()
+	local pending<const> = self._pending_component_attaches
+	local index = 1
+	while index <= self._pending_component_attach_count do
+		local comp<const> = pending[index]
+		pending[index] = nil
+		self:_commit_component_attach(comp)
+		index = index + 1
+	end
+	self._pending_component_attach_count = 0
+end
+
+function world_class:_flush_component_detaches()
+	local pending<const> = self._pending_component_detaches
+	local index = 1
+	while index <= self._pending_component_detach_count do
+		local comp<const> = pending[index]
+		pending[index] = nil
+		self:_commit_component_detach(comp)
+		index = index + 1
+	end
+	self._pending_component_detach_count = 0
+end
+
+function world_class:_flush_components()
+	local pending<const> = self._pending_components
 	for i = 1, #pending do
 		local comp<const> = pending[i]
-		comp._active_component_pending = nil
+		comp._component_reconcile_pending = nil
 		self:_reconcile_active_component(comp)
 		pending[i] = nil
 	end
 end
 
-function world_class:_flush_active_objects()
-	local pending<const> = self._pending_active_objects
+function world_class:_flush_objects()
+	local pending<const> = self._pending_objects
 	for i = 1, #pending do
 		local obj<const> = pending[i]
-		obj._active_object_pending = nil
-		self:_reconcile_active_object(obj)
+		obj._object_reconcile_pending = nil
+		self:_reconcile_object(obj)
 		pending[i] = nil
 	end
+end
+
+function world_class:_flush_tags()
+	local objects<const> = self._pending_tag_objects
+	local names<const> = self._pending_tag_names
+	for index = 1, self._pending_tag_count do
+		local obj<const> = objects[index]
+		local tag<const> = names[index]
+		objects[index] = nil
+		names[index] = nil
+		registry.instance:reconcile_tag(obj, tag)
+		local active_space<const> = obj._active_space
+		if active_space ~= nil then
+			active_space:reconcile_active_tag(obj, tag)
+		end
+	end
+	self._pending_tag_count = 0
 end
 
 function world_class:visual_depth_changed()
 	self._visual_revision = self._visual_revision + 1
 end
 
--- world:spawn(obj, pos?)
---   Registers obj in the world (and in the active space unless obj.space_id is
---   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
---   the object and emits the 'spawn' event.
---   obj.id must be unique. Returns obj.
-function world_class:spawn(obj, pos)
-	local existing<const> = registry.instance:get(obj.id)
-	if existing ~= nil and existing ~= obj then
-		error('world.spawn duplicate id "' .. obj.id .. '".')
-	end
-	local space_id<const> = obj.space_id or self.active_space_id
-	obj.world = self
+function world_class:_commit_spawn(obj)
 	registry.instance:register(obj)
+	local components<const> = obj.components
+	for i = 1, #components do
+		registry.instance:register(components[i])
+		components[i]._published = true
+	end
+	obj._published = true
 	self:_add_world_object(obj)
-	self:set_object_space(obj, space_id)
+	self:_reconcile_object(obj)
+	obj.events:emit('spawn', { pos = obj._spawn_position })
+	obj._spawn_position = nil
+end
+
+function world_class:_flush_spawns()
+	local pending<const> = self._pending_spawns
+	local index = 1
+	while index <= self._pending_spawn_count do
+		local obj<const> = pending[index]
+		pending[index] = nil
+		self:_commit_spawn(obj)
+		index = index + 1
+	end
+	self._pending_spawn_count = 0
+end
+
+-- A spawn is fully constructed before Registry, space and system views publish
+-- it. During a tick group that publication happens at the group barrier.
+function world_class:spawn(obj, pos)
+	registry.instance:reserve(obj)
+	obj.world = self
+	obj.space_id = obj.space_id or self.active_space_id
 	if pos then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y
@@ -357,7 +474,19 @@ function world_class:spawn(obj, pos)
 	end
 	obj:onspawn(pos)
 	obj:activate()
-	obj.events:emit('spawn', { pos = pos })
+	local components<const> = obj.components
+	for i = 1, #components do
+		registry.instance:reserve(components[i])
+	end
+	obj._spawn_position = pos
+	if self._current_tick_group == nil then
+		self:_commit_spawn(obj)
+	else
+		local index<const> = self._pending_spawn_count + 1
+		self._pending_spawn_count = index
+		self._pending_spawns[index] = obj
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_spawn
+	end
 	return obj
 end
 
@@ -372,6 +501,7 @@ function world_class:_commit_despawn(obj)
 	registry.instance:deregister(obj)
 	obj._space:remove_object(obj)
 	self:_remove_world_object(obj)
+	obj._published = nil
 
 	obj:ondespawn()
 	obj:dispose()
@@ -448,16 +578,47 @@ function world_class:_begin_tick_group(group)
 	self._current_tick_group = group
 end
 
-function world_class:_commit_tick_group()
-	self:_flush_active_objects()
-	self:_flush_active_components()
-	local pending_space_id<const> = self._pending_space_id
-	if pending_space_id ~= nil then
+function world_class:_flush_structural_mutations()
+	if (self._pending_mutation_mask & mutation_spawn) ~= 0 then
+		self:_flush_spawns()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_spawn
+	end
+	if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
+		self:_flush_component_attaches()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_attach
+	end
+	if (self._pending_mutation_mask & mutation_object) ~= 0 then
+		self:_flush_objects()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_object
+	end
+	if (self._pending_mutation_mask & mutation_component) ~= 0 then
+		self:_flush_components()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component
+	end
+	if (self._pending_mutation_mask & mutation_tag) ~= 0 then
+		self:_flush_tags()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_tag
+	end
+	if (self._pending_mutation_mask & mutation_component_detach) ~= 0 then
+		self:_flush_component_detaches()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_detach
+	end
+	if (self._pending_mutation_mask & mutation_active_space) ~= 0 then
+		local pending_space_id<const> = self._pending_space_id
 		self._pending_space_id = nil
 		self:_commit_active_space(pending_space_id)
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_active_space
+	end
+end
+
+function world_class:_commit_tick_group()
+	if self._pending_mutation_mask ~= 0 then
+		self:_flush_structural_mutations()
 	end
 	self._current_tick_group = nil
-	self:_flush_despawns()
+	if self._pending_despawn_count ~= 0 then
+		self:_flush_despawns()
+	end
 end
 
 function world_class:update()
