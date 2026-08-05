@@ -38,7 +38,6 @@ local system_manager<const> = require('cartlib/world/system_manager')
 local world
 local clear_color<const> = 0xff000000
 local render_command_capacity<const> = 4096
-local world_id_max<const> = 0x7fffffff
 local empty_object_bucket<const> = {}
 local mutation_spawn<const> = 0x01
 local mutation_component_attach<const> = 0x02
@@ -133,29 +132,7 @@ function world_class.new()
 		gx_gpu.draw_target(draw_page, self._page_size)
 		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
 	end
-	-- id counter for unique id generation
-	self.idcounter = 0
 	return self
-end
-
-function world_class:next_id(definition_id)
-	local baseid<const> = definition_id
-	local uniquenumber = self.idcounter + 1
-	if uniquenumber >= world_id_max then
-		uniquenumber = 1
-	end
-
-	local result = baseid .. '_' .. tostring(uniquenumber)
-	while registry:is_id_claimed(result) do
-		uniquenumber = uniquenumber + 1
-		if uniquenumber >= world_id_max then
-			uniquenumber = 1
-		end
-		result = baseid .. '_' .. tostring(uniquenumber)
-	end
-
-	self.idcounter = uniquenumber
-	return result
 end
 
 function world_class:_add_space(space_id)

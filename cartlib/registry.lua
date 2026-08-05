@@ -6,9 +6,11 @@ local registry<const> = {
 	_components_by_class = {},
 	_by_tag = {},
 	_reservations = {},
+	_id_counter = 0,
 }
 
 local empty_bucket<const> = {}
+local generated_id_max<const> = 0x7fffffff
 
 local add_object_definition<const> = function(self, obj)
 	local definition_id<const> = obj.definition_id
@@ -55,6 +57,25 @@ local remove_entity_tags<const> = function(self, entity)
 			dense_set.remove(self._by_tag[tag], entity)
 		end
 	end
+end
+
+function registry:next_id(prefix)
+	local number = self._id_counter + 1
+	if number >= generated_id_max then
+		number = 1
+	end
+
+	local id = prefix .. '_' .. tostring(number)
+	while self:is_id_claimed(id) do
+		number = number + 1
+		if number >= generated_id_max then
+			number = 1
+		end
+		id = prefix .. '_' .. tostring(number)
+	end
+
+	self._id_counter = number
+	return id
 end
 
 function registry:reserve(entity)

@@ -1,3 +1,4 @@
+local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 local worldobject<const> = require('cartlib/world/worldobject')
 
@@ -32,7 +33,7 @@ local construct<const> = function(definition, addons)
 	apply_values(options, definition.defaults, skip_position)
 	apply_values(options, addons, skip_position)
 	options.definition_id = definition.def_id
-	options.id = options.id or world:next_id(definition.def_id)
+	options.id = options.id or registry:next_id(definition.def_id)
 	local instance<const> = definition.base.new(options)
 	world:_reserve_object(instance)
 	apply_values(instance, options, skip_position)
