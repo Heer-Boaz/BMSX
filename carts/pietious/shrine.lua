@@ -21,14 +21,14 @@ local draw_shrine_visual<const> = function(parent, draw)
 end
 
 function shrine:ctor()
-	local text<const> = self:get_component('textcomponent')
+	local text<const> = self:get_component(textcomponent.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
 	text.offset_y = shrine_text_y
 	text:set_offset_z(1)
 	self.text_component = text
-	self:get_component('customvisualcomponent').producer = draw_shrine_visual
+	self:get_component(customvisualcomponent.type_name).producer = draw_shrine_visual
 end
 
 local room_shrine<const> = {}

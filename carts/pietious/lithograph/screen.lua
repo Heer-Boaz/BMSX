@@ -28,14 +28,14 @@ local draw_lithograph_visual<const> = function(parent, draw)
 end
 
 function lithograph_screen:ctor()
-	local text<const> = self:get_component('textcomponent')
+	local text<const> = self:get_component(textcomponent.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 6)
 	text:set_offset_z(1)
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component('customvisualcomponent').producer = draw_lithograph_visual
+	self:get_component(customvisualcomponent.type_name).producer = draw_lithograph_visual
 end
 
 local define_lithograph_screen_fsm<const> = function()

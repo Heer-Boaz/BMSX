@@ -1,7 +1,7 @@
 -- tile_collision.lua
 -- Tile-collision ECS system.
 
-local component_types<const> = require('cartlib/components/types')
+local tilecollisioncomponent<const> = require('cartlib/collision/tile_collision_component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
@@ -9,7 +9,7 @@ local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 
-local tile_collision_component_type<const> = component_types.tile_collision
+local tile_collision_component_type<const> = tilecollisioncomponent.type_name
 
 local tile_collision_system<const> = {}
 tile_collision_system.__index = tile_collision_system

@@ -1,14 +1,15 @@
 -- screen_boundary.lua
 -- Screen-boundary ECS system.
 
-local component_types<const> = require('cartlib/components/types')
+local prohibitleavingscreencomponent<const> = require('cartlib/physics/prohibit_leaving_screen_component')
+local screenboundarycomponent<const> = require('cartlib/physics/screen_boundary_component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
-local boundary_component_type<const> = component_types.screen_boundary
-local prohibit_leaving_component_type<const> = component_types.prohibit_leaving_screen
+local boundary_component_type<const> = screenboundarycomponent.type_name
+local prohibit_leaving_component_type<const> = prohibitleavingscreencomponent.type_name
 
 local screen_boundary_system<const> = {}
 screen_boundary_system.__index = screen_boundary_system

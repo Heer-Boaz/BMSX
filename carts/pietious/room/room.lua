@@ -900,7 +900,7 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-	local room_effect<const> = self:get_component('customvisualcomponent')
+	local room_effect<const> = self:get_component(customvisualcomponent.type_name)
 	room_effect:set_offset_z(draw_z_room_effect)
 	room_effect.producer = room_object.render_room
 end

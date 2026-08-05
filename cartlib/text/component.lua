@@ -1,4 +1,3 @@
-local component_types<const> = require('cartlib/components/types')
 local font_module<const> = require('cartlib/font')
 local image<const> = require('cartlib/gx/image')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -8,10 +7,11 @@ local empty_text_lines<const> = {}
 
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
+textcomponent.type_name = 'textcomponent'
 setmetatable(textcomponent, { __index = visualcomponent })
 
 function textcomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, component_types.text), textcomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts, textcomponent.type_name), textcomponent)
 	self.font = opts.font or font_module.get('default')
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff

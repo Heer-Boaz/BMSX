@@ -1,13 +1,13 @@
 -- timeline_system.lua
 -- Timeline ECS system.
 
-local component_types<const> = require('cartlib/components/types')
+local timelinecomponent<const> = require('cartlib/timeline/component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
-local timeline_component_type<const> = component_types.timeline
+local timeline_component_type<const> = timelinecomponent.type_name
 
 local timeline_system<const> = {}
 timeline_system.__index = timeline_system

@@ -1,5 +1,4 @@
 local component<const> = require('cartlib/world/component')
-local component_types<const> = require('cartlib/components/types')
 local fsm<const> = require('cartlib/fsm/fsm')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local state<const> = fsm.state
@@ -9,12 +8,13 @@ local transition_machine_state_path<const> = fsm.transition_state_path
 
 local fsmcomponent<const> = {}
 fsmcomponent.__index = fsmcomponent
+fsmcomponent.type_name = fsmlibrary.component_type
 setmetatable(fsmcomponent, { __index = component })
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
 function fsmcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.state_machine, true), fsmcomponent)
+	local self<const> = setmetatable(component.new(opts, fsmcomponent.type_name, true), fsmcomponent)
 	self.statemachines = {}
 	self.statemachine_list = {}
 	self.statemachine_count = 0

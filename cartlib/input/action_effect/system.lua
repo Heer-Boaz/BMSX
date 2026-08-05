@@ -1,11 +1,11 @@
-local component_types<const> = require('cartlib/components/types')
+local inputactioneffectcomponent<const> = require('cartlib/input/action_effect/component')
 local input<const> = require('cartlib/input/player')
 local system_module<const> = require('cartlib/world/system')
 
 local system<const> = system_module.system
 local tick_group<const> = system_module.tick_group
 
-local input_component_type<const> = component_types.input_action_effect
+local input_component_type<const> = inputactioneffectcomponent.type_name
 
 local modes_allow<const> = function(owner, modes)
 	if modes == nil then

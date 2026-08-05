@@ -42,7 +42,7 @@ local transition_mode_events<const> = {
 }
 
 function transition:ctor()
-	local text<const> = self:get_component('textcomponent')
+	local text<const> = self:get_component(textcomponent.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component('customvisualcomponent').producer = draw_transition_visual
+	self:get_component(customvisualcomponent.type_name).producer = draw_transition_visual
 	self.timelines:define(timeline.new({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),

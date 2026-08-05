@@ -1,14 +1,14 @@
-local component_types<const> = require('cartlib/components/types')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
 
 local surfacecomponent<const> = {}
 surfacecomponent.__index = surfacecomponent
+surfacecomponent.type_name = 'surfacecomponent'
 setmetatable(surfacecomponent, { __index = visualcomponent })
 
 function surfacecomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, component_types.surface), surfacecomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts, surfacecomponent.type_name), surfacecomponent)
 	self.color = opts.color or 0xffffffff
 	self:set_imgid(opts.imgid)
 	return self

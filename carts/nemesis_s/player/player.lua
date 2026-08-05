@@ -689,7 +689,7 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc<const> = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component(customvisualcomponent.type_name)
 	rc.producer = player.draw_visual
 end
 

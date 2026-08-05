@@ -3580,9 +3580,11 @@ through a parallel cartlib subsystem lifecycle.
 
 Carts remain the extension owner: a cart may derive a component directly from
 `cartlib/world/component`, use its own component key, and select its own system
-class in its `world_module`. A system owns the component keys and retained state
-that implement its capability. During configuration it binds retained component
-views to `world`; changing the active space redirects those views at
+class in its `world_module`. Every concrete component class owns its `type_name`;
+the systems for that domain bind the class-owned key and retain the views that
+implement their capability. There is no central built-in component-type table.
+During configuration a system binds retained component views to `world`;
+changing the active space redirects those views at
 the structural barrier. Systems therefore read their retained dense arrays
 directly instead of reaching through `world.active_space` or looking up a
 component key every frame. Cartlib does not prewarm a hardcoded list of built-in

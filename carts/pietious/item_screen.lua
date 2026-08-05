@@ -74,7 +74,7 @@ local item_screen_mode_exit_events<const> = {
 }
 
 function item_screen:ctor()
-	self:get_component('customvisualcomponent').producer = item_screen.draw_screen
+	self:get_component(customvisualcomponent.type_name).producer = item_screen.draw_screen
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true

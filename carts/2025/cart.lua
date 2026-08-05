@@ -39,7 +39,7 @@ local transition_module<const> = require('transition')
 local surface_object_class<const> = {}
 
 function surface_object_class:ctor()
-	self.surface_component = self:get_component('surfacecomponent')
+	self.surface_component = self:get_component(surfacecomponent.type_name)
 	if self.imgid then
 		self.surface_component:set_imgid(self.imgid)
 	end
@@ -109,7 +109,7 @@ local draw_director_visual<const> = function(parent, draw)
 end
 
 function director:ctor()
-	local transition_rc<const> = self:get_component('customvisualcomponent')
+	local transition_rc<const> = self:get_component(customvisualcomponent.type_name)
 	transition_rc:set_offset_z(director_visual_z)
 	transition_rc.producer = draw_director_visual
 end

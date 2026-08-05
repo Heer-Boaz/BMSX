@@ -14,12 +14,12 @@
 --    result. Prefer that over explicit registration in cart code.
 
 local fsm<const> = require('cartlib/fsm/fsm')
-local component_types<const> = require('cartlib/components/types')
 local registry<const> = require('cartlib/registry')
 
 local statedefinitions<const> = {}
 
 local fsmlibrary<const> = {}
+fsmlibrary.component_type = 'fsmcomponent'
 
 -- fsmlibrary.register(machine_name, blueprint)
 --   Compiles a state-definition from blueprint and stores it under machine_name.
@@ -31,7 +31,7 @@ function fsmlibrary.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	statedefinitions[machine_name] = replacement
-	local components<const> = registry:entities_by_type(component_types.state_machine)
+	local components<const> = registry:entities_by_type(fsmlibrary.component_type)
 	for i = 1, #components do
 		local state_machines<const> = components[i]
 		state_machines:rebind_statemachine(machine_name, replacement)

@@ -1,20 +1,20 @@
 local component<const> = require('cartlib/world/component')
-local component_types<const> = require('cartlib/components/types')
 local registry<const> = require('cartlib/registry')
 
 local behaviourtreecomponent<const> = {}
 behaviourtreecomponent.__index = behaviourtreecomponent
+behaviourtreecomponent.type_name = 'behaviourtreecomponent'
 setmetatable(behaviourtreecomponent, { __index = component })
 
 function behaviourtreecomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.behaviour_tree), behaviourtreecomponent)
+	local self<const> = setmetatable(component.new(opts, behaviourtreecomponent.type_name), behaviourtreecomponent)
 	self.root = opts.root
 	self.nodedata = {}
 	return self
 end
 
 function behaviourtreecomponent.factory(root)
-	local components<const> = registry:entities_by_type(component_types.behaviour_tree)
+	local components<const> = registry:entities_by_type(behaviourtreecomponent.type_name)
 	for i = 1, #components do
 		local behaviour_tree<const> = components[i]
 		if behaviour_tree.id_local == root.id then

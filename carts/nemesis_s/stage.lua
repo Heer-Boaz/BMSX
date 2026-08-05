@@ -560,7 +560,7 @@ function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
-	self.stage_visual = self:get_component('customvisualcomponent')
+	self.stage_visual = self:get_component(customvisualcomponent.type_name)
 	self.stage_visual.producer = stage.draw
 end
 

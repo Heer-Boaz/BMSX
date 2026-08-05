@@ -1,14 +1,14 @@
-local component_types<const> = require('cartlib/components/types')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
 
 local spritecomponent<const> = {}
 spritecomponent.__index = spritecomponent
+spritecomponent.type_name = 'spritecomponent'
 setmetatable(spritecomponent, { __index = visualcomponent })
 
 function spritecomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, component_types.sprite), spritecomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts, spritecomponent.type_name), spritecomponent)
 	self.flip_h = false
 	self.flip_v = false
 	self.color = opts.color or 0xffffffff

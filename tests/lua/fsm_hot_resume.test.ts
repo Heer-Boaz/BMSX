@@ -17,8 +17,8 @@ const SYSTEM_MODULE_FILES = [
 ] as const;
 
 const CART_MODULE_FILES = [
+	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
-	['cartlib/components/types', 'cartlib/components/types.lua'],
 	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
 	['cartlib/world/component', 'cartlib/world/component.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
@@ -69,7 +69,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 `;
 
 const CART_ENTRY_SOURCE = `
-local registry<const> = require('cartlib/registry').instance
+local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/eventemitter')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/component')
@@ -215,9 +215,9 @@ assert(timeline_before.head == timeline_head_before and timeline_before.time_ms 
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)
 assert(state_machines.state_paths == nil)
-assert(#events.eventemitter.instance.listeners.activate == 0)
-assert(#events.eventemitter.instance.listeners.deactivate == 1)
-assert(#events.eventemitter.instance.listeners.bonus == 1)
+assert(#events.listeners.activate == 0)
+assert(#events.listeners.deactivate == 1)
+assert(#events.listeners.bonus == 1)
 local bound_after<const> = state_machines:bind_state_path('/active')
 assert(bound_after ~= bound_before)
 

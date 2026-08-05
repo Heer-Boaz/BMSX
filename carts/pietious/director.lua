@@ -221,7 +221,7 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component('customvisualcomponent').producer = director.draw_visual
+	self:get_component(customvisualcomponent.type_name).producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end
 

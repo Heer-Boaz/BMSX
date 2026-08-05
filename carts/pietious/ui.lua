@@ -39,7 +39,7 @@ function ui:set_weapon_target(value)
 end
 
 function ui:ctor()
-	self:get_component('customvisualcomponent').producer = ui.draw_ui
+	self:get_component(customvisualcomponent.type_name).producer = ui.draw_ui
 	local player<const> = world:get('pietolon')
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)

@@ -1,14 +1,14 @@
-local component_types<const> = require('cartlib/components/types')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visualcomponent<const> = require('cartlib/render/visual_component')
 
 local tilelayercomponent<const> = {}
 tilelayercomponent.__index = tilelayercomponent
+tilelayercomponent.type_name = 'tilelayercomponent'
 setmetatable(tilelayercomponent, { __index = visualcomponent })
 
 function tilelayercomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, component_types.tile_layer), tilelayercomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts, tilelayercomponent.type_name), tilelayercomponent)
 	self.sources = opts.sources
 	self.tile_count = opts.tile_count or 0
 	self.columns = opts.columns or 1

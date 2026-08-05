@@ -1,13 +1,13 @@
 local compiler<const> = require('cartlib/input/action_effect/compiler')
 local component<const> = require('cartlib/world/component')
-local component_types<const> = require('cartlib/components/types')
 
 local inputactioneffectcomponent<const> = {}
 inputactioneffectcomponent.__index = inputactioneffectcomponent
+inputactioneffectcomponent.type_name = 'inputactioneffectcomponent'
 setmetatable(inputactioneffectcomponent, { __index = component })
 
 function inputactioneffectcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.input_action_effect, true), inputactioneffectcomponent)
+	local self<const> = setmetatable(component.new(opts, inputactioneffectcomponent.type_name, true), inputactioneffectcomponent)
 	self.source_program = opts.program
 	self.binding_latch = {}
 	self.binding_touched = {}

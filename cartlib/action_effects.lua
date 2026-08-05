@@ -1,5 +1,4 @@
 local component<const> = require('cartlib/world/component')
-local component_types<const> = require('cartlib/components/types')
 
 local action_effects<const> = {}
 local definitions<const> = {}
@@ -81,10 +80,11 @@ end
 
 local actioneffectcomponent<const> = {}
 actioneffectcomponent.__index = actioneffectcomponent
+actioneffectcomponent.type_name = 'actioneffectcomponent'
 setmetatable(actioneffectcomponent, { __index = component })
 
 function actioneffectcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.action_effect, true), actioneffectcomponent)
+	local self<const> = setmetatable(component.new(opts, actioneffectcomponent.type_name, true), actioneffectcomponent)
 	self.effects = {}
 	self.time_ms = 0
 	return self

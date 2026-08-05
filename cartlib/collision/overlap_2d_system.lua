@@ -56,7 +56,7 @@
 --    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local component_types<const> = require('cartlib/components/types')
+local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
@@ -66,7 +66,7 @@ local clear_map<const> = require('cartlib/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
 local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
-local collider_2d_component_type<const> = component_types.collider_2d
+local collider_2d_component_type<const> = collider2dcomponent.type_name
 
 local overlap_2d_system<const> = {}
 overlap_2d_system.__index = overlap_2d_system

@@ -1,14 +1,15 @@
 -- screen_boundary_capture.lua
 -- Captures positions before gameplay movement for screen-boundary resolution.
 
-local component_types<const> = require('cartlib/components/types')
+local prohibitleavingscreencomponent<const> = require('cartlib/physics/prohibit_leaving_screen_component')
+local screenboundarycomponent<const> = require('cartlib/physics/screen_boundary_component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
-local screen_boundary_type<const> = component_types.screen_boundary
-local prohibit_leaving_screen_type<const> = component_types.prohibit_leaving_screen
+local screen_boundary_type<const> = screenboundarycomponent.type_name
+local prohibit_leaving_screen_type<const> = prohibitleavingscreencomponent.type_name
 
 local screen_boundary_capture_system<const> = {}
 screen_boundary_capture_system.__index = screen_boundary_capture_system

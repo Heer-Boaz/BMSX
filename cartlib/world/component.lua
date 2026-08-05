@@ -1,16 +1,16 @@
-local component_types<const> = require('cartlib/components/types')
 local eventemitter<const> = require('cartlib/eventemitter')
 
 local empty_options<const> = {}
 
 local component<const> = {}
 component.__index = component
+component.type_name = 'component'
 
 function component.new(opts, type_name, unique)
 	opts = opts or empty_options
 	local self<const> = setmetatable({}, component)
 	self.parent = opts.parent
-	self.type_name = type_name or opts.type_name or component_types.base
+	self.type_name = type_name or opts.type_name or component.type_name
 	self.id_local = opts.id_local
 	self.id = opts.id
 	self.enabled = opts.enabled == nil or opts.enabled

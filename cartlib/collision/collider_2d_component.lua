@@ -1,9 +1,9 @@
-local component_types<const> = require('cartlib/components/types')
 local select_sprite_shape_ref<const> = require('cartlib/collision/sprite_shape')
 local component<const> = require('cartlib/world/component')
 
 local collider2dcomponent<const> = {}
 collider2dcomponent.__index = collider2dcomponent
+collider2dcomponent.type_name = 'collider2dcomponent'
 setmetatable(collider2dcomponent, { __index = component })
 
 local invalidate_overlap_shape<const> = function(collider)
@@ -46,7 +46,7 @@ function collider2dcomponent:prepare_overlap()
 end
 
 function collider2dcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, component_types.collider_2d), collider2dcomponent)
+	local self<const> = setmetatable(component.new(opts, collider2dcomponent.type_name), collider2dcomponent)
 	self.hittable = opts.hittable == nil or opts.hittable
 	self.layer = opts.layer or 1
 	self.mask = opts.mask or 0xffffffff

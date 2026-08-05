@@ -40,12 +40,12 @@ function breakablewall:process_damage_result(result)
 end
 
 function breakablewall:ctor()
-	local collider<const> = self:get_component('collider2dcomponent')
+	local collider<const> = self:get_component(collider2dcomponent.type_name)
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
 	self.sy = self.height_tiles * room_tile_size
-	local tile_layer<const> = self:get_component('tilelayercomponent')
+	local tile_layer<const> = self:get_component(tilelayercomponent.type_name)
 	local tile_count<const> = self.width_tiles * self.height_tiles
 	local tile_source<const> = image.resolve(self.tiletype)
 	local sources<const> = {}
