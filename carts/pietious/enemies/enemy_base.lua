@@ -17,8 +17,8 @@ function enemy_base.ctor(self)
 	self.sprite_component:set_offset_z(110)
 end
 
--- Attaches a screen_boundary_component with room bounds and subscribes to
--- screen.leave so the projectile auto-disposes when it exits the room.
+-- Attaches projectile boundary behaviour with the room bounds. The shared
+-- bind() below owns its event subscriptions after construction is complete.
 -- Call from the ctor of projectile-type enemies only (vlokfoe, nootfoe, etc.).
 function enemy_base.setup_projectile_boundary(self)
 	self:add_component(screen_boundary_component.new({
@@ -27,21 +27,6 @@ function enemy_base.setup_projectile_boundary(self)
 		right = room_width,
 		bottom = room_height,
 	}))
-	self.events:on({
-		event = 'screen.leave',
-		subscriber = self,
-		handler = function()
-			self:despawn()
-		end,
-	})
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function()
-			self:despawn()
-		end,
-	})
 end
 
 function enemy_base.bind(self)
@@ -76,6 +61,24 @@ function enemy_base.bind(self)
 			self:set_space('main')
 		end,
 	})
+
+	if self:get_component(screen_boundary_component) ~= nil then
+		self.events:on({
+			event = 'screen.leave',
+			subscriber = self,
+			handler = function()
+				self:despawn()
+			end,
+		})
+		self.events:on({
+			event = 'room.switched',
+			emitter = 'pietolon',
+			subscriber = self,
+			handler = function()
+				self:despawn()
+			end,
+		})
+	end
 end
 
 function enemy_base.spawn_death_effect(self)
