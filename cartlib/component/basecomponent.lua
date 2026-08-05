@@ -37,9 +37,6 @@ end
 function basecomponent:on_activate()
 end
 
-function basecomponent:bind()
-end
-
 function basecomponent:unbind()
 	eventemitter:remove_subscriber(self)
 end

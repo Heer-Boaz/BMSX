@@ -115,7 +115,6 @@ function worldobject:set_space(space_id)
 end
 
 -- add_component(comp): attach a component to this object.
--- comp.bind() is called immediately; comp.on_attach() fires after binding.
 -- Returns the component for chaining.  Components are updated by ECS systems,
 -- as the object lacks its own update() method.
 function worldobject:add_component(comp)
@@ -142,7 +141,6 @@ function worldobject:add_component(comp)
 	bucket[class_index] = comp
 	comp._parent_component_index = component_index
 	comp._parent_class_index = class_index
-	comp:bind()
 	comp:on_attach()
 	if self._published then
 		self.world:attach_component(comp)
