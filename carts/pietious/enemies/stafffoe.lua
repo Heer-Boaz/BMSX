@@ -15,7 +15,7 @@ local staff_shot_speed_y<const> = { 0, 6, 11, 15, 16, 15, 11, 6, 0, -6, -11, -15
 function stafffoe:ctor()
 	self.staff_state = 'default'
 	self.staff_spawn_count = 0
-	self:gfx('stafffoe')
+	self:set_imgid('stafffoe')
 end
 
 function stafffoe.bt_tick(self, blackboard)

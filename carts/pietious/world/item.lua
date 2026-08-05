@@ -12,7 +12,7 @@ world_item.__index = world_item
 function world_item:ctor()
 	self.collider.layer = collision_pickup_layer
 	self.collider.mask = collision_pickup_mask
-	self:gfx(world_item_sprite[self.item_type])
+	self:set_imgid(world_item_sprite[self.item_type])
 end
 
 function world_item:onspawn(_pos)

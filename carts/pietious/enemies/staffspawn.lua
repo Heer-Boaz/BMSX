@@ -9,7 +9,7 @@ local staffspawn<const> = {}
 staffspawn.__index = staffspawn
 
 function staffspawn:ctor()
-	self:gfx('staffspawn')
+	self:set_imgid('staffspawn')
 	self.sprite_component.flip_h = self.speed_x_num < 0
 	enemy_base.setup_projectile_boundary(self)
 end

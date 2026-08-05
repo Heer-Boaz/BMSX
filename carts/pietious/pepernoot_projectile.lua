@@ -42,7 +42,7 @@ function pepernoot_projectile:ctor()
 			return collision_flags
 		end,
 	}))
-	self:gfx('pepernoot_16')
+	self:set_imgid('pepernoot_16')
 end
 
 function pepernoot_projectile:onspawn(pos)

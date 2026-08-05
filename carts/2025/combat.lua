@@ -464,7 +464,7 @@ function combat.define_fsm()
 
 			local monster<const> = world:get(combat_monster_id)
 			texture_residency.load_combat_workset(node.monster_imgid)
-			monster:gfx(node.monster_imgid)
+			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
 			monster:set_z(200)
@@ -481,7 +481,7 @@ function combat.define_fsm()
 			self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
 
 			local maya_a<const> = world:get(combat_maya_a_id)
-			maya_a:gfx('maya_a')
+			maya_a:set_imgid('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
 			maya_a.y = screen_height - maya_a.sy
@@ -498,7 +498,7 @@ function combat.define_fsm()
 			all_out:set_z(800)
 
 			local maya_b<const> = world:get(combat_maya_b_id)
-			maya_b:gfx('maya_b')
+			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.color = p3_white_color
 			maya_b.x = screen_width - maya_b.sx
@@ -597,10 +597,10 @@ function combat.define_fsm()
 			local bg<const> = world:get(bg_id)
 			bg.visible = false
 			local monster<const> = world:get(combat_monster_id)
-			monster:gfx(node.monster_imgid)
+			monster:set_imgid(node.monster_imgid)
 			monster.visible = true
 			local maya_a<const> = world:get(combat_maya_a_id)
-			maya_a:gfx('maya_a')
+			maya_a:set_imgid('maya_a')
 			maya_a.visible = true
 			world:get(combat_all_out_id).visible = false
 			local maya_b<const> = world:get(combat_maya_b_id)
@@ -997,7 +997,7 @@ function combat.define_fsm()
 			local monster<const> = world:get(combat_monster_id)
 			local maya_a<const> = world:get(combat_maya_a_id)
 			local portrait<const> = world:get(combat_all_out_portrait_id)
-			portrait:gfx('maya_v_s')
+			portrait:set_imgid('maya_v_s')
 			portrait.visible = true
 			portrait:set_z(750)
 			portrait.sprite_component.scale_x = 1
@@ -1227,7 +1227,7 @@ function combat.define_fsm()
 			bg.color = p3_black_color
 
 			local maya_b<const> = world:get(combat_maya_b_id)
-			maya_b:gfx('maya_b')
+			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b:set_z(combat_results_maya_z)
 			self.combat_results_maya_target_x = screen_width - maya_b.sx

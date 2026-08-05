@@ -15,7 +15,7 @@ local rock_break_timelineid<const> = 'rock.tl.break'
 function rock:ctor()
 	self.collider.layer = collision_enemy_layer
 	self.collider.mask = collision_enemy_mask
-	self:gfx('stone')
+	self:set_imgid('stone')
 end
 
 function rock:apply_damage(request)
@@ -117,7 +117,7 @@ local define_rock_fsm<const> = function()
 				entering_state = function(self)
 					self:begin_break()
 					self.collider:set_enabled(false)
-					self:gfx('stone_broken')
+					self:set_imgid('stone_broken')
 				end,
 			},
 		},

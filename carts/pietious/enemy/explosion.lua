@@ -34,7 +34,7 @@ local loot_value_for_type<const> = function(loot_type)
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
-	self:gfx(imgid)
+	self:set_imgid(imgid)
 	self.visible = true
 end
 
@@ -54,7 +54,7 @@ function enemy_explosion:spawn_loot()
 end
 
 function enemy_explosion:ctor()
-	self:gfx(explosion_frames[1])
+	self:set_imgid(explosion_frames[1])
 	self:sync_explosion_sprite(explosion_frames[1])
 end
 

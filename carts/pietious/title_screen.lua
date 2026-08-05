@@ -128,7 +128,7 @@ end
 
 function title_screen:ctor()
 	self.collider:set_enabled(false)
-	self:gfx('title_screen')
+	self:set_imgid('title_screen')
 	self:set_z(350)
 	self.sparkle_sprite = sprite_component.new({
 		id_local = 'sparkle',
@@ -163,7 +163,7 @@ local define_title_screen_fsm<const> = function()
 			hidden = {},
 			idle = {
 				entering_state = function(self)
-					self:gfx('title_screen')
+					self:set_imgid('title_screen')
 				end,
 				timelines = {
 					[sparkle_timelineid] = {
@@ -205,7 +205,7 @@ local define_title_screen_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_frame = function(self)
-							self:gfx(self.timelines:get(start_timelineid):value().sprite_id)
+							self:set_imgid(self.timelines:get(start_timelineid):value().sprite_id)
 						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')

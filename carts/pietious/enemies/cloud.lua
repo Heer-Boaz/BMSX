@@ -23,16 +23,16 @@ local cloud_wave_neg_end_millirad<const> = 6030
 
 function cloud:ctor()
 	self.cloud_anim_frame = 1
-	self:gfx('cloud_1')
+	self:set_imgid('cloud_1')
 end
 
 function cloud.bt_tick(self, blackboard)
 	local node<const> = blackboard.node_data
 	local room<const> = world:get('room')
 	if self.cloud_anim_frame == 2 then
-		self:gfx('cloud_2')
+		self:set_imgid('cloud_2')
 	else
-		self:gfx('cloud_1')
+		self:set_imgid('cloud_1')
 	end
 
 	local anim_ticks = node.cloud_anim_ticks or enemy_cloud_anim_switch_steps

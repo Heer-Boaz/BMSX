@@ -22,7 +22,7 @@ world_entrance.__index = world_entrance
 
 function world_entrance:set_entrance_state(entrance_state)
 	self.entrance_state = entrance_state
-	self:gfx(world_entrance_sprite_ids[entrance_state])
+	self:set_imgid(world_entrance_sprite_ids[entrance_state])
 end
 
 function world_entrance:mark_half_open()

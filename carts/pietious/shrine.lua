@@ -36,7 +36,7 @@ room_shrine.__index = room_shrine
 
 function room_shrine:ctor()
 	self.collider:set_enabled(false)
-	self:gfx('shrine')
+	self:set_imgid('shrine')
 end
 
 local define_shrine_fsm<const> = function()

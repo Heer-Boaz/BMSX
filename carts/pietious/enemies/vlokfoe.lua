@@ -9,7 +9,7 @@ local vlokfoe<const> = {}
 vlokfoe.__index = vlokfoe
 
 function vlokfoe:ctor()
-	self:gfx('vlok')
+	self:set_imgid('vlok')
 	enemy_base.setup_projectile_boundary(self)
 end
 

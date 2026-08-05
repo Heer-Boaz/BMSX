@@ -336,7 +336,7 @@ function castle:sync_current_room_seal_instance()
 		seal_instance:set_z(23)
 	end
 
-	seal_instance:gfx(sprite_id)
+	seal_instance:set_imgid(sprite_id)
 end
 
 function castle:emit_room_state_changed()

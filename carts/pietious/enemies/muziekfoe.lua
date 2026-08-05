@@ -30,7 +30,7 @@ end
 
 -- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function muziekfoe:ctor()
-	self:gfx('muziekfoe')
+	self:set_imgid('muziekfoe')
 end
 
 function muziekfoe.bt_tick(self, blackboard)

@@ -9,7 +9,7 @@ local elevator<const> = {}
 elevator.__index = elevator
 
 function elevator:ctor()
-	self:gfx('elevator_platform')
+	self:set_imgid('elevator_platform')
 	self.collider:set_enabled(true)
 	self.collider.layer = collision_world_layer
 	self.collider.mask = collision_player_layer

@@ -5,7 +5,7 @@ seal.__index = seal
 
 function seal:ctor()
 	self.collider:set_enabled(false)
-	self:gfx('seal')
+	self:set_imgid('seal')
 end
 
 local register_seal_definition<const> = function()

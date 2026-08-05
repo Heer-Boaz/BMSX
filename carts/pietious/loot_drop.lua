@@ -23,7 +23,7 @@ end
 function loot_drop:ctor()
 	self.collider.layer = collision_pickup_layer
 	self.collider.mask = collision_pickup_mask
-	self:gfx(sprite_for_loot_type(self.loot_type))
+	self:set_imgid(sprite_for_loot_type(self.loot_type))
 end
 
 function loot_drop:onspawn(_pos)

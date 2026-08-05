@@ -9,7 +9,7 @@ local paperfoe<const> = {}
 paperfoe.__index = paperfoe
 
 function paperfoe:ctor()
-	self:gfx('boekfoe_paper')
+	self:set_imgid('boekfoe_paper')
 	self.sprite_component.flip_h = self.speed_x_num < 0
 	enemy_base.setup_projectile_boundary(self)
 end

@@ -5,7 +5,7 @@ lithograph.__index = lithograph
 
 function lithograph:ctor()
 	self.collider:set_enabled(false)
-	self:gfx('lithograph')
+	self:set_imgid('lithograph')
 end
 
 local register_lithograph_definition<const> = function()

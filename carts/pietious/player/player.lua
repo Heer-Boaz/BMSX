@@ -367,7 +367,7 @@ function player:ctor()
 	self:add_component(input_actioneffect_component.new({
 		program = player_abilities.build_input_actioneffect_program(),
 	}))
-	self:gfx('pietolon_stand_r')
+	self:set_imgid('pietolon_stand_r')
 	self.width = player_width
 	self.height = player_height
 	self.collider.id_local = 'body'
@@ -458,7 +458,7 @@ function player:apply_presentation_state()
 			end
 		end
 		self.sword_sprite:set_enabled(false)
-		self:gfx(imgid)
+		self:set_imgid(imgid)
 		self.sprite_component.flip_h = self.facing < 0
 		self.sprite_component.offset_y = self.to_enter_cut
 		self.visible = true
@@ -546,7 +546,7 @@ function player:apply_presentation_state()
 		self.sprite_component.offset_x = 0
 	end
 
-	self:gfx(imgid)
+	self:set_imgid(imgid)
 	self.sprite_component.flip_h = flip_h
 	self.sword_sprite:set_enabled(self:has_tag(state_tags.group.sword))
 	self.sword_sprite.flip_h = flip_h

@@ -21,7 +21,7 @@ local noot_colors<const> = {
 
 function nootfoe:ctor()
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
-	self:gfx('muzieknootfoe')
+	self:set_imgid('muzieknootfoe')
 	self.sprite_component.color = self.noot_color
 	world:get('c').events:emit('muzieknootspawn')
 	enemy_base.setup_projectile_boundary(self)

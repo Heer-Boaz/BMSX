@@ -117,7 +117,7 @@ function mijterfoe.change_sprite_on_direction(self)
 		flip_h = true
 		flip_v = true
 	end
-	self:gfx(imgid)
+	self:set_imgid(imgid)
 	self.sprite_component.flip_h = flip_h
 	self.sprite_component.flip_v = flip_v
 end
