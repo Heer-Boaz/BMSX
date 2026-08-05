@@ -16,7 +16,7 @@ local compile_effect<const> = function(player_index, effect, slot)
 			payload = trigger.payload
 		end
 		return function(component)
-			component.parent.actioneffects:trigger(id, payload)
+			component.parent.action_effects:trigger(id, payload)
 		end, true, 0, 0
 	end
 	local consume<const> = effect['input.consume']

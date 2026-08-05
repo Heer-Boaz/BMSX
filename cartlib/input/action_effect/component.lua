@@ -1,13 +1,13 @@
 local compiler<const> = require('cartlib/input/action_effect/compiler')
 local component<const> = require('cartlib/world/component')
 
-local inputactioneffectcomponent<const> = {}
-inputactioneffectcomponent.__index = inputactioneffectcomponent
-inputactioneffectcomponent.type_name = 'inputactioneffectcomponent'
-setmetatable(inputactioneffectcomponent, { __index = component })
+local input_action_effect_component<const> = {}
+input_action_effect_component.__index = input_action_effect_component
+input_action_effect_component.type_name = 'input_action_effect_component'
+setmetatable(input_action_effect_component, { __index = component })
 
-function inputactioneffectcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, inputactioneffectcomponent.type_name, true), inputactioneffectcomponent)
+function input_action_effect_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, input_action_effect_component.type_name, true), input_action_effect_component)
 	self.source_program = opts.program
 	self.binding_latch = {}
 	self.binding_touched = {}
@@ -21,11 +21,11 @@ function inputactioneffectcomponent.new(opts)
 	return self
 end
 
-function inputactioneffectcomponent:on_activate()
+function input_action_effect_component:on_activate()
 	local owner<const> = self.parent
 	local program<const>, uses_effect_triggers<const> = compiler.compile_program(owner, self.source_program)
-	if uses_effect_triggers and not owner.actioneffects then
-		error('input effects on "' .. owner.id .. '" trigger an ability component that is not attached.')
+	if uses_effect_triggers and not owner.action_effects then
+		error('input effects on "' .. owner.id .. '" trigger an action-effect component that is not attached.')
 	end
 	self.program = program
 	for i = 1, #program.bindings do
@@ -47,4 +47,4 @@ function inputactioneffectcomponent:on_activate()
 	self.last_frame = 0
 end
 
-return inputactioneffectcomponent
+return input_action_effect_component

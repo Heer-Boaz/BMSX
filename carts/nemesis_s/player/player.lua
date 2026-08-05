@@ -680,7 +680,7 @@ function player:update_runtime()
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
-		self.actioneffects:trigger(player_abilities.effect_ids.fire_salvo)
+		self.action_effects:trigger(player_abilities.effect_ids.fire_salvo)
 	end
 	self:update_weapons()
 	self:emit_metric()
@@ -826,7 +826,7 @@ local register_player_definition<const> = function()
 			customvisualcomponent.new,
 			timeline_component.new,
 			state_machine_component.factory({ ids_player_fsm }),
-			action_effects.actioneffectcomponent.factory({ player_abilities.effect_ids.fire_salvo }),
+			action_effects.action_effect_component.factory({ player_abilities.effect_ids.fire_salvo }),
 		},
 		defaults = {
 			player_index = 1,

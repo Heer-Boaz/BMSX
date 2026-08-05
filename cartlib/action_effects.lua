@@ -3,7 +3,7 @@ local component<const> = require('cartlib/world/component')
 local action_effects<const> = {}
 local definitions<const> = {}
 
-action_effects.effecttype = {
+action_effects.effect_type = {
 	spawn = 'spawn',
 	despawn = 'despawn',
 	damage = 'damage',
@@ -18,14 +18,14 @@ function action_effects.register_effect(id, definition)
 	definitions[id] = definition
 end
 
-action_effects.register_effect(action_effects.effecttype.move, {
+action_effects.register_effect(action_effects.effect_type.move, {
 	handler = function(owner, _payload, dx, dy)
 		owner.x = owner.x + dx
 		owner.y = owner.y + dy
 	end,
 })
 
-action_effects.register_effect(action_effects.effecttype.play_animation, {
+action_effects.register_effect(action_effects.effect_type.play_animation, {
 	handler = function(owner, _payload, animation_id, options)
 		owner.timelines:play(animation_id, options)
 	end,
@@ -78,21 +78,21 @@ local states_allow<const> = function(owner, required, blocked)
 	return true
 end
 
-local actioneffectcomponent<const> = {}
-actioneffectcomponent.__index = actioneffectcomponent
-actioneffectcomponent.type_name = 'actioneffectcomponent'
-setmetatable(actioneffectcomponent, { __index = component })
+local action_effect_component<const> = {}
+action_effect_component.__index = action_effect_component
+action_effect_component.type_name = 'action_effect_component'
+setmetatable(action_effect_component, { __index = component })
 
-function actioneffectcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, actioneffectcomponent.type_name, true), actioneffectcomponent)
+function action_effect_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, action_effect_component.type_name, true), action_effect_component)
 	self.effects = {}
 	self.time_ms = 0
 	return self
 end
 
-function actioneffectcomponent.factory(effect_ids)
+function action_effect_component.factory(effect_ids)
 	return function(opts)
-		local self<const> = actioneffectcomponent.new(opts)
+		local self<const> = action_effect_component.new(opts)
 		for i = 1, #effect_ids do
 			self:grant_effect(effect_ids[i])
 		end
@@ -100,15 +100,15 @@ function actioneffectcomponent.factory(effect_ids)
 	end
 end
 
-function actioneffectcomponent:on_attach()
-	self.parent.actioneffects = self
+function action_effect_component:on_attach()
+	self.parent.action_effects = self
 end
 
-function actioneffectcomponent:on_detach()
-	self.parent.actioneffects = nil
+function action_effect_component:on_detach()
+	self.parent.action_effects = nil
 end
 
-function actioneffectcomponent:grant_effect(id)
+function action_effect_component:grant_effect(id)
 	local owner<const> = self.parent
 	local definition<const> = definitions[id]
 	self.effects[id] = {
@@ -119,15 +119,15 @@ function actioneffectcomponent:grant_effect(id)
 	}
 end
 
-function actioneffectcomponent:revoke_effect(id)
+function action_effect_component:revoke_effect(id)
 	self.effects[id] = nil
 end
 
-function actioneffectcomponent:has_effect(id)
+function action_effect_component:has_effect(id)
 	return self.effects[id] ~= nil
 end
 
-function actioneffectcomponent:trigger(id, payload, ...)
+function action_effect_component:trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
 	if not effect then
 		return 'failed'
@@ -167,7 +167,7 @@ function actioneffectcomponent:trigger(id, payload, ...)
 	return 'ok'
 end
 
-function actioneffectcomponent:cooldown_remaining(id)
+function action_effect_component:cooldown_remaining(id)
 	local effect<const> = self.effects[id]
 	if not effect then
 		return nil
@@ -179,6 +179,6 @@ function actioneffectcomponent:cooldown_remaining(id)
 	return nil
 end
 
-action_effects.actioneffectcomponent = actioneffectcomponent
+action_effects.action_effect_component = action_effect_component
 
 return action_effects

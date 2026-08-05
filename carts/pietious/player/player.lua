@@ -87,7 +87,7 @@ require('constants')
 local castle_map<const> = require('castle/map')
 local action_effects<const> = require('cartlib/action_effects')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
-local inputactioneffectcomponent<const> = require('cartlib/input/action_effect/component')
+local input_action_effect_component<const> = require('cartlib/input/action_effect/component')
 local spritecomponent<const> = require('cartlib/render/sprite_component')
 local timeline_component<const> = require('cartlib/timeline/component')
 local collision2d<const> = require('cartlib/collision2d')
@@ -360,11 +360,11 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(action_effects.actioneffectcomponent.new({}))
-	self.actioneffects:grant_effect('halo')
-	self.actioneffects:grant_effect('pepernoot')
-	self.actioneffects:grant_effect('spyglass')
-	self:add_component(inputactioneffectcomponent.new({
+	self:add_component(action_effects.action_effect_component.new({}))
+	self.action_effects:grant_effect('halo')
+	self.action_effects:grant_effect('pepernoot')
+	self.action_effects:grant_effect('spyglass')
+	self:add_component(input_action_effect_component.new({
 		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
@@ -3150,7 +3150,7 @@ local define_player_fsm<const> = function()
 			['player.halo_trigger'] = {
 				emitter = 'd',
 				go = function(self)
-					local result<const> = self.actioneffects:trigger('halo')
+					local result<const> = self.action_effects:trigger('halo')
 					if result ~= 'ok' then
 						self.events:emit('halo_trigger_cancelled')
 					end

@@ -7,7 +7,7 @@ local system_module<const> = require('cartlib/world/system')
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
-local action_effect_runtime_component_type<const> = action_effects.actioneffectcomponent.type_name
+local action_effect_runtime_component_type<const> = action_effects.action_effect_component.type_name
 
 local action_effect_system<const> = {}
 action_effect_system.__index = action_effect_system
