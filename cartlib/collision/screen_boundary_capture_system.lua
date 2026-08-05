@@ -3,10 +3,9 @@
 
 local prohibit_leaving_screen_component<const> = require('cartlib/physics/prohibit_leaving_screen_component')
 local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 
 local screen_boundary_type<const> = screen_boundary_component.type_name
 local prohibit_leaving_screen_type<const> = prohibit_leaving_screen_component.type_name

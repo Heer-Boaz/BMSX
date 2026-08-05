@@ -2,10 +2,9 @@
 -- Action-effect cooldown ECS system.
 
 local action_effects<const> = require('cartlib/action_effects')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 
 local action_effect_runtime_component_type<const> = action_effects.action_effect_component.type_name
 

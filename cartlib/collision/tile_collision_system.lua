@@ -2,10 +2,9 @@
 -- Tile-collision ECS system.
 
 local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 

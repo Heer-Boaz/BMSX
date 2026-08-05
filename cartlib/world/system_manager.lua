@@ -1,7 +1,6 @@
 local clock<const> = require('cartlib/clock')
-local system_module<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
 local tick_group_order<const> = {
 	tick_group.input,
 	tick_group.action_effects,

@@ -1,7 +1,6 @@
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local system<const> = system_module.system
-local tick_group<const> = system_module.tick_group
 
 local elevator_system<const> = {}
 elevator_system.__index = elevator_system

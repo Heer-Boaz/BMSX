@@ -57,10 +57,9 @@
 --    Carts program these raw bitmasks when constructing each collider.
 
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local collision_2d<const> = require('cartlib/collision_2d')
@@ -75,27 +74,27 @@ setmetatable(overlap_2d_system, { __index = system })
 -- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
 -- stable collider high-water mark does not allocate during physics updates.
-local release_pair_rows<const> = function(system, set)
-	local row_pool<const> = system.pair_row_pool
-	local row_pool_count = system.pair_row_pool_count
+local release_pair_rows<const> = function(overlap, set)
+	local row_pool<const> = overlap.pair_row_pool
+	local row_pool_count = overlap.pair_row_pool_count
 	for key, row in pairs(set) do
 		clear_map(row)
 		row_pool_count = row_pool_count + 1
 		row_pool[row_pool_count] = row
 		set[key] = nil
 	end
-	system.pair_row_pool_count = row_pool_count
+	overlap.pair_row_pool_count = row_pool_count
 end
 
-local acquire_pair_row<const> = function(system)
-	local row_pool_count<const> = system.pair_row_pool_count
+local acquire_pair_row<const> = function(overlap)
+	local row_pool_count<const> = overlap.pair_row_pool_count
 	if row_pool_count == 0 then
 		return {}
 	end
-	local row_pool<const> = system.pair_row_pool
+	local row_pool<const> = overlap.pair_row_pool
 	local row<const> = row_pool[row_pool_count]
 	row_pool[row_pool_count] = nil
-	system.pair_row_pool_count = row_pool_count - 1
+	overlap.pair_row_pool_count = row_pool_count - 1
 	return row
 end
 

@@ -2,10 +2,9 @@
 -- Behaviour-tree ECS system.
 
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 local behaviour_tree_component_type<const> = behaviour_tree_component.type_name
 
 local behaviour_tree_system<const> = {}

@@ -2,10 +2,9 @@
 -- Finite-state-machine ECS system.
 
 local state_machine_component<const> = require('cartlib/fsm/component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 local state_machine_component_type<const> = state_machine_component.type_name
 
 local state_machine_system<const> = {}

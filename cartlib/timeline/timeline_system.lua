@@ -2,10 +2,9 @@
 -- Timeline ECS system.
 
 local timeline_component<const> = require('cartlib/timeline/component')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local tick_group<const> = system_module.tick_group
-local system<const> = system_module.system
 
 local timeline_component_type<const> = timeline_component.type_name
 

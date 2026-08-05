@@ -3,10 +3,9 @@
 -- controller latch themselves.
 
 local player_input<const> = require('cartlib/input/player')
-local system_module<const> = require('cartlib/world/system')
+local system<const> = require('cartlib/world/system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local system<const> = system_module.system
-local tick_group<const> = system_module.tick_group
 
 local input_control<const>: *word = 0x08000064
 local input_sample_next_vblank<const> = 0x00000001
