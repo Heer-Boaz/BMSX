@@ -77,6 +77,7 @@
 local eventemitter<const> = {
 	id = 'eventemitter',
 	listeners = {},
+	any_listeners = {},
 }
 
 local event_port<const> = {}
@@ -136,6 +137,13 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
+function eventemitter:on_any(handler, subscriber)
+	self.any_listeners[#self.any_listeners + 1] = {
+		handler = handler,
+		subscriber = subscriber,
+	}
+end
+
 -- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
 -- is retained by the owning event port for filtering and downstream FSMs.
 function eventemitter:emit(event_type, emitter, payload, emitter_id)
@@ -149,6 +157,10 @@ function eventemitter:emit(event_type, emitter, payload, emitter_id)
 			end
 		end
 	end
+	local any_listeners<const> = self.any_listeners
+	for i = 1, #any_listeners do
+		any_listeners[i].handler(event_type, emitter, payload, emitter_id)
+	end
 end
 
 -- eventemitter:remove_subscriber(subscriber): remove all
@@ -161,6 +173,12 @@ function eventemitter:remove_subscriber(subscriber)
 			if entry.subscriber == subscriber then
 				table.remove(list, i)
 			end
+		end
+	end
+	local any_listeners<const> = self.any_listeners
+	for i = #any_listeners, 1, -1 do
+		if any_listeners[i].subscriber == subscriber then
+			table.remove(any_listeners, i)
 		end
 	end
 end

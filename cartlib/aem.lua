@@ -700,6 +700,9 @@ end
 
 local handle_event<const> = function(event_type, emitter, payload)
 	local entry<const> = events[event_type]
+	if entry == nil then
+		return
+	end
 	local rules<const> = entry.rules
 	for i = 1, #rules do
 		local rule<const> = rules[i]
@@ -727,13 +730,7 @@ reset_audio_state()
 local rebind<const> = function()
 	eventemitter:remove_subscriber(handle_event)
 	events = merge_events(romdir.audioevents())
-	for event_name in pairs(events) do
-		eventemitter:on({
-			event = event_name,
-			handler = handle_event,
-			subscriber = handle_event,
-		})
-	end
+	eventemitter:on_any(handle_event, handle_event)
 	return events
 end
 
