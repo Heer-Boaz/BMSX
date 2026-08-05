@@ -3560,22 +3560,27 @@ reusable per-depth fired-rule state and grows it only at a newly observed
 nesting high-water mark. No event queue, fixed recursion bound, compatibility
 wrapper or dispatch-time record allocation obscures the synchronous ordering.
 
-State machines and behaviour trees are opt-in world components. Their ECS
-systems iterate the corresponding dense active-component buckets; a stateless
+State machines and behaviour trees are opt-in world components. Their systems
+iterate retained views of the corresponding dense active-component
+buckets; a stateless
 object therefore owns no controller, blackboard, tree-id map, or empty runtime
 tables. A state-machine component may retain multiple named machines. Each
 behaviour-tree component owns one blackboard while its immutable root node is
 constructed once by cart code and shared by every prefab instance. The base
 world object exposes no FSM or behaviour-tree forwarding facade. Carts compose
-non-object orchestration from their own components and ECS systems rather than
+non-object orchestration from their own components and systems rather than
 through a parallel cartlib subsystem lifecycle.
 
 Carts remain the extension owner: a cart may derive a component directly from
-`cartlib/world/component`, use its own component key, and register its own
-system factory in the cart-selected ECS schedule. Active-component buckets are
-created by component key when a space first uses them; cartlib does not prewarm
-a hardcoded list of built-in component kinds. Neither extension path requires
-modifying a cartlib registry.
+`cartlib/world/component`, use its own component key, and select its own system
+class in its `world_module`. A system owns the component keys and retained state
+that implement its capability. During configuration it binds retained component
+views to `world`; changing the active space redirects those views at
+the structural barrier. Systems therefore read their retained dense arrays
+directly instead of reaching through `world.active_space` or looking up a
+component key every frame. Cartlib does not prewarm a hardcoded list of built-in
+component kinds, and neither extension path requires modifying a cartlib
+registry.
 
 Sprite collision association is explicit: a collider owns the selected
 image/flip raw GEO shape reference, while the sprite only holds render state.
@@ -3585,24 +3590,32 @@ components never lazily mutate shared font descriptors. Screen-boundary
 components receive explicit flat world bounds and do not query the current GX
 display mode during construction.
 
-The cartridge entry module is the hardware-feature composition root: it
-replaces the ECS manager's schedule from an ordered `ecs_systems` list of direct
-system factories before clearing the world and constructing its spaces, and it
-registers only the device IRQ handlers it actually uses. Normal carts include
-the `player_input_system` factory in that schedule, so `world:update()` samples
-retained PlayerInput state in the input tick group before gameplay systems run.
-That system arms the ICU's next-VBlank sample latch after consuming the current
-snapshot; cart code neither updates PlayerInput separately nor programs the ICU
-latch. The entry loop still owns every explicit `vblank.wait()` and therefore
-keeps gameplay/display pacing visible.
-Each selected system publishes its component-query
-keys once; space construction seeds those keys with one shared empty bucket and
-the component producer materializes storage on the first attachment.
+The cartridge entry remains the hardware composition root. It registers only
+the device IRQ handlers it actually uses and configures `world` once with a
+cart-owned `world_module`. That plain module declares the fixed space topology
+and selects concrete system classes from their domain modules; it contains no
+factory descriptors or cart-supplied numeric priorities. The internal
+`system_manager` instantiates those classes once, sorts their instances once
+and retains flat arrays for the non-empty
+input, action-effects, gameplay, physics and animation groups. `world:update()`
+delegates to that owner; `world` only commits structural mutations at each group
+boundary. `world:clear()` retains the topology, component views and composed
+system manager.
+
+The input system samples retained PlayerInput state before gameplay systems
+run and arms the ICU's next-VBlank sample latch after consuming the current
+snapshot. Cart code neither updates PlayerInput separately nor programs the ICU
+latch. Carts using action effects select both their input-evaluation and
+cooldown-time systems in `world_module`.
+The entry loop still owns every explicit `vblank.wait()` and therefore keeps
+gameplay/display pacing visible.
+
 AEM and GEO have no import-time application facade; carts with AEM data call
 `aem.reload()` and bind its APU handler, while carts that submit GEO work bind
-the collision handler. Each ECS system factory owns its tick group, priority
-and retained runtime state. There is no system-name registry, reference-spec
-duplication, universal built-in schedule or import-time system registration.
+the collision handler. Each system owns its tick group, internal order and
+retained runtime state. There is no system-name registry,
+reference-spec duplication, dependency graph, universal built-in schedule or
+import-time system registration.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

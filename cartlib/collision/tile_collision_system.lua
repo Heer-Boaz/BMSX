@@ -1,12 +1,11 @@
 -- tile_collision.lua
 -- Tile-collision ECS system.
 
-local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world<const> = require('cartlib/world/world')
+local system_module<const> = require('cartlib/world/system')
 
-local tick_group<const> = ecs.tick_group
-local system<const> = ecs.system
+local tick_group<const> = system_module.tick_group
+local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 
@@ -14,7 +13,6 @@ local tile_collision_component_type<const> = component_types.tile_collision
 
 local tile_collision_system<const> = {}
 tile_collision_system.__index = tile_collision_system
-tile_collision_system.component_types = { tile_collision_component_type }
 setmetatable(tile_collision_system, { __index = system })
 
 local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
@@ -25,13 +23,14 @@ local emit_tilecollision_event<const> = function(owner, component, event_type, p
 	owner.events:emit(event_type, payload)
 end
 
-function tile_collision_system.new(priority)
-	local self<const> = setmetatable(system.new(tick_group.physics, priority or 45), tile_collision_system)
+function tile_collision_system.new(world)
+	local self<const> = setmetatable(system.new(tick_group.physics, 45), tile_collision_system)
+	self.components = world:_active_component_view(tile_collision_component_type)
 	return self
 end
 
 function tile_collision_system:update()
-	local components<const> = world.active_space.active_components_by_type[tile_collision_component_type]
+	local components<const> = self.components.items
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		local obj<const> = component.parent
@@ -61,4 +60,4 @@ function tile_collision_system:update()
 	end
 end
 
-return tile_collision_system.new
+return tile_collision_system

@@ -7,7 +7,7 @@ implementatiegeschiedenis, bestandsinventaris of tweede architectuurhandboek.
 ## Doel en grens
 
 Cartlib wordt opnieuw een kleine, snelle cart-bundled game-engine. Normale
-cartcode werkt met `world`-objecten, features en `imgid`. Cartcode hoeft geen
+cartcode werkt met `world`-objecten, systems en `imgid`. Cartcode hoeft geen
 interne registries, ECS-systemfactories, framebufferpagina's of fysieke
 texture-/CLUT-plaatsen te kennen.
 
@@ -84,7 +84,7 @@ weggegooid.
 De machine bezit GX/ICU/GEO/APU-registerfiles, latches, FIFOs, DMA, fysieke VRAM
 en timing. De BIOS bezit boot en firmware-services.
 
-Geen van beide bezit `world`, sprites, featurecomposition, residencybeleid of
+Geen van beide bezit `world`, sprites, systemcomposition, residencybeleid of
 de cart-frame-loop. Cartlib programmeert hardware; het emuleert hardware niet.
 
 ### Cartridge entry
@@ -131,14 +131,15 @@ eenmaal gecomposeerde tick groups, de vaste systemorder en de flat arrays die de
 framehotpath doorloopt. Hij bezit geen objectstorage, framebufferstate of
 VBlank en wordt niet door cartcode aangeroepen of vervangen.
 
-### `world_module` en features
+### `world_module` en systems
 
 `world_module` is een plain cart-owned compositietable. Hij declareert de vaste
-`space`-topologie en kiest semantische featuremodules plus echte cart-owned
-extensions. Een feature bezit zijn componentkey, retained queryviews, complete
-systemset en eventuele feature-indexen. Voorbeelden zijn input, FSM, behaviour
-tree, timelines, action effects en collision. De cart kiest geen losse
-`cartlib/ecs/systems/*`-factories en geeft geen cartlib-priorities door.
+`space`-topologie en kiest concrete systemklassen uit hun domeinmodules plus
+echte cart-owned systems. Een systemklasse bezit zijn tick group, interne
+priority, componentkey, retained queryviews en eventuele domeinindexen.
+Voorbeelden zijn input, FSM, behaviour tree, timelines, action effects en
+collision. Er is geen generieke `cartlib/ecs/systems/*`-bak en de cart geeft
+geen cartlib-priorities door.
 
 ### `renderer`
 
@@ -167,7 +168,7 @@ active views systems lezen.
 - één dense lifecyclelijst van alle levende world objects;
 - de actieve objectlijst van de geselecteerde `space`;
 - actieve type- en tagviews per `space`;
-- actieve componentbuckets per feature-owned componentkey;
+- actieve componentbuckets per systemquery;
 - één actieve visualbucket plus een visual revision.
 
 Registry onderhoudt de directe id-index en de cart-brede retained type- en
@@ -213,7 +214,7 @@ Een despawncommit doet in deze volgorde:
 1. verwijder actieve object-, component- en visualmembership;
 2. verwijder tag-, type-, `space`- en id-membership;
 3. voer despawncallback en event uit op nog intacte objectstate;
-4. detach componenten en feature-indexen;
+4. detach componenten en domeinindexen;
 5. unbind en finaliseer het object.
 
 `world:clear()` gebruikt dezelfde despawntransitie voor alle objecten. De vaste
@@ -243,7 +244,7 @@ Een query zonder resultaat geeft één `world`-owned lege dense array. First
 lookup is rechtstreeks `bucket[1]`. `find_by_*`, `find_any_by_*`, `all_*`-
 aliases en `objects_with_components` verdwijnen.
 
-Features vragen bij composition een retained componentview aan en bewaren die.
+Systems vragen bij configuratie een retained componentview aan en bewaren die.
 Een `space`-switch wijzigt de backing bucket van die view bij de barrier; het
 system wordt niet herbouwd en zoekt niet iedere frame opnieuw in
 `world.active_space`.
@@ -269,18 +270,18 @@ Tekenen is geen tick group. `world:update()` is de enige cart-facing updatecall
 en heeft geen delta-argument. De runtime leest de machine-frame timing zelf en
 de interne `system_manager` voert de vooraf gecomposeerde groups uit.
 
-Groupvolgorde en systemorder worden bij composition vastgelegd. De framehotpath
+Groupvolgorde en systemorder worden bij configuratie vastgelegd. De framehotpath
 loopt alleen over reeds geordende flat group-arrays. Geen filtering, sorteren,
 factorybouw of dependencyoplossing per frame.
 
-Carts kiezen semantische features in een cart-owned `world_module`. Zij importeren
-geen interne systems en geven geen willekeurige numerieke priorities door.
-Een cart-specifieke executor, zoals elevatorlogica, wordt als cart-owned feature
-op een benoemde group/order gecomposeerd.
+Carts kiezen concrete systemklassen in een cart-owned `world_module`. De klassen
+blijven bij hun domeinowner; de cart geeft geen willekeurige numerieke priorities
+door. Een cart-specifieke executor, zoals elevatorlogica, is een cart-owned
+system op een benoemde tick group en interne priority.
 
-Iedere feature levert zijn complete tijdowner. Een action-effectcomponent zonder
-system dat zijn cooldowntijd bijwerkt is niet toegestaan. Input sampling hoort
-bij de inputfeature; de cart declareert alleen mappings en leest playerinput.
+Een action-effectcomponent zonder system dat zijn cooldowntijd bijwerkt is niet
+toegestaan. Input sampling hoort bij het inputsystem; de cart declareert alleen
+mappings en leest playerinput.
 
 ## Render- en GX-contract
 
@@ -355,7 +356,7 @@ palette4-pagecoordinates en CLUT-woorden. De bestaande absolute raw quad-, GP0-
 en MMIO-routes blijven daarnaast beschikbaar.
 
 Een lage-level uploadvariant mag raw destination- en CLUT-woorden aannemen. Die
-route woont bij de texture-owner; feature- of cartfiles definiëren geen lokale
+route woont bij de texture-owner; domein- of cartfiles definiëren geen lokale
 encodinghelpers.
 
 ## Migratie
@@ -363,11 +364,11 @@ encodinghelpers.
 ### Stap 1: runtime-owner herstellen
 
 - Implementeer `world`-owned lifecycle, indexes en retained views.
-- Laat `world_module` eenmaal de featuremodules en cart-extensions composeren en
+- Laat `world_module` eenmaal de systemklassen en cart-owned systems kiezen en
   laat de interne `system_manager` daaruit zijn flat tick-grouparrays bouwen.
 - Migreer objecten, componenten en prefabs naar de ene mutationroute.
-- Verplaats ieder system naar zijn feature-owner en bind retained views bij
-  composition.
+- Verplaats ieder system naar zijn domeinowner en bind retained views bij
+  configuratie.
 - Migreer alle live callers van de gewijzigde API.
 - Maak Registry-buckets retained en dense; verwijder de schaduwindexen
   `world._by_id`, per-`space` `by_id` en `_obj_to_space`.
@@ -375,7 +376,7 @@ encodinghelpers.
   allocationqueries en het dubbele disposalpad. `world:update()` blijft de
   argumentloze updategrens maar bevat zelf geen uitgeschreven tick groups.
 
-Deze stap is niet klaar zolang een feature private `world`-/`space`-tabellen
+Deze stap is niet klaar zolang een system private `world`-/`space`-tabellen
 leest of oud en nieuw lifecyclecontract naast elkaar bestaan.
 
 ### Stap 2: render- en GX-owner herstellen
@@ -399,7 +400,7 @@ Beoordeel iedere resterende module op drie vragen:
 3. is zij gedeelde cart-SDK of cart-specifieke code.
 
 Een module zonder helder antwoord wordt verwijderd of naar de echte cart- of
-feature-owner verplaatst. Oude paden blijven niet bestaan als compatibility.
+domeinowner verplaatst. Oude paden blijven niet bestaan als compatibility.
 
 Live callers worden uit de checkout/compiler-importgraph bepaald. Er komt geen
 handmatig JSON-bestands-, consumer- of hot-functionregister.

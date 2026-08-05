@@ -3,27 +3,20 @@ local gx_display<const> = require('cartlib/gx/display')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
-local fsm_system<const> = require('cartlib/ecs/systems/fsm')
-local player_input_system<const> = require('cartlib/ecs/systems/player_input')
-local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local renderer<const> = require('cartlib/render/renderer')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
+local world_module<const> = require('world_module')
+world:configure(world_module)
 irq = irq_module.dispatch
 require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/player')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x08000008
-local ecs_systems<const> = {
-	player_input_system,
-	fsm_system,
-	timeline_system,
-}
-
 local function init<init>()
 	*irq_mask_register = 0
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
@@ -37,7 +30,6 @@ local function init<init>()
 end
 
 function new_game()
-	world.systems:replace(ecs_systems)
 	world:clear()
 	prefab.spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,

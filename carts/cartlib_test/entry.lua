@@ -4,10 +4,11 @@ local gx_gte<const> = require('cartlib/gx/gte')
 local vblank<const> = require('cartlib/gx/vblank')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_display.reset_320x240()
-local player_input_system<const> = require('cartlib/ecs/systems/player_input')
 local renderer<const> = require('cartlib/render/renderer')
 local irq_module<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/world')
+local world_module<const> = require('world_module')
+world:configure(world_module)
 irq = irq_module.dispatch
 
 gx_gte_plus[gx_gte.plus_add_xy] = gx_gte.pack_i16_pair(1, 2)
@@ -52,9 +53,7 @@ cartlib_test_gte_plus_ready = true
 
 local irq_mask_register<const>: *word = 0x08000008
 cartlib_test_ready = false
-world.systems:replace({ player_input_system })
 world:clear()
-world:set_space('main')
 irq_module.register(vblank.irq_mask, vblank.on_irq)
 *irq_mask_register = vblank.irq_mask
 vblank.wait()

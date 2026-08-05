@@ -5,22 +5,15 @@ local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
 local collision2d<const> = require('cartlib/collision2d')
-local behaviour_tree_system<const> = require('cartlib/ecs/systems/behaviour_tree')
-local fsm_system<const> = require('cartlib/ecs/systems/fsm')
-local overlap_2d_system<const> = require('cartlib/ecs/systems/overlap_2d')
-local player_input_system<const> = require('cartlib/ecs/systems/player_input')
-local screen_boundary_capture_system<const> = require('cartlib/ecs/systems/screen_boundary_capture')
-local screen_boundary_system<const> = require('cartlib/ecs/systems/screen_boundary')
-local tile_collision_system<const> = require('cartlib/ecs/systems/tile_collision')
-local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local renderer<const> = require('cartlib/render/renderer')
-local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
+local world_module<const> = require('world_module')
+world:configure(world_module)
 require('constants')
 local boekfoe_module<const> = require('enemies/boekfoe')
 local breakablewall_module<const> = require('enemies/breakablewall')
@@ -55,26 +48,12 @@ local rock_module<const> = require('rock')
 local pepernoot_projectile_module<const> = require('pepernoot_projectile')
 local enemy_explosion_module<const> = require('enemy/explosion')
 local elevator_module<const> = require('elevator/elevator')
-local elevator_system<const> = require('elevator/system')
 local castle_module<const> = require('castle/castle')
 local world_entrance_module<const> = require('world/entrance')
 local daemon_cloud_module<const> = require('daemon_cloud')
 local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
-
-local ecs_systems<const> = {
-	player_input_system,
-	screen_boundary_capture_system,
-	behaviour_tree_system,
-	input_action_effect_system,
-	fsm_system,
-	screen_boundary_system,
-	overlap_2d_system,
-	tile_collision_system,
-	timeline_system,
-	elevator_system,
-}
 
 local init_epoch = 0
 local pending_title_boot_epoch = -1
@@ -103,16 +82,7 @@ local grant_starting_loadout<const> = function()
 end
 
 local create_world<const> = function(director_boot_mode)
-	world.systems:replace(ecs_systems)
 	world:clear()
-	world:add_space('main')
-	world:add_space('title')
-	world:add_space('transition')
-	world:add_space('shrine')
-	world:add_space('lithograph')
-	world:add_space('item')
-	world:add_space('ui')
-	world:set_space('main')
 
 	local c<const> = prefab.spawn('castle', { id = 'c', })
 

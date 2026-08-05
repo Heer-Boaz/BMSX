@@ -2,19 +2,22 @@
 -- host input frame; carts consume PlayerInput actions and never program the
 -- controller latch themselves.
 
-local ecs<const> = require('cartlib/ecs')
 local player_input<const> = require('cartlib/input/player')
+local system_module<const> = require('cartlib/world/system')
+
+local system<const> = system_module.system
+local tick_group<const> = system_module.tick_group
 
 local input_control<const>: *word = 0x08000064
 local input_sample_next_vblank<const> = 0x00000001
 
 local player_input_system<const> = {}
 player_input_system.__index = player_input_system
-setmetatable(player_input_system, { __index = ecs.system })
+setmetatable(player_input_system, { __index = system })
 
-function player_input_system.new(priority)
+function player_input_system.new()
 	*input_control = input_sample_next_vblank
-	return setmetatable(ecs.system.new(ecs.tick_group.input, priority or -200), player_input_system)
+	return setmetatable(system.new(tick_group.input, -200), player_input_system)
 end
 
 function player_input_system:update()
@@ -22,4 +25,4 @@ function player_input_system:update()
 	*input_control = input_sample_next_vblank
 end
 
-return player_input_system.new
+return player_input_system

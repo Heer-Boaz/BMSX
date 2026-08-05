@@ -56,22 +56,20 @@
 --    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
-local world<const> = require('cartlib/world/world')
+local system_module<const> = require('cartlib/world/system')
 
-local tick_group<const> = ecs.tick_group
-local system<const> = ecs.system
+local tick_group<const> = system_module.tick_group
+local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
 local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
-local overlap_component_type<const> = component_types.collider_2d
+local collider_2d_component_type<const> = component_types.collider_2d
 
 local overlap_2d_system<const> = {}
 overlap_2d_system.__index = overlap_2d_system
-overlap_2d_system.component_types = { overlap_component_type }
 setmetatable(overlap_2d_system, { __index = system })
 
 -- Pair rows and the event payload are system-owned scratch. The two history
@@ -132,8 +130,9 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 	end
 end
 
-function overlap_2d_system.new(priority)
-	local self<const> = setmetatable(system.new(tick_group.physics, priority or 42), overlap_2d_system)
+function overlap_2d_system.new(world)
+	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap_2d_system)
+	self.components = world:_active_component_view(collider_2d_component_type)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}
@@ -165,7 +164,7 @@ function overlap_2d_system:update()
 	release_pair_rows(self, new_pairs)
 
 	local event_colliders<const> = self.event_colliders
-	local colliders<const> = world.active_space.active_components_by_type[overlap_component_type]
+	local colliders<const> = self.components.items
 	local event_collider_count = 0
 	local previous_event_collider_count<const> = self.event_collider_count
 	for i = 1, #colliders do
@@ -229,4 +228,18 @@ function overlap_2d_system:update()
 	self.next_pairs = prev_pairs
 end
 
-return overlap_2d_system.new
+function overlap_2d_system:clear()
+	release_pair_rows(self, self.prev_pairs)
+	release_pair_rows(self, self.next_pairs)
+	local event_colliders<const> = self.event_colliders
+	for index = 1, self.event_collider_count do
+		event_colliders[index] = nil
+	end
+	self.event_collider_count = 0
+	local overlap_items<const> = self.overlap_pairs.items
+	for index = 1, #overlap_items do
+		clear_map(overlap_items[index])
+	end
+end
+
+return overlap_2d_system

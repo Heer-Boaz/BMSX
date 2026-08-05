@@ -1,7 +1,9 @@
-local ecs<const> = require('cartlib/ecs')
 local component_types<const> = require('cartlib/components/types')
 local input<const> = require('cartlib/input/player')
-local world<const> = require('cartlib/world/world')
+local system_module<const> = require('cartlib/world/system')
+
+local system<const> = system_module.system
+local tick_group<const> = system_module.tick_group
 
 local input_component_type<const> = component_types.input_action_effect
 
@@ -130,11 +132,11 @@ end
 
 local input_action_effect_system<const> = {}
 input_action_effect_system.__index = input_action_effect_system
-input_action_effect_system.component_types = { input_component_type }
-setmetatable(input_action_effect_system, { __index = ecs.system })
+setmetatable(input_action_effect_system, { __index = system })
 
-function input_action_effect_system.new(priority)
-	local self<const> = setmetatable(ecs.system.new(ecs.tick_group.input, priority or 10), input_action_effect_system)
+function input_action_effect_system.new(world)
+	local self<const> = setmetatable(system.new(tick_group.input, 10), input_action_effect_system)
+	self.components = world:_active_component_view(input_component_type)
 	self.frame = 0
 	return self
 end
@@ -142,10 +144,10 @@ end
 function input_action_effect_system:update()
 	local frame<const> = self.frame + 1
 	self.frame = frame
-	local components<const> = world.active_space.active_components_by_type[input_component_type]
+	local components<const> = self.components.items
 	for i = 1, #components do
 		evaluate_component(components[i], frame)
 	end
 end
 
-return input_action_effect_system.new
+return input_action_effect_system

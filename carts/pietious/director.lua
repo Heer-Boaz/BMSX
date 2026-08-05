@@ -93,16 +93,6 @@ function director:draw_visual(draw)
 	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
-function director:activate_spaces()
-	world:add_space('main')
-	world:add_space('title')
-	world:add_space('transition')
-	world:add_space('shrine')
-	world:add_space('lithograph')
-	world:add_space('item')
-	world:add_space('ui')
-end
-
 function director:set_active_space(space_id)
 	world:set_space(space_id)
 	self:set_space(space_id)
@@ -231,7 +221,6 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:activate_spaces()
 	self:get_component('customvisualcomponent').producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end

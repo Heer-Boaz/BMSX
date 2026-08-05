@@ -4,9 +4,6 @@ local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local fsm_system<const> = require('cartlib/ecs/systems/fsm')
-local player_input_system<const> = require('cartlib/ecs/systems/player_input')
-local timeline_system<const> = require('cartlib/ecs/systems/timeline')
 local renderer<const> = require('cartlib/render/renderer')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsmcomponent<const> = require('cartlib/fsm/component')
@@ -21,6 +18,8 @@ local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
 local timelinecomponent<const> = require('cartlib/timeline/component')
 local world<const> = require('cartlib/world/world')
+local world_module<const> = require('world_module')
+world:configure(world_module)
 irq = irq_module.dispatch
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()
@@ -36,12 +35,6 @@ local irq_apu<const> = 0x0020
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
-
-local ecs_systems<const> = {
-	player_input_system,
-	fsm_system,
-	timeline_system,
-}
 
 local surface_object_class<const> = {}
 
@@ -317,7 +310,6 @@ local function init<init>()
 end
 
 function new_game()
-	world.systems:replace(ecs_systems)
 	world:clear()
 	local w<const> = screen_width
 	local h<const> = screen_height

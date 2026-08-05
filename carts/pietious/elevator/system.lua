@@ -1,12 +1,14 @@
-local ecs<const> = require('cartlib/ecs')
-local world<const> = require('cartlib/world/world')
+local system_module<const> = require('cartlib/world/system')
 
-local tick_group<const> = ecs.tick_group
+local system<const> = system_module.system
+local tick_group<const> = system_module.tick_group
 
 local elevator_system<const> = {}
 elevator_system.__index = elevator_system
+setmetatable(elevator_system, { __index = system })
 
 function elevator_system:update()
+	local world<const> = self.world
 	local player<const> = world:get('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
@@ -18,11 +20,10 @@ function elevator_system:update()
 	player.vertical_elevator_id = player.next_vertical_elevator_id
 end
 
-function elevator_system.new(priority)
-	return setmetatable({
-		group = tick_group.gameplay,
-		priority = priority or 20,
-	}, elevator_system)
+function elevator_system.new(world)
+	local self<const> = setmetatable(system.new(tick_group.gameplay, 20), elevator_system)
+	self.world = world
+	return self
 end
 
-return elevator_system.new
+return elevator_system

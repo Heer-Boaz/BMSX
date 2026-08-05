@@ -1,15 +1,13 @@
-local clock<const> = require('cartlib/clock')
-local frame_delta_ms<const> = clock.frame_milliseconds()
 -- world.lua
--- central world: owns all objects, spaces, and the ECS system manager
+-- central world: owns all objects, spaces, and structural mutation barriers
 --
 -- DESIGN PRINCIPLES
 --
 -- 1. SPACES partition the world into independently-updated subsets.
---    There is always a 'main' space. Add more with world:add_space(id).
+--    The cart world module declares the fixed space topology once.
 --    The 'active' space is set with world:set_space(id); default world queries
 --    only see active objects in that space.
---    Use spaces for: UI layer, background layer, loading screens, etc.
+--    Spaces are mutually exclusive world partitions, not render layers.
 --    Objects default to the active space at spawn unless they set .space_id.
 --
 -- 2. SPAWN / DESPAWN IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
@@ -28,14 +26,12 @@ local frame_delta_ms<const> = clock.frame_milliseconds()
 --    Systems iterate retained dense arrays directly; world keeps active
 --    membership stable until the current group completes.
 
-local ecs<const> = require('cartlib/ecs')
 local registry<const> = require('cartlib/registry')
 local dense_set<const> = require('cartlib/util/dense_set')
+local system_manager<const> = require('cartlib/world/system_manager')
 
-local tick_group<const> = ecs.tick_group
 local world
 local world_id_max<const> = 0x7fffffff
-local empty_component_bucket<const> = {}
 local empty_object_bucket<const> = {}
 
 local world_class<const> = {}
@@ -185,7 +181,7 @@ function world_class:_add_active_component(comp)
 	local space<const> = self._spaces[comp.parent.space_id]
 	local component_type<const> = comp.type_name
 	local bucket = space.active_components_by_type[component_type]
-	if not bucket or bucket == empty_component_bucket then
+	if bucket == nil then
 		bucket = {}
 		space.active_components_by_type[component_type] = bucket
 	end
@@ -225,16 +221,18 @@ function world_class.new()
 	self._pending_despawn_count = 0
 	self._pending_active_objects = {}
 	self._pending_active_components = {}
-	self.active_space_id = 'main'
-	self.active_space = nil
-	self.systems = ecs.system_manager.new()
-	self.current_phase = nil
+	self._active_component_views = {}
+	self._active_component_view_list = {}
+	self.active_space_id = nil
+	self._active_space = nil
+	self._pending_space_id = nil
+	self._initial_space_id = nil
+	self._system_manager = system_manager.new(self)
+	self._current_tick_group = nil
 	self._visual_sequence = 0
 	self._visual_revision = 0
 	-- id counter for unique id generation
 	self.idcounter = 0
-	self:add_space('main')
-	self.active_space = self._spaces.main
 	return self
 end
 
@@ -258,17 +256,11 @@ function world_class:next_id(type_name)
 	return result
 end
 
--- world:add_space(space_id)
---   Registers a new named space. Returns false if the space already exists.
---   Must be called before any object is spawned into that space.
-function world_class:add_space(space_id)
-	if self._spaces[space_id] ~= nil then
-		return false
-	end
+function world_class:_add_space(space_id)
 	local active_components_by_type<const> = {}
-	local system_component_types<const> = self.systems.component_types
-	for i = 1, #system_component_types do
-		active_components_by_type[system_component_types[i]] = empty_component_bucket
+	local component_views<const> = self._active_component_view_list
+	for view_index = 1, #component_views do
+		active_components_by_type[component_views[view_index].type_name] = {}
 	end
 	self._spaces[space_id] = {
 		id = space_id,
@@ -285,19 +277,73 @@ function world_class:add_space(space_id)
 		active_components_by_type = active_components_by_type,
 	}
 	self._space_order[#self._space_order + 1] = space_id
-	return true
 end
 
--- world:set_space(space_id): makes space_id the active space.
---   Objects subsequently spawned without an explicit .space_id go here.
---   Affects active_* query helpers and component views.
+function world_class:_commit_active_space(space_id)
+	local space<const> = self._spaces[space_id]
+	self._active_space = space
+	local component_views<const> = self._active_component_view_list
+	for view_index = 1, #component_views do
+		local view<const> = component_views[view_index]
+		view.items = space.active_components_by_type[view.type_name]
+	end
+	self._visual_revision = self._visual_revision + 1
+end
+
+function world_class:configure(world_module)
+	self._system_manager:configure(world_module.systems)
+	local spaces<const> = world_module.spaces
+	for space_index = 1, #spaces do
+		self:_add_space(spaces[space_index])
+	end
+	local initial_space_id<const> = spaces[1]
+	self._initial_space_id = initial_space_id
+	self.active_space_id = initial_space_id
+	self:_commit_active_space(initial_space_id)
+end
+
+function world_class:_active_component_view(type_name)
+	local views<const> = self._active_component_views
+	local view<const> = views[type_name]
+	if view then
+		return view
+	end
+	local created<const> = {
+		type_name = type_name,
+		items = empty_object_bucket,
+	}
+	views[type_name] = created
+	local view_list<const> = self._active_component_view_list
+	view_list[#view_list + 1] = created
+	local spaces<const> = self._spaces
+	local space_order<const> = self._space_order
+	for space_index = 1, #space_order do
+		local space<const> = spaces[space_order[space_index]]
+		local bucket = space.active_components_by_type[type_name]
+		if bucket == nil then
+			bucket = {}
+			space.active_components_by_type[type_name] = bucket
+		end
+	end
+	if self._active_space ~= nil then
+		created.items = self._active_space.active_components_by_type[type_name]
+	end
+	return created
+end
+
+-- The semantic active-space value changes immediately. Retained membership
+-- views switch only at the current tick-group barrier.
 function world_class:set_space(space_id)
-	if self.active_space_id ~= space_id then
-		self._visual_revision = self._visual_revision + 1
+	if self.active_space_id == space_id then
+		return space_id
 	end
 	self.active_space_id = space_id
-	self.active_space = self._spaces[space_id]
-	return self.active_space_id
+	if self._current_tick_group ~= nil then
+		self._pending_space_id = space_id
+	else
+		self:_commit_active_space(space_id)
+	end
+	return space_id
 end
 
 function world_class:add_object_tag(obj, tag)
@@ -381,7 +427,7 @@ function world_class:activate_object(obj)
 	for i = 1, #components do
 		self:reconcile_component(components[i])
 	end
-	if self.current_phase ~= nil then
+	if self._current_tick_group ~= nil then
 		self:_queue_active_object(obj)
 	else
 		self:_reconcile_active_object(obj)
@@ -393,7 +439,7 @@ function world_class:deactivate_object(obj)
 	for i = 1, #components do
 		self:reconcile_component(components[i])
 	end
-	if self.current_phase ~= nil then
+	if self._current_tick_group ~= nil then
 		self:_queue_active_object(obj)
 	else
 		self:_reconcile_active_object(obj)
@@ -427,7 +473,7 @@ function world_class:_reconcile_active_component(comp)
 end
 
 function world_class:reconcile_component(comp)
-	if self.current_phase ~= nil then
+	if self._current_tick_group ~= nil then
 		self:_queue_active_component(comp)
 	else
 		self:_reconcile_active_component(comp)
@@ -511,7 +557,7 @@ function world_class:despawn(obj)
 		return
 	end
 	obj._despawn_pending = true
-	if self.current_phase == nil then
+	if self._current_tick_group == nil then
 		self:_commit_despawn(obj)
 		return
 	end
@@ -540,7 +586,7 @@ function world_class:get(id)
 end
 
 function world_class:active_objects()
-	return self.active_space.active_objects
+	return self._active_space.active_objects
 end
 
 function world_class:objects()
@@ -548,7 +594,7 @@ function world_class:objects()
 end
 
 function world_class:active_objects_by_type(type_name)
-	return active_bucket_items(self.active_space.active_objects_by_type, type_name)
+	return active_bucket_items(self._active_space.active_objects_by_type, type_name)
 end
 
 function world_class:objects_by_type(type_name)
@@ -556,36 +602,35 @@ function world_class:objects_by_type(type_name)
 end
 
 function world_class:active_objects_by_tag(tag)
-	return active_bucket_items(self.active_space.active_objects_by_tag, tag)
+	return active_bucket_items(self._active_space.active_objects_by_tag, tag)
 end
 
 function world_class:objects_by_tag(tag)
 	return registry.instance:entities_by_tag(tag)
 end
 
-function world_class:active_components(type_name)
-	return self.active_space.active_components_by_type[type_name] or empty_component_bucket
-end
-
 function world_class:active_visuals()
-	return self.active_space.active_visual_components, self._visual_revision
+	return self._active_space.active_visual_components, self._visual_revision
 end
 
-local run_phase<const> = function(self, group, dt_ms)
-	self.current_phase = group
-	self.systems:update_phase(group, dt_ms)
+function world_class:_begin_tick_group(group)
+	self._current_tick_group = group
+end
+
+function world_class:_commit_tick_group()
 	self:_flush_active_objects()
 	self:_flush_active_components()
-	self.current_phase = nil
+	local pending_space_id<const> = self._pending_space_id
+	if pending_space_id ~= nil then
+		self._pending_space_id = nil
+		self:_commit_active_space(pending_space_id)
+	end
+	self._current_tick_group = nil
 	self:_flush_despawns()
 end
 
 function world_class:update()
-	run_phase(self, tick_group.input, frame_delta_ms)
-	run_phase(self, tick_group.action_effects, frame_delta_ms)
-	run_phase(self, tick_group.gameplay, frame_delta_ms)
-	run_phase(self, tick_group.physics, frame_delta_ms)
-	run_phase(self, tick_group.animation, frame_delta_ms)
+	self._system_manager:update()
 end
 
 function world_class:clear()
@@ -594,22 +639,9 @@ function world_class:clear()
 		self:despawn(objects[#objects])
 	end
 	registry.instance:clear()
-
-	local component_types<const> = self.systems.component_types
-	local spaces<const> = self._spaces
-	local space_order<const> = self._space_order
-	for space_index = 1, #space_order do
-		local buckets<const> = spaces[space_order[space_index]].active_components_by_type
-		for type_index = 1, #component_types do
-			local type_name<const> = component_types[type_index]
-			if buckets[type_name] == nil then
-				buckets[type_name] = empty_component_bucket
-			end
-		end
-	end
-
+	self._system_manager:reset()
 	self._visual_sequence = 0
-	self:set_space('main')
+	self:set_space(self._initial_space_id)
 end
 world = world_class.new()
 world.id = 'world'
