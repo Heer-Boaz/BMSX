@@ -87,7 +87,8 @@ const VALID_POLICIES = new Set(['replace', 'queue']);
 const VALID_SYNC_STRINGS = new Set(['immediate', 'loop']);
 const VALID_FILTER_TYPES = new Set(['lowpass', 'highpass', 'bandpass', 'notch', 'allpass', 'peaking', 'lowshelf', 'highshelf']);
 const VALID_ONE_OF_PICK = new Set(['uniform', 'weighted']);
-const EVENT_KEYS = new Set(['$type', 'name', 'kind', 'channel', 'policy', 'rules']);
+const DOCUMENT_KEYS = new Set(['events']);
+const EVENT_KEYS = new Set(['channel', 'policy', 'rules']);
 const RULE_KEYS = new Set(['when', 'go']);
 const MATCHER_KEYS = new Set(['equals', 'any_of', 'in', 'has_tag', 'and', 'or', 'not']);
 const ACTION_KEYS = new Set(['audio_id', 'modulation_preset', 'modulation_params', 'priority', 'cooldown_ms', 'stop_music', 'sequence', 'music_transition', 'one_of', 'pick', 'avoid_repeat', 'weight']);
@@ -657,34 +658,16 @@ export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, f
 		return { errors, warnings };
 	}
 	const object = doc as Record<string, unknown>;
-	if (object.events !== undefined) {
-		if (!object.events || typeof object.events !== 'object' || Array.isArray(object.events)) {
-			errors.push(`AEM document '${fileTag}' has invalid events: expected object.`);
-			return { errors, warnings };
-		}
-		const eventNames = Object.keys(object.events as Record<string, unknown>);
-		for (let index = 0; index < eventNames.length; index += 1) {
-			const eventName = eventNames[index]!;
-			validateEventDefinition((object.events as Record<string, unknown>)[eventName], fileTag, eventName, lookup, errors, warnings, musicTransitionsWithFallback);
-		}
+	checkUnknownKeys(object, DOCUMENT_KEYS, fileTag, errors);
+	if (!object.events || typeof object.events !== 'object' || Array.isArray(object.events)) {
+		errors.push(`AEM document '${fileTag}' has invalid events: expected object.`);
 		return { errors, warnings };
 	}
-	const keys = Object.keys(object);
-	for (let index = 0; index < keys.length; index += 1) {
-		const key = keys[index]!;
-		switch (key) {
-			case '$type':
-			case 'name':
-			case 'channel':
-			case 'policy':
-			case 'rules':
-				continue;
-		}
-		validateEventDefinition(object[key], fileTag, key, lookup, errors, warnings, musicTransitionsWithFallback);
-	}
-	if (Array.isArray(object.rules)) {
-		validateEventMeta(object, fileTag, undefined, errors);
-		validateRules(object.rules as AudioEventRule[], fileTag, undefined, object.channel, lookup, errors, warnings, musicTransitionsWithFallback);
+	const eventMap = object.events as Record<string, unknown>;
+	const eventNames = Object.keys(eventMap);
+	for (let index = 0; index < eventNames.length; index += 1) {
+		const eventName = eventNames[index]!;
+		validateEventDefinition(eventMap[eventName], fileTag, eventName, lookup, errors, warnings, musicTransitionsWithFallback);
 	}
 	return { errors, warnings };
 }

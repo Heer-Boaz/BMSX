@@ -435,12 +435,11 @@ function romdir.audio(id)
 end
 
 
-function romdir.audioevents()
+function romdir.aem_documents()
 	local entries<const> = list_entries(active_roms, kind_aem)
 	local out<const> = {}
 	for index = 1, #entries do
-		local entry<const> = entries[index]
-		out[entry.id] = decode_payload(entry)
+		out[index] = decode_payload(entries[index])
 	end
 	return out
 end

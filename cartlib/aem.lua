@@ -243,30 +243,23 @@ local resolve_action_spec<const> = function(rule, payload)
 	return actions[idx]
 end
 
-local merge_events<const> = function(map)
+local merge_events<const> = function(documents)
 	local merged<const> = {}
 
 	local add_or_merge<const> = function(event_name, entry)
 		local slot<const> = route_slot[entry.channel]
-		if slot == nil then
-			error('aem invalid APU route: ' .. tostring(entry.channel))
-		end
-		entry.__slot = slot
-		entry.__queued = entry.policy == 'queue'
 		local compiled_rules<const> = compile_rules(entry.rules)
 		local cur<const> = merged[event_name]
 		if not cur then
-			entry.name = event_name
-			entry.rules = compiled_rules
-			merged[event_name] = entry
+			merged[event_name] = {
+				slot = slot,
+				queued = entry.policy == 'queue',
+				rules = compiled_rules,
+			}
 			return
 		end
-		for k, v in pairs(entry) do
-			if k ~= 'rules' then
-				cur[k] = v
-			end
-		end
-		cur.name = event_name
+		cur.slot = slot
+		cur.queued = entry.policy == 'queue'
 		local old_count<const> = #cur.rules
 		local new_count<const> = #compiled_rules
 		for i = old_count, 1, -1 do
@@ -277,25 +270,10 @@ local merge_events<const> = function(map)
 		end
 	end
 
-	for _, value in pairs(map) do
-		local entry_events<const> = value.events
-		if entry_events ~= nil then
-			for event_name, entry in pairs(entry_events) do
-				add_or_merge(event_name, entry)
-			end
-		else
-			local found_direct
-			for key, entry in pairs(value) do
-				if key ~= '$type' and key ~= 'events' and key ~= 'name' and key ~= 'channel' and key ~= 'policy' and key ~= 'rules' then
-					if type(entry) ~= 'string' and entry.rules ~= nil then
-						found_direct = true
-						add_or_merge(key, entry)
-					end
-				end
-			end
-			if not found_direct and value.rules ~= nil then
-				add_or_merge(value.name, value)
-			end
+	for document_index = 1, #documents do
+		local document_events<const> = documents[document_index].events
+		for event_name, entry in pairs(document_events) do
+			add_or_merge(event_name, entry)
 		end
 	end
 
@@ -512,9 +490,9 @@ local dispatch_audio_play<const> = function(entry, audio_record, action, payload
 
 	submit_play(
 		apu.source(audio_record),
-		entry.__slot,
+		entry.slot,
 		action.__aem_priority or audio_record.audiometa.priority,
-		entry.__queued,
+		entry.queued,
 		rate_step_q16,
 		gain_q12,
 		start_sample,
@@ -662,9 +640,9 @@ local dispatch_action<const> = function(entry, action, payload)
 		local audio_record<const> = romdir.audio(action)
 		submit_play(
 			apu.source(audio_record),
-			entry.__slot,
+			entry.slot,
 			audio_record.audiometa.priority,
-			entry.__queued,
+			entry.queued,
 			0x00010000,
 			0x00001000,
 			0,
@@ -729,7 +707,7 @@ reset_audio_state()
 
 local rebind<const> = function()
 	eventemitter:remove_subscriber(handle_event)
-	events = merge_events(romdir.audioevents())
+	events = merge_events(romdir.aem_documents())
 	eventemitter:on_any(handle_event, handle_event)
 	return events
 end
