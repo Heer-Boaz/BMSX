@@ -16,7 +16,7 @@ local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local tilecollisioncomponent<const> = require('cartlib/collision/tile_collision_component')
+local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
 local worldobject<const> = require('cartlib/world/object')
 
 local pepernoot_projectile<const> = {}
@@ -29,7 +29,7 @@ local state_tags<const> = {
 function pepernoot_projectile:ctor()
 	self.collider.layer = collision_projectile_layer
 	self.collider.mask = collision_projectile_mask
-	self:add_component(tilecollisioncomponent.new({
+	self:add_component(tile_collision_component.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
 			local collision_flags<const> = world:get('room'):collision_flags_at_world(owner.x, owner.y)

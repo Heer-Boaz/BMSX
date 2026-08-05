@@ -1,12 +1,12 @@
 local component<const> = require('cartlib/world/component')
 
-local screenboundarycomponent<const> = {}
-screenboundarycomponent.__index = screenboundarycomponent
-screenboundarycomponent.type_name = 'screenboundarycomponent'
-setmetatable(screenboundarycomponent, { __index = component })
+local screen_boundary_component<const> = {}
+screen_boundary_component.__index = screen_boundary_component
+screen_boundary_component.type_name = 'screen_boundary_component'
+setmetatable(screen_boundary_component, { __index = component })
 
-function screenboundarycomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, screenboundarycomponent.type_name, true), screenboundarycomponent)
+function screen_boundary_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, screen_boundary_component.type_name, true), screen_boundary_component)
 	self.old_x = 0
 	self.old_y = 0
 	self.left = opts.left
@@ -16,4 +16,4 @@ function screenboundarycomponent.new(opts)
 	return self
 end
 
-return screenboundarycomponent
+return screen_boundary_component

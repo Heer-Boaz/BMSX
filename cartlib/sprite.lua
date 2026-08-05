@@ -22,9 +22,9 @@
 --
 -- 2. COLLISION IS DERIVED LAZILY FROM THE SPRITE METADATA.
 --    When gfx(id) is called, imgmeta.hitpolygons (baked by rombuilder) is later
---    read directly by the linked collider2dcomponent when collision code asks
+--    read directly by the linked collider_2d_component when collision code asks
 --    for the current shape.
---    No extra setup is needed in cart code — just ensure a collider2dcomponent
+--    No extra setup is needed in cart code — just ensure a collider_2d_component
 --    exists on the object before gfx() is called.
 --
 -- 3. COLLISION LAYERS: carts program the collider's raw layer and mask words.
@@ -33,7 +33,7 @@
 --      self.collider.mask = collision_enemy_mask
 
 local worldobject<const> = require('cartlib/world/object')
-local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_component<const> = require('cartlib/render/sprite_component')
 local romdir<const> = require('cartlib/romdir')
 
@@ -66,7 +66,7 @@ function spriteobject.new(opts)
 		imgid = self.imgid,
 		id_local = spriteobject.base_sprite_id,
 	})
-	self.collider = collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
+	self.collider = collider_2d_component.new({ id_local = spriteobject.primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
@@ -82,9 +82,9 @@ end
 --   Sets this object's sprite to the image with the given ROM id.
 --   id should be the base name WITHOUT the @cx/@cc suffix (rombuilder strips it).
 --   meta is optional; when omitted, imgmeta is read from the mapped ROM TOC.
---   After loading, the linked collider2dcomponent (if one exists) will read the
+--   After loading, the linked collider_2d_component (if one exists) will read the
 --   current imgmeta lazily when collision code asks for shape data.
---   Must be called AFTER the object is spawned and has a collider2dcomponent.
+--   Must be called AFTER the object is spawned and has a collider_2d_component.
 function spriteobject:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component:set_imgid(id)

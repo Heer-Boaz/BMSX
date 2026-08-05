@@ -1,7 +1,7 @@
--- collision2d.lua
+-- collision_2d.lua
 -- GEO overlap orchestration for direct pair queries + same-step ECS overlap passes
 
-local collision2d<const> = {}
+local collision_2d<const> = {}
 
 local irq_geo_error<const> = 0x0010
 
@@ -254,11 +254,11 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	*geo_cmd_register = 0x00000022
 end
 
-function collision2d.on_geo_irq(flags)
+function collision_2d.on_geo_irq(flags)
 	*geo_completion_irq_flags = flags
 end
 
-function collision2d.collect_overlaps(colliders, collider_count, pairs)
+function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	local batch_token<const> = next_geo_batch_token()
 	local shape_base<const> = geo_overlap_batch_base
 	local instance_base<const> = shape_base + collider_count * 0x00000020
@@ -287,7 +287,7 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
 end
 
-function collision2d.collides(a, b)
+function collision_2d.collides(a, b)
 	if not a.hittable or not b.hittable then
 		return nil
 	end
@@ -334,4 +334,4 @@ function collision2d.collides(a, b)
 	return contact
 end
 
-return collision2d
+return collision_2d

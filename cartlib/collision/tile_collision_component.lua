@@ -1,12 +1,12 @@
 local component<const> = require('cartlib/world/component')
 
-local tilecollisioncomponent<const> = {}
-tilecollisioncomponent.__index = tilecollisioncomponent
-tilecollisioncomponent.type_name = 'tilecollisioncomponent'
-setmetatable(tilecollisioncomponent, { __index = component })
+local tile_collision_component<const> = {}
+tile_collision_component.__index = tile_collision_component
+tile_collision_component.type_name = 'tile_collision_component'
+setmetatable(tile_collision_component, { __index = component })
 
-function tilecollisioncomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, tilecollisioncomponent.type_name, true), tilecollisioncomponent)
+function tile_collision_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, tile_collision_component.type_name, true), tile_collision_component)
 	self.query = opts.query
 	self.event_base = opts.event_base or 'tilecollision'
 	self.begin_event_type = self.event_base .. '.begin'
@@ -28,4 +28,4 @@ function tilecollisioncomponent.new(opts)
 	return self
 end
 
-return tilecollisioncomponent
+return tile_collision_component

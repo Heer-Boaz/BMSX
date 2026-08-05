@@ -2,7 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local tile_layer_component<const> = require('cartlib/render/tile_layer_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -40,7 +40,7 @@ function breakablewall:process_damage_result(result)
 end
 
 function breakablewall:ctor()
-	local collider<const> = self:get_component(collider2dcomponent.type_name)
+	local collider<const> = self:get_component(collider_2d_component.type_name)
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
@@ -81,7 +81,7 @@ function breakablewall.register()
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
 		components = {
-			collider2dcomponent.new,
+			collider_2d_component.new,
 			tile_layer_component.new,
 			state_machine_component.factory({ 'breakablewall' }),
 		},

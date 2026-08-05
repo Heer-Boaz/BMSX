@@ -1,16 +1,16 @@
 local select_sprite_shape_ref<const> = require('cartlib/collision/sprite_shape')
 local component<const> = require('cartlib/world/component')
 
-local collider2dcomponent<const> = {}
-collider2dcomponent.__index = collider2dcomponent
-collider2dcomponent.type_name = 'collider2dcomponent'
-setmetatable(collider2dcomponent, { __index = component })
+local collider_2d_component<const> = {}
+collider_2d_component.__index = collider_2d_component
+collider_2d_component.type_name = 'collider_2d_component'
+setmetatable(collider_2d_component, { __index = component })
 
 local invalidate_overlap_shape<const> = function(collider)
 	collider._overlap_cache_valid = false
 end
 
-function collider2dcomponent:prepare_overlap()
+function collider_2d_component:prepare_overlap()
 	if self._overlap_cache_valid then
 		return
 	end
@@ -45,8 +45,8 @@ function collider2dcomponent:prepare_overlap()
 	collider._overlap_cache_valid = true
 end
 
-function collider2dcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts, collider2dcomponent.type_name), collider2dcomponent)
+function collider_2d_component.new(opts)
+	local self<const> = setmetatable(component.new(opts, collider_2d_component.type_name), collider_2d_component)
 	self.hittable = opts.hittable == nil or opts.hittable
 	self.layer = opts.layer or 1
 	self.mask = opts.mask or 0xffffffff
@@ -63,7 +63,7 @@ function collider2dcomponent.new(opts)
 	return self
 end
 
-function collider2dcomponent:set_sprite(sprite)
+function collider_2d_component:set_sprite(sprite)
 	local previous_sprite<const> = self.sprite
 	if previous_sprite == sprite then
 		return
@@ -85,22 +85,22 @@ function collider2dcomponent:set_sprite(sprite)
 	invalidate_overlap_shape(self)
 end
 
-function collider2dcomponent:on_detach()
+function collider_2d_component:on_detach()
 	self:set_sprite(nil)
 	if self.parent.collider == self then
 		self.parent.collider = nil
 	end
 end
 
-function collider2dcomponent:set_local_area(area)
+function collider_2d_component:set_local_area(area)
 	self.local_area = area
 	invalidate_overlap_shape(self)
 end
 
-function collider2dcomponent:set_shape_offset(offset_x, offset_y)
+function collider_2d_component:set_shape_offset(offset_x, offset_y)
 	self.shape_offset_x = offset_x
 	self.shape_offset_y = offset_y
 	invalidate_overlap_shape(self)
 end
 
-return collider2dcomponent
+return collider_2d_component

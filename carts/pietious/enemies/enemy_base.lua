@@ -3,7 +3,7 @@ local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
-local screenboundarycomponent<const> = require('cartlib/physics/screen_boundary_component')
+local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
 
 local enemy_base<const> = {}
 local damaging_contact_kinds<const> = {
@@ -17,11 +17,11 @@ function enemy_base.ctor(self)
 	self.sprite_component:set_offset_z(110)
 end
 
--- Attaches a screenboundarycomponent with room bounds and subscribes to
+-- Attaches a screen_boundary_component with room bounds and subscribes to
 -- screen.leave so the projectile auto-disposes when it exits the room.
 -- Call from the ctor of projectile-type enemies only (vlokfoe, nootfoe, etc.).
 function enemy_base.setup_projectile_boundary(self)
-	self:add_component(screenboundarycomponent.new({
+	self:add_component(screen_boundary_component.new({
 		left = 0,
 		top = room_hud_height,
 		right = room_width,

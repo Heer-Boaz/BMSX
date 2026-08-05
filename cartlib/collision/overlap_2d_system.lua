@@ -21,7 +21,7 @@
 --      WRONG — manual loop every frame:
 --        function hero:update(dt)
 --          for enemy in objects_by_tag('enemy') do
---            if collision2d.collides(self.collider, enemy.collider) then ...
+--            if collision_2d.collides(self.collider, enemy.collider) then ...
 --
 --      RIGHT — reactive subscription:
 --        function hero:bind()
@@ -56,17 +56,17 @@
 --    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local system_module<const> = require('cartlib/world/system')
 
 local tick_group<const> = system_module.tick_group
 local system<const> = system_module.system
 
 local clear_map<const> = require('cartlib/util/clear_map')
-local collision2d<const> = require('cartlib/collision2d')
+local collision_2d<const> = require('cartlib/collision_2d')
 local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
-local collider_2d_component_type<const> = collider2dcomponent.type_name
+local collider_2d_component_type<const> = collider_2d_component.type_name
 
 local overlap_2d_system<const> = {}
 overlap_2d_system.__index = overlap_2d_system
@@ -185,7 +185,7 @@ function overlap_2d_system:update()
 		return
 	end
 
-	local overlap_pair_count<const> = collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
+	local overlap_pair_count<const> = collision_2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
 
 	for i = 1, overlap_pair_count do
 		local pair<const> = overlap_pairs.items[i]
