@@ -78,6 +78,7 @@ local eventemitter<const> = {
 	id = 'eventemitter',
 	listeners = {},
 	any_listeners = {},
+	_subscriptions_by_subscriber = {},
 	_dispatch_depth = 0,
 	_pending_listener_lists = {},
 	_pending_listener_count = 0,
@@ -95,6 +96,7 @@ local compact_listeners<const> = function(list)
 		local entry<const> = list[read_index]
 		if entry then
 			list[write_index] = entry
+			entry.list_index = write_index
 			write_index = write_index + 1
 		end
 	end
@@ -104,9 +106,55 @@ local compact_listeners<const> = function(list)
 	list._removals_pending = nil
 end
 
-local remove_listener_at<const> = function(self, list, index)
+local append_listener<const> = function(self, list, entry)
+	local list_index<const> = #list + 1
+	list[list_index] = entry
+	entry.list = list
+	entry.list_index = list_index
+	local subscriber<const> = entry.subscriber
+	if subscriber ~= nil then
+		local subscriptions = self._subscriptions_by_subscriber[subscriber]
+		if subscriptions == nil then
+			subscriptions = {}
+			self._subscriptions_by_subscriber[subscriber] = subscriptions
+		end
+		local subscriber_index<const> = #subscriptions + 1
+		subscriptions[subscriber_index] = entry
+		entry.subscriber_index = subscriber_index
+	end
+end
+
+local unlink_subscriber<const> = function(self, entry)
+	local subscriber<const> = entry.subscriber
+	if subscriber == nil then
+		return
+	end
+	local subscriptions<const> = self._subscriptions_by_subscriber[subscriber]
+	local subscriber_index<const> = entry.subscriber_index
+	local last_index<const> = #subscriptions
+	if subscriber_index < last_index then
+		local moved<const> = subscriptions[last_index]
+		subscriptions[subscriber_index] = moved
+		moved.subscriber_index = subscriber_index
+	end
+	subscriptions[last_index] = nil
+	entry.subscriber_index = nil
+	if last_index == 1 then
+		self._subscriptions_by_subscriber[subscriber] = nil
+	end
+end
+
+local remove_listener<const> = function(self, entry)
+	local list<const> = entry.list
+	local index<const> = entry.list_index
+	unlink_subscriber(self, entry)
+	entry.list = nil
+	entry.list_index = nil
 	if self._dispatch_depth == 0 then
 		table.remove(list, index)
+		for moved_index = index, #list do
+			list[moved_index].list_index = moved_index
+		end
 		return
 	end
 	list[index] = false
@@ -156,11 +204,11 @@ function eventemitter:on(spec)
 		list = {}
 		self.listeners[name] = list
 	end
-	list[#list + 1] = {
+	append_listener(self, list, {
 		handler = spec.handler,
 		subscriber = spec.subscriber,
 		emitter = spec.emitter,
-	}
+	})
 end
 
 -- eventemitter:off(event_name, handler, emitter): remove a specific listener
@@ -174,16 +222,16 @@ function eventemitter:off(event_name, handler, emitter)
 	for i = #list, 1, -1 do
 		local entry<const> = list[i]
 		if entry and entry.handler == handler and entry.emitter == emitter then
-			remove_listener_at(self, list, i)
+			remove_listener(self, entry)
 		end
 	end
 end
 
 function eventemitter:on_any(handler, subscriber)
-	self.any_listeners[#self.any_listeners + 1] = {
+	append_listener(self, self.any_listeners, {
 		handler = handler,
 		subscriber = subscriber,
-	}
+	})
 end
 
 -- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
@@ -224,20 +272,12 @@ end
 -- listeners whose `subscriber` field equals the given object.  This is the
 -- standard cleanup path called from worldobject:unbind().
 function eventemitter:remove_subscriber(subscriber)
-	for _, list in pairs(self.listeners) do
-		for i = #list, 1, -1 do
-			local entry<const> = list[i]
-			if entry and entry.subscriber == subscriber then
-				remove_listener_at(self, list, i)
-			end
-		end
+	local subscriptions<const> = self._subscriptions_by_subscriber[subscriber]
+	if subscriptions == nil then
+		return
 	end
-	local any_listeners<const> = self.any_listeners
-	for i = #any_listeners, 1, -1 do
-		local entry<const> = any_listeners[i]
-		if entry and entry.subscriber == subscriber then
-			remove_listener_at(self, any_listeners, i)
-		end
+	while #subscriptions > 0 do
+		remove_listener(self, subscriptions[#subscriptions])
 	end
 end
 
