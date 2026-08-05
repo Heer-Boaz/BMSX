@@ -50,7 +50,7 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -221,7 +221,7 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component(customvisualcomponent.type_name).producer = director.draw_visual
+	self:get_component(custom_visual_component.type_name).producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end
 
@@ -936,7 +936,7 @@ local register_director_definition<const> = function()
 		def_id = 'director',
 		class = director,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
 			state_machine_component.factory({ 'director' }),
 		},

@@ -88,7 +88,7 @@ local castle_map<const> = require('castle/map')
 local action_effects<const> = require('cartlib/action_effects')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
 local input_action_effect_component<const> = require('cartlib/input/action_effect/component')
-local spritecomponent<const> = require('cartlib/render/sprite_component')
+local sprite_component<const> = require('cartlib/render/sprite_component')
 local timeline_component<const> = require('cartlib/timeline/component')
 local collision2d<const> = require('cartlib/collision2d')
 local player_abilities<const> = require('player/abilities')
@@ -382,7 +382,7 @@ function player:ctor()
 	self.sword_collider:set_enabled(false)
 	self:add_component(self.sword_collider)
 
-	self.sword_sprite = spritecomponent.new({
+	self.sword_sprite = sprite_component.new({
 		id_local = 'sword',
 		imgid = 'sword_r',
 		offset_z = 111,

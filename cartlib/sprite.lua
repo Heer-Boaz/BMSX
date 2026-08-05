@@ -34,7 +34,7 @@
 
 local worldobject<const> = require('cartlib/world/object')
 local collider2dcomponent<const> = require('cartlib/collision/collider_2d_component')
-local spritecomponent<const> = require('cartlib/render/sprite_component')
+local sprite_component<const> = require('cartlib/render/sprite_component')
 local romdir<const> = require('cartlib/romdir')
 
 local spriteobject<const> = {}
@@ -62,7 +62,7 @@ function spriteobject.new(opts)
 	self.flip_v = false
 	self.imgid = opts.imgid
 
-	self.sprite_component = spritecomponent.new({
+	self.sprite_component = sprite_component.new({
 		imgid = self.imgid,
 		id_local = spriteobject.base_sprite_id,
 	})

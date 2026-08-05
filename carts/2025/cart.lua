@@ -12,8 +12,8 @@ local player_input<const> = require('cartlib/input/player')
 player_input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/prefab')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local surfacecomponent<const> = require('cartlib/render/surface_component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local surface_component<const> = require('cartlib/render/surface_component')
 local spriteobject<const> = require('cartlib/sprite')
 local textobject<const> = require('cartlib/text/object')
 local timeline_component<const> = require('cartlib/timeline/component')
@@ -39,7 +39,7 @@ local transition_module<const> = require('transition')
 local surface_object_class<const> = {}
 
 function surface_object_class:ctor()
-	self.surface_component = self:get_component(surfacecomponent.type_name)
+	self.surface_component = self:get_component(surface_component.type_name)
 	if self.imgid then
 		self.surface_component:set_imgid(self.imgid)
 	end
@@ -109,7 +109,7 @@ local draw_director_visual<const> = function(parent, draw)
 end
 
 function director:ctor()
-	local transition_rc<const> = self:get_component(customvisualcomponent.type_name)
+	local transition_rc<const> = self:get_component(custom_visual_component.type_name)
 	transition_rc:set_offset_z(director_visual_z)
 	transition_rc.producer = draw_director_visual
 end
@@ -202,7 +202,7 @@ local register_director<const> = function()
 		def_id = director_def_id,
 		class = director,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
 			state_machine_component.factory({ director_fsm_id }),
 		},
@@ -243,7 +243,7 @@ local register_director<const> = function()
 	prefab.define({
 		def_id = 'p3.bg',
 		class = surface_object_class,
-		components = { surfacecomponent.new },
+		components = { surface_component.new },
 	})
 	prefab.define({
 		def_id = 'p3.text.main',
@@ -288,7 +288,7 @@ local register_director<const> = function()
 	prefab.define({
 		def_id = 'p3.combat.all_out',
 		class = surface_object_class,
-		components = { surfacecomponent.new },
+		components = { surface_component.new },
 	})
 	prefab.define({
 		def_id = 'p3.combat.all_out_portrait',

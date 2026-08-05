@@ -13,7 +13,7 @@ local world<const> = require('cartlib/world/world')
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local input<const> = require('cartlib/input/player')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
 local timeline_component<const> = require('cartlib/timeline/component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
@@ -119,7 +119,7 @@ local draw_combat_slash<const> = function(director, draw)
 end
 
 function combat_director:ctor()
-	self:add_component(customvisualcomponent.new({
+	self:add_component(custom_visual_component.new({
 		parent = self,
 		id_local = 'slash',
 		offset_z = combat_hit_slash_z,

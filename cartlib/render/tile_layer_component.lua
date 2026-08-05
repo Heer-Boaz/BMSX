@@ -1,14 +1,14 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visualcomponent<const> = require('cartlib/render/visual_component')
+local visual_component<const> = require('cartlib/render/visual_component')
 
-local tilelayercomponent<const> = {}
-tilelayercomponent.__index = tilelayercomponent
-tilelayercomponent.type_name = 'tilelayercomponent'
-setmetatable(tilelayercomponent, { __index = visualcomponent })
+local tile_layer_component<const> = {}
+tile_layer_component.__index = tile_layer_component
+tile_layer_component.type_name = 'tile_layer_component'
+setmetatable(tile_layer_component, { __index = visual_component })
 
-function tilelayercomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, tilelayercomponent.type_name), tilelayercomponent)
+function tile_layer_component.new(opts)
+	local self<const> = setmetatable(visual_component.new(opts, tile_layer_component.type_name), tile_layer_component)
 	self.sources = opts.sources
 	self.tile_count = opts.tile_count or 0
 	self.columns = opts.columns or 1
@@ -16,7 +16,7 @@ function tilelayercomponent.new(opts)
 	return self
 end
 
-function tilelayercomponent:draw(draw)
+function tile_layer_component:draw(draw)
 	local parent<const> = self.parent
 	image.draw_tiles(
 		draw,
@@ -29,4 +29,4 @@ function tilelayercomponent:draw(draw)
 		gp0.draw_mode_blend_half)
 end
 
-return tilelayercomponent
+return tile_layer_component

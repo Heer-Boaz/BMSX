@@ -3,7 +3,7 @@
 --
 -- SELF-MANAGING SUBSCRIBER PATTERN:
 -- Uses an FSM with root `on` handlers (not bind()) for event subscriptions:
---   'lithograph' (from 'd') — rebuilds the retained textcomponent layout.
+--   'lithograph' (from 'd') — rebuilds the retained text_component layout.
 --   'room'       (from 'd') — clears that retained layout on mode change.
 -- Same pattern as shrine.lua, just expressed via FSM `on` block instead
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
@@ -14,8 +14,8 @@ local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local textcomponent<const> = require('cartlib/text/component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local text_component<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -28,14 +28,14 @@ local draw_lithograph_visual<const> = function(parent, draw)
 end
 
 function lithograph_screen:ctor()
-	local text<const> = self:get_component(textcomponent.type_name)
+	local text<const> = self:get_component(text_component.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 6)
 	text:set_offset_z(1)
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(customvisualcomponent.type_name).producer = draw_lithograph_visual
+	self:get_component(custom_visual_component.type_name).producer = draw_lithograph_visual
 end
 
 local define_lithograph_screen_fsm<const> = function()
@@ -66,8 +66,8 @@ local register_lithograph_screen_definition<const> = function()
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
 		components = {
-			customvisualcomponent.new,
-			textcomponent.new,
+			custom_visual_component.new,
+			text_component.new,
 			state_machine_component.factory({ 'lithograph_screen' }),
 		},
 		defaults = {

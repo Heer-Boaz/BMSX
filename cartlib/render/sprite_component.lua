@@ -1,14 +1,14 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visualcomponent<const> = require('cartlib/render/visual_component')
+local visual_component<const> = require('cartlib/render/visual_component')
 
-local spritecomponent<const> = {}
-spritecomponent.__index = spritecomponent
-spritecomponent.type_name = 'spritecomponent'
-setmetatable(spritecomponent, { __index = visualcomponent })
+local sprite_component<const> = {}
+sprite_component.__index = sprite_component
+sprite_component.type_name = 'sprite_component'
+setmetatable(sprite_component, { __index = visual_component })
 
-function spritecomponent.new(opts)
-	local self<const> = setmetatable(visualcomponent.new(opts, spritecomponent.type_name), spritecomponent)
+function sprite_component.new(opts)
+	local self<const> = setmetatable(visual_component.new(opts, sprite_component.type_name), sprite_component)
 	self.flip_h = false
 	self.flip_v = false
 	self.color = opts.color or 0xffffffff
@@ -20,7 +20,7 @@ function spritecomponent.new(opts)
 	return self
 end
 
-function spritecomponent:set_imgid(imgid)
+function sprite_component:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
 		self.image = image.resolve(imgid)
@@ -29,7 +29,7 @@ function spritecomponent:set_imgid(imgid)
 	end
 end
 
-function spritecomponent:on_detach()
+function sprite_component:on_detach()
 	if self._collider then
 		self._collider:set_sprite(nil)
 	end
@@ -38,7 +38,7 @@ function spritecomponent:on_detach()
 	end
 end
 
-function spritecomponent:draw(draw)
+function sprite_component:draw(draw)
 	local rect<const> = self.image
 	if not rect then
 		return
@@ -62,4 +62,4 @@ function spritecomponent:draw(draw)
 	image.draw_affine(draw, rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color, gp0.draw_mode_blend_half)
 end
 
-return spritecomponent
+return sprite_component

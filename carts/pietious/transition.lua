@@ -18,8 +18,8 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local prefab<const> = require('cartlib/prefab')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local textcomponent<const> = require('cartlib/text/component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local text_component<const> = require('cartlib/text/component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/component')
 require('constants')
@@ -42,7 +42,7 @@ local transition_mode_events<const> = {
 }
 
 function transition:ctor()
-	local text<const> = self:get_component(textcomponent.type_name)
+	local text<const> = self:get_component(text_component.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(customvisualcomponent.type_name).producer = draw_transition_visual
+	self:get_component(custom_visual_component.type_name).producer = draw_transition_visual
 	self.timelines:define(timeline.new({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
@@ -101,8 +101,8 @@ local register_transition_definition<const> = function()
 		def_id = 'transition',
 		class = transition,
 		components = {
-			customvisualcomponent.new,
-			textcomponent.new,
+			custom_visual_component.new,
+			text_component.new,
 			timeline_component.new,
 			state_machine_component.factory({ 'transition' }),
 		},

@@ -5,7 +5,7 @@ local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/component')
 require('constants')
-local spritecomponent<const> = require('cartlib/render/sprite_component')
+local sprite_component<const> = require('cartlib/render/sprite_component')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
@@ -130,7 +130,7 @@ function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:gfx('title_screen')
 	self:set_z(350)
-	self.sparkle_sprite = spritecomponent.new({
+	self.sparkle_sprite = sprite_component.new({
 		id_local = 'sparkle',
 		offset_z = 1,
 	})

@@ -6,9 +6,9 @@ local state_machine_component<const> = require('cartlib/fsm/component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
 local spriteobject<const> = require('cartlib/sprite')
-local textcomponent<const> = require('cartlib/text/component')
+local text_component<const> = require('cartlib/text/component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -21,14 +21,14 @@ local draw_shrine_visual<const> = function(parent, draw)
 end
 
 function shrine:ctor()
-	local text<const> = self:get_component(textcomponent.type_name)
+	local text<const> = self:get_component(text_component.type_name)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
 	text.offset_y = shrine_text_y
 	text:set_offset_z(1)
 	self.text_component = text
-	self:get_component(customvisualcomponent.type_name).producer = draw_shrine_visual
+	self:get_component(custom_visual_component.type_name).producer = draw_shrine_visual
 end
 
 local room_shrine<const> = {}
@@ -67,8 +67,8 @@ local register_shrine_definition<const> = function()
 		def_id = 'shrine',
 		class = shrine,
 		components = {
-			customvisualcomponent.new,
-			textcomponent.new,
+			custom_visual_component.new,
+			text_component.new,
 			state_machine_component.factory({ 'shrine' }),
 		},
 		defaults = {

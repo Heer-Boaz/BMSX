@@ -8,8 +8,8 @@ local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
-local customvisualcomponent<const> = require('cartlib/render/custom_visual_component')
-local tilelayercomponent<const> = require('cartlib/render/tile_layer_component')
+local custom_visual_component<const> = require('cartlib/render/custom_visual_component')
+local tile_layer_component<const> = require('cartlib/render/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/component')
 
 local room<const> = {}
@@ -877,7 +877,7 @@ function room_object:ctor()
 		self.water_surface_sources[i] = image.resolve(water_surface_frame_imgids[i])
 	end
 	self.water_body_source = image.resolve('water_body_msx')
-	self.room_tile_layer = tilelayercomponent.new({
+	self.room_tile_layer = tile_layer_component.new({
 		id_local = 'room',
 		sources = self.room_tile_sources,
 		tile_count = 0,
@@ -888,7 +888,7 @@ function room_object:ctor()
 		visible = false,
 	})
 	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = tilelayercomponent.new({
+	self.water_tile_layer = tile_layer_component.new({
 		id_local = 'water',
 		sources = self.water_tile_sources,
 		tile_count = 0,
@@ -900,7 +900,7 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-	local room_effect<const> = self:get_component(customvisualcomponent.type_name)
+	local room_effect<const> = self:get_component(custom_visual_component.type_name)
 	room_effect:set_offset_z(draw_z_room_effect)
 	room_effect.producer = room_object.render_room
 end
@@ -1204,7 +1204,7 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
 			state_machine_component.factory({ 'room' }),
 		},

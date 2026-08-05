@@ -2,7 +2,7 @@
 -- Text object with typewriter effect for carts.
 
 local worldobject<const> = require('cartlib/world/object')
-local textcomponent<const> = require('cartlib/text/component')
+local text_component<const> = require('cartlib/text/component')
 local timeline_component<const> = require('cartlib/timeline/component')
 local state_machine_component<const> = require('cartlib/fsm/component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -18,10 +18,10 @@ setmetatable(textobject, { __index = worldobject })
 
 local textobjectcomponent<const> = {}
 textobjectcomponent.__index = textobjectcomponent
-setmetatable(textobjectcomponent, { __index = textcomponent })
+setmetatable(textobjectcomponent, { __index = text_component })
 
 function textobjectcomponent.new(opts)
-	return setmetatable(textcomponent.new(opts), textobjectcomponent)
+	return setmetatable(text_component.new(opts), textobjectcomponent)
 end
 
 function textobjectcomponent:render(draw, x, y)
@@ -30,7 +30,7 @@ function textobjectcomponent:render(draw, x, y)
 	if self.background_color ~= nil then
 		owner:submit_text_background_lines(draw, x, y)
 	end
-	textcomponent.render_glyphs(self, draw, x, y)
+	text_component.render_glyphs(self, draw, x, y)
 end
 
 local highlight_move_timeline_id<const> = 'hmove'
