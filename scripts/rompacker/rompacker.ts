@@ -10,7 +10,7 @@ import {
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
-import { validateAudioEventReferences } from './audioeventvalidator';
+import { compileAudioEventResources } from './audioeventcompiler';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildPresentationConfigModuleSource, buildTextureBindingsModuleSource } from './gx_vram_layout';
@@ -411,7 +411,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	}));
 	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
 	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
-	validateAudioEventReferences(BIOSResources);
+	compileAudioEventResources(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
 	const BIOSLayout = layoutRomPrefix(
 		BIOSRomAssets,
@@ -577,8 +577,8 @@ async function main() {
 			));
 			await progress.taskCompleted();
 
-			// Validate AEM references against loaded resources
-			validateAudioEventReferences(resources);
+			// Compile AEM resources against the loaded audio and data resources.
+			compileAudioEventResources(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			if (gx_vram_layout) {

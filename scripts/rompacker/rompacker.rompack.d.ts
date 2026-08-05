@@ -71,6 +71,7 @@ export interface DataResource extends BaseResource<'data'> {
 export interface AemResource extends BaseResource<'aem'> {
 	id: number;
 	datatype: 'json' | 'yaml';
+	eventMap?: Record<string, unknown>;
 }
 
 export interface ModelResource extends BaseResource<'model'> {

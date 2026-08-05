@@ -4,6 +4,7 @@ import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import {
 	aemDocumentFormat,
 	assertValidAemDocument,
+	buildAemEventMap,
 	buildAemValidationLookup,
 	parseStructuredTextDocument,
 } from '../../toolchain/ts/rompack/aem';
@@ -44,8 +45,9 @@ export function applyAemSourceToRuntime(
 ): void {
 	const assetId = resource.source.resid;
 	const doc = parseStructuredTextDocument(source, aemDocumentFormat(resource.path), `AEM file '${resource.path}'`);
-	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(sources), resource.path);
-	const eventMap = doc.events;
+	const lookup = buildRuntimeAemValidationLookup(sources);
+	assertValidAemDocument(doc, lookup, resource.path);
+	const eventMap = buildAemEventMap(doc, lookup);
 	const revision = buildBlua32Revision(
 		sources,
 		luaTooling,

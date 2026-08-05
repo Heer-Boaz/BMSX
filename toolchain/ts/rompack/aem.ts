@@ -364,6 +364,38 @@ function resolveDataPath(lookup: AemValidationLookup, path: string): unknown {
 	return cursor;
 }
 
+function inlineModulationPresets(action: Record<string, unknown>, lookup: AemValidationLookup): void {
+	const presetPath = action.modulation_preset as string | undefined;
+	if (presetPath !== undefined) {
+		action.modulation_params = resolveDataPath(lookup, presetPath);
+		delete action.modulation_preset;
+	}
+	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
+	if (sequence !== undefined) {
+		for (let index = 0; index < sequence.length; index += 1) {
+			inlineModulationPresets(sequence[index]!, lookup);
+		}
+	}
+	const oneOf = action.one_of as Array<Record<string, unknown>> | undefined;
+	if (oneOf !== undefined) {
+		for (let index = 0; index < oneOf.length; index += 1) {
+			inlineModulationPresets(oneOf[index]!, lookup);
+		}
+	}
+}
+
+export function buildAemEventMap(document: AemDocument, lookup: AemValidationLookup): Record<string, unknown> {
+	const eventMap = document.events;
+	const eventNames = Object.keys(eventMap);
+	for (let eventIndex = 0; eventIndex < eventNames.length; eventIndex += 1) {
+		const event = eventMap[eventNames[eventIndex]!] as { rules: Array<{ go: Record<string, unknown> }> };
+		for (let ruleIndex = 0; ruleIndex < event.rules.length; ruleIndex += 1) {
+			inlineModulationPresets(event.rules[ruleIndex]!.go, lookup);
+		}
+	}
+	return eventMap;
+}
+
 function checkAction(
 	action: AudioAction,
 	ctx: { file: string; eventName?: string; ruleIndex?: number; choiceIndex?: number; sequenceIndex?: number },

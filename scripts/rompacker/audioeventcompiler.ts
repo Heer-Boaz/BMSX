@@ -1,10 +1,15 @@
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
-import { Resource } from './rompacker.rompack';
+import {
+	assertValidAemDocument,
+	buildAemEventMap,
+	buildAemValidationLookup,
+	parseStructuredTextDocument,
+} from '../../toolchain/ts/rompack/aem';
+import type { AemResource, Resource } from './rompacker.rompack';
 
-export function validateAudioEventReferences(resources: Resource[]): void {
+export function compileAudioEventResources(resources: Resource[]): void {
 	const audioIds: string[] = [];
 	const dataRecords: Array<{ name: string; value: unknown }> = [];
-	const aemResources: Resource[] = [];
+	const aemResources: AemResource[] = [];
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index]!;
 		if (resource.type === 'audio') {
@@ -29,12 +34,9 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 	for (let index = 0; index < aemResources.length; index += 1) {
 		const resource = aemResources[index]!;
 		const source = resource.buffer.toString('utf8');
-		// resource.type is narrowed to 'aem' when pushed into aemResources,
-		// but the Resource type is still a union here. Use the literal 'aem'
-		// so it matches StructuredTextDocumentFormat.
-		const format = 'yaml' as const;
 		const fileTag = resource.filepath ?? resource.name;
-		const doc = parseStructuredTextDocument(source, format, `AEM file '${fileTag}'`);
+		const doc = parseStructuredTextDocument(source, resource.datatype, `AEM file '${fileTag}'`);
 		assertValidAemDocument(doc, lookup, fileTag);
+		resource.eventMap = buildAemEventMap(doc, lookup);
 	}
 }

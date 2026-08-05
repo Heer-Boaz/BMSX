@@ -31,7 +31,6 @@ import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import type { RomPrefixLayout } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
-import type { AemDocument } from '../../toolchain/ts/rompack/aem';
 import {
 	type Blua32BiosFunctionExport,
 	BLUA32_BIOS_IMPORTS_IMAGE_ID,
@@ -1094,9 +1093,7 @@ export async function generateRomAssets(
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'aem': {
-				const source = res.buffer.toString('utf8');
-				const document = (res.datatype === 'yaml' ? yaml.load(source) : JSON.parse(source)) as AemDocument;
-				buffer = Buffer.from(encodeBinary(document.events));
+				buffer = Buffer.from(encodeBinary(res.eventMap));
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			}
