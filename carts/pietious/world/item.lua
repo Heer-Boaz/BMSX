@@ -5,7 +5,6 @@ local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
-local progression<const> = require('cartlib/progression')
 local world_item<const> = {}
 world_item.__index = world_item
 
@@ -37,8 +36,6 @@ local define_world_item_fsm<const> = function()
 				end
 				if self.rock_drop_id ~= nil then
 					world:get('room').rock_drops[self.rock_drop_id] = nil
-				elseif world_item_inventory[self.item_type] then
-					progression.set(world:get('c'), 'item_picked_' .. item_id, true)
 				end
 				self:despawn()
 			end,

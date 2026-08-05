@@ -8,16 +8,21 @@
 --    mounted programs and updates one or more
 --    'state programs' (key/value maps) based on declarative rules.  It is used
 --    to track persistent world state that evolves as gameplay events fire
---    (e.g. 'has_sword', 'room_2_cleared', counter values).
+--    (e.g. 'has_sword' and 'room_2_cleared').
 --
 -- 2. USAGE PATTERN.
 --
---    STEP 1 — define a program (rule list) and mount it onto a context:
---      progression.mount(castle, {
---          { on = 'enemy.defeated', set = {{ key = 'kills', value = true }} },
---          { on = 'item.collected', when_all = {{ key = 'kills' }},
---            set = {{ key = 'bonus_active', value = true }} },
+--    STEP 1 — compile the cart-owned rules and query filters, then mount that
+--    program onto a context:
+--      local program = progression.compile_program({
+--          rules = {
+--              { id = 'record_kill', on = 'enemy.defeated',
+--                set = {{ key = 'kills', value = true }} },
+--          },
+--          filters = { bonus_filter },
+--          handlers = {},
 --      })
+--      progression.mount(castle, program)
 --    Unmount it from the context's unbind() teardown.
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
@@ -26,12 +31,12 @@
 --
 --    STEP 3 — query state:
 --      if progression.get(castle, 'bonus_active') then ... end
---      progression.matches(castle, {{ key = 'kills' }})  -- condition check
+--      progression.matches(castle, bonus_filter)
 --
 -- 3. RULE ANATOMY.
 --    Each rule is a table with these fields:
 --      on          — event name (required); the event that can fire this rule
---      when_all    — array of conditions ({key, op='==', value=true}) that must
+--      when_all    — array of conditions ({key, equals}) that must
 --                    all be true on the state for the rule to fire
 --      when_event  — event-matcher spec (see eventmatcher.lua) filtering event
 --                    payload fields
@@ -40,185 +45,58 @@
 --      apply_once  — if true, this rule will only fire once per mounted runtime
 --
 -- 4. CONDITIONS.
---    Short forms: 'key_name' (key==true), '!key_name' (key==false).
---    Full form: { key='k', op='>=', value=5 } — operators: ==, !=, <, <=, >, >=
+--    Conditions have one representation: { key = 'key_name', equals = true }.
+--    Query filters must be listed in compile_program().filters so key interning
+--    and predicate compilation finish before the runtime is mounted.
 --
 -- 5. DO NOT USE progression FOR FRAME-BY-FRAME GAME LOGIC.
---    Progression is for persistent cross-room, cross-session state transitions
+--    Progression is for persistent cross-room world-state transitions
 --    driven by named gameplay events.  Transient per-frame state belongs in the
 --    object FSM or in worldobject fields directly.
 
 local eventemitter<const> = require('cartlib/eventemitter')
 local eventmatcher<const> = require('cartlib/eventmatcher')
 
-local progression<const> = {
-	_runtime_by_ctx = setmetatable({}, { __mode = 'k' }),
-	_runtimes_by_event = {},
-}
+local progression<const> = {}
+local runtime_by_ctx<const> = {}
+local runtimes_by_event<const> = {}
 
 local progression_state<const> = {}
 progression_state.__index = progression_state
 
 local empty_list<const> = {}
 
-local op_eq<const> = 1
-local op_ne<const> = 2
-local op_lt<const> = 3
-local op_lte<const> = 4
-local op_gt<const> = 5
-local op_gte<const> = 6
-
-local op_by_text<const> = {
-	['=='] = op_eq,
-	['='] = op_eq,
-	eq = op_eq,
-	['!='] = op_ne,
-	['~='] = op_ne,
-	ne = op_ne,
-	['<'] = op_lt,
-	lt = op_lt,
-	['<='] = op_lte,
-	lte = op_lte,
-	['>'] = op_gt,
-	gt = op_gt,
-	['>='] = op_gte,
-	gte = op_gte,
-}
-
-local new_state_program<const> = function()
-	return {
-		key2idx = {},
-		idx2key = {},
-	}
-end
-
-local default_for<const> = function(value)
-	local value_type<const> = type(value)
-	if value_type == 'boolean' then
-		return false
-	end
-	if value_type == 'number' then
-		return 0
-	end
-	return nil
-end
-
-local compare<const> = function(left, op, right)
-	if op == op_eq then
-		return left == right
-	end
-	if op == op_ne then
-		return left ~= right
-	end
-	if op == op_lt then
-		return left < right
-	end
-	if op == op_lte then
-		return left <= right
-	end
-	if op == op_gt then
-		return left > right
-	end
-	return left >= right
-end
-
 local intern_key<const> = function(program, key)
 	local key_idx = program.key2idx[key]
 	if key_idx ~= nil then
 		return key_idx
 	end
-	key_idx = #program.idx2key + 1
+	key_idx = program.key_count + 1
+	program.key_count = key_idx
 	program.key2idx[key] = key_idx
-	program.idx2key[key_idx] = key
 	return key_idx
-end
-
-local normalize_condition<const> = function(spec)
-	if type(spec) == 'string' then
-		if spec:sub(1, 1) == '!' then
-			return spec:sub(2), op_eq, false
-		end
-		return spec, op_eq, true
-	end
-
-	if type(spec) ~= 'table' then
-		error('progression condition must be string or table.')
-	end
-
-	local key<const> = spec.key or spec[1]
-	if type(key) ~= 'string' then
-		error('progression condition is missing key.')
-	end
-
-	local op_text<const> = spec.op or spec[2] or '=='
-	local op<const> = op_by_text[op_text]
-	if op == nil then
-		error('progression condition has unknown operator '' .. tostring(op_text) .. ''.')
-	end
-
-	local value = spec.equals
-	if value == nil then
-		value = spec.value
-	end
-	if value == nil then
-		value = spec[3]
-	end
-	if value == nil then
-		value = true
-	end
-
-	if (op == op_lt or op == op_lte or op == op_gt or op == op_gte) and type(value) ~= 'number' then
-		error('progression condition '' .. key .. '' expects numeric value for operator '' .. tostring(op_text) .. ''.')
-	end
-
-	return key, op, value
-end
-
-local is_compiled_predicates<const> = function(source)
-	if type(source) ~= 'table' then
-		return false
-	end
-	local count<const> = #source
-	if count == 0 then
-		return true
-	end
-	if count % 4 ~= 0 then
-		return false
-	end
-	return type(source[1]) == 'number'
 end
 
 local compile_predicates<const> = function(program, source)
 	if source == nil then
 		return empty_list
 	end
-	local compiled<const> = {}
-	local out_index = 1
-	for i = 1, #source do
-		local key<const>, op<const>, value<const> = normalize_condition(source[i])
-		compiled[out_index] = intern_key(program, key)
-		compiled[out_index + 1] = op
-		compiled[out_index + 2] = value
-		compiled[out_index + 3] = default_for(value)
-		out_index = out_index + 4
+	for i = #source, 1, -1 do
+		local condition<const> = source[i]
+		local out_index<const> = i * 2
+		source[out_index - 1] = intern_key(program, condition.key)
+		source[out_index] = condition.equals
 	end
-	return compiled
-end
-
-local compile_filter<const> = function(program, source)
-	if is_compiled_predicates(source) then
-		return source
-	end
-	return compile_predicates(program, source)
+	return source
 end
 
 local eval_predicates<const> = function(values, predicates)
-	for i = 1, #predicates, 4 do
+	for i = 1, #predicates, 2 do
 		local left = values[predicates[i]]
 		if left == nil then
-			left = predicates[i + 3]
+			left = false
 		end
-		if not compare(left, predicates[i + 1], predicates[i + 2]) then
+		if left ~= predicates[i + 1] then
 			return false
 		end
 	end
@@ -227,18 +105,13 @@ end
 
 function progression_state.new(program)
 	return setmetatable({
-		program = program or new_state_program(),
+		program = program,
 		values = {},
 		revision = 0,
-		filter_cache = setmetatable({}, { __mode = 'k' }),
 	}, progression_state)
 end
 
-function progression_state:set(key, value)
-	local key_idx = self.program.key2idx[key]
-	if key_idx == nil then
-		key_idx = intern_key(self.program, key)
-	end
+function progression_state:set_index(key_idx, value)
 	if self.values[key_idx] == value then
 		return false
 	end
@@ -248,75 +121,50 @@ function progression_state:set(key, value)
 end
 
 function progression_state:get(key)
-	local key_idx<const> = self.program.key2idx[key]
-	if key_idx == nil then
-		return nil
-	end
-	return self.values[key_idx]
+	return self.values[self.program.key2idx[key]]
 end
 
 function progression_state:matches_filter(filter)
-	if filter == nil then
-		return true
-	end
-	if is_compiled_predicates(filter) then
-		return eval_predicates(self.values, filter)
-	end
-	local cached = self.filter_cache[filter]
-	if cached == nil then
-		cached = compile_predicates(self.program, filter)
-		self.filter_cache[filter] = cached
-	end
-	return eval_predicates(self.values, cached)
+	return eval_predicates(self.values, filter)
 end
 
 local compile_set_actions<const> = function(state_program, actions)
 	if actions == nil then
 		return empty_list
 	end
-	for i = 1, #actions do
+	for i = #actions, 1, -1 do
 		local action<const> = actions[i]
-		local key<const> = action.key
-		if type(key) ~= 'string' then
-			error('progression set action at index ' .. i .. ' must define a string key.')
-		end
-		intern_key(state_program, key)
+		local out_index<const> = i * 2
+		actions[out_index - 1] = intern_key(state_program, action.key)
+		actions[out_index] = action.value
 	end
 	return actions
 end
 
+local compile_commands<const> = function(handlers, commands)
+	if commands == nil then
+		return empty_list
+	end
+	for i = #commands, 1, -1 do
+		local command<const> = commands[i]
+		local out_index<const> = i * 2
+		commands[out_index - 1] = handlers[command.op]
+		commands[out_index] = command
+	end
+	return commands
+end
+
 -- progression.compile_program(program_spec)
---   Pre-compiles a rule list into an optimised program table.  Called
---   automatically by progression.mount(); only call directly when you need to
---   share one compiled program across multiple mount() calls.
+--   Compiles the cart-owned rules and every query filter into retained indexed
+--   runtime data before mount() publishes the program. Condition arrays are
+--   consumed in place and become the compiled handles passed to matches().
 function progression.compile_program(program_spec)
-	if program_spec ~= nil and program_spec.state_program ~= nil and program_spec.rules_by_event ~= nil then
-		return program_spec
-	end
-
-	local rule_defs
-	local handlers
-	local seed_keys
-
-	if program_spec == nil then
-		rule_defs = empty_list
-		handlers = {}
-	elseif program_spec.rules ~= nil or program_spec.handlers ~= nil or program_spec.keys ~= nil then
-		rule_defs = program_spec.rules or empty_list
-		handlers = program_spec.handlers or {}
-		seed_keys = program_spec.keys
-	else
-		rule_defs = program_spec
-		handlers = {}
-	end
-
-	local state_program<const> = new_state_program()
-	if seed_keys ~= nil then
-		for i = 1, #seed_keys do
-			intern_key(state_program, seed_keys[i])
-		end
-	end
-	local rules<const> = {}
+	local rule_defs<const> = program_spec.rules
+	local handlers<const> = program_spec.handlers
+	local state_program<const> = {
+		key2idx = {},
+		key_count = 0,
+	}
 	local rules_by_event<const> = {}
 	local event_names<const> = {}
 	local seen_event<const> = {}
@@ -324,15 +172,13 @@ function progression.compile_program(program_spec)
 		local rule_def<const> = rule_defs[i]
 		local event_name<const> = rule_def.on
 		local rule<const> = {
-			id = rule_def.id or ('rule_' .. i),
-			on = event_name,
-			when_all = compile_filter(state_program, rule_def.when_all),
+			id = rule_def.id,
+			when_all = compile_predicates(state_program, rule_def.when_all),
 			when_event = eventmatcher.compile(rule_def.when_event),
 			set = compile_set_actions(state_program, rule_def.set),
-			apply = rule_def.apply or empty_list,
+			apply = compile_commands(handlers, rule_def.apply),
 			apply_once = (rule_def.apply_once),
 		}
-		rules[i] = rule
 		local event_rules = rules_by_event[event_name]
 		if event_rules == nil then
 			event_rules = {}
@@ -344,30 +190,31 @@ function progression.compile_program(program_spec)
 			event_names[#event_names + 1] = event_name
 		end
 	end
+	local filters<const> = program_spec.filters
+	for i = 1, #filters do
+		compile_predicates(state_program, filters[i])
+	end
+	state_program.key_count = nil
 
-	return {
+	local program<const> = {
 		state_program = state_program,
-		rules = rules,
 		rules_by_event = rules_by_event,
 		event_names = event_names,
-		handlers = handlers,
 	}
+	return program
 end
 
 local apply_set_actions<const> = function(rt, actions)
 	local state<const> = rt.state
-	for i = 1, #actions do
-		local action<const> = actions[i]
-		state:set(action.key, action.value)
+	for i = 1, #actions, 2 do
+		state:set_index(actions[i], actions[i + 1])
 	end
 end
 
 local apply_commands<const> = function(rt, commands, payload, emitter, event_type)
-	local handlers<const> = rt.program.handlers
 	local ctx<const> = rt.ctx
-	for i = 1, #commands do
-		local command<const> = commands[i]
-		handlers[command.op](ctx, command, payload, emitter, event_type)
+	for i = 1, #commands, 2 do
+		commands[i](ctx, commands[i + 1], payload, emitter, event_type)
 	end
 end
 
@@ -404,11 +251,8 @@ local dispatch_rules_to_runtime<const> = function(rt, rules, event_type, emitter
 	rt.dispatch_depth = depth - 1
 end
 
--- progression.dispatch_event(event_type, emitter, payload)
---   Synchronously feeds direct event values into every subscribed runtime.
---   In practice you do NOT need to call this manually for normal global events.
-function progression.dispatch_event(event_type, emitter, payload)
-	local runtimes<const> = progression._runtimes_by_event[event_type]
+local dispatch_event<const> = function(event_type, emitter, payload)
+	local runtimes<const> = runtimes_by_event[event_type]
 	if runtimes == nil then
 		return
 	end
@@ -422,13 +266,13 @@ function progression.dispatch_event(event_type, emitter, payload)
 end
 
 local add_runtime_subscription<const> = function(rt, event_name)
-	local runtimes = progression._runtimes_by_event[event_name]
+	local runtimes = runtimes_by_event[event_name]
 	if runtimes == nil then
 		runtimes = {}
-		progression._runtimes_by_event[event_name] = runtimes
+		runtimes_by_event[event_name] = runtimes
 		eventemitter:on({
 			event = event_name,
-			handler = progression.dispatch_event,
+			handler = dispatch_event,
 			subscriber = progression,
 		})
 	end
@@ -436,7 +280,7 @@ local add_runtime_subscription<const> = function(rt, event_name)
 end
 
 local remove_runtime_subscription<const> = function(rt, event_name)
-	local runtimes<const> = progression._runtimes_by_event[event_name]
+	local runtimes<const> = runtimes_by_event[event_name]
 	if runtimes == nil then
 		return
 	end
@@ -447,22 +291,15 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 		end
 	end
 	if #runtimes == 0 then
-		progression._runtimes_by_event[event_name] = nil
-		eventemitter:off(event_name, progression.dispatch_event, nil)
+		runtimes_by_event[event_name] = nil
+		eventemitter:off(event_name, dispatch_event, nil)
 	end
 end
 
--- progression.mount(ctx, program_or_rule_defs)
---   Attaches a progression runtime to ctx (typically a worldobject).
---   ctx.id is used as the runtime key; it must be unique.
---   program_or_rule_defs may be:
---     • a pre-compiled program from progression.compile_program()
---     • a plain rule-definition array
---     • a table with { rules=[], handlers={}, keys=[] }
---   Returns the runtime object (rarely needed; use progression.get/set/matches).
-function progression.mount(ctx, program_or_rule_defs)
+-- progression.mount(ctx, program)
+--   Attaches a compiled progression program to ctx.
+function progression.mount(ctx, program)
 	progression.unmount(ctx)
-	local program<const> = progression.compile_program(program_or_rule_defs)
 	local state<const> = progression_state.new(program.state_program)
 
 	local rt<const> = {
@@ -474,7 +311,7 @@ function progression.mount(ctx, program_or_rule_defs)
 		fired_by_depth = { {} },
 		fired_generation_by_depth = { 0 },
 	}
-	progression._runtime_by_ctx[ctx] = rt
+	runtime_by_ctx[ctx] = rt
 	for i = 1, #program.event_names do
 		add_runtime_subscription(rt, program.event_names[i])
 	end
@@ -485,35 +322,34 @@ end
 --   Call this in unbind() or when the context is no longer needed, otherwise
 --   the runtime leaks and keeps responding to global events.
 function progression.unmount(ctx)
-	local rt<const> = progression._runtime_by_ctx[ctx]
+	local rt<const> = runtime_by_ctx[ctx]
 	if rt == nil then
 		return
 	end
-	progression._runtime_by_ctx[ctx] = nil
+	runtime_by_ctx[ctx] = nil
 	local event_names<const> = rt.program.event_names
 	for i = 1, #event_names do
 		remove_runtime_subscription(rt, event_names[i])
 	end
 end
 
--- progression.matches(ctx, filter): returns true if all filter conditions
---   are currently true in ctx's progression state.  filter follows the same
---   format as rule.when_all.
+-- progression.matches(ctx, filter): returns true if all predicates in the
+--   compiled filter handle are currently true in ctx's progression state.
 function progression.matches(ctx, filter)
-	return progression._runtime_by_ctx[ctx].state:matches_filter(filter)
+	return runtime_by_ctx[ctx].state:matches_filter(filter)
 end
 
 -- progression.set(ctx, key, value): directly sets a state key on ctx's runtime.
 --   Use only for initialisation or testing; prefer rule-driven set actions.
 function progression.set(ctx, key, value)
-	local rt<const> = progression._runtime_by_ctx[ctx]
-	return rt.state:set(key, value)
+	local state<const> = runtime_by_ctx[ctx].state
+	return state:set_index(state.program.key2idx[key], value)
 end
 
 -- progression.get(ctx, key): reads a state key from ctx's progression runtime.
 --   Returns nil if the key has never been set.
 function progression.get(ctx, key)
-	return progression._runtime_by_ctx[ctx].state:get(key)
+	return runtime_by_ctx[ctx].state:get(key)
 end
 
 return progression

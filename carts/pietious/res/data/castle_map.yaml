@@ -341,7 +341,8 @@
   objects:
   - type: vlokspawner
     condition:
-    - '!cloud_1_destroyed'
+    - key: cloud_1_destroyed
+      equals: false
   - type: crossfoe
     condition:
     x: 3
@@ -400,7 +401,8 @@
     item: halo
   - type: breakablewall
     condition:
-    - '!castlewalldestroyed'
+    - key: castlewalldestroyed
+      equals: false
     area:
     - 10
     - 5
@@ -685,9 +687,12 @@
     direction: right
   - type: item
     condition:
-    - clouddestroyed
-    - '!greenvase'
-    - no_clouds
+    - key: clouddestroyed
+      equals: true
+    - key: greenvase
+      equals: false
+    - key: no_clouds
+      equals: true
     x: 23
     y: 3
     itemtype: greenvase
@@ -725,7 +730,8 @@
   objects:
   - type: item
     condition:
-    - '!map_world1'
+    - key: map_world1
+      equals: false
     x: 4
     y: 9
     itemtype: map_world1
@@ -944,56 +950,64 @@
   objects:
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 2
     y: 5
     speedx: 2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 10
     y: 15
     speedx: -2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 20
     y: 12
     speedx: 2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 6
     y: 10
     speedx: -2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 13
     y: 13
     speedx: -2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 18
     y: 8
     speedx: -2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     x: 25
     y: 7
     speedx: 2
     speedy: -2
   - type: disappearingwall
     condition:
-    - '!r106.wall'
+    - key: r106.wall
+      equals: false
     area:
     - 10
     - 1

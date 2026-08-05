@@ -35,15 +35,18 @@ end
 
 local build_progression_program<const> = function()
 	local rules<const> = {}
+	local filters<const> = {}
 	local condition_name_set<const> = {}
 	local condition_names<const> = {}
 	local world1_marspein_destroyed_keys<const> = {}
+	local persistent_item_ids<const> = {}
 
 	for _, room_template in pairs(castle_map.room_templates) do
 		local room_number<const> = room_template.room_number
 		local enemies<const> = room_template.enemies
 		for i = 1, #enemies do
 			local enemy_def<const> = enemies[i]
+			filters[#filters + 1] = enemy_def.conditions
 			rules[#rules + 1] = {
 				id = enemy_def.id,
 				on = 'damage.resolved',
@@ -65,6 +68,37 @@ local build_progression_program<const> = function()
 				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.id
 			end
 		end
+		local items<const> = room_template.items
+		for i = 1, #items do
+			local item<const> = items[i]
+			filters[#filters + 1] = item.conditions
+			if world_item_inventory[item.item_type] then
+				persistent_item_ids[#persistent_item_ids + 1] = item.id
+			end
+		end
+		local inventory_rocks<const> = room_template.inventory_rocks
+		for i = 1, #inventory_rocks do
+			persistent_item_ids[#persistent_item_ids + 1] = 'drop.' .. inventory_rocks[i].id
+		end
+		local seal<const> = room_template.seal
+		if seal ~= nil then
+			filters[#filters + 1] = seal.conditions
+		end
+	end
+	for i = 1, #persistent_item_ids do
+		local item_id<const> = persistent_item_ids[i]
+		rules[#rules + 1] = {
+			id = 'item.picked.' .. item_id,
+			on = 'item.picked',
+			when_event = {
+				equals = {
+					item_id = item_id,
+				},
+			},
+			set = {
+				{ key = 'item_picked_' .. item_id, value = true },
+			},
+		}
 	end
 
 	table.sort(condition_names)
@@ -217,6 +251,7 @@ local build_progression_program<const> = function()
 
 	return progression.compile_program({
 		rules = rules,
+		filters = filters,
 		handlers = {
 			['room.patch_rows'] = function(ctx, command)
 				current_room():apply_progression_command(command)
@@ -251,6 +286,8 @@ local build_progression_program<const> = function()
 		},
 	})
 end
+
+castle._progression_program = build_progression_program()
 
 local create_room_switch<const> = function(from_room_number, to_room_number, direction)
 	return {
@@ -528,7 +565,7 @@ function castle:ctor()
 	self.world_boss_defeated = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
-	progression.mount(self, build_progression_program())
+	progression.mount(self, castle._progression_program)
 end
 
 function castle:unbind()
