@@ -1,20 +1,4 @@
 local clock<const> = require('cartlib/clock')
-local tick_group<const> = require('cartlib/world/tick_group')
-
-local tick_group_order<const> = {
-	tick_group.input,
-	tick_group.actioneffects,
-	tick_group.gameplay,
-	tick_group.physics,
-	tick_group.animation,
-}
-local tick_group_index_by_id<const> = {
-	[tick_group.input] = 1,
-	[tick_group.actioneffects] = 2,
-	[tick_group.gameplay] = 3,
-	[tick_group.physics] = 4,
-	[tick_group.animation] = 5,
-}
 
 local system_manager<const> = {}
 system_manager.__index = system_manager
@@ -50,26 +34,23 @@ function system_manager:configure(system_classes)
 	end
 	table.sort(systems, system_priority_less)
 
-	local systems_by_tick_group<const> = { {}, {}, {}, {}, {} }
-	for system_index = 1, #systems do
-		local instance<const> = systems[system_index]
-		local tick_group_systems<const> = systems_by_tick_group[tick_group_index_by_id[instance.group]]
-		tick_group_systems[#tick_group_systems + 1] = instance
-	end
-
 	local tick_groups<const> = self._tick_groups
 	local configured_systems_by_tick_group<const> = self._systems_by_tick_group
 	local system_counts<const> = self._system_counts
 	local configured_tick_group_count = 0
-	for tick_group_index = 1, #tick_group_order do
-		local tick_group_systems<const> = systems_by_tick_group[tick_group_index]
-		local system_count<const> = #tick_group_systems
-		if system_count ~= 0 then
+	for system_index = 1, #systems do
+		local instance<const> = systems[system_index]
+		local group<const> = instance.group
+		if tick_groups[configured_tick_group_count] ~= group then
 			configured_tick_group_count = configured_tick_group_count + 1
-			tick_groups[configured_tick_group_count] = tick_group_order[tick_group_index]
-			configured_systems_by_tick_group[configured_tick_group_count] = tick_group_systems
-			system_counts[configured_tick_group_count] = system_count
+			tick_groups[configured_tick_group_count] = group
+			configured_systems_by_tick_group[configured_tick_group_count] = {}
+			system_counts[configured_tick_group_count] = 0
 		end
+		local tick_group_systems<const> = configured_systems_by_tick_group[configured_tick_group_count]
+		local system_count<const> = system_counts[configured_tick_group_count] + 1
+		tick_group_systems[system_count] = instance
+		system_counts[configured_tick_group_count] = system_count
 	end
 	self._systems = systems
 	self._tick_group_count = configured_tick_group_count
