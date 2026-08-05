@@ -5,7 +5,7 @@ local byte<const> = string_lib.byte
 local font<const> = {}
 
 local definitions<const> = {}
-local descriptors<const> = {}
+local resolved_fonts<const> = {}
 
 local build_default_definition<const> = function()
 	local glyphs<const> = {}
@@ -18,7 +18,7 @@ local build_default_definition<const> = function()
 	}
 end
 
-local build_descriptor<const> = function(definition)
+local build_resolved_font<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
@@ -49,31 +49,25 @@ end
 
 function font.define(id, definition)
 	definitions[id] = definition
-	descriptors[id] = nil
-end
-
-function font.definition(id)
-	local definition = definitions[id]
-	if not definition and id == 'default' then
-		definition = build_default_definition()
-		definitions[id] = definition
-	end
-	return definition
+	resolved_fonts[id] = nil
 end
 
 function font.get(id)
-	local descriptor = descriptors[id]
-	if not descriptor then
-		descriptor = build_descriptor(font.definition(id))
-		descriptors[id] = descriptor
+	local resolved_font = resolved_fonts[id]
+	if resolved_font == nil then
+		local definition = definitions[id]
+		if definition == nil and id == 'default' then
+			definition = build_default_definition()
+			definitions[id] = definition
+		end
+		resolved_font = build_resolved_font(definition)
+		resolved_fonts[id] = resolved_font
 	end
-	return descriptor
+	return resolved_font
 end
 
-
-function font.write_glyph_line(id_or_descriptor, line, target)
-	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	local items<const> = descriptor.items
+function font.write_glyph_line(resolved_font, line, target)
+	local items<const> = resolved_font.items
 	local fallback<const> = items[0x3f]
 	local length<const> = #line
 	local width = 0
@@ -84,26 +78,6 @@ function font.write_glyph_line(id_or_descriptor, line, target)
 	end
 	for index = length + 1, #target do
 		target[index] = nil
-	end
-	return width
-end
-
-function font.for_each_glyph(id_or_descriptor, line, fn)
-	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	local items<const> = descriptor.items
-	local fallback<const> = items[0x3f]
-	for index = 1, #line do
-		fn(items[byte(line, index)] or fallback)
-	end
-end
-
-function font.measure_line_width(id_or_descriptor, line)
-	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	local items<const> = descriptor.items
-	local fallback<const> = items[0x3f]
-	local width = 0
-	for index = 1, #line do
-		width = width + (items[byte(line, index)] or fallback).advance
 	end
 	return width
 end
