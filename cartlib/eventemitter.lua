@@ -78,12 +78,54 @@ local eventemitter<const> = {
 	id = 'eventemitter',
 	listeners = {},
 	any_listeners = {},
+	_dispatch_depth = 0,
+	_pending_listener_lists = {},
+	_pending_listener_count = 0,
 }
 
 local event_port<const> = {}
 event_port.__index = event_port
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
+
+local compact_listeners<const> = function(list)
+	local write_index = 1
+	local count<const> = #list
+	for read_index = 1, count do
+		local entry<const> = list[read_index]
+		if entry then
+			list[write_index] = entry
+			write_index = write_index + 1
+		end
+	end
+	for index = write_index, count do
+		list[index] = nil
+	end
+	list._removals_pending = nil
+end
+
+local remove_listener_at<const> = function(self, list, index)
+	if self._dispatch_depth == 0 then
+		table.remove(list, index)
+		return
+	end
+	list[index] = false
+	if not list._removals_pending then
+		list._removals_pending = true
+		local pending_index<const> = self._pending_listener_count + 1
+		self._pending_listener_count = pending_index
+		self._pending_listener_lists[pending_index] = list
+	end
+end
+
+local commit_listener_removals<const> = function(self)
+	local pending<const> = self._pending_listener_lists
+	for index = 1, self._pending_listener_count do
+		compact_listeners(pending[index])
+		pending[index] = nil
+	end
+	self._pending_listener_count = 0
+end
 
 function eventemitter.events_of(emitter)
 	local port = port_cache[emitter]
@@ -131,8 +173,8 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 	for i = #list, 1, -1 do
 		local entry<const> = list[i]
-		if entry.handler == handler and entry.emitter == emitter then
-			table.remove(list, i)
+		if entry and entry.handler == handler and entry.emitter == emitter then
+			remove_listener_at(self, list, i)
 		end
 	end
 end
@@ -146,20 +188,35 @@ end
 
 -- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
 -- is retained by the owning event port for filtering and downstream FSMs.
+-- Removal during dispatch takes effect before the listener's next call;
+-- listeners added during dispatch start with the next emission.
 function eventemitter:emit(event_type, emitter, payload, emitter_id)
 	local list<const> = self.listeners[event_type]
+	local listener_count<const> = list and #list or 0
+	local any_listeners<const> = self.any_listeners
+	local any_listener_count<const> = #any_listeners
+	self._dispatch_depth = self._dispatch_depth + 1
 	if list then
-		for i = 1, #list do
+		for i = 1, listener_count do
 			local entry<const> = list[i]
-			local filter<const> = entry.emitter
-			if filter == nil or filter == emitter or filter == emitter_id then
-				entry.handler(event_type, emitter, payload, emitter_id)
+			if entry then
+				local filter<const> = entry.emitter
+				if filter == nil or filter == emitter or filter == emitter_id then
+					entry.handler(event_type, emitter, payload, emitter_id)
+				end
 			end
 		end
 	end
-	local any_listeners<const> = self.any_listeners
-	for i = 1, #any_listeners do
-		any_listeners[i].handler(event_type, emitter, payload, emitter_id)
+	for i = 1, any_listener_count do
+		local entry<const> = any_listeners[i]
+		if entry then
+			entry.handler(event_type, emitter, payload, emitter_id)
+		end
+	end
+	local dispatch_depth<const> = self._dispatch_depth - 1
+	self._dispatch_depth = dispatch_depth
+	if dispatch_depth == 0 and self._pending_listener_count ~= 0 then
+		commit_listener_removals(self)
 	end
 end
 
@@ -170,15 +227,16 @@ function eventemitter:remove_subscriber(subscriber)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			local entry<const> = list[i]
-			if entry.subscriber == subscriber then
-				table.remove(list, i)
+			if entry and entry.subscriber == subscriber then
+				remove_listener_at(self, list, i)
 			end
 		end
 	end
 	local any_listeners<const> = self.any_listeners
 	for i = #any_listeners, 1, -1 do
-		if any_listeners[i].subscriber == subscriber then
-			table.remove(any_listeners, i)
+		local entry<const> = any_listeners[i]
+		if entry and entry.subscriber == subscriber then
+			remove_listener_at(self, any_listeners, i)
 		end
 	end
 end
