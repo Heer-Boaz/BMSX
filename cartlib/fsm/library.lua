@@ -15,7 +15,7 @@
 
 local fsm<const> = require('cartlib/fsm/fsm')
 local component_types<const> = require('cartlib/components/types')
-local registry_instance<const> = require('cartlib/registry').instance
+local registry<const> = require('cartlib/registry')
 
 local statedefinitions<const> = {}
 
@@ -31,7 +31,7 @@ function fsmlibrary.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	statedefinitions[machine_name] = replacement
-	local components<const> = registry_instance:entities_by_type(component_types.state_machine)
+	local components<const> = registry:entities_by_type(component_types.state_machine)
 	for i = 1, #components do
 		local state_machines<const> = components[i]
 		state_machines:rebind_statemachine(machine_name, replacement)

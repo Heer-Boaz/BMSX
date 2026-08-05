@@ -98,7 +98,7 @@ eventemitter.instance = eventemitter.new()
 eventemitter.instance.id = 'eventemitter'
 eventemitter.instance.type_name = 'eventemitter'
 eventemitter.instance.registrypersistent = true
-require('cartlib/registry').instance:register(eventemitter.instance)
+require('cartlib/registry'):register(eventemitter.instance)
 
 function eventemitter:events_of(emitter)
 	local port = port_cache[emitter]

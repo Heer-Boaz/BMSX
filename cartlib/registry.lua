@@ -1,7 +1,12 @@
 local dense_set<const> = require('cartlib/util/dense_set')
 
-local registry<const> = {}
-registry.__index = registry
+local registry<const> = {
+	_by_id = {},
+	_by_type = {},
+	_by_tag = {},
+	_reservations = {},
+	_entities = dense_set.new(),
+}
 
 local empty_bucket<const> = {}
 
@@ -24,16 +29,20 @@ local remove_entity_type<const> = function(self, entity)
 	end
 end
 
+local add_entity_tag<const> = function(self, entity, tag)
+	local bucket = self._by_tag[tag]
+	if bucket == nil then
+		bucket = dense_set.new()
+		self._by_tag[tag] = bucket
+	end
+	dense_set.add(bucket, entity)
+end
+
 local add_entity_tags<const> = function(self, entity)
 	local tags<const> = entity.tags
 	if tags ~= nil then
 		for tag in pairs(tags) do
-			local bucket = self._by_tag[tag]
-			if bucket == nil then
-				bucket = dense_set.new()
-				self._by_tag[tag] = bucket
-			end
-			dense_set.add(bucket, entity)
+			add_entity_tag(self, entity, tag)
 		end
 	end
 end
@@ -47,16 +56,6 @@ local remove_entity_tags<const> = function(self, entity)
 	end
 end
 
-function registry.new()
-	local self<const> = setmetatable({}, registry)
-	self._by_id = {}
-	self._by_type = {}
-	self._by_tag = {}
-	self._reservations = {}
-	self._entities = dense_set.new()
-	return self
-end
-
 function registry:reserve(entity)
 	local id<const> = entity.id
 	if self._by_id[id] ~= nil or self._reservations[id] ~= nil then
@@ -67,10 +66,6 @@ end
 
 function registry:get(id)
 	return self._by_id[id]
-end
-
-function registry:has(id)
-	return self._by_id[id] ~= nil
 end
 
 function registry:is_id_claimed(id)
@@ -93,7 +88,7 @@ function registry:reconcile_tag(entity, tag)
 	local bucket<const> = self._by_tag[tag]
 	if entity.tags[tag] then
 		if bucket == nil then
-			self:add_tag(entity, tag)
+			add_entity_tag(self, entity, tag)
 		elseif bucket.indices[entity] == nil then
 			dense_set.add(bucket, entity)
 		end
@@ -107,21 +102,6 @@ function registry:deregister(entity)
 	remove_entity_type(self, entity)
 	dense_set.remove(self._entities, entity)
 	self._by_id[entity.id] = nil
-end
-
-function registry:add_tag(entity, tag)
-	entity.tags[tag] = true
-	local bucket = self._by_tag[tag]
-	if bucket == nil then
-		bucket = dense_set.new()
-		self._by_tag[tag] = bucket
-	end
-	dense_set.add(bucket, entity)
-end
-
-function registry:remove_tag(entity, tag)
-	dense_set.remove(self._by_tag[tag], entity)
-	entity.tags[tag] = nil
 end
 
 function registry:clear()
@@ -146,7 +126,4 @@ function registry:entities_by_tag(tag)
 	return bucket and bucket.items or empty_bucket
 end
 
-return {
-	registry = registry,
-	instance = registry.new(),
-}
+return registry

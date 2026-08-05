@@ -106,7 +106,7 @@ function world_class:next_id(type_name)
 	end
 
 	local result = baseid .. '_' .. tostring(uniquenumber)
-	while registry.instance:is_id_claimed(result) do
+	while registry:is_id_claimed(result) do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1
@@ -200,7 +200,7 @@ function world_class:reconcile_object_tag(obj, tag)
 		self._pending_tag_names[index] = tag
 		self._pending_mutation_mask = self._pending_mutation_mask | mutation_tag
 	else
-		registry.instance:reconcile_tag(obj, tag)
+		registry:reconcile_tag(obj, tag)
 		local active_space<const> = obj._active_space
 		if active_space ~= nil then
 			active_space:reconcile_active_tag(obj, tag)
@@ -335,13 +335,13 @@ function world_class:reconcile_component(comp)
 end
 
 function world_class:_commit_component_attach(comp)
-	registry.instance:register(comp)
+	registry:register(comp)
 	comp._published = true
 	self:_reconcile_active_component(comp)
 end
 
 function world_class:attach_component(comp)
-	registry.instance:reserve(comp)
+	registry:reserve(comp)
 	if self._current_tick_group == nil then
 		self:_commit_component_attach(comp)
 		return
@@ -355,7 +355,7 @@ end
 function world_class:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
 	comp.parent:_commit_component_detach(comp)
-	registry.instance:deregister(comp)
+	registry:deregister(comp)
 	comp._published = nil
 end
 
@@ -422,7 +422,7 @@ function world_class:_flush_tags()
 		local tag<const> = names[index]
 		objects[index] = nil
 		names[index] = nil
-		registry.instance:reconcile_tag(obj, tag)
+		registry:reconcile_tag(obj, tag)
 		local active_space<const> = obj._active_space
 		if active_space ~= nil then
 			active_space:reconcile_active_tag(obj, tag)
@@ -436,16 +436,16 @@ function world_class:visual_depth_changed()
 end
 
 function world_class:_reserve_object(obj)
-	registry.instance:reserve(obj)
+	registry:reserve(obj)
 	obj.world = self
 	obj.space_id = obj.space_id or self.active_space_id
 end
 
 function world_class:_commit_spawn(obj)
-	registry.instance:register(obj)
+	registry:register(obj)
 	local components<const> = obj.components
 	for i = 1, #components do
-		registry.instance:register(components[i])
+		registry:register(components[i])
 		components[i]._published = true
 	end
 	obj._published = true
@@ -479,7 +479,7 @@ function world_class:spawn(obj, pos)
 	obj:activate()
 	local components<const> = obj.components
 	for i = 1, #components do
-		registry.instance:reserve(components[i])
+		registry:reserve(components[i])
 	end
 	obj._spawn_position = pos
 	if self._current_tick_group == nil then
@@ -501,7 +501,7 @@ function world_class:_commit_despawn(obj)
 	end
 	self:_reconcile_active_object(obj)
 
-	registry.instance:deregister(obj)
+	registry:deregister(obj)
 	obj._space:remove_object(obj)
 	self:_remove_world_object(obj)
 	obj._published = nil
@@ -546,7 +546,7 @@ end
 --   The central Registry owns this direct lookup. A despawn requested during a
 --   tick group remains part of that group's retained snapshot until its barrier.
 function world_class:get(id)
-	return registry.instance:get(id)
+	return registry:get(id)
 end
 
 function world_class:active_objects()
@@ -562,7 +562,7 @@ function world_class:active_objects_by_type(type_name)
 end
 
 function world_class:objects_by_type(type_name)
-	return registry.instance:entities_by_type(type_name)
+	return registry:entities_by_type(type_name)
 end
 
 function world_class:active_objects_by_tag(tag)
@@ -570,7 +570,7 @@ function world_class:active_objects_by_tag(tag)
 end
 
 function world_class:objects_by_tag(tag)
-	return registry.instance:entities_by_tag(tag)
+	return registry:entities_by_tag(tag)
 end
 
 function world_class:active_visuals()
@@ -633,7 +633,7 @@ function world_class:clear()
 	while #objects > 0 do
 		self:despawn(objects[#objects])
 	end
-	registry.instance:clear()
+	registry:clear()
 	self._system_manager:reset()
 	self._visual_sequence = 0
 	self:set_space(self._initial_space_id)
@@ -641,6 +641,6 @@ end
 world = world_class.new()
 world.id = 'world'
 world.registrypersistent = true
-registry.instance:register(world)
+registry:register(world)
 
 return world

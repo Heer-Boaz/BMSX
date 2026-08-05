@@ -3588,8 +3588,9 @@ registry.
 
 The central Registry is the only cart-wide id, type and tag index. It owns
 retained dense buckets for published world objects, components and persistent
-cart services. `world:get()` and unqualified type/tag queries read those buckets
-directly; `world` has no shadow identity index.
+cart services. Its module exports that single owner directly, not a constructible
+class plus `instance` facade. `world:get()` and unqualified type/tag queries read
+those buckets directly; `world` has no shadow identity index.
 
 `world` owns lifecycle and the fixed map of spaces; each `space` object owns its
 own dense object, active-object, tag, type, component and visual storage plus the
