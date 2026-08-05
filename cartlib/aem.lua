@@ -764,8 +764,9 @@ local on_apu_irq<const> = function()
 	play_next_queued(slot)
 end
 
+rebind()
+
 return {
-	reload = rebind,
 	reload_from_rom = reload_from_rom,
 	on_apu_irq = on_apu_irq,
 }

@@ -300,7 +300,6 @@ local function init<init>()
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	aem.reload()
 	*irq_mask_register = vblank.irq_mask | irq_imgdec | irq_apu
 	combat_module.define_fsm()
 	build_director_fsm()

@@ -116,7 +116,6 @@ local function init<init>()
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	irq_module.register(irq_geo_done_error, collision_2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	aem.reload()
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()

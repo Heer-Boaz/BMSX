@@ -3646,10 +3646,10 @@ cooldown-time systems in `world_module`.
 The entry loop still owns every explicit `vblank.wait()` and therefore keeps
 gameplay/display pacing visible.
 
-AEM and GEO have no import-time application facade; carts with AEM data call
-`aem.reload()` and bind its APU handler, while carts that submit GEO work bind
-the collision handler. Each system owns its tick group, internal order and
-retained runtime state. There is no system-name registry,
+AEM binds its event map when its owner module loads; carts bind its APU handler,
+while carts that submit GEO work bind the collision handler. Each system owns
+its tick group, internal order and retained runtime state. There is no
+application facade, system-name registry,
 reference-spec duplication, dependency graph, universal built-in schedule or
 import-time system registration.
 
