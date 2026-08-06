@@ -25,7 +25,7 @@ local new_reader<const> = function(addr, len, label)
 	return {
 		pos = addr,
 		limit = addr + len,
-		label = label or 'bin',
+		label = label,
 		depth = 0,
 		prop_names = nil,
 	}
