@@ -256,11 +256,37 @@ local dispatch_event<const> = function(event_type, emitter, payload)
 	if runtimes == nil then
 		return
 	end
-	for i = 1, #runtimes do
+	local runtime_count<const> = #runtimes
+	local dispatch_depth<const> = runtimes.dispatch_depth + 1
+	runtimes.dispatch_depth = dispatch_depth
+	for i = 1, runtime_count do
 		local rt<const> = runtimes[i]
-		local rules<const> = rt.program.rules_by_event[event_type]
-		if rules ~= nil then
-			dispatch_rules_to_runtime(rt, rules, event_type, emitter, payload)
+		if rt then
+			local rules<const> = rt.program.rules_by_event[event_type]
+			if rules ~= nil then
+				dispatch_rules_to_runtime(rt, rules, event_type, emitter, payload)
+			end
+		end
+	end
+	local next_dispatch_depth<const> = dispatch_depth - 1
+	runtimes.dispatch_depth = next_dispatch_depth
+	if next_dispatch_depth == 0 and runtimes.removals_pending then
+		local list_count<const> = #runtimes
+		local write_index = 1
+		for read_index = 1, list_count do
+			local rt<const> = runtimes[read_index]
+			if rt then
+				runtimes[write_index] = rt
+				write_index = write_index + 1
+			end
+		end
+		for index = write_index, list_count do
+			runtimes[index] = nil
+		end
+		runtimes.removals_pending = nil
+		if write_index == 1 then
+			runtimes_by_event[event_type] = nil
+			eventemitter:off(event_type, dispatch_event, nil)
 		end
 	end
 end
@@ -268,7 +294,7 @@ end
 local add_runtime_subscription<const> = function(rt, event_name)
 	local runtimes = runtimes_by_event[event_name]
 	if runtimes == nil then
-		runtimes = {}
+		runtimes = { dispatch_depth = 0 }
 		runtimes_by_event[event_name] = runtimes
 		eventemitter:on({
 			event = event_name,
@@ -286,11 +312,16 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 	for i = #runtimes, 1, -1 do
 		if runtimes[i] == rt then
-			table.remove(runtimes, i)
+			if runtimes.dispatch_depth == 0 then
+				table.remove(runtimes, i)
+			else
+				runtimes[i] = false
+				runtimes.removals_pending = true
+			end
 			break
 		end
 	end
-	if #runtimes == 0 then
+	if runtimes.dispatch_depth == 0 and #runtimes == 0 then
 		runtimes_by_event[event_name] = nil
 		eventemitter:off(event_name, dispatch_event, nil)
 	end
