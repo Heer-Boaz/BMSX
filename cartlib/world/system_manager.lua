@@ -64,7 +64,9 @@ function system_manager:update()
 		for system_index = 1, self._system_counts[tick_group_index] do
 			systems[system_index]:update(self._delta_time)
 		end
-		world:_commit_tick_group()
+		if world:_commit_tick_group() then
+			return
+		end
 	end
 end
 

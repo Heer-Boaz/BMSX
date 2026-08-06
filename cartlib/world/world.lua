@@ -582,7 +582,7 @@ function world_class:despawn(obj)
 	if obj._spawn_pending then
 		return
 	end
-	if self._current_tick_group == nil then
+	if self._current_tick_group == nil and not self._flushing_despawns then
 		self:_commit_despawn(obj)
 		return
 	end
@@ -683,8 +683,8 @@ function world_class:_commit_tick_group()
 	end
 	if self._clear_pending then
 		self._clear_pending = false
-		self._system_manager:reset()
-		self:_recompute_visual_sequence()
+		self:_commit_clear()
+		return true
 	end
 end
 
@@ -778,8 +778,6 @@ function world_class:clear()
 			self:despawn(pending_spawns[i])
 		end
 		self._clear_pending = true
-		self._visual_sequence = 0
-		self:set_space(self._initial_space_id)
 		return
 	end
 	self:_commit_clear()
