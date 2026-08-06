@@ -14,7 +14,7 @@
 --    bind()       — override this in subclasses to subscribe to events.
 --                   Called exactly once during the object's lifetime.
 --    ondespawn()  — called when removed from the world, before final teardown.
---    dispose()    — final teardown; calls unbind() which removes all event
+--    _dispose()   — object-owned final teardown after world removal; calls unbind() which removes all event
 --                   subscriptions whose `subscriber` field is this object.
 --
 -- 2. bind() / unbind() — event subscription lifecycle.
@@ -51,7 +51,8 @@
 --    self:mark_for_disposal() is the public terminal-lifecycle command. The
 --    world commits the removal at the current tick-group barrier, or directly
 --    when no group is active. `ondespawn()` remains the removal lifecycle hook;
---    `dispose()` is the final component and subscription teardown.
+--    `_dispose()` is the object-owned final component and subscription teardown
+--    called by world after that removal.
 --
 -- 5. set_space() IS NOT despawn. Use it only to temporarily hide/show objects.
 --    Moving an object to a non-active space hides it from gameplay queries
@@ -232,14 +233,6 @@ function worldobject:_commit_component_detach(comp)
 	comp:unbind()
 end
 
-function worldobject:_remove_all_components()
-	local components<const> = self._components
-	for i = #components, 1, -1 do
-		self:remove_component(components[i])
-	end
-end
-
-
 -- has_tag(tag): returns true if this object currently carries the given tag.
 -- Tags are plain-string keys set on self.tags.  The FSM also manages tags
 -- automatically through state `tags` declarations and timeline windows.
@@ -300,7 +293,7 @@ function worldobject:bind()
 end
 
 -- unbind(): removes all event subscriptions whose subscriber == self.
--- Called by dispose().  Override only if you need extra teardown beyond
+-- Called by _dispose().  Override only if you need extra teardown beyond
 -- event unsubscription; in that case call the base implementation first.
 function worldobject:unbind()
 	eventemitter:remove_subscriber(self)
@@ -339,8 +332,16 @@ function worldobject:mark_for_disposal()
 	self.world:mark_for_disposal(self)
 end
 
-function worldobject:dispose()
-	self:_remove_all_components()
+-- _dispose(): object teardown invoked only after world has removed Registry,
+-- space, and active membership. Cart code requests that transition through
+-- mark_for_disposal(); it never tears down a live object directly.
+function worldobject:_dispose()
+	local components<const> = self._components
+	for i = #components, 1, -1 do
+		local component<const> = components[i]
+		component._attached = false
+		self:_commit_component_detach(component)
+	end
 	self:unbind()
 end
 

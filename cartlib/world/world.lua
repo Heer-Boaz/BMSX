@@ -635,7 +635,7 @@ function worldclass:_commit_disposal(obj)
 	end
 
 	obj:ondespawn()
-	obj:dispose()
+	obj:_dispose()
 	obj.world = nil
 end
 
