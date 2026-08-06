@@ -1,6 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
+local world<const> = require('cartlib/world/world')
 local spriteobject<const> = require('cartlib/sprite')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
@@ -45,7 +46,7 @@ function enemy_explosion:spawn_loot()
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	prefab.spawn('loot_drop', {
+	world:spawn('loot_drop', {
 		id = loot_id,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),

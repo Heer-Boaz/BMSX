@@ -1,0 +1,32 @@
+local worldobject<const> = require('cartlib/world/worldobject')
+
+local definitions<const> = {}
+local prefab<const> = {}
+
+local empty_values<const> = {}
+local empty_components<const> = {}
+
+function prefab.define(definition)
+	local prototype<const> = definition.base or worldobject
+	local class<const> = definition.class
+	local class_metatable<const> = getmetatable(class)
+	if class_metatable then
+		if not class_metatable.__index then
+			class_metatable.__index = prototype
+		end
+	else
+		setmetatable(class, { __index = prototype })
+	end
+	definition.ctor = class.ctor
+	definition.instance_metatable = { __index = class }
+	definition.base = prototype
+	definition.defaults = definition.defaults or empty_values
+	definition.components = definition.components or empty_components
+	definitions[definition.def_id] = definition
+end
+
+function prefab.definition(definition_id)
+	return definitions[definition_id]
+end
+
+return prefab

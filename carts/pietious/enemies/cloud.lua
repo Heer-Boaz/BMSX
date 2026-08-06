@@ -1,4 +1,4 @@
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
@@ -102,7 +102,7 @@ function cloud.bt_tick(self, blackboard)
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end
-			prefab.spawn('enemy.vlokfoe', {
+			world:spawn('enemy.vlokfoe', {
 				direction = random_x < 0 and 'left' or 'right',
 				speed_x_num = random_x,
 				speed_y_num = random_y,

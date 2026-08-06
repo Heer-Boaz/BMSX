@@ -1,4 +1,3 @@
-local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local actioneffects<const> = require('cartlib/actioneffects')
@@ -60,7 +59,7 @@ actioneffects.register_effect('pepernoot', {
 		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
 		local spawn_y = owner.y + secondary_weapon_pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
-		prefab.spawn('pepernoot_projectile', {
+		world:spawn('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
 			room_number = world:get('c').current_room_number,

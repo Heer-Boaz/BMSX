@@ -3531,20 +3531,22 @@ registerfile. The Lua compiler owns the exact literal-`require` dependency graph
 and reachable-module traversal; ROM authoring only maps canonical module paths
 to source files and supplies a module when that graph reaches it.
 `cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge write.
-`cartlib/prefab` owns prefab definitions and spawning. A definition names its
-concrete object base directly; prefab code does not know string kinds for
+`cartlib/world/prefab` owns prefab definitions. `world` owns construction and
+the complete live spawn transition. A definition names its concrete object
+base directly; prefab code does not know string kinds for
 sprites, text, state machines, behaviour trees, or action effects. It prepares
 the instance metatable once when the definition is registered rather than
 allocating one per spawn. Its component list is one ordered list of direct
-constructors. Parameterized component owners bind immutable FSM definitions,
-behaviour roots, or effect ids into those constructors before spawning; prefab
-does not interpret parallel feature lists. There is no string component
+constructors. Parameterized component factories bind FSM, behaviour-tree, or
+effect ids into those constructors before spawning; their component owner
+resolves the current registered definition when it constructs the runtime.
+Prefab does not interpret parallel feature lists. There is no string component
 registry, universal component module, prebuilt-instance branch, or
 compatibility lookup. Component ids are materialized by the object at the
 attachment boundary, after the constructor has supplied its component-local
-identity. Prefab obtains generated object ids from `world`, reserves the base
-object there before attaching components or running the prefab constructor, and
-publishes it only through `world:spawn()` after construction. The world-object
+identity. `world:spawn()` obtains generated object ids from Registry, reserves
+the base object before attaching components or running the prefab constructor,
+and publishes it only after construction. The world-object
 base does not import a global world to allocate its own identity. The world
 component base owns only attachment state, activation
 reconciliation, event unbinding, IDs, and enabled state. Rendering, text,

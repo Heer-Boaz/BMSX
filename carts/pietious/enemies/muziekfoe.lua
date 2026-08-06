@@ -1,4 +1,4 @@
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
@@ -68,7 +68,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_scale<const> = 8
 		local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor<const> = math.random(1, 2)
-		prefab.spawn('enemy.nootfoe', {
+		world:spawn('enemy.nootfoe', {
 			direction = delta_x < 0 and 'left' or 'right',
 			speed_x_num = delta_x,
 			speed_y_num = delta_y,

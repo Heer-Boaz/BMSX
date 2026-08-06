@@ -1,7 +1,7 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')

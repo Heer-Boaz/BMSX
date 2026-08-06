@@ -14,6 +14,6 @@ export function lintDefineFactorySpaceIdPattern(factoryName: string, field: Tabl
 		issues,
 		defineFactorySpaceIdPatternRule.name,
 		field.value,
-		`${factoryName}: space_id is forbidden. Prefab/object space must be assigned at prefab.spawn(..., { space_id = ... }).`,
+		`${factoryName}: space_id is forbidden. Object space must be assigned at world:spawn(..., { space_id = ... }).`,
 	);
 }

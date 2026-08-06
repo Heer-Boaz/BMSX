@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
@@ -61,7 +61,7 @@ function rock:begin_break()
 			item_type = self.item_type,
 		}
 	end
-	local drop<const> = prefab.spawn('world_item', {
+	local drop<const> = world:spawn('world_item', {
 		id = id,
 		space_id = 'main',
 		pos = { x = self.x, y = drop_y, z = 130 },

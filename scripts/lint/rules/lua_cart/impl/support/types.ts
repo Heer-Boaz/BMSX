@@ -106,12 +106,10 @@ export type ShadowedRequireAliasContext = {
 
 export const CART_MODULE_CALL_FSM_REGISTER = 1;
 export const CART_MODULE_CALL_PREFAB_DEFINE = 2;
-export const CART_MODULE_CALL_PREFAB_SPAWN = 3;
 
 export type CartModuleCallKind =
 	| typeof CART_MODULE_CALL_FSM_REGISTER
-	| typeof CART_MODULE_CALL_PREFAB_DEFINE
-	| typeof CART_MODULE_CALL_PREFAB_SPAWN;
+	| typeof CART_MODULE_CALL_PREFAB_DEFINE;
 
 export type CartModuleCallMap = Readonly<WeakMap<CallExpression, CartModuleCallKind>>;
 

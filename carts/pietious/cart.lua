@@ -9,7 +9,6 @@ local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
-local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -45,7 +44,7 @@ local loot_drop_module<const> = require('loot_drop')
 local world_item_module<const> = require('world/item')
 local rock_module<const> = require('rock')
 local pepernoot_projectile_module<const> = require('pepernoot_projectile')
-local enemy_explosion_module<const> = require('enemy/explosion')
+local enemy_explosion_module<const> = require('enemies/explosion')
 local elevator_module<const> = require('elevator/elevator')
 local castle_module<const> = require('castle/castle')
 local world_entrance_module<const> = require('world/entrance')
@@ -83,24 +82,24 @@ end
 local create_world<const> = function(director_boot_mode)
 	world:clear()
 
-	local c<const> = prefab.spawn('castle', { id = 'c', })
+	local c<const> = world:spawn('castle', { id = 'c', })
 
-	prefab.spawn('room', { id = 'room', })
+	world:spawn('room', { id = 'room', })
 
-	prefab.spawn('player', {
+	world:spawn('player', {
 		id = 'pietolon',
 		pos = { x = player_start_x, y = player_start_y, z = 140 },
 	})
 	grant_starting_loadout()
 	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
 
-	prefab.spawn('transition', { id = 'transition', space_id = 'transition', })
-	prefab.spawn('shrine', { id = 'shrine', space_id = 'shrine', })
-	prefab.spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
-	prefab.spawn('item_screen', { id = 'item_screen', space_id = 'item', })
-	prefab.spawn('ui', { id = 'ui', pos = { z = draw_z_hud }, })
-	prefab.spawn('title_screen', { id = 'title_screen', space_id = 'title', })
-	prefab.spawn('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
+	world:spawn('transition', { id = 'transition', space_id = 'transition', })
+	world:spawn('shrine', { id = 'shrine', space_id = 'shrine', })
+	world:spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
+	world:spawn('item_screen', { id = 'item_screen', space_id = 'item', })
+	world:spawn('ui', { id = 'ui', pos = { z = draw_z_hud }, })
+	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
+	world:spawn('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
 end
 
 function new_game()

@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
 require('constants')

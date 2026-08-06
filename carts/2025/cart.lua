@@ -10,7 +10,7 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local surfacecomponent<const> = require('cartlib/component/surfacecomponent')
 local spriteobject<const> = require('cartlib/sprite')
@@ -319,20 +319,20 @@ function new_game()
 	local choice_top<const> = h - (line_height * (prompt_lines + choice_lines))
 	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	prefab.spawn('p3.bg', {
+	world:spawn('p3.bg', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		visible = false,
 	})
 
 	local horizontal_margin<const> = w / 10
-	prefab.spawn('p3.text.main', {
+	world:spawn('p3.text.main', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		blank_lines = 1,
 		pos = { z = 1000 },
 	})
-	prefab.spawn('p3.text.choice', {
+	world:spawn('p3.text.choice', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		blank_lines = 1,
@@ -341,13 +341,13 @@ function new_game()
 		highlight_pulse_enabled = true,
 		highlight_jitter_enabled = false,
 	})
-	prefab.spawn('p3.text.prompt', {
+	world:spawn('p3.text.prompt', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		blank_lines = 1,
 		pos = { z = 1002 },
 	})
-	prefab.spawn('p3.text.transition', {
+	world:spawn('p3.text.transition', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		blank_lines = 1,
@@ -355,7 +355,7 @@ function new_game()
 		text_color = p3_ink_color,
 		normal_bg_color = p3_white_color,
 	})
-	prefab.spawn('p3.text.results', {
+	world:spawn('p3.text.results', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		blank_lines = 1,
@@ -364,39 +364,39 @@ function new_game()
 
 	clear_texts(text_ids_all)
 
-	prefab.spawn('p3.combat.monster', {
+	world:spawn('p3.combat.monster', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	prefab.spawn('p3.combat.maya_a', {
+	world:spawn('p3.combat.maya_a', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	prefab.spawn('p3.combat.maya_b', {
+	world:spawn('p3.combat.maya_b', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	prefab.spawn('p3.combat.all_out', {
+	world:spawn('p3.combat.all_out', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
-	prefab.spawn('p3.combat.all_out_portrait', {
+	world:spawn('p3.combat.all_out_portrait', {
 		id = combat_all_out_portrait_id,
 		pos = { x = 0, y = 0, z = 750 },
 		imgid = 'maya_v_s',
 		visible = false,
 	})
 
-	combat_director_instance = prefab.spawn(combat_director_def_id, { id = combat_director_instance_id })
-	prefab.spawn(director_def_id, { id = director_instance_id })
+	combat_director_instance = world:spawn(combat_director_def_id, { id = combat_director_instance_id })
+	world:spawn(director_def_id, { id = director_instance_id })
 end
 
 init()

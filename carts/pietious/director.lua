@@ -54,7 +54,7 @@ local customvisualcomponent<const> = require('cartlib/component/customvisualcomp
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
@@ -127,7 +127,7 @@ function director:ensure_daemon_cloud_pool()
 	local clouds<const> = self.daemon_clouds
 	for i = 1, flow_daemon_cloud_max do
 		if clouds[i] == nil then
-			clouds[i] = prefab.spawn('daemon_cloud', {
+			clouds[i] = world:spawn('daemon_cloud', {
 				id = 'dc.' .. tostring(i),
 				space_id = 'main',
 				pos = { x = 0, y = 0, z = 23 },

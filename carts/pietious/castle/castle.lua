@@ -1,6 +1,6 @@
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -305,7 +305,7 @@ function castle:spawn_global_elevators()
 		local elevator_id<const> = 'e.p' .. tostring(i)
 		if world:get(elevator_id) == nil then
 			local start<const> = route.path[1]
-			prefab.spawn('elevator_platform', {
+			world:spawn('elevator_platform', {
 				id = elevator_id,
 				space_id = 'main',
 				pos = { x = start.x, y = start.y, z = 21 },
@@ -357,7 +357,7 @@ function castle:sync_current_room_seal_instance()
 	end
 
 	if seal_instance == nil then
-		seal_instance = prefab.spawn('seal', {
+		seal_instance = world:spawn('seal', {
 			id = seal.id,
 			space_id = active_space,
 			pos = { x = seal.x, y = seal.y, z = 23 },

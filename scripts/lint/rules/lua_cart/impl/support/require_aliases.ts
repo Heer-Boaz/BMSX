@@ -7,7 +7,6 @@ import { isConstantModulePath } from './object_ownership';
 import {
 	CART_MODULE_CALL_FSM_REGISTER,
 	CART_MODULE_CALL_PREFAB_DEFINE,
-	CART_MODULE_CALL_PREFAB_SPAWN,
 	type CartModuleCallKind,
 	type CartModuleCallMap,
 	type ShadowedRequireAliasBinding,
@@ -287,13 +286,13 @@ function classifyCartModuleCall(
 	if (alias.module === 'cartlib/fsm/library' && member === 'register') {
 		return CART_MODULE_CALL_FSM_REGISTER;
 	}
-	if (alias.module !== 'cartlib/prefab') {
+	if (alias.module !== 'cartlib/world/prefab') {
 		return undefined;
 	}
 	if (member === 'define') {
 		return CART_MODULE_CALL_PREFAB_DEFINE;
 	}
-	return member === 'spawn' ? CART_MODULE_CALL_PREFAB_SPAWN : undefined;
+	return undefined;
 }
 
 export function isRequireCallExpression(expression: Expression | undefined): boolean {

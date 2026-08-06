@@ -11,7 +11,7 @@
 
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
 local textcomponent<const> = require('cartlib/text/textcomponent')
 require('constants')

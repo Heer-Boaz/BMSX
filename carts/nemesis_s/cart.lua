@@ -6,7 +6,6 @@ gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
-local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -30,15 +29,15 @@ end
 
 function new_game()
 	world:clear()
-	prefab.spawn(stage_module.stage_def_id, {
+	world:spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	prefab.spawn(director_module.director_def_id, {
+	world:spawn(director_module.director_def_id, {
 		id = director_module.director_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	prefab.spawn(player_module.player_def_id, {
+	world:spawn(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		player_index = 1,
 		pos = { x = player_start_x, y = player_start_y, z = 70 },

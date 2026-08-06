@@ -1,4 +1,3 @@
-local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -83,7 +82,7 @@ end
 
 function enemy_base.spawn_death_effect(self)
 	local room<const> = world:get('room')
-	prefab.spawn('enemy_explosion', {
+	world:spawn('enemy_explosion', {
 		room_number = world:get('c').current_room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },

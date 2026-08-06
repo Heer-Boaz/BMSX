@@ -12,7 +12,7 @@
 --
 -- 2. SPAWN / DESPAWN IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
 --    Never add objects to the internal tables directly.
---    world:spawn(obj)         — calls obj:onspawn(), adds to active space
+--    world:spawn(definition_id, options) — constructs and admits one object
 --    world:despawn(obj) — requests the one world-owned despawn transition
 --
 -- 3. QUERY SCOPE IS EXPLICIT.
@@ -31,6 +31,7 @@ local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local gp0<const> = require('cartlib/gx/gp0')
 local presentation_config<const> = require('bmsx/presentation_config')
+local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local space<const> = require('cartlib/world/space')
 local systemmanager<const> = require('cartlib/world/systemmanager')
@@ -475,6 +476,14 @@ function worldclass:_reserve_object(obj)
 	obj.space_id = obj.space_id or self.active_space_id
 end
 
+local apply_construction_values<const> = function(target, values)
+	for key, value in pairs(values) do
+		if key ~= 'pos' then
+			target[key] = value
+		end
+	end
+end
+
 function worldclass:_commit_spawn(obj)
 	obj._spawn_pending = nil
 	registry:register_object(obj)
@@ -508,10 +517,31 @@ function worldclass:_flush_spawns()
 	self._pending_spawn_count = 0
 end
 
--- A spawn is fully constructed before Registry, space and system views publish
--- it. During a tick group that publication or cancellation happens at the
--- group barrier.
-function worldclass:spawn(obj, pos)
+-- A prefab instance is fully constructed before Registry, space and system
+-- views publish it. During a tick group that publication or cancellation
+-- happens at the group barrier.
+function worldclass:spawn(definition_id, options)
+	local definition<const> = prefab.definition(definition_id)
+	local construction_options<const> = {}
+	apply_construction_values(construction_options, definition.defaults)
+	apply_construction_values(construction_options, options)
+	construction_options.definition_id = definition_id
+	construction_options.id = construction_options.id or registry:next_id(definition_id)
+
+	local obj<const> = definition.base.new(construction_options)
+	self:_reserve_object(obj)
+	apply_construction_values(obj, construction_options)
+	setmetatable(obj, definition.instance_metatable)
+	local component_options<const> = { parent = obj }
+	local component_factories<const> = definition.components
+	for index = 1, #component_factories do
+		obj:add_component(component_factories[index](component_options))
+	end
+	local ctor<const> = definition.ctor
+	if ctor then
+		ctor(obj, options, definition_id)
+	end
+
 	local deferred<const> = self._current_tick_group ~= nil
 	if deferred then
 		obj._spawn_pending = true
@@ -520,6 +550,7 @@ function worldclass:spawn(obj, pos)
 		self._pending_spawns[index] = obj
 		self._pending_mutation_mask = self._pending_mutation_mask | mutation_spawn
 	end
+	local pos<const> = options.pos
 	if pos then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y

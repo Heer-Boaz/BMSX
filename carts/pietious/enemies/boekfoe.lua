@@ -1,4 +1,4 @@
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -42,7 +42,7 @@ function boekfoe.bt_tick(self, blackboard)
 	if spawn_ticks <= 0 then
 		local y_speed_num<const> = math.random(-5, 4)
 		world:get('c').events:emit('paperspawn')
-		prefab.spawn('enemy.paperfoe', {
+		world:spawn('enemy.paperfoe', {
 			direction = self.direction == 'left' and 'left' or 'right',
 			speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
 			speed_y_num = y_speed_num,

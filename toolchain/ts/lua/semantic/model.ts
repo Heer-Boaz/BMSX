@@ -393,14 +393,14 @@ type AssignmentTargetInfo = {
 
 const CARTLIB_CALL_NONE = 0;
 const CARTLIB_CALL_PREFAB_DEFINE = 1;
-const CARTLIB_CALL_PREFAB_SPAWN = 2;
+const CARTLIB_CALL_WORLD_SPAWN = 2;
 const CARTLIB_CALL_WORLD_GET = 3;
 const CARTLIB_CALL_REGISTRY_GET = 4;
 
 type CartlibCallKind =
 	| typeof CARTLIB_CALL_NONE
 	| typeof CARTLIB_CALL_PREFAB_DEFINE
-	| typeof CARTLIB_CALL_PREFAB_SPAWN
+	| typeof CARTLIB_CALL_WORLD_SPAWN
 	| typeof CARTLIB_CALL_WORLD_GET
 	| typeof CARTLIB_CALL_REGISTRY_GET;
 
@@ -2203,7 +2203,7 @@ class SemanticBuilder {
 			}
 			return null;
 		}
-		if (callKind === CARTLIB_CALL_PREFAB_SPAWN) {
+		if (callKind === CARTLIB_CALL_WORLD_SPAWN) {
 			const prefabId = extractStringLiteral(callExpression.arguments[0]);
 			if (!prefabId) {
 				return null;
@@ -2235,7 +2235,6 @@ class SemanticBuilder {
 
 	private classifyCartlibCall(callExpression: LuaCallExpression): CartlibCallKind {
 		let trailingMember = callExpression.methodName;
-		let leadingMember: string = null;
 		let memberCount = trailingMember ? 1 : 0;
 		let expression = callExpression.callee;
 		while (expression.kind === LuaSyntaxKind.MemberExpression
@@ -2250,50 +2249,36 @@ class SemanticBuilder {
 				member = expression.index.value;
 			}
 			memberCount += 1;
-			if (memberCount > 2) {
+			if (memberCount > 1) {
 				return CARTLIB_CALL_NONE;
 			}
-			if (trailingMember) {
-				leadingMember = member;
-			} else {
-				trailingMember = member;
-			}
+			trailingMember = member;
 			expression = expression.base;
 		}
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
 			return CARTLIB_CALL_NONE;
 		}
 		const alias = this.immutableModuleAliasForName(expression.name);
-		if (!alias || alias.memberPath.length + memberCount > 2) {
+		if (!alias || alias.memberPath.length + memberCount > 1) {
 			return CARTLIB_CALL_NONE;
 		}
-		if (alias.memberPath.length === 2) {
-			leadingMember = alias.memberPath[0];
-			trailingMember = alias.memberPath[1];
-		} else if (alias.memberPath.length === 1) {
-			if (memberCount === 0) {
-				trailingMember = alias.memberPath[0];
-			} else {
-				leadingMember = alias.memberPath[0];
-			}
+		if (alias.memberPath.length === 1) {
+			trailingMember = alias.memberPath[0];
 		}
 		const totalMemberCount = alias.memberPath.length + memberCount;
-		if (alias.module === 'cartlib/prefab' && totalMemberCount === 1) {
+		if (alias.module === 'cartlib/world/prefab' && totalMemberCount === 1) {
 			if (trailingMember === 'define') {
 				return CARTLIB_CALL_PREFAB_DEFINE;
 			}
+			return CARTLIB_CALL_NONE;
+		}
+		if (alias.module === 'cartlib/world/world' && totalMemberCount === 1) {
 			if (trailingMember === 'spawn') {
-				return CARTLIB_CALL_PREFAB_SPAWN;
+				return CARTLIB_CALL_WORLD_SPAWN;
 			}
-			return CARTLIB_CALL_NONE;
+			return trailingMember === 'get' ? CARTLIB_CALL_WORLD_GET : CARTLIB_CALL_NONE;
 		}
-		if (totalMemberCount !== 2 || leadingMember !== 'instance' || trailingMember !== 'get') {
-			return CARTLIB_CALL_NONE;
-		}
-		if (alias.module === 'cartlib/world/world') {
-			return CARTLIB_CALL_WORLD_GET;
-		}
-		return alias.module === 'cartlib/registry'
+		return alias.module === 'cartlib/registry' && totalMemberCount === 1 && trailingMember === 'get_object'
 			? CARTLIB_CALL_REGISTRY_GET
 			: CARTLIB_CALL_NONE;
 	}

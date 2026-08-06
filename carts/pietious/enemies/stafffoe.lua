@@ -1,4 +1,4 @@
-local prefab<const> = require('cartlib/prefab')
+local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -54,7 +54,7 @@ function stafffoe.bt_tick(self, blackboard)
 		local vector_index<const> = ((base_vector_index + (i * 4)) % 16) + 1
 		local speed_x_num<const> = staff_shot_speed_x[vector_index]
 		local speed_y_num<const> = staff_shot_speed_y[vector_index]
-		prefab.spawn('enemy.staffspawn', {
+		world:spawn('enemy.staffspawn', {
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,
 			speed_y_num = speed_y_num,
