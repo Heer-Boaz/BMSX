@@ -1,4 +1,4 @@
--- sprite_object built atop worldobject
+-- spriteobject built atop worldobject
 --
 -- DESIGN PRINCIPLES — image suffixes and collision geometry
 --
@@ -34,24 +34,23 @@
 
 local worldobject<const> = require('cartlib/world/worldobject')
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local sprite_component<const> = require('cartlib/component/spritecomponent')
+local spritecomponent<const> = require('cartlib/component/spritecomponent')
 
-local sprite_object<const> = {}
-sprite_object.__index = sprite_object
-setmetatable(sprite_object, { __index = worldobject })
+local spriteobject<const> = {}
+spriteobject.__index = spriteobject
+setmetatable(spriteobject, { __index = worldobject })
 
-sprite_object.base_sprite_id = 'base_sprite'
-sprite_object.primary_collider_id = 'primary'
+local base_sprite_id<const> = 'base_sprite'
+local primary_collider_id<const> = 'primary'
 
-function sprite_object.new(opts)
-	opts = opts or {}
-	local self<const> = setmetatable(worldobject.new(opts), sprite_object)
+function spriteobject.new(opts)
+	local self<const> = setmetatable(worldobject.new(opts), spriteobject)
 
-	self.sprite_component = sprite_component.new({
+	self.sprite_component = spritecomponent.new({
 		imgid = opts.imgid,
-		id_local = sprite_object.base_sprite_id,
+		id_local = base_sprite_id,
 	})
-	self.collider = collider2dcomponent.new({ id_local = sprite_object.primary_collider_id })
+	self.collider = collider2dcomponent.new({ id_local = primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
@@ -66,7 +65,7 @@ end
 
 -- Sets the sprite component's semantic image id and updates the object's size
 -- from the resolved image owned by that component.
-function sprite_object:set_imgid(id)
+function spriteobject:set_imgid(id)
 	self.sprite_component:set_imgid(id)
 	if id == nil then
 		return
@@ -75,4 +74,4 @@ function sprite_object:set_imgid(id)
 	self.sy = self.sprite_component.source_height
 end
 
-return sprite_object
+return spriteobject

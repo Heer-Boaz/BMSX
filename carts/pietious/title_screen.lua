@@ -1,11 +1,11 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
-local sprite_component<const> = require('cartlib/component/spritecomponent')
+local spritecomponent<const> = require('cartlib/component/spritecomponent')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
@@ -130,7 +130,7 @@ function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:set_imgid('title_screen')
 	self:set_z(350)
-	self.sparkle_sprite = sprite_component.new({
+	self.sparkle_sprite = spritecomponent.new({
 		id_local = 'sparkle',
 		offset_z = 1,
 	})
@@ -222,7 +222,7 @@ local register_title_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
-		base = sprite_object,
+		base = spriteobject,
 		components = { timelinecomponent.new, fsm_component.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})

@@ -1,7 +1,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
@@ -107,7 +107,7 @@ local register_elevator_definition<const> = function()
 	prefab.define({
 		def_id = 'elevator_platform',
 		class = elevator,
-		base = sprite_object,
+		base = spriteobject,
 		components = { fsm_component.factory({ 'elevator_platform' }) },
 		defaults = {
 			path = nil,

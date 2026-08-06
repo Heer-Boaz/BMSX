@@ -5,7 +5,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
 local bin<const> = require('cartlib/bin')
@@ -560,7 +560,7 @@ function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
-	self.stage_visual = self:get_component(custom_visual_component)
+	self.stage_visual = self:get_component(customvisualcomponent)
 	self.stage_visual.producer = stage.draw
 end
 
@@ -615,7 +615,7 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
-			custom_visual_component.new,
+			customvisualcomponent.new,
 			timelinecomponent.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},

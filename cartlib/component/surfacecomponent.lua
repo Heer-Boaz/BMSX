@@ -1,19 +1,19 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visual_component<const> = require('cartlib/component/visualcomponent')
+local visualcomponent<const> = require('cartlib/component/visualcomponent')
 
-local surface_component<const> = {}
-surface_component.__index = surface_component
-setmetatable(surface_component, { __index = visual_component })
+local surfacecomponent<const> = {}
+surfacecomponent.__index = surfacecomponent
+setmetatable(surfacecomponent, { __index = visualcomponent })
 
-function surface_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), surface_component)
+function surfacecomponent.new(opts)
+	local self<const> = setmetatable(visualcomponent.new(opts), surfacecomponent)
 	self.color = opts.color or 0xffffffff
 	self:set_imgid(opts.imgid)
 	return self
 end
 
-function surface_component:set_imgid(imgid)
+function surfacecomponent:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
 		self._source = image.resolve(imgid)
@@ -22,7 +22,7 @@ function surface_component:set_imgid(imgid)
 	end
 end
 
-function surface_component:draw(draw)
+function surfacecomponent:draw(draw)
 	local source<const> = self._source
 	if not source then
 		return
@@ -37,4 +37,4 @@ function surface_component:draw(draw)
 	end
 end
 
-return surface_component
+return surfacecomponent

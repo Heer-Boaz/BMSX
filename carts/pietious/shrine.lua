@@ -5,7 +5,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local textcomponent<const> = require('cartlib/text/textcomponent')
 require('constants')
 local font_module<const> = require('cartlib/font')
@@ -76,7 +76,7 @@ local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
-		base = sprite_object,
+		base = spriteobject,
 		defaults = {
 		},
 	})

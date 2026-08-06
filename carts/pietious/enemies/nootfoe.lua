@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
@@ -45,7 +45,7 @@ function nootfoe.register()
 	prefab.define({
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
-		base = sprite_object,
+		base = spriteobject,
 		components = { bt_component.factory(root.id) },
 		defaults = {
 			trigger = nil,

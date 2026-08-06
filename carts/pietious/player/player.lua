@@ -77,7 +77,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
@@ -88,7 +88,7 @@ local castle_map<const> = require('castle/map')
 local actioneffects<const> = require('cartlib/actioneffects')
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
-local sprite_component<const> = require('cartlib/component/spritecomponent')
+local spritecomponent<const> = require('cartlib/component/spritecomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local collision2d<const> = require('cartlib/collision/collision2d')
 local player_abilities<const> = require('player/abilities')
@@ -382,7 +382,7 @@ function player:ctor()
 	self.sword_collider:set_enabled(false)
 	self:add_component(self.sword_collider)
 
-	self.sword_sprite = sprite_component.new({
+	self.sword_sprite = spritecomponent.new({
 		id_local = 'sword',
 		imgid = 'sword_r',
 		offset_z = 111,
@@ -3184,7 +3184,7 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = 'player',
 		class = player,
-		base = sprite_object,
+		base = spriteobject,
 		components = {
 			timelinecomponent.new,
 			fsm_component.factory({ 'player' }),

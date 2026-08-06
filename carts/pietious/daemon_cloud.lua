@@ -1,7 +1,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 
@@ -67,7 +67,7 @@ local register_daemon_cloud_definition<const> = function()
 	prefab.define({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
-		base = sprite_object,
+		base = spriteobject,
 		components = { timelinecomponent.new, fsm_component.factory({ 'daemon_cloud' }) },
 		defaults = {
 			daemon_cloud_fx = true,

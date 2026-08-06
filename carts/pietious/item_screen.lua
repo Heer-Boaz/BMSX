@@ -3,7 +3,7 @@ local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
@@ -74,7 +74,7 @@ local item_screen_mode_exit_events<const> = {
 }
 
 function item_screen:ctor()
-	self:get_component(custom_visual_component).producer = item_screen.draw_screen
+	self:get_component(customvisualcomponent).producer = item_screen.draw_screen
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
@@ -254,7 +254,7 @@ local register_item_screen_definition<const> = function()
 		def_id = 'item_screen',
 		class = item_screen,
 		components = {
-			custom_visual_component.new,
+			customvisualcomponent.new,
 			timelinecomponent.new,
 			fsm_component.factory({ 'item_screen' }),
 		},

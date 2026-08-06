@@ -18,7 +18,7 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local textcomponent<const> = require('cartlib/text/textcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(custom_visual_component).producer = draw_transition_visual
+	self:get_component(customvisualcomponent).producer = draw_transition_visual
 	self.timelines:define({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
@@ -101,7 +101,7 @@ local register_transition_definition<const> = function()
 		def_id = 'transition',
 		class = transition,
 		components = {
-			custom_visual_component.new,
+			customvisualcomponent.new,
 			textcomponent.new,
 			timelinecomponent.new,
 			fsm_component.factory({ 'transition' }),

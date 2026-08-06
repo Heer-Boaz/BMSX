@@ -6,7 +6,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
-local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
+local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 local world<const> = require('cartlib/world/world')
@@ -689,7 +689,7 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc<const> = self:get_component(custom_visual_component)
+	local rc<const> = self:get_component(customvisualcomponent)
 	rc.producer = player.draw_visual
 end
 
@@ -823,7 +823,7 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		components = {
-			custom_visual_component.new,
+			customvisualcomponent.new,
 			timelinecomponent.new,
 			fsm_component.factory({ ids_player_fsm }),
 			actioneffects.actioneffect_component.factory({ player_abilities.effect_ids.fire_salvo }),

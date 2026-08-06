@@ -1,16 +1,16 @@
 local font_module<const> = require('cartlib/font')
 local image<const> = require('cartlib/gx/image')
 local gp0<const> = require('cartlib/gx/gp0')
-local visual_component<const> = require('cartlib/component/visualcomponent')
+local visualcomponent<const> = require('cartlib/component/visualcomponent')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
 
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
-setmetatable(textcomponent, { __index = visual_component })
+setmetatable(textcomponent, { __index = visualcomponent })
 
 function textcomponent.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), textcomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts), textcomponent)
 	self.font = opts.font or font_module.get('default')
 	self.font_id = self.font.id
 	self.line_height = opts.line_height or self.font.line_height

@@ -1,13 +1,13 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visual_component<const> = require('cartlib/component/visualcomponent')
+local visualcomponent<const> = require('cartlib/component/visualcomponent')
 
-local tile_layer_component<const> = {}
-tile_layer_component.__index = tile_layer_component
-setmetatable(tile_layer_component, { __index = visual_component })
+local tilelayercomponent<const> = {}
+tilelayercomponent.__index = tilelayercomponent
+setmetatable(tilelayercomponent, { __index = visualcomponent })
 
-function tile_layer_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), tile_layer_component)
+function tilelayercomponent.new(opts)
+	local self<const> = setmetatable(visualcomponent.new(opts), tilelayercomponent)
 	self.imgids = {}
 	self._sources = {}
 	self.tile_count = 0
@@ -24,7 +24,7 @@ function tile_layer_component.new(opts)
 	return self
 end
 
-function tile_layer_component:set_tile(index, imgid)
+function tilelayercomponent:set_tile(index, imgid)
 	self.imgids[index] = imgid
 	if imgid then
 		self._sources[index] = image.resolve(imgid)
@@ -33,7 +33,7 @@ function tile_layer_component:set_tile(index, imgid)
 	end
 end
 
-function tile_layer_component:set_tile_count(tile_count)
+function tilelayercomponent:set_tile_count(tile_count)
 	local imgids<const> = self.imgids
 	local sources<const> = self._sources
 	for index = tile_count + 1, self.tile_count do
@@ -43,7 +43,7 @@ function tile_layer_component:set_tile_count(tile_count)
 	self.tile_count = tile_count
 end
 
-function tile_layer_component:fill(imgid, tile_count, columns)
+function tilelayercomponent:fill(imgid, tile_count, columns)
 	local source<const> = image.resolve(imgid)
 	local imgids<const> = self.imgids
 	local sources<const> = self._sources
@@ -59,7 +59,7 @@ function tile_layer_component:fill(imgid, tile_count, columns)
 	self.columns = columns
 end
 
-function tile_layer_component:set_indexed_tiles(indices, index_count, imgid)
+function tilelayercomponent:set_indexed_tiles(indices, index_count, imgid)
 	local source<const> = image.resolve(imgid)
 	local imgids<const> = self.imgids
 	local sources<const> = self._sources
@@ -70,7 +70,7 @@ function tile_layer_component:set_indexed_tiles(indices, index_count, imgid)
 	end
 end
 
-function tile_layer_component:draw(draw)
+function tilelayercomponent:draw(draw)
 	local parent<const> = self.parent
 	image.draw_tiles(
 		draw,
@@ -83,4 +83,4 @@ function tile_layer_component:draw(draw)
 		gp0.draw_mode_blend_half)
 end
 
-return tile_layer_component
+return tilelayercomponent

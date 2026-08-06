@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
@@ -90,7 +90,7 @@ function boekfoe.register()
 	prefab.define({
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
-		base = sprite_object,
+		base = spriteobject,
 		components = { bt_component.factory(root.id) },
 		defaults = {
 			conditions = {},

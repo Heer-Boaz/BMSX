@@ -1,5 +1,5 @@
 local prefab<const> = require('cartlib/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -134,7 +134,7 @@ function cloud.register()
 	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,
-		base = sprite_object,
+		base = spriteobject,
 		components = { bt_component.factory(root.id) },
 		defaults = {
 			conditions = {},

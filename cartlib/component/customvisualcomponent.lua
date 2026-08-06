@@ -1,17 +1,17 @@
-local visual_component<const> = require('cartlib/component/visualcomponent')
+local visualcomponent<const> = require('cartlib/component/visualcomponent')
 
-local custom_visual_component<const> = {}
-custom_visual_component.__index = custom_visual_component
-setmetatable(custom_visual_component, { __index = visual_component })
+local customvisualcomponent<const> = {}
+customvisualcomponent.__index = customvisualcomponent
+setmetatable(customvisualcomponent, { __index = visualcomponent })
 
-function custom_visual_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), custom_visual_component)
+function customvisualcomponent.new(opts)
+	local self<const> = setmetatable(visualcomponent.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
 end
 
-function custom_visual_component:draw(draw)
+function customvisualcomponent:draw(draw)
 	self.producer(self.parent, draw)
 end
 
-return custom_visual_component
+return customvisualcomponent

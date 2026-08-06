@@ -1,13 +1,13 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visual_component<const> = require('cartlib/component/visualcomponent')
+local visualcomponent<const> = require('cartlib/component/visualcomponent')
 
-local sprite_component<const> = {}
-sprite_component.__index = sprite_component
-setmetatable(sprite_component, { __index = visual_component })
+local spritecomponent<const> = {}
+spritecomponent.__index = spritecomponent
+setmetatable(spritecomponent, { __index = visualcomponent })
 
-function sprite_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), sprite_component)
+function spritecomponent.new(opts)
+	local self<const> = setmetatable(visualcomponent.new(opts), spritecomponent)
 	self.flip_h = false
 	self.flip_v = false
 	self.color = opts.color or 0xffffffff
@@ -19,7 +19,7 @@ function sprite_component.new(opts)
 	return self
 end
 
-function sprite_component:set_imgid(imgid)
+function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
 		local source<const> = image.resolve(imgid)
@@ -33,7 +33,7 @@ function sprite_component:set_imgid(imgid)
 	end
 end
 
-function sprite_component:on_detach()
+function spritecomponent:on_detach()
 	if self._collider then
 		self._collider:set_sprite(nil)
 	end
@@ -42,7 +42,7 @@ function sprite_component:on_detach()
 	end
 end
 
-function sprite_component:draw(draw)
+function spritecomponent:draw(draw)
 	local source<const> = self._source
 	if not source then
 		return
@@ -74,4 +74,4 @@ function sprite_component:draw(draw)
 		gp0.draw_mode_blend_half)
 end
 
-return sprite_component
+return spritecomponent
