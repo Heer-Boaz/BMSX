@@ -461,6 +461,7 @@ function world_class:_reserve_object(obj)
 end
 
 function world_class:_commit_spawn(obj)
+	obj._spawn_pending = nil
 	registry:register_object(obj)
 	local components<const> = obj._components
 	for i = 1, #components do
@@ -480,17 +481,25 @@ function world_class:_flush_spawns()
 	while index <= self._pending_spawn_count do
 		local obj<const> = pending[index]
 		pending[index] = nil
-		self:_commit_spawn(obj)
+		-- A spawn canceled in the same structural scope never enters the
+		-- published Registry, space, or system views.
+		if obj._despawn_pending then
+			self:_commit_despawn(obj)
+		else
+			self:_commit_spawn(obj)
+		end
 		index = index + 1
 	end
 	self._pending_spawn_count = 0
 end
 
 -- A spawn is fully constructed before Registry, space and system views publish
--- it. During a tick group that publication happens at the group barrier.
+-- it. During a tick group that publication or cancellation happens at the
+-- group barrier.
 function world_class:spawn(obj, pos)
 	local deferred<const> = self._current_tick_group ~= nil
 	if deferred then
+		obj._spawn_pending = true
 		local index<const> = self._pending_spawn_count + 1
 		self._pending_spawn_count = index
 		self._pending_spawns[index] = obj
@@ -517,20 +526,28 @@ end
 function world_class:_commit_despawn(obj)
 	obj.active = false
 	local components<const> = obj._components
-	for i = 1, #components do
-		self:_reconcile_active_component(components[i])
-	end
-	self:_reconcile_active_object(obj)
+	if obj._spawn_pending then
+		for i = 1, #components do
+			registry:deregister(components[i])
+		end
+		registry:deregister(obj)
+		obj._spawn_pending = nil
+	else
+		for i = 1, #components do
+			self:_reconcile_active_component(components[i])
+		end
+		self:_reconcile_active_object(obj)
 
-	for i = 1, #components do
-		local comp<const> = components[i]
-		registry:deregister_component(comp)
-		comp._published = nil
+		for i = 1, #components do
+			local comp<const> = components[i]
+			registry:deregister_component(comp)
+			comp._published = nil
+		end
+		registry:deregister_object(obj)
+		obj._space:remove_object(obj)
+		self:_remove_worldobject(obj)
+		obj._published = nil
 	end
-	registry:deregister_object(obj)
-	obj._space:remove_object(obj)
-	self:_remove_worldobject(obj)
-	obj._published = nil
 
 	obj:ondespawn()
 	obj:dispose()
@@ -547,6 +564,9 @@ function world_class:despawn(obj)
 		return
 	end
 	obj._despawn_pending = true
+	if obj._spawn_pending then
+		return
+	end
 	if self._current_tick_group == nil then
 		self:_commit_despawn(obj)
 		return
@@ -649,6 +669,7 @@ function world_class:_commit_tick_group()
 	if self._clear_pending then
 		self._clear_pending = false
 		self._system_manager:reset()
+		self:_recompute_visual_sequence()
 	end
 end
 
@@ -705,13 +726,29 @@ function world_class:_render_double_page()
 	gx_gpu.draw_target(self._draw_page, self._page_size)
 end
 
+function world_class:_recompute_visual_sequence()
+	local sequence = 0
+	local objects<const> = self._objects
+	for object_index = 1, #objects do
+		local components<const> = objects[object_index]._components
+		for component_index = 1, #components do
+			local component<const> = components[component_index]
+			if component.is_visual and component._active_space ~= nil and component._visual_sequence > sequence then
+				sequence = component._visual_sequence
+			end
+		end
+	end
+	self._visual_sequence = sequence
+end
+
 function world_class:_commit_clear()
+	self._visual_sequence = 0
 	local objects<const> = self._objects
 	while #objects > 0 do
 		self:despawn(objects[#objects])
 	end
 	self._system_manager:reset()
-	self._visual_sequence = 0
+	self:_recompute_visual_sequence()
 	self:set_space(self._initial_space_id)
 end
 
