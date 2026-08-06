@@ -56,8 +56,8 @@
 --    Carts program these raw bitmasks when constructing each collider.
 
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
 local clear_map<const> = require('cartlib/util/clear_map')
@@ -66,7 +66,7 @@ local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
 local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
-setmetatable(overlap2dsystem, { __index = system })
+setmetatable(overlap2dsystem, { __index = basesystem })
 
 -- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
@@ -127,7 +127,7 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 end
 
 function overlap2dsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap2dsystem)
+	local self<const> = setmetatable(basesystem.new(tickgroup.physics, 42), overlap2dsystem)
 	self._component_view = world:_active_component_view(collider2dcomponent)
 	self.prev_pairs = {}
 	self.next_pairs = {}

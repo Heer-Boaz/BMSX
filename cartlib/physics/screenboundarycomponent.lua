@@ -1,12 +1,12 @@
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 
-local screen_boundary_component<const> = {}
-screen_boundary_component.__index = screen_boundary_component
-screen_boundary_component.unique = true
-setmetatable(screen_boundary_component, { __index = component })
+local screenboundarycomponent<const> = {}
+screenboundarycomponent.__index = screenboundarycomponent
+screenboundarycomponent.unique = true
+setmetatable(screenboundarycomponent, { __index = basecomponent })
 
-function screen_boundary_component.new(opts)
-	local self<const> = setmetatable(component.new(opts), screen_boundary_component)
+function screenboundarycomponent.new(opts)
+	local self<const> = setmetatable(basecomponent.new(opts), screenboundarycomponent)
 	self.old_x = 0
 	self.old_y = 0
 	self.left = opts.left
@@ -16,7 +16,7 @@ function screen_boundary_component.new(opts)
 	return self
 end
 
-function screen_boundary_component:resolve_leaving(_direction, _previous_position)
+function screenboundarycomponent:resolve_leaving(_direction, _previous_position)
 end
 
-return screen_boundary_component
+return screenboundarycomponent

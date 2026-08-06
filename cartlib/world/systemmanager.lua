@@ -1,7 +1,7 @@
 local clock<const> = require('cartlib/clock')
 
-local system_manager<const> = {}
-system_manager.__index = system_manager
+local systemmanager<const> = {}
+systemmanager.__index = systemmanager
 
 local system_priority_less<const> = function(a, b)
 	if a.group ~= b.group then
@@ -13,7 +13,7 @@ local system_priority_less<const> = function(a, b)
 	return a._configuration_index < b._configuration_index
 end
 
-function system_manager.new(world)
+function systemmanager.new(world)
 	return setmetatable({
 		_world = world,
 		_systems = {},
@@ -22,10 +22,10 @@ function system_manager.new(world)
 		_system_counts = {},
 		_tick_group_count = 0,
 		_delta_time = clock.frame_milliseconds(),
-	}, system_manager)
+	}, systemmanager)
 end
 
-function system_manager:configure(system_classes)
+function systemmanager:configure(system_classes)
 	local systems<const> = {}
 	for system_index = 1, #system_classes do
 		local instance<const> = system_classes[system_index].new(self._world)
@@ -56,7 +56,7 @@ function system_manager:configure(system_classes)
 	self._tick_group_count = configured_tick_group_count
 end
 
-function system_manager:update()
+function systemmanager:update()
 	local world<const> = self._world
 	for tick_group_index = 1, self._tick_group_count do
 		world:_begin_tick_group(self._tick_groups[tick_group_index])
@@ -70,11 +70,11 @@ function system_manager:update()
 	end
 end
 
-function system_manager:reset()
+function systemmanager:reset()
 	local systems<const> = self._systems
 	for system_index = 1, #systems do
 		systems[system_index]:clear()
 	end
 end
 
-return system_manager
+return systemmanager

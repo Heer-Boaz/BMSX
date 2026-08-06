@@ -1,15 +1,15 @@
-local screen_boundary_component<const> = require('cartlib/physics/screenboundarycomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local screenboundarycomponent<const> = require('cartlib/physics/screenboundarycomponent')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
-local screen_boundary_system<const> = {}
-screen_boundary_system.__index = screen_boundary_system
-setmetatable(screen_boundary_system, { __index = system })
+local screenboundarysystem<const> = {}
+screenboundarysystem.__index = screenboundarysystem
+setmetatable(screenboundarysystem, { __index = basesystem })
 
-function screen_boundary_system.new(world)
-	local self<const> = setmetatable(system.new(tick_group.physics, 30), screen_boundary_system)
-	self._component_view = world:_active_component_view(screen_boundary_component)
+function screenboundarysystem.new(world)
+	local self<const> = setmetatable(basesystem.new(tickgroup.physics, 30), screenboundarysystem)
+	self._component_view = world:_active_component_view(screenboundarycomponent)
 	-- Boundary payloads are synchronous system scratch, like overlap payloads.
 	-- Handlers consume their fields during dispatch rather than retaining them.
 	self._event_payload = { direction = false, previous_position = 0 }
@@ -65,7 +65,7 @@ local emit_boundary_events<const> = function(payload, obj, component)
 	end
 end
 
-function screen_boundary_system:update()
+function screenboundarysystem:update()
 	local event_payload<const> = self._event_payload
 	local screen_boundary_components<const> = self._component_view.items
 	for i = #screen_boundary_components, 1, -1 do
@@ -75,4 +75,4 @@ function screen_boundary_system:update()
 	end
 end
 
-return screen_boundary_system
+return screenboundarysystem

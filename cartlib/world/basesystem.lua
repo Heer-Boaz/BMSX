@@ -1,14 +1,14 @@
-local system<const> = {}
-system.__index = system
+local basesystem<const> = {}
+basesystem.__index = basesystem
 
-function system.new(group, priority)
+function basesystem.new(group, priority)
 	return setmetatable({
 		group = group,
 		priority = priority,
-	}, system)
+	}, basesystem)
 end
 
-function system:clear()
+function basesystem:clear()
 end
 
-return system
+return basesystem

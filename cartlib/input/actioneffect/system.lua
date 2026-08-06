@@ -1,7 +1,7 @@
 local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
 local input<const> = require('cartlib/input/input')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
 local modes_allow<const> = function(owner, modes)
@@ -129,10 +129,10 @@ end
 
 local inputactioneffectsystem<const> = {}
 inputactioneffectsystem.__index = inputactioneffectsystem
-setmetatable(inputactioneffectsystem, { __index = system })
+setmetatable(inputactioneffectsystem, { __index = basesystem })
 
 function inputactioneffectsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.input, 10), inputactioneffectsystem)
+	local self<const> = setmetatable(basesystem.new(tickgroup.input, 10), inputactioneffectsystem)
 	self._component_view = world:_active_component_view(inputactioneffectcomponent)
 	self.frame = 0
 	return self

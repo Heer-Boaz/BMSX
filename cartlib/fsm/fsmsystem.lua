@@ -2,15 +2,15 @@
 -- Finite-state-machine ECS system.
 
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 local fsmsystem<const> = {}
 fsmsystem.__index = fsmsystem
-setmetatable(fsmsystem, { __index = system })
+setmetatable(fsmsystem, { __index = basesystem })
 
 function fsmsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.gameplay, 0), fsmsystem)
+	local self<const> = setmetatable(basesystem.new(tickgroup.gameplay, 0), fsmsystem)
 	self._component_view = world:_active_component_view(fsmcomponent)
 	return self
 end

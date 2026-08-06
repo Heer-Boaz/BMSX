@@ -2,15 +2,15 @@
 -- Tile-collision ECS system.
 
 local tilecollisioncomponent<const> = require('cartlib/collision/tilecollisioncomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
 local clear_map<const> = require('cartlib/util/clear_map')
 
 local tilecollisionsystem<const> = {}
 tilecollisionsystem.__index = tilecollisionsystem
-setmetatable(tilecollisionsystem, { __index = system })
+setmetatable(tilecollisionsystem, { __index = basesystem })
 
 local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
 	payload.phase = phase
@@ -21,7 +21,7 @@ local emit_tilecollision_event<const> = function(owner, component, event_type, p
 end
 
 function tilecollisionsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.physics, 45), tilecollisionsystem)
+	local self<const> = setmetatable(basesystem.new(tickgroup.physics, 45), tilecollisionsystem)
 	self._component_view = world:_active_component_view(tilecollisioncomponent)
 	return self
 end

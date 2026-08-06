@@ -1,16 +1,16 @@
-local screen_boundary_component<const> = require('cartlib/physics/screenboundarycomponent')
+local screenboundarycomponent<const> = require('cartlib/physics/screenboundarycomponent')
 
-local prohibit_leaving_screen_component<const> = {}
-prohibit_leaving_screen_component.__index = prohibit_leaving_screen_component
-setmetatable(prohibit_leaving_screen_component, { __index = screen_boundary_component })
+local prohibitleavingscreencomponent<const> = {}
+prohibitleavingscreencomponent.__index = prohibitleavingscreencomponent
+setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent })
 
-function prohibit_leaving_screen_component.new(opts)
-	local self<const> = setmetatable(screen_boundary_component.new(opts), prohibit_leaving_screen_component)
+function prohibitleavingscreencomponent.new(opts)
+	local self<const> = setmetatable(screenboundarycomponent.new(opts), prohibitleavingscreencomponent)
 	self.stick_to_edge = opts.stick_to_edge == nil or opts.stick_to_edge
 	return self
 end
 
-function prohibit_leaving_screen_component:resolve_leaving(direction, previous_position)
+function prohibitleavingscreencomponent:resolve_leaving(direction, previous_position)
 	local owner<const> = self.parent
 	if direction == 'left' then
 		owner.x = self.stick_to_edge and self.left or previous_position
@@ -23,4 +23,4 @@ function prohibit_leaving_screen_component:resolve_leaving(direction, previous_p
 	end
 end
 
-return prohibit_leaving_screen_component
+return prohibitleavingscreencomponent

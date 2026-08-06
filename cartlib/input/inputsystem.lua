@@ -3,8 +3,8 @@
 -- controller latch themselves.
 
 local input<const> = require('cartlib/input/input')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
 local input_control<const>: *word = 0x08000064
@@ -12,11 +12,11 @@ local input_sample_next_vblank<const> = 0x00000001
 
 local inputsystem<const> = {}
 inputsystem.__index = inputsystem
-setmetatable(inputsystem, { __index = system })
+setmetatable(inputsystem, { __index = basesystem })
 
 function inputsystem.new()
 	*input_control = input_sample_next_vblank
-	return setmetatable(system.new(tick_group.input, -200), inputsystem)
+	return setmetatable(basesystem.new(tickgroup.input, -200), inputsystem)
 end
 
 function inputsystem:update()

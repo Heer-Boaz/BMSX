@@ -2,15 +2,15 @@
 -- Behaviour-tree ECS system.
 
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 local btsystem<const> = {}
 btsystem.__index = btsystem
-setmetatable(btsystem, { __index = system })
+setmetatable(btsystem, { __index = basesystem })
 
 function btsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.input, 0), btsystem)
+	local self<const> = setmetatable(basesystem.new(tickgroup.input, 0), btsystem)
 	self._component_view = world:_active_component_view(btcomponent)
 	return self
 end

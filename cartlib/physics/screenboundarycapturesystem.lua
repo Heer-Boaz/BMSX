@@ -1,21 +1,21 @@
 -- Captures positions before gameplay movement for screen-boundary resolution.
 
-local screen_boundary_component<const> = require('cartlib/physics/screenboundarycomponent')
-local system<const> = require('cartlib/world/basesystem')
-local tick_group<const> = require('cartlib/world/tick_group')
+local screenboundarycomponent<const> = require('cartlib/physics/screenboundarycomponent')
+local basesystem<const> = require('cartlib/world/basesystem')
+local tickgroup<const> = require('cartlib/world/tickgroup')
 
 
-local screen_boundary_capture_system<const> = {}
-screen_boundary_capture_system.__index = screen_boundary_capture_system
-setmetatable(screen_boundary_capture_system, { __index = system })
+local screenboundarycapturesystem<const> = {}
+screenboundarycapturesystem.__index = screenboundarycapturesystem
+setmetatable(screenboundarycapturesystem, { __index = basesystem })
 
-function screen_boundary_capture_system.new(world)
-	local self<const> = setmetatable(system.new(tick_group.input, -100), screen_boundary_capture_system)
-	self._component_view = world:_active_component_view(screen_boundary_component)
+function screenboundarycapturesystem.new(world)
+	local self<const> = setmetatable(basesystem.new(tickgroup.input, -100), screenboundarycapturesystem)
+	self._component_view = world:_active_component_view(screenboundarycomponent)
 	return self
 end
 
-function screen_boundary_capture_system:update()
+function screenboundarycapturesystem:update()
 	local boundary_components<const> = self._component_view.items
 	for i = 1, #boundary_components do
 		local component<const> = boundary_components[i]
@@ -25,4 +25,4 @@ function screen_boundary_capture_system:update()
 	end
 end
 
-return screen_boundary_capture_system
+return screenboundarycapturesystem
