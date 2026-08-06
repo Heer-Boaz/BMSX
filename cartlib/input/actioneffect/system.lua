@@ -1,4 +1,4 @@
-local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
+local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
 local input<const> = require('cartlib/input/input')
 local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
@@ -127,18 +127,18 @@ local evaluate_component<const> = function(component, frame)
 	component.queued_event_count = 0
 end
 
-local input_actioneffectsystem<const> = {}
-input_actioneffectsystem.__index = input_actioneffectsystem
-setmetatable(input_actioneffectsystem, { __index = system })
+local inputactioneffectsystem<const> = {}
+inputactioneffectsystem.__index = inputactioneffectsystem
+setmetatable(inputactioneffectsystem, { __index = system })
 
-function input_actioneffectsystem.new(world)
-	local self<const> = setmetatable(system.new(tick_group.input, 10), input_actioneffectsystem)
-	self._component_view = world:_active_component_view(input_actioneffect_component)
+function inputactioneffectsystem.new(world)
+	local self<const> = setmetatable(system.new(tick_group.input, 10), inputactioneffectsystem)
+	self._component_view = world:_active_component_view(inputactioneffectcomponent)
 	self.frame = 0
 	return self
 end
 
-function input_actioneffectsystem:update()
+function inputactioneffectsystem:update()
 	local frame<const> = self.frame + 1
 	self.frame = frame
 	local components<const> = self._component_view.items
@@ -147,4 +147,4 @@ function input_actioneffectsystem:update()
 	end
 end
 
-return input_actioneffectsystem
+return inputactioneffectsystem

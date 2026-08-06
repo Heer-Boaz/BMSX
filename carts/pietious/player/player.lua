@@ -86,8 +86,9 @@ local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
 local actioneffects<const> = require('cartlib/actioneffects')
+local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
+local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local collision2d<const> = require('cartlib/collision/collision2d')
@@ -360,11 +361,11 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(actioneffects.actioneffect_component.new({}))
+	self:add_component(actioneffectcomponent.new({}))
 	self.actioneffects:grant_effect('halo')
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
-	self:add_component(input_actioneffect_component.new({
+	self:add_component(inputactioneffectcomponent.new({
 		program = player_abilities.build_input_actioneffect_program(),
 	}))
 	self:set_imgid('pietolon_stand_r')

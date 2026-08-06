@@ -2,7 +2,7 @@ local actioneffectsystem<const> = require('cartlib/actioneffects/actioneffectsys
 local btsystem<const> = require('cartlib/behaviourtree/btsystem')
 local elevator_system<const> = require('elevator/system')
 local fsmsystem<const> = require('cartlib/fsm/fsmsystem')
-local input_actioneffectsystem<const> = require('cartlib/input/actioneffect/system')
+local inputactioneffectsystem<const> = require('cartlib/input/actioneffect/system')
 local inputsystem<const> = require('cartlib/input/inputsystem')
 local overlap2dsystem<const> = require('cartlib/collision/overlap2dsystem')
 local screen_boundary_capture_system<const> = require('cartlib/physics/screenboundarycapturesystem')
@@ -23,7 +23,7 @@ return {
 	systems = {
 		inputsystem,
 		btsystem,
-		input_actioneffectsystem,
+		inputactioneffectsystem,
 		actioneffectsystem,
 		fsmsystem,
 		screen_boundary_capture_system,

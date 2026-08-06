@@ -1,13 +1,13 @@
 local compiler<const> = require('cartlib/input/actioneffect/compiler')
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 
-local input_actioneffect_component<const> = {}
-input_actioneffect_component.__index = input_actioneffect_component
-input_actioneffect_component.unique = true
-setmetatable(input_actioneffect_component, { __index = component })
+local inputactioneffectcomponent<const> = {}
+inputactioneffectcomponent.__index = inputactioneffectcomponent
+inputactioneffectcomponent.unique = true
+setmetatable(inputactioneffectcomponent, { __index = basecomponent })
 
-function input_actioneffect_component.new(opts)
-	local self<const> = setmetatable(component.new(opts), input_actioneffect_component)
+function inputactioneffectcomponent.new(opts)
+	local self<const> = setmetatable(basecomponent.new(opts), inputactioneffectcomponent)
 	self.source_program = opts.program
 	self.binding_latch = {}
 	self.binding_touched = {}
@@ -21,7 +21,7 @@ function input_actioneffect_component.new(opts)
 	return self
 end
 
-function input_actioneffect_component:on_activate()
+function inputactioneffectcomponent:on_activate()
 	if self.program == nil then
 		local owner<const> = self.parent
 		local program<const>, uses_effect_triggers<const> = compiler.compile_program(owner, self.source_program)
@@ -50,8 +50,8 @@ function input_actioneffect_component:on_activate()
 	self.last_frame = 0
 end
 
-function input_actioneffect_component:on_detach()
+function inputactioneffectcomponent:on_detach()
 	self.program = nil
 end
 
-return input_actioneffect_component
+return inputactioneffectcomponent

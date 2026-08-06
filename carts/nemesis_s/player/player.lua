@@ -1,4 +1,5 @@
 local actioneffects<const> = require('cartlib/actioneffects')
+local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
@@ -826,7 +827,7 @@ local register_player_definition<const> = function()
 			customvisualcomponent.new,
 			timelinecomponent.new,
 			fsmcomponent.factory({ ids_player_fsm }),
-			actioneffects.actioneffect_component.factory({ player_abilities.effect_ids.fire_salvo }),
+			actioneffectcomponent.factory({ player_abilities.effect_ids.fire_salvo }),
 		},
 		defaults = {
 			player_index = 1,
