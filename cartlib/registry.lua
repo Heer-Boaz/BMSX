@@ -1,11 +1,11 @@
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {
-	_by_id = {},
+	_claims_by_id = {},
+	_objects_by_id = {},
 	_objects_by_definition = {},
 	_components_by_class = {},
 	_by_tag = {},
-	_reservations = {},
 	_id_counter = 0,
 }
 
@@ -32,30 +32,26 @@ local add_component_class<const> = function(self, comp)
 	dense_set.add(bucket, comp)
 end
 
-local add_entity_tag<const> = function(self, entity, tag)
+local add_object_tag<const> = function(self, obj, tag)
 	local bucket = self._by_tag[tag]
 	if bucket == nil then
 		bucket = dense_set.new()
 		self._by_tag[tag] = bucket
 	end
-	dense_set.add(bucket, entity)
+	dense_set.add(bucket, obj)
 end
 
-local add_entity_tags<const> = function(self, entity)
-	local tags<const> = entity.tags
-	if tags ~= nil then
-		for tag in pairs(tags) do
-			add_entity_tag(self, entity, tag)
-		end
+local add_object_tags<const> = function(self, obj)
+	local tags<const> = obj.tags
+	for tag in pairs(tags) do
+		add_object_tag(self, obj, tag)
 	end
 end
 
-local remove_entity_tags<const> = function(self, entity)
-	local tags<const> = entity.tags
-	if tags ~= nil then
-		for tag in pairs(tags) do
-			dense_set.remove(self._by_tag[tag], entity)
-		end
+local remove_object_tags<const> = function(self, obj)
+	local tags<const> = obj.tags
+	for tag in pairs(tags) do
+		dense_set.remove(self._by_tag[tag], obj)
 	end
 end
 
@@ -80,33 +76,33 @@ end
 
 function registry:reserve(entity)
 	local id<const> = entity.id
-	if self._by_id[id] ~= nil or self._reservations[id] ~= nil then
+	if self._claims_by_id[id] ~= nil then
 		error('registry.reserve duplicate id "' .. id .. '"')
 	end
-	self._reservations[id] = entity
+	self._claims_by_id[id] = entity
 end
 
-function registry:get(id)
-	return self._by_id[id]
+function registry:get_object(id)
+	return self._objects_by_id[id]
 end
 
 function registry:is_id_claimed(id)
-	return self._by_id[id] ~= nil or self._reservations[id] ~= nil
+	return self._claims_by_id[id] ~= nil
 end
 
 function registry:register(entity)
-	local existing<const> = self._by_id[entity.id]
+	local existing<const> = self._claims_by_id[entity.id]
 	if existing ~= nil and existing ~= entity then
 		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
-	self._reservations[entity.id] = nil
-	self._by_id[entity.id] = entity
-	add_entity_tags(self, entity)
+	self._claims_by_id[entity.id] = entity
 end
 
 function registry:register_object(obj)
 	self:register(obj)
+	self._objects_by_id[obj.id] = obj
 	add_object_definition(self, obj)
+	add_object_tags(self, obj)
 end
 
 function registry:register_component(comp)
@@ -114,26 +110,27 @@ function registry:register_component(comp)
 	add_component_class(self, comp)
 end
 
-function registry:reconcile_tag(entity, tag)
+function registry:reconcile_tag(obj, tag)
 	local bucket<const> = self._by_tag[tag]
-	if entity.tags[tag] then
+	if obj.tags[tag] then
 		if bucket == nil then
-			add_entity_tag(self, entity, tag)
-		elseif bucket.indices[entity] == nil then
-			dense_set.add(bucket, entity)
+			add_object_tag(self, obj, tag)
+		elseif bucket.indices[obj] == nil then
+			dense_set.add(bucket, obj)
 		end
-	elseif bucket ~= nil and bucket.indices[entity] ~= nil then
-		dense_set.remove(bucket, entity)
+	elseif bucket ~= nil and bucket.indices[obj] ~= nil then
+		dense_set.remove(bucket, obj)
 	end
 end
 
 function registry:deregister(entity)
-	remove_entity_tags(self, entity)
-	self._by_id[entity.id] = nil
+	self._claims_by_id[entity.id] = nil
 end
 
 function registry:deregister_object(obj)
+	remove_object_tags(self, obj)
 	dense_set.remove(self._objects_by_definition[obj.definition_id], obj)
+	self._objects_by_id[obj.id] = nil
 	self:deregister(obj)
 end
 
@@ -152,7 +149,7 @@ function registry:components(component_class)
 	return bucket and bucket.items or empty_bucket
 end
 
-function registry:entities_by_tag(tag)
+function registry:objects_by_tag(tag)
 	local bucket<const> = self._by_tag[tag]
 	return bucket and bucket.items or empty_bucket
 end

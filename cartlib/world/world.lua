@@ -574,7 +574,7 @@ end
 --   The central Registry owns this direct lookup. A despawn requested during a
 --   tick group remains part of that group's retained snapshot until its barrier.
 function world_class:get(id)
-	return registry:get(id)
+	return registry:get_object(id)
 end
 
 function world_class:active_objects()
@@ -598,7 +598,7 @@ function world_class:active_objects_by_tag(tag)
 end
 
 function world_class:objects_by_tag(tag)
-	return registry:entities_by_tag(tag)
+	return registry:objects_by_tag(tag)
 end
 
 function world_class:_begin_tick_group(group)
