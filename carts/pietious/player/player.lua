@@ -74,8 +74,8 @@
 --    and (for shrine exit) emits a reply event ('shrine_exit_done') when the
 --    exit animation timeline completes.
 
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -3022,7 +3022,7 @@ local define_player_fsm<const> = function()
 		},
 	}
 
-	fsm_library.register('player', {
+	fsmlibrary.register('player', {
 		initial = 'quiet',
 		-- TAG DERIVATIONS — define group and visual tags from state variant tags.
 		--
@@ -3187,7 +3187,7 @@ local register_player_definition<const> = function()
 		base = spriteobject,
 		components = {
 			timelinecomponent.new,
-			fsm_component.factory({ 'player' }),
+			fsmcomponent.factory({ 'player' }),
 		},
 		defaults = {
 			imgid = 'pietolon_stand_r',

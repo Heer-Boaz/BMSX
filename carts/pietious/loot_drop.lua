@@ -1,5 +1,5 @@
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
@@ -31,7 +31,7 @@ function loot_drop:onspawn(_pos)
 end
 
 local define_loot_drop_fsm<const> = function()
-	fsm_library.register('loot_drop', {
+	fsmlibrary.register('loot_drop', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
@@ -59,7 +59,7 @@ local register_loot_drop_definition<const> = function()
 		def_id = 'loot_drop',
 		class = loot_drop,
 		base = spriteobject,
-		components = { fsm_component.factory({ 'loot_drop' }) },
+		components = { fsmcomponent.factory({ 'loot_drop' }) },
 		defaults = {
 			loot_type = 'life',
 			loot_value = enemy_loot_life_regen,

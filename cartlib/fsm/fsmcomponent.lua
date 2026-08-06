@@ -1,4 +1,4 @@
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 local definitions_by_id<const> = require('cartlib/fsm/definitions')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsm<const> = require('cartlib/fsm/fsm')
@@ -7,15 +7,15 @@ local bind_machine_state_path<const> = fsm.bind_state_path
 local machine_matches_state_path<const> = fsm.matches_state_path
 local transition_machine_state_path<const> = fsm.transition_state_path
 
-local fsm_component<const> = {}
-fsm_component.__index = fsm_component
-fsm_component.unique = true
-setmetatable(fsm_component, { __index = component })
+local fsmcomponent<const> = {}
+fsmcomponent.__index = fsmcomponent
+fsmcomponent.unique = true
+setmetatable(fsmcomponent, { __index = basecomponent })
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
-function fsm_component.new(opts, machine_ids)
-	local self<const> = setmetatable(component.new(opts), fsm_component)
+function fsmcomponent.new(opts, machine_ids)
+	local self<const> = setmetatable(basecomponent.new(opts), fsmcomponent)
 	self._machines_by_id = {}
 	self._machines = {}
 	self._machine_count = 0
@@ -28,24 +28,24 @@ function fsm_component.new(opts, machine_ids)
 	return self
 end
 
-function fsm_component.factory(machine_ids)
+function fsmcomponent.factory(machine_ids)
 	return function(opts)
-		return fsm_component.new(opts, machine_ids)
+		return fsmcomponent.new(opts, machine_ids)
 	end
 end
 
-function fsm_component:on_attach()
+function fsmcomponent:on_attach()
 	self.parent.state_machines = self
 end
 
-function fsm_component:on_detach()
+function fsmcomponent:on_detach()
 	self:dispose()
 	if self.parent.state_machines == self then
 		self.parent.state_machines = nil
 	end
 end
 
-function fsm_component:on_activate()
+function fsmcomponent:on_activate()
 	self:start()
 end
 
@@ -56,7 +56,7 @@ local append_bound_machine<const> = function(bound, machine, path)
 	bound[count * 2] = bind_machine_state_path(machine.definition, path)
 end
 
-function fsm_component:add_state_machine(id, definition)
+function fsmcomponent:add_state_machine(id, definition)
 	local machine<const> = state.new(definition, self.parent)
 	local index<const> = self._machine_count + 1
 	self._machine_count = index
@@ -123,7 +123,7 @@ local bind_machines<const> = function(self)
 	end
 end
 
-function fsm_component:rebind_state_machine(id, definition)
+function fsmcomponent:rebind_state_machine(id, definition)
 	local machine<const> = self._machines_by_id[id]
 	if machine == nil then
 		return
@@ -136,7 +136,7 @@ function fsm_component:rebind_state_machine(id, definition)
 	end
 end
 
-function fsm_component:auto_dispatch(event_type, emitter, payload, emitter_id)
+function fsmcomponent:auto_dispatch(event_type, emitter, payload, emitter_id)
 	local parent<const> = self.parent
 	if not self.enabled or not parent.active then
 		return
@@ -144,10 +144,10 @@ function fsm_component:auto_dispatch(event_type, emitter, payload, emitter_id)
 	self:dispatch(event_type, payload, emitter, emitter_id)
 end
 
--- fsm_component:start(): start all managed FSMs from their initial
+-- fsmcomponent:start(): start all managed FSMs from their initial
 -- state.  Called automatically by worldobject:activate(); do not call
 -- manually in normal cart code.
-function fsm_component:start()
+function fsmcomponent:start()
 	if self._started then
 		return
 	end
@@ -159,7 +159,7 @@ function fsm_component:start()
 	self._started = true
 end
 
-function fsm_component:update()
+function fsmcomponent:update()
 	local list<const> = self._machines
 	-- Components only tick machines whose active subtree can actually do frame
 	-- work. That keeps event-only and dormant FSMs out of the per-frame loop.
@@ -171,12 +171,12 @@ function fsm_component:update()
 	end
 end
 
--- fsm_component:dispatch(event_name, payload): deliver an event
+-- fsmcomponent:dispatch(event_name, payload): deliver an event
 -- to all FSMs managed by this controller.  The active state's `on` table and
 -- `input_event_handlers` are consulted.  Returns true if any state handled it.
 -- In cart code, call self.state_machines:dispatch() or use the FSM `on` table
 -- instead of raw dispatch where possible.
-function fsm_component:dispatch(event_name, payload, emitter, emitter_id)
+function fsmcomponent:dispatch(event_name, payload, emitter, emitter_id)
 	if emitter_id == nil then
 		emitter = self.parent
 		emitter_id = self.parent.id
@@ -191,7 +191,7 @@ function fsm_component:dispatch(event_name, payload, emitter, emitter_id)
 	return handled
 end
 
-function fsm_component:bind_state_path(path)
+function fsmcomponent:bind_state_path(path)
 	local paths = self._state_paths
 	if paths then
 		local bound<const> = paths[path]
@@ -227,7 +227,7 @@ function fsm_component:bind_state_path(path)
 	return bound
 end
 
-function fsm_component:matches_state(bound)
+function fsmcomponent:matches_state(bound)
 	for i = 1, bound.count do
 		if machine_matches_state_path(bound[i * 2 - 1], bound[i * 2]) then
 			return true
@@ -236,19 +236,19 @@ function fsm_component:matches_state(bound)
 	return false
 end
 
--- fsm_component:transition_to(path): directly navigate to a state
+-- fsmcomponent:transition_to(path): directly navigate to a state
 -- by absolute path, bypassing guard conditions and without requiring an event.
 -- In cart code, prefer returning a path string from an `on`-handler or
 -- `entering_state`; only call transition_to() for imperative external control
 -- (e.g. a debug command or test harness).
 -- Path format: 'machine_id:/state/substate' or just '/state' for the default
 -- machine.
-function fsm_component:transition_to(path)
+function fsmcomponent:transition_to(path)
 	local bound<const> = self:bind_state_path(path)
 	transition_machine_state_path(bound[1], bound[2])
 end
 
-function fsm_component:dispose()
+function fsmcomponent:dispose()
 	self._started = false
 	local list<const> = self._machines
 	for i = 1, self._machine_count do
@@ -257,4 +257,4 @@ function fsm_component:dispose()
 end
 
 
-return fsm_component
+return fsmcomponent

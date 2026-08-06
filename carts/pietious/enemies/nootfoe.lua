@@ -3,8 +3,8 @@ local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
-local behaviourtree_library<const> = require('cartlib/behaviourtree/library')
-local bt_component<const> = require('cartlib/behaviourtree/btcomponent')
+local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
+local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local nootfoe<const> = {}
@@ -41,12 +41,12 @@ enemy_base.extend(nootfoe, 'nootfoe')
 
 function nootfoe.register()
 	local root<const> = behaviourtree.action_node.new('enemy_nootfoe', nootfoe.bt_tick)
-	behaviourtree_library.register(root)
+	behaviourtreelibrary.register(root)
 	prefab.define({
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		base = spriteobject,
-		components = { bt_component.factory(root.id) },
+		components = { btcomponent.factory(root.id) },
 		defaults = {
 			trigger = nil,
 			conditions = {},

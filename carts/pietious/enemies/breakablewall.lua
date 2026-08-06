@@ -1,5 +1,5 @@
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
@@ -53,7 +53,7 @@ function breakablewall:ctor()
 end
 
 function breakablewall.register()
-	fsm_library.register('breakablewall', {
+	fsmlibrary.register('breakablewall', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
@@ -75,7 +75,7 @@ function breakablewall.register()
 		components = {
 			collider2dcomponent.new,
 			tilelayercomponent.new,
-			fsm_component.factory({ 'breakablewall' }),
+			fsmcomponent.factory({ 'breakablewall' }),
 		},
 		defaults = {
 			trigger = nil,

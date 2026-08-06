@@ -1,5 +1,5 @@
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
@@ -19,7 +19,7 @@ function world_item:onspawn(_pos)
 end
 
 local define_world_item_fsm<const> = function()
-	fsm_library.register('world_item', {
+	fsmlibrary.register('world_item', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
@@ -51,7 +51,7 @@ local register_world_item_definition<const> = function()
 		def_id = 'world_item',
 		class = world_item,
 		base = spriteobject,
-		components = { fsm_component.factory({ 'world_item' }) },
+		components = { fsmcomponent.factory({ 'world_item' }) },
 		defaults = {
 			item_id = nil,
 			item_type = nil,

@@ -51,8 +51,8 @@
 --    IS the waiting mechanism.
 
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -274,7 +274,7 @@ local define_director_fsm<const> = function()
 		return '/room'
 	end
 
-	fsm_library.register('director', {
+	fsmlibrary.register('director', {
 		-- daemon_timelineid is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
 		-- (autoplay = false = registration only).  Each state configures behaviour
@@ -938,7 +938,7 @@ local register_director_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsm_component.factory({ 'director' }),
+			fsmcomponent.factory({ 'director' }),
 		},
 		defaults = {
 			id = 'd',

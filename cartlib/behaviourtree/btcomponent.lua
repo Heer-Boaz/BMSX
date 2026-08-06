@@ -1,26 +1,26 @@
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 local definitions_by_id<const> = require('cartlib/behaviourtree/definitions')
 
-local bt_component<const> = {}
-bt_component.__index = bt_component
-setmetatable(bt_component, { __index = component })
+local btcomponent<const> = {}
+btcomponent.__index = btcomponent
+setmetatable(btcomponent, { __index = basecomponent })
 
-function bt_component.new(opts, tree_id)
-	local self<const> = setmetatable(component.new(opts), bt_component)
+function btcomponent.new(opts, tree_id)
+	local self<const> = setmetatable(basecomponent.new(opts), btcomponent)
 	self.tree_id = tree_id
 	self.root = definitions_by_id[tree_id]
 	self.node_data = {}
 	return self
 end
 
-function bt_component.factory(tree_id)
+function btcomponent.factory(tree_id)
 	return function(opts)
-		return bt_component.new(opts, tree_id)
+		return btcomponent.new(opts, tree_id)
 	end
 end
 
-function bt_component:rebind_root(root)
+function btcomponent:rebind_root(root)
 	self.root = root
 end
 
-return bt_component
+return btcomponent

@@ -1,5 +1,5 @@
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
@@ -1037,7 +1037,7 @@ local room_runtime_state_name<const> = function(room_state)
 end
 
 local define_room_fsm<const> = function()
-	fsm_library.register('room', {
+	fsmlibrary.register('room', {
 		initial = 'mode_state',
 		on = {
 			['room.switched'] = {
@@ -1175,7 +1175,7 @@ local register_room_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsm_component.factory({ 'room' }),
+			fsmcomponent.factory({ 'room' }),
 		},
 		defaults = {
 		},

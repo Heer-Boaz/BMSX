@@ -9,8 +9,8 @@
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
 -- the object already has an FSM.
 
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
 local textcomponent<const> = require('cartlib/text/textcomponent')
@@ -36,7 +36,7 @@ function lithograph_screen:ctor()
 end
 
 local define_lithograph_screen_fsm<const> = function()
-	fsm_library.register('lithograph_screen', {
+	fsmlibrary.register('lithograph_screen', {
 		initial = 'active',
 		on = {
 			['lithograph'] = {
@@ -64,7 +64,7 @@ local register_lithograph_screen_definition<const> = function()
 		class = lithograph_screen,
 		components = {
 			textcomponent.new,
-			fsm_component.factory({ 'lithograph_screen' }),
+			fsmcomponent.factory({ 'lithograph_screen' }),
 		},
 		defaults = {
 			id = 'lithograph',

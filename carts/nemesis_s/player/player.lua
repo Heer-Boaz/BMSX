@@ -1,8 +1,8 @@
 local actioneffects<const> = require('cartlib/actioneffects')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
-local fsm_library<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
@@ -694,7 +694,7 @@ function player:ctor()
 end
 
 local define_player_fsm<const> = function()
-	fsm_library.register(ids_player_fsm, {
+	fsmlibrary.register(ids_player_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -825,7 +825,7 @@ local register_player_definition<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsm_component.factory({ ids_player_fsm }),
+			fsmcomponent.factory({ ids_player_fsm }),
 			actioneffects.actioneffect_component.factory({ player_abilities.effect_ids.fire_salvo }),
 		},
 		defaults = {

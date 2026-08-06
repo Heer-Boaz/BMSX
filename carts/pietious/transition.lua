@@ -15,8 +15,8 @@
 -- component is enabled by 'transition' and cleared/hidden by every other
 -- transition mode, so presentation performs no director-state polling.
 
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local textcomponent<const> = require('cartlib/text/textcomponent')
@@ -87,7 +87,7 @@ local define_transition_fsm<const> = function()
 			end,
 		}
 	end
-	fsm_library.register('transition', {
+	fsmlibrary.register('transition', {
 		initial = 'active',
 		on = on,
 		states = {
@@ -104,7 +104,7 @@ local register_transition_definition<const> = function()
 			customvisualcomponent.new,
 			textcomponent.new,
 			timelinecomponent.new,
-			fsm_component.factory({ 'transition' }),
+			fsmcomponent.factory({ 'transition' }),
 		},
 		defaults = {
 			id = 'transition',

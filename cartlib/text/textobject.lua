@@ -4,8 +4,8 @@
 local worldobject<const> = require('cartlib/world/worldobject')
 local textcomponent<const> = require('cartlib/text/textcomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
-local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
-local fsm_library<const> = require('cartlib/fsm/library')
+local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local gp0<const> = require('cartlib/gx/gp0')
 local font_module<const> = require('cartlib/font')
@@ -190,7 +190,7 @@ local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 	end
 end
 
-fsm_library.register(text_object_fsm_id, {
+fsmlibrary.register(text_object_fsm_id, {
 	initial = text_object_state_idle,
 	tag_derivations = {
 		[state_tags.group.typing] = { state_tags.variant.typing },
@@ -276,7 +276,7 @@ fsm_library.register(text_object_fsm_id, {
 function textobject.new(opts)
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
 	self:add_component(timelinecomponent.new({ parent = self }))
-	self:add_component(fsm_component.new({ parent = self }, text_object_machine_ids))
+	self:add_component(fsmcomponent.new({ parent = self }, text_object_machine_ids))
 	self.is_text_object = true
 	self.text = { '' }
 	self.full_text_lines = { '' }
