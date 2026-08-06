@@ -3,7 +3,7 @@ local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
-local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
+local screen_boundary_component<const> = require('cartlib/physics/screenboundarycomponent')
 
 local enemy_base<const> = {}
 local damaging_contact_kinds<const> = {

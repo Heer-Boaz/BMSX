@@ -55,6 +55,7 @@
 --    Moving an object to a non-active space hides it from gameplay queries
 --    without destroying it (components and subscriptions persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
+local componentclass<const> = require('cartlib/component/componentclass')
 local eventemitter<const> = require('cartlib/eventemitter')
 
 local worldobject<const> = {}
@@ -119,16 +120,17 @@ end
 -- Returns the component for chaining.  Components are updated by ECS systems,
 -- as the object lacks its own update() method.
 function worldobject:add_component(comp)
-	comp.parent = self
 	local component_class<const> = getmetatable(comp)
-	local bucket = self._components_by_class[component_class]
-	if not bucket then
-		bucket = {}
-		self._components_by_class[component_class] = bucket
+	local classes<const> = componentclass.chain(component_class)
+	local components_by_class<const> = self._components_by_class
+	for class_index = 1, #classes do
+		local class<const> = classes[class_index]
+		local bucket<const> = components_by_class[class]
+		if rawget(class, 'unique') and bucket ~= nil and #bucket > 0 then
+			error('unique component already attached to "' .. self.id .. '"')
+		end
 	end
-	if comp.unique and #bucket > 0 then
-		error('unique component already attached to "' .. self.id .. '"')
-	end
+	comp.parent = self
 	if not comp.id then
 		local sequence<const> = self._component_sequence + 1
 		self._component_sequence = sequence
@@ -137,11 +139,21 @@ function worldobject:add_component(comp)
 	comp._attached = true
 	local components<const> = self._components
 	local component_index<const> = #components + 1
-	local class_index<const> = #bucket + 1
 	components[component_index] = comp
-	bucket[class_index] = comp
 	comp._parent_component_index = component_index
-	comp._parent_class_index = class_index
+	for class_index = 1, #classes do
+		local class<const> = classes[class_index]
+		local bucket = components_by_class[class]
+		if bucket == nil then
+			bucket = {}
+			components_by_class[class] = bucket
+		end
+		local bucket_index<const> = #bucket + 1
+		bucket[bucket_index] = comp
+		if class_index == 1 then
+			comp._parent_class_index = bucket_index
+		end
+	end
 	comp:on_attach()
 	if self._published then
 		self.world:attach_component(comp)
@@ -169,20 +181,36 @@ end
 
 function worldobject:_commit_component_detach(comp)
 	local component_class<const> = getmetatable(comp)
+	local classes<const> = componentclass.chain(component_class)
 	local components_by_class<const> = self._components_by_class
-	local list<const> = components_by_class[component_class]
-	local class_index<const> = comp._parent_class_index
-	local last_class_index<const> = #list
-	if class_index < last_class_index then
-		local moved<const> = list[last_class_index]
-		list[class_index] = moved
-		moved._parent_class_index = class_index
+	for chain_index = 1, #classes do
+		local class<const> = classes[chain_index]
+		local list<const> = components_by_class[class]
+		local class_index
+		if chain_index == 1 then
+			class_index = comp._parent_class_index
+		else
+			for index = 1, #list do
+				if list[index] == comp then
+					class_index = index
+					break
+				end
+			end
+		end
+		local last_class_index<const> = #list
+		if class_index < last_class_index then
+			local moved<const> = list[last_class_index]
+			list[class_index] = moved
+			if getmetatable(moved) == class then
+				moved._parent_class_index = class_index
+			end
+		end
+		list[last_class_index] = nil
+		if last_class_index == 1 then
+			components_by_class[class] = nil
+		end
 	end
-	list[last_class_index] = nil
 	comp._parent_class_index = nil
-	if last_class_index == 1 then
-		components_by_class[component_class] = nil
-	end
 
 	local components<const> = self._components
 	local component_index<const> = comp._parent_component_index

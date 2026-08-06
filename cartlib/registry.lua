@@ -1,3 +1,4 @@
+local componentclass<const> = require('cartlib/component/componentclass')
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {
@@ -22,14 +23,17 @@ local add_object_definition<const> = function(self, obj)
 	dense_set.add(bucket, obj)
 end
 
-local add_component_class<const> = function(self, comp)
-	local component_class<const> = getmetatable(comp)
-	local bucket = self._components_by_class[component_class]
-	if bucket == nil then
-		bucket = dense_set.new()
-		self._components_by_class[component_class] = bucket
+local add_component_classes<const> = function(self, comp)
+	local classes<const> = componentclass.chain(getmetatable(comp))
+	for class_index = 1, #classes do
+		local component_class<const> = classes[class_index]
+		local bucket = self._components_by_class[component_class]
+		if bucket == nil then
+			bucket = dense_set.new()
+			self._components_by_class[component_class] = bucket
+		end
+		dense_set.add(bucket, comp)
 	end
-	dense_set.add(bucket, comp)
 end
 
 local add_object_tag<const> = function(self, obj, tag)
@@ -107,7 +111,7 @@ end
 
 function registry:register_component(comp)
 	self:register(comp)
-	add_component_class(self, comp)
+	add_component_classes(self, comp)
 end
 
 function registry:reconcile_tag(obj, tag)
@@ -135,7 +139,10 @@ function registry:deregister_object(obj)
 end
 
 function registry:deregister_component(comp)
-	dense_set.remove(self._components_by_class[getmetatable(comp)], comp)
+	local classes<const> = componentclass.chain(getmetatable(comp))
+	for class_index = 1, #classes do
+		dense_set.remove(self._components_by_class[classes[class_index]], comp)
+	end
 	self:deregister(comp)
 end
 

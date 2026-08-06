@@ -1,3 +1,4 @@
+local componentclass<const> = require('cartlib/component/componentclass')
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local space<const> = {}
@@ -34,13 +35,13 @@ function space:active_visuals()
 end
 
 function space:register_component_class(component_class)
-	local bucket<const> = {}
+	local bucket<const> = dense_set.new()
 	self._active_components_by_class[component_class] = bucket
-	return bucket
+	return bucket.items
 end
 
 function space:component_bucket(component_class)
-	return self._active_components_by_class[component_class]
+	return self._active_components_by_class[component_class].items
 end
 
 function space:add_object(obj)
@@ -153,11 +154,13 @@ end
 
 function space:activate_component(comp, visual_sequence)
 	comp._active_space = self
-	local bucket<const> = self._active_components_by_class[getmetatable(comp)]
-	if bucket ~= nil then
-		local index<const> = #bucket + 1
-		bucket[index] = comp
-		comp._active_component_index = index
+	local classes<const> = componentclass.chain(getmetatable(comp))
+	local component_buckets<const> = self._active_components_by_class
+	for class_index = 1, #classes do
+		local bucket<const> = component_buckets[classes[class_index]]
+		if bucket ~= nil then
+			dense_set.add(bucket, comp)
+		end
 	end
 	if comp.is_visual then
 		local visuals<const> = self._active_visuals
@@ -182,17 +185,13 @@ function space:deactivate_component(comp)
 		comp._visual_sequence = nil
 	end
 
-	local index<const> = comp._active_component_index
-	if index ~= nil then
-		local bucket<const> = self._active_components_by_class[getmetatable(comp)]
-		local last_index<const> = #bucket
-		if index < last_index then
-			local moved<const> = bucket[last_index]
-			bucket[index] = moved
-			moved._active_component_index = index
+	local classes<const> = componentclass.chain(getmetatable(comp))
+	local component_buckets<const> = self._active_components_by_class
+	for class_index = 1, #classes do
+		local bucket<const> = component_buckets[classes[class_index]]
+		if bucket ~= nil then
+			dense_set.remove(bucket, comp)
 		end
-		bucket[last_index] = nil
-		comp._active_component_index = nil
 	end
 	comp._active_space = nil
 end

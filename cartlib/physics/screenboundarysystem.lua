@@ -1,8 +1,4 @@
--- screen_boundary.lua
--- Screen-boundary ECS system.
-
-local prohibit_leaving_screen_component<const> = require('cartlib/physics/prohibit_leaving_screen_component')
-local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
+local screen_boundary_component<const> = require('cartlib/physics/screenboundarycomponent')
 local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
 
@@ -13,21 +9,20 @@ setmetatable(screen_boundary_system, { __index = system })
 
 function screen_boundary_system.new(world)
 	local self<const> = setmetatable(system.new(tick_group.physics, 30), screen_boundary_system)
-	self._boundary_component_view = world:_active_component_view(screen_boundary_component)
-	self._prohibit_leaving_component_view = world:_active_component_view(prohibit_leaving_screen_component)
+	self._component_view = world:_active_component_view(screen_boundary_component)
 	-- Boundary payloads are synchronous system scratch, like overlap payloads.
 	-- Handlers consume their fields during dispatch rather than retaining them.
-	self._event_payload = { d = false, old_x_or_y = 0 }
+	self._event_payload = { direction = false, previous_position = 0 }
 	return self
 end
 
 local emit_boundary_event<const> = function(payload, obj, event_type, direction, old_position)
-	payload.d = direction
-	payload.old_x_or_y = old_position
+	payload.direction = direction
+	payload.previous_position = old_position
 	obj.events:emit(event_type, payload)
 end
 
-local emit_boundary_events<const> = function(payload, obj, component, prohibit_leaving)
+local emit_boundary_events<const> = function(payload, obj, component)
 	local left<const> = component.left
 	local top<const> = component.top
 	local right<const> = component.right
@@ -42,18 +37,14 @@ local emit_boundary_events<const> = function(payload, obj, component, prohibit_l
 		if newx + sx < left then
 			emit_boundary_event(payload, obj, 'screen.leave', 'left', oldx)
 		elseif newx < left then
-			if prohibit_leaving then
-				obj.x = component.stick_to_edge and left or oldx
-			end
+			component:resolve_leaving('left', oldx)
 			emit_boundary_event(payload, obj, 'screen.leaving', 'left', oldx)
 		end
 	elseif newx > oldx then
 		if newx >= right then
 			emit_boundary_event(payload, obj, 'screen.leave', 'right', oldx)
 		elseif newx + sx > right then
-			if prohibit_leaving then
-				obj.x = component.stick_to_edge and (right - sx) or oldx
-			end
+			component:resolve_leaving('right', oldx)
 			emit_boundary_event(payload, obj, 'screen.leaving', 'right', oldx)
 		end
 	end
@@ -61,18 +52,14 @@ local emit_boundary_events<const> = function(payload, obj, component, prohibit_l
 		if newy + sy < top then
 			emit_boundary_event(payload, obj, 'screen.leave', 'up', oldy)
 		elseif newy < top then
-			if prohibit_leaving then
-				obj.y = component.stick_to_edge and top or oldy
-			end
+			component:resolve_leaving('up', oldy)
 			emit_boundary_event(payload, obj, 'screen.leaving', 'up', oldy)
 		end
 	elseif newy > oldy then
 		if newy >= bottom then
 			emit_boundary_event(payload, obj, 'screen.leave', 'down', oldy)
 		elseif newy + sy > bottom then
-			if prohibit_leaving then
-				obj.y = component.stick_to_edge and (bottom - sy) or oldy
-			end
+			component:resolve_leaving('down', oldy)
 			emit_boundary_event(payload, obj, 'screen.leaving', 'down', oldy)
 		end
 	end
@@ -80,17 +67,11 @@ end
 
 function screen_boundary_system:update()
 	local event_payload<const> = self._event_payload
-	local screen_boundary_components<const> = self._boundary_component_view.items
+	local screen_boundary_components<const> = self._component_view.items
 	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent
-		emit_boundary_events(event_payload, obj, component, false)
-	end
-	local prohibit_leave_components<const> = self._prohibit_leaving_component_view.items
-	for i = #prohibit_leave_components, 1, -1 do
-		local component<const> = prohibit_leave_components[i]
-		local obj<const> = component.parent
-		emit_boundary_events(event_payload, obj, component, true)
+		emit_boundary_events(event_payload, obj, component)
 	end
 end
 

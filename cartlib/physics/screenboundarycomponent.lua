@@ -16,4 +16,7 @@ function screen_boundary_component.new(opts)
 	return self
 end
 
+function screen_boundary_component:resolve_leaving(_direction, _previous_position)
+end
+
 return screen_boundary_component
