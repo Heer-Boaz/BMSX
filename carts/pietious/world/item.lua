@@ -37,7 +37,7 @@ local define_world_item_fsm<const> = function()
 				if self.rock_drop_id ~= nil then
 					world:get('room').rock_drops[self.rock_drop_id] = nil
 				end
-				self:despawn()
+				self:mark_for_disposal()
 			end,
 		},
 		states = {

@@ -32,7 +32,7 @@ function disappearingwall.register()
 		on = {
 			['room.condition_set'] = function(self, _state, event)
 				if event.condition == self.trigger then
-					self:despawn()
+					self:mark_for_disposal()
 				end
 			end,
 		},

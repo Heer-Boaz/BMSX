@@ -13,7 +13,7 @@
 --                   the attached components.
 --    bind()       — override this in subclasses to subscribe to events.
 --                   Called exactly once during the object's lifetime.
---    ondespawn()  — called when removed from the world; deactivates the object.
+--    ondespawn()  — called when removed from the world, before final teardown.
 --    dispose()    — final teardown; calls unbind() which removes all event
 --                   subscriptions whose `subscriber` field is this object.
 --
@@ -47,9 +47,11 @@
 --    let the other object respond, or use component activation for
 --    initialisation that must happen on activate.
 --
--- 4. DESPAWN THROUGH THE OBJECT'S WORLD.
---    self:despawn() is the only public destruction command. The world commits
---    it at the current tick-group barrier, or directly when no group is active.
+-- 4. DISPOSAL THROUGH THE OBJECT'S WORLD.
+--    self:mark_for_disposal() is the public terminal-lifecycle command. The
+--    world commits the removal at the current tick-group barrier, or directly
+--    when no group is active. `ondespawn()` remains the removal lifecycle hook;
+--    `dispose()` is the final component and subscription teardown.
 --
 -- 5. set_space() IS NOT despawn. Use it only to temporarily hide/show objects.
 --    Moving an object to a non-active space hides it from gameplay queries
@@ -77,6 +79,7 @@ function worldobject.new(opts)
 	self._components_by_class = {}
 	self._component_sequence = 0
 	self._bound = false
+	self.marked_for_disposal = false
 	self.space_id = opts.space_id
 	self.events = eventemitter.events_of(self)
 	return self
@@ -306,7 +309,7 @@ end
 
 -- deactivate(): removes the object and its components from active scheduling
 -- without removing it from the world. Component state and event subscriptions
--- are preserved. Despawn commits remove the same membership directly before
+-- are preserved. Disposal commits remove the same membership directly before
 -- the object's despawn callback runs.
 -- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
@@ -330,8 +333,11 @@ function worldobject:ondespawn()
 	self.events:emit('despawn')
 end
 
-function worldobject:despawn()
-	self.world:despawn(self)
+-- mark_for_disposal(): requests terminal removal from the world and deactivates
+-- the object before the structural removal commit. The world owns that commit,
+-- so this remains safe from update and event code.
+function worldobject:mark_for_disposal()
+	self.world:mark_for_disposal(self)
 end
 
 function worldobject:dispose()

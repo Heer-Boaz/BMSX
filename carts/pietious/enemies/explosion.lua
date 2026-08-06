@@ -74,7 +74,7 @@ local define_enemy_explosion_fsm<const> = function()
 				end,
 				on_end = function(self)
 					self:spawn_loot()
-					self:despawn()
+					self:mark_for_disposal()
 				end,
 			},
 		},
@@ -82,7 +82,7 @@ local define_enemy_explosion_fsm<const> = function()
 		on = {
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.despawn,
+				go = worldobject.mark_for_disposal,
 			},
 		},
 		states = {

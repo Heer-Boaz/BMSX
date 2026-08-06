@@ -336,7 +336,7 @@ function castle:sync_current_room_seal_instance()
 	end
 	if not keep_seal_instance then
 		if seal_instance ~= nil then
-			seal_instance:despawn()
+			seal_instance:mark_for_disposal()
 		end
 		return
 	end
@@ -344,7 +344,7 @@ function castle:sync_current_room_seal_instance()
 	local dissolve_step<const> = room.seal_dissolve_step
 	if dissolve_step >= 6 then
 		if seal_instance ~= nil then
-			seal_instance:despawn()
+			seal_instance:mark_for_disposal()
 		end
 		return
 	end

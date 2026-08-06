@@ -118,7 +118,7 @@ local spawn_items<const> = function(room)
 			end
 		else
 			if existing ~= nil then
-				existing:despawn()
+				existing:mark_for_disposal()
 			end
 		end
 	end
@@ -156,7 +156,7 @@ local spawn_enemies<const> = function(room)
 			end
 		else
 			if existing ~= nil then
-				existing:despawn()
+				existing:mark_for_disposal()
 			end
 		end
 	end
@@ -209,7 +209,7 @@ function room_spawner.spawn_all_for_room(room)
 	for i = 1, #room_objects do
 		local obj<const> = room_objects[i]
 		if obj.rs_room_number ~= room.room_number then
-			obj:despawn()
+			obj:mark_for_disposal()
 		end
 	end
 	spawn_rocks(room)
@@ -226,7 +226,7 @@ end
 function room_spawner.despawn_previous()
 	local room_objects<const> = world:objects_by_tag('rs')
 	for i = 1, #room_objects do
-		room_objects[i]:despawn()
+		room_objects[i]:mark_for_disposal()
 	end
 end
 

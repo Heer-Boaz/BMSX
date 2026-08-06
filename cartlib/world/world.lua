@@ -10,10 +10,10 @@
 --    Spaces are mutually exclusive world partitions, not render layers.
 --    Objects default to the active space at spawn unless they set .space_id.
 --
--- 2. SPAWN / DESPAWN IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
+-- 2. SPAWN / DISPOSAL IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
 --    Never add objects to the internal tables directly.
 --    world:spawn(definition_id, options) — constructs and admits one object
---    world:despawn(obj) — requests the one world-owned despawn transition
+--    world:mark_for_disposal(obj) — requests the one world-owned removal
 --
 -- 3. QUERY SCOPE IS EXPLICIT.
 --    active_* returns retained dense arrays for the selected space. Unqualified
@@ -40,7 +40,7 @@ local world
 local clear_color<const> = 0xff000000
 local render_command_capacity<const> = 4096
 local empty_object_bucket<const> = {}
-local mutation_spawn<const> = 0x01
+local mutation_admission<const> = 0x01
 local mutation_component_attach<const> = 0x02
 local mutation_object<const> = 0x04
 local mutation_component<const> = 0x08
@@ -87,11 +87,11 @@ function worldclass.new()
 	self._objects = {}
 	self._spaces = {}
 	self._space_order = {}
-	self._pending_despawns = {}
-	self._pending_despawn_count = 0
-	self._flushing_despawns = false
-	self._pending_spawns = {}
-	self._pending_spawn_count = 0
+	self._pending_disposals = {}
+	self._pending_disposal_count = 0
+	self._flushing_disposals = false
+	self._pending_admissions = {}
+	self._pending_admission_count = 0
 	self._pending_objects = {}
 	self._pending_components = {}
 	self._pending_component_attaches = {}
@@ -474,7 +474,6 @@ function worldclass:_reserve_object(obj)
 	registry:reserve(obj)
 	obj.world = self
 	obj.space_id = obj.space_id or self.active_space_id
-	obj._spawn_pending = true
 end
 
 local apply_construction_values<const> = function(target, values)
@@ -486,7 +485,6 @@ local apply_construction_values<const> = function(target, values)
 end
 
 function worldclass:_commit_spawn(obj)
-	obj._spawn_pending = nil
 	registry:register_object(obj)
 	local components<const> = obj._components
 	for i = 1, #components do
@@ -500,22 +498,22 @@ function worldclass:_commit_spawn(obj)
 	obj._spawn_position = nil
 end
 
-function worldclass:_flush_spawns()
-	local pending<const> = self._pending_spawns
+function worldclass:_flush_admissions()
+	local pending<const> = self._pending_admissions
 	local index = 1
-	while index <= self._pending_spawn_count do
+	while index <= self._pending_admission_count do
 		local obj<const> = pending[index]
 		pending[index] = nil
 		-- A spawn canceled in the same structural scope never enters the
 		-- published Registry, space, or system views.
-		if obj._despawn_pending then
-			self:_commit_despawn(obj)
+		if obj.marked_for_disposal then
+			self:_commit_disposal(obj)
 		else
 			self:_commit_spawn(obj)
 		end
 		index = index + 1
 	end
-	self._pending_spawn_count = 0
+	self._pending_admission_count = 0
 end
 
 -- A prefab instance is fully constructed before Registry, space and system
@@ -545,10 +543,10 @@ function worldclass:spawn(definition_id, options)
 
 	local deferred<const> = self._current_tick_group ~= nil
 	if deferred then
-		local index<const> = self._pending_spawn_count + 1
-		self._pending_spawn_count = index
-		self._pending_spawns[index] = obj
-		self._pending_mutation_mask = self._pending_mutation_mask | mutation_spawn
+		local index<const> = self._pending_admission_count + 1
+		self._pending_admission_count = index
+		self._pending_admissions[index] = obj
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_admission
 	end
 	local pos<const> = options.pos
 	if pos then
@@ -564,8 +562,8 @@ function worldclass:spawn(definition_id, options)
 	end
 	obj._spawn_position = pos
 	if not deferred then
-		if obj._despawn_pending then
-			self:_commit_despawn(obj)
+		if obj.marked_for_disposal then
+			self:_commit_disposal(obj)
 		else
 			self:_commit_spawn(obj)
 		end
@@ -573,15 +571,14 @@ function worldclass:spawn(definition_id, options)
 	return obj
 end
 
-function worldclass:_commit_despawn(obj)
+function worldclass:_commit_disposal(obj)
 	obj.active = false
 	local components<const> = obj._components
-	if obj._spawn_pending then
+	if not obj._published then
 		for i = 1, #components do
 			registry:deregister(components[i])
 		end
 		registry:deregister(obj)
-		obj._spawn_pending = nil
 	else
 		for i = 1, #components do
 			self:_reconcile_active_component(components[i])
@@ -601,48 +598,52 @@ function worldclass:_commit_despawn(obj)
 
 	obj:ondespawn()
 	obj:dispose()
-	obj._despawn_pending = nil
+	obj.marked_for_disposal = nil
 	obj.world = nil
 end
 
--- world:despawn(obj)
+-- world:mark_for_disposal(obj)
 --   Requests the object's terminal lifecycle transition. During a tick group
 --   the command commits at the group barrier; outside one it commits directly
 --   through the same operation.
-function worldclass:despawn(obj)
-	if obj._despawn_pending then
+function worldclass:mark_for_disposal(obj)
+	if obj.marked_for_disposal then
 		return
 	end
-	obj._despawn_pending = true
-	if obj._spawn_pending then
+	obj.marked_for_disposal = true
+	if not obj._published then
 		return
 	end
-	if self._current_tick_group == nil and not self._flushing_despawns then
-		self:_commit_despawn(obj)
+	if obj.active then
+		obj:deactivate()
+	end
+	if self._current_tick_group == nil and not self._flushing_disposals then
+		self:_commit_disposal(obj)
 		return
 	end
-	local pending_count<const> = self._pending_despawn_count + 1
-	self._pending_despawn_count = pending_count
-	self._pending_despawns[pending_count] = obj
+	local pending_count<const> = self._pending_disposal_count + 1
+	self._pending_disposal_count = pending_count
+	self._pending_disposals[pending_count] = obj
 end
 
-function worldclass:_flush_despawns()
-	local pending<const> = self._pending_despawns
-	self._flushing_despawns = true
+function worldclass:_flush_disposals()
+	local pending<const> = self._pending_disposals
+	self._flushing_disposals = true
 	local index = 1
-	while index <= self._pending_despawn_count do
+	while index <= self._pending_disposal_count do
 		local obj<const> = pending[index]
 		pending[index] = nil
-		self:_commit_despawn(obj)
+		self:_commit_disposal(obj)
 		index = index + 1
 	end
-	self._pending_despawn_count = 0
-	self._flushing_despawns = false
+	self._pending_disposal_count = 0
+	self._flushing_disposals = false
 end
 
 -- world:get(id): returns the current live object with this id, or nil.
---   The central Registry owns this direct lookup. A despawn requested during a
---   tick group remains part of that group's retained snapshot until its barrier.
+--   The central Registry owns this direct lookup. An object marked for disposal
+--   during a tick group remains part of that group's retained snapshot until
+--   its barrier.
 function worldclass:get(id)
 	return registry:get_object(id)
 end
@@ -676,9 +677,9 @@ function worldclass:_begin_tick_group(group)
 end
 
 function worldclass:_flush_structural_mutations()
-	if (self._pending_mutation_mask & mutation_spawn) ~= 0 then
-		self:_flush_spawns()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_spawn
+	if (self._pending_mutation_mask & mutation_admission) ~= 0 then
+		self:_flush_admissions()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
 	end
 	if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
 		self:_flush_component_attaches()
@@ -713,8 +714,8 @@ function worldclass:_commit_tick_group()
 		self:_flush_structural_mutations()
 	end
 	self._current_tick_group = nil
-	if self._pending_despawn_count ~= 0 then
-		self:_flush_despawns()
+	if self._pending_disposal_count ~= 0 then
+		self:_flush_disposals()
 	end
 	if self._clear_pending then
 		self._clear_pending = false
@@ -795,7 +796,7 @@ function worldclass:_commit_clear()
 	self._visual_sequence = 0
 	local objects<const> = self._objects
 	while #objects > 0 do
-		self:despawn(objects[#objects])
+		self:mark_for_disposal(objects[#objects])
 	end
 	self._system_manager:reset()
 	self:_recompute_visual_sequence()
@@ -803,14 +804,14 @@ function worldclass:_commit_clear()
 end
 
 function worldclass:clear()
-	if self._current_tick_group ~= nil or self._flushing_despawns then
+	if self._current_tick_group ~= nil or self._flushing_disposals then
 		local objects<const> = self._objects
 		for i = #objects, 1, -1 do
-			self:despawn(objects[i])
+			self:mark_for_disposal(objects[i])
 		end
-		local pending_spawns<const> = self._pending_spawns
-		for i = 1, self._pending_spawn_count do
-			self:despawn(pending_spawns[i])
+		local pending_admissions<const> = self._pending_admissions
+		for i = 1, self._pending_admission_count do
+			self:mark_for_disposal(pending_admissions[i])
 		end
 		self._clear_pending = true
 		return

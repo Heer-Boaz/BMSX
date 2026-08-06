@@ -49,7 +49,7 @@ function enemy_base.bind(self)
 		emitter = 'd',
 		subscriber = self,
 		handler = function()
-			self:despawn()
+			self:mark_for_disposal()
 		end,
 	})
 	self.events:on({
@@ -66,7 +66,7 @@ function enemy_base.bind(self)
 			event = 'screen.leave',
 			subscriber = self,
 			handler = function()
-				self:despawn()
+				self:mark_for_disposal()
 			end,
 		})
 		self.events:on({
@@ -74,7 +74,7 @@ function enemy_base.bind(self)
 			emitter = 'pietolon',
 			subscriber = self,
 			handler = function()
-				self:despawn()
+				self:mark_for_disposal()
 			end,
 		})
 	end
@@ -111,7 +111,7 @@ function enemy_base.process_damage_result(self, result)
 				condition = self.trigger,
 			})
 		end
-		self:despawn()
+		self:mark_for_disposal()
 		return
 	end
 end
