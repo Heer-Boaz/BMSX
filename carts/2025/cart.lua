@@ -14,7 +14,7 @@ local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local surface_component<const> = require('cartlib/component/surfacecomponent')
 local sprite_object<const> = require('cartlib/sprite')
-local text_object<const> = require('cartlib/text/textobject')
+local textobject<const> = require('cartlib/text/textobject')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
@@ -246,28 +246,28 @@ local register_director<const> = function()
 	})
 	prefab.define({
 		def_id = 'p3.text.main',
-		class = text_object,
-		base = text_object,
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.choice',
-		class = text_object,
-		base = text_object,
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.prompt',
-		class = text_object,
-		base = text_object,
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.transition',
-		class = text_object,
-		base = text_object,
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.text.results',
-		class = text_object,
-		base = text_object,
+		class = textobject,
+		base = textobject,
 	})
 	prefab.define({
 		def_id = 'p3.combat.monster',

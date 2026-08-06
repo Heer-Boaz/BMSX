@@ -8,7 +8,7 @@ local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
 local sprite_object<const> = require('cartlib/sprite')
-local text_component<const> = require('cartlib/text/textcomponent')
+local textcomponent<const> = require('cartlib/text/textcomponent')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -21,7 +21,7 @@ local draw_shrine_visual<const> = function(parent, draw)
 end
 
 function shrine:ctor()
-	local text<const> = self:get_component(text_component)
+	local text<const> = self:get_component(textcomponent)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
@@ -68,7 +68,7 @@ local register_shrine_definition<const> = function()
 		class = shrine,
 		components = {
 			custom_visual_component.new,
-			text_component.new,
+			textcomponent.new,
 			fsm_component.factory({ 'shrine' }),
 		},
 		defaults = {

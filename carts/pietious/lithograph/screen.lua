@@ -15,7 +15,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
-local text_component<const> = require('cartlib/text/textcomponent')
+local textcomponent<const> = require('cartlib/text/textcomponent')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -28,7 +28,7 @@ local draw_lithograph_visual<const> = function(parent, draw)
 end
 
 function lithograph_screen:ctor()
-	local text<const> = self:get_component(text_component)
+	local text<const> = self:get_component(textcomponent)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 6)
@@ -67,7 +67,7 @@ local register_lithograph_screen_definition<const> = function()
 		class = lithograph_screen,
 		components = {
 			custom_visual_component.new,
-			text_component.new,
+			textcomponent.new,
 			fsm_component.factory({ 'lithograph_screen' }),
 		},
 		defaults = {

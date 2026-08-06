@@ -5,12 +5,12 @@ local visual_component<const> = require('cartlib/component/visualcomponent')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
 
-local text_component<const> = {}
-text_component.__index = text_component
-setmetatable(text_component, { __index = visual_component })
+local textcomponent<const> = {}
+textcomponent.__index = textcomponent
+setmetatable(textcomponent, { __index = visual_component })
 
-function text_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), text_component)
+function textcomponent.new(opts)
+	local self<const> = setmetatable(visual_component.new(opts), textcomponent)
 	self.font = opts.font or font_module.get('default')
 	self.font_id = self.font.id
 	self.line_height = opts.line_height or self.font.line_height
@@ -29,7 +29,7 @@ function text_component.new(opts)
 	return self
 end
 
-function text_component:set_text(text)
+function textcomponent:set_text(text)
 	self.text = text
 	if type(text) == 'string' then
 		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
@@ -59,7 +59,7 @@ function text_component:set_text(text)
 	self.glyph_line_count = #lines
 end
 
-function text_component:set_font(font)
+function textcomponent:set_font(font)
 	if self.font == font then
 		return
 	end
@@ -69,7 +69,7 @@ function text_component:set_font(font)
 	self:set_text(self.text)
 end
 
-function text_component:set_wrap_chars(wrap_chars)
+function textcomponent:set_wrap_chars(wrap_chars)
 	if self.wrap_chars == wrap_chars then
 		return
 	end
@@ -77,12 +77,12 @@ function text_component:set_wrap_chars(wrap_chars)
 	self:set_text(self.text)
 end
 
-function text_component:draw(draw)
+function textcomponent:draw(draw)
 	local obj<const> = self.parent
 	self:render(draw, obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
 end
 
-function text_component:render_glyphs(draw, x, y)
+function textcomponent:render_glyphs(draw, x, y)
 	local glyphs<const> = self.glyph_lines
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
@@ -114,7 +114,7 @@ function text_component:render_glyphs(draw, x, y)
 	end
 end
 
-function text_component:render(draw, x, y)
+function textcomponent:render(draw, x, y)
 	local glyphs<const> = self.glyph_lines
 	local background_color<const> = self.background_color
 	if background_color ~= nil then
@@ -149,4 +149,4 @@ function text_component:render(draw, x, y)
 	self:render_glyphs(draw, x, y)
 end
 
-return text_component
+return textcomponent

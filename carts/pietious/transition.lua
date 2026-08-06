@@ -19,7 +19,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/prefab')
 local custom_visual_component<const> = require('cartlib/component/customvisualcomponent')
-local text_component<const> = require('cartlib/text/textcomponent')
+local textcomponent<const> = require('cartlib/text/textcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 require('constants')
@@ -42,7 +42,7 @@ local transition_mode_events<const> = {
 }
 
 function transition:ctor()
-	local text<const> = self:get_component(text_component)
+	local text<const> = self:get_component(textcomponent)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
@@ -102,7 +102,7 @@ local register_transition_definition<const> = function()
 		class = transition,
 		components = {
 			custom_visual_component.new,
-			text_component.new,
+			textcomponent.new,
 			timelinecomponent.new,
 			fsm_component.factory({ 'transition' }),
 		},
