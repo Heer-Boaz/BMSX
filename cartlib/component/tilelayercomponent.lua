@@ -8,18 +8,73 @@ setmetatable(tile_layer_component, { __index = visual_component })
 
 function tile_layer_component.new(opts)
 	local self<const> = setmetatable(visual_component.new(opts), tile_layer_component)
-	self.sources = opts.sources
-	self.tile_count = opts.tile_count or 0
+	self.imgids = {}
+	self._sources = {}
+	self.tile_count = 0
 	self.columns = opts.columns or 1
 	self.tile_size = opts.tile_size or 0
+	local imgids<const> = opts.imgids
+	if imgids then
+		local tile_count<const> = opts.tile_count or #imgids
+		for index = 1, tile_count do
+			self:set_tile(index, imgids[index])
+		end
+		self.tile_count = tile_count
+	end
 	return self
+end
+
+function tile_layer_component:set_tile(index, imgid)
+	self.imgids[index] = imgid
+	if imgid then
+		self._sources[index] = image.resolve(imgid)
+	else
+		self._sources[index] = nil
+	end
+end
+
+function tile_layer_component:set_tile_count(tile_count)
+	local imgids<const> = self.imgids
+	local sources<const> = self._sources
+	for index = tile_count + 1, self.tile_count do
+		imgids[index] = nil
+		sources[index] = nil
+	end
+	self.tile_count = tile_count
+end
+
+function tile_layer_component:fill(imgid, tile_count, columns)
+	local source<const> = image.resolve(imgid)
+	local imgids<const> = self.imgids
+	local sources<const> = self._sources
+	for index = 1, tile_count do
+		imgids[index] = imgid
+		sources[index] = source
+	end
+	for index = tile_count + 1, self.tile_count do
+		imgids[index] = nil
+		sources[index] = nil
+	end
+	self.tile_count = tile_count
+	self.columns = columns
+end
+
+function tile_layer_component:set_indexed_tiles(indices, index_count, imgid)
+	local source<const> = image.resolve(imgid)
+	local imgids<const> = self.imgids
+	local sources<const> = self._sources
+	for index = 1, index_count do
+		local tile_index<const> = indices[index]
+		imgids[tile_index] = imgid
+		sources[tile_index] = source
+	end
 end
 
 function tile_layer_component:draw(draw)
 	local parent<const> = self.parent
 	image.draw_tiles(
 		draw,
-		self.sources,
+		self._sources,
 		self.tile_count,
 		self.columns,
 		self.tile_size,

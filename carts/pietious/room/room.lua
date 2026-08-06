@@ -1,7 +1,6 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
-local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
@@ -17,6 +16,7 @@ local water_surface_timelineid<const> = 'r.ws'
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
+local water_body_imgid<const> = 'water_body_msx'
 local water_surface_timelineframe_defs<const> = {
 	{ value = 1, hold = 1 },
 }
@@ -862,25 +862,14 @@ function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self.rock_drops = {}
 	self.logic_rows = {}
-	self.room_tile_sources = {}
-	self.room_tile_source_count = 0
 	self.room_tile_count = 0
-	self.water_tile_sources = {}
-	self.water_tile_source_count = 0
 	self.water_tile_count = 0
 	self.water_rows = 0
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
 	self.last_water_surface_frame = 1
-	self.water_surface_sources = {}
-	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = image.resolve(water_surface_frame_imgids[i])
-	end
-	self.water_body_source = image.resolve('water_body_msx')
 	self.room_tile_layer = tile_layer_component.new({
 		id_local = 'room',
-		sources = self.room_tile_sources,
-		tile_count = 0,
 		columns = 1,
 		tile_size = room_tile_size,
 		offset_x = room_tile_origin_x,
@@ -890,8 +879,6 @@ function room_object:ctor()
 	self:add_component(self.room_tile_layer)
 	self.water_tile_layer = tile_layer_component.new({
 		id_local = 'water',
-		sources = self.water_tile_sources,
-		tile_count = 0,
 		columns = 1,
 		tile_size = room_tile_size,
 		offset_x = room_tile_origin_x,
@@ -918,16 +905,11 @@ function room_object:show_room_tiles()
 end
 
 function room_object:rebuild_room_tiles()
-	-- Build the persistent Lua-side image-rect caches once for the current room
-	-- geometry/state. This is the expensive path and should only run when room
-	-- data actually changes: room load, row patch, rock destruction, dissolve
-	-- phase change, etc.
-	local prev_room_tile_source_count<const> = self.room_tile_source_count
 	local tile_columns<const> = self.tile_columns
 	local tile_rows<const> = self.tile_rows
 	local tile_count<const> = tile_columns * tile_rows
 	local dissolve_step<const> = self.room_dissolve_step
-	local room_tile_sources<const> = self.room_tile_sources
+	local room_tile_layer<const> = self.room_tile_layer
 
 	for y = 1, tile_rows do
 		local row_base<const> = ((y - 1) * tile_columns)
@@ -939,52 +921,46 @@ function room_object:rebuild_room_tiles()
 				local dissolve_index<const> = dissolve_step - 1
 				if self.room_subtype == 'world' and string.byte(map_row, x) == tile_chars.breakable_wall then
 					if dissolve_index >= 6 then
-						room_tile_sources[tile_index] = nil
+						room_tile_layer:set_tile(tile_index, nil)
 						goto continue
 					end
 					local wall_phase<const> = ((x + (y * 3)) % 6) + 1
 					if dissolve_index >= wall_phase then
-						room_tile_sources[tile_index] = nil
+						room_tile_layer:set_tile(tile_index, nil)
 						goto continue
 					end
 				end
 				local dissolve_prefix<const> = world_dissolve_prefix_by_tile_id[tile_id]
 				if dissolve_prefix ~= nil then
 					if dissolve_index >= 6 then
-						room_tile_sources[tile_index] = nil
+						room_tile_layer:set_tile(tile_index, nil)
 						goto continue
 					end
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = image.resolve(tile_id)
+			room_tile_layer:set_tile(tile_index, tile_id)
 			::continue::
 		end
 	end
-	for i = tile_count + 1, prev_room_tile_source_count do
-		room_tile_sources[i] = nil
-	end
-	self.room_tile_source_count = tile_count
 	self.room_tile_count = tile_count
-	self.room_tile_layer.tile_count = tile_count
-	self.room_tile_layer.columns = tile_columns
+	room_tile_layer:set_tile_count(tile_count)
+	room_tile_layer.columns = tile_columns
 
 	if self.water == nil then
 		self.water_tile_count = 0
 		self.water_rows = 0
-			self.water_tile_source_count = 0
 		self.water_surface_tile_count = 0
 		self.last_water_surface_frame = 1
-		self.water_tile_layer.tile_count = 0
+		self.water_tile_layer:set_tile_count(0)
 		self.water_tile_layer.visible = false
 		return
 	end
-	local prev_water_tile_source_count<const> = self.water_tile_source_count
 	local prev_water_surface_tile_count<const> = self.water_surface_tile_count
-	local water_surface_source<const> = self.water_surface_sources[1]
+	local water_surface_imgid<const> = water_surface_frame_imgids[1]
 	local water_rows<const> = self.tile_rows - self.water.surface_row + 1
 	local water_tile_count<const> = self.tile_columns * water_rows
-	local water_tile_sources<const> = self.water_tile_sources
+	local water_tile_layer<const> = self.water_tile_layer
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
 	local water_surface_tile_count = 0
 
@@ -994,30 +970,26 @@ function room_object:rebuild_room_tiles()
 			local tile_index<const> = row_base + x
 			local kind<const> = water_kind_at_tile(self, x, y)
 			if kind == water_none then
-				water_tile_sources[tile_index] = nil
+				water_tile_layer:set_tile(tile_index, nil)
 			elseif kind == water_surface then
-				water_tile_sources[tile_index] = water_surface_source
+				water_tile_layer:set_tile(tile_index, water_surface_imgid)
 				water_surface_tile_count = water_surface_tile_count + 1
 				water_surface_tile_indices[water_surface_tile_count] = tile_index
 			else
-				water_tile_sources[tile_index] = self.water_body_source
+				water_tile_layer:set_tile(tile_index, water_body_imgid)
 			end
 		end
-	end
-	for i = water_tile_count + 1, prev_water_tile_source_count do
-		water_tile_sources[i] = nil
 	end
 	for i = water_surface_tile_count + 1, prev_water_surface_tile_count do
 		water_surface_tile_indices[i] = nil
 	end
-	self.water_tile_source_count = water_tile_count
 	self.water_tile_count = water_tile_count
 	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
-	self.water_tile_layer.tile_count = water_tile_count
-	self.water_tile_layer.columns = self.tile_columns
-	self.water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
+	water_tile_layer:set_tile_count(water_tile_count)
+	water_tile_layer.columns = self.tile_columns
+	water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true
 	end
@@ -1027,13 +999,10 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	if self.water == nil or self.last_water_surface_frame == water_surface_frame then
 		return
 	end
-	local water_surface_source<const> = self.water_surface_sources[water_surface_frame]
-	local water_tile_sources<const> = self.water_tile_sources
+	local water_surface_imgid<const> = water_surface_frame_imgids[water_surface_frame]
+	local water_tile_layer<const> = self.water_tile_layer
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
-	for i = 1, self.water_surface_tile_count do
-		local tile_index<const> = water_surface_tile_indices[i]
-		water_tile_sources[tile_index] = water_surface_source
-	end
+	water_tile_layer:set_indexed_tiles(water_surface_tile_indices, self.water_surface_tile_count, water_surface_imgid)
 	self.last_water_surface_frame = water_surface_frame
 end
 

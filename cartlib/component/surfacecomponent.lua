@@ -16,24 +16,24 @@ end
 function surface_component:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self.image = image.resolve(imgid)
+		self._source = image.resolve(imgid)
 	else
-		self.image = nil
+		self._source = nil
 	end
 end
 
 function surface_component:draw(draw)
-	local source<const> = self.image
+	local source<const> = self._source
 	if not source then
 		return
 	end
 	local parent<const> = self.parent
 	local x<const> = parent.x + self.offset_x + self.draw_offset_x
 	local y<const> = parent.y + self.offset_y + self.draw_offset_y
-	local tiles<const> = source.tiles
+	local tiles<const> = source._tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
-		image.draw(draw, tile, x + tile.x, y + tile.y, self.color, 0, gp0.draw_mode_blend_half)
+		image.draw(draw, tile, x + tile.offset_x, y + tile.offset_y, self.color, 0, gp0.draw_mode_blend_half)
 	end
 end
 

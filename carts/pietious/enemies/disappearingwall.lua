@@ -1,6 +1,5 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsmcomponent')
-local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/prefab')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local tile_layer_component<const> = require('cartlib/component/tilelayercomponent')
@@ -21,14 +20,7 @@ function disappearingwall:ctor()
 	self:update_wall_size()
 	local tile_layer<const> = self:get_component(tile_layer_component)
 	local tile_count<const> = self.width_tiles * self.height_tiles
-	local tile_source<const> = image.resolve(self.tiletype)
-	local sources<const> = {}
-	for index = 1, tile_count do
-		sources[index] = tile_source
-	end
-	tile_layer.sources = sources
-	tile_layer.tile_count = tile_count
-	tile_layer.columns = self.width_tiles
+	tile_layer:fill(self.tiletype, tile_count, self.width_tiles)
 	tile_layer.tile_size = room_tile_size
 	tile_layer.offset_x = 0
 	tile_layer.offset_y = 0

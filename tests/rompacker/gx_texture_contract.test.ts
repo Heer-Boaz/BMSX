@@ -451,7 +451,7 @@ local imgdec<const> = require('cartlib/gx/imgdec')
 local first_image<const> = image.resolve('first')
 local second_image<const> = image.resolve('second')
 texture.upload('first')
-return first_image.texture == second_image.texture and 1 or 0, imgdec.last_upload()
+return first_image._texture == second_image._texture and 1 or 0, imgdec.last_upload()
 `;
 		const cartModuleSources = [
 			[TEXTURE_BINDINGS_MODULE_PATH, buildTextureBindingsModuleSource(layout)],

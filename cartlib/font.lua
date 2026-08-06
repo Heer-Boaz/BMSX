@@ -24,16 +24,16 @@ local build_resolved_font<const> = function(definition)
 	for glyph, imgid in pairs(definition.glyphs) do
 		local source<const> = image.resolve(imgid)
 		items[byte(glyph)] = {
-			image = source,
-			width = source.w,
-			height = source.h,
-			advance = source.w + advance_padding,
+			source = source,
+			width = source.width,
+			height = source.height,
+			advance = source.width + advance_padding,
 		}
 	end
 	local space<const> = items[0x20]
 	if space and not items[0x09] then
 		items[0x09] = {
-			image = space.image,
+			source = space.source,
 			width = space.width,
 			height = space.height,
 			advance = space.advance * 4,

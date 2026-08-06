@@ -5,19 +5,13 @@ local texture_bindings<const> = require('bmsx/texture_bindings')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
-local binding_pool_by_words<const> = {}
-
-local resolve_binding_pool<const> = function(placement_words)
-	local pool<const> = binding_pool_by_words[placement_words]
-	if pool then
-		return pool
-	end
-	local created<const> = {
-		placement_words = placement_words,
+local binding_pools<const> = {}
+local placement_pools<const> = texture_bindings.placement_pools
+for pool_index = 1, #placement_pools do
+	binding_pools[pool_index] = {
+		placement_words = placement_pools[pool_index],
 		next_index = 1,
 	}
-	binding_pool_by_words[placement_words] = created
-	return created
 end
 
 function gx_texture.resolve(texture_id)
@@ -39,7 +33,7 @@ function gx_texture.resolve(texture_id)
 		y = 0,
 		clut_x = 0,
 		clut_y = 0,
-		binding_pool = resolve_binding_pool(texture_bindings[texture_id]),
+		binding_pool = binding_pools[texture_bindings.pool_index_by_texture[texture_id]],
 	}
 	texture_by_id[texture_id] = resolved
 	return resolved

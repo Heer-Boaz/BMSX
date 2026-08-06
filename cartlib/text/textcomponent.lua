@@ -102,7 +102,7 @@ function text_component:render_glyphs(draw, x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				image.draw(draw, glyph.image, cursor_x, line_y, color, 0, gp0.draw_mode_blend_half)
+				image.draw(draw, glyph.source, cursor_x, line_y, color, 0, gp0.draw_mode_blend_half)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end

@@ -22,9 +22,14 @@ end
 function sprite_component:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self.image = image.resolve(imgid)
+		local source<const> = image.resolve(imgid)
+		self._source = source
+		self.source_width = source.width
+		self.source_height = source.height
 	else
-		self.image = nil
+		self._source = nil
+		self.source_width = 0
+		self.source_height = 0
 	end
 end
 
@@ -38,8 +43,8 @@ function sprite_component:on_detach()
 end
 
 function sprite_component:draw(draw)
-	local rect<const> = self.image
-	if not rect then
+	local source<const> = self._source
+	if not source then
 		return
 	end
 	local obj<const> = self.parent
@@ -55,10 +60,18 @@ function sprite_component:draw(draw)
 	local scale_x<const> = self.scale_x * self.draw_scale_x
 	local scale_y<const> = self.scale_y * self.draw_scale_y
 	if scale_x == 1 and scale_y == 1 then
-		image.draw(draw, rect, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
+		image.draw(draw, source, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
 		return
 	end
-	image.draw_affine(draw, rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color, gp0.draw_mode_blend_half)
+	image.draw_affine(
+		draw,
+		source,
+		x, y,
+		self.source_width * scale_x, 0.0,
+		0.0, self.source_height * scale_y,
+		flip_flags,
+		self.color,
+		gp0.draw_mode_blend_half)
 end
 
 return sprite_component

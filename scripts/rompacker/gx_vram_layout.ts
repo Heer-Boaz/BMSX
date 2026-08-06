@@ -186,8 +186,8 @@ export function validateGxVramLayout(layout: GxVramLayout): void {
 }
 
 export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
-	const pools = new Map<string, { name: string; words: number[] }>();
-	const bindings: Array<{ textureId: string; poolName: string }> = [];
+	const pools = new Map<string, { name: string; words: number[]; index: number }>();
+	const bindings: Array<{ textureId: string; poolIndex: number }> = [];
 	const groupEntries = Object.entries(layout.groups).sort(([left], [right]) => Number(left) - Number(right));
 	for (let groupIndex = 0; groupIndex < groupEntries.length; groupIndex += 1) {
 		const [groupId, group] = groupEntries[groupIndex];
@@ -205,12 +205,13 @@ export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
 			pool = {
 				name: `placement_words_${pools.size + 1}`,
 				words,
+				index: pools.size + 1,
 			};
 			pools.set(poolKey, pool);
 		}
 		bindings.push({
 			textureId: textureGroupResourceName(Number(groupId)),
-			poolName: pool.name,
+			poolIndex: pool.index,
 		});
 	}
 
@@ -222,12 +223,16 @@ export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
 		}
 		lines.push('}', '');
 	}
-	lines.push('return {');
+	lines.push('local placement_pools<const> = {');
+	for (const pool of pools.values()) {
+		lines.push(`\t${pool.name},`);
+	}
+	lines.push('}', '', 'local pool_index_by_texture<const> = {');
 	for (let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex += 1) {
 		const binding = bindings[bindingIndex];
-		lines.push(`\t${binding.textureId} = ${binding.poolName},`);
+		lines.push(`\t${binding.textureId} = ${binding.poolIndex},`);
 	}
-	lines.push('}', '');
+	lines.push('}', '', 'return {', '\tplacement_pools = placement_pools,', '\tpool_index_by_texture = pool_index_by_texture,', '}', '');
 	return lines.join('\n');
 }
 

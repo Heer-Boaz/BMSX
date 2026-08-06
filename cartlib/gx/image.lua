@@ -18,63 +18,73 @@ function image.resolve(id)
 	local resource<const> = romdir.image(id)
 	local meta<const> = resource.imgmeta
 	local texture
-	local u
-	local v
+	local source_x
+	local source_y
 	if meta.gx_source_x then
 		texture = fixed_direct16_texture
-		u = meta.gx_source_x
-		v = meta.gx_source_y
+		source_x = meta.gx_source_x
+		source_y = meta.gx_source_y
 	else
 		texture = gx_texture.resolve(meta.gx_texture_resid)
-		u = meta.texture_u
-		v = meta.texture_v
+		source_x = meta.texture_u
+		source_y = meta.texture_v
 	end
-	local rect<const> = {
-		texture = texture,
-		u = u,
-		v = v,
-		w = meta.width,
-		h = meta.height,
-		tiles = meta.gx_page_tiles,
+	local source<const> = {
+		_texture = texture,
+		source_x = source_x,
+		source_y = source_y,
+		width = meta.width,
+		height = meta.height,
 	}
-	local tiles<const> = rect.tiles
-	if tiles then
-		for index = 1, #tiles do
-			tiles[index].texture = texture
+	local page_tiles<const> = meta.gx_page_tiles
+	if page_tiles then
+		local tiles<const> = {}
+		for index = 1, #page_tiles do
+			local tile<const> = page_tiles[index]
+			tiles[index] = {
+				_texture = texture,
+				source_x = tile.u,
+				source_y = tile.v,
+				width = tile.w,
+				height = tile.h,
+				offset_x = tile.x,
+				offset_y = tile.y,
+			}
 		end
+		source._tiles = tiles
 	end
-	image_by_id[id] = rect
-	return rect
+	image_by_id[id] = source
+	return source
 end
 
 function image.draw_source_rect(draw, source, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
-	local texture<const> = source.texture
+	local texture<const> = source._texture
 	local rectangle_flip_mode<const> = flip_flags << 12
 	if texture.mode == gp0.texture_mode_palette4 then
 		draw:palette4_rect(
 			texture.x, texture.clut_x, texture.clut_y,
-			source.u + source_x, texture.y + source.v + source_y,
+			source.source_x + source_x, texture.y + source.source_y + source_y,
 			x, y, width, height, color, rectangle_flip_mode, blend_mode)
 		return
 	end
 	draw:direct16_rect(
-		texture.x + source.u + source_x, texture.y + source.v + source_y,
+		texture.x + source.source_x + source_x, texture.y + source.source_y + source_y,
 		x, y, width, height, color, rectangle_flip_mode, blend_mode)
 end
 
 function image.draw(draw, source, x, y, color, flip_flags, blend_mode)
-	local texture<const> = source.texture
+	local texture<const> = source._texture
 	local rectangle_flip_mode<const> = flip_flags << 12
 	if texture.mode == gp0.texture_mode_palette4 then
 		draw:palette4_rect(
 			texture.x, texture.clut_x, texture.clut_y,
-			source.u, texture.y + source.v,
-			x, y, source.w, source.h, color, rectangle_flip_mode, blend_mode)
+			source.source_x, texture.y + source.source_y,
+			x, y, source.width, source.height, color, rectangle_flip_mode, blend_mode)
 		return
 	end
 	draw:direct16_rect(
-		texture.x + source.u, texture.y + source.v,
-		x, y, source.w, source.h, color, rectangle_flip_mode, blend_mode)
+		texture.x + source.source_x, texture.y + source.source_y,
+		x, y, source.width, source.height, color, rectangle_flip_mode, blend_mode)
 end
 
 function image.draw_tiles(draw, sources, tile_count, columns, tile_size, origin_x, origin_y, blend_mode)
@@ -106,24 +116,24 @@ function image.draw_affine(
 	flip_flags,
 	color,
 	blend_mode)
-	local texture<const> = source.texture
+	local texture<const> = source._texture
 	local source_x
 	if texture.mode == gp0.texture_mode_palette4 then
-		source_x = source.u
+		source_x = source.source_x
 	else
-		source_x = texture.x + source.u
+		source_x = texture.x + source.source_x
 	end
-	local source_y<const> = texture.y + source.v
+	local source_y<const> = texture.y + source.source_y
 	local u0 = source_x
-	local u1 = source_x + source.w - 1
+	local u1 = source_x + source.width - 1
 	local v0 = source_y
-	local v1 = source_y + source.h - 1
+	local v1 = source_y + source.height - 1
 	if (flip_flags & 1) ~= 0 then
-		u0 = source_x + source.w - 1
+		u0 = source_x + source.width - 1
 		u1 = source_x
 	end
 	if (flip_flags & 2) ~= 0 then
-		v0 = source_y + source.h - 1
+		v0 = source_y + source.height - 1
 		v1 = source_y
 	end
 	if texture.mode == gp0.texture_mode_palette4 then
@@ -169,12 +179,12 @@ function image.draw_quad(
 	x3, y3,
 	color,
 	blend_mode)
-	local texture<const> = source.texture
-	local source_x = source.u
+	local texture<const> = source._texture
+	local source_x = source.source_x
 	if texture.mode ~= gp0.texture_mode_palette4 then
 		source_x = texture.x + source_x
 	end
-	local source_y<const> = texture.y + source.v
+	local source_y<const> = texture.y + source.source_y
 	local u0<const> = source_x + source_x0
 	local v0<const> = source_y + source_y0
 	local u1<const> = source_x + source_x1

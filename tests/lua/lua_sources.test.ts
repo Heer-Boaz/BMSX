@@ -167,7 +167,7 @@ test('debug package source boot resolves the persisted texture bindings module',
 	const cartSource = [
 		'module<entry>',
 		`local texture_bindings<const> = require('${TEXTURE_BINDINGS_MODULE_PATH}')`,
-		'return texture_bindings._atlas_00[1]',
+		'return texture_bindings.placement_pools[1][1]',
 	].join('\n');
 	const layoutSource = buildTextureBindingsModuleSource(layout);
 	const cartBytes = textEncoder.encode(cartSource);

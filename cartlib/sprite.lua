@@ -56,10 +56,9 @@ function sprite_object.new(opts)
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
 	self.collider:set_sprite(self.sprite_component)
-	local source<const> = self.sprite_component.image
-	if source ~= nil then
-		self.sx = source.w
-		self.sy = source.h
+	if opts.imgid ~= nil then
+		self.sx = self.sprite_component.source_width
+		self.sy = self.sprite_component.source_height
 	end
 
 	return self
@@ -72,9 +71,8 @@ function sprite_object:set_imgid(id)
 	if id == nil then
 		return
 	end
-	local source<const> = self.sprite_component.image
-	self.sx = source.w
-	self.sy = source.h
+	self.sx = self.sprite_component.source_width
+	self.sy = self.sprite_component.source_height
 end
 
 return sprite_object

@@ -20,9 +20,9 @@ local option_animation_timelineid<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
 local sources<const> = {
-	player_neutral = { id = assets_player_n, image = image.resolve(assets_player_n) },
-	player_up = { id = assets_player_u, image = image.resolve(assets_player_u) },
-	player_down = { id = assets_player_d, image = image.resolve(assets_player_d) },
+	player_neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
+	player_up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
+	player_down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
 	options = {
 		image.resolve(assets_option1),
 		image.resolve(assets_option2),
@@ -76,7 +76,7 @@ function player:emit_metric()
 		self.y,
 		self.last_dx,
 		self.last_dy,
-		self.sprite.id,
+		self.sprite.imgid,
 		self.last_speed,
 		bool01(self.left_held),
 		bool01(self.right_held),
@@ -227,7 +227,7 @@ function player:draw_visual(draw)
 		local option<const> = self.options[i]
 		image.draw(draw, option_source, option.x, option.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
-	image.draw(draw, self.sprite.image, self.x, self.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	image.draw(draw, self.sprite.source, self.x, self.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	self:draw_lasers(draw)
 	self:draw_missiles(draw)
 	self:draw_uplasers(draw)
