@@ -25,6 +25,21 @@ function space:active_objects_by_definition(definition_id)
 	return bucket and bucket.items
 end
 
+function space:register_definition(definition_id)
+	local buckets<const> = self._active_objects_by_definition
+	local bucket = buckets[definition_id]
+	if bucket ~= nil then
+		return bucket.items
+	end
+	bucket = dense_set.new()
+	buckets[definition_id] = bucket
+	return bucket.items
+end
+
+function space:definition_bucket(definition_id)
+	return self._active_objects_by_definition[definition_id].items
+end
+
 function space:active_objects_by_tag(tag)
 	local bucket<const> = self._active_objects_by_tag[tag]
 	return bucket and bucket.items

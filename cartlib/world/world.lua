@@ -103,6 +103,8 @@ function worldclass.new()
 	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
 	self._clear_pending = false
+	self._active_definition_views = {}
+	self._active_definition_view_list = {}
 	self._active_component_views_by_class = {}
 	self._active_component_view_list = {}
 	self.active_space_id = nil
@@ -140,6 +142,10 @@ end
 
 function worldclass:_add_space(space_id)
 	local created<const> = space.new(space_id)
+	local definition_views<const> = self._active_definition_view_list
+	for view_index = 1, #definition_views do
+		created:register_definition(definition_views[view_index].definition_id)
+	end
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
 		created:register_component_class(component_views[view_index].component_class)
@@ -151,6 +157,11 @@ end
 function worldclass:_commit_active_space(space_id)
 	local active_space<const> = self._spaces[space_id]
 	self._active_space = active_space
+	local definition_views<const> = self._active_definition_view_list
+	for view_index = 1, #definition_views do
+		local view<const> = definition_views[view_index]
+		view.items = active_space:definition_bucket(view.definition_id)
+	end
 	local component_views<const> = self._active_component_view_list
 	for view_index = 1, #component_views do
 		local view<const> = component_views[view_index]
@@ -192,6 +203,33 @@ function worldclass:_active_component_view(component_class)
 	end
 	if self._active_space ~= nil then
 		created.items = self._active_space:component_bucket(component_class)
+	end
+	return created
+end
+
+-- Systems bind active definition views once at configuration time.
+-- The world swaps the retained bucket only when the active space commits.
+function worldclass:_active_definition_view(definition_id)
+	local views<const> = self._active_definition_views
+	local view<const> = views[definition_id]
+	if view then
+		return view
+	end
+	local created<const> = {
+		definition_id = definition_id,
+		items = empty_object_bucket,
+	}
+	views[definition_id] = created
+	local view_list<const> = self._active_definition_view_list
+	view_list[#view_list + 1] = created
+	local spaces<const> = self._spaces
+	local space_order<const> = self._space_order
+	for space_index = 1, #space_order do
+		local partition<const> = spaces[space_order[space_index]]
+		partition:register_definition(definition_id)
+	end
+	if self._active_space ~= nil then
+		created.items = self._active_space:definition_bucket(definition_id)
 	end
 	return created
 end
