@@ -474,6 +474,7 @@ function worldclass:_reserve_object(obj)
 	registry:reserve(obj)
 	obj.world = self
 	obj.space_id = obj.space_id or self.active_space_id
+	obj._spawn_pending = true
 end
 
 local apply_construction_values<const> = function(target, values)
@@ -544,7 +545,6 @@ function worldclass:spawn(definition_id, options)
 
 	local deferred<const> = self._current_tick_group ~= nil
 	if deferred then
-		obj._spawn_pending = true
 		local index<const> = self._pending_spawn_count + 1
 		self._pending_spawn_count = index
 		self._pending_spawns[index] = obj
@@ -564,7 +564,11 @@ function worldclass:spawn(definition_id, options)
 	end
 	obj._spawn_position = pos
 	if not deferred then
-		self:_commit_spawn(obj)
+		if obj._despawn_pending then
+			self:_commit_despawn(obj)
+		else
+			self:_commit_spawn(obj)
+		end
 	end
 	return obj
 end
