@@ -1,4 +1,4 @@
--- overlap_2d.lua
+-- overlap2dsystem.lua
 -- 2D-overlap ECS system.
 
 --
@@ -9,7 +9,7 @@
 --    The 2D-overlap system is an opt-in ECS stage. Carts that want automatic
 --    overlap events add it to their pipeline; carts that do not can stick to
 --    targeted collision queries. When enabled, it detects all overlapping
---    active+hittable collider pairs in the active world space and emits
+--    active collider pairs in the active world space and emits
 --    three events on BOTH owner objects' event ports:
 --
 --      overlap.begin  — first frame two colliders touch (phase = 'begin')
@@ -21,7 +21,7 @@
 --      WRONG — manual loop every frame:
 --        function hero:update(delta_time)
 --          for enemy in objects_by_tag('enemy') do
---            if collision_2d.collides(self.collider, enemy.collider) then ...
+--            if collision2d.collides(self.collider, enemy.collider) then ...
 --
 --      RIGHT — reactive subscription:
 --        function hero:bind()
@@ -53,21 +53,20 @@
 --
 -- 3. LAYER / MASK FILTERING
 --    A pair is only tested when (a.layer & b.mask) != 0 OR (b.layer & a.mask) != 0.
---    Both colliders must also have hittable=true.
 --    Carts program these raw bitmasks when constructing each collider.
 
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local system<const> = require('cartlib/world/basesystem')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 
 local clear_map<const> = require('cartlib/util/clear_map')
-local collision_2d<const> = require('cartlib/collision_2d')
+local collision2d<const> = require('cartlib/collision/collision2d')
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
-local overlap_2d_system<const> = {}
-overlap_2d_system.__index = overlap_2d_system
-setmetatable(overlap_2d_system, { __index = system })
+local overlap2dsystem<const> = {}
+overlap2dsystem.__index = overlap2dsystem
+setmetatable(overlap2dsystem, { __index = system })
 
 -- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
@@ -127,9 +126,9 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 	end
 end
 
-function overlap_2d_system.new(world)
-	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap_2d_system)
-	self._component_view = world:_active_component_view(collider_2d_component)
+function overlap2dsystem.new(world)
+	local self<const> = setmetatable(system.new(tick_group.physics, 42), overlap2dsystem)
+	self._component_view = world:_active_component_view(collider2dcomponent)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.pair_row_pool = {}
@@ -147,42 +146,26 @@ function overlap_2d_system.new(world)
 		contact = false,
 		phase = false,
 	}
-	self.event_colliders = {}
 	self.overlap_pairs = scratch_record_batch.new(64)
-	self.event_collider_count = 0
 	return self
 end
 
-function overlap_2d_system:update()
+function overlap2dsystem:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
 	local overlap_pairs<const> = self.overlap_pairs
 	local overlap_payload<const> = self.overlap_payload
 	release_pair_rows(self, new_pairs)
 
-	local event_colliders<const> = self.event_colliders
 	local colliders<const> = self._component_view.items
-	local event_collider_count = 0
-	local previous_event_collider_count<const> = self.event_collider_count
-	for i = 1, #colliders do
-		local collider<const> = colliders[i]
-		if collider.hittable then
-			event_collider_count = event_collider_count + 1
-			event_colliders[event_collider_count] = collider
-		end
-	end
-	for i = event_collider_count + 1, previous_event_collider_count do
-		event_colliders[i] = nil
-	end
-	self.event_collider_count = event_collider_count
-
-	if event_collider_count <= 1 then
+	local collider_count<const> = #colliders
+	if collider_count <= 1 then
 		emit_overlap_end_events(overlap_payload, prev_pairs, nil)
 		release_pair_rows(self, prev_pairs)
 		return
 	end
 
-	local overlap_pair_count<const> = collision_2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
+	local overlap_pair_count<const> = collision2d.collect_overlaps(colliders, collider_count, overlap_pairs)
 
 	for i = 1, overlap_pair_count do
 		local pair<const> = overlap_pairs.items[i]
@@ -225,18 +208,13 @@ function overlap_2d_system:update()
 	self.next_pairs = prev_pairs
 end
 
-function overlap_2d_system:clear()
+function overlap2dsystem:clear()
 	release_pair_rows(self, self.prev_pairs)
 	release_pair_rows(self, self.next_pairs)
-	local event_colliders<const> = self.event_colliders
-	for index = 1, self.event_collider_count do
-		event_colliders[index] = nil
-	end
-	self.event_collider_count = 0
 	local overlap_items<const> = self.overlap_pairs.items
 	for index = 1, #overlap_items do
 		clear_map(overlap_items[index])
 	end
 end
 
-return overlap_2d_system
+return overlap2dsystem

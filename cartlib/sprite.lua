@@ -22,9 +22,9 @@
 --
 -- 2. COLLISION IS DERIVED LAZILY FROM THE SPRITE METADATA.
 --    When set_imgid(id) is called, the packed collision geometry is later
---    read directly by the linked collider_2d_component when collision code asks
+--    read directly by the linked collider2dcomponent when collision code asks
 --    for the current shape.
---    No extra setup is needed in cart code — just ensure a collider_2d_component
+--    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object.
 --
 -- 3. COLLISION LAYERS: carts program the collider's raw layer and mask words.
@@ -33,7 +33,7 @@
 --      self.collider.mask = collision_enemy_mask
 
 local worldobject<const> = require('cartlib/world/worldobject')
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local sprite_component<const> = require('cartlib/component/spritecomponent')
 
 local sprite_object<const> = {}
@@ -51,7 +51,7 @@ function sprite_object.new(opts)
 		imgid = opts.imgid,
 		id_local = sprite_object.base_sprite_id,
 	})
-	self.collider = collider_2d_component.new({ id_local = sprite_object.primary_collider_id })
+	self.collider = collider2dcomponent.new({ id_local = sprite_object.primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)

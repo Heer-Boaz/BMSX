@@ -86,11 +86,11 @@ local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
 local actioneffects<const> = require('cartlib/actioneffects')
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
 local sprite_component<const> = require('cartlib/component/spritecomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
-local collision_2d<const> = require('cartlib/collision_2d')
+local collision2d<const> = require('cartlib/collision/collision2d')
 local player_abilities<const> = require('player/abilities')
 
 local input<const> = require('cartlib/input/input')
@@ -374,7 +374,7 @@ function player:ctor()
 	self.collider.layer = collision_player_layer
 	self.collider.mask = collision_player_mask
 
-	self.sword_collider = collider_2d_component.new({
+	self.sword_collider = collider2dcomponent.new({
 		id_local = 'sword',
 		layer = collision_projectile_layer,
 		mask = collision_projectile_mask,
@@ -1480,7 +1480,7 @@ function player:collides_with_elevator_at(x, y)
 	for i = 1, count do
 		local platform<const> = world:get('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
-		and collision_2d.collides(self.collider, platform.collider)
+		and collision2d.collides(self.collider, platform.collider)
 		then
 			self.x = old_x
 			self.y = old_y
@@ -1506,7 +1506,7 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	if platform.current_room_number ~= world:get('c').current_room_number then
 		return false
 	end
-	if not collision_2d.collides(self.collider, platform.collider) then
+	if not collision2d.collides(self.collider, platform.collider) then
 		return false
 	end
 	if self.y <= previous_platform_y and self:has_feet_over_elevator_top(platform, self.x) then
