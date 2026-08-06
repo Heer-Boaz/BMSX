@@ -354,9 +354,16 @@ function world_class:reconcile_component(comp)
 end
 
 function world_class:_commit_component_attach(comp)
+	comp._attach_pending = nil
 	registry:register_component(comp)
 	comp._published = true
 	self:_reconcile_active_component(comp)
+end
+
+function world_class:_cancel_component_attach(comp)
+	comp._attach_pending = nil
+	registry:deregister(comp)
+	comp.parent:_commit_component_detach(comp)
 end
 
 function world_class:attach_component(comp)
@@ -365,6 +372,7 @@ function world_class:attach_component(comp)
 		self:_commit_component_attach(comp)
 		return
 	end
+	comp._attach_pending = true
 	local index<const> = self._pending_component_attach_count + 1
 	self._pending_component_attach_count = index
 	self._pending_component_attaches[index] = comp
@@ -379,6 +387,9 @@ function world_class:_commit_component_detach(comp)
 end
 
 function world_class:detach_component(comp)
+	if comp._attach_pending then
+		return
+	end
 	if self._current_tick_group == nil then
 		self:_commit_component_detach(comp)
 		return
@@ -395,7 +406,11 @@ function world_class:_flush_component_attaches()
 	while index <= self._pending_component_attach_count do
 		local comp<const> = pending[index]
 		pending[index] = nil
-		self:_commit_component_attach(comp)
+		if comp._attached then
+			self:_commit_component_attach(comp)
+		else
+			self:_cancel_component_attach(comp)
+		end
 		index = index + 1
 	end
 	self._pending_component_attach_count = 0

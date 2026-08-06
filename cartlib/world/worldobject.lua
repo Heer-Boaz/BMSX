@@ -126,8 +126,12 @@ function worldobject:add_component(comp)
 	for class_index = 1, #classes do
 		local class<const> = classes[class_index]
 		local bucket<const> = components_by_class[class]
-		if rawget(class, 'unique') and bucket ~= nil and #bucket > 0 then
-			error('unique component already attached to "' .. self.id .. '"')
+		if rawget(class, 'unique') and bucket ~= nil then
+			for component_index = 1, #bucket do
+				if bucket[component_index]._attached then
+					error('unique component already attached to "' .. self.id .. '"')
+				end
+			end
 		end
 	end
 	comp.parent = self

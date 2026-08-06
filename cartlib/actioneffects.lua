@@ -98,7 +98,9 @@ function actioneffect_component:on_attach()
 end
 
 function actioneffect_component:on_detach()
-	self.parent.actioneffects = nil
+	if self.parent.actioneffects == self then
+		self.parent.actioneffects = nil
+	end
 end
 
 function actioneffect_component:grant_effect(id)

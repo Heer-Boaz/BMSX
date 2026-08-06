@@ -40,7 +40,9 @@ end
 
 function fsm_component:on_detach()
 	self:dispose()
-	self.parent.state_machines = nil
+	if self.parent.state_machines == self then
+		self.parent.state_machines = nil
+	end
 end
 
 function fsm_component:on_activate()
