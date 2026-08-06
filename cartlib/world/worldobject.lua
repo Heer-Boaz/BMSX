@@ -79,7 +79,6 @@ function worldobject.new(opts)
 	self._components_by_class = {}
 	self._component_sequence = 0
 	self._bound = false
-	self.marked_for_disposal = false
 	self.space_id = opts.space_id
 	self.events = eventemitter.events_of(self)
 	return self

@@ -17,7 +17,7 @@
 --
 -- 3. QUERY SCOPE IS EXPLICIT.
 --    active_* returns retained dense arrays for the selected space. Unqualified
---    objects* uses the cart-wide Registry or the world's lifecycle list.
+--    objects_by_* uses the cart-wide Registry.
 --
 -- 4. THE MODULE RETURNS THE CART WORLD.
 --    Access it via require('cartlib/world/world'); carts do not create another world.
@@ -598,7 +598,6 @@ function worldclass:_commit_disposal(obj)
 
 	obj:ondespawn()
 	obj:dispose()
-	obj.marked_for_disposal = nil
 	obj.world = nil
 end
 
@@ -615,7 +614,7 @@ function worldclass:mark_for_disposal(obj)
 		return
 	end
 	if obj.active then
-		obj:deactivate()
+		obj.active = false
 	end
 	if self._current_tick_group == nil and not self._flushing_disposals then
 		self:_commit_disposal(obj)
@@ -650,10 +649,6 @@ end
 
 function worldclass:active_objects()
 	return self._active_space:active_objects()
-end
-
-function worldclass:objects()
-	return self._objects
 end
 
 function worldclass:active_objects_by_definition(definition_id)
