@@ -14,28 +14,23 @@ setmetatable(fsm_component, { __index = component })
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
-function fsm_component.new(opts)
+function fsm_component.new(opts, machine_ids)
 	local self<const> = setmetatable(component.new(opts), fsm_component)
 	self._machines_by_id = {}
 	self._machines = {}
 	self._machine_count = 0
 	self._started = false
 	self._state_paths = nil
-	if opts.definition then
-		local def<const> = opts.definition
-		self:add_state_machine(def.id, def)
+	for i = 1, #machine_ids do
+		local machine_id<const> = machine_ids[i]
+		self:add_state_machine(machine_id, definitions_by_id[machine_id])
 	end
 	return self
 end
 
 function fsm_component.factory(machine_ids)
 	return function(opts)
-		local self<const> = fsm_component.new(opts)
-		for i = 1, #machine_ids do
-			local machine_id<const> = machine_ids[i]
-			self:add_state_machine(machine_id, definitions_by_id[machine_id])
-		end
-		return self
+		return fsm_component.new(opts, machine_ids)
 	end
 end
 

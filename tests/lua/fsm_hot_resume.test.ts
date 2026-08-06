@@ -240,7 +240,7 @@ assert(target.value == 1021)
 target.events:emit('restore')
 assert(machine.current_id == 'active')
 
-local published_definition<const> = fsm_library.get('hot_machine')
+local published_definition<const> = machine.definition
 local concurrent_compatible<const> = pcall(function()
 	fsm_library.register('hot_machine', {
 		initial = 'idle',
@@ -253,7 +253,7 @@ local concurrent_compatible<const> = pcall(function()
 	})
 end)
 assert(concurrent_compatible == false)
-assert(fsm_library.get('hot_machine') == published_definition)
+assert(machine.definition == published_definition)
 local compatible<const> = pcall(function()
 	fsm_library.register('hot_machine', {
 		initial = 'idle',
@@ -264,8 +264,9 @@ local compatible<const> = pcall(function()
 	})
 end)
 assert(compatible == false)
-assert(fsm_library.get('hot_machine') == published_definition)
 assert(machine.definition == published_definition)
+local future_state_machines<const> = make_fsm({ parent = target })
+assert(future_state_machines._machines_by_id.hot_machine.definition == published_definition)
 
 local old_root<const> = behaviour_tree.action_node.new('enemy_hot', function(_, blackboard)
 	blackboard.node_data.ticks = (blackboard.node_data.ticks or 0) + 1

@@ -36,6 +36,7 @@ end
 local highlight_move_timelineid<const> = 'hmove'
 local highlight_vibe_timelineid<const> = 'hvibe'
 local text_object_fsm_id<const> = 'text_object'
+local text_object_machine_ids<const> = { text_object_fsm_id }
 local text_object_state_idle<const> = 'idle'
 local text_object_state_typing<const> = 'typing'
 local typing_command_start<const> = 'type.start'
@@ -273,10 +274,7 @@ function text_object.new(opts)
 	opts = opts or {}
 	local self<const> = setmetatable(worldobject.new(opts), text_object)
 	self:add_component(timelinecomponent.new({ parent = self }))
-	self:add_component(fsm_component.new({
-		parent = self,
-		definition = fsm_library.get(text_object_fsm_id),
-	}))
+	self:add_component(fsm_component.new({ parent = self }, text_object_machine_ids))
 	self.is_text_object = true
 	self.text = { '' }
 	self.full_text_lines = { '' }

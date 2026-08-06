@@ -37,8 +37,4 @@ function fsm_library.register(machine_name, blueprint)
 	end
 end
 
-function fsm_library.get(machine_name)
-	return state_definitions[machine_name]
-end
-
 return fsm_library
