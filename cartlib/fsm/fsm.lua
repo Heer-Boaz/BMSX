@@ -137,8 +137,8 @@ local clear_map<const> = require('cartlib/util/clear_map')
 local timelinemodule<const> = require('cartlib/timeline/timeline')
 local input<const> = require('cartlib/input/input')
 
-local state_definition<const> = {}
-state_definition.__index = state_definition
+local statedefinition<const> = {}
+statedefinition.__index = statedefinition
 
 local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
 local no_op<const> = 'no_op'
@@ -344,8 +344,8 @@ local validate_transition_spec_map<const> = function(def_id, field_name, map)
 	end
 end
 
-function state_definition.new(id, def, root, parent)
-	local self<const> = setmetatable({}, state_definition)
+function statedefinition.new(id, def, root, parent)
+	local self<const> = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
 	self.id = id
 	self.parent = parent
@@ -438,7 +438,7 @@ function state_definition.new(id, def, root, parent)
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
-			local child<const> = state_definition.new(state_id, state_def, self.root, self)
+			local child<const> = statedefinition.new(state_id, state_def, self.root, self)
 			self.states[state_id] = child
 			if not self.initial and start_state_prefixes[string.sub(state_id, 1, 1)] then
 				self.initial = state_id
@@ -1689,7 +1689,7 @@ return {
 	assert_rebind_compatible = assert_rebind_compatible,
 	bind_state_path = get_definition_path_plan,
 	matches_state_path = matches_cached_path_plan,
-	state_definition = state_definition,
+	state_definition = statedefinition,
 	state = state,
 	transition_state_path = transition_cached_path,
 }

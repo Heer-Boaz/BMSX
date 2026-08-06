@@ -1,12 +1,12 @@
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 
 local tilecollisioncomponent<const> = {}
 tilecollisioncomponent.__index = tilecollisioncomponent
 tilecollisioncomponent.unique = true
-setmetatable(tilecollisioncomponent, { __index = component })
+setmetatable(tilecollisioncomponent, { __index = basecomponent })
 
 function tilecollisioncomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts), tilecollisioncomponent)
+	local self<const> = setmetatable(basecomponent.new(opts), tilecollisioncomponent)
 	self.query = opts.query
 	self.event_base = opts.event_base or 'tilecollision'
 	self.begin_event_type = self.event_base .. '.begin'

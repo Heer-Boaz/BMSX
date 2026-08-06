@@ -68,9 +68,9 @@
 --    are cleaned up when the subscriber object is removed.
 --
 -- 6. EVENTPORT VS EVENTEMITTER.
---    Cart code should use event_port (self.events) not eventemitter directly.
---    event_port:on() auto-fills the emitter filter from the port owner.
---    event_port:emit() auto-fills the emitter identity.
+--    Cart code should use eventport (self.events) not eventemitter directly.
+--    eventport:on() auto-fills the emitter filter from the port owner.
+--    eventport:emit() auto-fills the emitter identity.
 --    This prevents accidentally omitting the emitter and creating
 --    subscriptions that fire for unrelated sources.
 
@@ -84,8 +84,8 @@ local eventemitter<const> = {
 	_pending_listener_count = 0,
 }
 
-local event_port<const> = {}
-event_port.__index = event_port
+local eventport<const> = {}
+eventport.__index = eventport
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
@@ -184,7 +184,7 @@ function eventemitter.events_of(emitter)
 			emitter_id = emitter.id
 			subscriber = emitter
 		end
-		port = setmetatable({ emitter = emitter, emitter_id = emitter_id, subscriber = subscriber }, event_port)
+		port = setmetatable({ emitter = emitter, emitter_id = emitter_id, subscriber = subscriber }, eventport)
 		port_cache[emitter] = port
 	end
 	return port
@@ -291,17 +291,17 @@ function eventemitter:remove_subscriber(subscriber)
 	end
 end
 
--- event_port:on(spec): preferred cart API for subscribing to events.
+-- eventport:on(spec): preferred cart API for subscribing to events.
 -- Identical to eventemitter:on() but defaults the retained emitter filter and
 -- subscriber to the port owner. The caller's declarative spec is not retained
 -- or modified.
-function event_port:on(spec)
+function eventport:on(spec)
 	eventemitter:on(spec, self.subscriber, self.emitter_id)
 end
 
--- event_port:emit(event_name, payload): preferred cart API for emitting events.
+-- eventport:emit(event_name, payload): preferred cart API for emitting events.
 -- Payload identity is preserved exactly, including nil and false.
-function event_port:emit(event_name, payload)
+function eventport:emit(event_name, payload)
 	eventemitter:emit(event_name, self.emitter, payload, self.emitter_id)
 end
 

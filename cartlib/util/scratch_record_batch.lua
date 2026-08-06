@@ -1,10 +1,10 @@
 -- scratch_record_batch.lua
 -- reusable scratch batch for small table-shaped records
 
-local scratch_record_batch<const> = {}
-scratch_record_batch.__index = scratch_record_batch
+local scratchrecordbatch<const> = {}
+scratchrecordbatch.__index = scratchrecordbatch
 
-function scratch_record_batch.new(initial_capacity)
+function scratchrecordbatch.new(initial_capacity)
 	local items<const> = {}
 	local count<const> = initial_capacity or 0
 	local i = 0
@@ -16,10 +16,10 @@ function scratch_record_batch.new(initial_capacity)
 		items = items,
 		size = count,
 		length = count,
-	}, scratch_record_batch)
+	}, scratchrecordbatch)
 end
 
-function scratch_record_batch:get(index)
+function scratchrecordbatch:get(index)
 	local item = self.items[index]
 	if item == nil then
 		item = {}
@@ -32,7 +32,7 @@ function scratch_record_batch:get(index)
 	return item
 end
 
-function scratch_record_batch:reserve(min_capacity)
+function scratchrecordbatch:reserve(min_capacity)
 	local items<const> = self.items
 	while #items < min_capacity do
 		items[#items + 1] = {}
@@ -44,4 +44,4 @@ function scratch_record_batch:reserve(min_capacity)
 	return items
 end
 
-return scratch_record_batch
+return scratchrecordbatch

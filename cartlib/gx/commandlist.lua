@@ -6,8 +6,8 @@ local irq_flags<const>: *word = 0x08000000
 local irq_ack<const>: *word = 0x08000004
 local irq_gpu<const> = 0x0040
 
-local draw_list<const> = {}
-draw_list.__index = draw_list
+local drawlist<const> = {}
+drawlist.__index = drawlist
 
 local commandlist<const> = {}
 
@@ -41,7 +41,7 @@ function commandlist.new(words)
 		words = words,
 		word_count = 0,
 		draw_mode = gp0.draw_mode_blend_half,
-	}, draw_list)
+	}, drawlist)
 end
 
 function commandlist.begin(draw, draw_mode)
@@ -63,7 +63,7 @@ function commandlist.submit_fenced(draw)
 	gx_gpu.ack_irq()
 end
 
-function draw_list:clear(origin_word, size_word, color)
+function drawlist:clear(origin_word, size_word, color)
 	local index<const> = reserve(self, 3, false)
 	local words<const>: *word = self.words
 	words[index] = gp0.fill_rectangle | gp0.argb_to_rgb(color)
@@ -72,7 +72,7 @@ function draw_list:clear(origin_word, size_word, color)
 	self.word_count = index + 3
 end
 
-function draw_list:mode(draw_mode)
+function drawlist:mode(draw_mode)
 	if draw_mode == self.draw_mode then
 		return
 	end
@@ -83,7 +83,7 @@ function draw_list:mode(draw_mode)
 	self.draw_mode = draw_mode
 end
 
-function draw_list:mask(mode_word)
+function drawlist:mask(mode_word)
 	local index<const> = reserve(self, 1, false)
 	local words<const>: *word = self.words
 	words[index] = gp0.mask_bit_mode | mode_word
@@ -99,15 +99,15 @@ local emit_rect_color<const> = function(self, opcode, x0, y0, x1, y1, color)
 	self.word_count = index + 3
 end
 
-function draw_list:rect(x0, y0, x1, y1, color)
+function drawlist:rect(x0, y0, x1, y1, color)
 	emit_rect_color(self, gp0.draw_rectangle, x0, y0, x1, y1, color)
 end
 
-function draw_list:semitransparent_rect(x0, y0, x1, y1, color)
+function drawlist:semitransparent_rect(x0, y0, x1, y1, color)
 	emit_rect_color(self, gp0.draw_semitransparent_rectangle, x0, y0, x1, y1, color)
 end
 
-function draw_list:line(x0, y0, x1, y1, color)
+function drawlist:line(x0, y0, x1, y1, color)
 	local index<const> = reserve(self, 3, true)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_line | gp0.argb_to_rgb(color)
@@ -127,15 +127,15 @@ local emit_quad_color<const> = function(self, opcode, x0, y0, x1, y1, x2, y2, x3
 	self.word_count = index + 5
 end
 
-function draw_list:quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
+function drawlist:quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
 	emit_quad_color(self, gp0.draw_quad, x0, y0, x1, y1, x2, y2, x3, y3, color)
 end
 
-function draw_list:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
+function drawlist:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
 	emit_quad_color(self, gp0.draw_semitransparent_quad, x0, y0, x1, y1, x2, y2, x3, y3, color)
 end
 
-function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
+function drawlist:triangle(x0, y0, x1, y1, x2, y2, color)
 	local index<const> = reserve(self, 4, true)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_triangle | gp0.argb_to_rgb(color)
@@ -145,7 +145,7 @@ function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
 	self.word_count = index + 4
 end
 
-function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)
+function drawlist:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)
 	local index<const> = reserve(self, 6, true)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_gouraud_triangle | gp0.argb_to_rgb(color0)
@@ -157,7 +157,7 @@ function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, colo
 	self.word_count = index + 6
 end
 
-function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
+function drawlist:direct16_rect(source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
 	local texture_x<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
 	local texture_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
 	local draw_mode<const> = gp0.direct16_draw_mode(texture_x, texture_y, blend_mode) | rectangle_flip_mode
@@ -175,7 +175,7 @@ function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color,
 	self.word_count = index + 4
 end
 
-function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
+function drawlist:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
 	local texture_source_x<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
 	local texture_source_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
 	local draw_mode<const> = gp0.palette4_draw_mode(texture_x, texture_source_x, texture_source_y, blend_mode) | rectangle_flip_mode
@@ -193,7 +193,7 @@ function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, 
 	self.word_count = index + 4
 end
 
-function draw_list:direct16_quad(
+function drawlist:direct16_quad(
 	page_source_x, page_source_y,
 	source_x0, source_y0,
 	source_x1, source_y1,
@@ -225,7 +225,7 @@ function draw_list:direct16_quad(
 	self.word_count = index + 9
 end
 
-function draw_list:palette4_quad(
+function drawlist:palette4_quad(
 	texture_x, clut_x, clut_y,
 	page_source_x, page_source_y,
 	source_x0, source_y0,

@@ -61,8 +61,8 @@ local progression<const> = {}
 local runtime_by_ctx<const> = {}
 local runtimes_by_event<const> = {}
 
-local progression_state<const> = {}
-progression_state.__index = progression_state
+local progressionstate<const> = {}
+progressionstate.__index = progressionstate
 
 local empty_list<const> = {}
 
@@ -103,15 +103,15 @@ local eval_predicates<const> = function(values, predicates)
 	return true
 end
 
-function progression_state.new(program)
+function progressionstate.new(program)
 	return setmetatable({
 		program = program,
 		values = {},
 		revision = 0,
-	}, progression_state)
+	}, progressionstate)
 end
 
-function progression_state:set_index(key_idx, value)
+function progressionstate:set_index(key_idx, value)
 	if self.values[key_idx] == value then
 		return false
 	end
@@ -120,11 +120,11 @@ function progression_state:set_index(key_idx, value)
 	return true
 end
 
-function progression_state:get(key)
+function progressionstate:get(key)
 	return self.values[self.program.key2idx[key]]
 end
 
-function progression_state:matches_filter(filter)
+function progressionstate:matches_filter(filter)
 	return eval_predicates(self.values, filter)
 end
 
@@ -331,7 +331,7 @@ end
 --   Attaches a compiled progression program to ctx.
 function progression.mount(ctx, program)
 	progression.unmount(ctx)
-	local state<const> = progression_state.new(program.state_program)
+	local state<const> = progressionstate.new(program.state_program)
 
 	local rt<const> = {
 		ctx = ctx,

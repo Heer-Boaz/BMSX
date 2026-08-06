@@ -1,9 +1,9 @@
 local select_spriteshaperef<const> = require('cartlib/collision/spriteshape')
-local component<const> = require('cartlib/component/basecomponent')
+local basecomponent<const> = require('cartlib/component/basecomponent')
 
 local collider2dcomponent<const> = {}
 collider2dcomponent.__index = collider2dcomponent
-setmetatable(collider2dcomponent, { __index = component })
+setmetatable(collider2dcomponent, { __index = basecomponent })
 
 local invalidate_overlap_shape<const> = function(collider)
 	collider._overlap_cache_valid = false
@@ -45,7 +45,7 @@ function collider2dcomponent:prepare_overlap()
 end
 
 function collider2dcomponent.new(opts)
-	local self<const> = setmetatable(component.new(opts), collider2dcomponent)
+	local self<const> = setmetatable(basecomponent.new(opts), collider2dcomponent)
 	self.layer = opts.layer or 1
 	self.mask = opts.mask or 0xffffffff
 	self.local_area = opts.local_area
