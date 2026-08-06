@@ -14,7 +14,6 @@
 --    result. Prefer that over explicit registration in cart code.
 
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local state_definitions<const> = require('cartlib/fsm/definitions')
 local fsm<const> = require('cartlib/fsm/fsm')
 local registry<const> = require('cartlib/registry')
 
@@ -25,11 +24,11 @@ local fsmlibrary<const> = {}
 --   Replaces any previously registered definition with the same name.
 function fsmlibrary.register(machine_name, blueprint)
 	local replacement<const> = fsm.state_definition.new(machine_name, blueprint)
-	local previous<const> = state_definitions[machine_name]
+	local previous<const> = fsmcomponent.definition(machine_name)
 	if previous then
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
-	state_definitions[machine_name] = replacement
+	fsmcomponent.set_definition(machine_name, replacement)
 	local components<const> = registry:components(fsmcomponent)
 	for i = 1, #components do
 		local state_machines<const> = components[i]

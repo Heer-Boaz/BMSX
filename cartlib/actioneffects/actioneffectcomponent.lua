@@ -1,5 +1,4 @@
 local basecomponent<const> = require('cartlib/component/basecomponent')
-local definitions<const> = require('cartlib/actioneffects/definitions')
 
 local bind_state_paths<const> = function(owner, paths)
 	if not paths then
@@ -53,6 +52,12 @@ actioneffectcomponent.__index = actioneffectcomponent
 actioneffectcomponent.unique = true
 setmetatable(actioneffectcomponent, { __index = basecomponent })
 
+local definitions_by_id<const> = {}
+
+function actioneffectcomponent.set_definition(id, definition)
+	definitions_by_id[id] = definition
+end
+
 function actioneffectcomponent.new(opts)
 	local self<const> = setmetatable(basecomponent.new(opts), actioneffectcomponent)
 	self.effects = {}
@@ -79,7 +84,7 @@ function actioneffectcomponent:on_attach()
 		return
 	end
 	for id in pairs(self.effects) do
-		self:rebind_effect(id, definitions[id])
+		self:rebind_effect(id, definitions_by_id[id])
 	end
 end
 
@@ -91,7 +96,7 @@ end
 
 function actioneffectcomponent:grant_effect(id)
 	local owner<const> = self.parent
-	local definition<const> = definitions[id]
+	local definition<const> = definitions_by_id[id]
 	self.effects[id] = {
 		definition = definition,
 		required_states = bind_state_paths(owner, definition.required_state_paths),

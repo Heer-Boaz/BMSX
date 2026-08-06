@@ -1,5 +1,4 @@
 local basecomponent<const> = require('cartlib/component/basecomponent')
-local definitions_by_id<const> = require('cartlib/fsm/definitions')
 local eventemitter<const> = require('cartlib/eventemitter')
 local fsm<const> = require('cartlib/fsm/fsm')
 local state<const> = fsm.state
@@ -11,6 +10,16 @@ local fsmcomponent<const> = {}
 fsmcomponent.__index = fsmcomponent
 fsmcomponent.unique = true
 setmetatable(fsmcomponent, { __index = basecomponent })
+
+local definitions_by_id<const> = {}
+
+function fsmcomponent.definition(machine_id)
+	return definitions_by_id[machine_id]
+end
+
+function fsmcomponent.set_definition(machine_id, definition)
+	definitions_by_id[machine_id] = definition
+end
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}

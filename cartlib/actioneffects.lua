@@ -1,5 +1,4 @@
 local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
-local definitions<const> = require('cartlib/actioneffects/definitions')
 local registry<const> = require('cartlib/registry')
 
 local actioneffects<const> = {}
@@ -16,7 +15,7 @@ actioneffects.effect_type = {
 }
 
 function actioneffects.register_effect(id, definition)
-	definitions[id] = definition
+	actioneffectcomponent.set_definition(id, definition)
 	local components<const> = registry:components(actioneffectcomponent)
 	for i = 1, #components do
 		local actioneffect<const> = components[i]

@@ -1,12 +1,11 @@
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
-local definitions_by_id<const> = require('cartlib/behaviourtree/definitions')
 local registry<const> = require('cartlib/registry')
 
 local behaviourtreelibrary<const> = {}
 
 function behaviourtreelibrary.register(root)
 	local tree_id<const> = root.id
-	definitions_by_id[tree_id] = root
+	btcomponent.set_definition(tree_id, root)
 	local components<const> = registry:components(btcomponent)
 	for i = 1, #components do
 		local behaviourtree<const> = components[i]

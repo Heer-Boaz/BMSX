@@ -18,6 +18,7 @@ const SYSTEM_MODULE_FILES = [
 
 const CART_MODULE_FILES = [
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
+	['cartlib/component/componentclass', 'cartlib/component/componentclass.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
 	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
 	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
@@ -29,11 +30,9 @@ const CART_MODULE_FILES = [
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
 	['cartlib/util/scratch_record_batch', 'cartlib/util/scratch_record_batch.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
-	['cartlib/fsm/definitions', 'cartlib/fsm/definitions.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsmcomponent', 'cartlib/fsm/fsmcomponent.lua'],
 	['cartlib/behaviourtree/bt', 'cartlib/behaviourtree/bt.lua'],
-	['cartlib/behaviourtree/definitions', 'cartlib/behaviourtree/definitions.lua'],
 	['cartlib/behaviourtree/btcomponent', 'cartlib/behaviourtree/btcomponent.lua'],
 	['cartlib/behaviourtree/library', 'cartlib/behaviourtree/library.lua'],
 ] as const;
