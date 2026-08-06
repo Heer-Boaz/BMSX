@@ -1,5 +1,7 @@
 local string_lib<const> = string
+local basecomponent<const> = require('cartlib/component/basecomponent')
 local image<const> = require('cartlib/gx/image')
+local registry<const> = require('cartlib/registry')
 local byte<const> = string_lib.byte
 
 local font<const> = {}
@@ -18,7 +20,7 @@ local build_default_definition<const> = function()
 	}
 end
 
-local build_resolved_font<const> = function(definition)
+local build_resolved_font<const> = function(id, definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
@@ -41,6 +43,7 @@ local build_resolved_font<const> = function(definition)
 	end
 	local line_glyph<const> = items[0x41] or items[0x61] or items[0x3f]
 	return {
+		id = id,
 		items = items,
 		line_height = definition.line_height or line_glyph.height,
 		advance_padding = advance_padding,
@@ -49,7 +52,18 @@ end
 
 function font.define(id, definition)
 	definitions[id] = definition
-	resolved_fonts[id] = nil
+	if resolved_fonts[id] == nil then
+		return
+	end
+	local resolved_font<const> = build_resolved_font(id, definition)
+	resolved_fonts[id] = resolved_font
+	local components<const> = registry:components(basecomponent)
+	for i = 1, #components do
+		local component<const> = components[i]
+		if component.font_id == id then
+			component:set_font(resolved_font)
+		end
+	end
 end
 
 function font.get(id)
@@ -60,7 +74,7 @@ function font.get(id)
 			definition = build_default_definition()
 			definitions[id] = definition
 		end
-		resolved_font = build_resolved_font(definition)
+		resolved_font = build_resolved_font(id, definition)
 		resolved_fonts[id] = resolved_font
 	end
 	return resolved_font

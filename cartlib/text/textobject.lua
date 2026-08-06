@@ -33,6 +33,10 @@ function text_object_component:render(draw, x, y)
 	text_component.render_glyphs(self, draw, x, y)
 end
 
+function text_object_component:set_font(font)
+	self.parent:set_font(font)
+end
+
 local highlight_move_timelineid<const> = 'hmove'
 local highlight_vibe_timelineid<const> = 'hvibe'
 local text_object_fsm_id<const> = 'text_object'
@@ -469,6 +473,7 @@ end
 
 function text_object:set_font(font)
 	self.text_component.font = font
+	self.text_component.font_id = font.id
 	self.text_component.line_height = line_advance(font, self.blank_lines)
 	if self.char_width_uses_font then
 		self.char_width = font.items[0x61].width

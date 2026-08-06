@@ -12,6 +12,7 @@ setmetatable(text_component, { __index = visual_component })
 function text_component.new(opts)
 	local self<const> = setmetatable(visual_component.new(opts), text_component)
 	self.font = opts.font or font_module.get('default')
+	self.font_id = self.font.id
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff
 	self.background_color = opts.background_color
@@ -63,6 +64,7 @@ function text_component:set_font(font)
 		return
 	end
 	self.font = font
+	self.font_id = font.id
 	self.line_height = font.line_height
 	self:set_text(self.text)
 end
