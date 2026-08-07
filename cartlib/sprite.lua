@@ -66,7 +66,9 @@ end
 -- Sets the sprite component's semantic image id and updates the object's size
 -- from the resolved image owned by that component.
 function spriteobject:set_imgid(id)
-	self.sprite_component:set_imgid(id)
+	if not self.sprite_component:set_imgid(id) then
+		return
+	end
 	if id == nil then
 		return
 	end

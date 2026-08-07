@@ -15,11 +15,18 @@ function spritecomponent.new(opts)
 	self.scale_y = opts.scale_y or 1
 	self.draw_scale_x = opts.draw_scale_x or 1
 	self.draw_scale_y = opts.draw_scale_y or 1
+	self.imgid = nil
+	self._source = nil
+	self.source_width = 0
+	self.source_height = 0
 	self:set_imgid(opts.imgid)
 	return self
 end
 
 function spritecomponent:set_imgid(imgid)
+	if self.imgid == imgid then
+		return false
+	end
 	self.imgid = imgid
 	if imgid then
 		local source<const> = image.resolve(imgid)
@@ -31,6 +38,7 @@ function spritecomponent:set_imgid(imgid)
 		self.source_width = 0
 		self.source_height = 0
 	end
+	return true
 end
 
 function spritecomponent:on_detach()
