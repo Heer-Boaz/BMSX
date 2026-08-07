@@ -49,7 +49,6 @@ local dispatch_frame<const> = function(entry, owner, evt, delta_time, on_frame_p
 	apply_markers(entry, owner, evt.current)
 	on_frame_payload(context, entry, owner, payload)
 
-	owner.events:emit('timeline.frame', payload)
 	owner.events:emit(scoped_event_type, payload)
 	state.depth = state.depth - 1
 end
@@ -61,7 +60,6 @@ local dispatch_end<const> = function(entry, owner, evt)
 	payload.mode = evt.mode
 	payload.wrapped = evt.wrapped
 
-	owner.events:emit('timeline.end', payload)
 	owner.events:emit(scoped_event_type, payload)
 	state.depth = state.depth - 1
 	return evt.mode == 'once'

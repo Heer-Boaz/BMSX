@@ -41,12 +41,6 @@ local timelinestart_index<const> = -1
 local timeline<const> = {}
 timeline.__index = timeline
 
-local ensure_timelinehas_frames<const> = function(id, length)
-	if length <= 0 then
-		error('timeline "' .. tostring(id) .. '" requires at least one frame.')
-	end
-end
-
 local clear_step_events<const> = function(self)
 	self.step_event_count = 0
 end
@@ -278,7 +272,7 @@ function timeline.new(def)
 		self.frames = {}
 		self.length = 0
 		self.built = false
-	elseif source_type == 'table' then
+	elseif frame_source ~= nil then
 		self.frames = expand_frames(frame_source, self.repetitions)
 		if self.frames.__timelinerange then
 			self.range_source_length = self.frames.source_length
@@ -286,10 +280,7 @@ function timeline.new(def)
 		else
 			self.length = #self.frames
 		end
-		ensure_timelinehas_frames(self.id, self.length)
 		self.built = true
-	elseif frame_source ~= nil then
-		error('timeline "' .. tostring(def.id) .. '" requires a frames table or builder function.')
 	end
 	if def.ticks_per_frame ~= nil then
 		self.ticks_per_frame = def.ticks_per_frame
@@ -349,13 +340,7 @@ function timeline:rebind_definition(replacement)
 end
 
 function timeline:build(params)
-	if not self.frame_builder then
-		error('timeline "' .. tostring(self.id) .. '" has no frame builder.')
-	end
 	local frames<const> = self.frame_builder(params)
-	if type(frames) ~= 'table' then
-		error('timeline "' .. tostring(self.id) .. '" frame builder must return a table.')
-	end
 	self.frames = expand_frames(frames, self.repetitions)
 	if self.frames.__timelinerange then
 		self.range_source_length = self.frames.source_length
@@ -364,7 +349,6 @@ function timeline:build(params)
 		self.range_source_length = nil
 		self.length = #self.frames
 	end
-	ensure_timelinehas_frames(self.id, self.length)
 	self.built = true
 	compile_timelineruntime(self)
 	self:rewind()

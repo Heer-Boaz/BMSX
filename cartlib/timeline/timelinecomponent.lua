@@ -115,18 +115,12 @@ end
 
 function timelinecomponent:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
-	end
 	entry.instance:force_seek(frame)
 	return entry.instance
 end
 
 function timelinecomponent:advance(id)
 	local entry<const> = self._entries_by_id[id]
-	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
-	end
 	local instance<const> = entry.instance
 	if instance:advance() ~= nil then
 		if timelinedispatch.process_instance_events(entry, self.parent, 0, process_timelineframe_payload) then
@@ -138,9 +132,6 @@ end
 
 function timelinecomponent:play(id, opts)
 	local entry<const> = self._entries_by_id[id]
-	if not entry then
-		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
-	end
 	local instance<const> = entry.instance
 	local owner<const> = self.parent
 	local rewind
@@ -201,12 +192,10 @@ end
 
 function timelinecomponent:stop(id)
 	local entry<const> = self._entries_by_id[id]
-	if entry then
-		local owner<const> = self.parent
-		local controlled<const> = entry.markers.controlled_tags
-		for i = 1, #controlled do
-			owner:remove_tag(controlled[i])
-		end
+	local owner<const> = self.parent
+	local controlled<const> = entry.markers.controlled_tags
+	for i = 1, #controlled do
+		owner:remove_tag(controlled[i])
 	end
 	deactivate_timelineentry(self, id)
 end

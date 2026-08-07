@@ -83,17 +83,11 @@ local compile_frame_shape_apply<const> = function(frame, shape_cache)
 end
 
 function timelineapply.compile_frames(frames)
-	if frames.__timelinerange then
-		error('[timelineapply] apply=true requires table frames, not timeline.range().')
-	end
 	local compiled<const> = {}
 	local cache<const> = {}
 	local shape_cache<const> = {}
 	for i = 1, #frames do
 		local frame<const> = frames[i]
-		if type(frame) ~= 'table' then
-			error('[timelineapply] apply=true requires table frames.')
-		end
 		local apply_fn = cache[frame]
 		if apply_fn == nil then
 			apply_fn = compile_frame_shape_apply(frame, shape_cache)
@@ -106,9 +100,6 @@ end
 
 local compile_target_setter<const> = function(path)
 	local count<const> = #path
-	if count == 0 then
-		error('[timelineapply] track path must not be empty.')
-	end
 	if count == 1 then
 		local key1<const> = path[1]
 		return function(target, value)
@@ -165,9 +156,7 @@ local compile_track_runner<const> = function(track)
 				set_value(target, base_value + ((eased - 0.5) * 2 * amp))
 			end
 		end
-		error('[timelineapply] unknown wave "' .. tostring(track.wave) .. '".')
 	end
-	error('[timelineapply] unknown track kind "' .. tostring(kind) .. '".')
 end
 
 function timelineapply.compile_tracks(tracks)
