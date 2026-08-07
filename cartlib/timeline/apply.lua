@@ -84,14 +84,17 @@ function timelineapply.compile_frames(frames)
 	return frame_appliers
 end
 
-local compile_target_setter<const> = function(path)
-	local last_index<const> = #path
-	local key<const> = path[last_index]
-	return function(target, value)
-		for i = 1, last_index - 1 do
-			target = target[path[i]]
+local compile_target_setter
+compile_target_setter = function(path, index, last_index)
+	local key<const> = path[index]
+	if index == last_index then
+		return function(target, value)
+			target[key] = value
 		end
-		target[key] = value
+	end
+	local child<const> = compile_target_setter(path, index + 1, last_index)
+	return function(target, value)
+		child(target[key], value)
 	end
 end
 
@@ -107,7 +110,8 @@ local compile_track_runner<const> = function(track)
 		local phase<const> = track.phase or 0
 		local period_inv<const> = 1 / track.period
 		local ease<const> = track.ease
-		local set_value<const> = compile_target_setter(track.path)
+		local path<const> = track.path
+		local set_value<const> = compile_target_setter(path, 1, #path)
 		if track.wave == 'pingpong' then
 			return function(target, params, _event, time_seconds)
 				local w<const> = pingpong01((time_seconds * period_inv) + phase)
