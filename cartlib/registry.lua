@@ -146,11 +146,6 @@ function registry:deregister_component(comp)
 	self:deregister(comp)
 end
 
-function registry:objects_by_definition(definition_id)
-	local bucket<const> = self._objects_by_definition[definition_id]
-	return bucket and bucket.items or empty_bucket
-end
-
 function registry:components(component_class)
 	local bucket<const> = self._components_by_class[component_class]
 	return bucket and bucket.items or empty_bucket

@@ -16,8 +16,9 @@
 --    world:mark_for_disposal(obj) — requests the one world-owned removal
 --
 -- 3. QUERY SCOPE IS EXPLICIT.
---    active_* returns retained dense arrays for the selected space. Unqualified
---    objects_by_* uses the cart-wide Registry.
+--    Systems and long-lived cart queries retain active_*_view() results; the
+--    selected space swaps each view's dense backing array at its barrier.
+--    Cart-wide tag lookup remains a Registry-backed world query.
 --
 -- 4. THE MODULE RETURNS THE CART WORLD.
 --    Access it via require('cartlib/world/world'); carts do not create another world.
@@ -683,22 +684,6 @@ end
 --   its barrier.
 function worldclass:get(id)
 	return registry:get_object(id)
-end
-
-function worldclass:active_objects()
-	return self._active_space:active_objects()
-end
-
-function worldclass:active_objects_by_definition(definition_id)
-	return self._active_space:active_objects_by_definition(definition_id) or empty_object_bucket
-end
-
-function worldclass:objects_by_definition(definition_id)
-	return registry:objects_by_definition(definition_id)
-end
-
-function worldclass:active_objects_by_tag(tag)
-	return self._active_space:active_objects_by_tag(tag) or empty_object_bucket
 end
 
 function worldclass:objects_by_tag(tag)

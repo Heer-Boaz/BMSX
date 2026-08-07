@@ -16,15 +16,6 @@ function space.new(id)
 	}, space)
 end
 
-function space:active_objects()
-	return self._active_objects
-end
-
-function space:active_objects_by_definition(definition_id)
-	local bucket<const> = self._active_objects_by_definition[definition_id]
-	return bucket and bucket.items
-end
-
 function space:register_definition(definition_id)
 	local buckets<const> = self._active_objects_by_definition
 	local bucket = buckets[definition_id]
@@ -38,11 +29,6 @@ end
 
 function space:definition_bucket(definition_id)
 	return self._active_objects_by_definition[definition_id].items
-end
-
-function space:active_objects_by_tag(tag)
-	local bucket<const> = self._active_objects_by_tag[tag]
-	return bucket and bucket.items
 end
 
 function space:active_visuals()
