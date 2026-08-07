@@ -4,7 +4,6 @@ local decode_float<const> = require('string/float/decode')
 local string_lib<const> = string
 local table_lib<const> = table
 
-local version<const> = 0xa1
 local tag_null<const> = 0
 local tag_true<const> = 1
 local tag_false<const> = 2
@@ -17,49 +16,38 @@ local tag_bin<const> = 8
 local tag_int<const> = 9
 local tag_f32<const> = 10
 local tag_set<const> = 11
-local metadata_magic<const> = 0x44544d42
-local metadata_version<const> = 1
 local metadata_header_size<const> = 12
 
-local new_reader<const> = function(addr, len, label)
+local new_reader<const> = function(addr, label)
 	return {
 		pos = addr,
-		limit = addr + len,
 		label = label,
-		depth = 0,
 		prop_names = nil,
 	}
 end
 
-local need<const> = function(reader, bytes, label)
-	if reader.pos + bytes > reader.limit then
-		error((label or reader.label) .. ' is truncated.')
-	end
-end
-
-local read_u8<const> = function(reader, label)
-	need(reader, 1, label)
+local read_u8<const> = function(reader)
 	local value<const> = mem8[reader.pos]
 	reader.pos = reader.pos + 1
 	return value
 end
 
-local read_varuint<const> = function(reader, label)
+local read_varuint<const> = function(reader)
 	local value = 0
 	local shift = 0
 	for _ = 1, 5 do
-		local byte<const> = read_u8(reader, label)
+		local byte<const> = read_u8(reader)
 		value = value | ((byte & 0x7f) << shift)
 		if (byte & 0x80) == 0 then
 			return value
 		end
 		shift = shift + 7
 	end
-	error((label or reader.label) .. ' varuint overflow.')
+	return value
 end
 
-local read_varint<const> = function(reader, label)
-	local raw<const> = read_varuint(reader, label)
+local read_varint<const> = function(reader)
+	local raw<const> = read_varuint(reader)
 	local value<const> = raw >> 1
 	if (raw & 1) == 0 then
 		return value
@@ -67,9 +55,8 @@ local read_varint<const> = function(reader, label)
 	return -(value + 1)
 end
 
-local read_string<const> = function(reader, label)
-	local length<const> = read_varuint(reader, label)
-	need(reader, length, label)
+local read_string<const> = function(reader)
+	local length<const> = read_varuint(reader)
 	if length == 0 then
 		return ''
 	end
@@ -93,17 +80,16 @@ local read_string<const> = function(reader, label)
 end
 
 local read_prop_names<const> = function(reader)
-	local count<const> = read_varuint(reader, 'property count')
+	local count<const> = read_varuint(reader)
 	local names<const> = {}
 	for index = 1, count do
-		names[index] = read_string(reader, 'property name')
+		names[index] = read_string(reader)
 	end
 	return names
 end
 
 local read_binary<const> = function(reader)
-	local length<const> = read_varuint(reader, 'binary length')
-	need(reader, length, 'binary payload')
+	local length<const> = read_varuint(reader)
 	local values<const> = {}
 	for index = 1, length do
 		values[index] = mem8[reader.pos]
@@ -115,7 +101,7 @@ end
 local read_value
 
 local read_array<const> = function(reader)
-	local count<const> = read_varuint(reader, 'array length')
+	local count<const> = read_varuint(reader)
 	local values<const> = {}
 	for index = 1, count do
 		values[index] = read_value(reader)
@@ -124,26 +110,18 @@ local read_array<const> = function(reader)
 end
 
 local read_object<const> = function(reader)
-	local count<const> = read_varuint(reader, 'object property count')
+	local count<const> = read_varuint(reader)
 	local values<const> = {}
 	local names<const> = reader.prop_names
 	for _ = 1, count do
-		local prop_id<const> = read_varuint(reader, 'property id')
-		local name<const> = names[prop_id + 1]
-		if name == nil then
-			error('bin object has invalid property id ' .. tostring(prop_id) .. '.')
-		end
-		values[name] = read_value(reader)
+		local prop_id<const> = read_varuint(reader)
+		values[names[prop_id + 1]] = read_value(reader)
 	end
 	return values
 end
 
 read_value = function(reader)
-	reader.depth = reader.depth + 1
-	if reader.depth > 32768 then
-		error(reader.label .. ' nesting is too deep.')
-	end
-	local tag<const> = read_u8(reader, 'tag')
+	local tag<const> = read_u8(reader)
 	local value
 	if tag == tag_null then
 		value = nil
@@ -152,7 +130,6 @@ read_value = function(reader)
 	elseif tag == tag_false then
 		value = false
 	elseif tag == tag_f64 then
-		need(reader, 8, 'float64')
 		value = decode_float(read_u32le(reader.pos + 4), read_u32le(reader.pos), 8)
 		reader.pos = reader.pos + 8
 	elseif tag == tag_str then
@@ -160,67 +137,45 @@ read_value = function(reader)
 	elseif tag == tag_arr then
 		value = read_array(reader)
 	elseif tag == tag_ref then
-		value = { r = read_varuint(reader, 'ref id') }
+		value = { r = read_varuint(reader) }
 	elseif tag == tag_obj then
 		value = read_object(reader)
 	elseif tag == tag_bin then
 		value = read_binary(reader)
 	elseif tag == tag_int then
-		value = read_varint(reader, 'int')
+		value = read_varint(reader)
 	elseif tag == tag_f32 then
-		need(reader, 4, 'float32')
 		value = decode_float(read_u32le(reader.pos), 0, 4)
 		reader.pos = reader.pos + 4
 	elseif tag == tag_set then
 		value = read_array(reader)
 	else
-		error('Unsupported bin tag ' .. tostring(tag) .. '.')
+		error(reader.label .. ' has unsupported bin tag ' .. tostring(tag) .. '.')
 	end
-	reader.depth = reader.depth - 1
 	return value
 end
 
-local finish<const> = function(reader)
-	if reader.pos ~= reader.limit then
-		error(reader.label .. ' has trailing bytes.')
-	end
-end
-
-function bin.decode(addr, len, label)
-	local reader<const> = new_reader(addr, len, label)
-	local actual_version<const> = read_u8(reader, 'bin version')
-	if actual_version ~= version then
-		error('Unsupported binary payload version.')
-	end
+function bin.decode(addr, label)
+	local reader<const> = new_reader(addr, label)
+	read_u8(reader)
 	reader.prop_names = read_prop_names(reader)
 	local value<const> = read_value(reader)
-	finish(reader)
 	return value
 end
 
-function bin.decode_with_props(addr, len, prop_names, label)
-	local reader<const> = new_reader(addr, len, label)
+function bin.decode_with_props(addr, prop_names, label)
+	local reader<const> = new_reader(addr, label)
 	reader.prop_names = prop_names
 	local value<const> = read_value(reader)
-	finish(reader)
 	return value
 end
 
-function bin.read_metadata_prop_names(addr, len)
-	if len < metadata_header_size then
-		error('ROM metadata section is too small.')
-	end
-	if mem[addr] ~= metadata_magic then
-		error('ROM metadata section magic is invalid.')
-	end
-	if mem[addr + 4] ~= metadata_version then
-		error('ROM metadata section version is invalid.')
-	end
+function bin.read_metadata_prop_names(addr)
 	local count<const> = mem[addr + 8]
-	local reader<const> = new_reader(addr + metadata_header_size, len - metadata_header_size, 'ROM metadata')
+	local reader<const> = new_reader(addr + metadata_header_size, 'ROM metadata')
 	local names<const> = {}
 	for index = 1, count do
-		names[index] = read_string(reader, 'ROM metadata property name')
+		names[index] = read_string(reader)
 	end
 	return names, reader.pos - addr
 end

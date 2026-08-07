@@ -446,7 +446,7 @@ local build_draaideuren<const> = function(room_number, object_defs)
 end
 
 local load_room_templates<const> = function()
-	local data<const> = bin.decode(assets.data_castle_map_addr, assets.data_castle_map_len, 'castle_map')
+	local data<const> = bin.decode(assets.data_castle_map_addr, 'castle_map')
 	local templates<const> = {}
 
 	for raw_room_number, room_def in pairs(data) do

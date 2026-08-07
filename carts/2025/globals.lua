@@ -27,7 +27,7 @@ combat_director_fsm_id = 'p3.combat.director.fsm'
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 local world<const> = require('cartlib/world/world')
-local transition_config<const> = bin.decode(assets.data_transition_config_addr, assets.data_transition_config_len, 'transition_config')
+local transition_config<const> = bin.decode(assets.data_transition_config_addr, 'transition_config')
 
 overgang_timelineid = transition_config.overgang_timelineid
 overgang_in_frames = transition_config.overgang_in_frames

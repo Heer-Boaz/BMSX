@@ -90,7 +90,7 @@ local parse_metadata_header<const> = function(header)
 	if header.metadata_len == 0 then
 		return
 	end
-	local names<const>, payload_off<const> = bin.read_metadata_prop_names(header.rom_base + header.metadata_off, header.metadata_len)
+	local names<const>, payload_off<const> = bin.read_metadata_prop_names(header.rom_base + header.metadata_off)
 	header.metadata_prop_names = names
 	header.metadata_payload_off = header.metadata_off + payload_off
 end
@@ -192,7 +192,7 @@ local decode_payload<const> = function(entry)
 		return entry.payload_value
 	end
 	entry.payload_loaded = true
-	entry.payload_value = bin.decode(entry.addr, entry.len, entry.id)
+	entry.payload_value = bin.decode(entry.addr, entry.id)
 	return entry.payload_value
 end
 
@@ -206,9 +206,9 @@ local decode_meta<const> = function(entry)
 	end
 	local header<const> = entry.rom.header
 	if header.metadata_prop_names ~= nil and entry.meta_start >= header.metadata_payload_off and entry.meta_finish <= header.metadata_off + header.metadata_len then
-		entry.meta_value = bin.decode_with_props(entry.meta_addr, entry.meta_len, header.metadata_prop_names, entry.id .. ' metadata')
+		entry.meta_value = bin.decode_with_props(entry.meta_addr, header.metadata_prop_names, entry.id .. ' metadata')
 	else
-		entry.meta_value = bin.decode(entry.meta_addr, entry.meta_len, entry.id .. ' metadata')
+		entry.meta_value = bin.decode(entry.meta_addr, entry.id .. ' metadata')
 	end
 	return entry.meta_value
 end

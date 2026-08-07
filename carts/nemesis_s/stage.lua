@@ -397,7 +397,7 @@ function stage:apply_stage_config(stage_data)
 end
 
 function stage:build_tape()
-	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, stage_asset_id)
+	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
 
