@@ -87,7 +87,7 @@ end
 
 local entry_span<const> = function(header, section_off, section_len, start, finish, label)
 	if start == toc_invalid_u32 and finish == toc_invalid_u32 then
-		return nil, nil, 0, 0
+		return 0, 0, nil, nil
 	end
 	if start == toc_invalid_u32 or finish == toc_invalid_u32 then
 		error(label .. ' has an incomplete ROM span.')
@@ -98,7 +98,7 @@ local entry_span<const> = function(header, section_off, section_len, start, fini
 	if start < section_off or finish > section_off + section_len then
 		error(label .. ' span is outside its ROM section.')
 	end
-	return start, finish, header.rom_base + start, finish - start
+	return header.rom_base + start, finish - start, start, finish
 end
 
 local read_toc_string<const> = function(toc_base, string_table_offset, string_table_length, offset, length, label)
@@ -177,17 +177,13 @@ local parse_rom<const> = function(header)
 	}
 	for index = 0, entry_count - 1 do
 		local entry_base<const> = toc_base + entry_offset + index * entry_size
-		local payload_start<const>, payload_end<const>, payload_addr<const>, payload_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 40], mem[entry_base + 44], header.label .. ' payload')
-		local compiled_start<const>, compiled_end<const>, compiled_addr<const>, compiled_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 48], mem[entry_base + 52], header.label .. ' compiled payload')
-		local meta_start<const>, meta_end<const>, meta_addr<const>, meta_len<const> = entry_span(header, header.metadata_off, header.metadata_len, mem[entry_base + 56], mem[entry_base + 60], header.label .. ' metadata')
-		local model_texture_start<const>, model_texture_end<const>, model_texture_addr<const>, model_texture_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 64], mem[entry_base + 68], header.label .. ' model texture')
-		local collision_start<const>, collision_end<const>, collision_addr<const>, collision_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 72], mem[entry_base + 76], header.label .. ' collision')
+		local payload_addr<const>, payload_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 40], mem[entry_base + 44], header.label .. ' payload')
+		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(header, header.metadata_off, header.metadata_len, mem[entry_base + 56], mem[entry_base + 60], header.label .. ' metadata')
+		local collision_addr<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 72], mem[entry_base + 76], header.label .. ' collision')
 		local id<const> = read_toc_string(toc_base, string_table_offset, string_table_length, mem[entry_base + 16], mem[entry_base + 20], header.label .. ' resid')
 		if not id or #id == 0 then
 			error(header.label .. ' ROM TOC entry is missing an id.')
 		end
-		local source_path<const> = read_toc_string(toc_base, string_table_offset, string_table_length, mem[entry_base + 24], mem[entry_base + 28], header.label .. ' source path')
-		local normalized_source_path<const> = read_toc_string(toc_base, string_table_offset, string_table_length, mem[entry_base + 32], mem[entry_base + 36], header.label .. ' normalized source path')
 		local entry<const> = {
 			id = id,
 			token_lo = mem[entry_base],
@@ -196,29 +192,13 @@ local parse_rom<const> = function(header)
 			op = mem[entry_base + 12],
 			rom = rom,
 			type = kind_name_by_id[mem[entry_base + 8]],
-			source_path = source_path,
-			normalized_source_path = normalized_source_path,
-			start = payload_start,
-			finish = payload_end,
 			addr = payload_addr,
 			len = payload_len,
-			compiled_start = compiled_start,
-			compiled_finish = compiled_end,
-			compiled_addr = compiled_addr,
-			compiled_len = compiled_len,
 			meta_start = meta_start,
-			meta_finish = meta_end,
+			meta_finish = meta_finish,
 			meta_addr = meta_addr,
 			meta_len = meta_len,
-			model_texture_start = model_texture_start,
-			model_texture_finish = model_texture_end,
-			model_texture_addr = model_texture_addr,
-			model_texture_len = model_texture_len,
-			collision_start = collision_start,
-			collision_finish = collision_end,
 			collision_addr = collision_addr,
-			collision_len = collision_len,
-			update_timestamp = mem[entry_base + 80] + (mem[entry_base + 84] * u32_mod),
 		}
 		rom.entries[#rom.entries + 1] = entry
 		register_token(rom, entry)
@@ -305,12 +285,6 @@ local decode_meta<const> = function(entry)
 	return entry.meta_value
 end
 
-local set_if_present<const> = function(out, key, value)
-	if value ~= nil then
-		out[key] = value
-	end
-end
-
 local record_for_entry<const> = function(entry)
 	if entry.record ~= nil then
 		return entry.record
@@ -321,33 +295,13 @@ local record_for_entry<const> = function(entry)
 		addr = entry.addr,
 		len = entry.len,
 	}
-	set_if_present(out, 'source_path', entry.source_path)
-	set_if_present(out, 'normalized_source_path', entry.normalized_source_path)
-	set_if_present(out, 'start', entry.start)
-	set_if_present(out, 'end', entry.finish)
-	set_if_present(out, 'compiled_start', entry.compiled_start)
-	set_if_present(out, 'compiled_end', entry.compiled_finish)
-	set_if_present(out, 'compiled_addr', entry.compiled_addr)
-	set_if_present(out, 'compiled_len', entry.compiled_len)
-	set_if_present(out, 'metabuffer_start', entry.meta_start)
-	set_if_present(out, 'metabuffer_end', entry.meta_finish)
-	set_if_present(out, 'metabuffer_addr', entry.meta_addr)
-	set_if_present(out, 'metabuffer_len', entry.meta_len)
-	set_if_present(out, 'model_texture_start', entry.model_texture_start)
-	set_if_present(out, 'model_texture_end', entry.model_texture_finish)
-	set_if_present(out, 'model_texture_addr', entry.model_texture_addr)
-	set_if_present(out, 'model_texture_len', entry.model_texture_len)
-	set_if_present(out, 'collision_bin_start', entry.collision_start)
-	set_if_present(out, 'collision_bin_end', entry.collision_finish)
-	set_if_present(out, 'collision_addr', entry.collision_addr)
-	set_if_present(out, 'collision_len', entry.collision_len)
-	if entry.update_timestamp ~= 0 then
-		out.update_timestamp = entry.update_timestamp
-	end
 	local meta<const> = decode_meta(entry)
-	set_if_present(out, 'meta', meta)
+	if meta ~= nil then
+		out.meta = meta
+	end
 	if entry.kind == kind_image then
 		out.imgmeta = meta
+		out.collision_addr = entry.collision_addr
 	elseif entry.kind == kind_texture then
 		out.texturemeta = meta
 	elseif entry.kind == kind_audio then
