@@ -23,6 +23,13 @@ function space:register_definition(definition_id)
 	end
 	bucket = dense_set.new()
 	buckets[definition_id] = bucket
+	local objects<const> = self._active_objects
+	for object_index = 1, #objects do
+		local obj<const> = objects[object_index]
+		if obj.definition_id == definition_id then
+			dense_set.add(bucket, obj)
+		end
+	end
 	return bucket.items
 end
 
@@ -94,16 +101,17 @@ function space:activate_object(obj)
 	obj._active_space = self
 	obj._active_object_index = index
 
-	local definition_bucket = self._active_objects_by_definition[obj.definition_id]
-	if definition_bucket == nil then
-		definition_bucket = dense_set.new()
-		self._active_objects_by_definition[obj.definition_id] = definition_bucket
+	local definition_bucket<const> = self._active_objects_by_definition[obj.definition_id]
+	if definition_bucket ~= nil then
+		dense_set.add(definition_bucket, obj)
 	end
-	dense_set.add(definition_bucket, obj)
 end
 
 function space:deactivate_object(obj)
-	dense_set.remove(self._active_objects_by_definition[obj.definition_id], obj)
+	local definition_bucket<const> = self._active_objects_by_definition[obj.definition_id]
+	if definition_bucket ~= nil then
+		dense_set.remove(definition_bucket, obj)
+	end
 
 	local objects<const> = self._active_objects
 	local index<const> = obj._active_object_index

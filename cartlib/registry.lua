@@ -4,7 +4,6 @@ local dense_set<const> = require('cartlib/util/dense_set')
 local registry<const> = {
 	_claims_by_id = {},
 	_objects_by_id = {},
-	_objects_by_definition = {},
 	_components_by_class = {},
 	_by_tag = {},
 	_id_counter = 0,
@@ -12,16 +11,6 @@ local registry<const> = {
 
 local empty_bucket<const> = {}
 local generated_id_max<const> = 0x7fffffff
-
-local add_object_definition<const> = function(self, obj)
-	local definition_id<const> = obj.definition_id
-	local bucket = self._objects_by_definition[definition_id]
-	if bucket == nil then
-		bucket = dense_set.new()
-		self._objects_by_definition[definition_id] = bucket
-	end
-	dense_set.add(bucket, obj)
-end
 
 local add_component_classes<const> = function(self, comp)
 	local classes<const> = componentclass.chain(getmetatable(comp))
@@ -105,7 +94,6 @@ end
 function registry:register_object(obj)
 	self:register(obj)
 	self._objects_by_id[obj.id] = obj
-	add_object_definition(self, obj)
 	add_object_tags(self, obj)
 end
 
@@ -133,7 +121,6 @@ end
 
 function registry:deregister_object(obj)
 	remove_object_tags(self, obj)
-	dense_set.remove(self._objects_by_definition[obj.definition_id], obj)
 	self._objects_by_id[obj.id] = nil
 	self:deregister(obj)
 end
