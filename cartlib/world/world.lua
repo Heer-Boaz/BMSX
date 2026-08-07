@@ -603,7 +603,6 @@ function worldclass:spawn(definition_id, options)
 end
 
 function worldclass:_commit_disposal(obj)
-	obj.active = false
 	local components<const> = obj._components
 	if not obj._published then
 		for i = 1, #components do
@@ -641,11 +640,9 @@ function worldclass:mark_for_disposal(obj)
 		return
 	end
 	obj.marked_for_disposal = true
+	obj.active = false
 	if not obj._published then
 		return
-	end
-	if obj.active then
-		obj.active = false
 	end
 	if self._current_tick_group == nil and not self._flushing_disposals then
 		self:_commit_disposal(obj)

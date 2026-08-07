@@ -271,6 +271,9 @@ end
 -- Components added during bind activate through add_component() exactly once.
 -- Do not call directly; spawn the object through the world instead.
 function worldobject:activate()
+	if self.marked_for_disposal then
+		return
+	end
 	local components<const> = self._components
 	local component_count<const> = #components
 	self.active = true
@@ -280,6 +283,9 @@ function worldobject:activate()
 	if not self._bound then
 		self._bound = true
 		self:bind()
+	end
+	if not self.active then
+		return
 	end
 	for i = 1, component_count do
 		components[i]:on_activate()
