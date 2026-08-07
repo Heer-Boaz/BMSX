@@ -323,12 +323,7 @@ function worldclass:_reconcile_object(obj)
 				end
 			end
 		end
-		if current_space ~= nil then
-			current_space:remove_object(obj)
-		end
-		if target_space ~= nil then
-			target_space:add_object(obj)
-		end
+		obj._space = target_space
 	end
 	self:_reconcile_active_object(obj)
 	local components<const> = obj._components
@@ -621,7 +616,7 @@ function worldclass:_commit_disposal(obj)
 			comp._published = nil
 		end
 		registry:deregister_object(obj)
-		obj._space:remove_object(obj)
+		obj._space = nil
 		self:_remove_worldobject(obj)
 		obj._published = nil
 	end

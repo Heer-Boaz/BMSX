@@ -7,7 +7,6 @@ space.__index = space
 function space.new(id)
 	return setmetatable({
 		id = id,
-		_objects = {},
 		_active_objects = {},
 		_active_objects_by_definition = {},
 		_active_components_by_class = {},
@@ -70,28 +69,6 @@ end
 
 function space:component_bucket(component_class)
 	return self._active_components_by_class[component_class].items
-end
-
-function space:add_object(obj)
-	local objects<const> = self._objects
-	local index<const> = #objects + 1
-	objects[index] = obj
-	obj._space = self
-	obj._space_object_index = index
-end
-
-function space:remove_object(obj)
-	local objects<const> = self._objects
-	local index<const> = obj._space_object_index
-	local last_index<const> = #objects
-	if index < last_index then
-		local moved<const> = objects[last_index]
-		objects[index] = moved
-		moved._space_object_index = index
-	end
-	objects[last_index] = nil
-	obj._space = nil
-	obj._space_object_index = nil
 end
 
 function space:activate_object(obj)
