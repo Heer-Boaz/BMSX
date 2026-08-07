@@ -188,8 +188,6 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 		local b<const> = colliders[instance_b_index + 1]
 		pair.a = a
 		pair.b = b
-		pair.hit = true
-		pair.geo_pair_index = -1
 		local contact<const>, contact_other<const> = ensure_pair_contacts(pair)
 		local normal_x<const> = results[i].nx
 		local normal_y<const> = results[i].ny
@@ -265,7 +263,6 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
 		collider:prepare_overlap()
-		collider._geo_overlap_instance_token = batch_token
 		collider._geo_overlap_instance_index = i - 1
 		stage_geo_overlap_instance(collider, batch_token, instance_base, shape_base + (i - 1) * 0x00000020)
 	end
@@ -294,9 +291,7 @@ function collision2d.collides(a, b)
 	a:prepare_overlap()
 	b:prepare_overlap()
 	local batch_token<const> = next_geo_batch_token()
-	a._geo_overlap_instance_token = batch_token
 	a._geo_overlap_instance_index = 0
-	b._geo_overlap_instance_token = batch_token
 	b._geo_overlap_instance_index = 1
 	stage_geo_overlap_instance(a, batch_token, geo_direct_instance_base, geo_direct_shape_base)
 	stage_geo_overlap_instance(b, batch_token, geo_direct_instance_base, geo_direct_shape_base + 0x00000020)
