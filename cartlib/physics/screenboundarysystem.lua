@@ -9,7 +9,7 @@ setmetatable(screenboundarysystem, { __index = basesystem })
 
 function screenboundarysystem.new(world)
 	local self<const> = setmetatable(basesystem.new(tickgroup.physics, 30), screenboundarysystem)
-	self._component_view = world:_active_component_view(screenboundarycomponent)
+	self._component_view = world:active_component_view(screenboundarycomponent)
 	-- Boundary payloads are synchronous system scratch, like overlap payloads.
 	-- Handlers consume their fields during dispatch rather than retaining them.
 	self._event_payload = { direction = false, previous_position = 0 }
@@ -67,7 +67,7 @@ end
 
 function screenboundarysystem:update()
 	local event_payload<const> = self._event_payload
-	local screen_boundary_components<const> = self._component_view.items
+	local screen_boundary_components<const> = self._component_view.components
 	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent

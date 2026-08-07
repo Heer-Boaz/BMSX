@@ -12,12 +12,12 @@ setmetatable(timelinesystem, { __index = basesystem })
 
 function timelinesystem.new(world)
 	local self<const> = setmetatable(basesystem.new(tickgroup.animation, 0), timelinesystem)
-	self._component_view = world:_active_component_view(timelinecomponent)
+	self._component_view = world:active_component_view(timelinecomponent)
 	return self
 end
 
 function timelinesystem:update(delta_time)
-	local components<const> = self._component_view.items
+	local components<const> = self._component_view.components
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		if component._active_count ~= 0 then

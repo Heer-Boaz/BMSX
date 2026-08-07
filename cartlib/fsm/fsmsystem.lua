@@ -11,12 +11,12 @@ setmetatable(fsmsystem, { __index = basesystem })
 
 function fsmsystem.new(world)
 	local self<const> = setmetatable(basesystem.new(tickgroup.gameplay, 0), fsmsystem)
-	self._component_view = world:_active_component_view(fsmcomponent)
+	self._component_view = world:active_component_view(fsmcomponent)
 	return self
 end
 
 function fsmsystem:update(delta_time)
-	local components<const> = self._component_view.items
+	local components<const> = self._component_view.components
 	for i = 1, #components do
 		components[i]:update(delta_time)
 	end

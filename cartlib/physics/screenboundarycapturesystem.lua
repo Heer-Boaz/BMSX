@@ -11,12 +11,12 @@ setmetatable(screenboundarycapturesystem, { __index = basesystem })
 
 function screenboundarycapturesystem.new(world)
 	local self<const> = setmetatable(basesystem.new(tickgroup.input, -100), screenboundarycapturesystem)
-	self._component_view = world:_active_component_view(screenboundarycomponent)
+	self._component_view = world:active_component_view(screenboundarycomponent)
 	return self
 end
 
 function screenboundarycapturesystem:update()
-	local boundary_components<const> = self._component_view.items
+	local boundary_components<const> = self._component_view.components
 	for i = 1, #boundary_components do
 		local component<const> = boundary_components[i]
 		local parent<const> = component.parent

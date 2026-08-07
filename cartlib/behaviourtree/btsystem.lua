@@ -11,12 +11,12 @@ setmetatable(btsystem, { __index = basesystem })
 
 function btsystem.new(world)
 	local self<const> = setmetatable(basesystem.new(tickgroup.input, 0), btsystem)
-	self._component_view = world:_active_component_view(btcomponent)
+	self._component_view = world:active_component_view(btcomponent)
 	return self
 end
 
 function btsystem:update()
-	local components<const> = self._component_view.items
+	local components<const> = self._component_view.components
 	for i = 1, #components do
 		local component<const> = components[i]
 		component.root:tick(component.parent, component)
