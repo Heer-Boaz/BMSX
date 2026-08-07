@@ -4,9 +4,6 @@ local table_lib<const> = table
 
 local romdir<const> = {}
 
-local cart_magic<const> = 0x58534d42
-local cart_metadata_header_size<const> = 72
-local toc_magic_value<const> = 0x434f5442
 local toc_header_size<const> = 48
 local toc_entry_size<const> = 88
 local toc_invalid_u32<const> = 0xffffffff
@@ -37,34 +34,12 @@ local kind_name_by_id<const> = {
 	[kind_texture] = 'texture',
 }
 
-local assert_range<const> = function(offset, length, limit, label)
-	if offset < 0 or length < 0 or offset + length > limit then
-		error(label .. ' range is outside ROM data.')
-	end
-end
-
-local read_header<const> = function(rom_base, label, required)
-	if mem[rom_base] ~= cart_magic then
-		if required then
-			error(label .. ' ROM header is missing.')
-		end
-		return nil
-	end
-	local header_size<const> = mem[rom_base + 4]
-	local has_metadata_header<const> = header_size >= cart_metadata_header_size
+local read_header<const> = function(rom_base)
 	return {
 		rom_base = rom_base,
-		label = label,
-		manifest_off = mem[rom_base + 8],
-		manifest_len = mem[rom_base + 12],
 		toc_off = mem[rom_base + 16],
-		toc_len = mem[rom_base + 20],
-		data_off = mem[rom_base + 24],
-		data_len = mem[rom_base + 28],
-		metadata_off = has_metadata_header and mem[rom_base + 64] or 0,
-		metadata_len = has_metadata_header and mem[rom_base + 68] or 0,
-		metadata_payload_off = 0,
-		metadata_prop_names = nil,
+		metadata_off = mem[rom_base + 64],
+		metadata_len = mem[rom_base + 68],
 	}
 end
 
@@ -79,36 +54,17 @@ local register_token<const> = function(rom, entry)
 		kind_map = {}
 		hi_map[entry.token_lo] = kind_map
 	end
-	if kind_map[entry.kind] ~= nil then
-		error(rom.label .. ' ROM TOC has duplicate resource token.')
-	end
 	kind_map[entry.kind] = entry
 end
 
-local entry_span<const> = function(header, section_off, section_len, start, finish, label)
-	if start == toc_invalid_u32 and finish == toc_invalid_u32 then
-		return 0, 0, nil, nil
+local entry_span<const> = function(rom_base, start, finish)
+	if start == toc_invalid_u32 then
+		return 0, 0, 0, 0
 	end
-	if start == toc_invalid_u32 or finish == toc_invalid_u32 then
-		error(label .. ' has an incomplete ROM span.')
-	end
-	if finish < start then
-		error(label .. ' span ends before it starts.')
-	end
-	if start < section_off or finish > section_off + section_len then
-		error(label .. ' span is outside its ROM section.')
-	end
-	return header.rom_base + start, finish - start, start, finish
+	return rom_base + start, finish - start, start, finish
 end
 
-local read_toc_string<const> = function(toc_base, string_table_offset, string_table_length, offset, length, label)
-	if offset == toc_invalid_u32 then
-		if length ~= 0 then
-			error(label .. ' has an invalid string-table entry.')
-		end
-		return nil
-	end
-	assert_range(offset, length, string_table_length, label)
+local read_toc_string<const> = function(toc_base, string_table_offset, offset, length)
 	if length == 0 then
 		return ''
 	end
@@ -140,50 +96,22 @@ local parse_metadata_header<const> = function(header)
 end
 
 local parse_rom<const> = function(header)
-	if header.toc_len < toc_header_size then
-		error(header.label .. ' ROM TOC is too small.')
-	end
 	parse_metadata_header(header)
 	local toc_base<const> = header.rom_base + header.toc_off
-	if mem[toc_base] ~= toc_magic_value then
-		error(header.label .. ' ROM TOC magic is invalid.')
-	end
-	if mem[toc_base + 4] ~= toc_header_size then
-		error(header.label .. ' ROM TOC header size is invalid.')
-	end
-	local entry_size<const> = mem[toc_base + 8]
-	if entry_size ~= toc_entry_size then
-		error(header.label .. ' ROM TOC entry size is invalid.')
-	end
 	local entry_count<const> = mem[toc_base + 12]
-	local entry_offset<const> = mem[toc_base + 16]
-	if entry_offset ~= toc_header_size then
-		error(header.label .. ' ROM TOC entry offset is invalid.')
-	end
-	local string_table_offset<const> = mem[toc_base + 20]
-	local string_table_length<const> = mem[toc_base + 24]
-	local entries_bytes<const> = entry_count * entry_size
-	if string_table_offset ~= entry_offset + entries_bytes then
-		error(header.label .. ' ROM TOC string table offset is invalid.')
-	end
-	assert_range(entry_offset, entries_bytes, header.toc_len, header.label .. ' TOC entries')
-	assert_range(string_table_offset, string_table_length, header.toc_len, header.label .. ' TOC strings')
+	local string_table_offset<const> = toc_header_size + entry_count * toc_entry_size
 
 	local rom<const> = {
-		label = header.label,
 		header = header,
 		tokens = {},
 		entries = {},
 	}
 	for index = 0, entry_count - 1 do
-		local entry_base<const> = toc_base + entry_offset + index * entry_size
-		local payload_addr<const>, payload_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 40], mem[entry_base + 44], header.label .. ' payload')
-		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(header, header.metadata_off, header.metadata_len, mem[entry_base + 56], mem[entry_base + 60], header.label .. ' metadata')
-		local collision_addr<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 72], mem[entry_base + 76], header.label .. ' collision')
-		local id<const> = read_toc_string(toc_base, string_table_offset, string_table_length, mem[entry_base + 16], mem[entry_base + 20], header.label .. ' resid')
-		if not id or #id == 0 then
-			error(header.label .. ' ROM TOC entry is missing an id.')
-		end
+		local entry_base<const> = toc_base + toc_header_size + index * toc_entry_size
+		local payload_addr<const>, payload_len<const> = entry_span(header.rom_base, mem[entry_base + 40], mem[entry_base + 44])
+		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(header.rom_base, mem[entry_base + 56], mem[entry_base + 60])
+		local collision_addr<const> = entry_span(header.rom_base, mem[entry_base + 72], mem[entry_base + 76])
+		local id<const> = read_toc_string(toc_base, string_table_offset, mem[entry_base + 16], mem[entry_base + 20])
 		local entry<const> = {
 			id = id,
 			token_lo = mem[entry_base],
@@ -329,13 +257,13 @@ local list_entries<const> = function(roms, kind)
 	return out
 end
 
-local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true))
-local active_roms<const> = { parse_rom(read_header(cart_rom_base, 'cart', true)) }
+local system_rom<const> = parse_rom(read_header(0x00000000))
+local active_roms<const> = { parse_rom(read_header(cart_rom_base)) }
 local active_plus_system_roms<const> = { active_roms[1], system_rom }
 local system_roms<const> = { system_rom }
 
 function romdir.reload_cartridge_directory()
-	local cart_rom<const> = parse_rom(read_header(cart_rom_base, 'cart', true))
+	local cart_rom<const> = parse_rom(read_header(cart_rom_base))
 	active_roms[1] = cart_rom
 	active_plus_system_roms[1] = cart_rom
 end
