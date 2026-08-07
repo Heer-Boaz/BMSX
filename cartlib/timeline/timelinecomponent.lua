@@ -45,9 +45,9 @@ local process_timelineframe_payload<const> = function(_, entry, owner, payload)
 	if apply_function ~= nil then
 		apply_function(target, payload.frame_value, entry.params, payload)
 	end
-	local compiled_apply_frames<const> = entry.compiled_apply_frames
-	if compiled_apply_frames ~= nil then
-		compiled_apply_frames[payload.frame_index + 1](target, payload.frame_value)
+	local frame_appliers<const> = entry.frame_appliers
+	if frame_appliers ~= nil then
+		frame_appliers[payload.frame_index + 1](target, payload.frame_value)
 	end
 end
 
@@ -91,16 +91,17 @@ function timelinecomponent:define(definition)
 		self._entries_by_id[instance.id] = entry
 	end
 	local markers<const> = timelinemodule.compile_timelinemarkers(instance.def, instance.length)
+	local apply<const> = instance.def.apply
 	local apply_function
-	local compiled_apply_frames
-	if type(instance.def.apply) == 'function' then
-		apply_function = instance.def.apply
-	else
-		compiled_apply_frames = instance.compiled_apply_frames
+	local frame_appliers
+	if type(apply) == 'function' then
+		apply_function = apply
+	elseif apply then
+		frame_appliers = instance.frame_appliers
 	end
 	entry.markers = markers
 	entry.apply_function = apply_function
-	entry.compiled_apply_frames = compiled_apply_frames
+	entry.frame_appliers = frame_appliers
 	if not active then
 		entry.target = instance.def.target
 		entry.params = instance.def.params
@@ -168,7 +169,7 @@ function timelinecomponent:play(id, opts)
 	entry.target = target
 	if instance.frame_builder then
 		instance:build(params)
-		entry.compiled_apply_frames = instance.compiled_apply_frames
+		entry.frame_appliers = instance.frame_appliers
 		entry.markers = timelinemodule.compile_timelinemarkers(instance.def, instance.length)
 	end
 	timelinedispatch.init_entry(entry)

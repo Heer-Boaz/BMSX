@@ -3,127 +3,95 @@ local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = math.sin
 local pi<const> = math.pi
 
-local copy_path<const> = function(path)
-	local out<const> = {}
-	for i = 1, #path do
-		out[i] = path[i]
+local same_frame_shape
+same_frame_shape = function(left, right)
+	local key_count = 0
+	for key, left_value in pairs(left) do
+		local right_value<const> = right[key]
+		if right_value == nil then
+			return false
+		end
+		local left_is_table<const> = type(left_value) == 'table'
+		if left_is_table ~= (type(right_value) == 'table') then
+			return false
+		end
+		if left_is_table and not same_frame_shape(left_value, right_value) then
+			return false
+		end
+		key_count = key_count + 1
 	end
-	return out
+	for _ in pairs(right) do
+		key_count = key_count - 1
+	end
+	return key_count == 0
 end
 
-local append_key_signature<const> = function(parts, key)
-	local key_text<const> = tostring(key)
-	parts[#parts + 1] = type(key)
-	parts[#parts + 1] = ':'
-	parts[#parts + 1] = #key_text
-	parts[#parts + 1] = ':'
-	parts[#parts + 1] = key_text
-	parts[#parts + 1] = ';'
-end
-
-local collect_frame_shape<const> = function(node, path, ops, parts)
-	for key, value in pairs(node) do
-		local path_index<const> = #path + 1
-		path[path_index] = key
-		append_key_signature(parts, key)
+local compile_frame_shape_apply
+compile_frame_shape_apply = function(frame)
+	local leaf_keys<const> = {}
+	local leaf_count = 0
+	local branch_keys<const> = {}
+	local branch_appliers<const> = {}
+	local branch_count = 0
+	for key, value in pairs(frame) do
 		if type(value) == 'table' then
-			parts[#parts + 1] = '{'
-			collect_frame_shape(value, path, ops, parts)
-			parts[#parts + 1] = '}'
+			branch_count = branch_count + 1
+			branch_keys[branch_count] = key
+			branch_appliers[branch_count] = compile_frame_shape_apply(value)
 		else
-			ops[#ops + 1] = copy_path(path)
-		end
-		path[path_index] = nil
-	end
-end
-
-local read_path<const> = function(root, path)
-	local value = root
-	for i = 1, #path do
-		value = value[path[i]]
-	end
-	return value
-end
-
-local write_path<const> = function(root, path, value)
-	local count<const> = #path
-	if count == 1 then
-		root[path[1]] = value
-	elseif count == 2 then
-		root[path[1]][path[2]] = value
-	elseif count == 3 then
-		root[path[1]][path[2]][path[3]] = value
-	else
-		local node = root
-		for i = 1, count - 1 do
-			node = node[path[i]]
-		end
-		node[path[count]] = value
-	end
-end
-
-local compile_frame_shape_apply<const> = function(frame, shape_cache)
-	local ops<const> = {}
-	local parts<const> = {}
-	collect_frame_shape(frame, {}, ops, parts)
-	local shape_key<const> = table.concat(parts)
-	local cached<const> = shape_cache[shape_key]
-	if cached ~= nil then
-		return cached
-	end
-	local count<const> = #ops
-	local apply_fn<const> = function(target, frame_value)
-		for i = 1, count do
-			local path<const> = ops[i]
-			write_path(target, path, read_path(frame_value, path))
+			leaf_count = leaf_count + 1
+			leaf_keys[leaf_count] = key
 		end
 	end
-	shape_cache[shape_key] = apply_fn
-	return apply_fn
+	return function(target, frame_value)
+		for i = 1, leaf_count do
+			local key<const> = leaf_keys[i]
+			target[key] = frame_value[key]
+		end
+		for i = 1, branch_count do
+			local key<const> = branch_keys[i]
+			branch_appliers[i](target[key], frame_value[key])
+		end
+	end
 end
 
 function timelineapply.compile_frames(frames)
-	local compiled<const> = {}
-	local cache<const> = {}
-	local shape_cache<const> = {}
+	local frame_appliers<const> = {}
+	local applier_by_frame<const> = {}
+	local shape_samples<const> = {}
+	local shape_appliers<const> = {}
+	local shape_count = 0
 	for i = 1, #frames do
 		local frame<const> = frames[i]
-		local apply_fn = cache[frame]
-		if apply_fn == nil then
-			apply_fn = compile_frame_shape_apply(frame, shape_cache)
-			cache[frame] = apply_fn
+		local apply_frame = applier_by_frame[frame]
+		if apply_frame == nil then
+			for shape_index = 1, shape_count do
+				if same_frame_shape(frame, shape_samples[shape_index]) then
+					apply_frame = shape_appliers[shape_index]
+					break
+				end
+			end
+			if apply_frame == nil then
+				apply_frame = compile_frame_shape_apply(frame)
+				shape_count = shape_count + 1
+				shape_samples[shape_count] = frame
+				shape_appliers[shape_count] = apply_frame
+			end
+			applier_by_frame[frame] = apply_frame
 		end
-		compiled[i] = apply_fn
+		frame_appliers[i] = apply_frame
 	end
-	return compiled
+	return frame_appliers
 end
 
 local compile_target_setter<const> = function(path)
-	local count<const> = #path
-	if count == 1 then
-		local key1<const> = path[1]
-		return function(target, value)
-			target[key1] = value
-		end
-	end
-	if count == 2 then
-		local key1<const> = path[1]
-		local key2<const> = path[2]
-		return function(target, value)
-			target[key1][key2] = value
-		end
-	end
-	if count == 3 then
-		local key1<const> = path[1]
-		local key2<const> = path[2]
-		local key3<const> = path[3]
-		return function(target, value)
-			target[key1][key2][key3] = value
-		end
-	end
-	local captured_path<const> = copy_path(path)
+	local last_index<const> = #path
+	local key<const> = path[last_index]
 	return function(target, value)
-		write_path(target, captured_path, value)
+		for i = 1, last_index - 1 do
+			target = target[path[i]]
+		end
+		target[key] = value
 	end
 end
 

@@ -239,12 +239,12 @@ local frame_value_at<const> = function(self, index)
 	return self.frames[index + 1]
 end
 
-local compile_timelineruntime<const> = function(self)
+local compile_frame_appliers<const> = function(self)
 	local apply<const> = self.def.apply
-	if apply ~= nil and type(apply) ~= 'function' then
-		self.compiled_apply_frames = timelineapply.compile_frames(self.frames)
+	if apply and type(apply) ~= 'function' then
+		self.frame_appliers = timelineapply.compile_frames(self.frames)
 	else
-		self.compiled_apply_frames = nil
+		self.frame_appliers = nil
 	end
 end
 
@@ -311,9 +311,9 @@ function timeline.new(def)
 		self.compiled_track_runner = nil
 	end
 	if self.built then
-		compile_timelineruntime(self)
+		compile_frame_appliers(self)
 	else
-		self.compiled_apply_frames = nil
+		self.frame_appliers = nil
 	end
 	return self
 end
@@ -336,7 +336,7 @@ function timeline:rebind_definition(replacement)
 	self.auto_tick = replacement.auto_tick
 	self.duration_ms = replacement.duration_ms
 	self.compiled_track_runner = replacement.compiled_track_runner
-	self.compiled_apply_frames = replacement.compiled_apply_frames
+	self.frame_appliers = replacement.frame_appliers
 end
 
 function timeline:build(params)
@@ -350,7 +350,7 @@ function timeline:build(params)
 		self.length = #self.frames
 	end
 	self.built = true
-	compile_timelineruntime(self)
+	compile_frame_appliers(self)
 	self:rewind()
 end
 
