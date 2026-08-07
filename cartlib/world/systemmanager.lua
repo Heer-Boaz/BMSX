@@ -17,10 +17,7 @@ function systemmanager.new(world)
 	return setmetatable({
 		_world = world,
 		_systems = {},
-		_tick_groups = {},
-		_systems_by_tick_group = {},
-		_system_counts = {},
-		_tick_group_count = 0,
+		_group_count = 0,
 		_delta_time = clock.frame_milliseconds(),
 	}, systemmanager)
 end
@@ -34,39 +31,42 @@ function systemmanager:configure(system_classes)
 	end
 	table.sort(systems, system_priority_less)
 
-	local tick_groups<const> = self._tick_groups
-	local configured_systems_by_tick_group<const> = self._systems_by_tick_group
-	local system_counts<const> = self._system_counts
-	local configured_tick_group_count = 0
-	for system_index = 1, #systems do
-		local instance<const> = systems[system_index]
-		local group<const> = instance.group
-		if tick_groups[configured_tick_group_count] ~= group then
-			configured_tick_group_count = configured_tick_group_count + 1
-			tick_groups[configured_tick_group_count] = group
-			configured_systems_by_tick_group[configured_tick_group_count] = {}
-			system_counts[configured_tick_group_count] = 0
+	local system_count<const> = #systems
+	local group_end_indices<const> = {}
+	local group_count = 0
+	if system_count ~= 0 then
+		local group = systems[1].group
+		for system_index = 1, system_count do
+			local instance<const> = systems[system_index]
+			if instance.group ~= group then
+				group_count = group_count + 1
+				group_end_indices[group_count] = system_index - 1
+				group = instance.group
+			end
+			instance._configuration_index = nil
 		end
-		local tick_group_systems<const> = configured_systems_by_tick_group[configured_tick_group_count]
-		local system_count<const> = system_counts[configured_tick_group_count] + 1
-		tick_group_systems[system_count] = instance
-		system_counts[configured_tick_group_count] = system_count
+		group_count = group_count + 1
+		group_end_indices[group_count] = system_count
 	end
 	self._systems = systems
-	self._tick_group_count = configured_tick_group_count
+	self._group_end_indices = group_end_indices
+	self._group_count = group_count
 end
 
 function systemmanager:update()
 	local world<const> = self._world
-	for tick_group_index = 1, self._tick_group_count do
+	local systems<const> = self._systems
+	local first_system_index = 1
+	for group_index = 1, self._group_count do
 		world:_open_mutation_barrier()
-		local systems<const> = self._systems_by_tick_group[tick_group_index]
-		for system_index = 1, self._system_counts[tick_group_index] do
+		local last_system_index<const> = self._group_end_indices[group_index]
+		for system_index = first_system_index, last_system_index do
 			systems[system_index]:update(self._delta_time)
 		end
 		if world:_commit_mutation_barrier() then
 			return
 		end
+		first_system_index = last_system_index + 1
 	end
 end
 
