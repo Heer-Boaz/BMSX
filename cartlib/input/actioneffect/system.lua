@@ -17,7 +17,10 @@ local modes_allow<const> = function(owner, modes)
 		if mode.tag ~= nil then
 			matches = matches and owner:has_tag(mode.tag)
 		end
-		if mode.negated == matches then
+		if mode.negated then
+			matches = not matches
+		end
+		if not matches then
 			return false
 		end
 	end
