@@ -180,9 +180,6 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 		local pair_meta<const> = results[i].pair_meta
 		local instance_a_index<const> = (pair_meta >> 0x00000010) & 0x0000ffff
 		local instance_b_index<const> = pair_meta & 0x0000ffff
-		if instance_a_index < 0 or instance_a_index >= collider_count or instance_b_index <= instance_a_index or instance_b_index >= collider_count then
-			error('GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
-		end
 		local pair<const> = pairs:get(i + 1)
 		local a<const> = colliders[instance_a_index + 1]
 		local b<const> = colliders[instance_b_index + 1]
@@ -268,9 +265,6 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	end
 	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
 	local scratch_for_results<const> = geo_overlap_batch_size - collider_count * (0x00000020 + 0x00000014) - 0x00000010
-	if scratch_for_results < 0x00000024 then
-		error('GEO overlap scratch overflow (instances=' .. tostring(collider_count) .. ')')
-	end
 	local scratch_result_capacity<const> = scratch_for_results // 0x00000024
 	local result_capacity<const> = math.min(max_pair_count, scratch_result_capacity)
 	local result_base<const> = instance_base + collider_count * 0x00000014
@@ -285,9 +279,6 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 end
 
 function collision2d.collides(a, b)
-	if a == b then
-		error('self overlap query is invalid: ' .. tostring(a.id))
-	end
 	a:prepare_overlap()
 	b:prepare_overlap()
 	local batch_token<const> = next_geo_batch_token()
