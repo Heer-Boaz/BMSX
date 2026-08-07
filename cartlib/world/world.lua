@@ -260,10 +260,6 @@ function worldclass:reconcile_object_tag(obj, tag)
 		self._pending_mutation_mask = self._pending_mutation_mask | mutation_tag
 	else
 		registry:reconcile_tag(obj, tag)
-		local active_space<const> = obj._active_space
-		if active_space ~= nil then
-			active_space:reconcile_active_tag(obj, tag)
-		end
 	end
 end
 
@@ -497,10 +493,6 @@ function worldclass:_flush_tags()
 		objects[index] = nil
 		names[index] = nil
 		registry:reconcile_tag(obj, tag)
-		local active_space<const> = obj._active_space
-		if active_space ~= nil then
-			active_space:reconcile_active_tag(obj, tag)
-		end
 	end
 	self._pending_tag_count = 0
 end
