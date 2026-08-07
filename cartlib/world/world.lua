@@ -113,7 +113,7 @@ function worldclass.new()
 	self._pending_space_id = nil
 	self._initial_space_id = nil
 	self._system_manager = systemmanager.new(self)
-	self._current_tick_group = nil
+	self._mutation_barrier_open = false
 	self._visual_sequence = 0
 	self._visual_revision = 0
 	self._draw_commands = commandlist.new(cartlib_render_commands)
@@ -242,7 +242,7 @@ function worldclass:set_space(space_id)
 		return space_id
 	end
 	self.active_space_id = space_id
-	if self._current_tick_group ~= nil then
+	if self._mutation_barrier_open then
 		self._pending_space_id = space_id
 		self._pending_mutation_mask = self._pending_mutation_mask | mutation_active_space
 	else
@@ -252,7 +252,7 @@ function worldclass:set_space(space_id)
 end
 
 function worldclass:reconcile_object_tag(obj, tag)
-	if self._current_tick_group ~= nil then
+	if self._mutation_barrier_open then
 		local index<const> = self._pending_tag_count + 1
 		self._pending_tag_count = index
 		self._pending_tag_objects[index] = obj
@@ -333,7 +333,7 @@ function worldclass:_reconcile_object(obj)
 end
 
 function worldclass:reconcile_object(obj)
-	if self._current_tick_group ~= nil then
+	if self._mutation_barrier_open then
 		self:_queue_object_reconcile(obj)
 	else
 		self:_reconcile_object(obj)
@@ -377,7 +377,7 @@ function worldclass:_reconcile_active_component(comp)
 end
 
 function worldclass:reconcile_component(comp)
-	if self._current_tick_group ~= nil then
+	if self._mutation_barrier_open then
 		self:_queue_component_reconcile(comp)
 	else
 		self:_reconcile_active_component(comp)
@@ -399,7 +399,7 @@ end
 
 function worldclass:attach_component(comp)
 	registry:reserve(comp)
-	if self._current_tick_group == nil then
+	if not self._mutation_barrier_open then
 		self:_commit_component_attach(comp)
 		return
 	end
@@ -421,7 +421,7 @@ function worldclass:detach_component(comp)
 	if comp._attach_pending then
 		return
 	end
-	if self._current_tick_group == nil then
+	if not self._mutation_barrier_open then
 		self:_commit_component_detach(comp)
 		return
 	end
@@ -567,7 +567,7 @@ function worldclass:spawn(definition_id, options)
 		ctor(obj, options, definition_id)
 	end
 
-	local deferred<const> = self._current_tick_group ~= nil
+	local deferred<const> = self._mutation_barrier_open
 	if deferred then
 		local index<const> = self._pending_admission_count + 1
 		self._pending_admission_count = index
@@ -639,7 +639,7 @@ function worldclass:mark_for_disposal(obj)
 	if not obj._published then
 		return
 	end
-	if self._current_tick_group == nil and not self._flushing_disposals then
+	if not self._mutation_barrier_open and not self._flushing_disposals then
 		self:_commit_disposal(obj)
 		return
 	end
@@ -674,8 +674,8 @@ function worldclass:objects_by_tag(tag)
 	return registry:objects_by_tag(tag)
 end
 
-function worldclass:_begin_tick_group(group)
-	self._current_tick_group = group
+function worldclass:_open_mutation_barrier()
+	self._mutation_barrier_open = true
 end
 
 function worldclass:_flush_structural_mutations()
@@ -711,11 +711,11 @@ function worldclass:_flush_structural_mutations()
 	end
 end
 
-function worldclass:_commit_tick_group()
+function worldclass:_commit_mutation_barrier()
 	if self._pending_mutation_mask ~= 0 then
 		self:_flush_structural_mutations()
 	end
-	self._current_tick_group = nil
+	self._mutation_barrier_open = false
 	if self._pending_disposal_count ~= 0 then
 		self:_flush_disposals()
 	end
@@ -806,7 +806,7 @@ function worldclass:_commit_clear()
 end
 
 function worldclass:clear()
-	if self._current_tick_group ~= nil or self._flushing_disposals then
+	if self._mutation_barrier_open or self._flushing_disposals then
 		local objects<const> = self._objects
 		for i = #objects, 1, -1 do
 			self:mark_for_disposal(objects[i])

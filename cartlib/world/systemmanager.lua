@@ -59,12 +59,12 @@ end
 function systemmanager:update()
 	local world<const> = self._world
 	for tick_group_index = 1, self._tick_group_count do
-		world:_begin_tick_group(self._tick_groups[tick_group_index])
+		world:_open_mutation_barrier()
 		local systems<const> = self._systems_by_tick_group[tick_group_index]
 		for system_index = 1, self._system_counts[tick_group_index] do
 			systems[system_index]:update(self._delta_time)
 		end
-		if world:_commit_tick_group() then
+		if world:_commit_mutation_barrier() then
 			return
 		end
 	end
