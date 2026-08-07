@@ -236,12 +236,14 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 			enemy_index = enemy_index + 1
 			local enemy_id<const> = string.format('enemy_%03d_%02d', room_number, enemy_index)
 			local raw_conditions<const> = object_def.condition or empty_conditions
-			local conditions<const> = {
-				{
+			local persistent_defeat<const> = object_def.persistent_defeat
+			local conditions<const> = {}
+			if persistent_defeat then
+				conditions[1] = {
 					key = enemy_id,
 					equals = false,
-				},
-			}
+				}
+			end
 			for j = 1, #raw_conditions do
 				conditions[#conditions + 1] = raw_conditions[j]
 			end
@@ -261,6 +263,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					health = object_def.hp,
 					speedx = nil,
 					speedy = nil,
+					persistent_defeat = persistent_defeat,
 					trigger = object_def.trigger,
 					conditions = conditions,
 					width_tiles = right - left,
@@ -284,6 +287,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					health = object_def.health,
 					speedx = object_def.speedx,
 					speedy = object_def.speedy,
+					persistent_defeat = persistent_defeat,
 					trigger = object_def.trigger,
 					conditions = conditions,
 					draw_z = draw_z_enemy,

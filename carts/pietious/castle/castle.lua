@@ -47,19 +47,21 @@ local build_progression_program<const> = function()
 		for i = 1, #enemies do
 			local enemy_def<const> = enemies[i]
 			filters[#filters + 1] = enemy_def.conditions
-			rules[#rules + 1] = {
-				id = enemy_def.id,
-				on = 'damage.resolved',
-				when_event = {
-					equals = {
-						target_id = enemy_def.id,
-						destroyed = true,
+			if enemy_def.persistent_defeat then
+				rules[#rules + 1] = {
+					id = enemy_def.id,
+					on = 'damage.resolved',
+					when_event = {
+						equals = {
+							target_id = enemy_def.id,
+							destroyed = true,
+						},
 					},
-				},
-				set = {
-					{ key = enemy_def.id, value = true },
-				},
-			}
+					set = {
+						{ key = enemy_def.id, value = true },
+					},
+				}
+			end
 			if enemy_def.trigger ~= nil and not condition_name_set[enemy_def.trigger] then
 				condition_name_set[enemy_def.trigger] = true
 				condition_names[#condition_names + 1] = enemy_def.trigger

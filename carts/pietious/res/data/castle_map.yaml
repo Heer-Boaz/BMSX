@@ -685,6 +685,7 @@
     x: 16
     y: 10
     direction: right
+    persistent_defeat: true
   - type: item
     condition:
     - key: clouddestroyed
@@ -874,6 +875,7 @@
     x: 7
     y: 1
     trigger: staff1destroyed
+    persistent_defeat: true
 105:
   type: world
   subtype: world
@@ -956,6 +958,7 @@
     y: 5
     speedx: 2
     speedy: 2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -964,6 +967,7 @@
     y: 15
     speedx: -2
     speedy: 2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -972,6 +976,7 @@
     y: 12
     speedx: 2
     speedy: -2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -980,6 +985,7 @@
     y: 10
     speedx: -2
     speedy: -2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -988,6 +994,7 @@
     y: 13
     speedx: -2
     speedy: 2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -996,6 +1003,7 @@
     y: 8
     speedx: -2
     speedy: -2
+    persistent_defeat: true
   - type: marspeinenaardappel
     condition:
     - key: r106.wall
@@ -1004,6 +1012,7 @@
     y: 7
     speedx: 2
     speedy: -2
+    persistent_defeat: true
   - type: disappearingwall
     condition:
     - key: r106.wall
@@ -1071,6 +1080,7 @@
     x: 15
     y: 15
     trigger: staff2destroyed
+    persistent_defeat: true
   - type: draaideur
     x: 15
     y: 2
@@ -1294,6 +1304,7 @@
     x: 15
     y: 0
     trigger: staff3destroyed
+    persistent_defeat: true
 100:
   type: world
   subtype: world
