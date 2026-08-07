@@ -96,7 +96,8 @@ target.events = events.events_of(target)
 local timelines<const> = timeline_component.new({ parent = target })
 timelines.id = 'hot_target_timelines'
 timelines:on_attach()
-registry:register_component(timelines)
+registry:register(timelines)
+registry:index(timelines, timeline_component)
 
 fsm_library.register('hot_machine', {
 	initial = 'idle',
@@ -138,7 +139,8 @@ local make_fsm<const> = state_machine_component.factory({ 'hot_machine' })
 local state_machines<const> = make_fsm({ parent = target })
 state_machines.id = 'hot_target_fsm'
 state_machines:on_attach()
-registry:register_component(state_machines)
+registry:register(state_machines)
+registry:index(state_machines, state_machine_component)
 state_machines:start()
 
 local machine<const> = state_machines._machines_by_id.hot_machine
@@ -275,7 +277,8 @@ behaviour_tree_library.register(old_root)
 local make_old_tree<const> = behaviour_tree_component.factory(old_root.id)
 local behaviour_tree_instance<const> = make_old_tree({ parent = target })
 behaviour_tree_instance.id = 'hot_target_bt'
-registry:register_component(behaviour_tree_instance)
+registry:register(behaviour_tree_instance)
+registry:index(behaviour_tree_instance, behaviour_tree_component)
 behaviour_tree_instance.root:tick(target, behaviour_tree_instance)
 local node_data<const> = behaviour_tree_instance.node_data
 node_data.retained = 91

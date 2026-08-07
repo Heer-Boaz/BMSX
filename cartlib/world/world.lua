@@ -32,6 +32,7 @@ local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local gp0<const> = require('cartlib/gx/gp0')
 local presentation_config<const> = require('bmsx/presentation_config')
+local componentclass<const> = require('cartlib/component/componentclass')
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local space<const> = require('cartlib/world/space')
@@ -259,7 +260,7 @@ function worldclass:reconcile_object_tag(obj, tag)
 		self._pending_tag_names[index] = tag
 		self._pending_mutation_mask = self._pending_mutation_mask | mutation_tag
 	else
-		registry:reconcile_tag(obj, tag)
+		registry:reconcile_index(obj, tag, obj.tags[tag])
 	end
 end
 
@@ -287,7 +288,7 @@ end
 -- active list directly instead of relying on reverse-loop/remove workarounds.
 function worldclass:_reconcile_active_object(obj)
 	local target_space = nil
-	if obj._published and obj.active then
+	if obj._worldobject_index ~= nil and obj.active then
 		target_space = obj._space
 	end
 	local active_space<const> = obj._active_space
@@ -303,7 +304,7 @@ end
 
 function worldclass:_reconcile_object(obj)
 	local target_space = nil
-	if obj._published then
+	if obj._worldobject_index ~= nil then
 		target_space = self._spaces[obj.space_id]
 	end
 	local current_space<const> = obj._space
@@ -353,7 +354,7 @@ end
 function worldclass:_reconcile_active_component(comp)
 	local parent<const> = comp.parent
 	local target_space = nil
-	if comp._attached and comp.enabled and parent._published and parent.active then
+	if comp._attached and not comp._attach_pending and comp.enabled and parent._worldobject_index ~= nil and parent.active then
 		target_space = parent._space
 	end
 	local active_space<const> = comp._active_space
@@ -386,19 +387,23 @@ end
 
 function worldclass:_commit_component_attach(comp)
 	comp._attach_pending = nil
-	registry:register_component(comp)
-	comp._published = true
+	if comp.id == nil then
+		comp.id = comp.parent.id .. '_component_' .. tostring(registry:next_id())
+	end
+	registry:register(comp)
+	local classes<const> = componentclass.chain(getmetatable(comp))
+	for class_index = 1, #classes do
+		registry:index(comp, classes[class_index])
+	end
 	self:_reconcile_active_component(comp)
 end
 
 function worldclass:_cancel_component_attach(comp)
 	comp._attach_pending = nil
-	registry:deregister(comp)
 	comp.parent:_commit_component_detach(comp)
 end
 
 function worldclass:attach_component(comp)
-	registry:reserve(comp)
 	if not self._mutation_barrier_open then
 		self:_commit_component_attach(comp)
 		return
@@ -413,8 +418,7 @@ end
 function worldclass:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
 	comp.parent:_commit_component_detach(comp)
-	registry:deregister_component(comp)
-	comp._published = nil
+	registry:deregister(comp)
 end
 
 function worldclass:detach_component(comp)
@@ -487,19 +491,13 @@ function worldclass:_flush_tags()
 		local tag<const> = names[index]
 		objects[index] = nil
 		names[index] = nil
-		registry:reconcile_tag(obj, tag)
+		registry:reconcile_index(obj, tag, obj.tags[tag])
 	end
 	self._pending_tag_count = 0
 end
 
 function worldclass:visual_depth_changed()
 	self._visual_revision = self._visual_revision + 1
-end
-
-function worldclass:_reserve_object(obj)
-	registry:reserve(obj)
-	obj.world = self
-	obj.space_id = obj.space_id or self.active_space_id
 end
 
 local apply_construction_values<const> = function(target, values)
@@ -511,13 +509,22 @@ local apply_construction_values<const> = function(target, values)
 end
 
 function worldclass:_commit_spawn(obj)
-	registry:register_object(obj)
+	registry:register(obj)
+	for tag in pairs(obj.tags) do
+		registry:index(obj, tag)
+	end
 	local components<const> = obj._components
 	for i = 1, #components do
-		registry:register_component(components[i])
-		components[i]._published = true
+		local comp<const> = components[i]
+		if comp.id == nil then
+			comp.id = obj.id .. '_component_' .. tostring(registry:next_id())
+		end
+		registry:register(comp)
+		local classes<const> = componentclass.chain(getmetatable(comp))
+		for class_index = 1, #classes do
+			registry:index(comp, classes[class_index])
+		end
 	end
-	obj._published = true
 	self:_add_worldobject(obj)
 	self:_reconcile_object(obj)
 	obj.events:emit('spawn', { pos = obj._spawn_position })
@@ -551,10 +558,11 @@ function worldclass:spawn(definition_id, options)
 	apply_construction_values(construction_options, definition.defaults)
 	apply_construction_values(construction_options, options)
 	construction_options.definition_id = definition_id
-	construction_options.id = construction_options.id or registry:next_id(definition_id)
+	construction_options.id = construction_options.id or definition_id .. '_' .. tostring(registry:next_id())
 
 	local obj<const> = definition.base.new(construction_options)
-	self:_reserve_object(obj)
+	obj.world = self
+	obj.space_id = obj.space_id or self.active_space_id
 	apply_construction_values(obj, construction_options)
 	setmetatable(obj, definition.instance_metatable)
 	local component_options<const> = { parent = obj }
@@ -582,10 +590,6 @@ function worldclass:spawn(definition_id, options)
 	end
 	obj:onspawn(pos)
 	obj:activate()
-	local components<const> = obj._components
-	for i = 1, #components do
-		registry:reserve(components[i])
-	end
 	obj._spawn_position = pos
 	if not deferred then
 		if obj.marked_for_disposal then
@@ -599,12 +603,7 @@ end
 
 function worldclass:_commit_disposal(obj)
 	local components<const> = obj._components
-	if not obj._published then
-		for i = 1, #components do
-			registry:deregister(components[i])
-		end
-		registry:deregister(obj)
-	else
+	if obj._worldobject_index ~= nil then
 		for i = 1, #components do
 			self:_reconcile_active_component(components[i])
 		end
@@ -612,13 +611,11 @@ function worldclass:_commit_disposal(obj)
 
 		for i = 1, #components do
 			local comp<const> = components[i]
-			registry:deregister_component(comp)
-			comp._published = nil
+			registry:deregister(comp)
 		end
-		registry:deregister_object(obj)
+		registry:deregister(obj)
 		obj._space = nil
 		self:_remove_worldobject(obj)
-		obj._published = nil
 	end
 
 	obj:ondespawn()
@@ -636,7 +633,7 @@ function worldclass:mark_for_disposal(obj)
 	end
 	obj.marked_for_disposal = true
 	obj.active = false
-	if not obj._published then
+	if obj._worldobject_index == nil then
 		return
 	end
 	if not self._mutation_barrier_open and not self._flushing_disposals then
@@ -667,11 +664,11 @@ end
 --   during a tick group remains part of that group's retained snapshot until
 --   its barrier.
 function worldclass:get(id)
-	return registry:get_object(id)
+	return registry:get(id)
 end
 
 function worldclass:objects_by_tag(tag)
-	return registry:objects_by_tag(tag)
+	return registry:entries(tag)
 end
 
 function worldclass:_open_mutation_barrier()

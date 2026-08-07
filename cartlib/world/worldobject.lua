@@ -78,7 +78,6 @@ function worldobject.new(opts)
 	self.tags = opts.tags or {}
 	self._components = {}
 	self._components_by_class = {}
-	self._component_sequence = 0
 	self._bound = false
 	self.space_id = opts.space_id
 	self.events = eventemitter.events_of(self)
@@ -97,7 +96,7 @@ end
 
 function worldobject:set_z(z)
 	self.z = z
-	if self._published then
+	if self._worldobject_index ~= nil then
 		self.world:visual_depth_changed()
 	end
 end
@@ -138,11 +137,6 @@ function worldobject:add_component(comp)
 		end
 	end
 	comp.parent = self
-	if not comp.id then
-		local sequence<const> = self._component_sequence + 1
-		self._component_sequence = sequence
-		comp.id = self.id .. '_component_' .. tostring(sequence)
-	end
 	comp._attached = true
 	local components<const> = self._components
 	local component_index<const> = #components + 1
@@ -162,7 +156,7 @@ function worldobject:add_component(comp)
 		end
 	end
 	comp:on_attach()
-	if self._published then
+	if self._worldobject_index ~= nil then
 		self.world:attach_component(comp)
 	end
 	if self.active then
@@ -179,7 +173,7 @@ end
 
 function worldobject:remove_component(comp)
 	comp._attached = false
-	if self._published then
+	if self._worldobject_index ~= nil then
 		self.world:detach_component(comp)
 	else
 		self:_commit_component_detach(comp)
@@ -243,7 +237,7 @@ end
 function worldobject:add_tag(tag)
 	if not self.tags[tag] then
 		self.tags[tag] = true
-		if self._published then
+		if self._worldobject_index ~= nil then
 			self.world:reconcile_object_tag(self, tag)
 		end
 	end
@@ -252,7 +246,7 @@ end
 function worldobject:remove_tag(tag)
 	if self.tags[tag] then
 		self.tags[tag] = nil
-		if self._published then
+		if self._worldobject_index ~= nil then
 			self.world:reconcile_object_tag(self, tag)
 		end
 	end
@@ -277,7 +271,7 @@ function worldobject:activate()
 	local components<const> = self._components
 	local component_count<const> = #components
 	self.active = true
-	if self._published then
+	if self._worldobject_index ~= nil then
 		self.world:reconcile_object(self)
 	end
 	if not self._bound then
@@ -312,7 +306,7 @@ end
 -- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
-	if self._published then
+	if self._worldobject_index ~= nil then
 		self.world:reconcile_object(self)
 	end
 end

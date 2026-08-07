@@ -57,7 +57,7 @@ function font.define(id, definition)
 	end
 	local resolved_font<const> = build_resolved_font(id, definition)
 	resolved_fonts[id] = resolved_font
-	local components<const> = registry:components(basecomponent)
+	local components<const> = registry:entries(basecomponent)
 	for i = 1, #components do
 		local component<const> = components[i]
 		if component.font_id == id then

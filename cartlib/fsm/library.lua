@@ -29,7 +29,7 @@ function fsmlibrary.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	fsmcomponent.set_definition(machine_name, replacement)
-	local components<const> = registry:components(fsmcomponent)
+	local components<const> = registry:entries(fsmcomponent)
 	for i = 1, #components do
 		local state_machines<const> = components[i]
 		state_machines:rebind_state_machine(machine_name, replacement)

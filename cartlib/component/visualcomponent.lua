@@ -19,14 +19,14 @@ end
 
 function visualcomponent:set_offset_z(offset_z)
 	self.offset_z = offset_z
-	if self._published then
+	if self._attached and self.parent._worldobject_index ~= nil then
 		self.parent.world:visual_depth_changed()
 	end
 end
 
 function visualcomponent:set_draw_offset_z(draw_offset_z)
 	self.draw_offset_z = draw_offset_z
-	if self._published then
+	if self._attached and self.parent._worldobject_index ~= nil then
 		self.parent.world:visual_depth_changed()
 	end
 end

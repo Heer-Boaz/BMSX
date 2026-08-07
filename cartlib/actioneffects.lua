@@ -16,7 +16,7 @@ actioneffects.effect_type = {
 
 function actioneffects.register_effect(id, definition)
 	actioneffectcomponent.set_definition(id, definition)
-	local components<const> = registry:components(actioneffectcomponent)
+	local components<const> = registry:entries(actioneffectcomponent)
 	for i = 1, #components do
 		local actioneffect<const> = components[i]
 		if actioneffect.effects[id] ~= nil then

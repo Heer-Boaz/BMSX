@@ -1,146 +1,78 @@
-local componentclass<const> = require('cartlib/component/componentclass')
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {
-	_claims_by_id = {},
-	_objects_by_id = {},
-	_components_by_class = {},
-	_by_tag = {},
+	_entries_by_id = {},
+	_entries_by_key = {},
+	_keys_by_entry = {},
 	_id_counter = 0,
 }
 
-local empty_bucket<const> = {}
-local generated_id_max<const> = 0x7fffffff
+local empty_entries<const> = {}
 
-local add_component_classes<const> = function(self, comp)
-	local classes<const> = componentclass.chain(getmetatable(comp))
-	for class_index = 1, #classes do
-		local component_class<const> = classes[class_index]
-		local bucket = self._components_by_class[component_class]
-		if bucket == nil then
-			bucket = dense_set.new()
-			self._components_by_class[component_class] = bucket
-		end
-		dense_set.add(bucket, comp)
-	end
-end
-
-local add_object_tag<const> = function(self, obj, tag)
-	local bucket = self._by_tag[tag]
+local add_index<const> = function(self, entry, key)
+	local bucket = self._entries_by_key[key]
 	if bucket == nil then
 		bucket = dense_set.new()
-		self._by_tag[tag] = bucket
+		self._entries_by_key[key] = bucket
 	end
-	dense_set.add(bucket, obj)
+	dense_set.add(bucket, entry)
+	local keys = self._keys_by_entry[entry]
+	if keys == nil then
+		keys = {}
+		self._keys_by_entry[entry] = keys
+	end
+	keys[key] = true
 end
 
-local add_object_tags<const> = function(self, obj)
-	local tags<const> = obj.tags
-	for tag in pairs(tags) do
-		add_object_tag(self, obj, tag)
-	end
-end
-
-local remove_object_tags<const> = function(self, obj)
-	local tags<const> = obj.tags
-	for tag in pairs(tags) do
-		dense_set.remove(self._by_tag[tag], obj)
-	end
-end
-
-function registry:next_id(prefix)
-	local number = self._id_counter + 1
-	if number >= generated_id_max then
-		number = 1
-	end
-
-	local id = prefix .. '_' .. tostring(number)
-	while self:is_id_claimed(id) do
-		number = number + 1
-		if number >= generated_id_max then
-			number = 1
-		end
-		id = prefix .. '_' .. tostring(number)
-	end
-
-	self._id_counter = number
+function registry:next_id()
+	local id<const> = self._id_counter
+	self._id_counter = id + 1
 	return id
 end
 
-function registry:reserve(entity)
-	local id<const> = entity.id
-	if self._claims_by_id[id] ~= nil then
-		error('registry.reserve duplicate id "' .. id .. '"')
+function registry:get(id)
+	return self._entries_by_id[id]
+end
+
+function registry:register(entry)
+	local id<const> = entry.id
+	if self._entries_by_id[id] ~= nil then
+		error('registry.register duplicate id "' .. id .. '"')
 	end
-	self._claims_by_id[id] = entity
+	self._entries_by_id[id] = entry
 end
 
-function registry:get_object(id)
-	return self._objects_by_id[id]
+function registry:index(entry, key)
+	add_index(self, entry, key)
 end
 
-function registry:is_id_claimed(id)
-	return self._claims_by_id[id] ~= nil
-end
-
-function registry:register(entity)
-	local existing<const> = self._claims_by_id[entity.id]
-	if existing ~= nil and existing ~= entity then
-		error('registry.register duplicate id "' .. entity.id .. '"')
-	end
-	self._claims_by_id[entity.id] = entity
-end
-
-function registry:register_object(obj)
-	self:register(obj)
-	self._objects_by_id[obj.id] = obj
-	add_object_tags(self, obj)
-end
-
-function registry:register_component(comp)
-	self:register(comp)
-	add_component_classes(self, comp)
-end
-
-function registry:reconcile_tag(obj, tag)
-	local bucket<const> = self._by_tag[tag]
-	if obj.tags[tag] then
-		if bucket == nil then
-			add_object_tag(self, obj, tag)
-		elseif bucket.indices[obj] == nil then
-			dense_set.add(bucket, obj)
+function registry:reconcile_index(entry, key, included)
+	local keys<const> = self._keys_by_entry[entry]
+	local indexed<const> = keys ~= nil and keys[key] ~= nil
+	if included then
+		if not indexed then
+			add_index(self, entry, key)
 		end
-	elseif bucket ~= nil and bucket.indices[obj] ~= nil then
-		dense_set.remove(bucket, obj)
+	elseif indexed then
+		dense_set.remove(self._entries_by_key[key], entry)
+		keys[key] = nil
 	end
 end
 
-function registry:deregister(entity)
-	self._claims_by_id[entity.id] = nil
-end
-
-function registry:deregister_object(obj)
-	remove_object_tags(self, obj)
-	self._objects_by_id[obj.id] = nil
-	self:deregister(obj)
-end
-
-function registry:deregister_component(comp)
-	local classes<const> = componentclass.chain(getmetatable(comp))
-	for class_index = 1, #classes do
-		dense_set.remove(self._components_by_class[classes[class_index]], comp)
+function registry:deregister(entry)
+	local keys<const> = self._keys_by_entry[entry]
+	if keys ~= nil then
+		for key in pairs(keys) do
+			dense_set.remove(self._entries_by_key[key], entry)
+		end
+		self._keys_by_entry[entry] = nil
 	end
-	self:deregister(comp)
+	self._entries_by_id[entry.id] = nil
 end
 
-function registry:components(component_class)
-	local bucket<const> = self._components_by_class[component_class]
-	return bucket and bucket.items or empty_bucket
-end
-
-function registry:objects_by_tag(tag)
-	local bucket<const> = self._by_tag[tag]
-	return bucket and bucket.items or empty_bucket
+function registry:entries(key)
+	local bucket<const> = self._entries_by_key[key]
+	return bucket and bucket.items or empty_entries
 end
 
 return registry
