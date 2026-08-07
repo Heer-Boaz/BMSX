@@ -50,8 +50,29 @@ function space:active_visuals()
 end
 
 function space:register_component_class(component_class)
+	local component_buckets<const> = self._active_components_by_class
+	local existing<const> = component_buckets[component_class]
+	if existing ~= nil then
+		return existing.items
+	end
 	local bucket<const> = dense_set.new()
-	self._active_components_by_class[component_class] = bucket
+	component_buckets[component_class] = bucket
+	local objects<const> = self._active_objects
+	for object_index = 1, #objects do
+		local components<const> = objects[object_index]._components
+		for component_index = 1, #components do
+			local component<const> = components[component_index]
+			if component._active_space == self then
+				local classes<const> = componentclass.chain(getmetatable(component))
+				for class_index = 1, #classes do
+					if classes[class_index] == component_class then
+						dense_set.add(bucket, component)
+						break
+					end
+				end
+			end
+		end
+	end
 	return bucket.items
 end
 
