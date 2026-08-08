@@ -462,7 +462,6 @@ private:
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
-	Value loadTableIntegerIndexCached(DecodedInstructionPage& page, int cacheIndex, const Value& base, int index);
 	Value loadTableIntegerIndex(const Value& base, int index);
 	Value loadTableFieldIndexCached(DecodedInstructionPage& page, int cacheIndex, const Value& base, StringId key);
 	Value loadTableFieldIndex(const Value& base, StringId key);

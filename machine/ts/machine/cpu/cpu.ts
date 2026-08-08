@@ -127,7 +127,6 @@ import {
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
-	type TableLoadInlineCache,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
 import { LuaHeap } from './lua_heap';
@@ -659,8 +658,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private loadTableIntegerIndexCached(
-		cache: TableLoadInlineCache,
+	private loadTableIntegerIndex(
 		baseTag: ValueTag,
 		baseTable: Table | null,
 		index: number,
@@ -689,21 +687,12 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
-		const version = table.getVersion();
-		if (cache.table === table && cache.version === version) {
-			target.setEncoded(targetIndex, cache.valueTag, cache.valueScalar, cache.valueReference);
-			return;
-		}
 		table.loadInteger(index, target, targetIndex);
-		cache.table = table;
-		cache.version = version;
-		cache.valueTag = target.getTag(targetIndex);
-		cache.valueScalar = target.getScalar(targetIndex);
-		cache.valueReference = target.getReference(targetIndex);
 	}
 
 	private loadTableFieldIndexCached(
-		cache: TableLoadInlineCache,
+		page: DecodedInstructionPage,
+		pageOffset: number,
 		baseTag: ValueTag,
 		baseTable: Table | null,
 		key: StringId,
@@ -732,6 +721,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
+		const cache = page.tableLoadCaches[page.tableCacheIndexes[pageOffset]];
 		const version = table.getVersion();
 		if (cache.table === table && cache.version === version) {
 			target.setEncoded(targetIndex, cache.valueTag, cache.valueScalar, cache.valueReference);
@@ -1361,7 +1351,7 @@ export class CPU implements MappedPageInvalidator {
 				MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS),
 			);
 			page.disp[pageOffset] = ext;
-			if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
+			if (op === OpCode.GETFIELD || op === OpCode.SELF) {
 				let cacheIndex = page.tableCacheIndexes[pageOffset];
 				if (cacheIndex === NO_TABLE_LOAD_CACHE_INDEX) {
 					cacheIndex = page.tableLoadCaches.length;
@@ -2324,9 +2314,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.GETI: {
 					const b = page.b[pageOffset];
-					this.loadTableIntegerIndexCached(
-						// disable-next-line repeated_expression_pattern -- Cache metadata is consumed only by its table-load opcode.
-						page.tableLoadCaches[page.tableCacheIndexes[pageOffset]],
+					this.loadTableIntegerIndex(
 						registers.getTag(b),
 						registers.getTable(b),
 						page.c[pageOffset],
@@ -2365,7 +2353,8 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.GETFIELD: {
 					const b = page.b[pageOffset];
 					this.loadTableFieldIndexCached(
-						page.tableLoadCaches[page.tableCacheIndexes[pageOffset]],
+						page,
+						pageOffset,
 						registers.getTag(b),
 						registers.getTable(b),
 						image.constScalars[page.c[pageOffset]] as StringId,
@@ -2409,7 +2398,8 @@ export class CPU implements MappedPageInvalidator {
 					registers.copySlot(a + 1, b);
 					this.bumpRegisterTop(frame, a + 1);
 					this.loadTableFieldIndexCached(
-						page.tableLoadCaches[page.tableCacheIndexes[pageOffset]],
+						page,
+						pageOffset,
 						baseTag,
 						baseTable,
 						key,

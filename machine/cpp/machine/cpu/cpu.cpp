@@ -904,8 +904,7 @@ bool CPU::decodeInstruction(
 			MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS)
 		);
 		decoded.disp = ext;
-		if (static_cast<OpCode>(op) == OpCode::GETI
-			|| static_cast<OpCode>(op) == OpCode::GETFIELD
+		if (static_cast<OpCode>(op) == OpCode::GETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SELF) {
 			if (decoded.tableCacheIndex == UINT32_MAX) {
 				decoded.tableCacheIndex = static_cast<uint32_t>(
@@ -2948,44 +2947,6 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 			return m_stringIndexTable->get(key);
 		}
 		return resolveTableIndex(m_stringIndexTable, key);
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-}
-
-Value CPU::loadTableIntegerIndexCached(
-	DecodedInstructionPage& page,
-	int cacheIndex,
-	const Value& base,
-	int index
-) {
-	if (valueIsTable(base)) {
-		Table* table = asTable(base);
-		if (!table->metatable) {
-			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
-			if (cache.table == table && cache.version == table->version()) {
-				return cache.value;
-			}
-			const Value value = table->getInteger(index);
-			cache.table = table;
-			cache.version = table->version();
-			cache.value = value;
-			return value;
-		}
-		return resolveTableIntegerIndex(table, index);
-	}
-	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
-			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
-				return cache.value;
-			}
-			const Value value = m_stringIndexTable->getInteger(index);
-			cache.table = m_stringIndexTable;
-			cache.version = m_stringIndexTable->version();
-			cache.value = value;
-			return value;
-		}
-		return resolveTableIntegerIndex(m_stringIndexTable, index);
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }

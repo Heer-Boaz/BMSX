@@ -76,7 +76,7 @@ DISPATCH_LABEL(SETGL) {
 }
 
 DISPATCH_LABEL(GETI) {
-	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(*decodedPage, TABLE_CACHE_INDEX(), REG(b), c));
+	SET_REGISTER_FAST(a, loadTableIntegerIndex(REG(b), c));
 	DISPATCH_CONTINUE();
 }
 
