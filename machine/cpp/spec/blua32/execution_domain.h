@@ -6,6 +6,7 @@ namespace bmsx {
 
 using ExecutionDomainId = i32;
 constexpr ExecutionDomainId SYSTEM_EXECUTION_DOMAIN_ID = -1;
+constexpr u32 EXECUTION_DOMAIN_COUNT = 3u;
 
 using ExecutionDomainMask = u32;
 constexpr ExecutionDomainMask SYSTEM_EXECUTION_DOMAIN_MASK = 0x1u;

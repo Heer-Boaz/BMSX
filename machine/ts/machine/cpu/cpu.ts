@@ -82,6 +82,7 @@ import {
 	type Blua32ExecutionBoot,
 } from '../execution_address_space';
 import {
+	EXECUTION_DOMAIN_COUNT,
 	executionDomainBit,
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
@@ -428,7 +429,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private readonly executionImages: Blua32ExecutionImage[] = [];
+	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
+		new Array<Blua32ExecutionImage | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
 	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
@@ -884,9 +886,9 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.memory.clearMappedPageWriteWatches();
-		this.executionImages.length = 0;
+		this.executionImagesByDomain.fill(null);
 		this.systemImage = this.activateExecutionImage(systemBoot);
-		this.executionImages.push(this.systemImage);
+		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
 		this.systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 		this.latchActiveExecutionImage(this.systemImage);
 		this.pushFrame(
@@ -1058,8 +1060,9 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
+		const executionDomainId = executionBoot.executionDomainId;
 		this.executionAddressSpace.bindReadOnlyView(
-			executionBoot.executionDomainId,
+			executionDomainId,
 			executionBoot.imageAddress,
 			BLUA32_IMAGE_HEADER_SIZE,
 			this.executionReadView,
@@ -1093,25 +1096,25 @@ export class CPU implements MappedPageInvalidator {
 		const constTags = new Uint8Array(constantCount);
 		const constScalars = new Float64Array(constantCount);
 		this.decodeConstantPool(
-			executionBoot.executionDomainId,
+			executionDomainId,
 			constantTableAddress,
 			constTags,
 			constScalars,
 		);
 		const globalSlots = this.registerGlobalNames(
-			executionBoot.executionDomainId,
+			executionDomainId,
 			globalNameTableAddress,
 			globalNameCount,
 			false,
 		);
 		const systemGlobalSlots = this.registerGlobalNames(
-			executionBoot.executionDomainId,
+			executionDomainId,
 			systemGlobalNameTableAddress,
 			systemGlobalNameCount,
 			true,
 		);
 		const image: Blua32ExecutionImage = {
-			executionDomainId: executionBoot.executionDomainId,
+			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			constTags,
 			constScalars,
@@ -1122,18 +1125,9 @@ export class CPU implements MappedPageInvalidator {
 		return image;
 	}
 
-	private residentExecutionImage(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
-		for (let index = 0; index < this.executionImages.length; index += 1) {
-			const image = this.executionImages[index];
-			if (image.executionDomainId === executionDomainId) {
-				return image;
-			}
-		}
-		return null;
-	}
-
 	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
-		const residentImage = this.residentExecutionImage(executionDomainId);
+		const imageIndex = executionDomainId + 1;
+		const residentImage = this.executionImagesByDomain[imageIndex];
 		if (residentImage) {
 			return residentImage;
 		}
@@ -1142,7 +1136,7 @@ export class CPU implements MappedPageInvalidator {
 			return null;
 		}
 		const image = this.activateExecutionImage(executionBoot);
-		this.executionImages.push(image);
+		this.executionImagesByDomain[imageIndex] = image;
 		return image;
 	}
 
@@ -1171,13 +1165,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
-		let imageIndex = 0;
-		while (this.executionImages[imageIndex].executionDomainId !== executionBoot.executionDomainId) {
-			imageIndex += 1;
-		}
-		const previousImage = this.executionImages[imageIndex];
+		const imageIndex = executionBoot.executionDomainId + 1;
+		const previousImage = this.executionImagesByDomain[imageIndex];
 		const image = this.activateExecutionImage(executionBoot);
-		this.executionImages[imageIndex] = image;
+		this.executionImagesByDomain[imageIndex] = image;
 		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
 			this.systemImage = image;
 			this.systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
@@ -1188,7 +1179,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public isExecutionDomainResident(executionDomainId: ExecutionDomainId): boolean {
-		return this.residentExecutionImage(executionDomainId) !== null;
+		return this.executionImagesByDomain[executionDomainId + 1] !== null;
 	}
 
 	private decodedPageForAddress(
@@ -1209,8 +1200,12 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private invalidateDecodedPage(key: number): void {
-		for (let index = 0; index < this.executionImages.length; index += 1) {
-			const page = this.executionImages[index].decodedPages.get(key);
+		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
+			const image = this.executionImagesByDomain[index];
+			if (image === null) {
+				continue;
+			}
+			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
 				page.decodeRequired.fill(1);
 				page.fusionRequired.fill(0);
@@ -1229,8 +1224,12 @@ export class CPU implements MappedPageInvalidator {
 		const invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 			? firstKey - MAPPED_PAGE_BYTE_SIZE
 			: 0;
-		for (let imageIndex = 0; imageIndex < this.executionImages.length; imageIndex += 1) {
-			for (const [key, page] of this.executionImages[imageIndex].decodedPages) {
+		for (let imageIndex = 0; imageIndex < this.executionImagesByDomain.length; imageIndex += 1) {
+			const image = this.executionImagesByDomain[imageIndex];
+			if (image === null) {
+				continue;
+			}
+			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
 					page.decodeRequired.fill(1);
 					page.fusionRequired.fill(0);
@@ -4766,8 +4765,11 @@ export class CPU implements MappedPageInvalidator {
 				);
 			}
 		}
-		for (let index = 0; index < this.executionImages.length; index += 1) {
-			this.pushHeapImage(this.executionImages[index]);
+		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
+			const image = this.executionImagesByDomain[index];
+			if (image !== null) {
+				this.pushHeapImage(image);
+			}
 		}
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];

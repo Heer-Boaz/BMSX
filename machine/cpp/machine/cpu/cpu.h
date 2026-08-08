@@ -413,7 +413,6 @@ private:
 		bool system
 	);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot);
-	Blua32ExecutionImage* residentExecutionImage(ExecutionDomainId executionDomainId) const;
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(Blua32ExecutionImage& image);
@@ -485,7 +484,10 @@ private:
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
 
-	std::vector<std::unique_ptr<Blua32ExecutionImage>> m_executionImages;
+	std::array<
+		std::unique_ptr<Blua32ExecutionImage>,
+		EXECUTION_DOMAIN_COUNT
+	> m_executionImagesByDomain;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;

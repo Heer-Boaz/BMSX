@@ -1,5 +1,6 @@
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;
+export const EXECUTION_DOMAIN_COUNT = 3;
 
 export type ExecutionDomainMask = number;
 

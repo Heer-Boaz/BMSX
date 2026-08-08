@@ -332,7 +332,6 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument.", false));
-	m_executionImages.reserve(3);
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -407,11 +406,14 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	m_executionImages.clear();
+	for (std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
+		image.reset();
+	}
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
 		activateExecutionImage(systemBoot);
 	m_systemImage = activatedSystemImage.get();
-	m_executionImages.push_back(std::move(activatedSystemImage));
+	m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)] =
+		std::move(activatedSystemImage);
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	latchActiveExecutionImage(*m_systemImage);
 	Closure* systemResetClosure = staticClosureAtAddress(systemResetFunctionAddress);
@@ -542,11 +544,12 @@ std::vector<u32> CPU::registerGlobalNames(
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	Blua32ExecutionBoot executionBoot
 ) {
+	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
-	image->executionDomainId = executionBoot.executionDomainId;
+	image->executionDomainId = executionDomainId;
 	image->irqFunctionAddress = executionBoot.irqFunctionAddress;
 	m_executionAddressSpace.bindReadOnlyView(
-		executionBoot.executionDomainId,
+		executionDomainId,
 		executionBoot.imageAddress,
 		BLUA32_IMAGE_HEADER_SIZE,
 		m_executionReadView
@@ -571,18 +574,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
 	image->constPool = decodeConstantPool(
-		executionBoot.executionDomainId,
+		executionDomainId,
 		constantTableAddress,
 		constantCount
 	);
 	image->globalSlots = registerGlobalNames(
-		executionBoot.executionDomainId,
+		executionDomainId,
 		globalNameTableAddress,
 		globalNameCount,
 		false
 	);
 	image->systemGlobalSlots = registerGlobalNames(
-		executionBoot.executionDomainId,
+		executionDomainId,
 		systemGlobalNameTableAddress,
 		systemGlobalNameCount,
 		true
@@ -590,21 +593,11 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	return image;
 }
 
-Blua32ExecutionImage* CPU::residentExecutionImage(
-	ExecutionDomainId executionDomainId
-) const {
-	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
-		if (image->executionDomainId == executionDomainId) {
-			return image.get();
-		}
-	}
-	return nullptr;
-}
-
 Blua32ExecutionImage* CPU::executionImageForDomain(
 	ExecutionDomainId executionDomainId
 ) {
-	if (Blua32ExecutionImage* image = residentExecutionImage(executionDomainId)) {
+	const size_t imageIndex = static_cast<size_t>(executionDomainId + 1);
+	if (Blua32ExecutionImage* image = m_executionImagesByDomain[imageIndex].get()) {
 		return image;
 	}
 	std::optional<Blua32ExecutionBoot> executionBoot =
@@ -615,7 +608,7 @@ Blua32ExecutionImage* CPU::executionImageForDomain(
 	std::unique_ptr<Blua32ExecutionImage> image =
 		activateExecutionImage(*executionBoot);
 	Blua32ExecutionImage* activatedImage = image.get();
-	m_executionImages.push_back(std::move(image));
+	m_executionImagesByDomain[imageIndex] = std::move(image);
 	return activatedImage;
 }
 
@@ -631,15 +624,14 @@ void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
-	auto imageEntry = m_executionImages.begin();
-	while ((*imageEntry)->executionDomainId != executionBoot.executionDomainId) {
-		++imageEntry;
-	}
-	Blua32ExecutionImage* previousImage = imageEntry->get();
+	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
+		static_cast<size_t>(executionBoot.executionDomainId + 1)
+	];
+	Blua32ExecutionImage* previousImage = imageEntry.get();
 	std::unique_ptr<Blua32ExecutionImage> image =
 		activateExecutionImage(executionBoot);
 	Blua32ExecutionImage* activatedImage = image.get();
-	*imageEntry = std::move(image);
+	imageEntry = std::move(image);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
 		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
@@ -650,7 +642,9 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 }
 
 bool CPU::isExecutionDomainResident(ExecutionDomainId executionDomainId) const {
-	return residentExecutionImage(executionDomainId) != nullptr;
+	return m_executionImagesByDomain[
+		static_cast<size_t>(executionDomainId + 1)
+	] != nullptr;
 }
 
 Closure* CPU::staticClosureAtAddress(u32 address) {
@@ -733,7 +727,10 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 }
 
 void CPU::invalidateDecodedPage(u64 key) {
-	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
+	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
+		if (!image) {
+			continue;
+		}
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
 			page->second.decodeRequired.fill(1u);
@@ -753,7 +750,10 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 		? firstKey - MAPPED_PAGE_BYTE_SIZE
 		: 0u;
-	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
+	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
+		if (!image) {
+			continue;
+		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
 				page.decodeRequired.fill(1u);
@@ -3210,7 +3210,10 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : m_globalValues) {
 		heap.markValue(value);
 	}
-	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImages) {
+	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {
+		if (!executionImage) {
+			continue;
+		}
 		Blua32ExecutionImage* image = executionImage.get();
 		for (Value value : image->constPool) {
 			heap.markValue(value);
