@@ -75,7 +75,7 @@ void CartridgeController::restoreState(const CartridgeControllerState& state) {
 }
 
 u8 CartridgeController::readU8(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[slotIndexForSignals(busSignals)];
+	const Slot& slot = m_slots[selectedSlot(busSignals)];
 	if (address < CART_RAM_BASE) {
 		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
 		return offset < slot.media.rom.size() ? slot.media.rom[offset] : 0u;
@@ -90,7 +90,7 @@ u8 CartridgeController::readU8(u32 address, MappedBusSignals busSignals) const {
 }
 
 u32 CartridgeController::readU16(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[slotIndexForSignals(busSignals)];
+	const Slot& slot = m_slots[selectedSlot(busSignals)];
 	if (address < CART_RAM_BASE) {
 		return readU16From(slot.media.rom, static_cast<size_t>(address - CART_ROM_BASE));
 	}
@@ -103,7 +103,7 @@ u32 CartridgeController::readU16(u32 address, MappedBusSignals busSignals) const
 }
 
 u32 CartridgeController::readU32(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[slotIndexForSignals(busSignals)];
+	const Slot& slot = m_slots[selectedSlot(busSignals)];
 	if (address < CART_RAM_BASE) {
 		return readU32From(slot.media.rom, static_cast<size_t>(address - CART_ROM_BASE));
 	}
@@ -115,7 +115,7 @@ u32 CartridgeController::readU32(u32 address, MappedBusSignals busSignals) const
 }
 
 void CartridgeController::writeU8(u32 address, u8 value, MappedBusSignals busSignals) {
-	Slot& slot = m_slots[slotIndexForSignals(busSignals)];
+	Slot& slot = m_slots[selectedSlot(busSignals)];
 	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
 		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
@@ -127,7 +127,7 @@ void CartridgeController::writeU8(u32 address, u8 value, MappedBusSignals busSig
 
 void CartridgeController::writeU16(u32 address, u32 value, MappedBusSignals busSignals) {
 	if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-	Slot& slot = m_slots[slotIndexForSignals(busSignals)];
+	Slot& slot = m_slots[selectedSlot(busSignals)];
 	if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
 	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 	if (offset + 2u <= slot.ram.size()) {
@@ -136,7 +136,7 @@ void CartridgeController::writeU16(u32 address, u32 value, MappedBusSignals busS
 }
 
 void CartridgeController::writeU32(u32 address, u32 value, MappedBusSignals busSignals) {
-	const u32 slotIndex = slotIndexForSignals(busSignals);
+	const u32 slotIndex = selectedSlot(busSignals);
 	Slot& slot = m_slots[slotIndex];
 	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
 		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
@@ -196,13 +196,6 @@ bool CartridgeController::bindRomByteView(u32 slotIndex, u32 address, size_t len
 	}
 	out = Span<const u8>(rom.data() + offset, length);
 	return true;
-}
-
-u32 CartridgeController::slotIndexForSignals(MappedBusSignals busSignals) const {
-	if ((busSignals & MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE) == 0u) {
-		return selectedSlot();
-	}
-	return (busSignals & MAPPED_BUS_CARTRIDGE_SLOT1) != 0u ? 1u : 0u;
 }
 
 u32 CartridgeController::readU16From(std::span<const u8> bytes, size_t offset) {

@@ -76,7 +76,7 @@ DISPATCH_LABEL(SETGL) {
 }
 
 DISPATCH_LABEL(GETI) {
-	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(IMAGE, TABLE_CACHE_INDEX(), REG(b), c));
+	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(*decodedPage, TABLE_CACHE_INDEX(), REG(b), c));
 	DISPATCH_CONTINUE();
 }
 
@@ -87,7 +87,7 @@ DISPATCH_LABEL(SETI) {
 
 DISPATCH_LABEL(GETFIELD) {
 	SET_REGISTER_FAST(a, loadTableFieldIndexCached(
-		IMAGE,
+		*decodedPage,
 		TABLE_CACHE_INDEX(),
 		REG(b),
 		asStringId(IMAGE.constPool[static_cast<size_t>(c)])
@@ -108,7 +108,7 @@ DISPATCH_LABEL(SELF) {
 	const Value base = REG(b);
 	const StringId key = asStringId(IMAGE.constPool[static_cast<size_t>(c)]);
 	SET_REGISTER_FAST(a + 1, base);
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(IMAGE, TABLE_CACHE_INDEX(), base, key));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(*decodedPage, TABLE_CACHE_INDEX(), base, key));
 	DISPATCH_CONTINUE();
 }
 
@@ -407,14 +407,18 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	if (!readFunctionRecordInExecutionDomain(
-		*FRAME.executionImage,
-		bx * BLUA32_FUNCTION_ALIGNMENT
+	if (!readFunctionRecordOnBus(
+		*m_activeExecutionImage,
+		bx * BLUA32_FUNCTION_ALIGNMENT,
+		m_executionBusSignals
 	)) {
 		hardHalt();
 		DISPATCH_CONTINUE();
 	}
 	Closure* closure = createClosure(FRAME);
+	if (!closure) {
+		DISPATCH_CONTINUE();
+	}
 	SET_REGISTER_FAST(a, valueClosure(closure));
 	DISPATCH_CONTINUE();
 }

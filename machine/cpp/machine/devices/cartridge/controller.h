@@ -19,7 +19,12 @@ public:
 
 	void connect(Memory& memory, IrqController& irq, DmaController& dma);
 	void installRom(u32 slotIndex, std::span<const u8> rom);
-	u32 selectedSlot() const { return m_selectionWord & 1u; }
+	u32 selectedSlot(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU) const {
+		if ((busSignals & MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE) == 0u) {
+			return m_selectionWord & 1u;
+		}
+		return (busSignals & MAPPED_BUS_CARTRIDGE_SLOT1) >> 3u;
+	}
 	size_t ramByteCount() const { return m_slots[0].ram.size() + m_slots[1].ram.size(); }
 	void reset();
 
@@ -52,7 +57,6 @@ private:
 	static u32 readSlot1BoardThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static u32 readSlot1RamBytesThunk(void* context, u32 address, MappedBusSignals busSignals);
 
-	u32 slotIndexForSignals(MappedBusSignals busSignals) const;
 	static u32 readU16From(std::span<const u8> bytes, size_t offset);
 	static u32 readU32From(std::span<const u8> bytes, size_t offset);
 	u32 readMailboxWord(const Slot& slot, u32 offset) const;

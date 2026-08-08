@@ -1,6 +1,7 @@
 import { readLE32 } from '../common/endian';
-import type { Memory, RomByteView } from './memory/memory';
-import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
+import { MemoryRegionKind, type Memory, type RomByteView } from './memory/memory';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
+import type { MappedBusSignals } from './memory/bus_signals';
 import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
@@ -32,14 +33,15 @@ export class ExecutionAddressSpace {
 	public constructor(private readonly memory: Memory) {
 	}
 
-	public domainIdOnBus(address: number): ExecutionDomainId | null {
-		if (address < RAM_BASE) {
-			return SYSTEM_EXECUTION_DOMAIN_ID;
+	public domainIdOnBus(address: number, busSignals: MappedBusSignals): ExecutionDomainId | null {
+		switch (this.memory.mappedRegion(address)) {
+			case MemoryRegionKind.SystemRom:
+				return SYSTEM_EXECUTION_DOMAIN_ID;
+			case MemoryRegionKind.Cartridge:
+				return this.memory.cartridgeController.selectedSlot(busSignals);
+			default:
+				return null;
 		}
-		if (address < CART_ROM_BASE) {
-			return null;
-		}
-		return this.memory.cartridgeController.selectedSlot();
 	}
 
 	public bindReadOnlyView(

@@ -446,10 +446,10 @@ MappedBusSignals DmaController::cartridgeSlotSignals(u32 request) {
 	switch (request) {
 	case DMA_REQUEST_CARTRIDGE_SLOT0_READ:
 	case DMA_REQUEST_CARTRIDGE_SLOT0_WRITE:
-		return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE;
+		return mappedBusSignalsForCartridgeSlot(0u);
 	case DMA_REQUEST_CARTRIDGE_SLOT1_READ:
 	case DMA_REQUEST_CARTRIDGE_SLOT1_WRITE:
-		return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | MAPPED_BUS_CARTRIDGE_SLOT1;
+		return mappedBusSignalsForCartridgeSlot(1u);
 	default:
 		return 0u;
 	}

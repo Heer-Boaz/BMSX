@@ -3,10 +3,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "machine/memory/bus_signals.h"
 #include "spec/blua32/execution_domain.h"
 #include "spec/blua32/opcode.h"
 
@@ -41,12 +43,13 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 }
 
 struct DecodedInstruction {
-	uint32_t word = 0;
+	uint32_t sourceWord = 0;
+	uint32_t bodyWord = 0;
 	uint32_t bx = 0;
 	int32_t sbx = 0;
 	int32_t rkB = 0;
 	int32_t rkC = 0;
-	uint32_t tableCacheIndex = 0;
+	uint32_t tableCacheIndex = UINT32_MAX;
 	uint16_t a = 0;
 	uint16_t b = 0;
 	uint16_t c = 0;
@@ -60,6 +63,7 @@ struct Blua32ExecutionImage;
 
 struct Blua32FunctionRecordLatch {
 	Blua32ExecutionImage* image = nullptr;
+	MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU;
 	u32 address = 0;
 	u32 codeAddress = 0;
 	u32 codeByteCount = 0;
@@ -76,27 +80,40 @@ struct TableLoadInlineCache {
 	Value value = valueNil();
 };
 
-constexpr size_t DECODED_PAGE_SHIFT = 8;
+constexpr u32 DECODED_PAGE_BYTE_SHIFT = 10u;
+constexpr u32 DECODED_PAGE_BYTE_SIZE = 1u << DECODED_PAGE_BYTE_SHIFT;
+constexpr u32 DECODED_PAGE_BYTE_MASK = DECODED_PAGE_BYTE_SIZE - 1u;
+constexpr size_t DECODED_PAGE_SHIFT = DECODED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
-constexpr size_t DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1u;
 
 struct DecodedInstructionPage {
+	DecodedInstructionPage() {
+		decodeRequired.fill(1u);
+	}
+
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
+	std::array<uint8_t, DECODED_PAGE_WORDS> decodeRequired{};
+	std::array<uint8_t, DECODED_PAGE_WORDS> fusionRequired{};
+	std::vector<TableLoadInlineCache> tableLoadCaches;
+	bool readOnly = false;
 };
+
+inline bool decodedInstructionNeedsRefresh(
+	const DecodedInstructionPage& page,
+	size_t pageOffset,
+	bool allowFusion
+) {
+	return page.decodeRequired[pageOffset] != 0u
+		|| (allowFusion && page.fusionRequired[pageOffset] != 0u);
+}
 
 struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
-	u32 functionTableAddress = 0;
-	u32 functionCount = 0;
-	u32 textAddress = 0;
-	u32 textByteCount = 0;
 	std::vector<Value> constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
-	std::vector<DecodedInstructionPage> decodedPages;
-	size_t decodedWordCount = 0;
-	std::vector<TableLoadInlineCache> tableLoadCaches;
+	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
 };
 
 } // namespace bmsx

@@ -1,5 +1,5 @@
 import type { Closure, Upvalue } from './closure';
-import type { Blua32ExecutionImage } from './execution_image';
+import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import type { ValueSlots } from './value_slots';
 
 export const enum ProtectedCallKind {
@@ -11,6 +11,8 @@ export const enum ProtectedCallKind {
 export type CallFrame = {
 	functionAddress: number;
 	executionImage: Blua32ExecutionImage;
+	decodedPage: DecodedInstructionPage | null;
+	decodedPageAddress: number;
 	codeAddress: number;
 	codeByteCount: number;
 	pc: number;

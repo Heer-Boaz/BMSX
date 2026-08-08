@@ -1,5 +1,10 @@
 import { StringPool, type StringId } from './string_pool';
 import { NO_BLOCKED_MAPPED_WRITE, type Memory, type RomByteView } from '../memory/memory';
+import {
+	MAPPED_BUS_MASTER_CPU,
+	mappedBusSignalsForCartridgeSlot,
+	type MappedBusSignals,
+} from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
 import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from '../../spec/blua32/opcode';
@@ -35,7 +40,7 @@ import {
 	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
@@ -46,7 +51,6 @@ import {
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
-	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_FUNCTION_STATIC,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
@@ -56,15 +60,11 @@ import {
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
-	BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
-	BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
-	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
-	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
@@ -84,7 +84,6 @@ import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
-import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
@@ -104,11 +103,12 @@ import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
-	DECODED_PAGE_MASK,
-	DECODED_PAGE_SHIFT,
-	DECODED_PAGE_WORDS,
+	DECODED_PAGE_BYTE_MASK,
+	DECODED_PAGE_BYTE_SIZE,
+	NO_TABLE_LOAD_CACHE_INDEX,
 	createDecodedInstructionPage,
 	decodedDispatchOp,
+	decodedInstructionNeedsRefresh,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
@@ -297,6 +297,7 @@ export class CPU {
 		1,
 	);
 	private builtinResultsScratchIndex = 0;
+	private closureUpvalueWords = new Uint32Array(0);
 	private readonly heapObjectStack: Array<Table | Closure> = [];
 	private readonly heapUpvalueStack: Upvalue[] = [];
 	private readonly heapWeakTables: Table[] = [];
@@ -420,8 +421,10 @@ export class CPU {
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
+	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
+		busSignals: MAPPED_BUS_MASTER_CPU,
 		address: 0,
 		codeAddress: 0,
 		codeByteCount: 0,
@@ -786,6 +789,8 @@ export class CPU {
 		return {
 			functionAddress: 0,
 			executionImage: null!,
+			decodedPage: null,
+			decodedPageAddress: 0,
 			codeAddress: 0,
 			codeByteCount: 0,
 			pc: 0,
@@ -811,6 +816,8 @@ export class CPU {
 		frame.varargCount = 0;
 		frame.stackBase = 0;
 		frame.stackCapacity = 0;
+		frame.decodedPage = null;
+		frame.decodedPageAddress = 0;
 		frame.registers.rebind(this.stackRegisters, 0, 0);
 		frame.isExceptionFrame = false;
 		frame.isNonMaskableExceptionFrame = false;
@@ -863,9 +870,9 @@ export class CPU {
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImages.push(this.systemImage);
 		this.systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
-		this.activeExecutionImage = this.systemImage;
+		this.latchActiveExecutionImage(this.systemImage);
 		this.pushFrame(
-			this.staticClosuresByAddress.get(systemResetFunctionAddress)!,
+			this.staticClosureAtAddress(systemResetFunctionAddress),
 			EMPTY_CALL_ARGS,
 			0,
 			0,
@@ -1041,14 +1048,6 @@ export class CPU {
 		);
 		const headerBytes = this.executionReadView.bytes;
 		const headerByteOffset = this.executionReadView.byteOffset;
-		const functionTableAddress = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
-		);
-		const functionCount = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
-		);
 		const constantTableAddress = readLE32(
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
@@ -1073,14 +1072,6 @@ export class CPU {
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 		);
-		const textAddress = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
-		);
-		const textByteCount = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
-		);
 		const constTags = new Uint8Array(constantCount);
 		const constScalars = new Float64Array(constantCount);
 		this.decodeConstantPool(
@@ -1101,43 +1092,15 @@ export class CPU {
 			systemGlobalNameCount,
 			true,
 		);
-		const decoded = this.decodeText(
-			executionBoot.executionDomainId,
-			textAddress,
-			textByteCount,
-			globalSlots,
-			systemGlobalSlots,
-		);
 		const image: Blua32ExecutionImage = {
 			executionDomainId: executionBoot.executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
-			functionTableAddress,
-			functionCount,
-			textAddress,
-			textByteCount,
 			constTags,
 			constScalars,
 			globalSlots,
 			systemGlobalSlots,
-			decodedPages: decoded.pages,
-			decodedWordCount: textByteCount / INSTRUCTION_BYTES,
-			tableLoadCaches: decoded.tableLoadCaches,
+			decodedPages: new Map(),
 		};
-		this.bindStaticClosures(image);
-		if (!this.readFunctionRecordInImage(image, executionBoot.irqFunctionAddress)
-			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
-			throw new Error('BLua32 IRQ vector does not name a static function record.');
-		}
-		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
-			if (!this.readFunctionRecordInImage(image, executionBoot.startupFunctionAddress)
-				|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
-				throw new Error('BLua32 system vector does not name a static function record.');
-			}
-			if (!this.readFunctionRecordInImage(image, executionBoot.exceptionFunctionAddress)
-				|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
-				throw new Error('BLua32 system vector does not name a static function record.');
-			}
-		}
 		return image;
 	}
 
@@ -1165,6 +1128,19 @@ export class CPU {
 		return image;
 	}
 
+	private static executionBusSignalsForDomain(
+		executionDomainId: ExecutionDomainId,
+	): MappedBusSignals {
+		return executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+			? MAPPED_BUS_MASTER_CPU
+			: mappedBusSignalsForCartridgeSlot(executionDomainId);
+	}
+
+	private latchActiveExecutionImage(image: Blua32ExecutionImage): void {
+		this.activeExecutionImage = image;
+		this.executionBusSignals = CPU.executionBusSignalsForDomain(image.executionDomainId);
+	}
+
 	private staticClosureAtAddress(address: number): Closure {
 		const existing = this.staticClosuresByAddress.get(address);
 		if (existing) {
@@ -1174,16 +1150,6 @@ export class CPU {
 		closure.hashId = this.allocateObjectHashId();
 		this.staticClosuresByAddress.set(address, closure);
 		return closure;
-	}
-
-	private bindStaticClosures(image: Blua32ExecutionImage): void {
-		for (let index = 0; index < image.functionCount; index += 1) {
-			const functionAddress = image.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE;
-			this.readFunctionRecordInImage(image, functionAddress);
-			if ((this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) !== 0) {
-				this.staticClosureAtAddress(functionAddress);
-			}
-		}
 	}
 
 	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
@@ -1199,7 +1165,7 @@ export class CPU {
 			this.systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 		}
 		if (this.activeExecutionImage === previousImage) {
-			this.activeExecutionImage = image;
+			this.latchActiveExecutionImage(image);
 		}
 	}
 
@@ -1207,175 +1173,250 @@ export class CPU {
 		return this.residentExecutionImage(executionDomainId) !== null;
 	}
 
-	private decodeText(
-		executionDomainId: ExecutionDomainId,
-		textAddress: number,
-		textByteCount: number,
-		globalSlots: Uint32Array,
-		systemGlobalSlots: Uint32Array,
-	): {
-		pages: DecodedInstructionPage[];
-		tableLoadCaches: TableLoadInlineCache[];
-	} {
-		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
-			textAddress,
-			textByteCount,
-			this.executionReadView,
-		);
-		const code = this.executionReadView.bytes;
-		const codeWordOffset = this.executionReadView.byteOffset / INSTRUCTION_BYTES;
-		const instructionCount = textByteCount / INSTRUCTION_BYTES;
-		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
-		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
-			decodedPages[pageIndex] = createDecodedInstructionPage();
+	private decodedPageForAddress(
+		image: Blua32ExecutionImage,
+		pageKey: number,
+		pageAddress: number,
+	): DecodedInstructionPage {
+		const existing = image.decodedPages.get(pageKey);
+		if (existing !== undefined) {
+			return existing;
 		}
-		const tableLoadCaches: TableLoadInlineCache[] = [];
-		let previousInstructionWordIndex = -1;
-		for (let wordIndex = 0; wordIndex < instructionCount;) {
-			const page = this.decodedPageForWrite(decodedPages, wordIndex);
-			const pageOffset = wordIndex & DECODED_PAGE_MASK;
-			let width = 1;
-			let wideA = 0;
-			let wideB = 0;
-			let wideC = 0;
-			let instr = readInstructionWord(code, codeWordOffset + wordIndex);
-			let op = (instr >>> 18) & 0x3f;
-			let ext = instr >>> 24;
-			if (op === OpCode.WIDE && wordIndex + 1 < instructionCount) {
-				width = 2;
-				wideA = (instr >>> 12) & 0x3f;
-				wideB = (instr >>> 6) & 0x3f;
-				wideC = instr & 0x3f;
-				instr = readInstructionWord(code, codeWordOffset + wordIndex + 1);
-				op = (instr >>> 18) & 0x3f;
-				ext = instr >>> 24;
+		const page = createDecodedInstructionPage();
+		page.readOnly = this.memory.mappedRangeIsReadOnly(
+			pageAddress,
+			DECODED_PAGE_BYTE_SIZE,
+		);
+		image.decodedPages.set(pageKey, page);
+		return page;
+	}
+
+	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage | null {
+		if (((pc - frame.codeAddress) >>> 0) >= frame.codeByteCount) {
+			this.hardHalt();
+			return null;
+		}
+		const pageAddress = (pc & ~DECODED_PAGE_BYTE_MASK) >>> 0;
+		const cached = frame.decodedPage;
+		if (cached !== null
+			&& frame.decodedPageAddress === pageAddress) {
+			return cached;
+		}
+		const pageKey = this.memory.mappedPageKey(pageAddress, this.executionBusSignals);
+		const page = this.decodedPageForAddress(frame.executionImage, pageKey, pageAddress);
+		frame.decodedPage = page;
+		frame.decodedPageAddress = pageAddress;
+		return page;
+	}
+
+	private decodeInstruction(
+		frame: CallFrame,
+		page: DecodedInstructionPage,
+		pageOffset: number,
+		pc: number,
+		allowFusion: boolean,
+	): void {
+		const codeEnd = frame.codeAddress + frame.codeByteCount;
+		let width = 1;
+		let op: number;
+		const faultSequence = this.memory.readBusFaultSequence();
+		let wideA = 0;
+		let wideB = 0;
+		let wideC = 0;
+		const sourceWord = this.memory.readMappedBusU32BE(pc, this.executionBusSignals);
+		if (this.memory.readBusFaultSequence() !== faultSequence) {
+			this.hardHalt();
+			return;
+		}
+		let bodyWord = sourceWord;
+		op = (sourceWord >>> 18) & 0x3f;
+		let ext = sourceWord >>> 24;
+		if (op === OpCode.WIDE && pc + INSTRUCTION_BYTES < codeEnd) {
+			width = 2;
+			wideA = (sourceWord >>> 12) & 0x3f;
+			wideB = (sourceWord >>> 6) & 0x3f;
+			wideC = sourceWord & 0x3f;
+			bodyWord = this.memory.readMappedBusU32BE(
+				pc + INSTRUCTION_BYTES,
+				this.executionBusSignals,
+			);
+			if (this.memory.readBusFaultSequence() !== faultSequence) {
+				this.hardHalt();
+				return;
 			}
-			const aLow = (instr >>> 12) & 0x3f;
-			const bLow = (instr >>> 6) & 0x3f;
-			const cLow = instr & 0x3f;
+			op = (bodyWord >>> 18) & 0x3f;
+			ext = bodyWord >>> 24;
+		}
+		const unchanged = page.widths[pageOffset] !== 0
+			&& page.sourceWords[pageOffset] === sourceWord
+			&& page.bodyWords[pageOffset] === bodyWord
+			&& page.widths[pageOffset] === width;
+		if (!unchanged) {
+			const aLow = (bodyWord >>> 12) & 0x3f;
+			const bLow = (bodyWord >>> 6) & 0x3f;
+			const cLow = bodyWord & 0x3f;
 			const usesDisp = OPCODE_USES_DISP[op] !== 0;
 			const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
 			const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
 			const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
 			const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
-			const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+			const aShift = usesDisp
+				? MAX_OPERAND_BITS
+				: MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
 			const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
 			const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
 			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
 			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
 			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
-			const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
+			const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS))
+				| ((usesBx ? ext : 0) << MAX_BX_BITS)
+				| bxLow;
 			page.widths[pageOffset] = width;
-			page.words[pageOffset] = instr;
+			page.sourceWords[pageOffset] = sourceWord;
+			page.bodyWords[pageOffset] = bodyWord;
 			page.ops[pageOffset] = op;
-			page.dispatchOps[pageOffset] = op;
 			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
 			page.b[pageOffset] = rawB;
 			page.c[pageOffset] = rawC;
 			switch (op) {
 				case OpCode.GETGL:
 				case OpCode.SETGL:
-					page.bx[pageOffset] = globalSlots[decodedBx];
+					page.bx[pageOffset] = frame.executionImage.globalSlots[decodedBx];
 					break;
 				case OpCode.GETSYS:
 				case OpCode.SETSYS:
-					page.bx[pageOffset] = systemGlobalSlots[decodedBx];
+					page.bx[pageOffset] = frame.executionImage.systemGlobalSlots[decodedBx];
 					break;
 				default:
 					page.bx[pageOffset] = decodedBx;
 					break;
 			}
-			page.sbx[pageOffset] = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			page.rkB[pageOffset] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			page.rkC[pageOffset] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			page.sbx[pageOffset] = signExtend(
+				decodedBx,
+				MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS),
+			);
+			page.rkB[pageOffset] = signExtend(
+				rawB,
+				MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS),
+			);
+			page.rkC[pageOffset] = signExtend(
+				rawC,
+				MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS),
+			);
 			page.disp[pageOffset] = ext;
 			if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
-				page.tableCacheIndexes[pageOffset] = tableLoadCaches.length;
-				tableLoadCaches.push({
-					table: null,
-					version: 0,
-					valueTag: ValueTag.Nil,
-					valueScalar: NaN,
-					valueReference: null,
-				});
+				let cacheIndex = page.tableCacheIndexes[pageOffset];
+				if (cacheIndex === NO_TABLE_LOAD_CACHE_INDEX) {
+					cacheIndex = page.tableLoadCaches.length;
+					page.tableCacheIndexes[pageOffset] = cacheIndex;
+					page.tableLoadCaches.push({
+						table: null,
+						version: 0,
+						valueTag: ValueTag.Nil,
+						valueScalar: NaN,
+						valueReference: null,
+					});
+				} else {
+					const cache = page.tableLoadCaches[cacheIndex];
+					cache.table = null;
+					cache.version = 0;
+					cache.valueTag = ValueTag.Nil;
+					cache.valueScalar = NaN;
+					cache.valueReference = null;
+				}
 			}
-			if (previousInstructionWordIndex >= 0) {
-				const previousPage = this.decodedPageForWrite(
-					decodedPages,
-					previousInstructionWordIndex,
-				);
-				const previousPageOffset = previousInstructionWordIndex & DECODED_PAGE_MASK;
-				previousPage.dispatchOps[previousPageOffset] = decodedDispatchOp(
-					previousPage.ops[previousPageOffset],
-					op,
-				);
-			}
-			previousInstructionWordIndex = wordIndex;
-			wordIndex += width;
 		}
-		return { pages: decodedPages, tableLoadCaches };
-	}
-
-	private decodedPageForWrite(decodedPages: DecodedInstructionPage[], wordIndex: number): DecodedInstructionPage {
-		return decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
-	}
-
-	private decodedPageAt(image: Blua32ExecutionImage, wordIndex: number): DecodedInstructionPage {
-		return image.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
-	}
-
-	private readFunctionRecordInImage(image: Blua32ExecutionImage, address: number): boolean {
-		if (address < image.functionTableAddress) {
-			return false;
+		page.dispatchOps[pageOffset] = op;
+		page.decodeRequired[pageOffset] = page.readOnly ? 0 : 1;
+		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
+		if (!allowFusion || !fusionCandidate || !page.readOnly) {
+			page.fusionRequired[pageOffset] = !allowFusion && fusionCandidate && page.readOnly ? 1 : 0;
+			return;
 		}
-		const offset = address - image.functionTableAddress;
-		if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1)) !== 0
-			|| offset >= image.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
-			return false;
+		const nextPc = pc + width * INSTRUCTION_BYTES;
+		if (nextPc >= codeEnd) {
+			page.fusionRequired[pageOffset] = 0;
+			return;
 		}
-		const latch = this.functionRecordLatch;
-		const executionDomainId = image.executionDomainId;
-		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
-			address,
-			BLUA32_FUNCTION_RECORD_SIZE,
-			this.executionReadView,
+		const nextPage = this.decodedPageForFrame(frame, nextPc);
+		if (nextPage === null) {
+			return;
+		}
+		if (!nextPage.readOnly) {
+			page.fusionRequired[pageOffset] = 0;
+			return;
+		}
+		const nextPageOffset = (nextPc & DECODED_PAGE_BYTE_MASK) >>> 2;
+		if (decodedInstructionNeedsRefresh(nextPage, nextPageOffset, false)) {
+			this.decodeInstruction(
+				frame,
+				nextPage,
+				nextPageOffset,
+				nextPc,
+				false,
+			);
+		}
+		if (this.hardHalted) {
+			return;
+		}
+		page.dispatchOps[pageOffset] = decodedDispatchOp(
+			op as OpCode,
+			nextPage.ops[nextPageOffset] as OpCode,
 		);
-		const bytes = this.executionReadView.bytes;
-		const byteOffset = this.executionReadView.byteOffset;
-		latch.image = image;
-		latch.address = address;
-		latch.codeAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
-		latch.codeByteCount = readLE32(bytes, byteOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
-		latch.numParams = readLE32(bytes, byteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
-		latch.maxStack = readLE32(bytes, byteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET);
-		latch.flags = readLE32(bytes, byteOffset + BLUA32_FUNCTION_FLAGS_OFFSET);
-		latch.upvalueTableAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
-		latch.upvalueCount = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
-		return true;
+		page.fusionRequired[pageOffset] = 0;
 	}
 
-	private readFunctionRecordInExecutionDomain(
-		executionImage: Blua32ExecutionImage,
+	private readFunctionRecord(
+		image: Blua32ExecutionImage,
 		address: number,
+		busSignals: MappedBusSignals,
 	): boolean {
-		if (address >= CART_ROM_BASE) {
-			return this.readFunctionRecordInImage(executionImage, address);
-		}
-		if (address >= RAM_BASE) {
-			return false;
-		}
-		return this.readFunctionRecordInImage(this.systemImage, address);
+		const faultSequence = this.memory.readBusFaultSequence();
+		const latch = this.functionRecordLatch;
+		latch.image = image;
+		latch.busSignals = busSignals;
+		latch.address = address;
+		latch.codeAddress = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.codeByteCount = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.numParams = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_NUM_PARAMS_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.maxStack = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_MAX_STACK_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.flags = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_FLAGS_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.upvalueTableAddress = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET) >>> 0,
+			busSignals,
+		);
+		latch.upvalueCount = this.memory.readMappedBusU32LE(
+			(address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) >>> 0,
+			busSignals,
+		);
+		return this.memory.readBusFaultSequence() === faultSequence;
 	}
 
-	private readFunctionRecordOnSelectedBus(address: number): boolean {
-		const executionDomainId = this.executionAddressSpace.domainIdOnBus(address);
-		if (executionDomainId === null) {
-			return false;
-		}
-		const image = this.executionImageForDomain(executionDomainId);
-		return image !== null && this.readFunctionRecordInImage(image, address);
+	private readFunctionRecordOnBus(
+		ambientExecutionImage: Blua32ExecutionImage,
+		address: number,
+		busSignals: MappedBusSignals,
+	): boolean {
+		const executionDomainId = this.executionAddressSpace.domainIdOnBus(address, busSignals);
+		const image = executionDomainId === null
+			? ambientExecutionImage
+			: this.executionImageForDomain(executionDomainId);
+		return image !== null && this.readFunctionRecord(image, address, busSignals);
 	}
 
 	public isCartridgeExecutionActive(): boolean {
@@ -1387,14 +1428,18 @@ export class CPU {
 	}
 
 	private executeFunctionAddress(functionAddress: number): void {
-		if (!this.readFunctionRecordOnSelectedBus(functionAddress)
+		if (!this.readFunctionRecordOnBus(
+			this.activeExecutionImage,
+			functionAddress,
+			MAPPED_BUS_MASTER_CPU,
+		)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
 			return;
 		}
 		const image = this.functionRecordLatch.image;
 		this.clearCallStack();
-		this.activeExecutionImage = image;
+		this.latchActiveExecutionImage(image);
 		const cartridgeEntry = image.executionDomainId >= 0;
 		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrqFrameDepth = -1;
@@ -1403,7 +1448,7 @@ export class CPU {
 		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
 		this.yieldRequested = false;
-		const closure = this.staticClosuresByAddress.get(functionAddress)!;
+		const closure = this.staticClosureAtAddress(functionAddress);
 		this.pushLatchedFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
 	}
 
@@ -1419,12 +1464,13 @@ export class CPU {
 	): void {
 		this.clearCompletionValues();
 		this.yieldRequested = false;
-		this.readFunctionRecordInImage(
+		this.readFunctionRecord(
 			this.executionImageForDomain(executionDomainId)!,
 			functionAddress,
+			CPU.executionBusSignalsForDomain(executionDomainId),
 		);
 		this.pushLatchedFrame(
-			this.staticClosuresByAddress.get(functionAddress)!,
+			this.staticClosureAtAddress(functionAddress),
 			EMPTY_CALL_ARGS,
 			0,
 			0,
@@ -1604,7 +1650,7 @@ export class CPU {
 		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
 			| ((this.statusWord << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
-		const closure = this.staticClosuresByAddress.get(functionAddress)!;
+		const closure = this.staticClosureAtAddress(functionAddress);
 		const frame = this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false)!;
 		frame.callSitePc = epcWord;
 		frame.isExceptionFrame = true;
@@ -1652,14 +1698,17 @@ export class CPU {
 					const frame = frames[frames.length - 1];
 					const image = frame.executionImage;
 					const pc = frame.pc;
-					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
-					if ((wordIndex >>> 0) >= image.decodedWordCount) {
-						this.hardHalt();
+					const page = this.decodedPageForFrame(frame, pc);
+					if (page === null) {
 						return RunResult.Halted;
 					}
-					const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
-					const page = image.decodedPages[pageIndex];
-					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					if (decodedInstructionNeedsRefresh(page, pageOffset, true)) {
+						this.decodeInstruction(frame, page, pageOffset, pc, true);
+					}
+					if (this.hardHalted) {
+						return RunResult.Halted;
+					}
 					const width = page.widths[pageOffset];
 					const dispatchOp = page.dispatchOps[pageOffset];
 					this.currentInstructionPc = pc;
@@ -1669,6 +1718,7 @@ export class CPU {
 					this.instructionBudgetRemaining -= dispatchBaseCycles[dispatchOp];
 					this.executeInstruction(
 						frame,
+						page,
 						page.tableCacheIndexes[pageOffset],
 						dispatchOp,
 						page.a[pageOffset],
@@ -1730,18 +1780,21 @@ export class CPU {
 					const frame = frames[frames.length - 1];
 					const image = frame.executionImage;
 					const pc = frame.pc;
-					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
-					if ((wordIndex >>> 0) >= image.decodedWordCount) {
-						this.hardHalt();
+					const page = this.decodedPageForFrame(frame, pc);
+					if (page === null) {
 						return RunResult.Halted;
 					}
 					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
 						&& executionHook(image.executionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
-					const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
-					const page = image.decodedPages[pageIndex];
-					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
+						this.decodeInstruction(frame, page, pageOffset, pc, false);
+					}
+					if (this.hardHalted) {
+						return RunResult.Halted;
+					}
 					const width = page.widths[pageOffset];
 					const op = page.ops[pageOffset];
 					this.currentInstructionPc = pc;
@@ -1751,6 +1804,7 @@ export class CPU {
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
 						frame,
+						page,
 						page.tableCacheIndexes[pageOffset],
 						op,
 						page.a[pageOffset],
@@ -1823,15 +1877,19 @@ export class CPU {
 	}
 
 	private skipNextInstruction(frame: CallFrame): void {
-		const image = frame.executionImage;
-		const wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
-		if ((wordIndex >>> 0) >= image.decodedWordCount) {
-			this.hardHalt();
+		const pc = frame.pc;
+		const page = this.decodedPageForFrame(frame, pc);
+		if (page === null) {
 			return;
 		}
-		const page = this.decodedPageAt(image, wordIndex);
-		const width = page.widths[wordIndex & DECODED_PAGE_MASK];
-		const nextPc = frame.pc + width * INSTRUCTION_BYTES;
+		const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+		if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
+			this.decodeInstruction(frame, page, pageOffset, pc, false);
+		}
+		if (this.hardHalted) {
+			return;
+		}
+		const nextPc = pc + page.widths[pageOffset] * INSTRUCTION_BYTES;
 		if (nextPc < frame.codeAddress
 			|| nextPc >= frame.codeAddress + frame.codeByteCount) {
 			this.hardHalt();
@@ -1949,7 +2007,11 @@ export class CPU {
 		pc: number,
 	): void {
 		const image = this.executionImageForDomain(executionDomainId)!;
-		this.readFunctionRecordInImage(image, functionAddress);
+		this.readFunctionRecord(
+			image,
+			functionAddress,
+			CPU.executionBusSignalsForDomain(executionDomainId),
+		);
 		const functionRecord = this.functionRecordLatch;
 		const frame = this.frames[frameIndex];
 		if (functionRecord.maxStack > frame.stackCapacity) {
@@ -1957,12 +2019,14 @@ export class CPU {
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) !== 0
 			&& functionRecord.upvalueCount === 0) {
-			frame.closure = this.staticClosuresByAddress.get(functionAddress)!;
+			frame.closure = this.staticClosureAtAddress(functionAddress);
 		} else {
 			frame.closure.functionAddress = functionAddress;
 		}
 		frame.functionAddress = functionAddress;
 		frame.executionImage = image;
+		frame.decodedPage = null;
+		frame.decodedPageAddress = 0;
 		frame.codeAddress = functionRecord.codeAddress;
 		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = pc;
@@ -2035,6 +2099,7 @@ export class CPU {
 
 	private executeInstruction(
 		frame: CallFrame,
+		page: DecodedInstructionPage,
 		tableCacheIndex: number,
 		op: number,
 		a: number,
@@ -2048,30 +2113,49 @@ export class CPU {
 	): void {
 		const registers = frame.registers;
 		const image = frame.executionImage;
+		const tableLoadCaches = page.tableLoadCaches;
 		switch (op) {
-				case DecodedDispatchOp.FusedShlBxor: {
+				case DecodedDispatchOp.FusedShlBxor:
+				case DecodedDispatchOp.FusedShrBxor: {
 					const left = this.readRKNumber(frame, rkB);
 					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
+					const shifted = op === DecodedDispatchOp.FusedShlBxor
+						? left << (right & 31)
+						: left >> (right & 31);
+					this.setRegisterNumberFast(frame, registers, a, shifted);
 					if (this.instructionBudgetRemaining <= 0) {
 						return;
 					}
 					const pc = frame.pc;
-					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
-					const page = this.decodedPageAt(image, wordIndex);
-					const pageOffset = wordIndex & DECODED_PAGE_MASK;
-					const width = page.widths[pageOffset];
+					const secondPage = this.decodedPageForFrame(frame, pc);
+					if (secondPage === null) {
+						return;
+					}
+					const secondPageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
+						this.decodeInstruction(
+							frame,
+							secondPage,
+							secondPageOffset,
+							pc,
+							false,
+						);
+					}
+					if (this.hardHalted) {
+						return;
+					}
+					const width = secondPage.widths[secondPageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = pc + width * INSTRUCTION_BYTES;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.BXOR];
-					const xorLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
-					const xorRight = this.readRKNumber(frame, page.rkC[pageOffset]);
+					const xorLeft = this.readRKNumber(frame, secondPage.rkB[secondPageOffset]);
+					const xorRight = this.readRKNumber(frame, secondPage.rkC[secondPageOffset]);
 					this.setRegisterNumberFast(
 						frame,
 						registers,
-						page.a[pageOffset],
+						secondPage.a[secondPageOffset],
 						xorLeft ^ xorRight,
 					);
 					return;
@@ -2084,49 +2168,36 @@ export class CPU {
 						return;
 					}
 					const pc = frame.pc;
-					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
-					const page = this.decodedPageAt(image, wordIndex);
-					const pageOffset = wordIndex & DECODED_PAGE_MASK;
-					const width = page.widths[pageOffset];
+					const secondPage = this.decodedPageForFrame(frame, pc);
+					if (secondPage === null) {
+						return;
+					}
+					const secondPageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
+						this.decodeInstruction(
+							frame,
+							secondPage,
+							secondPageOffset,
+							pc,
+							false,
+						);
+					}
+					if (this.hardHalted) {
+						return;
+					}
+					const width = secondPage.widths[secondPageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = pc + width * INSTRUCTION_BYTES;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.SHL];
-					const shiftLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
-					const shiftRight = this.readRKNumber(frame, page.rkC[pageOffset]);
+					const shiftLeft = this.readRKNumber(frame, secondPage.rkB[secondPageOffset]);
+					const shiftRight = this.readRKNumber(frame, secondPage.rkC[secondPageOffset]);
 					this.setRegisterNumberFast(
 						frame,
 						registers,
-						page.a[pageOffset],
+						secondPage.a[secondPageOffset],
 						shiftLeft << (shiftRight & 31),
-					);
-					return;
-				}
-				case DecodedDispatchOp.FusedShrBxor: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
-					if (this.instructionBudgetRemaining <= 0) {
-						return;
-					}
-					const pc = frame.pc;
-					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
-					const page = this.decodedPageAt(image, wordIndex);
-					const pageOffset = wordIndex & DECODED_PAGE_MASK;
-					const width = page.widths[pageOffset];
-					this.currentInstructionPc = pc;
-					frame.pc = pc + width * INSTRUCTION_BYTES;
-					this.lastExecutionDomainId = image.executionDomainId;
-					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.BXOR];
-					const xorLeft = this.readRKNumber(frame, page.rkB[pageOffset]);
-					const xorRight = this.readRKNumber(frame, page.rkC[pageOffset]);
-					this.setRegisterNumberFast(
-						frame,
-						registers,
-						page.a[pageOffset],
-						xorLeft ^ xorRight,
 					);
 					return;
 				}
@@ -2182,7 +2253,7 @@ export class CPU {
 					return;
 				case OpCode.GETI:
 					this.loadTableIntegerIndexCached(
-						image.tableLoadCaches[tableCacheIndex],
+						tableLoadCaches[tableCacheIndex],
 						registers.getTag(b),
 						registers.getTable(b),
 						c,
@@ -2217,7 +2288,7 @@ export class CPU {
 				}
 				case OpCode.GETFIELD:
 					this.loadTableFieldIndexCached(
-						image.tableLoadCaches[tableCacheIndex],
+						tableLoadCaches[tableCacheIndex],
 						registers.getTag(b),
 						registers.getTable(b),
 						image.constScalars[c] as StringId,
@@ -2257,7 +2328,7 @@ export class CPU {
 					registers.copySlot(a + 1, b);
 					this.bumpRegisterTop(frame, a + 1);
 					this.loadTableFieldIndexCached(
-						image.tableLoadCaches[tableCacheIndex],
+						tableLoadCaches[tableCacheIndex],
 						baseTag,
 						baseTable,
 						key,
@@ -2645,14 +2716,19 @@ export class CPU {
 					return;
 				}
 				case OpCode.CLOSURE: {
-					if (!this.readFunctionRecordInExecutionDomain(
-						frame.executionImage,
+					if (!this.readFunctionRecordOnBus(
+						this.activeExecutionImage,
 						bx * 16,
+						this.executionBusSignals,
 					)) {
 						this.hardHalt();
 						return;
 					}
-					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame));
+					const closure = this.createClosure(frame);
+					if (closure === null) {
+						return;
+					}
+					this.setRegisterClosureFast(frame, registers, a, closure);
 					return;
 				}
 				case OpCode.GETUP: {
@@ -2939,9 +3015,10 @@ export class CPU {
 		returnCount: number,
 		returnToCompletionLatch: boolean,
 	): CallFrame | null {
-		if (!this.readFunctionRecordInExecutionDomain(
+		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			closure.functionAddress,
+			this.executionBusSignals,
 		)) {
 			this.hardHalt();
 			return null;
@@ -2966,6 +3043,8 @@ export class CPU {
 		const frame = this.acquireFrame();
 		frame.functionAddress = closure.functionAddress;
 		frame.executionImage = functionRecord.image;
+		frame.decodedPage = null;
+		frame.decodedPageAddress = 0;
 		frame.codeAddress = functionRecord.codeAddress;
 		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = functionRecord.codeAddress;
@@ -2996,9 +3075,10 @@ export class CPU {
 	}
 
 	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, returnToCompletionLatch: boolean, callSitePc: number): CallFrame | null {
-		if (!this.readFunctionRecordInExecutionDomain(
+		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			closure.functionAddress,
+			this.executionBusSignals,
 		)) {
 			this.hardHalt();
 			return null;
@@ -3007,6 +3087,8 @@ export class CPU {
 		const frame = this.acquireFrame();
 		frame.functionAddress = closure.functionAddress;
 		frame.executionImage = functionRecord.image;
+		frame.decodedPage = null;
+		frame.decodedPageAddress = 0;
 		frame.codeAddress = functionRecord.codeAddress;
 		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = functionRecord.codeAddress;
@@ -3043,29 +3125,30 @@ export class CPU {
 		return frame;
 	}
 
-	private createClosure(frame: CallFrame): Closure {
+	private createClosure(frame: CallFrame): Closure | null {
 		const functionRecord = this.functionRecordLatch;
 		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) !== 0
 			&& functionRecord.upvalueCount === 0) {
-			return this.staticClosuresByAddress.get(functionRecord.address)!;
+			return this.staticClosureAtAddress(functionRecord.address);
 		}
+		if (this.closureUpvalueWords.length < functionRecord.upvalueCount) {
+			this.closureUpvalueWords = new Uint32Array(functionRecord.upvalueCount);
+		}
+		const upvalueWords = this.closureUpvalueWords;
 		const upvalues = new Array<Upvalue>(functionRecord.upvalueCount);
-		if (functionRecord.upvalueCount > 0) {
-			this.executionAddressSpace.bindReadOnlyView(
-				functionRecord.image.executionDomainId,
-				functionRecord.upvalueTableAddress,
-				functionRecord.upvalueCount * BLUA32_UPVALUE_RECORD_SIZE,
-				this.executionReadView,
-			);
-		}
-		const upvalueBytes = this.executionReadView.bytes;
-		const upvalueByteOffset = this.executionReadView.byteOffset;
+		const faultSequence = this.memory.readBusFaultSequence();
 		let newUpvalueCount = 0;
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
-			const word = readLE32(
-				upvalueBytes,
-				upvalueByteOffset + index * BLUA32_UPVALUE_RECORD_SIZE,
+			const word = this.memory.readMappedBusU32LE(
+				(functionRecord.upvalueTableAddress
+					+ index * BLUA32_UPVALUE_RECORD_SIZE) >>> 0,
+				functionRecord.busSignals,
 			);
+			if (this.memory.readBusFaultSequence() !== faultSequence) {
+				this.hardHalt();
+				return null;
+			}
+			upvalueWords[index] = word;
 			const upvalueIndex = word & BLUA32_UPVALUE_INDEX_MASK;
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
 				const upvalue = this.findOpenUpvalue(frame, upvalueIndex);
@@ -3084,14 +3167,10 @@ export class CPU {
 			if (upvalues[index]) {
 				continue;
 			}
-			const word = readLE32(
-				upvalueBytes,
-				upvalueByteOffset + index * BLUA32_UPVALUE_RECORD_SIZE,
-			);
 			const upvalue: Upvalue = {
 				hashId: this.allocateObjectHashId(),
 				open: true,
-				index: word & BLUA32_UPVALUE_INDEX_MASK,
+				index: upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK,
 				frame,
 				valueTag: ValueTag.Nil,
 				valueScalar: NaN,
@@ -4226,7 +4305,7 @@ export class CPU {
 				case 'closure': {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
 					if (objectState.canonical) {
-						const closure = this.staticClosuresByAddress.get(objectState.functionAddress)!;
+						const closure = this.staticClosureAtAddress(objectState.functionAddress);
 						closure.hashId = objectState.hashId;
 						restoredObjects[index] = closure;
 					} else {
@@ -4374,15 +4453,16 @@ export class CPU {
 		this.clearCallStack();
 		this.globals.clear();
 		this.globals.prepareRestoreStorage(0, Table.hashCapacity(state.globals.length));
-		this.activeExecutionImage = executionImage;
+		this.latchActiveExecutionImage(executionImage);
 		this.systemGlobalSlots.clear(this.systemGlobalNames.length);
 		this.globalSlots.clear(this.globalNames.length);
 
 		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
 			const frameState = state.frames[frameIndex];
-			this.readFunctionRecordInExecutionDomain(
+			this.readFunctionRecordOnBus(
 				executionImage,
 				frameState.functionAddress,
+				this.executionBusSignals,
 			);
 			const functionRecord = this.functionRecordLatch;
 			const frame = this.acquireFrame();
@@ -4542,13 +4622,15 @@ export class CPU {
 			return;
 		}
 		this.heapSeenImages.set(image, this.heapEpoch);
-		for (let index = 0; index < image.tableLoadCaches.length; index += 1) {
-			const cache = image.tableLoadCaches[index];
-			cache.table = null;
-			cache.version = 0;
-			cache.valueTag = ValueTag.Nil;
-			cache.valueScalar = NaN;
-			cache.valueReference = null;
+		for (const page of image.decodedPages.values()) {
+			for (let index = 0; index < page.tableLoadCaches.length; index += 1) {
+				const cache = page.tableLoadCaches[index];
+				cache.table = null;
+				cache.version = 0;
+				cache.valueTag = ValueTag.Nil;
+				cache.valueScalar = NaN;
+				cache.valueReference = null;
+			}
 		}
 		for (let index = 0; index < image.constTags.length; index += 1) {
 			if (image.constTags[index] === ValueTag.String) {

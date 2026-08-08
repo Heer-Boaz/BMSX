@@ -8,6 +8,7 @@
 namespace bmsx {
 
 struct Blua32ExecutionImage;
+struct DecodedInstructionPage;
 struct Closure;
 struct Upvalue;
 
@@ -20,6 +21,8 @@ enum class ProtectedCallKind : uint8_t {
 struct CallFrame {
 	u32 functionAddress = 0;
 	Blua32ExecutionImage* executionImage = nullptr;
+	DecodedInstructionPage* decodedPage = nullptr;
+	u32 decodedPageAddress = 0;
 	u32 codeAddress = 0;
 	u32 codeByteCount = 0;
 	u32 pc = 0;

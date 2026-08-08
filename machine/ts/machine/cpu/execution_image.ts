@@ -1,5 +1,6 @@
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
+import type { MappedBusSignals } from '../memory/bus_signals';
 import type { Closure } from './closure';
 import type { Table } from './table';
 import { ValueTag } from './value';
@@ -12,9 +13,12 @@ export type TableLoadInlineCache = {
 	valueReference: Table | Closure | null;
 };
 
-export const DECODED_PAGE_SHIFT = 8;
+export const DECODED_PAGE_BYTE_SHIFT = 10;
+export const DECODED_PAGE_BYTE_SIZE = 1 << DECODED_PAGE_BYTE_SHIFT;
+export const DECODED_PAGE_BYTE_MASK = DECODED_PAGE_BYTE_SIZE - 1;
+export const DECODED_PAGE_SHIFT = DECODED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
-export const DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1;
+export const NO_TABLE_LOAD_CACHE_INDEX = 0xffffffff;
 
 export const enum DecodedDispatchOp {
 	FusedShlBxor = OPCODE_COUNT,
@@ -43,6 +47,15 @@ export function decodedDispatchOp(first: OpCode, second: OpCode): number {
 	}
 }
 
+export function decodedInstructionNeedsRefresh(
+	page: DecodedInstructionPage,
+	pageOffset: number,
+	allowFusion: boolean,
+): boolean {
+	return page.decodeRequired[pageOffset] !== 0
+		|| (allowFusion && page.fusionRequired[pageOffset] !== 0);
+}
+
 export type DecodedInstructionPage = {
 	widths: Uint8Array;
 	ops: Uint8Array;
@@ -55,28 +68,28 @@ export type DecodedInstructionPage = {
 	rkB: Int32Array;
 	rkC: Int32Array;
 	disp: Uint8Array;
-	words: Uint32Array;
+	sourceWords: Uint32Array;
+	bodyWords: Uint32Array;
 	tableCacheIndexes: Uint32Array;
+	decodeRequired: Uint8Array;
+	fusionRequired: Uint8Array;
+	readOnly: boolean;
+	tableLoadCaches: TableLoadInlineCache[];
 };
 
 export type Blua32ExecutionImage = {
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
-	functionTableAddress: number;
-	functionCount: number;
-	textAddress: number;
-	textByteCount: number;
 	constTags: Uint8Array;
 	constScalars: Float64Array;
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
-	decodedPages: DecodedInstructionPage[];
-	decodedWordCount: number;
-	tableLoadCaches: TableLoadInlineCache[];
+	decodedPages: Map<number, DecodedInstructionPage>;
 };
 
 export type Blua32FunctionRecordLatch = {
 	image: Blua32ExecutionImage;
+	busSignals: MappedBusSignals;
 	address: number;
 	codeAddress: number;
 	codeByteCount: number;
@@ -100,11 +113,17 @@ export function createDecodedInstructionPage(): DecodedInstructionPage {
 		rkB: new Int32Array(DECODED_PAGE_WORDS),
 		rkC: new Int32Array(DECODED_PAGE_WORDS),
 		disp: new Uint8Array(DECODED_PAGE_WORDS),
-		words: new Uint32Array(DECODED_PAGE_WORDS),
+		sourceWords: new Uint32Array(DECODED_PAGE_WORDS),
+		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
+		decodeRequired: new Uint8Array(DECODED_PAGE_WORDS),
+		fusionRequired: new Uint8Array(DECODED_PAGE_WORDS),
+		readOnly: false,
+		tableLoadCaches: [],
 	};
-	page.widths.fill(1);
+	page.decodeRequired.fill(1);
 	page.ops.fill(OpCode.WIDE);
 	page.dispatchOps.fill(OpCode.WIDE);
+	page.tableCacheIndexes.fill(NO_TABLE_LOAD_CACHE_INDEX);
 	return page;
 }

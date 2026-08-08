@@ -8,6 +8,7 @@
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "spec/bmsx/io.h"
+#include "spec/bmsx/memory_map.h"
 #include "common/primitives.h"
 
 namespace bmsx {
@@ -69,6 +70,29 @@ public:
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
 	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32) const;
+	uint32_t readMappedBusU32LE(
+		uint32_t addr,
+		MappedBusSignals busSignals,
+		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32
+	) const;
+	uint32_t readMappedBusU32BE(
+		uint32_t addr,
+		MappedBusSignals busSignals,
+		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32
+	) const;
+	u64 mappedPageKey(uint32_t addr, MappedBusSignals busSignals) const {
+		if (addr >= CART_ROM_BASE && addr < CART_BUS_END) {
+			return static_cast<u64>(addr)
+				| (static_cast<u64>(m_cartridgeController.selectedSlot(busSignals) + 1u) << 32u);
+		}
+		return addr;
+	}
+	bool mappedRangeIsReadOnly(uint32_t addr, uint32_t byteCount) const {
+		return (byteCount <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - byteCount)
+			|| (addr >= CART_ROM_BASE
+				&& byteCount <= CART_ROM_SIZE
+				&& addr - CART_ROM_BASE <= CART_ROM_SIZE - byteCount);
+	}
 	uint32_t readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const;
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;
@@ -123,7 +147,6 @@ private:
 	bool isReadOnlyIoAddress(uint32_t addr) const;
 	u32 readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals);
-	uint32_t readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusSignals busSignals) const;
 	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals);
 	bool writeRamU8(uint32_t addr, u8 value);
 	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);

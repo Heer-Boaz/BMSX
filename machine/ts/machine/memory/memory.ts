@@ -351,7 +351,7 @@ export class Memory {
 	}
 
 	public readMappedWord(addr: number): number {
-		return this.readMappedBusU32LE(addr, BUS_ACCESS_READ_WORD, MAPPED_BUS_MASTER_CPU);
+		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD);
 	}
 
 	public writeIoU32(addr: number, value: number): void {
@@ -449,14 +449,44 @@ export class Memory {
 	}
 
 	public readMappedU32LE(addr: number, faultAccess = BUS_ACCESS_READ_U32): number {
-		return this.readMappedBusU32LE(addr, faultAccess, MAPPED_BUS_MASTER_CPU);
+		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
+	}
+
+	public readMappedBusU32BE(
+		addr: number,
+		busSignals: MappedBusSignals,
+		faultAccess = BUS_ACCESS_READ_U32,
+	): number {
+		const word = this.readMappedBusU32LE(addr, busSignals, faultAccess);
+		return ((word >>> 24)
+			| ((word >>> 8) & 0x0000ff00)
+			| ((word << 8) & 0x00ff0000)
+			| (word << 24)) >>> 0;
+	}
+
+	public mappedPageKey(addr: number, busSignals: MappedBusSignals): number {
+		if (addr >= CART_ROM_BASE && addr < CART_BUS_END) {
+			return addr + (this.cartridgeController.selectedSlot(busSignals) + 1) * 0x100000000;
+		}
+		return addr;
+	}
+
+	public mappedRangeIsReadOnly(addr: number, byteCount: number): boolean {
+		return (byteCount <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - byteCount)
+			|| (addr >= CART_ROM_BASE
+				&& byteCount <= CART_ROM_SIZE
+				&& addr - CART_ROM_BASE <= CART_ROM_SIZE - byteCount);
 	}
 
 	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
-		return this.readMappedBusU32LE(addr, BUS_ACCESS_READ_U32, busSignals);
+		return this.readMappedBusU32LE(addr, busSignals);
 	}
 
-	private readMappedBusU32LE(addr: number, faultAccess: number, busSignals: MappedBusSignals): number {
+	public readMappedBusU32LE(
+		addr: number,
+		busSignals: MappedBusSignals,
+		faultAccess = BUS_ACCESS_READ_U32,
+	): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			return this.readIoSlot(slot, addr, busSignals);

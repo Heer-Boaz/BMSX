@@ -347,6 +347,7 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Ima
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
+	applyRawTestClosureRelocations(linked.layout.textBytes, source.closureRelocations);
 	return testImage(linked, rawTestVectors(source, linked));
 }
 

@@ -15,4 +15,10 @@ constexpr MappedBusSignals MAPPED_BUS_DMA_BLOCK_END = 2u;
 constexpr MappedBusSignals MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE = 4u;
 constexpr MappedBusSignals MAPPED_BUS_CARTRIDGE_SLOT1 = 8u;
 
+constexpr MappedBusSignals mappedBusSignalsForCartridgeSlot(u32 slot) {
+	return static_cast<MappedBusSignals>(
+		MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | (slot * MAPPED_BUS_CARTRIDGE_SLOT1)
+	);
+}
+
 } // namespace bmsx

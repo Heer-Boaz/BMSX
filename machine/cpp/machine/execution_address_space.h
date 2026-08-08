@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/memory/bus_signals.h"
 #include "spec/blua32/execution_domain.h"
 
 #include <optional>
@@ -23,7 +24,10 @@ public:
 		: m_memory(memory) {
 	}
 
-	std::optional<ExecutionDomainId> domainIdOnBus(u32 address) const;
+	std::optional<ExecutionDomainId> domainIdOnBus(
+		u32 address,
+		MappedBusSignals busSignals
+	) const;
 	void bindReadOnlyView(
 		ExecutionDomainId executionDomainId,
 		u32 address,

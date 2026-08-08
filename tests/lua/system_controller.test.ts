@@ -42,6 +42,7 @@ import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -134,6 +135,20 @@ function makeClosureCartSource(value: number, path: string, staticClosure: boole
 		debugRanges: [range, range, range, range, range, range, range, range, range],
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
+	};
+}
+
+function makeCartridgeSelectionSwitchSource(result: 0 | 1): TestBlua32Source {
+	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.K0, 1, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(text, 3, result === 0 ? OpCode.K0 : OpCode.K1, 0, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.RET, 0, 1, 0, 0);
+	return {
+		text,
+		functions: [{ firstWord: 0, wordCount: 5, maxStack: 2 }],
+		constants: [IO_CART_SELECT],
 	};
 }
 
@@ -392,6 +407,24 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 
 	unusedSlotRom[decodeBlua32BootHeader(unusedSlotRom).imageOffset] ^= 0xff;
 	dual.rebootSystem();
+});
+
+test('cartridge instruction fetch remains on the EXEC-latched socket when data selection changes', () => {
+	const systemSource = makeExecutionSelectorSystemSource();
+	const slot0 = linkRawTestBlua32Pair(systemSource, makeCartridgeSelectionSwitchSource(0));
+	const slot1 = linkRawTestBlua32Pair(systemSource, makeCartridgeSelectionSwitchSource(1));
+	const runtime = createSystemResetRuntime(
+		slot0.systemRomBytes,
+		slot0.cartRomBytes,
+		slot1.cartRomBytes,
+	);
+	runtime.boot();
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
+
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.deepEqual(runtime.readCompletionValues(), [1]);
+	assert.equal(runtime.machine.memory.readMappedU32LE(IO_CART_SELECT), 0);
+	assert.equal(runtime.machine.cpu.activeCartridgeSlot(), 1);
 });
 
 test('guest cartridge selection and EXEC-latched closures survive the runtime save-state wire format', () => {

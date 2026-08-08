@@ -29,10 +29,9 @@ import {
 import type { CPU } from '../../cpu/cpu';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
-	MAPPED_BUS_CARTRIDGE_SLOT1,
-	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,
 	MAPPED_BUS_DMA_BLOCK_END,
 	MAPPED_BUS_MASTER_DMA,
+	mappedBusSignalsForCartridgeSlot,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
 import { Memory, MemoryRegionKind } from '../../memory/memory';
@@ -547,10 +546,10 @@ export class DmaController {
 		switch (request) {
 			case DMA_REQUEST_CARTRIDGE_SLOT0_READ:
 			case DMA_REQUEST_CARTRIDGE_SLOT0_WRITE:
-				return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE;
+				return mappedBusSignalsForCartridgeSlot(0);
 			case DMA_REQUEST_CARTRIDGE_SLOT1_READ:
 			case DMA_REQUEST_CARTRIDGE_SLOT1_WRITE:
-				return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | MAPPED_BUS_CARTRIDGE_SLOT1;
+				return mappedBusSignalsForCartridgeSlot(1);
 			default:
 				return 0;
 		}

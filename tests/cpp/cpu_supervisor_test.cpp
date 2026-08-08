@@ -1,6 +1,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/blua32/cop0.h"
 #include "machine/cpu/cpu.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "machine/devices/dma/controller.h"
@@ -33,6 +34,8 @@ constexpr bmsx::u32 CART_USER_CP0_FUNCTION = 2u;
 constexpr bmsx::u32 CART_USER_BUS_LOAD_FUNCTION = 3u;
 constexpr bmsx::u32 CART_COMPLETION_FUNCTION = 4u;
 constexpr bmsx::u32 UNMAPPED_ADDRESS = 0x06000000u;
+constexpr bmsx::u32 RAM_FUNCTION_ADDRESS = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
+constexpr bmsx::u32 RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100u;
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -141,6 +144,27 @@ auto makeDecodedPairSystemImage() -> bmsx::test::Blua32TestImage {
 	image.startupFunctionIndex = 0u;
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 1u;
+	return image;
+}
+
+auto makeCartridgeSelectionSwitchImage(bmsx::OpCode result) -> bmsx::test::Blua32TestImage {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(5u * bmsx::INSTRUCTION_BYTES);
+	image.constants = {static_cast<bmsx::f64>(bmsx::IO_CART_SELECT)};
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K0), 1, 0, 0);
+	bmsx::writeInstruction(
+		code,
+		2,
+		static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D),
+		1,
+		0,
+		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
+	);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(result), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0u, .wordCount = 5u, .maxStack = 2u}};
 	return image;
 }
 
@@ -349,24 +373,33 @@ void testControlFlowCannotLeaveTheActiveFunctionRecord() {
 	}
 }
 
-void testInvalidClosureTargetHardHalts() {
+void testUnmappedClosureRecordHardHalts() {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(bmsx::INSTRUCTION_BYTES);
+	image.text.resize(2u * bmsx::INSTRUCTION_BYTES);
 	bmsx::writeInstruction(
 		std::span<bmsx::u8>(image.text),
 		0,
+		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
+		0,
+		0,
+		0
+	);
+	bmsx::writeInstruction(
+		std::span<bmsx::u8>(image.text),
+		1,
 		static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE),
 		0,
 		0,
 		0
 	);
-	image.functions = {{.firstWord = 0u, .wordCount = 1u}};
+	image.functions = {{.firstWord = 0u, .wordCount = 2u}};
+	image.closureRelocations = {{.wordIndex = 1u, .functionAddress = UNMAPPED_ADDRESS}};
 	CpuTestMachine machine(std::move(image));
 
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid CLOSURE target hard-halts");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "unmapped CLOSURE record hard-halts");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(state.frames.size() == 1u, "invalid CLOSURE target retains the active frame");
-	require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "invalid CLOSURE target does not enter host state");
+	require(state.frames.size() == 1u, "unmapped CLOSURE record retains the active frame");
+	require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "unmapped CLOSURE record does not enter host state");
 }
 
 void testCrossImageCallStackPcsBelongToTheirFrames() {
@@ -584,6 +617,159 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 			entryPc + 3u * bmsx::INSTRUCTION_BYTES,
 		},
 		"instrumented dispatch observes every raw guest instruction"
+	);
+}
+
+void testMappedRamFunctionExecution() {
+	bmsx::test::Blua32TestImage systemImage;
+	systemImage.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> systemCode(systemImage.text);
+	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	systemImage.functions = {
+		{.firstWord = 0u, .wordCount = 3u},
+		{.firstWord = 3u, .wordCount = 2u},
+		{.firstWord = 5u, .wordCount = 1u},
+	};
+	systemImage.startupFunctionIndex = 0u;
+	systemImage.irqFunctionIndex = 2u;
+	systemImage.exceptionFunctionIndex = 2u;
+	systemImage.closureRelocations = {{.wordIndex = 1u, .functionAddress = RAM_FUNCTION_ADDRESS}};
+
+	CpuTestMachine machine(std::move(systemImage));
+	bmsx::CPU& cpu = machine.cpu;
+	bmsx::Memory& memory = machine.memory;
+	const bmsx::u32 romFunctionOperand = machine.systemRom.functionAddresses[1] >> 4u;
+	std::array<bmsx::u8, 4u * bmsx::INSTRUCTION_BYTES> ramCode{};
+	bmsx::writeInstruction(
+		ramCode,
+		0,
+		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
+		0,
+		static_cast<bmsx::u8>(romFunctionOperand >> bmsx::BASE_BX_BITS),
+		0
+	);
+	bmsx::writeInstruction(
+		ramCode,
+		1,
+		static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE),
+		0,
+		static_cast<bmsx::u8>((romFunctionOperand >> 6u) & 0x3fu),
+		static_cast<bmsx::u8>(romFunctionOperand & 0x3fu),
+		static_cast<bmsx::u8>(romFunctionOperand >> bmsx::MAX_BX_BITS)
+	);
+	bmsx::writeInstruction(
+		ramCode,
+		2,
+		static_cast<bmsx::u8>(bmsx::OpCode::CALL),
+		0,
+		bmsx::encodeFixedCallArgCount(0),
+		1
+	);
+	bmsx::writeInstruction(ramCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+		RAM_CODE_ADDRESS
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+		static_cast<bmsx::u32>(ramCode.size())
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+		0u
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_MAX_STACK_OFFSET,
+		1u
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_FLAGS_OFFSET,
+		bmsx::BLUA32_FUNCTION_STATIC
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+		0u
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+		0u
+	);
+	memory.writeBytes(RAM_CODE_ADDRESS, ramCode.data(), ramCode.size());
+
+	require(
+		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"ROM creates a closure for a mapped RAM function record"
+	);
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	require(
+		closure->functionAddress == RAM_FUNCTION_ADDRESS,
+		"the closure retains the mapped RAM function address"
+	);
+
+	cpu.beginCompletionCall(*closure);
+	require(
+		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"RAM code calls a ROM function and returns"
+	);
+	const std::span<const bmsx::Value> romResults = cpu.readCompletionValues();
+	require(
+		romResults.size() == 1u && bmsx::asNumber(romResults[0]) == 1.0,
+		"the RAM to ROM call returns the ROM result"
+	);
+
+	std::array<bmsx::u8, 2u * bmsx::INSTRUCTION_BYTES> replacement{};
+	bmsx::writeInstruction(replacement, 0, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
+	bmsx::writeInstruction(replacement, 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	memory.writeBytes(RAM_CODE_ADDRESS, replacement.data(), replacement.size());
+
+	cpu.beginCompletionCall(*closure);
+	require(
+		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"the same RAM closure executes after its code changes"
+	);
+	const std::span<const bmsx::Value> changedResults = cpu.readCompletionValues();
+	require(
+		changedResults.size() == 1u && bmsx::asNumber(changedResults[0]) == 0.0,
+		"the decoder observes rewritten mapped RAM instructions"
+	);
+}
+
+void testCartridgeInstructionFetchRetainsExecSlot() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(
+		std::move(systemImage),
+		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K0)
+	);
+	bmsx::test::Blua32TestRom slot1 = bmsx::test::encodeBlua32TestRom(
+		bmsx::RomImageDomain::Cartridge,
+		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K1)
+	);
+	machine.memory.cartridgeController().installRom(1u, slot1.bytes);
+	machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+
+	require(
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"slot-1 cartridge execution returns after changing the data selection"
+	);
+	const std::span<const bmsx::Value> result = machine.cpu.readCompletionValues();
+	require(
+		result.size() == 1u && bmsx::asNumber(result[0]) == 1.0,
+		"instruction fetch remains on the CP0.EXEC-latched cartridge socket"
+	);
+	require(
+		machine.memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0u,
+		"the cartridge changed only the ordinary data-bus selection"
+	);
+	require(
+		machine.cpu.activeCartridgeSlot() == 1,
+		"the CPU retains the slot-1 execution latch"
 	);
 }
 
@@ -1125,10 +1311,12 @@ int main() {
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
 	testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage();
 	testControlFlowCannotLeaveTheActiveFunctionRecord();
-	testInvalidClosureTargetHardHalts();
+	testUnmappedClosureRecordHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
 	testDecodedSuperinstructionsPreserveGuestBoundaries();
+	testMappedRamFunctionExecution();
+	testCartridgeInstructionFetchRetainsExecSlot();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();

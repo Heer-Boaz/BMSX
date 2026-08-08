@@ -1380,12 +1380,14 @@ test('BLua32 branches cannot enter adjacent function text', () => {
 	}
 });
 
-test('invalid CLOSURE targets hard-halt without entering host error handling', () => {
-	const code = new Uint8Array(INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CLOSURE, 0, 0, 0, 0);
+test('unmapped CLOSURE records hard-halt without entering host error handling', () => {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: code,
-		functions: [{ firstWord: 0, wordCount: 1 }],
+		functions: [{ firstWord: 0, wordCount: 2 }],
+		closureRelocations: [{ wordIndex: 1, functionAddress: 0x06000000 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
 

@@ -900,42 +900,44 @@ cartridge image only when execution first targets the currently selected
 socket. The resident execution image does not retain an outer ROM DTO, image
 byte copy, decoded layout, or static-layout token.
 
-Activation binds the fixed physical image header once and latches its raw
-function-table and text addresses and counts on the resident execution image.
-It binds the physical constant and global-name record tables and materializes
-only the guest constant registerfile and immutable instruction-operand-to-global
-slot maps. String payloads are interned from their physical ROM addresses. It
-binds the complete physical text span once and derives dense decoded instruction
-pages directly from those instruction words; no copied raw instruction buffer
-remains. Every decoded entry retains the raw guest opcode and a host-only normal
-dispatch opcode derived once during activation. The normal executor may map a
-selected adjacent straight-line numeric pair to one dispatch opcode while still
-advancing the physical PC and cycle budget at both guest-instruction boundaries.
-The instrumented executor always consumes the raw opcode, so breakpoints and
-single-instruction execution observe every physical guest instruction. Dispatch
-opcodes are derived CPU state: they are neither guest words nor save-state or
-tooling metadata. The CPU scans physical function records to create canonical
-static closures. Merely inserting or replacing an unexecuted second cartridge
-therefore cannot consume guest string or object identities or change table
-iteration. A call frame retains its physical function-record address, physical
-PC, execution domain, and the raw code bounds latched from that function
-record. Instruction fetch subtracts the resident image's latched raw text
-address and indexes the activated dense decoded page. It performs no memory-map
-classification, TOC lookup, string lookup, allocation, parser work or
-activation check per instruction.
+Activation binds the fixed physical image header once. It binds the physical
+constant and global-name record tables and materializes only the guest constant
+registerfile and immutable instruction-operand-to-global slot maps. String
+payloads are interned from their physical ROM addresses. Instruction pages are
+created lazily from mapped fetches; no raw instruction buffer or text-span view
+is retained. Every decoded entry retains the raw guest opcode and a host-only
+normal dispatch opcode. The normal executor may map a selected adjacent
+straight-line numeric pair to one dispatch opcode while still advancing the
+physical PC and cycle budget at both guest-instruction boundaries. The
+instrumented executor always consumes the raw opcode, so breakpoints and
+single-instruction execution observe every physical guest instruction.
+Dispatch opcodes are derived CPU state: they are neither guest words nor
+save-state or tooling metadata.
 
-Function entry and `CLOSURE` bind one complete raw function record through the
-physical execution address space into one CPU-owned scratch latch; `CLOSURE`
-likewise binds its complete raw upvalue table once. There is no resident
-runtime-function array or per-image static-closure index. `LOADK` and RK
-operands index the guest constant registerfile owned by the frame's resident
-image. Static closures are retained CPU objects keyed by physical
-function-record address. Table-load inline caches are allocated only for actual
-table-load instructions. Guest constant registers, global-slot maps, decoded
-instruction pages, and inline caches are regenerated only when suspended
-tooling explicitly replaces an affected resident execution image after the ROM
-owner installs new bytes. They are never serialized. No decoded host image
-graph determines CPU execution.
+A call frame retains its physical function-record address, physical PC,
+execution domain, and the raw code bounds latched from that function record.
+Instruction fetch reads the PC through `Memory` with the CPU's retained
+cartridge instruction-bus chip select. `Memory` and the cartridge controller
+own the ROM, RAM, cartridge and MMIO decoding; the CPU does not classify those
+regions or bind instruction bytes to a host ROM view. Decoded pages are a
+derived cache keyed by the physical page and cartridge bus mapping. Immutable
+ROM words decode once. Writable mapped words are read and compared on every
+dispatch, so later RAM writes are observed without an invalidation API. The
+steady immutable path performs no TOC lookup, string lookup, allocation, parser
+work or image activation.
+
+Function entry and `CLOSURE` read raw function records through the same mapped
+bus, and `CLOSURE` reads its raw upvalue records through the mapping captured by
+that function-record access. Function records and code may therefore reside in
+ROM or RAM and may refer across those regions. There is no resident
+runtime-function array, function-table membership gate or per-image
+static-closure index. `LOADK` and RK operands index the guest constant
+registerfile owned by the frame's resident program context. Static closures are
+retained CPU objects keyed by physical function-record address. Table-load
+inline caches are allocated only for actual table-load instructions and live
+with their decoded page. Guest constant registers, global-slot maps, decoded
+instruction pages, and inline caches are derived runtime state and are never
+serialized.
 
 A closure value owns only its raw physical function-record address and captured
 upvalues. Entering a cartridge closure resolves that address once through the

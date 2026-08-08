@@ -411,11 +411,26 @@ private:
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot);
 	Blua32ExecutionImage* residentExecutionImage(ExecutionDomainId executionDomainId) const;
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
-	void decodeImageText(Blua32ExecutionImage& image);
+	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
+	void latchActiveExecutionImage(Blua32ExecutionImage& image);
+	DecodedInstructionPage& decodedPageForAddress(
+		Blua32ExecutionImage& image,
+		u64 pageKey,
+		u32 pageAddress
+	);
+	DecodedInstructionPage* decodedPageForFrame(CallFrame& frame, u32 pc);
+	void decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	Closure* staticClosureAtAddress(u32 address);
-	bool readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address);
-	bool readFunctionRecordInExecutionDomain(Blua32ExecutionImage& executionImage, u32 address);
-	bool readFunctionRecordOnSelectedBus(u32 address);
+	bool readFunctionRecord(
+		Blua32ExecutionImage& image,
+		u32 address,
+		MappedBusSignals busSignals
+	);
+	bool readFunctionRecordOnBus(
+		Blua32ExecutionImage& ambientExecutionImage,
+		u32 address,
+		MappedBusSignals busSignals
+	);
 	void executeFunctionAddress(u32 functionAddress);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
@@ -439,9 +454,9 @@ private:
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
-	Value loadTableIntegerIndexCached(Blua32ExecutionImage& image, int cacheIndex, const Value& base, int index);
+	Value loadTableIntegerIndexCached(DecodedInstructionPage& page, int cacheIndex, const Value& base, int index);
 	Value loadTableIntegerIndex(const Value& base, int index);
-	Value loadTableFieldIndexCached(Blua32ExecutionImage& image, int cacheIndex, const Value& base, StringId key);
+	Value loadTableFieldIndexCached(DecodedInstructionPage& page, int cacheIndex, const Value& base, StringId key);
 	Value loadTableFieldIndex(const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
@@ -456,11 +471,6 @@ private:
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
 
-	DecodedInstruction& decodedSlotForWrite(Blua32ExecutionImage& image, size_t wordIndex);
-	const DecodedInstruction& decodedAtWordIndex(const Blua32ExecutionImage& image, size_t wordIndex) const {
-		return image.decodedPages[wordIndex >> DECODED_PAGE_SHIFT]
-			.words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
-	}
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
@@ -474,6 +484,7 @@ private:
 	std::vector<std::unique_ptr<Blua32ExecutionImage>> m_executionImages;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
+	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
 	size_t m_protectedCallDepth = 0;
@@ -523,6 +534,7 @@ private:
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	std::vector<Upvalue*> m_closureUpvalueScratch;
+	std::vector<u32> m_closureUpvalueWordScratch;
 	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;

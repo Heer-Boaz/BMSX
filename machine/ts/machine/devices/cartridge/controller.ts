@@ -102,8 +102,11 @@ export class CartridgeController {
 		memory.mapIoRead(IO_CART_SLOT1_RAM_BYTES, this, CartridgeController.readSlot1RamBytesThunk);
 	}
 
-	public selectedSlot(): CartridgeSlotIndex {
-		return (this.selectionWord & 1) === 0 ? 0 : 1;
+	public selectedSlot(busSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU): CartridgeSlotIndex {
+		if ((busSignals & MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE) === 0) {
+			return (this.selectionWord & 1) === 0 ? 0 : 1;
+		}
+		return (busSignals & MAPPED_BUS_CARTRIDGE_SLOT1) === 0 ? 0 : 1;
 	}
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
@@ -143,7 +146,7 @@ export class CartridgeController {
 	}
 
 	public readU8(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.slotIndexForSignals(busSignals)]!;
+		const slot = this.slots[this.selectedSlot(busSignals)]!;
 		if (address < CART_RAM_BASE) {
 			const offset = address - CART_ROM_BASE;
 			return offset < slot.media.rom.byteLength ? slot.media.rom[offset]! : 0;
@@ -158,7 +161,7 @@ export class CartridgeController {
 	}
 
 	public readU16(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.slotIndexForSignals(busSignals)]!;
+		const slot = this.slots[this.selectedSlot(busSignals)]!;
 		if (address < CART_RAM_BASE) {
 			return this.readU16From(slot.media.rom, address - CART_ROM_BASE);
 		}
@@ -171,7 +174,7 @@ export class CartridgeController {
 	}
 
 	public readU32(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.slotIndexForSignals(busSignals)]!;
+		const slot = this.slots[this.selectedSlot(busSignals)]!;
 		if (address < CART_RAM_BASE) {
 			return this.readU32From(slot.media.rom, address - CART_ROM_BASE);
 		}
@@ -183,7 +186,7 @@ export class CartridgeController {
 	}
 
 	public writeU8(address: number, value: number, busSignals: MappedBusSignals): void {
-		const slot = this.slots[this.slotIndexForSignals(busSignals)]!;
+		const slot = this.slots[this.selectedSlot(busSignals)]!;
 		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
 			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
 			const offset = address - CART_RAM_BASE;
@@ -195,7 +198,7 @@ export class CartridgeController {
 
 	public writeU16(address: number, value: number, busSignals: MappedBusSignals): void {
 		if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-		const slot = this.slots[this.slotIndexForSignals(busSignals)]!;
+		const slot = this.slots[this.selectedSlot(busSignals)]!;
 		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
 		const ram = slot.ram;
 		const offset = address - CART_RAM_BASE;
@@ -205,7 +208,7 @@ export class CartridgeController {
 	}
 
 	public writeU32(address: number, value: number, busSignals: MappedBusSignals): void {
-		const slotIndex = this.slotIndexForSignals(busSignals);
+		const slotIndex = this.selectedSlot(busSignals);
 		const slot = this.slots[slotIndex]!;
 		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
 			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
@@ -268,13 +271,6 @@ export class CartridgeController {
 		slot.mailboxDataWord = state.mailboxDataWord >>> 0;
 		slot.mailboxControlWord = state.mailboxControlWord >>> 0;
 		slot.mailboxIrqPending = state.mailboxIrqPending;
-	}
-
-	private slotIndexForSignals(busSignals: MappedBusSignals): number {
-		if ((busSignals & MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE) === 0) {
-			return this.selectionWord & 1;
-		}
-		return (busSignals & MAPPED_BUS_CARTRIDGE_SLOT1) !== 0 ? 1 : 0;
 	}
 
 	private readU16From(bytes: Uint8Array, offset: number): number {

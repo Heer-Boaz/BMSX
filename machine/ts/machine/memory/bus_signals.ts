@@ -8,3 +8,7 @@ export const MAPPED_BUS_CARTRIDGE_SLOT1 = 8;
 // strobes. DMA asserts BLOCK_END on the final word of an admitted hardware block
 // and can drive a cartridge socket's chip select independently on each bus side.
 export type MappedBusSignals = number;
+
+export function mappedBusSignalsForCartridgeSlot(slot: number): MappedBusSignals {
+	return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | (slot * MAPPED_BUS_CARTRIDGE_SLOT1);
+}

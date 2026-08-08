@@ -7,14 +7,20 @@
 
 namespace bmsx {
 
-std::optional<ExecutionDomainId> ExecutionAddressSpace::domainIdOnBus(u32 address) const {
-	if (address < RAM_BASE) {
-		return SYSTEM_EXECUTION_DOMAIN_ID;
+std::optional<ExecutionDomainId> ExecutionAddressSpace::domainIdOnBus(
+	u32 address,
+	MappedBusSignals busSignals
+) const {
+	switch (m_memory.mappedRegion(address)) {
+		case MemoryRegionKind::SystemRom:
+			return SYSTEM_EXECUTION_DOMAIN_ID;
+		case MemoryRegionKind::Cartridge:
+			return static_cast<ExecutionDomainId>(
+				m_memory.cartridgeController().selectedSlot(busSignals)
+			);
+		default:
+			return {};
 	}
-	if (address < CART_ROM_BASE) {
-		return {};
-	}
-	return static_cast<ExecutionDomainId>(m_memory.cartridgeController().selectedSlot());
 }
 
 void ExecutionAddressSpace::bindReadOnlyView(

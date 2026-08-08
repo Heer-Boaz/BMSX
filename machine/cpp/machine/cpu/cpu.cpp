@@ -407,8 +407,8 @@ void CPU::reset() {
 	m_systemImage = activatedSystemImage.get();
 	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
-	m_activeExecutionImage = m_systemImage;
-	Closure* systemResetClosure = &m_staticClosuresByAddress.at(systemResetFunctionAddress);
+	latchActiveExecutionImage(*m_systemImage);
+	Closure* systemResetClosure = staticClosureAtAddress(systemResetFunctionAddress);
 	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
 	collectHeap();
 }
@@ -546,12 +546,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		m_executionReadView
 	);
 	const u8* header = m_executionReadView.data();
-	image->functionTableAddress = readLE32(
-		header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET
-	);
-	image->functionCount = readLE32(
-		header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET
-	);
 	const u32 constantTableAddress = readLE32(
 		header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET
 	);
@@ -570,12 +564,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 systemGlobalNameCount = readLE32(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
-	image->textAddress = readLE32(
-		header + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET
-	);
-	image->textByteCount = readLE32(
-		header + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET
-	);
 	image->constPool = decodeConstantPool(
 		executionBoot.executionDomainId,
 		constantTableAddress,
@@ -593,31 +581,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		systemGlobalNameCount,
 		true
 	);
-	decodeImageText(*image);
-
-	for (u32 index = 0; index < image->functionCount; ++index) {
-		const u32 address = image->functionTableAddress
-			+ index * BLUA32_FUNCTION_RECORD_SIZE;
-		readFunctionRecordInImage(*image, address);
-		if ((m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) != 0u) {
-			staticClosureAtAddress(address);
-		}
-	}
-
-	if (!readFunctionRecordInImage(*image, executionBoot.irqFunctionAddress)
-		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
-		throw BMSX_RUNTIME_ERROR("BLua32 IRQ vector does not name a static function record.");
-	}
-	if (executionBoot.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
-		if (!readFunctionRecordInImage(*image, executionBoot.startupFunctionAddress)
-			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
-			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
-		}
-		if (!readFunctionRecordInImage(*image, executionBoot.exceptionFunctionAddress)
-			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
-			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
-		}
-	}
 	return image;
 }
 
@@ -650,6 +613,17 @@ Blua32ExecutionImage* CPU::executionImageForDomain(
 	return activatedImage;
 }
 
+MappedBusSignals CPU::executionBusSignalsForDomain(ExecutionDomainId executionDomainId) {
+	return executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		? MAPPED_BUS_MASTER_CPU
+		: mappedBusSignalsForCartridgeSlot(static_cast<u32>(executionDomainId));
+}
+
+void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
+	m_activeExecutionImage = &image;
+	m_executionBusSignals = executionBusSignalsForDomain(image.executionDomainId);
+}
+
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	auto imageEntry = m_executionImages.begin();
 	while ((*imageEntry)->executionDomainId != executionBoot.executionDomainId) {
@@ -665,7 +639,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 	}
 	if (m_activeExecutionImage == previousImage) {
-		m_activeExecutionImage = activatedImage;
+		latchActiveExecutionImage(*activatedImage);
 	}
 }
 
@@ -740,197 +714,285 @@ void CPU::syncGlobalSlotsToTable() {
 }
 
 
-void CPU::decodeImageText(Blua32ExecutionImage& image) {
-	m_executionAddressSpace.bindReadOnlyView(
-		image.executionDomainId,
-		image.textAddress,
-		image.textByteCount,
-		m_executionReadView
-	);
-	const std::span<const u8> code(m_executionReadView.data(), m_executionReadView.size());
-	image.decodedWordCount = code.size() / INSTRUCTION_BYTES;
-	const size_t pageCount = (image.decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
-	image.decodedPages.resize(pageCount);
-	for (DecodedInstructionPage& page : image.decodedPages) {
-		for (DecodedInstruction& decoded : page.words) {
-			decoded.op = static_cast<uint8_t>(OpCode::WIDE);
-			decoded.dispatchOp = static_cast<uint8_t>(OpCode::WIDE);
-			decoded.width = 1;
-		}
+DecodedInstructionPage& CPU::decodedPageForAddress(
+	Blua32ExecutionImage& image, u64 pageKey, u32 pageAddress
+) {
+	auto [it, inserted] = image.decodedPages.try_emplace(pageKey);
+	if (inserted) {
+		it->second.readOnly = m_memory.mappedRangeIsReadOnly(
+			pageAddress,
+			DECODED_PAGE_BYTE_SIZE
+		);
 	}
-	size_t previousInstructionWordIndex = image.decodedWordCount;
-	for (size_t wordIndex = 0; wordIndex < image.decodedWordCount;) {
-		int width = 1;
-		uint8_t wideA = 0;
-		uint8_t wideB = 0;
-		uint8_t wideC = 0;
-		uint32_t instr = readInstructionWord(code, static_cast<int>(wordIndex));
-		uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-		uint8_t ext = static_cast<uint8_t>(instr >> 24);
-		if (static_cast<OpCode>(op) == OpCode::WIDE && wordIndex + 1u < image.decodedWordCount) {
-			width = 2;
-			wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
-			wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
-			wideC = static_cast<uint8_t>(instr & 0x3f);
-			instr = readInstructionWord(code, static_cast<int>(wordIndex + 1));
-			op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-			ext = static_cast<uint8_t>(instr >> 24);
+	return it->second;
+}
+
+DecodedInstructionPage* CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
+	if (pc - frame.codeAddress >= frame.codeByteCount) {
+		hardHalt();
+		return nullptr;
+	}
+	const u32 pageAddress = pc & ~DECODED_PAGE_BYTE_MASK;
+	if (frame.decodedPage
+		&& frame.decodedPageAddress == pageAddress) {
+		return frame.decodedPage;
+	}
+	const u64 pageKey = m_memory.mappedPageKey(pageAddress, m_executionBusSignals);
+	DecodedInstructionPage& page = decodedPageForAddress(
+		*frame.executionImage,
+		pageKey,
+		pageAddress
+	);
+	frame.decodedPage = &page;
+	frame.decodedPageAddress = pageAddress;
+	return &page;
+}
+
+void CPU::decodeInstruction(
+	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
+) {
+	const u32 codeEnd = frame.codeAddress + frame.codeByteCount;
+	DecodedInstruction& decoded = page.words[pageOffset];
+	int width = 1;
+	uint8_t op;
+	const u32 faultSequence = m_memory.readBusFaultSequence();
+	uint8_t wideA = 0;
+	uint8_t wideB = 0;
+	uint8_t wideC = 0;
+	const uint32_t sourceWord = m_memory.readMappedBusU32BE(pc, m_executionBusSignals);
+	if (m_memory.readBusFaultSequence() != faultSequence) {
+		hardHalt();
+		return;
+	}
+	uint32_t bodyWord = sourceWord;
+	op = static_cast<uint8_t>((sourceWord >> 18) & 0x3f);
+	uint8_t ext = static_cast<uint8_t>(sourceWord >> 24);
+	if (static_cast<OpCode>(op) == OpCode::WIDE
+		&& pc + INSTRUCTION_BYTES < codeEnd) {
+		width = 2;
+		wideA = static_cast<uint8_t>((sourceWord >> 12) & 0x3f);
+		wideB = static_cast<uint8_t>((sourceWord >> 6) & 0x3f);
+		wideC = static_cast<uint8_t>(sourceWord & 0x3f);
+		bodyWord = m_memory.readMappedBusU32BE(
+			pc + INSTRUCTION_BYTES,
+			m_executionBusSignals
+		);
+		if (m_memory.readBusFaultSequence() != faultSequence) {
+			hardHalt();
+			return;
 		}
-		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
-		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
-		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+		op = static_cast<uint8_t>((bodyWord >> 18) & 0x3f);
+		ext = static_cast<uint8_t>(bodyWord >> 24);
+	}
+	const bool unchanged = decoded.width != 0u
+		&& decoded.sourceWord == sourceWord
+		&& decoded.bodyWord == bodyWord
+		&& decoded.width == static_cast<uint8_t>(width);
+	if (!unchanged) {
+		const uint8_t aLow = static_cast<uint8_t>((bodyWord >> 12) & 0x3f);
+		const uint8_t bLow = static_cast<uint8_t>((bodyWord >> 6) & 0x3f);
+		const uint8_t cLow = static_cast<uint8_t>(bodyWord & 0x3f);
 		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
 		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
-		const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
-		const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
-		const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
-		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-		const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
-		const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
+		const uint8_t extA = usesBx || usesDisp
+			? 0
+			: static_cast<uint8_t>((ext >> 6) & 0x3);
+		const uint8_t extB = usesBx || usesDisp
+			? 0
+			: static_cast<uint8_t>((ext >> 3) & 0x7);
+		const uint8_t extC = usesBx || usesDisp
+			? 0
+			: static_cast<uint8_t>(ext & 0x7);
+		const int aShift = usesDisp
+			? MAX_OPERAND_BITS
+			: MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const int bShift = usesDisp
+			? MAX_OPERAND_BITS
+			: MAX_OPERAND_BITS + EXT_B_BITS;
+		const int cShift = usesDisp
+			? MAX_OPERAND_BITS
+			: MAX_OPERAND_BITS + EXT_C_BITS;
+		const uint32_t bxLow =
+			(static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | cLow;
+		const uint32_t rawB = (static_cast<uint32_t>(wideB) << bShift)
 			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
-			| static_cast<uint32_t>(bLow);
-		const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
+			| bLow;
+		const uint32_t rawC = (static_cast<uint32_t>(wideC) << cShift)
 			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
-			| static_cast<uint32_t>(cLow);
-		DecodedInstruction decoded;
-		decoded.word = instr;
-		decoded.op = op;
-		decoded.dispatchOp = op;
-		decoded.width = static_cast<uint8_t>(width);
-		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
-		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
-		decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
-		const u32 decodedBx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
+			| cLow;
+		const uint32_t decodedBx =
+			(static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
 			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
 			| bxLow;
+		decoded.sourceWord = sourceWord;
+		decoded.bodyWord = bodyWord;
+		decoded.op = op;
+		decoded.width = static_cast<uint8_t>(width);
+		decoded.a = static_cast<uint16_t>(
+			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
+		);
+		decoded.b = static_cast<uint16_t>(rawB);
+		decoded.c = static_cast<uint16_t>(rawC);
 		switch (static_cast<OpCode>(op)) {
 			case OpCode::GETGL:
 			case OpCode::SETGL:
-				decoded.bx = image.globalSlots[decodedBx];
+				decoded.bx = frame.executionImage->globalSlots[decodedBx];
 				break;
 			case OpCode::GETSYS:
 			case OpCode::SETSYS:
-				decoded.bx = image.systemGlobalSlots[decodedBx];
+				decoded.bx = frame.executionImage->systemGlobalSlots[decodedBx];
 				break;
 			default:
 				decoded.bx = decodedBx;
 				break;
 		}
-		decoded.sbx = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.sbx = signExtend(
+			decodedBx,
+			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
+		);
+		decoded.rkB = signExtend(
+			rawB,
+			MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS)
+		);
+		decoded.rkC = signExtend(
+			rawC,
+			MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS)
+		);
 		decoded.disp = ext;
 		if (static_cast<OpCode>(op) == OpCode::GETI
 			|| static_cast<OpCode>(op) == OpCode::GETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SELF) {
-			decoded.tableCacheIndex = static_cast<uint32_t>(image.tableLoadCaches.size());
-			image.tableLoadCaches.push_back(TableLoadInlineCache{});
+			if (decoded.tableCacheIndex == UINT32_MAX) {
+				decoded.tableCacheIndex = static_cast<uint32_t>(
+					page.tableLoadCaches.size()
+				);
+				page.tableLoadCaches.emplace_back();
+			} else {
+				page.tableLoadCaches[decoded.tableCacheIndex] = TableLoadInlineCache{};
+			}
 		}
-		decodedSlotForWrite(image, wordIndex) = decoded;
-		if (previousInstructionWordIndex != image.decodedWordCount) {
-			DecodedInstruction& previous = decodedSlotForWrite(image, previousInstructionWordIndex);
-			previous.dispatchOp = decodedDispatchOp(previous.op, op);
-		}
-		previousInstructionWordIndex = wordIndex;
-		wordIndex += static_cast<size_t>(width);
 	}
-}
-
-DecodedInstruction& CPU::decodedSlotForWrite(Blua32ExecutionImage& image, size_t wordIndex) {
-	return image.decodedPages[wordIndex >> DECODED_PAGE_SHIFT].words[wordIndex & DECODED_PAGE_MASK];
+	decoded.dispatchOp = op;
+	page.decodeRequired[pageOffset] = page.readOnly ? 0u : 1u;
+	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
+		|| static_cast<OpCode>(op) == OpCode::ADD
+		|| static_cast<OpCode>(op) == OpCode::SHR;
+	if (!allowFusion || !fusionCandidate || !page.readOnly) {
+		page.fusionRequired[pageOffset] = !allowFusion && fusionCandidate && page.readOnly
+			? 1u
+			: 0u;
+		return;
+	}
+	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
+	if (nextPc >= codeEnd) {
+		page.fusionRequired[pageOffset] = 0u;
+		return;
+	}
+	DecodedInstructionPage* nextPage = decodedPageForFrame(frame, nextPc);
+	if (!nextPage) {
+		return;
+	}
+	if (!nextPage->readOnly) {
+		page.fusionRequired[pageOffset] = 0u;
+		return;
+	}
+	const u32 nextOffset = (nextPc & DECODED_PAGE_BYTE_MASK) >> 2;
+	if (decodedInstructionNeedsRefresh(*nextPage, nextOffset, false)) {
+		decodeInstruction(frame, *nextPage, nextOffset, nextPc, false);
+	}
+	if (m_hardHalted) {
+		return;
+	}
+	const DecodedInstruction& successor = nextPage->words[nextOffset];
+	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
+	page.fusionRequired[pageOffset] = 0u;
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	Blua32ExecutionImage& image = *frame.executionImage;
-	const size_t wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
-	if (wordIndex >= image.decodedWordCount) {
-		hardHalt();
+	DecodedInstructionPage* page = decodedPageForFrame(frame, frame.pc);
+	if (!page) {
 		return;
 	}
-	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
-	const u32 nextPc = frame.pc + static_cast<u32>(decoded.width) * INSTRUCTION_BYTES;
-	if (nextPc < frame.codeAddress
-		|| nextPc >= frame.codeAddress + frame.codeByteCount) {
+	const u32 offset = (frame.pc & DECODED_PAGE_BYTE_MASK) >> 2;
+	if (decodedInstructionNeedsRefresh(*page, offset, false)) {
+		decodeInstruction(frame, *page, offset, frame.pc, false);
+	}
+	if (m_hardHalted) {
+		return;
+	}
+	const u32 nextPc = frame.pc + static_cast<u32>(page->words[offset].width) * INSTRUCTION_BYTES;
+	if (nextPc < frame.codeAddress || nextPc >= frame.codeAddress + frame.codeByteCount) {
 		hardHalt();
 		return;
 	}
 	frame.pc = nextPc;
 }
 
-bool CPU::readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address) {
-	if (address < image.functionTableAddress) {
-		return false;
-	}
-	const u32 offset = address - image.functionTableAddress;
-	if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1u)) != 0u
-		|| offset >= image.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
-		return false;
-	}
-	m_executionAddressSpace.bindReadOnlyView(
-		image.executionDomainId,
-		address,
-		BLUA32_FUNCTION_RECORD_SIZE,
-		m_executionReadView
-	);
-	m_functionRecordLatch.image = &image;
-	m_functionRecordLatch.address = address;
-	m_functionRecordLatch.codeAddress = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
-	);
-	m_functionRecordLatch.codeByteCount = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET
-	);
-	m_functionRecordLatch.numParams = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
-	);
-	m_functionRecordLatch.maxStack = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_MAX_STACK_OFFSET
-	);
-	m_functionRecordLatch.flags = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_FLAGS_OFFSET
-	);
-	m_functionRecordLatch.upvalueTableAddress = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET
-	);
-	m_functionRecordLatch.upvalueCount = readLE32(
-		m_executionReadView.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
-	);
-	return true;
-}
-
-bool CPU::readFunctionRecordInExecutionDomain(
-	Blua32ExecutionImage& executionImage,
-	u32 address
+bool CPU::readFunctionRecord(
+	Blua32ExecutionImage& image,
+	u32 address,
+	MappedBusSignals busSignals
 ) {
-	if (address >= CART_ROM_BASE) {
-		return readFunctionRecordInImage(executionImage, address);
-	}
-	if (address >= RAM_BASE) {
-		return false;
-	}
-	return readFunctionRecordInImage(*m_systemImage, address);
+	const u32 faultSequence = m_memory.readBusFaultSequence();
+	m_functionRecordLatch.image = &image;
+	m_functionRecordLatch.busSignals = busSignals;
+	m_functionRecordLatch.address = address;
+	m_functionRecordLatch.codeAddress = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.codeByteCount = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.numParams = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.maxStack = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_MAX_STACK_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.flags = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_FLAGS_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.upvalueTableAddress = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+		busSignals
+	);
+	m_functionRecordLatch.upvalueCount = m_memory.readMappedBusU32LE(
+		address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+		busSignals
+	);
+	return m_memory.readBusFaultSequence() == faultSequence;
 }
 
-bool CPU::readFunctionRecordOnSelectedBus(u32 address) {
+bool CPU::readFunctionRecordOnBus(
+	Blua32ExecutionImage& ambientExecutionImage,
+	u32 address,
+	MappedBusSignals busSignals
+) {
 	const std::optional<ExecutionDomainId> executionDomainId =
-		m_executionAddressSpace.domainIdOnBus(address);
-	if (!executionDomainId) {
-		return false;
-	}
-	Blua32ExecutionImage* image = executionImageForDomain(*executionDomainId);
-	return image && readFunctionRecordInImage(*image, address);
+		m_executionAddressSpace.domainIdOnBus(address, busSignals);
+	Blua32ExecutionImage* image = executionDomainId
+		? executionImageForDomain(*executionDomainId)
+		: &ambientExecutionImage;
+	return image && readFunctionRecord(*image, address, busSignals);
 }
 
 void CPU::executeFunctionAddress(u32 functionAddress) {
-	if (!readFunctionRecordOnSelectedBus(functionAddress)
+	if (!readFunctionRecordOnBus(
+		*m_activeExecutionImage,
+		functionAddress,
+		MAPPED_BUS_MASTER_CPU
+	)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
 		return;
 	}
 	clearCallStack();
-	m_activeExecutionImage = m_functionRecordLatch.image;
+	latchActiveExecutionImage(*m_functionRecordLatch.image);
 	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
@@ -940,7 +1002,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_memoryWriteBlockedAddress = 0u;
 	m_hardHalted = false;
 	m_yieldRequested = false;
-	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
+	Closure* closure = staticClosureAtAddress(functionAddress);
 	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
 }
 
@@ -956,12 +1018,13 @@ void CPU::beginCompletionCallInExecutionDomain(
 ) {
 	m_completionValues.clear();
 	m_yieldRequested = false;
-	readFunctionRecordInImage(
+	readFunctionRecord(
 		*executionImageForDomain(executionDomainId),
-		functionAddress
+		functionAddress,
+		executionBusSignalsForDomain(executionDomainId)
 	);
 	pushLatchedFrame(
-		&m_staticClosuresByAddress.at(functionAddress),
+		staticClosureAtAddress(functionAddress),
 		nullptr,
 		0,
 		0,
@@ -1214,7 +1277,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuObjectState::Kind::Closure: {
 				const size_t upvalueCount = objectState.upvalues.size();
 				if (objectState.closureCanonical) {
-					restoredObjects[index].closure = &m_staticClosuresByAddress.find(objectState.functionAddress)->second;
+					restoredObjects[index].closure = staticClosureAtAddress(objectState.functionAddress);
 				} else {
 					const size_t heapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
 					m_luaHeap.restoreAllocate(heapBytes);
@@ -1310,7 +1373,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	clearCallStack();
 	globals->clear();
 	globals->prepareRestoreStorage(0, Table::hashCapacity(static_cast<int>(state.globals.size())));
-	m_activeExecutionImage = executionImage;
+	latchActiveExecutionImage(*executionImage);
 	for (Value& value : m_systemGlobalValues) {
 		value = valueNil();
 	}
@@ -1319,9 +1382,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 
 	for (const CpuFrameState& frameState : state.frames) {
-		readFunctionRecordInExecutionDomain(
+		readFunctionRecordOnBus(
 			*executionImage,
-			frameState.functionAddress
+			frameState.functionAddress,
+			m_executionBusSignals
 		);
 		const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 		auto frame = acquireFrame();
@@ -1922,7 +1986,7 @@ void CPU::enterException(
 	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
+	Closure* closure = staticClosureAtAddress(functionAddress);
 	CallFrame* frame = pushFrame(
 		closure,
 		nullptr,
@@ -1969,7 +2033,6 @@ RunResult CPU::runLoop(
 	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
 	u32 pc = 0;
-	size_t wordIndex = 0;
 	int a = 0;
 	int b = 0;
 	int c = 0;
@@ -2035,10 +2098,15 @@ RunResult CPU::runLoop(
 			image = frame->executionImage;
 			registers = frame->registers;
 			pc = frame->pc;
-			wordIndex = (pc - image->textAddress) / INSTRUCTION_BYTES;
-			if (wordIndex >= image->decodedWordCount) {
+			if (pc - frame->codeAddress >= frame->codeByteCount) {
 				hardHalt();
 				return RunResult::Halted;
+			}
+			const u32 pageAddress = pc & ~DECODED_PAGE_BYTE_MASK;
+			DecodedInstructionPage* decodedPage = frame->decodedPage;
+			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
+				decodedPage = decodedPageForFrame(*frame, pc);
+				if (!decodedPage) return RunResult::Halted;
 			}
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
@@ -2046,7 +2114,22 @@ RunResult CPU::runLoop(
 					return RunResult::ExecutionStopped;
 				}
 			}
-			decoded = &decodedAtWordIndex(*image, wordIndex);
+			const u32 pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >> 2;
+			if (decodedInstructionNeedsRefresh(
+				*decodedPage,
+				pageOffset,
+				!Instrumented
+			)) {
+				decodeInstruction(
+					*frame,
+					*decodedPage,
+					pageOffset,
+					pc,
+					!Instrumented
+				);
+			}
+			if (m_hardHalted) return RunResult::Halted;
+			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
 			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 			m_lastExecutionDomainId = image->executionDomainId;
@@ -2095,22 +2178,46 @@ RunResult CPU::runLoop(
 				}
 			} else {
 				switch (dispatchOp) {
-				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor): {
+				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
+				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
 					const Value& shiftLeftValue = readRK(FRAME, rkB);
 					const Value& shiftRightValue = readRK(FRAME, rkC);
-					const uint32_t shifted = toU32(shiftLeftValue)
-						<< (toU32(shiftRightValue) & 31u);
+					const int32_t shifted = dispatchOp
+						== static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor)
+						? static_cast<int32_t>(
+							toU32(shiftLeftValue) << (toU32(shiftRightValue) & 31u)
+						)
+						: toI32(shiftLeftValue) >> (toU32(shiftRightValue) & 31u);
 					SET_REGISTER_FAST(
 						a,
-						valueNumber(static_cast<double>(static_cast<int32_t>(shifted)))
+						valueNumber(static_cast<double>(shifted))
 					);
 					if (instructionBudgetRemaining <= 0) {
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = FRAME.pc;
-					const size_t successorWordIndex =
-						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
-					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
+					DecodedInstructionPage* successorPage = decodedPageForFrame(FRAME, successorPc);
+					if (!successorPage) {
+						return RunResult::Halted;
+					}
+					const u32 successorOffset = (successorPc & DECODED_PAGE_BYTE_MASK) >> 2;
+					if (decodedInstructionNeedsRefresh(
+						*successorPage,
+						successorOffset,
+						false
+					)) {
+						decodeInstruction(
+							FRAME,
+							*successorPage,
+							successorOffset,
+							successorPc,
+							false
+						);
+					}
+					if (m_hardHalted) {
+						return RunResult::Halted;
+					}
+					decoded = &successorPage->words[successorOffset];
 					m_currentInstructionPc = successorPc;
 					FRAME.pc = successorPc
 						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
@@ -2142,9 +2249,28 @@ RunResult CPU::runLoop(
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = FRAME.pc;
-					const size_t successorWordIndex =
-						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
-					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
+					DecodedInstructionPage* successorPage = decodedPageForFrame(FRAME, successorPc);
+					if (!successorPage) {
+						return RunResult::Halted;
+					}
+					const u32 successorOffset = (successorPc & DECODED_PAGE_BYTE_MASK) >> 2;
+					if (decodedInstructionNeedsRefresh(
+						*successorPage,
+						successorOffset,
+						false
+					)) {
+						decodeInstruction(
+							FRAME,
+							*successorPage,
+							successorOffset,
+							successorPc,
+							false
+						);
+					}
+					if (m_hardHalted) {
+						return RunResult::Halted;
+					}
+					decoded = &successorPage->words[successorOffset];
 					m_currentInstructionPc = successorPc;
 					FRAME.pc = successorPc
 						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
@@ -2161,39 +2287,6 @@ RunResult CPU::runLoop(
 					SET_REGISTER_FAST(
 						decoded->a,
 						valueNumber(static_cast<double>(static_cast<int32_t>(shifted)))
-					);
-					DISPATCH_CONTINUE();
-				}
-				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
-					const Value& shiftLeftValue = readRK(FRAME, rkB);
-					const Value& shiftRightValue = readRK(FRAME, rkC);
-					const int32_t shifted = toI32(shiftLeftValue)
-						>> (toU32(shiftRightValue) & 31u);
-					SET_REGISTER_FAST(a, valueNumber(static_cast<double>(shifted)));
-					if (instructionBudgetRemaining <= 0) {
-						DISPATCH_CONTINUE();
-					}
-					const u32 successorPc = FRAME.pc;
-					const size_t successorWordIndex =
-						(successorPc - IMAGE.textAddress) / INSTRUCTION_BYTES;
-					decoded = &decodedAtWordIndex(IMAGE, successorWordIndex);
-					m_currentInstructionPc = successorPc;
-					FRAME.pc = successorPc
-						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
-					m_lastExecutionDomainId = IMAGE.executionDomainId;
-					lastPc = successorPc
-						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-					instructionBudgetRemaining -= static_cast<int>(
-						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
-					);
-					const Value& xorLeftValue = readRK(FRAME, decoded->rkB);
-					const Value& xorRightValue = readRK(FRAME, decoded->rkC);
-					const int32_t xorResult = static_cast<int32_t>(
-						toU32(xorLeftValue) ^ toU32(xorRightValue)
-					);
-					SET_REGISTER_FAST(
-						decoded->a,
-						valueNumber(static_cast<double>(xorResult))
 					);
 					DISPATCH_CONTINUE();
 				}
@@ -2398,7 +2491,11 @@ void CPU::writeFrameExecution(
 	u32 pc
 ) {
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
-	readFunctionRecordInImage(image, functionAddress);
+	readFunctionRecord(
+		image,
+		functionAddress,
+		executionBusSignalsForDomain(executionDomainId)
+	);
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
 	if (functionRecord.maxStack > static_cast<u32>(frame.stackCapacity)) {
@@ -2406,12 +2503,14 @@ void CPU::writeFrameExecution(
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		frame.closure = &m_staticClosuresByAddress.at(functionRecord.address);
+		frame.closure = staticClosureAtAddress(functionRecord.address);
 	} else {
 		frame.closure->functionAddress = functionRecord.address;
 	}
 	frame.functionAddress = functionRecord.address;
 	frame.executionImage = functionRecord.image;
+	frame.decodedPage = nullptr;
+	frame.decodedPageAddress = 0;
 	frame.codeAddress = functionRecord.codeAddress;
 	frame.codeByteCount = functionRecord.codeByteCount;
 	frame.pc = pc;
@@ -2445,23 +2544,25 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		return &m_staticClosuresByAddress.at(functionRecord.address);
-	}
-	if (functionRecord.upvalueCount != 0u) {
-		m_executionAddressSpace.bindReadOnlyView(
-			functionRecord.image->executionDomainId,
-			functionRecord.upvalueTableAddress,
-			static_cast<size_t>(functionRecord.upvalueCount) * BLUA32_UPVALUE_RECORD_SIZE,
-			m_executionReadView
-		);
+		return staticClosureAtAddress(functionRecord.address);
 	}
 	m_closureUpvalueScratch.resize(functionRecord.upvalueCount);
 	std::fill(m_closureUpvalueScratch.begin(), m_closureUpvalueScratch.end(), nullptr);
+	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);
+	const u32 faultSequence = m_memory.readBusFaultSequence();
 	size_t newUpvalueCount = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
-		const u32 upvalueWord = readLE32(
-			m_executionReadView.data() + index * BLUA32_UPVALUE_RECORD_SIZE
+		const u32 upvalueWord = m_memory.readMappedBusU32LE(
+			functionRecord.upvalueTableAddress + index * BLUA32_UPVALUE_RECORD_SIZE,
+			functionRecord.busSignals
 		);
+		if (m_memory.readBusFaultSequence() != faultSequence) {
+			m_closureUpvalueScratch.clear();
+			m_closureUpvalueWordScratch.clear();
+			hardHalt();
+			return nullptr;
+		}
+		m_closureUpvalueWordScratch[index] = upvalueWord;
 		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
@@ -2484,18 +2585,18 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
 		Upvalue* upvalue = m_closureUpvalueScratch[index];
 		if (!upvalue) {
-			const u32 upvalueWord = readLE32(
-				m_executionReadView.data() + index * BLUA32_UPVALUE_RECORD_SIZE
-			);
 			upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 			upvalue->open = true;
-			upvalue->index = static_cast<int>(upvalueWord & BLUA32_UPVALUE_INDEX_MASK);
+			upvalue->index = static_cast<int>(
+				m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK
+			);
 			upvalue->frame = &frame;
 			linkOpenUpvalue(frame, upvalue);
 		}
 		closure->upvalues[index] = upvalue;
 	}
 	m_closureUpvalueScratch.clear();
+	m_closureUpvalueWordScratch.clear();
 	return closure;
 }
 
@@ -2529,9 +2630,10 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
-	if (!readFunctionRecordInExecutionDomain(
+	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
-		closure->functionAddress
+		closure->functionAddress,
+		m_executionBusSignals
 	)) {
 		hardHalt();
 		return nullptr;
@@ -2587,9 +2689,10 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 
 CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch) {
-	if (!readFunctionRecordInExecutionDomain(
+	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
-		closure->functionAddress
+		closure->functionAddress,
+		m_executionBusSignals
 	)) {
 		hardHalt();
 		return nullptr;
@@ -2809,7 +2912,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 }
 
 Value CPU::loadTableIntegerIndexCached(
-	Blua32ExecutionImage& image,
+	DecodedInstructionPage& page,
 	int cacheIndex,
 	const Value& base,
 	int index
@@ -2817,7 +2920,7 @@ Value CPU::loadTableIntegerIndexCached(
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
 		if (!table->metatable) {
-			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
 			}
@@ -2831,7 +2934,7 @@ Value CPU::loadTableIntegerIndexCached(
 	}
 	if (valueIsString(base)) {
 		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
 			}
@@ -2864,7 +2967,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 }
 
 Value CPU::loadTableFieldIndexCached(
-	Blua32ExecutionImage& image,
+	DecodedInstructionPage& page,
 	int cacheIndex,
 	const Value& base,
 	StringId key
@@ -2872,7 +2975,7 @@ Value CPU::loadTableFieldIndexCached(
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
 		if (!table->metatable) {
-			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
 			}
@@ -2886,7 +2989,7 @@ Value CPU::loadTableFieldIndexCached(
 	}
 	if (valueIsString(base)) {
 		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
 			}
@@ -2954,6 +3057,8 @@ std::unique_ptr<CallFrame> CPU::acquireFrame() {
 void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	frame->varargBase = 0;
 	frame->varargCount = 0;
+	frame->decodedPage = nullptr;
+	frame->decodedPageAddress = 0;
 	frame->registers = nullptr;
 	frame->stackBase = 0;
 	frame->stackCapacity = 0;
@@ -3048,10 +3153,12 @@ void CPU::markRoots(GcHeap& heap) {
 		for (Value value : image->constPool) {
 			heap.markValue(value);
 		}
-		for (TableLoadInlineCache& cache : image->tableLoadCaches) {
-			cache.table = nullptr;
-			cache.version = 0;
-			cache.value = valueNil();
+		for (auto& entry : image->decodedPages) {
+			for (TableLoadInlineCache& cache : entry.second.tableLoadCaches) {
+				cache.table = nullptr;
+				cache.version = 0;
+				cache.value = valueNil();
+			}
 		}
 	}
 	for (const auto& framePtr : m_frames) {
