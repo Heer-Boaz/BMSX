@@ -872,6 +872,10 @@ void CPU::decodeInstruction(
 			(static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
 			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
 			| bxLow;
+		const int32_t decodedSbx = signExtend(
+			decodedBx,
+			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
+		);
 		decoded.sourceWord = sourceWord;
 		decoded.bodyWord = bodyWord;
 		decoded.op = op;
@@ -890,14 +894,18 @@ void CPU::decodeInstruction(
 			case OpCode::SETSYS:
 				decoded.bx = frame.executionImage->systemGlobalSlots[decodedBx];
 				break;
+			case OpCode::JMP:
+			case OpCode::JMPIF:
+			case OpCode::JMPIFNOT:
+				decoded.bx = pc
+					+ static_cast<u32>(width * INSTRUCTION_BYTES)
+					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES);
+				break;
 			default:
 				decoded.bx = decodedBx;
 				break;
 		}
-		decoded.sbx = signExtend(
-			decodedBx,
-			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
+		decoded.sbx = decodedSbx;
 		decoded.rkB = signExtend(
 			rawB,
 			MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS)

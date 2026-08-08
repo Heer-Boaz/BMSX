@@ -1331,6 +1331,10 @@ export class CPU implements MappedPageInvalidator {
 			const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS))
 				| ((usesBx ? ext : 0) << MAX_BX_BITS)
 				| bxLow;
+			const decodedSbx = signExtend(
+				decodedBx,
+				MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS),
+			);
 			page.widths[pageOffset] = width;
 			page.sourceWords[pageOffset] = sourceWord;
 			page.bodyWords[pageOffset] = bodyWord;
@@ -1347,14 +1351,18 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.SETSYS:
 					page.bx[pageOffset] = frame.executionImage.systemGlobalSlots[decodedBx];
 					break;
+				case OpCode.JMP:
+				case OpCode.JMPIF:
+				case OpCode.JMPIFNOT:
+					page.bx[pageOffset] = (
+						pc + width * INSTRUCTION_BYTES + decodedSbx * INSTRUCTION_BYTES
+					) >>> 0;
+					break;
 				default:
 					page.bx[pageOffset] = decodedBx;
 					break;
 			}
-			page.sbx[pageOffset] = signExtend(
-				decodedBx,
-				MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS),
-			);
+			page.sbx[pageOffset] = decodedSbx;
 			page.rkB[pageOffset] = signExtend(
 				rawB,
 				MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS),
@@ -2799,36 +2807,18 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.JMP: {
-					const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
-					if (targetPc < frame.codeAddress
-						|| targetPc >= frame.codeAddress + frame.codeByteCount) {
-						this.hardHalt();
-						return;
-					}
-					frame.pc = targetPc;
+					frame.pc = bx;
 					return;
 				}
 				case OpCode.JMPIF: {
 					if (registers.isTruthy(a)) {
-						const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
-						if (targetPc < frame.codeAddress
-							|| targetPc >= frame.codeAddress + frame.codeByteCount) {
-							this.hardHalt();
-							return;
-						}
-						frame.pc = targetPc;
+						frame.pc = bx;
 					}
 					return;
 				}
 				case OpCode.JMPIFNOT: {
 					if (!registers.isTruthy(a)) {
-						const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
-						if (targetPc < frame.codeAddress
-							|| targetPc >= frame.codeAddress + frame.codeByteCount) {
-							this.hardHalt();
-							return;
-						}
-						frame.pc = targetPc;
+						frame.pc = bx;
 					}
 					return;
 				}

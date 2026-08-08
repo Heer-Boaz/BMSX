@@ -919,6 +919,11 @@ single-instruction execution observe every physical guest instruction.
 Dispatch opcodes are derived CPU state: they are neither guest words nor
 save-state or tooling metadata.
 
+Relative branch targets resolve to physical byte addresses when their mapped
+instruction page decodes. Branch dispatch only latches that address into the
+PC; the next instruction fetch enforces the active frame's raw function-record
+code range.
+
 A call frame retains its physical function-record address, physical PC,
 execution domain, and the raw code bounds latched from that function record.
 Instruction fetch reads the PC through `Memory` with the CPU's retained

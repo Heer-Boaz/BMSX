@@ -370,38 +370,20 @@ DISPATCH_LABEL(MTC0) {
 }
 
 DISPATCH_LABEL(JMP) {
-	const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-	if (targetPc < FRAME.codeAddress
-		|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
-		hardHalt();
-		DISPATCH_CONTINUE();
-	}
-	FRAME.pc = targetPc;
+	FRAME.pc = bx;
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMPIF) {
 	if (isTruthy(REG(a))) {
-		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-		if (targetPc < FRAME.codeAddress
-			|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
-			hardHalt();
-			DISPATCH_CONTINUE();
-		}
-		FRAME.pc = targetPc;
+		FRAME.pc = bx;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
 	if (!isTruthy(REG(a))) {
-		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-		if (targetPc < FRAME.codeAddress
-			|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
-			hardHalt();
-			DISPATCH_CONTINUE();
-		}
-		FRAME.pc = targetPc;
+		FRAME.pc = bx;
 	}
 	DISPATCH_CONTINUE();
 }
