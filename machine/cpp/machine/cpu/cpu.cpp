@@ -1468,12 +1468,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
-		size_t targetCapacity = nextPowerOfTwo(
-			static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
-		);
-		if (targetCapacity < 8) {
-			targetCapacity = 8;
-		}
+		const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
 		frame->stackCapacity = static_cast<int>(targetCapacity);
 		m_stackTop = frame->stackBase + frame->stackCapacity;
 		ensureStackSize(static_cast<size_t>(m_stackTop));
@@ -2407,7 +2402,6 @@ void CPU::unwindToDepth(int targetDepth) {
 		m_frames.pop_back();
 		closeUpvalues(*finished);
 		m_stackTop = finished->varargBase;
-		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 	}
 	while (m_protectedCallDepth > 0) {
@@ -2706,17 +2700,13 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 		? std::max(argCount - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(
-		static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
-	);
-	if (targetCapacity < 8) {
-		targetCapacity = 8;
-	}
+	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
+	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < argCount) {
@@ -2786,17 +2776,13 @@ CallFrame* CPU::pushLatchedFrame(
 		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(
-		static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
-	);
-	if (targetCapacity < 8) {
-		targetCapacity = 8;
-	}
+	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
+	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
 	const Value* sourceArgs = argsInStack ? m_stack.data() + argsOffset : args;
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {

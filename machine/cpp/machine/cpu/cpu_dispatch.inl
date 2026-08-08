@@ -478,7 +478,6 @@ DISPATCH_LABEL(RET) {
 			auto finished = std::move(m_frames.back());
 			m_frames.pop_back();
 			m_stackTop = finished->varargBase;
-			m_stack.resize(static_cast<size_t>(m_stackTop));
 			releaseFrame(std::move(finished));
 			DISPATCH_CONTINUE();
 		}
@@ -490,14 +489,12 @@ DISPATCH_LABEL(RET) {
 	if (finished->returnToCompletionLatch) {
 		m_completionValues.assign(results, results + count);
 		m_stackTop = finished->varargBase;
-		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
 	if (m_frames.empty()) {
 		m_completionValues.assign(results, results + count);
 		m_stackTop = finished->varargBase;
-		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
@@ -513,7 +510,6 @@ DISPATCH_LABEL(RET) {
 		writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
 	}
 	m_stackTop = finished->varargBase;
-	m_stack.resize(static_cast<size_t>(m_stackTop));
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();
 }
@@ -667,7 +663,6 @@ DISPATCH_LABEL(RFE) {
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	m_stackTop = finished->varargBase;
-	m_stack.resize(static_cast<size_t>(m_stackTop));
 	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (!m_frames.empty()) {
