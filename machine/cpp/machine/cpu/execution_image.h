@@ -99,15 +99,6 @@ struct DecodedInstructionPage {
 	u8* writeWatch;
 };
 
-inline bool decodedInstructionNeedsRefresh(
-	const DecodedInstructionPage& page,
-	size_t pageOffset,
-	bool allowFusion
-) {
-	const u8 state = page.refreshState[pageOffset];
-	return allowFusion ? state != 0u : (state & DECODED_REFRESH_DECODE) != 0u;
-}
-
 struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;

@@ -943,7 +943,8 @@ bool CPU::decodeInstruction(
 		return true;
 	}
 	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	if (decodedInstructionNeedsRefresh(nextPage, nextOffset, false)) {
+	const u8 nextRefreshState = nextPage.refreshState[nextOffset];
+	if ((nextRefreshState & DECODED_REFRESH_DECODE) != 0u) {
 		if (nextOffset == DECODED_PAGE_WORDS - 1u) {
 			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 			return true;
@@ -951,9 +952,9 @@ bool CPU::decodeInstruction(
 		if (!decodeInstruction(frame, nextPage, nextOffset, nextPc, false)) {
 			return false;
 		}
-	}
-	if ((nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) != 0u) {
-		return true;
+		if ((nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) != 0u) {
+			return true;
+		}
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
@@ -963,7 +964,7 @@ bool CPU::decodeInstruction(
 void CPU::skipNextInstruction(CallFrame& frame) {
 	DecodedInstructionPage& page = decodedPageForFrame(frame, frame.pc);
 	const u32 offset = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	if (decodedInstructionNeedsRefresh(page, offset, false)
+	if ((page.refreshState[offset] & DECODED_REFRESH_DECODE) != 0u
 		&& !decodeInstruction(frame, page, offset, frame.pc, false)) {
 		return;
 	}
@@ -2185,11 +2186,10 @@ RunResult CPU::runLoop(
 				decodedPage = &decodedPageForFrame(*frame, pc);
 			}
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
-			if (decodedInstructionNeedsRefresh(
-				*decodedPage,
-				pageOffset,
-				!Instrumented
-			) && !decodeInstruction(
+			if ((Instrumented
+					? (decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE)
+					: decodedPage->refreshState[pageOffset]) != 0u
+				&& !decodeInstruction(
 				*frame,
 				*decodedPage,
 				pageOffset,
@@ -2267,11 +2267,8 @@ RunResult CPU::runLoop(
 					const u32 successorPc = FRAME.pc;
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-					if (decodedInstructionNeedsRefresh(
-						successorPage,
-						successorOffset,
-						false
-					)) {
+					if ((successorPage.refreshState[successorOffset]
+						& DECODED_REFRESH_DECODE) != 0u) {
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,
@@ -2316,11 +2313,8 @@ RunResult CPU::runLoop(
 					const u32 successorPc = FRAME.pc;
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-					if (decodedInstructionNeedsRefresh(
-						successorPage,
-						successorOffset,
-						false
-					)) {
+					if ((successorPage.refreshState[successorOffset]
+						& DECODED_REFRESH_DECODE) != 0u) {
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,

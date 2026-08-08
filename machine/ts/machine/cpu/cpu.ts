@@ -123,7 +123,6 @@ import {
 	NO_TABLE_LOAD_CACHE_INDEX,
 	createDecodedInstructionPage,
 	decodedDispatchOp,
-	decodedInstructionNeedsRefresh,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
@@ -1408,7 +1407,8 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const nextPageOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-		if (decodedInstructionNeedsRefresh(nextPage, nextPageOffset, false)) {
+		const nextRefreshState = nextPage.refreshState[nextPageOffset];
+		if ((nextRefreshState & DECODED_REFRESH_DECODE) !== 0) {
 			if (nextPageOffset === DECODED_PAGE_WORDS - 1) {
 				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 				return true;
@@ -1422,9 +1422,9 @@ export class CPU implements MappedPageInvalidator {
 			)) {
 				return false;
 			}
-		}
-		if ((nextPage.refreshState[nextPageOffset] & DECODED_REFRESH_DECODE) !== 0) {
-			return true;
+			if ((nextPage.refreshState[nextPageOffset] & DECODED_REFRESH_DECODE) !== 0) {
+				return true;
+			}
 		}
 		page.dispatchOps[pageOffset] = decodedDispatchOp(
 			op as OpCode,
@@ -1812,7 +1812,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (decodedInstructionNeedsRefresh(page, pageOffset, true)
+					if (page.refreshState[pageOffset] !== 0
 						&& !this.decodeInstruction(frame, page, pageOffset, pc, true)) {
 						continue;
 					}
@@ -1890,7 +1890,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (decodedInstructionNeedsRefresh(page, pageOffset, false)
+					if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 						&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
 						continue;
 					}
@@ -1971,7 +1971,7 @@ export class CPU implements MappedPageInvalidator {
 		const pc = frame.pc;
 		const page = this.decodedPageForFrame(frame, pc);
 		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-		if (decodedInstructionNeedsRefresh(page, pageOffset, false)
+		if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 			&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
 			return;
 		}
@@ -2213,7 +2213,7 @@ export class CPU implements MappedPageInvalidator {
 		const pc = frame.pc;
 		const secondPage = this.decodedPageForFrame(frame, pc);
 		const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-		if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
+		if ((secondPage.refreshState[secondPageOffset] & DECODED_REFRESH_DECODE) !== 0) {
 			if (!this.decodeInstruction(
 				frame,
 				secondPage,

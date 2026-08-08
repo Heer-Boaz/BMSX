@@ -47,15 +47,6 @@ export function decodedDispatchOp(first: OpCode, second: OpCode): number {
 	}
 }
 
-export function decodedInstructionNeedsRefresh(
-	page: DecodedInstructionPage,
-	pageOffset: number,
-	allowFusion: boolean,
-): boolean {
-	const state = page.refreshState[pageOffset];
-	return allowFusion ? state !== 0 : (state & DECODED_REFRESH_DECODE) !== 0;
-}
-
 export type DecodedInstructionPage = {
 	widths: Uint8Array;
 	ops: Uint8Array;
