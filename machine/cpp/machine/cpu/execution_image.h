@@ -67,7 +67,6 @@ struct Blua32FunctionRecordLatch {
 	MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU;
 	u32 address = 0;
 	u32 codeAddress = 0;
-	u32 codeByteCount = 0;
 	u32 numParams = 0;
 	u32 maxStack = 0;
 	u32 flags = 0;

@@ -23,8 +23,6 @@ struct CallFrame {
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;
 	u32 decodedPageAddress = 0;
-	u32 codeAddress = 0;
-	u32 codeByteCount = 0;
 	u32 pc = 0;
 	int varargBase = 0;
 	int varargCount = 0;

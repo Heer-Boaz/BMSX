@@ -92,7 +92,6 @@ export type Blua32FunctionRecordLatch = {
 	busSignals: MappedBusSignals;
 	address: number;
 	codeAddress: number;
-	codeByteCount: number;
 	numParams: number;
 	maxStack: number;
 	flags: number;

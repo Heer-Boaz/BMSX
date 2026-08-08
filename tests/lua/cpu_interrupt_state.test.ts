@@ -1347,7 +1347,7 @@ test('Hot Resume updates the physical last-PC latch', () => {
 	assert.equal(cpu.lastPc, relocatedPc);
 });
 
-test('BLua32 branches cannot enter adjacent function text', () => {
+test('BLua32 branches fetch adjacent mapped instructions without function-range gates', () => {
 	const cases = [
 		{ op: OpCode.JMP, initializeTrue: false },
 		{ op: OpCode.JMPIF, initializeTrue: true },
@@ -1374,9 +1374,7 @@ test('BLua32 branches cannot enter adjacent function text', () => {
 		const { cpu } = createTestSystemCpu(image);
 
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-		assertFrameFunctionAddresses(cpu, [
-			image.symbols.functionAddresses[0],
-		]);
+		assert.equal(cpu.getFrameDepth(), 0);
 	}
 });
 
@@ -1428,8 +1426,8 @@ nothing()
 	assert.equal(memory.readMappedU32LE(exceptionReasonAddress), LUA_FAULT_REASON_CALL_NON_FUNCTION);
 });
 
-test('RFE cannot resume outside the interrupted function record', () => {
-	const { cpu, haltFunctionAddress, systemExceptionFunctionAddress } = makeHaltCpu();
+test('RFE resumes the retained frame at any mapped instruction address', () => {
+	const { cpu } = makeHaltCpu();
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 
@@ -1437,10 +1435,7 @@ test('RFE cannot resume outside the interrupted function record', () => {
 	state.epcWord = HALT_TEST_IMAGES.cartImage.functions[1].codeAddress;
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assertFrameFunctionAddresses(cpu, [
-		haltFunctionAddress,
-		systemExceptionFunctionAddress,
-	]);
+	assert.equal(cpu.getFrameDepth(), 0);
 });
 
 test('system NMI preempts a stalled cart IRQ root and RFE retries its unaccepted mapped store', () => {

@@ -53,7 +53,6 @@ import {
 	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
@@ -448,7 +447,6 @@ export class CPU implements MappedPageInvalidator {
 		busSignals: MAPPED_BUS_MASTER_CPU,
 		address: 0,
 		codeAddress: 0,
-		codeByteCount: 0,
 		numParams: 0,
 		maxStack: 0,
 		flags: 0,
@@ -813,8 +811,6 @@ export class CPU implements MappedPageInvalidator {
 			executionImage: null!,
 			decodedPage: null,
 			decodedPageAddress: 0,
-			codeAddress: 0,
-			codeByteCount: 0,
 			pc: 0,
 			varargBase: 0,
 			varargCount: 0,
@@ -1241,11 +1237,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage | null {
-		if (((pc - frame.codeAddress) >>> 0) >= frame.codeByteCount) {
-			this.hardHalt();
-			return null;
-		}
+	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 		const cached = frame.decodedPage;
 		if (cached !== null
@@ -1267,7 +1259,6 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 		allowFusion: boolean,
 	): void {
-		const codeEnd = frame.codeAddress + frame.codeByteCount;
 		let instructionCacheable = page.cacheable;
 		let bodyPage: DecodedInstructionPage | null = null;
 		let width = 1;
@@ -1284,13 +1275,10 @@ export class CPU implements MappedPageInvalidator {
 		let bodyWord = sourceWord;
 		op = (sourceWord >>> 18) & 0x3f;
 		let ext = sourceWord >>> 24;
-		if (op === OpCode.WIDE && pc + INSTRUCTION_BYTES < codeEnd) {
+		if (op === OpCode.WIDE) {
 			width = 2;
 			if (pageOffset === DECODED_PAGE_WORDS - 1) {
 				bodyPage = this.decodedPageForFrame(frame, pc + INSTRUCTION_BYTES);
-				if (bodyPage === null) {
-					return;
-				}
 				instructionCacheable = instructionCacheable && bodyPage.cacheable;
 			}
 			wideA = (sourceWord >>> 12) & 0x3f;
@@ -1413,14 +1401,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const nextPc = pc + width * INSTRUCTION_BYTES;
-		if (nextPc >= codeEnd) {
-			page.fusionRequired[pageOffset] = 0;
-			return;
-		}
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
-		if (nextPage === null) {
-			return;
-		}
 		if (!nextPage.cacheable) {
 			page.fusionRequired[pageOffset] = 0;
 			return;
@@ -1473,10 +1454,6 @@ export class CPU implements MappedPageInvalidator {
 					bytes,
 					recordByteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 				);
-				latch.codeByteCount = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
-				);
 				latch.numParams = readLE32(
 					bytes,
 					recordByteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
@@ -1503,10 +1480,6 @@ export class CPU implements MappedPageInvalidator {
 		const faultSequence = this.memory.readBusFaultSequence();
 		latch.codeAddress = this.memory.readMappedBusU32LE(
 			(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0,
-			busSignals,
-		);
-		latch.codeByteCount = this.memory.readMappedBusU32LE(
-			(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0,
 			busSignals,
 		);
 		latch.numParams = this.memory.readMappedBusU32LE(
@@ -1824,9 +1797,6 @@ export class CPU implements MappedPageInvalidator {
 					const image = frame.executionImage;
 					const pc = frame.pc;
 					const page = this.decodedPageForFrame(frame, pc);
-					if (page === null) {
-						return RunResult.Halted;
-					}
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(page, pageOffset, true)) {
 						this.decodeInstruction(frame, page, pageOffset, pc, true);
@@ -1906,9 +1876,6 @@ export class CPU implements MappedPageInvalidator {
 					const image = frame.executionImage;
 					const pc = frame.pc;
 					const page = this.decodedPageForFrame(frame, pc);
-					if (page === null) {
-						return RunResult.Halted;
-					}
 					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
 						&& executionHook(image.executionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
@@ -2004,9 +1971,6 @@ export class CPU implements MappedPageInvalidator {
 	private skipNextInstruction(frame: CallFrame): void {
 		const pc = frame.pc;
 		const page = this.decodedPageForFrame(frame, pc);
-		if (page === null) {
-			return;
-		}
 		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
 			this.decodeInstruction(frame, page, pageOffset, pc, false);
@@ -2015,11 +1979,6 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const nextPc = pc + page.widths[pageOffset] * INSTRUCTION_BYTES;
-		if (nextPc < frame.codeAddress
-			|| nextPc >= frame.codeAddress + frame.codeByteCount) {
-			this.hardHalt();
-			return;
-		}
 		frame.pc = nextPc;
 	}
 
@@ -2152,8 +2111,6 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.codeAddress = functionRecord.codeAddress;
-		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = pc;
 	}
 
@@ -2253,9 +2210,6 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const pc = frame.pc;
 					const secondPage = this.decodedPageForFrame(frame, pc);
-					if (secondPage === null) {
-						return;
-					}
 					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
 						this.decodeInstruction(
@@ -2294,9 +2248,6 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const pc = frame.pc;
 					const secondPage = this.decodedPageForFrame(frame, pc);
-					if (secondPage === null) {
-						return;
-					}
 					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
 						this.decodeInstruction(
@@ -2748,12 +2699,6 @@ export class CPU implements MappedPageInvalidator {
 					const returnFromNmi = frame.isNonMaskableExceptionFrame;
 					const returnPc = this.epcWord;
 					const caller = this.frames[this.frames.length - 2];
-					if (caller
-						&& (returnPc < caller.codeAddress
-							|| returnPc >= caller.codeAddress + caller.codeByteCount)) {
-						this.hardHalt();
-						return;
-					}
 					this.closeUpvalues(frame);
 					this.frames.pop();
 					this.stackTop = frame.varargBase;
@@ -3155,8 +3100,6 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = functionRecord.image;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.codeAddress = functionRecord.codeAddress;
-		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
@@ -3199,8 +3142,6 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = functionRecord.image;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.codeAddress = functionRecord.codeAddress;
-		frame.codeByteCount = functionRecord.codeByteCount;
 		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
@@ -4578,8 +4519,6 @@ export class CPU implements MappedPageInvalidator {
 			const frame = this.acquireFrame();
 			frame.functionAddress = frameState.functionAddress;
 			frame.executionImage = functionRecord.image;
-			frame.codeAddress = functionRecord.codeAddress;
-			frame.codeByteCount = functionRecord.codeByteCount;
 			frame.pc = frameState.pc;
 			frame.closure = restoredObjects[frameState.closureRef] as Closure;
 			frame.returnBase = frameState.returnBase;

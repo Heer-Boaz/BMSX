@@ -421,7 +421,7 @@ private:
 		const MappedPageBinding& binding
 	);
 	void invalidateDecodedPage(u64 key);
-	DecodedInstructionPage* decodedPageForFrame(CallFrame& frame, u32 pc);
+	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	void decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	Closure* staticClosureAtAddress(u32 address);
 	bool readFunctionRecord(

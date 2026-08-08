@@ -644,14 +644,6 @@ DISPATCH_LABEL(RFE) {
 	}
 	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
 	const u32 returnPc = m_epcWord;
-	if (m_frames.size() > 1u) {
-		const CallFrame& callerFrame = *m_frames[m_frames.size() - 2u];
-		if (returnPc < callerFrame.codeAddress
-			|| returnPc >= callerFrame.codeAddress + callerFrame.codeByteCount) {
-			hardHalt();
-			DISPATCH_CONTINUE();
-		}
-	}
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();

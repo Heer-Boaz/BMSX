@@ -28,6 +28,27 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100;
 
+test('WIDE and sequential fetch cross function-record metadata boundaries', () => {
+	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.K1, 0, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 1, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code,
+		functions: [
+			{ firstWord: 0, wordCount: 1, maxStack: 1 },
+			{ firstWord: 1, wordCount: 2, maxStack: 1 },
+		],
+		irqFunctionIndex: 1,
+		exceptionFunctionIndex: 1,
+	});
+	const { cpu } = createTestSystemCpu(image);
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.equal(cpu.getFrameDepth(), 0);
+});
+
 function writeRamFunction(
 	memory: ReturnType<typeof createTestSystemCpu>['memory'],
 	code: Uint8Array,

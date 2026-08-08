@@ -13,8 +13,6 @@ export type CallFrame = {
 	executionImage: Blua32ExecutionImage;
 	decodedPage: DecodedInstructionPage | null;
 	decodedPageAddress: number;
-	codeAddress: number;
-	codeByteCount: number;
 	pc: number;
 	varargBase: number;
 	varargCount: number;

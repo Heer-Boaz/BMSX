@@ -322,7 +322,7 @@ void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
 	require(state.statusWord == bmsx::CPU_STATUS_CART_ENTRY, "CP0.EXEC enters cartridge privilege mode");
 }
 
-void testControlFlowCannotLeaveTheActiveFunctionRecord() {
+void testBranchesFetchAdjacentMappedInstructions() {
 	struct BranchCase {
 		bmsx::OpCode op;
 		bool initializeTrue;
@@ -368,9 +368,35 @@ void testControlFlowCannotLeaveTheActiveFunctionRecord() {
 
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-		require(state.frames.size() == 1u, "branch hard-halts before entering adjacent function text");
-		require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "branch retains the active function record");
+		require(state.frames.empty(), "branch target executes through the mapped instruction bus");
 	}
+}
+
+void testMappedFetchCrossesFunctionRecordMetadata() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(3u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 1u, .maxStack = 1u},
+		{.firstWord = 1u, .wordCount = 2u, .maxStack = 1u},
+	};
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+	CpuTestMachine machine(std::move(image));
+
+	require(
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"mapped fetch crosses function-record metadata"
+	);
+	const std::span<const bmsx::Value> values = machine.cpu.readCompletionValues();
+	require(
+		values.size() == 1u && bmsx::asNumber(values[0]) == 1.0,
+		"WIDE consumes its mapped body and execution reaches the following mapped RET"
+	);
+	require(machine.cpu.getFrameDepth() == 0, "mapped RET completes the original call frame");
 }
 
 void testUnmappedClosureRecordHardHalts() {
@@ -1040,7 +1066,7 @@ void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
 	require(!interrupted.interruptEventPending, "accepted IRQ does not queue a duplicate wake event for a consumed HALT latch");
 }
 
-void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
+void testRfeResumesAtAnyMappedInstructionAddress() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 	CpuTestMachine machine(std::move(systemImage));
@@ -1049,13 +1075,11 @@ void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters the system exception vector");
 
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	state.epcWord = machine.cartRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES;
+	state.epcWord = machine.cartRom.textAddress + 11u * bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(state);
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid RFE target hard-halts");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE resumes mapped adjacent text");
 	state = machine.cpu.captureRuntimeState();
-	require(state.frames.size() == 2u, "invalid RFE target retains both frames");
-	require(state.frames.front().functionAddress == machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION], "invalid RFE target does not replace the interrupted frame");
-	require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "invalid RFE target does not pop the exception frame");
+	require(state.frames.empty(), "mapped RET completes the retained frame after RFE");
 }
 
 void testMappedBusErrorsEnterTheSystemExceptionVector() {
@@ -1323,7 +1347,8 @@ int main() {
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
 	testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage();
-	testControlFlowCannotLeaveTheActiveFunctionRecord();
+	testBranchesFetchAdjacentMappedInstructions();
+	testMappedFetchCrossesFunctionRecordMetadata();
 	testUnmappedClosureRecordHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
@@ -1335,7 +1360,7 @@ int main() {
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
-	testRfeCannotResumeOutsideTheInterruptedFunctionRecord();
+	testRfeResumesAtAnyMappedInstructionAddress();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testMappedMemoryAlignmentContract();
 	testAddressErrorsPrecedeMappedMemoryBusCycles();

@@ -862,7 +862,9 @@ Each 32-byte function record is 16-byte aligned and contains, in order, the
 absolute code address, code byte count, parameter count, maximum register
 count, raw function flags, absolute upvalue-table address, upvalue count, and
 one reserved word. A function record's physical address is the function's
-runtime identity. Direct `CLOSURE` stores that address shifted right by four;
+runtime identity. The code byte count describes emitted text for allocation,
+inspection, diagnostics, and source revision; it is not an instruction-fetch
+limit. Direct `CLOSURE` stores that address shifted right by four;
 its `WIDE` form covers every aligned physical address. `CLOSURE.R` is the
 indirect form: the `WIDE.C` register marker makes its `Bx` operand a register
 containing the raw function-record address. Both forms consume the same mapped
@@ -921,11 +923,11 @@ save-state or tooling metadata.
 
 Relative branch targets resolve to physical byte addresses when their mapped
 instruction page decodes. Branch dispatch only latches that address into the
-PC; the next instruction fetch enforces the active frame's raw function-record
-code range.
+PC; the next instruction fetch resolves that address through the mapped
+instruction bus.
 
 A call frame retains its physical function-record address, physical PC,
-execution domain, and the raw code bounds latched from that function record.
+and resident program context.
 Instruction fetch reads the PC through `Memory` with the CPU's retained
 cartridge instruction-bus chip select. `Memory` and the cartridge controller
 own the ROM, RAM, cartridge and MMIO decoding; the CPU does not classify those
@@ -1304,7 +1306,7 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 - The CPU consumes instruction words and runtime values directly from the mapped
   machine representation.
 - Reserved opcodes, malformed standalone `WIDE` prefix words, invalid physical
-  function records, and branch skips past the active function text do not
+  function records, and instruction fetches that fault on the mapped bus do not
   become host exceptions. The CPU latches a hard-halt state, stops accepting
   IRQs, and stays stopped until reset starts it again.
 - Emulator invariant failures remain host failures. A frontend stops its host

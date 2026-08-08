@@ -763,15 +763,11 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 	}
 }
 
-DecodedInstructionPage* CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
-	if (pc - frame.codeAddress >= frame.codeByteCount) {
-		hardHalt();
-		return nullptr;
-	}
+DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 	if (frame.decodedPage
 		&& frame.decodedPageAddress == pageAddress) {
-		return frame.decodedPage;
+		return *frame.decodedPage;
 	}
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pageAddress, m_executionBusSignals, binding);
@@ -781,13 +777,12 @@ DecodedInstructionPage* CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	);
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
-	return &page;
+	return page;
 }
 
 void CPU::decodeInstruction(
 	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
 ) {
-	const u32 codeEnd = frame.codeAddress + frame.codeByteCount;
 	DecodedInstruction& decoded = page.words[pageOffset];
 	bool instructionCacheable = page.cacheable;
 	DecodedInstructionPage* bodyPage = nullptr;
@@ -805,17 +800,13 @@ void CPU::decodeInstruction(
 	uint32_t bodyWord = sourceWord;
 	op = static_cast<uint8_t>((sourceWord >> 18) & 0x3f);
 	uint8_t ext = static_cast<uint8_t>(sourceWord >> 24);
-	if (static_cast<OpCode>(op) == OpCode::WIDE
-		&& pc + INSTRUCTION_BYTES < codeEnd) {
+	if (static_cast<OpCode>(op) == OpCode::WIDE) {
 		width = 2;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
-			bodyPage = decodedPageForFrame(
+			bodyPage = &decodedPageForFrame(
 				frame,
 				pc + INSTRUCTION_BYTES
 			);
-			if (!bodyPage) {
-				return;
-			}
 			instructionCacheable = instructionCacheable && bodyPage->cacheable;
 		}
 		wideA = static_cast<uint8_t>((sourceWord >> 12) & 0x3f);
@@ -950,51 +941,37 @@ void CPU::decodeInstruction(
 		return;
 	}
 	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
-	if (nextPc >= codeEnd) {
-		page.fusionRequired[pageOffset] = 0u;
-		return;
-	}
-	DecodedInstructionPage* nextPage = decodedPageForFrame(frame, nextPc);
-	if (!nextPage) {
-		return;
-	}
-	if (!nextPage->cacheable) {
+	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
+	if (!nextPage.cacheable) {
 		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
 	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	if (decodedInstructionNeedsRefresh(*nextPage, nextOffset, false)) {
-		decodeInstruction(frame, *nextPage, nextOffset, nextPc, false);
+	if (decodedInstructionNeedsRefresh(nextPage, nextOffset, false)) {
+		decodeInstruction(frame, nextPage, nextOffset, nextPc, false);
 	}
 	if (m_hardHalted) {
 		return;
 	}
-	if (nextPage->decodeRequired[nextOffset] != 0u) {
+	if (nextPage.decodeRequired[nextOffset] != 0u) {
 		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
-	const DecodedInstruction& successor = nextPage->words[nextOffset];
+	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
 	page.fusionRequired[pageOffset] = 0u;
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	DecodedInstructionPage* page = decodedPageForFrame(frame, frame.pc);
-	if (!page) {
-		return;
-	}
+	DecodedInstructionPage& page = decodedPageForFrame(frame, frame.pc);
 	const u32 offset = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	if (decodedInstructionNeedsRefresh(*page, offset, false)) {
-		decodeInstruction(frame, *page, offset, frame.pc, false);
+	if (decodedInstructionNeedsRefresh(page, offset, false)) {
+		decodeInstruction(frame, page, offset, frame.pc, false);
 	}
 	if (m_hardHalted) {
 		return;
 	}
-	const u32 nextPc = frame.pc + static_cast<u32>(page->words[offset].width) * INSTRUCTION_BYTES;
-	if (nextPc < frame.codeAddress || nextPc >= frame.codeAddress + frame.codeByteCount) {
-		hardHalt();
-		return;
-	}
+	const u32 nextPc = frame.pc + static_cast<u32>(page.words[offset].width) * INSTRUCTION_BYTES;
 	frame.pc = nextPc;
 }
 
@@ -1014,9 +991,6 @@ bool CPU::readFunctionRecord(
 			const u8* record = binding.readBytes + pageOffset;
 			m_functionRecordLatch.codeAddress = readLE32(
 				record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
-			);
-			m_functionRecordLatch.codeByteCount = readLE32(
-				record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET
 			);
 			m_functionRecordLatch.numParams = readLE32(
 				record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
@@ -1039,10 +1013,6 @@ bool CPU::readFunctionRecord(
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	m_functionRecordLatch.codeAddress = m_memory.readMappedBusU32LE(
 		address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-		busSignals
-	);
-	m_functionRecordLatch.codeByteCount = m_memory.readMappedBusU32LE(
-		address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 		busSignals
 	);
 	m_functionRecordLatch.numParams = m_memory.readMappedBusU32LE(
@@ -1491,8 +1461,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		auto frame = acquireFrame();
 		frame->functionAddress = frameState.functionAddress;
 		frame->executionImage = functionRecord.image;
-		frame->codeAddress = functionRecord.codeAddress;
-		frame->codeByteCount = functionRecord.codeByteCount;
 		frame->pc = frameState.pc;
 		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
 		frame->returnBase = frameState.returnBase;
@@ -2198,15 +2166,10 @@ RunResult CPU::runLoop(
 			image = frame->executionImage;
 			registers = frame->registers;
 			pc = frame->pc;
-			if (pc - frame->codeAddress >= frame->codeByteCount) {
-				hardHalt();
-				return RunResult::Halted;
-			}
 			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			DecodedInstructionPage* decodedPage = frame->decodedPage;
 			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
-				decodedPage = decodedPageForFrame(*frame, pc);
-				if (!decodedPage) return RunResult::Halted;
+				decodedPage = &decodedPageForFrame(*frame, pc);
 			}
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
@@ -2296,19 +2259,16 @@ RunResult CPU::runLoop(
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = FRAME.pc;
-					DecodedInstructionPage* successorPage = decodedPageForFrame(FRAME, successorPc);
-					if (!successorPage) {
-						return RunResult::Halted;
-					}
+					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if (decodedInstructionNeedsRefresh(
-						*successorPage,
+						successorPage,
 						successorOffset,
 						false
 					)) {
 						decodeInstruction(
 							FRAME,
-							*successorPage,
+							successorPage,
 							successorOffset,
 							successorPc,
 							false
@@ -2317,7 +2277,7 @@ RunResult CPU::runLoop(
 					if (m_hardHalted) {
 						return RunResult::Halted;
 					}
-					decoded = &successorPage->words[successorOffset];
+					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
 					FRAME.pc = successorPc
 						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
@@ -2349,19 +2309,16 @@ RunResult CPU::runLoop(
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = FRAME.pc;
-					DecodedInstructionPage* successorPage = decodedPageForFrame(FRAME, successorPc);
-					if (!successorPage) {
-						return RunResult::Halted;
-					}
+					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if (decodedInstructionNeedsRefresh(
-						*successorPage,
+						successorPage,
 						successorOffset,
 						false
 					)) {
 						decodeInstruction(
 							FRAME,
-							*successorPage,
+							successorPage,
 							successorOffset,
 							successorPc,
 							false
@@ -2370,7 +2327,7 @@ RunResult CPU::runLoop(
 					if (m_hardHalted) {
 						return RunResult::Halted;
 					}
-					decoded = &successorPage->words[successorOffset];
+					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
 					FRAME.pc = successorPc
 						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
@@ -2611,8 +2568,6 @@ void CPU::writeFrameExecution(
 	frame.executionImage = functionRecord.image;
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
-	frame.codeAddress = functionRecord.codeAddress;
-	frame.codeByteCount = functionRecord.codeByteCount;
 	frame.pc = pc;
 }
 
@@ -2743,8 +2698,6 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	auto frame = acquireFrame();
 	frame->functionAddress = closure->functionAddress;
 	frame->executionImage = functionRecord.image;
-	frame->codeAddress = functionRecord.codeAddress;
-	frame->codeByteCount = functionRecord.codeByteCount;
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
@@ -2825,8 +2778,6 @@ CallFrame* CPU::pushLatchedFrame(
 	auto frame = acquireFrame();
 	frame->functionAddress = closure->functionAddress;
 	frame->executionImage = functionRecord.image;
-	frame->codeAddress = functionRecord.codeAddress;
-	frame->codeByteCount = functionRecord.codeByteCount;
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
