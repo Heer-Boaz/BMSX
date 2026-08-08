@@ -78,12 +78,27 @@ DISPATCH_LABEL(SETGL) {
 }
 
 DISPATCH_LABEL(GETI) {
-	SET_REGISTER_FAST(a, loadTableIntegerIndex(REG(b), c));
+	const Value& tableValue = REG(b);
+	if (valueIsTable(tableValue)) {
+		Table* table = asTable(tableValue);
+		Value value;
+		if (!table->metatable && table->getIntegerArrayKey(c, value)) {
+			SET_REGISTER_FAST(a, value);
+			DISPATCH_CONTINUE();
+		}
+	}
+	SET_REGISTER_FAST(a, loadTableIntegerIndex(tableValue, c));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETI) {
-	storeTableIntegerIndex(REG(a), b, readRK(IMAGE, registers, rkC));
+	const Value& tableValue = REG(a);
+	const Value& value = readRK(IMAGE, registers, rkC);
+	if (valueIsTable(tableValue)
+		&& asTable(tableValue)->setIntegerArrayKey(b, value)) {
+		DISPATCH_CONTINUE();
+	}
+	storeTableIntegerIndex(tableValue, b, value);
 	DISPATCH_CONTINUE();
 }
 

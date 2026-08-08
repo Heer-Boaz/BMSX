@@ -55,6 +55,22 @@ public:
 		setArraySlot(static_cast<size_t>(index), value);
 		return true;
 	}
+	bool getIntegerArrayKey(int key, Value& value) const {
+		const size_t slot = static_cast<size_t>(key - 1);
+		if (slot >= m_array.size()) {
+			return false;
+		}
+		value = m_array[slot];
+		return true;
+	}
+	bool setIntegerArrayKey(int key, const Value& value) {
+		const size_t slot = static_cast<size_t>(key - 1);
+		if (slot >= m_array.size()) {
+			return false;
+		}
+		setIntegerArraySlot(slot, value);
+		return true;
+	}
 	Value getInteger(int index) const;
 	void setInteger(int index, const Value& value);
 	Value getStringKey(StringId key) const;
@@ -173,6 +189,16 @@ private:
 				++newLength;
 			}
 			m_arrayLength = newLength;
+		}
+	}
+	void setIntegerArraySlot(size_t slot, const Value& value) {
+		m_array[slot] = value;
+		if (isNil(value)) {
+			if (slot < m_arrayLength) {
+				m_arrayLength = slot;
+			}
+		} else if (slot == m_arrayLength) {
+			updateArrayLengthFrom(m_arrayLength);
 		}
 	}
 
