@@ -1802,6 +1802,10 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 		if (instruction.op !== OpCode.CLOSURE) {
 			continue;
 		}
+		if (instruction.closureAddressRegister) {
+			captured.fill(1);
+			continue;
+		}
 		const upvalues = context.getClosureUpvalues(instruction.b);
 		for (let u = 0; u < upvalues.length; u += 1) {
 			const desc = upvalues[u];

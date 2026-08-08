@@ -107,6 +107,11 @@ function visitInstructionUses<T>(
 		case OpCode.CONCATN:
 			visitRegisterRange(state, visitor, instruction.b, instruction.c);
 			break;
+		case OpCode.CLOSURE:
+			if (instruction.closureAddressRegister) {
+				visitRegisterRange(state, visitor, 0, maxRegister + 1);
+			}
+			break;
 		case OpCode.LOAD_MEM:
 			visitRegister(state, visitor, instruction.b);
 			break;

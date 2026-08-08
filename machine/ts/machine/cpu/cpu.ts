@@ -40,7 +40,7 @@ import {
 	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
@@ -48,6 +48,7 @@ import {
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
@@ -2716,9 +2717,12 @@ export class CPU {
 					return;
 				}
 				case OpCode.CLOSURE: {
+					const functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
+						? registers.getNumber(bx) >>> 0
+						: bx * BLUA32_FUNCTION_ALIGNMENT;
 					if (!this.readFunctionRecordOnBus(
 						this.activeExecutionImage,
-						bx * 16,
+						functionAddress,
 						this.executionBusSignals,
 					)) {
 						this.hardHalt();

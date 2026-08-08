@@ -37,6 +37,9 @@ constexpr int MAX_EXT_REGISTER = MAX_EXT_REGISTER_BC;
 constexpr int MAX_EXT_CONST = (1 << (MAX_OPERAND_BITS + EXT_B_BITS - 1)) - 1;
 constexpr int MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 
+constexpr int CLOSURE_ADDRESS_REGISTER_WIDE_C = 1 << (MAX_OPERAND_BITS - 1);
+constexpr int CLOSURE_ADDRESS_REGISTER_FLAG = CLOSURE_ADDRESS_REGISTER_WIDE_C << (MAX_OPERAND_BITS + EXT_C_BITS);
+
 int signExtend(uint32_t value, int bits);
 uint32_t packInstructionWord(uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
 void writeInstruction(std::span<uint8_t> code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);

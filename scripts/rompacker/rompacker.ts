@@ -18,6 +18,7 @@ import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_p
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
+	BLUA32_FIRMWARE_MODULE_PATH,
 	PRESENTATION_CONFIG_MODULE_PATH,
 	PRESENTATION_CONFIG_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
@@ -25,6 +26,7 @@ import {
 	TEXTURE_BINDINGS_MODULE_PATH,
 	TEXTURE_BINDINGS_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { resolveCartridgeHeaderWords } from '../../toolchain/ts/rompack/manifest';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
@@ -423,10 +425,16 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
 	);
 	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, {
-		generatedLuaModules: [{
-			path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
-			source: BIOSAssetSymbolModuleSource,
-		}],
+		generatedLuaModules: [
+			{
+				path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+				source: BIOSAssetSymbolModuleSource,
+			},
+			{
+				path: BLUA32_FIRMWARE_MODULE_PATH,
+				source: BLUA32_FIRMWARE_MODULE_SOURCE,
+			},
+		],
 		includeSymbols: debug,
 		optLevel,
 		systemAssetEndOffset: BIOSLayout.nextOffset,

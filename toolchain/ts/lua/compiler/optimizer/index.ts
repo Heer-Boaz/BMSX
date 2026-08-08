@@ -51,6 +51,7 @@ export type Instruction = {
 	rkMask: number;
 	target: number | null;
 	callProtoIndex?: number | null;
+	closureAddressRegister?: boolean;
 	symbolicReloc?:
 		| { kind: 'module_init'; symbol: string }
 		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
@@ -377,6 +378,10 @@ const markCapturedClosureRegisters = (
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
 		if (instruction.op !== OpCode.CLOSURE) {
+			continue;
+		}
+		if (instruction.closureAddressRegister) {
+			captured.fill(1);
 			continue;
 		}
 		const upvalues = context.getClosureUpvalues(instruction.b);
@@ -1430,6 +1435,10 @@ const applyClosureTransferForInlining = (
 			return;
 		}
 		case OpCode.CLOSURE:
+			if (instruction.closureAddressRegister) {
+				closures.delete(instruction.a);
+				return;
+			}
 			if (closureWrittenRegisters.has(instruction.a)) {
 				closures.delete(instruction.a);
 			} else {

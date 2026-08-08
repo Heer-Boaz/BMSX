@@ -12,7 +12,6 @@ import { lintCallNewlineNormalizationPattern } from '../lint/rules/code_quality/
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
 import { lintFunctionBodyRequireCall } from '../lint/rules/lua_cart/function_body_require_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
-import { lintForbiddenRuntimeCompilerReferences } from '../lint/rules/lua_cart/forbidden_runtime_compiler_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
 import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pattern';
 import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern';
@@ -108,7 +107,6 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'forbidden_random_helper_pattern',
 	'forbidden_render_module_require_pattern',
 	'forbidden_render_wrapper_call_pattern',
-	'forbidden_runtime_compiler_call_pattern',
 	'forbidden_transition_to_pattern',
 	'foreign_object_internal_mutation_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
@@ -581,7 +579,6 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 			const chunk = parsed.path;
 			const moduleCalls = analyzeRequireAliases(chunk.body, issues);
 			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
-			lintForbiddenRuntimeCompilerReferences(chunk.body, issues, pushIssue);
 			lintSplitLocalTableInitPattern(chunk.body, issues);
 			lintDuplicateInitializerPattern(chunk.body, issues);
 			lintStagedExportLocalCallPattern(chunk.body, issues);

@@ -2,7 +2,7 @@ import { getMemoryAccessKindForName } from '../memory_access_syntax';
 import type { LuaSymbolKind } from '../semantic_contracts';
 import type { SemanticSymbolKind } from './symbols';
 
-export const RESERVED_LUA_INTRINSIC_NAMES = ['cop0'] as const;
+export const RESERVED_LUA_INTRINSIC_NAMES = ['blua32', 'cop0'] as const;
 
 const RESERVED_LUA_INTRINSIC_NAME_SET = new Set<string>(RESERVED_LUA_INTRINSIC_NAMES);
 

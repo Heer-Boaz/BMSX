@@ -15,6 +15,7 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	BASE_BX_BITS,
+	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	INSTRUCTION_BYTES,
 	MAX_BX_BITS,
 	writeInstruction,
@@ -27,21 +28,46 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100;
 
-test('the CPU executes a RAM function record, follows its ROM reference, and observes rewritten RAM code', () => {
-	const systemCode = new Uint8Array(6 * INSTRUCTION_BYTES);
+function writeRamFunction(
+	memory: ReturnType<typeof createTestSystemCpu>['memory'],
+	code: Uint8Array,
+	maxStack: number,
+): void {
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+		RAM_CODE_ADDRESS,
+	);
+	memory.writeMappedU32LE(
+		RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+		code.byteLength,
+	);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, 0);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, maxStack);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, 0);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0);
+	memory.writeBytes(RAM_CODE_ADDRESS, code);
+}
+
+test('the CPU addresses mapped RAM functions directly and through a register', () => {
+	const systemCode = new Uint8Array(9 * INSTRUCTION_BYTES);
 	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
-	writeInstruction(systemCode, 2, OpCode.RET, 0, 1, 0, 0);
-	writeInstruction(systemCode, 3, OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(systemCode, 4, OpCode.RET, 0, 1, 0, 0);
-	writeInstruction(systemCode, 5, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(systemCode, 2, OpCode.LOADK, 1, 0, 0, 0);
+	writeInstruction(systemCode, 3, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C, 0);
+	writeInstruction(systemCode, 4, OpCode.CLOSURE, 1, 0, 1, 0);
+	writeInstruction(systemCode, 5, OpCode.RET, 0, 2, 0, 0);
+	writeInstruction(systemCode, 6, OpCode.K1, 0, 0, 0, 0);
+	writeInstruction(systemCode, 7, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(systemCode, 8, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: systemCode,
 		functions: [
-			{ firstWord: 0, wordCount: 3 },
-			{ firstWord: 3, wordCount: 2 },
-			{ firstWord: 5, wordCount: 1 },
+			{ firstWord: 0, wordCount: 6, maxStack: 2 },
+			{ firstWord: 6, wordCount: 2 },
+			{ firstWord: 8, wordCount: 1 },
 		],
+		constants: [RAM_FUNCTION_ADDRESS],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
@@ -62,24 +88,13 @@ test('the CPU executes a RAM function record, follows its ROM reference, and obs
 	);
 	writeInstruction(ramCode, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1, 0);
 	writeInstruction(ramCode, 3, OpCode.RET, 0, 1, 0, 0);
-	memory.writeMappedU32LE(
-		RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-		RAM_CODE_ADDRESS,
-	);
-	memory.writeMappedU32LE(
-		RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
-		ramCode.byteLength,
-	);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, 0);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, 0);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0);
-	memory.writeBytes(RAM_CODE_ADDRESS, ramCode);
+	writeRamFunction(memory, ramCode, 1);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
-	assert.equal(closure.functionAddress, RAM_FUNCTION_ADDRESS);
+	const closures = materializeCpuCompletionValues(cpu) as Closure[];
+	assert.equal(closures[0].functionAddress, RAM_FUNCTION_ADDRESS);
+	assert.equal(closures[1].functionAddress, RAM_FUNCTION_ADDRESS);
+	const closure = closures[1];
 
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

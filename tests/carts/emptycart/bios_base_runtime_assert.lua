@@ -71,6 +71,25 @@ function __bmsx_host_test.setup()
 	assert(not xpcall_ok and xpcall_value == 'handled:xerr', 'xpcall mismatch')
 	local error_ok<const>, error_value<const> = pcall(error, 'vm-error')
 	assert(not error_ok and error_value == 'vm-error', 'error/pcall mismatch')
+
+	local chunk<const>, load_error<const> = load([[
+return function(target, frame)
+	target["visual"]["color"] = frame["visual"]["color"]
+	target[-1] = -8
+	target[&"field"] = &"value"
+end
+	]], 'bios_base_runtime_assert.load', 't')
+	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
+	local apply<const> = chunk()
+	local loaded_target<const> = { visual = {} }
+	apply(loaded_target, { visual = { color = 0xff010203 } })
+	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
+	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
+	assert(loaded_target.field == 'value', 'load string-id literal mismatch')
+	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
+	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')
+	local binary_chunk<const>, binary_error<const> = load('return function() end', nil, 'b')
+	assert(binary_chunk == nil and type(binary_error) == 'string', 'load mode contract mismatch')
 end
 
 function __bmsx_host_test.update(_frame)

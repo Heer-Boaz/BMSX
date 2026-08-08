@@ -407,9 +407,12 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
+	const u32 functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0
+		? toU32(REG(bx))
+		: bx * BLUA32_FUNCTION_ALIGNMENT;
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
-		bx * BLUA32_FUNCTION_ALIGNMENT,
+		functionAddress,
 		m_executionBusSignals
 	)) {
 		hardHalt();

@@ -1,6 +1,7 @@
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
+	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	INSTRUCTION_BYTES,
 	MAX_BX_BITS,
 	MAX_EXT_BX,
@@ -432,6 +433,9 @@ function rewriteLocalClosures(code: Uint8Array, functionAddresses: ReadonlyArray
 		const wideWord = readInstructionWord(code, wordIndex - 1);
 		if (((wideWord >>> 18) & 0x3f) !== OpCode.WIDE) {
 			throw new Error('BLua32 closure instruction has no WIDE word.');
+		}
+		if ((wideWord & CLOSURE_ADDRESS_REGISTER_WIDE_C) !== 0) {
+			continue;
 		}
 		const functionIndex = (((wideWord >>> 6) & 0x3f) << BASE_BX_BITS)
 			| ((word >>> 24) << MAX_BX_BITS)

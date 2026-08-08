@@ -1,5 +1,5 @@
 import { extractSourceRangeText } from './source_text';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatNumber } from '../../../machine/ts/common/number_format';
@@ -417,7 +417,9 @@ const buildInstructionOperands = (
 		case OpCode.JMPIFNOT:
 			return [registerOperand('a', 'cond', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.CLOSURE:
-			return [registerOperand('a', 'dst', a), plainOperand('bx', 'function', formatSourceFunctionOperand(source, bx))];
+			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
+				? [registerOperand('a', 'dst', a), registerOperand('b', 'function_address', bx)]
+				: [registerOperand('a', 'dst', a), plainOperand('bx', 'function', formatSourceFunctionOperand(source, bx))];
 		case OpCode.GETUP:
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'upvalue', `u${b}`)];
 		case OpCode.SETUP:
@@ -582,7 +584,9 @@ const formatInstruction = (
 		case OpCode.JMPIFNOT:
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.CLOSURE:
-			return `CLOSURE r${a}, ${formatSourceFunctionOperand(source, bx)}`;
+			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
+				? `CLOSURE.R r${a}, r${bx}`
+				: `CLOSURE r${a}, ${formatSourceFunctionOperand(source, bx)}`;
 		case OpCode.GETUP:
 			return `GETUP r${a}, u${b}`;
 		case OpCode.SETUP:

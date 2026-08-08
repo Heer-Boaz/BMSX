@@ -622,18 +622,29 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 
 void testMappedRamFunctionExecution() {
 	bmsx::test::Blua32TestImage systemImage;
-	systemImage.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	systemImage.text.resize(9u * bmsx::INSTRUCTION_BYTES);
+	systemImage.constants = {static_cast<bmsx::f64>(RAM_FUNCTION_ADDRESS)};
 	std::span<bmsx::u8> systemCode(systemImage.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
-	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
-	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
+	bmsx::writeInstruction(
+		systemCode,
+		3,
+		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
+		0,
+		0,
+		bmsx::CLOSURE_ADDRESS_REGISTER_WIDE_C
+	);
+	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(systemCode, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	systemImage.functions = {
-		{.firstWord = 0u, .wordCount = 3u},
-		{.firstWord = 3u, .wordCount = 2u},
-		{.firstWord = 5u, .wordCount = 1u},
+		{.firstWord = 0u, .wordCount = 6u, .maxStack = 2u},
+		{.firstWord = 6u, .wordCount = 2u},
+		{.firstWord = 8u, .wordCount = 1u},
 	};
 	systemImage.startupFunctionIndex = 0u;
 	systemImage.irqFunctionIndex = 2u;
@@ -706,10 +717,12 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"ROM creates a closure for a mapped RAM function record"
 	);
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	bmsx::Closure* directClosure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[1]);
 	require(
-		closure->functionAddress == RAM_FUNCTION_ADDRESS,
-		"the closure retains the mapped RAM function address"
+		directClosure->functionAddress == RAM_FUNCTION_ADDRESS
+			&& closure->functionAddress == RAM_FUNCTION_ADDRESS,
+		"direct and register-addressed closures retain the mapped RAM function address"
 	);
 
 	cpu.beginCompletionCall(*closure);

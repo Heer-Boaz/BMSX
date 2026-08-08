@@ -325,6 +325,10 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::JMPIFNOT:
 			return "JMPIFNOT r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::CLOSURE:
+			if ((decoded.c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0) {
+				return "CLOSURE.R r" + std::to_string(decoded.a)
+					+ ", r" + std::to_string(decoded.bx);
+			}
 			return "CLOSURE r" + std::to_string(decoded.a) + ", "
 				+ formatFunctionOperand(image, symbols, static_cast<u32>(decoded.bx));
 		case OpCode::GETUP:
@@ -442,6 +446,12 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::JMPIFNOT:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::CLOSURE:
+			if ((decoded.c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0) {
+				return {
+					registerOperand("dst", decoded.a),
+					registerOperand("function_address", decoded.bx),
+				};
+			}
 			return {
 				registerOperand("dst", decoded.a),
 				plainOperand(

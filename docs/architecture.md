@@ -227,11 +227,14 @@ modules consume cartridge code and heap rather than system-firmware code and
 heap. BIOS fixed assets use generated link-time system-ROM address constants;
 BIOS does not build a runtime TOC object graph for them.
 
-Runtime source compilation (`load`/`loadstring`) is a compiler/loader boundary,
-not a shipped-cart technique or a BIOS-provided public Lua API. ROM, BIOS and
-cart sources must contain explicit Lua code or precompiled module exports; the
-cart Lua linter rejects references to `load` and `loadstring` in shipped
-sources.
+`load` is a BIOS-owned guest service. Its compiler, arena, lexer and BLua32
+emitter live under `machine/bios/compiler` and execute as firmware Lua. The
+current compiler accepts the generated assignment-function subset used by
+timeline specialization: one returned function whose body contains direct
+assignments through parameter-rooted table paths. It emits ordinary function
+records, upvalue records and instruction words into system `.bss`; the CPU has
+no source parser, compiler callback, runtime-image installer or `load` branch.
+`loadstring` is not currently published.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
@@ -859,10 +862,12 @@ Each 32-byte function record is 16-byte aligned and contains, in order, the
 absolute code address, code byte count, parameter count, maximum register
 count, raw function flags, absolute upvalue-table address, upvalue count, and
 one reserved word. A function record's physical address is the function's
-runtime identity. `CLOSURE` stores that address shifted right by four; its
-`WIDE` form covers every function record in the system and cartridge ROM
-windows. A four-byte upvalue word uses bit 31 for `in-stack` and bits 30--0 for
-the slot index.
+runtime identity. Direct `CLOSURE` stores that address shifted right by four;
+its `WIDE` form covers every aligned physical address. `CLOSURE.R` is the
+indirect form: the `WIDE.C` register marker makes its `Bx` operand a register
+containing the raw function-record address. Both forms consume the same mapped
+function and upvalue records. A four-byte upvalue word uses bit 31 for
+`in-stack` and bits 30--0 for the slot index.
 
 Each constant record is 16 bytes. Its first word selects nil, false, true,
 64-bit number, or string. Number payloads are little-endian binary64. String
@@ -926,18 +931,20 @@ dispatch, so later RAM writes are observed without an invalidation API. The
 steady immutable path performs no TOC lookup, string lookup, allocation, parser
 work or image activation.
 
-Function entry and `CLOSURE` read raw function records through the same mapped
-bus, and `CLOSURE` reads its raw upvalue records through the mapping captured by
-that function-record access. Function records and code may therefore reside in
-ROM or RAM and may refer across those regions. There is no resident
-runtime-function array, function-table membership gate or per-image
-static-closure index. `LOADK` and RK operands index the guest constant
-registerfile owned by the frame's resident program context. Static closures are
-retained CPU objects keyed by physical function-record address. Table-load
-inline caches are allocated only for actual table-load instructions and live
-with their decoded page. Guest constant registers, global-slot maps, decoded
-instruction pages, and inline caches are derived runtime state and are never
-serialized.
+Function entry, direct `CLOSURE` and `CLOSURE.R` read raw function records
+through the same mapped bus and read raw upvalue records through the mapping
+captured by that function-record access. Function records and code may therefore
+reside in ROM or RAM and may refer across those regions. Firmware-generated RAM
+functions use their caller's resident program context for constants and global
+slots; the current `load` subset instead captures every literal and path key and
+emits no constant/global operand. There is no resident runtime-function array,
+function-table membership gate or per-image static-closure index. `LOADK` and RK
+operands index the guest constant registerfile owned by the frame's resident
+program context. Static closures are retained CPU objects keyed by physical
+function-record address. Table-load inline caches are allocated only for actual
+table-load instructions and live with their decoded page. Guest constant
+registers, global-slot maps, decoded instruction pages, and inline caches are
+derived runtime state and are never serialized.
 
 A closure value owns only its raw physical function-record address and captured
 upvalues. Entering a cartridge closure resolves that address once through the

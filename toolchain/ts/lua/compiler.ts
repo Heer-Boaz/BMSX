@@ -91,7 +91,7 @@ import {
 	type ProgramLinkValueExpression,
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_WIDE_C, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
 import {
@@ -2008,7 +2008,14 @@ class FunctionBuilder {
 					? splitSignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
 					: splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 				if (hasWide) {
-					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bxSplit.wide, 0);
+					writeInstruction(
+						code,
+						cursor,
+						OpCode.WIDE,
+						aSplit.wide,
+						bxSplit.wide,
+						instr.closureAddressRegister ? CLOSURE_ADDRESS_REGISTER_WIDE_C : 0,
+					);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
@@ -2972,6 +2979,23 @@ class FunctionBuilder {
 			rkMask: 0,
 			target: null,
 			symbolicReloc,
+			statementRange: this.currentStatementRange,
+			resumeRange: this.currentStatementRange,
+		});
+		this.ranges.push(this.currentRange);
+	}
+
+	private emitClosureAddressRegister(target: number, addressRegister: number): void {
+		this.assertStaticCallTargetCanEmit(OpCode.CLOSURE);
+		this.code.push({
+			op: OpCode.CLOSURE,
+			a: target,
+			b: addressRegister,
+			c: 0,
+			format: 'ABx',
+			rkMask: 0,
+			target: null,
+			closureAddressRegister: true,
 			statementRange: this.currentStatementRange,
 			resumeRange: this.currentStatementRange,
 		});
@@ -5330,6 +5354,9 @@ class FunctionBuilder {
 			this.compileRequireExpression(requireBinding, target, resultCount);
 			return;
 		}
+		if (this.compileBlua32ClosureCall(expression, target, resultCount)) {
+			return;
+		}
 		const methodName = expression.methodName;
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
 		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
@@ -5395,6 +5422,41 @@ class FunctionBuilder {
 				this.emitABC(OpCode.MOV, target + i, callBase + i, 0);
 			}
 		}
+	}
+
+	private compileBlua32ClosureCall(
+		expression: LuaCallExpression,
+		target: number,
+		resultCount: number,
+	): boolean {
+		if (expression.methodName !== null
+			|| expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
+			return false;
+		}
+		const callee = expression.callee as LuaMemberExpression;
+		if (callee.base.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const reference = getResolvedIdentifierReference(
+			this.semantics,
+			callee.base as LuaIdentifierExpression,
+		);
+		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
+			return false;
+		}
+		if (callee.identifier !== 'closure') {
+			throw new Error(`Unknown blua32 operation '${callee.identifier}'.`);
+		}
+		if (expression.arguments.length !== 1) {
+			throw new Error('blua32.closure expects one function-record address.');
+		}
+		const addressRegister = this.allocTemp();
+		this.compileExpressionInto(expression.arguments[0], addressRegister, 1);
+		this.emitClosureAddressRegister(target, addressRegister);
+		if (resultCount > 1) {
+			this.emitLoadNil(target + 1, resultCount - 1);
+		}
+		return true;
 	}
 
 	private encodeConstOperand(constIndex: number): number {
