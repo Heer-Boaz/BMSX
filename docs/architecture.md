@@ -926,10 +926,14 @@ cartridge instruction-bus chip select. `Memory` and the cartridge controller
 own the ROM, RAM, cartridge and MMIO decoding; the CPU does not classify those
 regions or bind instruction bytes to a host ROM view. Decoded pages are a
 derived cache keyed by the physical page and cartridge bus mapping. Immutable
-ROM words decode once. Writable mapped words are read and compared on every
-dispatch, so later RAM writes are observed without an invalidation API. The
-steady immutable path performs no TOC lookup, string lookup, allocation, parser
-work or image activation.
+ROM and RAM words decode once. A successful RAM decode arms one byte in the
+owning physical RAM bank. A later mapped write to that page clears the byte and
+invalidates the decoded page and its cross-page predecessor dependencies; more
+writes do no CPU-cache work until execution decodes the page again. ROM
+replacement and RAM restoration invalidate the affected retained ranges.
+MMIO and unmapped fetches remain volatile and are read on every dispatch. The
+steady decoded path performs no memory-content comparison, TOC lookup, string
+lookup, allocation, parser work or image activation.
 
 Function entry, direct `CLOSURE` and `CLOSURE.R` read raw function records
 through the same mapped bus and read raw upvalue records through the mapping

@@ -22,50 +22,68 @@ constexpr u32 CARTRIDGE_DREQ_MASK =
 } // namespace
 
 CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media)
-	: m_romRevisions{MappedPageRevisions(1u), MappedPageRevisions(1u)}
-	, m_ramPageRevisions{
-		MappedPageRevisions(media[0].ramByteCount),
-		MappedPageRevisions(media[1].ramByteCount)
+	: m_ramPageWriteWatches{
+		MappedPageWriteWatches(media[0].ramByteCount),
+		MappedPageWriteWatches(media[1].ramByteCount)
 	} {
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
 		const CartridgeSlotMedia& source = media[slotIndex];
 		Slot& slot = m_slots[slotIndex];
 		slot.media = source;
 		slot.ram.resize(source.ramByteCount);
+		slot.mappedKeyOffset = static_cast<u64>(slotIndex + 1u) << 32u;
 	}
 	m_selectionWord = 0u;
 }
 
 void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
-	m_slots[slotIndex].media.rom = rom;
-	m_romRevisions[slotIndex].touch(0u, 1u);
+	Slot& slot = m_slots[slotIndex];
+	slot.media.rom = rom;
+	if (m_mappedPageInvalidator) {
+		m_mappedPageInvalidator->invalidateMappedRange(
+			CART_ROM_BASE + slot.mappedKeyOffset,
+			CART_ROM_END + slot.mappedKeyOffset
+		);
+	}
+}
+
+void CartridgeController::attachMappedPageInvalidator(
+	MappedPageInvalidator& invalidator
+) {
+	m_mappedPageInvalidator = &invalidator;
+}
+
+void CartridgeController::detachMappedPageInvalidator() {
+	m_mappedPageInvalidator = nullptr;
+}
+
+void CartridgeController::clearMappedPageWriteWatches() {
+	m_ramPageWriteWatches[0].clear();
+	m_ramPageWriteWatches[1].clear();
 }
 
 void CartridgeController::bindMappedPage(
 	u32 address,
 	MappedBusSignals busSignals,
 	MappedPageBinding& out
-) const {
+) {
 	const u32 slotIndex = selectedSlot(busSignals);
-	out.key = static_cast<u64>(address)
-		| (static_cast<u64>(slotIndex + 1u) << 32u);
+	Slot& slot = m_slots[slotIndex];
+	out.key = address + slot.mappedKeyOffset;
+	out.writeWatch = nullptr;
 	if (address < CART_RAM_BASE) {
-		out.revision = &m_romRevisions[slotIndex].values[0];
+		out.cacheable = true;
 		return;
 	}
 	if (address < CART_MMIO_BASE) {
-		const std::vector<u64>& revisions = m_ramPageRevisions[slotIndex].values;
-		const size_t revisionIndex = static_cast<size_t>(
-			(address - CART_RAM_BASE) >> MAPPED_PAGE_BYTE_SHIFT
-		);
-		if (revisionIndex < revisions.size()) {
-			out.revision = &revisions[revisionIndex];
-		} else {
-			out.revision = nullptr;
+		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
+		if (offset < slot.ram.size()) {
+			out.cacheable = true;
+			m_ramPageWriteWatches[slotIndex].bind(offset, out);
+			return;
 		}
-		return;
 	}
-	out.revision = nullptr;
+	out.cacheable = false;
 }
 
 void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
@@ -102,7 +120,7 @@ CartridgeControllerState CartridgeController::captureState() const {
 void CartridgeController::restoreState(const CartridgeControllerState& state) {
 	m_selectionWord = state.selectionWord;
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		restoreSlot(slotIndex, m_slots[slotIndex], state.slots[slotIndex]);
+		restoreSlot(m_slots[slotIndex], state.slots[slotIndex]);
 	}
 	publishDreqLines();
 }
@@ -155,7 +173,12 @@ void CartridgeController::writeU8(u32 address, u8 value, MappedBusSignals busSig
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 		if (offset < slot.ram.size()) {
 			slot.ram[offset] = value;
-			m_ramPageRevisions[slotIndex].touch(offset, 1u);
+			m_ramPageWriteWatches[slotIndex].invalidateWrite(
+				offset,
+				1u,
+				CART_RAM_BASE + slot.mappedKeyOffset,
+				m_mappedPageInvalidator
+			);
 		}
 	}
 }
@@ -168,7 +191,12 @@ void CartridgeController::writeU16(u32 address, u32 value, MappedBusSignals busS
 	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 	if (offset + 2u <= slot.ram.size()) {
 		writeLE16(slot.ram.data() + offset, static_cast<u16>(value));
-		m_ramPageRevisions[slotIndex].touch(offset, 2u);
+		m_ramPageWriteWatches[slotIndex].invalidateWrite(
+			offset,
+			2u,
+			CART_RAM_BASE + slot.mappedKeyOffset,
+			m_mappedPageInvalidator
+		);
 	}
 }
 
@@ -180,7 +208,12 @@ void CartridgeController::writeU32(u32 address, u32 value, MappedBusSignals busS
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 		if (offset + 4u <= slot.ram.size()) {
 			writeLE32(slot.ram.data() + offset, value);
-			m_ramPageRevisions[slotIndex].touch(offset, 4u);
+			m_ramPageWriteWatches[slotIndex].invalidateWrite(
+				offset,
+				4u,
+				CART_RAM_BASE + slot.mappedKeyOffset,
+				m_mappedPageInvalidator
+			);
 		}
 		return;
 	}
@@ -314,16 +347,17 @@ CartridgeSlotState CartridgeController::captureSlot(const Slot& slot) {
 	return state;
 }
 
-void CartridgeController::restoreSlot(
-	u32 slotIndex,
-	Slot& slot,
-	const CartridgeSlotState& state
-) {
+void CartridgeController::restoreSlot(Slot& slot, const CartridgeSlotState& state) {
 	if (state.ram.size() != slot.ram.size()) {
 		throw BMSX_RUNTIME_ERROR("Cartridge RAM size does not match the inserted board.");
 	}
 	std::copy_n(state.ram.data(), slot.ram.size(), slot.ram.data());
-	m_ramPageRevisions[slotIndex].touch(0u, slot.ram.size());
+	if (m_mappedPageInvalidator) {
+		m_mappedPageInvalidator->invalidateMappedRange(
+			CART_RAM_BASE + slot.mappedKeyOffset,
+			CART_RAM_BASE + slot.mappedKeyOffset + slot.ram.size()
+		);
+	}
 	slot.mailboxDataWord = state.mailboxDataWord;
 	slot.mailboxControlWord = state.mailboxControlWord;
 	slot.mailboxIrqPending = state.mailboxIrqPending;

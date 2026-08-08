@@ -23,11 +23,15 @@ import {
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
 	CART_ROM_BASE,
+	CART_ROM_END,
 } from '../../../spec/bmsx/memory_map';
-import type { MappedPageBinding, Memory } from '../../memory/memory';
+import type {
+	MappedPageBinding,
+	MappedPageInvalidator,
+	Memory,
+} from '../../memory/memory';
 import {
-	MAPPED_PAGE_BYTE_SHIFT,
-	MappedPageRevisions,
+	MappedPageWriteWatches,
 } from '../../memory/mapped_page';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
@@ -58,6 +62,7 @@ import {
 type CartridgeSlot = {
 	media: CartridgeSlotMedia;
 	ram: Uint8Array;
+	mappedKeyOffset: number;
 	mailboxDataWord: number;
 	mailboxControlWord: number;
 	mailboxIrqPending: boolean;
@@ -71,8 +76,8 @@ const CARTRIDGE_DREQ_MASK =
 
 export class CartridgeController {
 	private readonly slots: [CartridgeSlot, CartridgeSlot];
-	private readonly romRevisions: [MappedPageRevisions, MappedPageRevisions];
-	private readonly ramPageRevisions: [MappedPageRevisions, MappedPageRevisions];
+	private readonly ramPageWriteWatches: [MappedPageWriteWatches, MappedPageWriteWatches];
+	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private selectionWord = 0;
 	private irq!: IrqController;
 	private dma!: DmaController;
@@ -82,6 +87,7 @@ export class CartridgeController {
 			{
 				media: media[0],
 				ram: new Uint8Array(media[0].ramByteCount),
+				mappedKeyOffset: 0x100000000,
 				mailboxDataWord: 0,
 				mailboxControlWord: 0,
 				mailboxIrqPending: false,
@@ -89,18 +95,15 @@ export class CartridgeController {
 			{
 				media: media[1],
 				ram: new Uint8Array(media[1].ramByteCount),
+				mappedKeyOffset: 0x200000000,
 				mailboxDataWord: 0,
 				mailboxControlWord: 0,
 				mailboxIrqPending: false,
 			},
 		];
-		this.romRevisions = [
-			new MappedPageRevisions(1),
-			new MappedPageRevisions(1),
-		];
-		this.ramPageRevisions = [
-			new MappedPageRevisions(media[0].ramByteCount),
-			new MappedPageRevisions(media[1].ramByteCount),
+		this.ramPageWriteWatches = [
+			new MappedPageWriteWatches(media[0].ramByteCount),
+			new MappedPageWriteWatches(media[1].ramByteCount),
 		];
 	}
 
@@ -124,29 +127,44 @@ export class CartridgeController {
 	}
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
-		this.slots[slotIndex]!.media.rom = rom;
-		this.romRevisions[slotIndex].touch(0, 1);
+		const slot = this.slots[slotIndex]!;
+		slot.media.rom = rom;
+		if (this.mappedPageInvalidator !== null) {
+			this.mappedPageInvalidator.invalidateMappedRange(
+				CART_ROM_BASE + slot.mappedKeyOffset,
+				CART_ROM_END + slot.mappedKeyOffset,
+			);
+		}
+	}
+
+	public attachMappedPageInvalidator(invalidator: MappedPageInvalidator): void {
+		this.mappedPageInvalidator = invalidator;
+	}
+
+	public clearMappedPageWriteWatches(): void {
+		this.ramPageWriteWatches[0].clear();
+		this.ramPageWriteWatches[1].clear();
 	}
 
 	public bindMappedPage(address: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
 		const slotIndex = this.selectedSlot(busSignals);
-		out.key = address + (slotIndex + 1) * 0x100000000;
+		const slot = this.slots[slotIndex];
+		out.key = address + slot.mappedKeyOffset;
+		out.writeWatches = null;
+		out.writeWatchIndex = 0;
 		if (address < CART_RAM_BASE) {
-			out.revisions = this.romRevisions[slotIndex].values;
-			out.revisionIndex = 0;
+			out.cacheable = true;
 			return;
 		}
 		if (address < CART_MMIO_BASE) {
-			const revisions = this.ramPageRevisions[slotIndex].values;
-			const revisionIndex = (address - CART_RAM_BASE) >>> MAPPED_PAGE_BYTE_SHIFT;
-			if (revisionIndex < revisions.length) {
-				out.revisions = revisions;
-				out.revisionIndex = revisionIndex;
+			const offset = address - CART_RAM_BASE;
+			if (offset < slot.ram.byteLength) {
+				out.cacheable = true;
+				this.ramPageWriteWatches[slotIndex].bind(offset, out);
 				return;
 			}
 		}
-		out.revisions = null;
-		out.revisionIndex = 0;
+		out.cacheable = false;
 	}
 
 	public ramByteCount(): number {
@@ -176,8 +194,8 @@ export class CartridgeController {
 
 	public restoreState(state: CartridgeControllerState): void {
 		this.selectionWord = state.selectionWord >>> 0;
-		this.restoreSlot(0, this.slots[0], state.slots[0]);
-		this.restoreSlot(1, this.slots[1], state.slots[1]);
+		this.restoreSlot(this.slots[0], state.slots[0]);
+		this.restoreSlot(this.slots[1], state.slots[1]);
 		this.publishDreqLines();
 	}
 
@@ -229,7 +247,12 @@ export class CartridgeController {
 			const offset = address - CART_RAM_BASE;
 			if (offset < slot.ram.byteLength) {
 				slot.ram[offset] = value & 0xff;
-				this.ramPageRevisions[slotIndex].touch(offset, 1);
+				this.ramPageWriteWatches[slotIndex].invalidateWrite(
+					offset,
+					1,
+					CART_RAM_BASE + slot.mappedKeyOffset,
+					this.mappedPageInvalidator!,
+				);
 			}
 		}
 	}
@@ -243,7 +266,12 @@ export class CartridgeController {
 		const offset = address - CART_RAM_BASE;
 		if (offset + 2 <= ram.byteLength) {
 			writeLE16(ram, offset, value);
-			this.ramPageRevisions[slotIndex].touch(offset, 2);
+			this.ramPageWriteWatches[slotIndex].invalidateWrite(
+				offset,
+				2,
+				CART_RAM_BASE + slot.mappedKeyOffset,
+				this.mappedPageInvalidator!,
+			);
 		}
 	}
 
@@ -255,7 +283,12 @@ export class CartridgeController {
 			const offset = address - CART_RAM_BASE;
 			if (offset + 4 <= slot.ram.byteLength) {
 				writeLE32(slot.ram, offset, value);
-				this.ramPageRevisions[slotIndex].touch(offset, 4);
+				this.ramPageWriteWatches[slotIndex].invalidateWrite(
+					offset,
+					4,
+					CART_RAM_BASE + slot.mappedKeyOffset,
+					this.mappedPageInvalidator!,
+				);
 			}
 			return;
 		}
@@ -304,12 +337,17 @@ export class CartridgeController {
 		};
 	}
 
-	private restoreSlot(slotIndex: number, slot: CartridgeSlot, state: CartridgeSlotState): void {
+	private restoreSlot(slot: CartridgeSlot, state: CartridgeSlotState): void {
 		if (state.ram.byteLength !== slot.ram.byteLength) {
 			throw new Error('Cartridge RAM size does not match the inserted board.');
 		}
 		slot.ram.set(state.ram);
-		this.ramPageRevisions[slotIndex].touch(0, slot.ram.byteLength);
+		if (this.mappedPageInvalidator !== null) {
+			this.mappedPageInvalidator.invalidateMappedRange(
+				CART_RAM_BASE + slot.mappedKeyOffset,
+				CART_RAM_BASE + slot.mappedKeyOffset + slot.ram.byteLength,
+			);
+		}
 		slot.mailboxDataWord = state.mailboxDataWord >>> 0;
 		slot.mailboxControlWord = state.mailboxControlWord >>> 0;
 		slot.mailboxIrqPending = state.mailboxIrqPending;

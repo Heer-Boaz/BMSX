@@ -2,6 +2,7 @@ import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
 	type MappedPageBinding,
+	type MappedPageInvalidator,
 	type Memory,
 	type RomByteView,
 } from '../memory/memory';
@@ -92,6 +93,7 @@ import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import {
 	MAPPED_PAGE_BYTE_MASK,
+	MAPPED_PAGE_BYTE_SIZE,
 } from '../memory/mapped_page';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
@@ -257,7 +259,7 @@ const TABLE_WEAK_VALUE_CODE_UNIT = 0x76;
 
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
-export class CPU {
+export class CPU implements MappedPageInvalidator {
 	public instructionBudgetRemaining: number = 0;
 	public lastPc: number = 0;
 	public readonly globals: Table;
@@ -432,8 +434,9 @@ export class CPU {
 	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	private readonly mappedPageBinding: MappedPageBinding = {
 		key: 0,
-		revisions: null,
-		revisionIndex: 0,
+		cacheable: false,
+		writeWatches: null,
+		writeWatchIndex: 0,
 	};
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
@@ -496,6 +499,7 @@ export class CPU {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.', false);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
+		this.memory.attachMappedPageInvalidator(this);
 	}
 
 	public allocateObjectHashId(): number {
@@ -879,6 +883,7 @@ export class CPU {
 		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
+		this.memory.clearMappedPageWriteWatches();
 		this.executionImages.length = 0;
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImages.push(this.systemImage);
@@ -1195,11 +1200,43 @@ export class CPU {
 			return existing;
 		}
 		const page = createDecodedInstructionPage(
-			binding.revisions,
-			binding.revisionIndex,
+			binding.cacheable,
+			binding.writeWatches,
+			binding.writeWatchIndex,
 		);
 		image.decodedPages.set(binding.key, page);
 		return page;
+	}
+
+	private invalidateDecodedPage(key: number): void {
+		for (let index = 0; index < this.executionImages.length; index += 1) {
+			const page = this.executionImages[index].decodedPages.get(key);
+			if (page !== undefined) {
+				page.decodeRequired.fill(1);
+				page.fusionRequired.fill(0);
+			}
+		}
+	}
+
+	public invalidateMappedPage(key: number): void {
+		this.invalidateDecodedPage(key);
+		if (key >= MAPPED_PAGE_BYTE_SIZE) {
+			this.invalidateDecodedPage(key - MAPPED_PAGE_BYTE_SIZE);
+		}
+	}
+
+	public invalidateMappedRange(firstKey: number, endKey: number): void {
+		const invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
+			? firstKey - MAPPED_PAGE_BYTE_SIZE
+			: 0;
+		for (let imageIndex = 0; imageIndex < this.executionImages.length; imageIndex += 1) {
+			for (const [key, page] of this.executionImages[imageIndex].decodedPages) {
+				if (key >= invalidationStart && key < endKey) {
+					page.decodeRequired.fill(1);
+					page.fusionRequired.fill(0);
+				}
+			}
+		}
 	}
 
 	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage | null {
@@ -1229,6 +1266,8 @@ export class CPU {
 		allowFusion: boolean,
 	): void {
 		const codeEnd = frame.codeAddress + frame.codeByteCount;
+		let instructionCacheable = page.cacheable;
+		let bodyPage: DecodedInstructionPage | null = null;
 		let width = 1;
 		let op: number;
 		const faultSequence = this.memory.readBusFaultSequence();
@@ -1245,6 +1284,13 @@ export class CPU {
 		let ext = sourceWord >>> 24;
 		if (op === OpCode.WIDE && pc + INSTRUCTION_BYTES < codeEnd) {
 			width = 2;
+			if (pageOffset === DECODED_PAGE_WORDS - 1) {
+				bodyPage = this.decodedPageForFrame(frame, pc + INSTRUCTION_BYTES);
+				if (bodyPage === null) {
+					return;
+				}
+				instructionCacheable = instructionCacheable && bodyPage.cacheable;
+			}
 			wideA = (sourceWord >>> 12) & 0x3f;
 			wideB = (sourceWord >>> 6) & 0x3f;
 			wideC = sourceWord & 0x3f;
@@ -1339,17 +1385,20 @@ export class CPU {
 			}
 		}
 		page.dispatchOps[pageOffset] = op;
-		page.decodeRequired[pageOffset] = page.contentRevisions === null
-			|| (width === 2 && pageOffset === DECODED_PAGE_WORDS - 1)
-			? 1
-			: 0;
+		page.decodeRequired[pageOffset] = instructionCacheable ? 0 : 1;
+		if (instructionCacheable && page.writeWatches !== null) {
+			page.writeWatches[page.writeWatchIndex] = 1;
+		}
+		if (instructionCacheable && bodyPage !== null && bodyPage.writeWatches !== null) {
+			bodyPage.writeWatches[bodyPage.writeWatchIndex] = 1;
+		}
 		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
 		if (!allowFusion) {
 			page.fusionRequired[pageOffset] = fusionCandidate
-				&& page.contentRevisions !== null ? 1 : 0;
+				&& instructionCacheable ? 1 : 0;
 			return;
 		}
-		if (!fusionCandidate || page.contentRevisions === null) {
+		if (!fusionCandidate || !instructionCacheable) {
 			page.fusionRequired[pageOffset] = 0;
 			return;
 		}
@@ -1362,7 +1411,7 @@ export class CPU {
 		if (nextPage === null) {
 			return;
 		}
-		if (nextPage.contentRevisions === null) {
+		if (!nextPage.cacheable) {
 			page.fusionRequired[pageOffset] = 0;
 			return;
 		}
@@ -1379,11 +1428,15 @@ export class CPU {
 		if (this.hardHalted) {
 			return;
 		}
+		if (nextPage.decodeRequired[nextPageOffset] !== 0) {
+			page.fusionRequired[pageOffset] = 0;
+			return;
+		}
 		page.dispatchOps[pageOffset] = decodedDispatchOp(
 			op as OpCode,
 			nextPage.ops[nextPageOffset] as OpCode,
 		);
-		page.fusionRequired[pageOffset] = nextPage === page ? 0 : 1;
+		page.fusionRequired[pageOffset] = 0;
 	}
 
 	private readFunctionRecord(

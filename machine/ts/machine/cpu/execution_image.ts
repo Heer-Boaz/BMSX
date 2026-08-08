@@ -50,16 +50,6 @@ export function decodedInstructionNeedsRefresh(
 	pageOffset: number,
 	allowFusion: boolean,
 ): boolean {
-	const revisions = page.contentRevisions;
-	if (revisions === null) {
-		return true;
-	}
-	const revision = revisions[page.contentRevisionIndex];
-	if (page.decodedRevision !== revision) {
-		page.decodedRevision = revision;
-		page.decodeRequired.fill(1);
-		page.fusionRequired.fill(0);
-	}
 	return page.decodeRequired[pageOffset] !== 0
 		|| (allowFusion && page.fusionRequired[pageOffset] !== 0);
 }
@@ -81,9 +71,9 @@ export type DecodedInstructionPage = {
 	tableCacheIndexes: Uint32Array;
 	decodeRequired: Uint8Array;
 	fusionRequired: Uint8Array;
-	contentRevisions: Float64Array | null;
-	contentRevisionIndex: number;
-	decodedRevision: number;
+	cacheable: boolean;
+	writeWatches: Uint8Array | null;
+	writeWatchIndex: number;
 	tableLoadCaches: TableLoadInlineCache[];
 };
 
@@ -111,8 +101,9 @@ export type Blua32FunctionRecordLatch = {
 };
 
 export function createDecodedInstructionPage(
-	contentRevisions: Float64Array | null,
-	contentRevisionIndex: number,
+	cacheable: boolean,
+	writeWatches: Uint8Array | null,
+	writeWatchIndex: number,
 ): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
@@ -131,9 +122,9 @@ export function createDecodedInstructionPage(
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
 		decodeRequired: new Uint8Array(DECODED_PAGE_WORDS),
 		fusionRequired: new Uint8Array(DECODED_PAGE_WORDS),
-		contentRevisions,
-		contentRevisionIndex,
-		decodedRevision: contentRevisions === null ? 0 : contentRevisions[contentRevisionIndex],
+		cacheable,
+		writeWatches,
+		writeWatchIndex,
 		tableLoadCaches: [],
 	};
 	page.decodeRequired.fill(1);

@@ -91,8 +91,7 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(ramByteCount)
-	, m_systemRomRevisions(1u)
-	, m_ramPageRevisions(ramByteCount)
+	, m_ramPageWriteWatches(ramByteCount)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
@@ -102,41 +101,60 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 
 void Memory::installSystemRom(std::span<const u8> rom) {
 	m_systemRom = rom;
-	m_systemRomRevisions.touch(0u, 1u);
+	if (m_mappedPageInvalidator) {
+		m_mappedPageInvalidator->invalidateMappedRange(
+			SYSTEM_ROM_BASE,
+			SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE
+		);
+	}
+}
+
+void Memory::attachMappedPageInvalidator(MappedPageInvalidator& invalidator) {
+	m_mappedPageInvalidator = &invalidator;
+	m_cartridgeController.attachMappedPageInvalidator(invalidator);
+}
+
+void Memory::detachMappedPageInvalidator() {
+	clearMappedPageWriteWatches();
+	m_cartridgeController.detachMappedPageInvalidator();
+	m_mappedPageInvalidator = nullptr;
+}
+
+void Memory::clearMappedPageWriteWatches() {
+	m_ramPageWriteWatches.clear();
+	m_cartridgeController.clearMappedPageWriteWatches();
 }
 
 void Memory::bindMappedPage(
 	uint32_t addr,
 	MappedBusSignals busSignals,
 	MappedPageBinding& out
-) const {
+) {
 	out.key = addr;
+	out.writeWatch = nullptr;
 	if (addr < RAM_BASE) {
-		if (addr < SYSTEM_ROM_SIZE) {
-			out.revision = &m_systemRomRevisions.values[0];
-		} else {
-			out.revision = nullptr;
-		}
+		out.cacheable = addr < SYSTEM_ROM_SIZE;
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
 		if (addr < IO_BASE + m_ioSlots.size() * IO_WORD_SIZE) {
-			out.revision = nullptr;
+			out.cacheable = false;
 			return;
 		}
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset < m_ram.size()) {
-			out.revision = &m_ramPageRevisions.values[offset >> MAPPED_PAGE_BYTE_SHIFT];
+			out.cacheable = true;
+			m_ramPageWriteWatches.bind(offset, out);
 			return;
 		}
-		out.revision = nullptr;
+		out.cacheable = false;
 		return;
 	}
 	if (addr < CART_BUS_END) {
 		m_cartridgeController.bindMappedPage(addr, busSignals, out);
 		return;
 	}
-	out.revision = nullptr;
+	out.cacheable = false;
 }
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
@@ -187,7 +205,12 @@ MemorySaveState Memory::captureSaveState() const {
 
 void Memory::restoreSaveState(const MemorySaveState& state) {
 	std::memcpy(m_ram.data(), state.ram.data(), state.ram.size());
-	m_ramPageRevisions.touch(0u, m_ram.size());
+	if (m_mappedPageInvalidator) {
+		m_mappedPageInvalidator->invalidateMappedRange(
+			RAM_BASE,
+			static_cast<u64>(RAM_BASE) + m_ram.size()
+		);
+	}
 	m_busFaultCode = state.busFaultCode;
 	m_busFaultAddr = state.busFaultAddr;
 	m_busFaultAccess = state.busFaultAccess;
@@ -237,7 +260,12 @@ bool Memory::writeRamU8(uint32_t addr, u8 value) {
 		return false;
 	}
 	m_ram[offset] = value;
-	m_ramPageRevisions.touch(offset, 1u);
+	m_ramPageWriteWatches.invalidateWrite(
+		offset,
+		1u,
+		RAM_BASE,
+		m_mappedPageInvalidator
+	);
 	return true;
 }
 
@@ -254,7 +282,12 @@ bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
 	} else {
 		writeLE32(m_ram.data() + offset, value);
 	}
-	m_ramPageRevisions.touch(offset, byteLength);
+	m_ramPageWriteWatches.invalidateWrite(
+		offset,
+		byteLength,
+		RAM_BASE,
+		m_mappedPageInvalidator
+	);
 	return true;
 }
 
@@ -532,7 +565,12 @@ void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + length <= m_ram.size()) {
 			std::memcpy(m_ram.data() + offset, data, length);
-			m_ramPageRevisions.touch(offset, length);
+			m_ramPageWriteWatches.invalidateWrite(
+				offset,
+				length,
+				RAM_BASE,
+				m_mappedPageInvalidator
+			);
 			return;
 		}
 	}

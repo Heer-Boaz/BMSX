@@ -20,7 +20,10 @@ public:
 
 	void connect(Memory& memory, IrqController& irq, DmaController& dma);
 	void installRom(u32 slotIndex, std::span<const u8> rom);
-	void bindMappedPage(u32 address, MappedBusSignals busSignals, MappedPageBinding& out) const;
+	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
+	void detachMappedPageInvalidator();
+	void clearMappedPageWriteWatches();
+	void bindMappedPage(u32 address, MappedBusSignals busSignals, MappedPageBinding& out);
 	u32 selectedSlot(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU) const {
 		if ((busSignals & MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE) == 0u) {
 			return m_selectionWord & 1u;
@@ -46,6 +49,7 @@ private:
 	struct Slot {
 		CartridgeSlotMedia media;
 		std::vector<u8> ram;
+		u64 mappedKeyOffset = 0u;
 		u32 mailboxDataWord = 0;
 		u32 mailboxControlWord = 0;
 		bool mailboxIrqPending = false;
@@ -65,11 +69,11 @@ private:
 	void writeMailboxWord(u32 slotIndex, Slot& slot, u32 offset, u32 value);
 	void publishDreqLines();
 	static CartridgeSlotState captureSlot(const Slot& slot);
-	void restoreSlot(u32 slotIndex, Slot& slot, const CartridgeSlotState& state);
+	void restoreSlot(Slot& slot, const CartridgeSlotState& state);
 
 	std::array<Slot, CARTRIDGE_SLOT_COUNT> m_slots;
-	std::array<MappedPageRevisions, CARTRIDGE_SLOT_COUNT> m_romRevisions;
-	std::array<MappedPageRevisions, CARTRIDGE_SLOT_COUNT> m_ramPageRevisions;
+	std::array<MappedPageWriteWatches, CARTRIDGE_SLOT_COUNT> m_ramPageWriteWatches;
+	MappedPageInvalidator* m_mappedPageInvalidator = nullptr;
 	u32 m_selectionWord = 0;
 	IrqController* m_irq;
 	DmaController* m_dma;

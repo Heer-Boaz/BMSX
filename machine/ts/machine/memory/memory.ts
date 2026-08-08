@@ -76,12 +76,12 @@ import {
 	type MappedBusSignals,
 } from './bus_signals';
 import {
-	MAPPED_PAGE_BYTE_SHIFT,
-	MappedPageRevisions,
 	type MappedPageBinding,
+	type MappedPageInvalidator,
+	MappedPageWriteWatches,
 } from './mapped_page';
 
-export type { MappedPageBinding } from './mapped_page';
+export type { MappedPageBinding, MappedPageInvalidator } from './mapped_page';
 
 export const enum MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other }
 
@@ -137,8 +137,8 @@ export class Memory {
 	private systemRom: Uint8Array;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
-	private readonly systemRomRevisions = new MappedPageRevisions(1);
-	private readonly ramPageRevisions: MappedPageRevisions;
+	private readonly ramPageWriteWatches: MappedPageWriteWatches;
+	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
 	private readonly ioReadContexts: unknown[];
 	private readonly ioWriteContexts: unknown[];
@@ -161,7 +161,7 @@ export class Memory {
 		this.systemRom = init.systemRom;
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
-		this.ramPageRevisions = new MappedPageRevisions(ramByteCount);
+		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -190,35 +190,48 @@ export class Memory {
 
 	public installSystemRom(rom: Uint8Array): void {
 		this.systemRom = rom;
-		this.systemRomRevisions.touch(0, 1);
+		if (this.mappedPageInvalidator !== null) {
+			this.mappedPageInvalidator.invalidateMappedRange(SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE);
+		}
+	}
+
+	public attachMappedPageInvalidator(invalidator: MappedPageInvalidator): void {
+		this.mappedPageInvalidator = invalidator;
+		this.cartridgeController.attachMappedPageInvalidator(invalidator);
+	}
+
+	public clearMappedPageWriteWatches(): void {
+		this.ramPageWriteWatches.clear();
+		this.cartridgeController.clearMappedPageWriteWatches();
 	}
 
 	public bindMappedPage(addr: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
 		out.key = addr;
-		out.revisionIndex = 0;
+		out.writeWatches = null;
+		out.writeWatchIndex = 0;
 		if (addr < RAM_BASE) {
-			out.revisions = addr < SYSTEM_ROM_SIZE ? this.systemRomRevisions.values : null;
+			out.cacheable = addr < SYSTEM_ROM_SIZE;
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
 			if (addr < IO_BASE + this.ioByteLength) {
-				out.revisions = null;
+				out.cacheable = false;
 				return;
 			}
 			const offset = addr - RAM_BASE;
 			if (offset < this.ram.byteLength) {
-				out.revisions = this.ramPageRevisions.values;
-				out.revisionIndex = offset >>> MAPPED_PAGE_BYTE_SHIFT;
+				out.cacheable = true;
+				this.ramPageWriteWatches.bind(offset, out);
 				return;
 			}
-			out.revisions = null;
+			out.cacheable = false;
 			return;
 		}
 		if (addr < CART_BUS_END) {
 			this.cartridgeController.bindMappedPage(addr, busSignals, out);
 			return;
 		}
-		out.revisions = null;
+		out.cacheable = false;
 	}
 
 	public mapIoRead<TContext>(addr: number, context: TContext, handler: IoReadHandler<TContext>): void {
@@ -277,7 +290,12 @@ export class Memory {
 
 	public restoreSaveState(state: MemorySaveState): void {
 		this.ram.set(state.ram);
-		this.ramPageRevisions.touch(0, this.ram.byteLength);
+		if (this.mappedPageInvalidator !== null) {
+			this.mappedPageInvalidator.invalidateMappedRange(
+				RAM_BASE,
+				RAM_BASE + this.ram.byteLength,
+			);
+		}
 		this.busFaultCode = state.busFaultCode >>> 0;
 		this.busFaultAddr = state.busFaultAddr >>> 0;
 		this.busFaultAccess = state.busFaultAccess >>> 0;
@@ -359,7 +377,7 @@ export class Memory {
 			return false;
 		}
 		this.ram[offset] = value & 0xff;
-		this.ramPageRevisions.touch(offset, 1);
+		this.ramPageWriteWatches.invalidateWrite(offset, 1, RAM_BASE, this.mappedPageInvalidator!);
 		return true;
 	}
 
@@ -376,7 +394,12 @@ export class Memory {
 		} else {
 			writeLE32(this.ram, offset, value);
 		}
-		this.ramPageRevisions.touch(offset, byteLength);
+		this.ramPageWriteWatches.invalidateWrite(
+			offset,
+			byteLength,
+			RAM_BASE,
+			this.mappedPageInvalidator!,
+		);
 		return true;
 	}
 
@@ -748,7 +771,12 @@ export class Memory {
 			const offset = addr - RAM_BASE;
 			if (offset + bytes.byteLength <= this.ram.byteLength) {
 				this.ram.set(bytes, offset);
-				this.ramPageRevisions.touch(offset, bytes.byteLength);
+				this.ramPageWriteWatches.invalidateWrite(
+					offset,
+					bytes.byteLength,
+					RAM_BASE,
+					this.mappedPageInvalidator!,
+				);
 				return;
 			}
 		}
@@ -760,7 +788,12 @@ export class Memory {
 			const offset = dstAddr - RAM_BASE;
 			if (offset + length <= this.ram.byteLength) {
 				this.ram.set(src.subarray(srcOffset, srcOffset + length), offset);
-				this.ramPageRevisions.touch(offset, length);
+				this.ramPageWriteWatches.invalidateWrite(
+					offset,
+					length,
+					RAM_BASE,
+					this.mappedPageInvalidator!,
+				);
 				return;
 			}
 		}

@@ -85,9 +85,9 @@ constexpr size_t DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
 
 struct DecodedInstructionPage {
-	explicit DecodedInstructionPage(const u64* revision)
-		: contentRevision(revision)
-		, decodedRevision(revision ? *revision : 0u) {
+	explicit DecodedInstructionPage(bool isCacheable, u8* pageWriteWatch)
+		: cacheable(isCacheable)
+		, writeWatch(pageWriteWatch) {
 		decodeRequired.fill(1u);
 	}
 
@@ -95,24 +95,15 @@ struct DecodedInstructionPage {
 	std::array<uint8_t, DECODED_PAGE_WORDS> decodeRequired{};
 	std::array<uint8_t, DECODED_PAGE_WORDS> fusionRequired{};
 	std::vector<TableLoadInlineCache> tableLoadCaches;
-	const u64* contentRevision;
-	u64 decodedRevision;
+	bool cacheable;
+	u8* writeWatch;
 };
 
 inline bool decodedInstructionNeedsRefresh(
-	DecodedInstructionPage& page,
+	const DecodedInstructionPage& page,
 	size_t pageOffset,
 	bool allowFusion
 ) {
-	if (!page.contentRevision) {
-		return true;
-	}
-	const u64 revision = *page.contentRevision;
-	if (page.decodedRevision != revision) {
-		page.decodedRevision = revision;
-		page.decodeRequired.fill(1u);
-		page.fusionRequired.fill(0u);
-	}
 	return page.decodeRequired[pageOffset] != 0u
 		|| (allowFusion && page.fusionRequired[pageOffset] != 0u);
 }

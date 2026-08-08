@@ -345,6 +345,11 @@ CPU::CPU(
 		builtin.cyclePerRet = cost.perRet;
 	}
 	globals = createTable();
+	m_memory.attachMappedPageInvalidator(*this);
+}
+
+CPU::~CPU() {
+	m_memory.detachMappedPageInvalidator();
 }
 
 Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
@@ -401,6 +406,7 @@ void CPU::reset() {
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
+	m_memory.clearMappedPageWriteWatches();
 	m_executionImages.clear();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
 		activateExecutionImage(systemBoot);
@@ -720,9 +726,41 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 ) {
 	auto it = image.decodedPages.try_emplace(
 		binding.key,
-		binding.revision
+		binding.cacheable,
+		binding.writeWatch
 	).first;
 	return it->second;
+}
+
+void CPU::invalidateDecodedPage(u64 key) {
+	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
+		auto page = image->decodedPages.find(key);
+		if (page != image->decodedPages.end()) {
+			page->second.decodeRequired.fill(1u);
+			page->second.fusionRequired.fill(0u);
+		}
+	}
+}
+
+void CPU::invalidateMappedPage(u64 key) {
+	invalidateDecodedPage(key);
+	if (key >= MAPPED_PAGE_BYTE_SIZE) {
+		invalidateDecodedPage(key - MAPPED_PAGE_BYTE_SIZE);
+	}
+}
+
+void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
+	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
+		? firstKey - MAPPED_PAGE_BYTE_SIZE
+		: 0u;
+	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
+		for (auto& [key, page] : image->decodedPages) {
+			if (key >= invalidationStart && key < endKey) {
+				page.decodeRequired.fill(1u);
+				page.fusionRequired.fill(0u);
+			}
+		}
+	}
 }
 
 DecodedInstructionPage* CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
@@ -751,6 +789,8 @@ void CPU::decodeInstruction(
 ) {
 	const u32 codeEnd = frame.codeAddress + frame.codeByteCount;
 	DecodedInstruction& decoded = page.words[pageOffset];
+	bool instructionCacheable = page.cacheable;
+	DecodedInstructionPage* bodyPage = nullptr;
 	int width = 1;
 	uint8_t op;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
@@ -768,6 +808,16 @@ void CPU::decodeInstruction(
 	if (static_cast<OpCode>(op) == OpCode::WIDE
 		&& pc + INSTRUCTION_BYTES < codeEnd) {
 		width = 2;
+		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
+			bodyPage = decodedPageForFrame(
+				frame,
+				pc + INSTRUCTION_BYTES
+			);
+			if (!bodyPage) {
+				return;
+			}
+			instructionCacheable = instructionCacheable && bodyPage->cacheable;
+		}
 		wideA = static_cast<uint8_t>((sourceWord >> 12) & 0x3f);
 		wideB = static_cast<uint8_t>((sourceWord >> 6) & 0x3f);
 		wideC = static_cast<uint8_t>(sourceWord & 0x3f);
@@ -871,20 +921,23 @@ void CPU::decodeInstruction(
 		}
 	}
 	decoded.dispatchOp = op;
-	page.decodeRequired[pageOffset] = !page.contentRevision
-		|| (width == 2 && pageOffset == DECODED_PAGE_WORDS - 1u)
-		? 1u
-		: 0u;
+	page.decodeRequired[pageOffset] = instructionCacheable ? 0u : 1u;
+	if (instructionCacheable && page.writeWatch) {
+		*page.writeWatch = 1u;
+	}
+	if (instructionCacheable && bodyPage && bodyPage->writeWatch) {
+		*bodyPage->writeWatch = 1u;
+	}
 	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
 		|| static_cast<OpCode>(op) == OpCode::ADD
 		|| static_cast<OpCode>(op) == OpCode::SHR;
 	if (!allowFusion) {
-		page.fusionRequired[pageOffset] = fusionCandidate && page.contentRevision
+		page.fusionRequired[pageOffset] = fusionCandidate && instructionCacheable
 			? 1u
 			: 0u;
 		return;
 	}
-	if (!fusionCandidate || !page.contentRevision) {
+	if (!fusionCandidate || !instructionCacheable) {
 		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
@@ -897,7 +950,7 @@ void CPU::decodeInstruction(
 	if (!nextPage) {
 		return;
 	}
-	if (!nextPage->contentRevision) {
+	if (!nextPage->cacheable) {
 		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
@@ -908,9 +961,13 @@ void CPU::decodeInstruction(
 	if (m_hardHalted) {
 		return;
 	}
+	if (nextPage->decodeRequired[nextOffset] != 0u) {
+		page.fusionRequired[pageOffset] = 0u;
+		return;
+	}
 	const DecodedInstruction& successor = nextPage->words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
-	page.fusionRequired[pageOffset] = nextPage == &page ? 0u : 1u;
+	page.fusionRequired[pageOffset] = 0u;
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {

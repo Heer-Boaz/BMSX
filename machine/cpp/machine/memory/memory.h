@@ -43,7 +43,10 @@ public:
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	void installSystemRom(std::span<const u8> rom);
-	void bindMappedPage(uint32_t addr, MappedBusSignals busSignals, MappedPageBinding& out) const;
+	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
+	void detachMappedPageInvalidator();
+	void clearMappedPageWriteWatches();
+	void bindMappedPage(uint32_t addr, MappedBusSignals busSignals, MappedPageBinding& out);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {
@@ -117,8 +120,8 @@ private:
 	std::span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
-	MappedPageRevisions m_systemRomRevisions;
-	MappedPageRevisions m_ramPageRevisions;
+	MappedPageWriteWatches m_ramPageWriteWatches;
+	MappedPageInvalidator* m_mappedPageInvalidator = nullptr;
 	mutable std::vector<u32> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
