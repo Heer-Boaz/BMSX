@@ -372,6 +372,33 @@ void testBranchesFetchAdjacentMappedInstructions() {
 	}
 }
 
+void testStringOrderingMatchesUtf8CodepointOrder() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(9u * bmsx::INSTRUCTION_BYTES);
+	image.constants = {
+		std::string("\xf0\x90\x80\x80"),
+		std::string("\xee\x80\x80"),
+	};
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::KFALSE), 2, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LT), 1, 0, 1);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::KTRUE), 2, 0, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::KFALSE), 3, 0, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::LT), 1, 1, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::KTRUE), 3, 0, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RET), 2, 2, 0);
+	image.functions = {{.firstWord = 0u, .wordCount = 9u, .maxStack = 4u}};
+	CpuTestMachine machine(std::move(image));
+
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "string comparison completes");
+	const std::span<const bmsx::Value> values = machine.cpu.readCompletionValues();
+	require(values.size() == 2u, "string comparison returns both order results");
+	require(!bmsx::isTruthy(values[0]), "U+10000 sorts after U+E000 in UTF-8 order");
+	require(bmsx::isTruthy(values[1]), "U+E000 sorts before U+10000 in UTF-8 order");
+}
+
 void testMappedFetchCrossesFunctionRecordMetadata() {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(3u * bmsx::INSTRUCTION_BYTES);
@@ -1446,6 +1473,7 @@ int main() {
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
 	testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage();
 	testBranchesFetchAdjacentMappedInstructions();
+	testStringOrderingMatchesUtf8CodepointOrder();
 	testMappedFetchCrossesFunctionRecordMetadata();
 	testUnmappedClosureRecordHardHalts();
 	testCrossImageCallStackPcsBelongToTheirFrames();

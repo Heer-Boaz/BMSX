@@ -137,6 +137,21 @@ return values[1] < values[2], values[2] < values[1], values[1] <= 'apple'
 	assert.equal(result[2], true);
 });
 
+test('string ordering follows UTF-8 order outside the BMP at every optimization level', () => {
+	const source = `
+local values = { '𐀀', '' }
+return values[1] < values[2], values[2] < values[1],
+	values[1] <= values[2], values[2] <= values[1],
+	'𐀀' < '', '' <= '𐀀'
+`;
+	for (const optLevel of [0, 2, 3] as const) {
+		assert.deepEqual(
+			runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel),
+			[false, true, false, true, false, true],
+		);
+	}
+});
+
 test('passes no stale arguments to zero-argument closure calls', () => {
 	const result = runCompiledLua(`
 local function optional(value)

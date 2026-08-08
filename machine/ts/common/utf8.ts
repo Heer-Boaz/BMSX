@@ -33,6 +33,27 @@ export function utf8ByteLength(text: string): number {
 	return bytes;
 }
 
+export function utf8Compare(left: string, right: string): number {
+	const sharedLength = left.length < right.length ? left.length : right.length;
+	for (let index = 0; index < sharedLength; index += 1) {
+		const leftCode = left.charCodeAt(index);
+		const rightCode = right.charCodeAt(index);
+		if (leftCode === rightCode) {
+			continue;
+		}
+		// UTF-16 and UTF-8 order differ only where a supplementary-plane
+		// surrogate pair is compared with a BMP scalar above the surrogate range.
+		if (leftCode >= 0xd800 && leftCode <= 0xdbff && rightCode >= 0xe000) {
+			return 1;
+		}
+		if (rightCode >= 0xd800 && rightCode <= 0xdbff && leftCode >= 0xe000) {
+			return -1;
+		}
+		return leftCode < rightCode ? -1 : 1;
+	}
+	return left.length < right.length ? -1 : left.length > right.length ? 1 : 0;
+}
+
 export function encodeUtf8Codepoint(codepoint: number, output: Uint8Array): number {
 	if (codepoint <= 0x7f) {
 		output[0] = codepoint;

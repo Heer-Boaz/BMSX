@@ -1,7 +1,7 @@
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../../../machine/ts/spec/blua32/instruction_format';
-import { utf8CodepointCount } from '../../../../../machine/ts/common/utf8';
+import { utf8CodepointCount, utf8Compare } from '../../../../../machine/ts/common/utf8';
 import type { ProgramConstant } from '../program';
 import type { Instruction, OptimizationContext } from './index';
 import { luaFloorDivide, luaModulo } from '../../../../../machine/ts/spec/blua32/numeric';
@@ -225,9 +225,10 @@ export const evaluateComparison = (op: OpCode, left: ConstValue, right: ConstVal
 					: left.value <= right.value;
 			}
 			if (left.kind === ConstValueKind.String && right.kind === ConstValueKind.String) {
+				const order = utf8Compare(left.value, right.value);
 				return op === OpCode.LT
-					? left.value < right.value
-					: left.value <= right.value;
+					? order < 0
+					: order <= 0;
 			}
 			return null;
 		default:

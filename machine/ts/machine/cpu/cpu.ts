@@ -91,6 +91,7 @@ import {
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
+import { utf8Compare } from '../../common/utf8';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import {
@@ -2656,8 +2657,10 @@ export class CPU implements MappedPageInvalidator {
 						rightScalar = registers.getScalar(rkC);
 					}
 					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
-						? this.stringPool.toString(leftScalar as StringId)
-							< this.stringPool.toString(rightScalar as StringId)
+						? utf8Compare(
+							this.stringPool.toString(leftScalar as StringId),
+							this.stringPool.toString(rightScalar as StringId),
+						) < 0
 						: (leftTag === ValueTag.Number ? leftScalar : NaN)
 							< (rightTag === ValueTag.Number ? rightScalar : NaN);
 					if (ok !== (a !== 0)) {
@@ -2755,8 +2758,10 @@ export class CPU implements MappedPageInvalidator {
 						rightScalar = registers.getScalar(rkC);
 					}
 					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
-						? this.stringPool.toString(leftScalar as StringId)
-							<= this.stringPool.toString(rightScalar as StringId)
+						? utf8Compare(
+							this.stringPool.toString(leftScalar as StringId),
+							this.stringPool.toString(rightScalar as StringId),
+						) <= 0
 						: (leftTag === ValueTag.Number ? leftScalar : NaN)
 							<= (rightTag === ValueTag.Number ? rightScalar : NaN);
 					if (ok !== (a !== 0)) {
