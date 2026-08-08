@@ -422,7 +422,7 @@ private:
 	);
 	void invalidateDecodedPage(u64 key);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
-	void decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
+	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	Closure* staticClosureAtAddress(u32 address);
 	bool readFunctionRecord(
 		Blua32ExecutionImage& image,
@@ -478,6 +478,7 @@ private:
 	void clearHaltAfterAcceptedInterrupt();
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
+	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	void enterException(u32 functionAddress, u32 causeWord, u32 epcWord);
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();

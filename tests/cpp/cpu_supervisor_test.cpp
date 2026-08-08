@@ -1118,6 +1118,104 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8), "burst tail does not overwrite the first-fault access");
 }
 
+void testInstructionFetchExceptionsEnterTheSystemVector() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(4u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 3u, .maxStack = 2u},
+		{.firstWord = 3u, .wordCount = 1u},
+	};
+	image.startupFunctionIndex = 0u;
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+
+	{
+		CpuTestMachine machine(image);
+		const bmsx::u32 faultPc = 0x06000000u;
+		machine.cpu.writeFrameExecution(
+			0,
+			bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+			machine.systemRom.functionAddresses[0],
+			faultPc
+		);
+
+		require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "unmapped instruction fetch consumes its fetch slot before exception dispatch");
+		require(machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, "unmapped instruction fetch latches IBE");
+		require(machine.cpu.readEpcWord() == faultPc, "unmapped instruction fetch latches its physical PC in EPC");
+		require(machine.cpu.readBadAddressWord() == 0u, "IBE leaves BAD_ADDRESS unchanged");
+		require(machine.cpu.readFrameFunctionAddress(machine.cpu.getFrameDepth() - 1) == machine.systemRom.functionAddresses[1], "IBE selects the system exception vector");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "instruction fetch retains the mapped-bus fault code");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == faultPc, "instruction fetch retains the faulting bus address");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32), "instruction fetch retains its physical U32 bus transaction");
+	}
+
+	{
+		CpuTestMachine machine(image);
+		const bmsx::u32 faultPc = machine.systemRom.textAddress + 1u;
+		const bmsx::u32 faultSequence = machine.memory.readBusFaultSequence();
+		machine.cpu.writeFrameExecution(
+			0,
+			bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+			machine.systemRom.functionAddresses[0],
+			faultPc
+		);
+
+		require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "misaligned instruction fetch enters the exception handler");
+		require(machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, "misaligned instruction fetch latches AdEL");
+		require(machine.cpu.readEpcWord() == faultPc, "misaligned instruction fetch latches its physical PC in EPC");
+		require(machine.cpu.readBadAddressWord() == faultPc, "misaligned instruction fetch latches its physical PC in BAD_ADDRESS");
+		require(machine.memory.readBusFaultSequence() == faultSequence, "instruction AdEL issues no mapped-bus cycle");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_NONE, "instruction AdEL leaves the bus-fault latch empty");
+	}
+
+	{
+		CpuTestMachine machine(image);
+		const bmsx::u32 instructionPc = bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes
+			- 2u * bmsx::INSTRUCTION_BYTES;
+		const bmsx::u32 prefixPc = instructionPc + bmsx::INSTRUCTION_BYTES;
+		const bmsx::u32 bodyPc = prefixPc + bmsx::INSTRUCTION_BYTES;
+		std::array<bmsx::u8, 2u * bmsx::INSTRUCTION_BYTES> instructions{};
+		bmsx::writeInstruction(
+			std::span<bmsx::u8>(instructions),
+			0,
+			static_cast<bmsx::u8>(bmsx::OpCode::ADD),
+			0,
+			0,
+			1
+		);
+		bmsx::writeInstruction(
+			std::span<bmsx::u8>(instructions),
+			1,
+			static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
+			0,
+			0,
+			0
+		);
+		machine.memory.writeBytes(instructionPc, instructions.data(), instructions.size());
+		require(machine.cpu.runUntilDepth(0, 2) == bmsx::RunResult::Yielded, "register setup consumes its two instruction slots");
+		machine.cpu.writeFrameExecution(
+			0,
+			bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+			machine.systemRom.functionAddresses[0],
+			instructionPc
+		);
+
+		require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "faulting WIDE body fetch enters the exception handler");
+		require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 0)) == 2.0, "fusion lookahead does not raise the successor fetch fault before the preceding instruction executes");
+		require(machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, "faulting WIDE body fetch latches IBE");
+		require(machine.cpu.readEpcWord() == prefixPc, "faulting WIDE body fetch retains the prefix PC in EPC");
+		require(machine.cpu.readBadAddressWord() == 0u, "WIDE-body IBE leaves BAD_ADDRESS unchanged");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "WIDE-body fetch retains the mapped-bus fault code");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == bodyPc, "WIDE-body fetch retains the physical body address");
+		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32), "WIDE-body fetch retains its physical U32 bus transaction");
+	}
+}
+
 void testMappedMemoryAlignmentContract() {
 	constexpr bmsx::u32 BYTE_ADDRESS = bmsx::RAM_BASE + bmsx::MIN_RAM_SIZE + 0x101u;
 	constexpr bmsx::u32 F64_ADDRESS = bmsx::RAM_BASE + bmsx::MIN_RAM_SIZE + 0x104u;
@@ -1362,6 +1460,7 @@ int main() {
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
 	testRfeResumesAtAnyMappedInstructionAddress();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
+	testInstructionFetchExceptionsEnterTheSystemVector();
 	testMappedMemoryAlignmentContract();
 	testAddressErrorsPrecedeMappedMemoryBusCycles();
 	testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors();

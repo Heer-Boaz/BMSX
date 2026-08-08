@@ -780,7 +780,7 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	return page;
 }
 
-void CPU::decodeInstruction(
+bool CPU::decodeInstruction(
 	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
 ) {
 	DecodedInstruction& decoded = page.words[pageOffset];
@@ -794,8 +794,8 @@ void CPU::decodeInstruction(
 	uint8_t wideC = 0;
 	const uint32_t sourceWord = m_memory.readMappedBusU32BE(pc, m_executionBusSignals);
 	if (m_memory.readBusFaultSequence() != faultSequence) {
-		hardHalt();
-		return;
+		enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
+		return false;
 	}
 	uint32_t bodyWord = sourceWord;
 	op = static_cast<uint8_t>((sourceWord >> 18) & 0x3f);
@@ -817,8 +817,8 @@ void CPU::decodeInstruction(
 			m_executionBusSignals
 		);
 		if (m_memory.readBusFaultSequence() != faultSequence) {
-			hardHalt();
-			return;
+			enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
+			return false;
 		}
 		op = static_cast<uint8_t>((bodyWord >> 18) & 0x3f);
 		ext = static_cast<uint8_t>(bodyWord >> 24);
@@ -934,41 +934,43 @@ void CPU::decodeInstruction(
 		page.fusionRequired[pageOffset] = fusionCandidate && instructionCacheable
 			? 1u
 			: 0u;
-		return;
+		return true;
 	}
 	if (!fusionCandidate || !instructionCacheable) {
 		page.fusionRequired[pageOffset] = 0u;
-		return;
+		return true;
 	}
 	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
 	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
 	if (!nextPage.cacheable) {
 		page.fusionRequired[pageOffset] = 0u;
-		return;
+		return true;
 	}
 	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if (decodedInstructionNeedsRefresh(nextPage, nextOffset, false)) {
-		decodeInstruction(frame, nextPage, nextOffset, nextPc, false);
-	}
-	if (m_hardHalted) {
-		return;
+		if (nextOffset == DECODED_PAGE_WORDS - 1u) {
+			page.fusionRequired[pageOffset] = 1u;
+			return true;
+		}
+		if (!decodeInstruction(frame, nextPage, nextOffset, nextPc, false)) {
+			return false;
+		}
 	}
 	if (nextPage.decodeRequired[nextOffset] != 0u) {
 		page.fusionRequired[pageOffset] = 0u;
-		return;
+		return true;
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
 	page.fusionRequired[pageOffset] = 0u;
+	return true;
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
 	DecodedInstructionPage& page = decodedPageForFrame(frame, frame.pc);
 	const u32 offset = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	if (decodedInstructionNeedsRefresh(page, offset, false)) {
-		decodeInstruction(frame, page, offset, frame.pc, false);
-	}
-	if (m_hardHalted) {
+	if (decodedInstructionNeedsRefresh(page, offset, false)
+		&& !decodeInstruction(frame, page, offset, frame.pc, false)) {
 		return;
 	}
 	const u32 nextPc = frame.pc + static_cast<u32>(page.words[offset].width) * INSTRUCTION_BYTES;
@@ -2037,6 +2039,12 @@ void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 caus
 	enterSynchronousException(interruptedFrame, causeWord);
 }
 
+void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc) {
+	instructionBudgetRemaining -= 1;
+	interruptedFrame.pc = pc;
+	enterException(m_systemExceptionFunctionAddress, causeWord, pc);
+}
+
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_luaFaultReasonWord = reason;
 	enterSynchronousException(*m_frames.back(), CPU_CAUSE_CODE_TRAP);
@@ -2166,32 +2174,36 @@ RunResult CPU::runLoop(
 			image = frame->executionImage;
 			registers = frame->registers;
 			pc = frame->pc;
-			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			DecodedInstructionPage* decodedPage = frame->decodedPage;
-			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
-				decodedPage = &decodedPageForFrame(*frame, pc);
-			}
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
 					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
 					return RunResult::ExecutionStopped;
 				}
 			}
+			if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
+				m_badAddressWord = pc;
+				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+				continue;
+			}
+			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+			DecodedInstructionPage* decodedPage = frame->decodedPage;
+			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
+				decodedPage = &decodedPageForFrame(*frame, pc);
+			}
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			if (decodedInstructionNeedsRefresh(
 				*decodedPage,
 				pageOffset,
 				!Instrumented
+			) && !decodeInstruction(
+				*frame,
+				*decodedPage,
+				pageOffset,
+				pc,
+				!Instrumented
 			)) {
-				decodeInstruction(
-					*frame,
-					*decodedPage,
-					pageOffset,
-					pc,
-					!Instrumented
-				);
+				continue;
 			}
-			if (m_hardHalted) return RunResult::Halted;
 			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
 			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
@@ -2266,16 +2278,15 @@ RunResult CPU::runLoop(
 						successorOffset,
 						false
 					)) {
-						decodeInstruction(
+						if (!decodeInstruction(
 							FRAME,
 							successorPage,
 							successorOffset,
 							successorPc,
 							false
-						);
-					}
-					if (m_hardHalted) {
-						return RunResult::Halted;
+						)) {
+							DISPATCH_CONTINUE();
+						}
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
@@ -2316,16 +2327,15 @@ RunResult CPU::runLoop(
 						successorOffset,
 						false
 					)) {
-						decodeInstruction(
+						if (!decodeInstruction(
 							FRAME,
 							successorPage,
 							successorOffset,
 							successorPc,
 							false
-						);
-					}
-					if (m_hardHalted) {
-						return RunResult::Halted;
+						)) {
+							DISPATCH_CONTINUE();
+						}
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;

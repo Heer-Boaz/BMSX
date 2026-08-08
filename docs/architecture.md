@@ -1305,10 +1305,11 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   raw words and do not box and unbox again inside devices.
 - The CPU consumes instruction words and runtime values directly from the mapped
   machine representation.
-- Reserved opcodes, malformed standalone `WIDE` prefix words, invalid physical
-  function records, and instruction fetches that fault on the mapped bus do not
-  become host exceptions. The CPU latches a hard-halt state, stops accepting
-  IRQs, and stays stopped until reset starts it again.
+- Reserved opcodes, malformed standalone `WIDE` prefix words, and invalid
+  physical function records do not become host exceptions. The CPU latches a
+  hard-halt state, stops accepting IRQs, and stays stopped until reset starts it
+  again. Instruction address and mapped-bus fetch faults are architectural CP0
+  exceptions instead.
 - Emulator invariant failures remain host failures. A frontend stops its host
   run and may inspect the unchanged machine for diagnostics; it does not clear
   CPU/input/frame state, inject a guest fault, or serialize a host-failure latch
@@ -1827,23 +1828,28 @@ narrow:
 | Cause | `CAUSE.ExcCode` | `EPC` | `BAD_ADDRESS` | Resume rule |
 | --- | ---: | --- | --- | --- |
 | User execution of `MFC0`, `MTC0`, or `RFE` | 11 (`CAUSE[6:2] = 11`) | Faulting instruction | Unchanged | The handler must replace `EPC` with another instruction address before `RFE`; unchanged `EPC` retries the fault. |
+| Misaligned instruction fetch | 4 (`CAUSE[6:2] = 4`, `AdEL`) | Exact physical fetch address | Exact physical fetch address | Unchanged `EPC` retries the fetch. The fault consumes one fetch slot but issues no mapped-bus cycle. |
 | Misaligned CPU mapped-memory load | 4 (`CAUSE[6:2] = 4`, `AdEL`) | Faulting instruction | Exact load address | Unchanged `EPC` retries the complete load. The faulting access issues no bus cycle and does not commit its destination. |
 | Misaligned CPU mapped-memory store | 5 (`CAUSE[6:2] = 5`, `AdES`) | Faulting instruction | Exact store address | Unchanged `EPC` retries the complete store. The faulting access issues no bus cycle; a multiword store commits no prefix. |
+| Bus error during instruction fetch | 6 (`CAUSE[6:2] = 6`, `IBE`) | Start of the faulting instruction | Unchanged | Unchanged `EPC` retries the complete fetch. A fault on a `WIDE` body retains the prefix address in `EPC`; the mapped-bus latch retains the physical body address. |
 | Bus error during a CPU mapped-memory load or store | 7 (`CAUSE[6:2] = 7`) | Faulting instruction | Unchanged | Unchanged `EPC` retries the complete instruction. A load does not commit its destination. A multiword store retains completed prefix writes, stops at the faulting cycle and does not issue its tail. |
 
 CPU alignment is part of instruction execution rather than a defensive memory
-API check. Byte accesses have no alignment requirement, 16-bit accesses require
+API check. The central instruction-fetch boundary requires a four-byte-aligned
+physical PC; relative branches and other PC producers do not duplicate that
+check. Byte accesses have no alignment requirement, 16-bit accesses require
 two-byte alignment, and word, 32-bit, `f32`, `f64`, and multiword accesses
 require four-byte alignment. `f64` uses two ordered 32-bit bus cycles and
-therefore retains the compiler ABI's four-byte alignment. The CPU checks the
-effective address before write-readiness sampling, bus-fault sampling, or any
-mapped-memory cycle, then latches `BAD_ADDRESS` and enters the system exception
-vector on `AdEL` or `AdES`.
+therefore retains the compiler ABI's four-byte alignment. The CPU checks an
+effective data address before write-readiness sampling, bus-fault sampling, or
+any mapped-memory cycle, then latches `BAD_ADDRESS` and enters the system
+exception vector on `AdEL` or `AdES`.
 
 The mapped-memory owner publishes a runtime-only monotonically changing bus
 fault sequence alongside the sticky guest-visible fault registers. The CPU
-samples that sideband around its own transaction, so a new CPU bus error still
-vectors when an older first-fault record occupies `BUS_FAULT_CODE`. The
+samples that sideband around instruction and data transactions, so a new CPU
+bus error still vectors when an older first-fault record occupies
+`BUS_FAULT_CODE`. The
 sideband is neither guest-visible nor save-state data: no transaction remains
 in flight at a save-state boundary. DMA and other device-master faults continue
 to update only the sticky bus-fault registers and never vector the CPU.

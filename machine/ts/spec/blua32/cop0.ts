@@ -18,6 +18,7 @@ export const CPU_CAUSE_NMI = 1 << 16;
 export const CPU_CAUSE_CODE_MASK = 0x7c;
 export const CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD = 4 << 2;
 export const CPU_CAUSE_CODE_ADDRESS_ERROR_STORE = 5 << 2;
+export const CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR = 6 << 2;
 export const CPU_CAUSE_CODE_DATA_BUS_ERROR = 7 << 2;
 export const CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE = 11 << 2;
 export const CPU_CAUSE_CODE_TRAP = 13 << 2;

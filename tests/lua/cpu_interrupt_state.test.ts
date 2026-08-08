@@ -24,6 +24,7 @@ import {
 	COP0_EXEC,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
+	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_TRAP,
@@ -34,7 +35,9 @@ import {
 } from '../../machine/ts/spec/blua32/cop0';
 import {
 	BUS_FAULT_ACCESS_READ,
+	BUS_FAULT_ACCESS_U32,
 	BUS_FAULT_ACCESS_U8,
+	BUS_FAULT_NONE,
 	BUS_FAULT_UNMAPPED,
 	IO_IRQ_ACK,
 	IO_IRQ_MASK,
@@ -52,7 +55,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -1604,6 +1607,77 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), unmappedAddress);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+});
+
+test('instruction fetch faults enter the system exception vector at the physical PC', () => {
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.K1, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.HALT, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code,
+		functions: [
+			{ firstWord: 0, wordCount: 3, maxStack: 2 },
+			{ firstWord: 3, wordCount: 1 },
+		],
+		startupFunctionIndex: 0,
+		irqFunctionIndex: 1,
+		exceptionFunctionIndex: 1,
+	});
+	const entryFunctionAddress = image.symbols.functionAddresses[0];
+	const exceptionFunctionAddress = image.symbols.functionAddresses[1];
+
+	{
+		const { cpu, memory } = createTestSystemCpu(image);
+		const faultPc = 0x06000000;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, entryFunctionAddress, faultPc);
+
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+		assert.equal(cpu.readEpcWord(), faultPc);
+		assert.equal(cpu.readBadAddressWord(), 0);
+		assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), exceptionFunctionAddress);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), faultPc);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	}
+
+	{
+		const { cpu, memory } = createTestSystemCpu(image);
+		const faultPc = image.image.header.textAddress + 1;
+		const faultSequence = memory.readBusFaultSequence();
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, entryFunctionAddress, faultPc);
+
+		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Halted);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD);
+		assert.equal(cpu.readEpcWord(), faultPc);
+		assert.equal(cpu.readBadAddressWord(), faultPc);
+		assert.equal(memory.readBusFaultSequence(), faultSequence);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+	}
+
+	{
+		const { cpu, memory } = createTestSystemCpu(image);
+		const instructionPc = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 2 * INSTRUCTION_BYTES;
+		const prefixPc = instructionPc + INSTRUCTION_BYTES;
+		const bodyPc = prefixPc + INSTRUCTION_BYTES;
+		const instructions = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(instructions, 0, OpCode.ADD, 0, 0, 1, 0);
+		writeInstruction(instructions, 1, OpCode.WIDE, 0, 0, 0, 0);
+		memory.writeBytes(instructionPc, instructions);
+		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, entryFunctionAddress, instructionPc);
+
+		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Halted);
+		assert.equal(cpu.readFrameRegister(0, 0), 2);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+		assert.equal(cpu.readEpcWord(), prefixPc);
+		assert.equal(cpu.readBadAddressWord(), 0);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), bodyPc);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	}
 });
 
 test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 addresses', () => {

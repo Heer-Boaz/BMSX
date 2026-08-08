@@ -24,6 +24,7 @@ constexpr uint32_t CPU_CAUSE_NMI = 1u << 16u;
 constexpr uint32_t CPU_CAUSE_CODE_MASK = 0x7cu;
 constexpr uint32_t CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD = 4u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_ADDRESS_ERROR_STORE = 5u << 2u;
+constexpr uint32_t CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR = 6u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_DATA_BUS_ERROR = 7u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE = 11u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_TRAP = 13u << 2u;

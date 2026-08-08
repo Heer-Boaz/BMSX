@@ -29,8 +29,9 @@ import type { ResourceDomain, ResourceIdentity } from '../common/resource';
 import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
-	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
+	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_MASK,
 	CPU_CAUSE_CODE_TRAP,
 } from '../../machine/ts/spec/blua32/cop0';
@@ -345,6 +346,9 @@ export function recordSupervisorFault(
 			break;
 		case CPU_CAUSE_CODE_ADDRESS_ERROR_STORE:
 			message = `Address error store at ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
+			break;
+		case CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR:
+			message = 'Instruction bus error.';
 			break;
 		case CPU_CAUSE_CODE_DATA_BUS_ERROR:
 			message = 'Data bus error.';

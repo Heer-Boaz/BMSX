@@ -23,6 +23,7 @@ import {
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
+	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_TRAP,
@@ -1258,7 +1259,7 @@ export class CPU implements MappedPageInvalidator {
 		pageOffset: number,
 		pc: number,
 		allowFusion: boolean,
-	): void {
+	): boolean {
 		let instructionCacheable = page.cacheable;
 		let bodyPage: DecodedInstructionPage | null = null;
 		let width = 1;
@@ -1269,8 +1270,8 @@ export class CPU implements MappedPageInvalidator {
 		let wideC = 0;
 		const sourceWord = this.memory.readMappedBusU32BE(pc, this.executionBusSignals);
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
-			this.hardHalt();
-			return;
+			this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
+			return false;
 		}
 		let bodyWord = sourceWord;
 		op = (sourceWord >>> 18) & 0x3f;
@@ -1289,8 +1290,8 @@ export class CPU implements MappedPageInvalidator {
 				this.executionBusSignals,
 			);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
-				this.hardHalt();
-				return;
+				this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
+				return false;
 			}
 			op = (bodyWord >>> 18) & 0x3f;
 			ext = bodyWord >>> 24;
@@ -1394,40 +1395,44 @@ export class CPU implements MappedPageInvalidator {
 		if (!allowFusion) {
 			page.fusionRequired[pageOffset] = fusionCandidate
 				&& instructionCacheable ? 1 : 0;
-			return;
+			return true;
 		}
 		if (!fusionCandidate || !instructionCacheable) {
 			page.fusionRequired[pageOffset] = 0;
-			return;
+			return true;
 		}
 		const nextPc = pc + width * INSTRUCTION_BYTES;
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
 		if (!nextPage.cacheable) {
 			page.fusionRequired[pageOffset] = 0;
-			return;
+			return true;
 		}
 		const nextPageOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if (decodedInstructionNeedsRefresh(nextPage, nextPageOffset, false)) {
-			this.decodeInstruction(
+			if (nextPageOffset === DECODED_PAGE_WORDS - 1) {
+				page.fusionRequired[pageOffset] = 1;
+				return true;
+			}
+			if (!this.decodeInstruction(
 				frame,
 				nextPage,
 				nextPageOffset,
 				nextPc,
 				false,
-			);
-		}
-		if (this.hardHalted) {
-			return;
+			)) {
+				return false;
+			}
 		}
 		if (nextPage.decodeRequired[nextPageOffset] !== 0) {
 			page.fusionRequired[pageOffset] = 0;
-			return;
+			return true;
 		}
 		page.dispatchOps[pageOffset] = decodedDispatchOp(
 			op as OpCode,
 			nextPage.ops[nextPageOffset] as OpCode,
 		);
 		page.fusionRequired[pageOffset] = 0;
+		return true;
 	}
 
 	private readFunctionRecord(
@@ -1721,6 +1726,12 @@ export class CPU implements MappedPageInvalidator {
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
+	private enterInstructionFetchException(interruptedFrame: CallFrame, causeWord: number, pc: number): void {
+		this.instructionBudgetRemaining -= 1;
+		interruptedFrame.pc = pc;
+		this.enterException(this.systemExceptionFunctionAddress, causeWord, pc);
+	}
+
 	private enterLuaFaultException(
 		reason: number,
 		errorTag: ValueTag,
@@ -1796,13 +1807,16 @@ export class CPU implements MappedPageInvalidator {
 					const frame = frames[frames.length - 1];
 					const image = frame.executionImage;
 					const pc = frame.pc;
+					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
+						this.badAddressWord = pc;
+						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+						continue;
+					}
 					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (decodedInstructionNeedsRefresh(page, pageOffset, true)) {
-						this.decodeInstruction(frame, page, pageOffset, pc, true);
-					}
-					if (this.hardHalted) {
-						return RunResult.Halted;
+					if (decodedInstructionNeedsRefresh(page, pageOffset, true)
+						&& !this.decodeInstruction(frame, page, pageOffset, pc, true)) {
+						continue;
 					}
 					const width = page.widths[pageOffset];
 					const dispatchOp = page.dispatchOps[pageOffset];
@@ -1875,17 +1889,20 @@ export class CPU implements MappedPageInvalidator {
 					const frame = frames[frames.length - 1];
 					const image = frame.executionImage;
 					const pc = frame.pc;
-					const page = this.decodedPageForFrame(frame, pc);
 					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
 						&& executionHook(image.executionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
-					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
-						this.decodeInstruction(frame, page, pageOffset, pc, false);
+					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
+						this.badAddressWord = pc;
+						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+						continue;
 					}
-					if (this.hardHalted) {
-						return RunResult.Halted;
+					const page = this.decodedPageForFrame(frame, pc);
+					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
+					if (decodedInstructionNeedsRefresh(page, pageOffset, false)
+						&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
+						continue;
 					}
 					const width = page.widths[pageOffset];
 					const op = page.ops[pageOffset];
@@ -1972,10 +1989,8 @@ export class CPU implements MappedPageInvalidator {
 		const pc = frame.pc;
 		const page = this.decodedPageForFrame(frame, pc);
 		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-		if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
-			this.decodeInstruction(frame, page, pageOffset, pc, false);
-		}
-		if (this.hardHalted) {
+		if (decodedInstructionNeedsRefresh(page, pageOffset, false)
+			&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
 			return;
 		}
 		const nextPc = pc + page.widths[pageOffset] * INSTRUCTION_BYTES;
@@ -2212,16 +2227,15 @@ export class CPU implements MappedPageInvalidator {
 					const secondPage = this.decodedPageForFrame(frame, pc);
 					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
-						this.decodeInstruction(
+						if (!this.decodeInstruction(
 							frame,
 							secondPage,
 							secondPageOffset,
 							pc,
 							false,
-						);
-					}
-					if (this.hardHalted) {
-						return;
+						)) {
+							return;
+						}
 					}
 					const width = secondPage.widths[secondPageOffset];
 					this.currentInstructionPc = pc;
@@ -2250,16 +2264,15 @@ export class CPU implements MappedPageInvalidator {
 					const secondPage = this.decodedPageForFrame(frame, pc);
 					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
-						this.decodeInstruction(
+						if (!this.decodeInstruction(
 							frame,
 							secondPage,
 							secondPageOffset,
 							pc,
 							false,
-						);
-					}
-					if (this.hardHalted) {
-						return;
+						)) {
+							return;
+						}
 					}
 					const width = secondPage.widths[secondPageOffset];
 					this.currentInstructionPc = pc;

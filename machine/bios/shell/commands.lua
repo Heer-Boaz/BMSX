@@ -46,6 +46,7 @@ local cause_code_mask<const> = 0x0000007c
 local cause_nmi<const> = 0x00010000
 local exception_code_address_error_load<const> = 4
 local exception_code_address_error_store<const> = 5
+local exception_code_instruction_bus_error<const> = 6
 local exception_code_data_bus_error<const> = 7
 local exception_code_coprocessor_unusable<const> = 11
 local exception_code_trap<const> = 13
@@ -79,6 +80,7 @@ end
 rodata exception_registry: monitor_exception[] = {
 	{ code = exception_code_address_error_load, mnemonic = 'ADEL', description = 'ADDRESS ERROR LOAD', has_bad_address = 1 },
 	{ code = exception_code_address_error_store, mnemonic = 'ADES', description = 'ADDRESS ERROR STORE', has_bad_address = 1 },
+	{ code = exception_code_instruction_bus_error, mnemonic = 'IBE', description = 'INSTRUCTION BUS ERROR', has_bad_address = 0 },
 	{ code = exception_code_data_bus_error, mnemonic = 'DBE', description = 'DATA BUS ERROR', has_bad_address = 0 },
 	{ code = exception_code_coprocessor_unusable, mnemonic = 'CPU', description = 'COPROCESSOR UNUSABLE', has_bad_address = 0 },
 	{ code = exception_code_trap, mnemonic = 'TRAP', description = 'LUA RUNTIME FAULT', has_bad_address = 0 },
