@@ -17,6 +17,8 @@ export type TableLoadInlineCache = {
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
 export const NO_TABLE_LOAD_CACHE_INDEX = 0xffffffff;
+export const DECODED_REFRESH_DECODE = 1;
+export const DECODED_REFRESH_FUSION = 2;
 
 export const enum DecodedDispatchOp {
 	FusedShlBxor = OPCODE_COUNT,
@@ -50,8 +52,8 @@ export function decodedInstructionNeedsRefresh(
 	pageOffset: number,
 	allowFusion: boolean,
 ): boolean {
-	return page.decodeRequired[pageOffset] !== 0
-		|| (allowFusion && page.fusionRequired[pageOffset] !== 0);
+	const state = page.refreshState[pageOffset];
+	return allowFusion ? state !== 0 : (state & DECODED_REFRESH_DECODE) !== 0;
 }
 
 export type DecodedInstructionPage = {
@@ -69,8 +71,7 @@ export type DecodedInstructionPage = {
 	sourceWords: Uint32Array;
 	bodyWords: Uint32Array;
 	tableCacheIndexes: Uint32Array;
-	decodeRequired: Uint8Array;
-	fusionRequired: Uint8Array;
+	refreshState: Uint8Array;
 	cacheable: boolean;
 	writeWatches: Uint8Array | null;
 	writeWatchIndex: number;
@@ -119,14 +120,13 @@ export function createDecodedInstructionPage(
 		sourceWords: new Uint32Array(DECODED_PAGE_WORDS),
 		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
-		decodeRequired: new Uint8Array(DECODED_PAGE_WORDS),
-		fusionRequired: new Uint8Array(DECODED_PAGE_WORDS),
+		refreshState: new Uint8Array(DECODED_PAGE_WORDS),
 		cacheable,
 		writeWatches,
 		writeWatchIndex,
 		tableLoadCaches: [],
 	};
-	page.decodeRequired.fill(1);
+	page.refreshState.fill(DECODED_REFRESH_DECODE);
 	page.ops.fill(OpCode.WIDE);
 	page.dispatchOps.fill(OpCode.WIDE);
 	page.tableCacheIndexes.fill(NO_TABLE_LOAD_CACHE_INDEX);

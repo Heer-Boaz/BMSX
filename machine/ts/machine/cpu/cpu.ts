@@ -118,6 +118,8 @@ import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
 	DECODED_PAGE_WORDS,
+	DECODED_REFRESH_DECODE,
+	DECODED_REFRESH_FUSION,
 	NO_TABLE_LOAD_CACHE_INDEX,
 	createDecodedInstructionPage,
 	decodedDispatchOp,
@@ -1208,8 +1210,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
-				page.decodeRequired.fill(1);
-				page.fusionRequired.fill(0);
+				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
 	}
@@ -1232,8 +1233,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
-					page.decodeRequired.fill(1);
-					page.fusionRequired.fill(0);
+					page.refreshState.fill(DECODED_REFRESH_DECODE);
 				}
 			}
 		}
@@ -1385,7 +1385,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		page.dispatchOps[pageOffset] = op;
-		page.decodeRequired[pageOffset] = instructionCacheable ? 0 : 1;
+		page.refreshState[pageOffset] = instructionCacheable ? 0 : DECODED_REFRESH_DECODE;
 		if (instructionCacheable && page.writeWatches !== null) {
 			page.writeWatches[page.writeWatchIndex] = 1;
 		}
@@ -1394,24 +1394,23 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
 		if (!allowFusion) {
-			page.fusionRequired[pageOffset] = fusionCandidate
-				&& instructionCacheable ? 1 : 0;
+			if (fusionCandidate && instructionCacheable) {
+				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
+			}
 			return true;
 		}
 		if (!fusionCandidate || !instructionCacheable) {
-			page.fusionRequired[pageOffset] = 0;
 			return true;
 		}
 		const nextPc = pc + width * INSTRUCTION_BYTES;
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
 		if (!nextPage.cacheable) {
-			page.fusionRequired[pageOffset] = 0;
 			return true;
 		}
 		const nextPageOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if (decodedInstructionNeedsRefresh(nextPage, nextPageOffset, false)) {
 			if (nextPageOffset === DECODED_PAGE_WORDS - 1) {
-				page.fusionRequired[pageOffset] = 1;
+				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 				return true;
 			}
 			if (!this.decodeInstruction(
@@ -1424,15 +1423,13 @@ export class CPU implements MappedPageInvalidator {
 				return false;
 			}
 		}
-		if (nextPage.decodeRequired[nextPageOffset] !== 0) {
-			page.fusionRequired[pageOffset] = 0;
+		if ((nextPage.refreshState[nextPageOffset] & DECODED_REFRESH_DECODE) !== 0) {
 			return true;
 		}
 		page.dispatchOps[pageOffset] = decodedDispatchOp(
 			op as OpCode,
 			nextPage.ops[nextPageOffset] as OpCode,
 		);
-		page.fusionRequired[pageOffset] = 0;
 		return true;
 	}
 

@@ -82,17 +82,18 @@ struct TableLoadInlineCache {
 
 constexpr size_t DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
+inline constexpr u8 DECODED_REFRESH_DECODE = 1u;
+inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
 
 struct DecodedInstructionPage {
 	explicit DecodedInstructionPage(bool isCacheable, u8* pageWriteWatch)
 		: cacheable(isCacheable)
 		, writeWatch(pageWriteWatch) {
-		decodeRequired.fill(1u);
+		refreshState.fill(DECODED_REFRESH_DECODE);
 	}
 
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
-	std::array<uint8_t, DECODED_PAGE_WORDS> decodeRequired{};
-	std::array<uint8_t, DECODED_PAGE_WORDS> fusionRequired{};
+	std::array<uint8_t, DECODED_PAGE_WORDS> refreshState{};
 	std::vector<TableLoadInlineCache> tableLoadCaches;
 	bool cacheable;
 	u8* writeWatch;
@@ -103,8 +104,8 @@ inline bool decodedInstructionNeedsRefresh(
 	size_t pageOffset,
 	bool allowFusion
 ) {
-	return page.decodeRequired[pageOffset] != 0u
-		|| (allowFusion && page.fusionRequired[pageOffset] != 0u);
+	const u8 state = page.refreshState[pageOffset];
+	return allowFusion ? state != 0u : (state & DECODED_REFRESH_DECODE) != 0u;
 }
 
 struct Blua32ExecutionImage {

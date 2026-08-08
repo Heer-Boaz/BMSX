@@ -733,8 +733,7 @@ void CPU::invalidateDecodedPage(u64 key) {
 		}
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
-			page->second.decodeRequired.fill(1u);
-			page->second.fusionRequired.fill(0u);
+			page->second.refreshState.fill(DECODED_REFRESH_DECODE);
 		}
 	}
 }
@@ -756,8 +755,7 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
-				page.decodeRequired.fill(1u);
-				page.fusionRequired.fill(0u);
+				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
 	}
@@ -920,7 +918,7 @@ bool CPU::decodeInstruction(
 		}
 	}
 	decoded.dispatchOp = op;
-	page.decodeRequired[pageOffset] = instructionCacheable ? 0u : 1u;
+	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
 	if (instructionCacheable && page.writeWatch) {
 		*page.writeWatch = 1u;
 	}
@@ -931,38 +929,34 @@ bool CPU::decodeInstruction(
 		|| static_cast<OpCode>(op) == OpCode::ADD
 		|| static_cast<OpCode>(op) == OpCode::SHR;
 	if (!allowFusion) {
-		page.fusionRequired[pageOffset] = fusionCandidate && instructionCacheable
-			? 1u
-			: 0u;
+		if (fusionCandidate && instructionCacheable) {
+			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
+		}
 		return true;
 	}
 	if (!fusionCandidate || !instructionCacheable) {
-		page.fusionRequired[pageOffset] = 0u;
 		return true;
 	}
 	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
 	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
 	if (!nextPage.cacheable) {
-		page.fusionRequired[pageOffset] = 0u;
 		return true;
 	}
 	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if (decodedInstructionNeedsRefresh(nextPage, nextOffset, false)) {
 		if (nextOffset == DECODED_PAGE_WORDS - 1u) {
-			page.fusionRequired[pageOffset] = 1u;
+			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 			return true;
 		}
 		if (!decodeInstruction(frame, nextPage, nextOffset, nextPc, false)) {
 			return false;
 		}
 	}
-	if (nextPage.decodeRequired[nextOffset] != 0u) {
-		page.fusionRequired[pageOffset] = 0u;
+	if ((nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) != 0u) {
 		return true;
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
-	page.fusionRequired[pageOffset] = 0u;
 	return true;
 }
 
