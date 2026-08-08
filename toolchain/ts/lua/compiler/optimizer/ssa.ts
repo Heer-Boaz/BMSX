@@ -3,7 +3,7 @@
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, remapInstructions, type Block } from '../control_flow';
 import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import {
@@ -1403,9 +1403,12 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 
 		const preheaderBlock = blocks[preheader];
 		const preheaderLastIndex = preheaderBlock.end - 1;
-		const insertIndex = preheaderLastIndex >= 0 && isControlFlowInstruction(instructions[preheaderLastIndex])
+		let insertIndex = preheaderLastIndex >= 0 && isControlFlowInstruction(instructions[preheaderLastIndex])
 			? preheaderLastIndex
 			: preheaderBlock.end;
+		if (insertIndex > 0 && isSkipInstruction(instructions[insertIndex - 1])) {
+			insertIndex -= 1;
+		}
 
 		const moved: number[] = [];
 		for (const blockIndex of loopBlocks) {
@@ -1821,6 +1824,12 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
 
 	const keep = new Array<boolean>(count).fill(true);
+	const pinned = new Uint8Array(count);
+	for (let i = 0; i + 1 < count; i += 1) {
+		if (isSkipInstruction(instructions[i])) {
+			pinned[i + 1] = 1;
+		}
+	}
 	let removed = 0;
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
 		const block = blocks[blockIndex];
@@ -1843,7 +1852,7 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 					break;
 				}
 			}
-			if (defs.length > 0 && isPureInstruction(instruction) && !hasLive && !hasCaptured) {
+			if (pinned[i] === 0 && defs.length > 0 && isPureInstruction(instruction) && !hasLive && !hasCaptured) {
 				keep[i] = false;
 				removed += 1;
 				continue;

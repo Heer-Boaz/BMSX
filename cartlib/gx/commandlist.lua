@@ -1,10 +1,19 @@
 local dma<const> = require('cartlib/dma')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local irq<const> = require('cartlib/irq')
 
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_gpu<const> = 0x0040
+local gpu_completion_sequence = 0
+
+local on_gpu_irq<const> = function()
+	gpu_completion_sequence = gpu_completion_sequence + 1
+	gx_gpu.ack_irq()
+end
+
+local function init_gpu_irq<init>()
+	irq.register(gx_gpu.irq_mask, on_gpu_irq)
+end
+init_gpu_irq()
 
 local drawlist<const> = {}
 drawlist.__index = drawlist
@@ -56,11 +65,11 @@ function commandlist.submit_fenced(draw)
 	local words<const>: *word = draw.words
 	words[index] = gp0.irq_request
 	draw.word_count = index + 1
+	local completion_sequence<const> = gpu_completion_sequence
 	commandlist.submit(draw)
-	while (*irq_flags & irq_gpu) == 0 do
+	while gpu_completion_sequence == completion_sequence do
+		halt_until_irq
 	end
-	*irq_ack = irq_gpu
-	gx_gpu.ack_irq()
 end
 
 function drawlist:clear(origin_word, size_word, color)

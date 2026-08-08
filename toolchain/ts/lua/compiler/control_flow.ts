@@ -12,6 +12,11 @@ export const isJump = (instruction: Instruction): boolean =>
 	|| instruction.op === OpCode.JMPIF
 	|| instruction.op === OpCode.JMPIFNOT;
 
+export const isSkipInstruction = (instruction: Instruction): boolean =>
+	instruction.op === OpCode.EQ
+	|| instruction.op === OpCode.LT
+	|| instruction.op === OpCode.LE;
+
 export const getJumpTarget = (instruction: Instruction): number => {
 	if (instruction.target === null) {
 		throw new Error('[ProgramOptimizer] Jump target is missing.');

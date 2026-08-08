@@ -1,5 +1,6 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
+local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
@@ -179,7 +180,7 @@ end
 
 *irq_mask_register = 0
 init()
-*irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu
+*irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu | gx_gpu.irq_mask
 gx_texture.upload('pietolon_stand_r')
 new_game()
 vblank.wait()

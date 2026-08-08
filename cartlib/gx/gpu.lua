@@ -2,6 +2,8 @@ local gp0<const> = require('cartlib/gx/gp0')
 
 local gx_gpu<const> = {}
 
+gx_gpu.irq_mask = 0x0040
+
 local gp0_register<const>: *word = 0x08010238
 local gp1<const>: *word = 0x0801023c
 local gp1_ack_irq<const> = 0x02000000

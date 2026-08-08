@@ -10,7 +10,7 @@ import type {
 } from '../program';
 import { inlineCallChainContainsFunction, ROOT_INLINE_CALL_SITES } from '../inline_debug';
 import { MAX_EXT_CONST, MAX_EXT_REGISTER_A } from '../../../../../machine/ts/spec/blua32/instruction_format';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, remapInstructions, type Block } from '../control_flow';
 import {
 	cloneDuplicatedInstruction,
 	cloneInstruction,
@@ -88,11 +88,6 @@ type InstructionRegisterOperand = 'a' | 'b' | 'c';
 
 const RK_B = 1;
 const RK_C = 2;
-
-const isSkipInstruction = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.EQ
-		|| instruction.op === OpCode.LT
-		|| instruction.op === OpCode.LE;
 
 const getConstForOperand = (
 	operand: number,
@@ -293,7 +288,7 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 		if (compare.op !== OpCode.EQ && compare.op !== OpCode.LT && compare.op !== OpCode.LE) {
 			continue;
 		}
-		if (compare.a !== 1 || compare.format !== 'ABC') {
+		if (compare.format !== 'ABC') {
 			continue;
 		}
 		if (jump.op !== OpCode.JMP || jump.format !== 'AsBx') {
@@ -305,7 +300,7 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 		if (inboundTargets[i + 2] > 0) {
 			continue;
 		}
-		compare.a = 0;
+		compare.a ^= 1;
 		keep[i + 2] = false;
 		removed += 1;
 	}

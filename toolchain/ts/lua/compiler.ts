@@ -4288,9 +4288,8 @@ class FunctionBuilder {
 		for (let i = 0; i < statement.clauses.length; i += 1) {
 			const clause = statement.clauses[i];
 			if (clause.condition) {
-				const condReg = this.allocTemp();
-				this.compileExpressionInto(clause.condition, condReg, 1);
-				const jumpToNext = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
+				const jumpsToNext: number[] = [];
+				this.compileConditionJumps(clause.condition, false, jumpsToNext);
 				this.pushScope(clause.block.range);
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
@@ -4298,7 +4297,9 @@ class FunctionBuilder {
 				}
 				this.popScope();
 				endJumps.push(this.emitJumpPlaceholder());
-				this.patchJump(jumpToNext, this.code.length);
+				for (let j = 0; j < jumpsToNext.length; j += 1) {
+					this.patchJump(jumpsToNext[j], this.code.length);
+				}
 				continue;
 			}
 			this.pushScope(clause.block.range);
@@ -4316,9 +4317,8 @@ class FunctionBuilder {
 
 	private compileWhile(statement: LuaWhileStatement): void {
 		const loopStart = this.code.length;
-		const condReg = this.allocTemp();
-		this.compileExpressionInto(statement.condition, condReg, 1);
-		const jumpOut = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
+		const jumpsOut: number[] = [];
+		this.compileConditionJumps(statement.condition, false, jumpsOut);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope(statement.block.range);
@@ -4329,7 +4329,9 @@ class FunctionBuilder {
 		this.popScope();
 		this.loopStack.pop();
 		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
-		this.patchJump(jumpOut, this.code.length);
+		for (let i = 0; i < jumpsOut.length; i += 1) {
+			this.patchJump(jumpsOut[i], this.code.length);
+		}
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
@@ -4346,9 +4348,11 @@ class FunctionBuilder {
 		}
 		this.popScope();
 		this.loopStack.pop();
-		const condReg = this.allocTemp();
-		this.compileExpressionInto(statement.condition, condReg, 1);
-		this.emitAsBx(OpCode.JMPIFNOT, condReg, loopStart - (this.code.length + 1));
+		const repeatJumps: number[] = [];
+		this.compileConditionJumps(statement.condition, false, repeatJumps);
+		for (let i = 0; i < repeatJumps.length; i += 1) {
+			this.patchJump(repeatJumps[i], loopStart);
+		}
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
@@ -5170,23 +5174,22 @@ class FunctionBuilder {
 				this.compileOrExpression(expression, target);
 				return;
 			case LuaBinaryOperator.Equal:
-				this.compileComparison(OpCode.EQ, expression.left, expression.right, target);
+				this.compileComparisonValue(OpCode.EQ, expression.left, expression.right, target, true);
 				return;
 			case LuaBinaryOperator.NotEqual:
-				this.compileComparison(OpCode.EQ, expression.left, expression.right, target);
-				this.emitABC(OpCode.NOT, target, target, 0);
+				this.compileComparisonValue(OpCode.EQ, expression.left, expression.right, target, false);
 				return;
 			case LuaBinaryOperator.LessThan:
-				this.compileComparison(OpCode.LT, expression.left, expression.right, target);
+				this.compileComparisonValue(OpCode.LT, expression.left, expression.right, target, true);
 				return;
 			case LuaBinaryOperator.LessEqual:
-				this.compileComparison(OpCode.LE, expression.left, expression.right, target);
+				this.compileComparisonValue(OpCode.LE, expression.left, expression.right, target, true);
 				return;
 			case LuaBinaryOperator.GreaterThan:
-				this.compileComparison(OpCode.LT, expression.right, expression.left, target);
+				this.compileComparisonValue(OpCode.LT, expression.right, expression.left, target, true);
 				return;
 			case LuaBinaryOperator.GreaterEqual:
-				this.compileComparison(OpCode.LE, expression.right, expression.left, target);
+				this.compileComparisonValue(OpCode.LE, expression.right, expression.left, target, true);
 				return;
 			case LuaBinaryOperator.BitwiseOr:
 				this.compileArithmetic(OpCode.BOR, expression.left, expression.right, target);
@@ -5238,14 +5241,107 @@ class FunctionBuilder {
 		this.emitABC(op, target, leftOperand, rightOperand, RK_B | RK_C);
 	}
 
-	private compileComparison(op: OpCode, left: LuaExpression, right: LuaExpression, target: number): void {
+	private emitComparison(op: OpCode, left: LuaExpression, right: LuaExpression, expectedResult: boolean): void {
 		const leftOperand = this.compileRKOperand(left);
 		const rightOperand = this.compileRKOperand(right);
+		this.emitABC(op, expectedResult ? 1 : 0, leftOperand, rightOperand, RK_B | RK_C);
+	}
+
+	private compileComparisonValue(
+		op: OpCode,
+		left: LuaExpression,
+		right: LuaExpression,
+		target: number,
+		trueComparisonResult: boolean,
+	): void {
 		this.emitLoadBool(target, true);
-		this.emitABC(op, 1, leftOperand, rightOperand, RK_B | RK_C);
+		this.emitComparison(op, left, right, trueComparisonResult);
 		const jump = this.emitJumpPlaceholder();
 		this.emitLoadBool(target, false);
 		this.patchJump(jump, this.code.length);
+	}
+
+	private compileConditionJumps(expression: LuaExpression, jumpOnTruthy: boolean, jumps: number[]): void {
+		const tempBase = this.tempTop;
+		this.withRange(expression.range, () => {
+			if (this.evaluateCompileTimeExpression(expression)) {
+				if ((!this.compileTimeValueIsFalsey()) === jumpOnTruthy) {
+					jumps.push(this.emitJumpPlaceholder());
+				}
+				return;
+			}
+
+			if (expression.kind === LuaSyntaxKind.UnaryExpression) {
+				const unary = expression as LuaUnaryExpression;
+				if (unary.operator === LuaUnaryOperator.Not) {
+					this.compileConditionJumps(unary.operand, !jumpOnTruthy, jumps);
+					return;
+				}
+			}
+
+			if (expression.kind === LuaSyntaxKind.BinaryExpression) {
+				const binary = expression as LuaBinaryExpression;
+				switch (binary.operator) {
+					case LuaBinaryOperator.And:
+						if (jumpOnTruthy) {
+							const falseJumps: number[] = [];
+							this.compileConditionJumps(binary.left, false, falseJumps);
+							this.compileConditionJumps(binary.right, true, jumps);
+							for (let i = 0; i < falseJumps.length; i += 1) {
+								this.patchJump(falseJumps[i], this.code.length);
+							}
+							return;
+						}
+						this.compileConditionJumps(binary.left, false, jumps);
+						this.compileConditionJumps(binary.right, false, jumps);
+						return;
+					case LuaBinaryOperator.Or:
+						if (jumpOnTruthy) {
+							this.compileConditionJumps(binary.left, true, jumps);
+							this.compileConditionJumps(binary.right, true, jumps);
+							return;
+						}
+						const trueJumps: number[] = [];
+						this.compileConditionJumps(binary.left, true, trueJumps);
+						this.compileConditionJumps(binary.right, false, jumps);
+						for (let i = 0; i < trueJumps.length; i += 1) {
+							this.patchJump(trueJumps[i], this.code.length);
+						}
+						return;
+					case LuaBinaryOperator.Equal:
+						this.emitComparison(OpCode.EQ, binary.left, binary.right, jumpOnTruthy);
+						break;
+					case LuaBinaryOperator.NotEqual:
+						this.emitComparison(OpCode.EQ, binary.left, binary.right, !jumpOnTruthy);
+						break;
+					case LuaBinaryOperator.LessThan:
+						this.emitComparison(OpCode.LT, binary.left, binary.right, jumpOnTruthy);
+						break;
+					case LuaBinaryOperator.LessEqual:
+						this.emitComparison(OpCode.LE, binary.left, binary.right, jumpOnTruthy);
+						break;
+					case LuaBinaryOperator.GreaterThan:
+						this.emitComparison(OpCode.LT, binary.right, binary.left, jumpOnTruthy);
+						break;
+					case LuaBinaryOperator.GreaterEqual:
+						this.emitComparison(OpCode.LE, binary.right, binary.left, jumpOnTruthy);
+						break;
+					default: {
+						const conditionReg = this.allocTemp();
+						this.compileExpressionInto(expression, conditionReg, 1);
+						jumps.push(this.emitJumpPlaceholder(jumpOnTruthy ? OpCode.JMPIF : OpCode.JMPIFNOT, conditionReg));
+						return;
+					}
+				}
+				jumps.push(this.emitJumpPlaceholder());
+				return;
+			}
+
+			const conditionReg = this.allocTemp();
+			this.compileExpressionInto(expression, conditionReg, 1);
+			jumps.push(this.emitJumpPlaceholder(jumpOnTruthy ? OpCode.JMPIF : OpCode.JMPIFNOT, conditionReg));
+		});
+		this.tempTop = tempBase;
 	}
 
 	private compileAndExpression(expression: any, target: number): void {
