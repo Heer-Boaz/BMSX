@@ -55,10 +55,10 @@ end
 function bytecode.write(words, address)
 	for index = 1, #words do
 		local word<const> = words[index]
-		mem8[address] = (word >> 24) & 0xff
-		mem8[address + 1] = (word >> 16) & 0xff
-		mem8[address + 2] = (word >> 8) & 0xff
-		mem8[address + 3] = word & 0xff
+		mem32le[address] = ((word >> 24) & 0x000000ff)
+			| ((word >> 8) & 0x0000ff00)
+			| ((word << 8) & 0x00ff0000)
+			| (word << 24)
 		address = address + isa.instruction_bytes
 	end
 end
