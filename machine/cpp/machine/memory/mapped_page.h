@@ -21,6 +21,7 @@ public:
 struct MappedPageBinding {
 	u64 key;
 	bool cacheable;
+	const u8* readBytes;
 	u8* writeWatch;
 };
 

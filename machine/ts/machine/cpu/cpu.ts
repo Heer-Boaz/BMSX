@@ -58,6 +58,7 @@ import {
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_FUNCTION_STATIC,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
@@ -437,6 +438,8 @@ export class CPU implements MappedPageInvalidator {
 	private readonly mappedPageBinding: MappedPageBinding = {
 		key: 0,
 		cacheable: false,
+		readBytes: null,
+		readByteOffset: 0,
 		writeWatches: null,
 		writeWatchIndex: 0,
 	};
@@ -1443,11 +1446,53 @@ export class CPU implements MappedPageInvalidator {
 		address: number,
 		busSignals: MappedBusSignals,
 	): boolean {
-		const faultSequence = this.memory.readBusFaultSequence();
 		const latch = this.functionRecordLatch;
 		latch.image = image;
 		latch.busSignals = busSignals;
 		latch.address = address;
+		const pageOffset = address & MAPPED_PAGE_BYTE_MASK;
+		if (pageOffset <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE) {
+			const binding = this.mappedPageBinding;
+			this.memory.bindMappedPage(
+				(address & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
+				busSignals,
+				binding,
+			);
+			const bytes = binding.readBytes;
+			if (bytes !== null) {
+				const recordByteOffset = binding.readByteOffset + pageOffset;
+				latch.codeAddress = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+				);
+				latch.codeByteCount = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+				);
+				latch.numParams = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+				);
+				latch.maxStack = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET,
+				);
+				latch.flags = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
+				);
+				latch.upvalueTableAddress = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+				);
+				latch.upvalueCount = readLE32(
+					bytes,
+					recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+				);
+				return true;
+			}
+		}
+		const faultSequence = this.memory.readBusFaultSequence();
 		latch.codeAddress = this.memory.readMappedBusU32LE(
 			(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0,
 			busSignals,

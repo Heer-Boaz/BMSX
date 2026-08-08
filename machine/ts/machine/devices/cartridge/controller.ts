@@ -31,6 +31,7 @@ import type {
 	Memory,
 } from '../../memory/memory';
 import {
+	MAPPED_PAGE_BYTE_SIZE,
 	MappedPageWriteWatches,
 } from '../../memory/mapped_page';
 import type { DmaController } from '../dma/controller';
@@ -150,16 +151,27 @@ export class CartridgeController {
 		const slotIndex = this.selectedSlot(busSignals);
 		const slot = this.slots[slotIndex];
 		out.key = address + slot.mappedKeyOffset;
+		out.readBytes = null;
+		out.readByteOffset = 0;
 		out.writeWatches = null;
 		out.writeWatchIndex = 0;
 		if (address < CART_RAM_BASE) {
 			out.cacheable = true;
+			const offset = address - CART_ROM_BASE;
+			if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.media.rom.byteLength) {
+				out.readBytes = slot.media.rom;
+				out.readByteOffset = offset;
+			}
 			return;
 		}
 		if (address < CART_MMIO_BASE) {
 			const offset = address - CART_RAM_BASE;
 			if (offset < slot.ram.byteLength) {
 				out.cacheable = true;
+				if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.ram.byteLength) {
+					out.readBytes = slot.ram;
+					out.readByteOffset = offset;
+				}
 				this.ramPageWriteWatches[slotIndex].bind(offset, out);
 				return;
 			}

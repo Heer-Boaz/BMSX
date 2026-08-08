@@ -131,9 +131,13 @@ void Memory::bindMappedPage(
 	MappedPageBinding& out
 ) {
 	out.key = addr;
+	out.readBytes = nullptr;
 	out.writeWatch = nullptr;
 	if (addr < RAM_BASE) {
 		out.cacheable = addr < SYSTEM_ROM_SIZE;
+		if (static_cast<size_t>(addr) + MAPPED_PAGE_BYTE_SIZE <= m_systemRom.size()) {
+			out.readBytes = m_systemRom.data() + addr;
+		}
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
@@ -144,6 +148,9 @@ void Memory::bindMappedPage(
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset < m_ram.size()) {
 			out.cacheable = true;
+			if (offset + MAPPED_PAGE_BYTE_SIZE <= m_ram.size()) {
+				out.readBytes = m_ram.data() + offset;
+			}
 			m_ramPageWriteWatches.bind(offset, out);
 			return;
 		}

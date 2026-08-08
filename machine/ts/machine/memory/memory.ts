@@ -76,6 +76,7 @@ import {
 	type MappedBusSignals,
 } from './bus_signals';
 import {
+	MAPPED_PAGE_BYTE_SIZE,
 	type MappedPageBinding,
 	type MappedPageInvalidator,
 	MappedPageWriteWatches,
@@ -207,10 +208,16 @@ export class Memory {
 
 	public bindMappedPage(addr: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
 		out.key = addr;
+		out.readBytes = null;
+		out.readByteOffset = 0;
 		out.writeWatches = null;
 		out.writeWatchIndex = 0;
 		if (addr < RAM_BASE) {
 			out.cacheable = addr < SYSTEM_ROM_SIZE;
+			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.byteLength) {
+				out.readBytes = this.systemRom;
+				out.readByteOffset = addr;
+			}
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
@@ -221,6 +228,10 @@ export class Memory {
 			const offset = addr - RAM_BASE;
 			if (offset < this.ram.byteLength) {
 				out.cacheable = true;
+				if (offset + MAPPED_PAGE_BYTE_SIZE <= this.ram.byteLength) {
+					out.readBytes = this.ram;
+					out.readByteOffset = offset;
+				}
 				this.ramPageWriteWatches.bind(offset, out);
 				return;
 			}

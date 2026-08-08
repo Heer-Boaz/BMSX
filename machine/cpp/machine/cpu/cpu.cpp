@@ -995,10 +995,40 @@ bool CPU::readFunctionRecord(
 	u32 address,
 	MappedBusSignals busSignals
 ) {
-	const u32 faultSequence = m_memory.readBusFaultSequence();
 	m_functionRecordLatch.image = &image;
 	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
+	const u32 pageOffset = address & MAPPED_PAGE_BYTE_MASK;
+	if (pageOffset <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE) {
+		MappedPageBinding binding;
+		m_memory.bindMappedPage(address & ~MAPPED_PAGE_BYTE_MASK, busSignals, binding);
+		if (binding.readBytes) {
+			const u8* record = binding.readBytes + pageOffset;
+			m_functionRecordLatch.codeAddress = readLE32(
+				record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
+			);
+			m_functionRecordLatch.codeByteCount = readLE32(
+				record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET
+			);
+			m_functionRecordLatch.numParams = readLE32(
+				record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
+			);
+			m_functionRecordLatch.maxStack = readLE32(
+				record + BLUA32_FUNCTION_MAX_STACK_OFFSET
+			);
+			m_functionRecordLatch.flags = readLE32(
+				record + BLUA32_FUNCTION_FLAGS_OFFSET
+			);
+			m_functionRecordLatch.upvalueTableAddress = readLE32(
+				record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET
+			);
+			m_functionRecordLatch.upvalueCount = readLE32(
+				record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
+			);
+			return true;
+		}
+	}
+	const u32 faultSequence = m_memory.readBusFaultSequence();
 	m_functionRecordLatch.codeAddress = m_memory.readMappedBusU32LE(
 		address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 		busSignals

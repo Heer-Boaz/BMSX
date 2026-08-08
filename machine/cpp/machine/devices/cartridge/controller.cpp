@@ -70,15 +70,23 @@ void CartridgeController::bindMappedPage(
 	const u32 slotIndex = selectedSlot(busSignals);
 	Slot& slot = m_slots[slotIndex];
 	out.key = address + slot.mappedKeyOffset;
+	out.readBytes = nullptr;
 	out.writeWatch = nullptr;
 	if (address < CART_RAM_BASE) {
 		out.cacheable = true;
+		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
+		if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.media.rom.size()) {
+			out.readBytes = slot.media.rom.data() + offset;
+		}
 		return;
 	}
 	if (address < CART_MMIO_BASE) {
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 		if (offset < slot.ram.size()) {
 			out.cacheable = true;
+			if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.ram.size()) {
+				out.readBytes = slot.ram.data() + offset;
+			}
 			m_ramPageWriteWatches[slotIndex].bind(offset, out);
 			return;
 		}

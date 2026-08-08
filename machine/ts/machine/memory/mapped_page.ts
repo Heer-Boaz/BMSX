@@ -10,6 +10,8 @@ export interface MappedPageInvalidator {
 export type MappedPageBinding = {
 	key: number;
 	cacheable: boolean;
+	readBytes: Uint8Array | null;
+	readByteOffset: number;
 	writeWatches: Uint8Array | null;
 	writeWatchIndex: number;
 };
