@@ -268,7 +268,7 @@ void Table::allocateHash(size_t size) {
 	std::fill(m_hashNext, m_hashNext + size, kTableHashNextEnd);
 }
 
-void Table::rawSet(const Value& key, const Value& value) {
+int Table::rawSet(const Value& key, const Value& value) {
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
@@ -286,25 +286,24 @@ void Table::rawSet(const Value& key, const Value& value) {
 				}
 				m_arrayLength = newLength;
 			}
-			return;
+			return -1;
 		}
 	}
-	insertHash(key, value);
+	const int nodeIndex = insertHash(key, value);
 	if (isArrayKey && static_cast<size_t>(index) == m_arrayLength) {
 		updateArrayLengthFrom(m_arrayLength);
 	}
+	return nodeIndex;
 }
 
-void Table::insertHash(const Value& key, const Value& value) {
+int Table::insertHash(const Value& key, const Value& value) {
 	if (m_hashDeadCount > 0) {
 		rehash(key, value);
-		rawSet(key, value);
-		return;
+		return rawSet(key, value);
 	}
 	if (m_hashSize == 0) {
 		rehash(key, value);
-		rawSet(key, value);
-		return;
+		return rawSet(key, value);
 	}
 	size_t mask = m_hashSize - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
@@ -314,13 +313,12 @@ void Table::insertHash(const Value& key, const Value& value) {
 		m_hashKeys[mainSlot] = key;
 		m_hashValues[mainSlot] = value;
 		m_hashNext[mainSlot] = kTableHashNextEnd;
-		return;
+		return mainIndex;
 	}
 	int freeIndex = getFreeIndex();
 	if (freeIndex < 0) {
 		rehash(key, value);
-		rawSet(key, value);
-		return;
+		return rawSet(key, value);
 	}
 	const size_t freeSlot = static_cast<size_t>(freeIndex);
 	int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
@@ -336,12 +334,13 @@ void Table::insertHash(const Value& key, const Value& value) {
 		m_hashKeys[mainSlot] = key;
 		m_hashValues[mainSlot] = value;
 		m_hashNext[mainSlot] = kTableHashNextEnd;
-		return;
+		return mainIndex;
 	}
 	m_hashKeys[freeSlot] = key;
 	m_hashValues[freeSlot] = value;
 	m_hashNext[freeSlot] = m_hashNext[mainSlot];
 	m_hashNext[mainSlot] = freeIndex;
+	return freeIndex;
 }
 
 void Table::removeFromHash(const Value& key) {
@@ -450,7 +449,6 @@ void Table::set(const Value& key, const Value& value) {
 				if (idx < m_arrayLength) {
 					m_arrayLength = idx;
 				}
-				bumpVersion();
 				return;
 			}
 		} else if (idx < m_array.size()) {
@@ -462,7 +460,6 @@ void Table::set(const Value& key, const Value& value) {
 				}
 				m_arrayLength = newLength;
 			}
-			bumpVersion();
 			return;
 		}
 	}
@@ -472,7 +469,6 @@ void Table::set(const Value& key, const Value& value) {
 		if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
 			m_arrayLength = static_cast<size_t>(index);
 		}
-		bumpVersion();
 		return;
 	}
 	int nodeIndex = findNodeIndex(key);
@@ -481,14 +477,12 @@ void Table::set(const Value& key, const Value& value) {
 			--m_hashDeadCount;
 		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
-		bumpVersion();
 		return;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
 		rehash(key, value);
 	}
 	rawSet(key, value);
-	bumpVersion();
 }
 
 Value Table::getInteger(int indexValue) const {
@@ -512,14 +506,12 @@ void Table::setInteger(int indexValue, const Value& value) {
 			if (idx < m_arrayLength) {
 				m_arrayLength = idx;
 			}
-			bumpVersion();
 			return;
 		}
 		m_array[idx] = value;
 		if (idx == m_arrayLength) {
 			updateArrayLengthFrom(m_arrayLength);
 		}
-		bumpVersion();
 		return;
 	}
 	const Value key = valueNumber(static_cast<double>(indexValue));
@@ -528,7 +520,6 @@ void Table::setInteger(int indexValue, const Value& value) {
 		if (index >= 0 && static_cast<size_t>(index) < m_arrayLength) {
 			m_arrayLength = static_cast<size_t>(index);
 		}
-		bumpVersion();
 		return;
 	}
 	const int nodeIndex = findNodeIndex(key);
@@ -537,14 +528,12 @@ void Table::setInteger(int indexValue, const Value& value) {
 			--m_hashDeadCount;
 		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
-		bumpVersion();
 		return;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
 		rehash(key, value);
 	}
 	rawSet(key, value);
-	bumpVersion();
 }
 
 Value Table::getStringKey(StringId key) const {
@@ -555,12 +544,29 @@ Value Table::getStringKey(StringId key) const {
 	return valueNil();
 }
 
-void Table::setStringKey(StringId key, const Value& value) {
+Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
+	if (predictedSlot >= 0 && static_cast<size_t>(predictedSlot) < m_hashSize) {
+		const size_t slot = static_cast<size_t>(predictedSlot);
+		if (valueIsString(m_hashKeys[slot])
+			&& asStringId(m_hashKeys[slot]) == key
+			&& !isNil(m_hashValues[slot])) {
+			return m_hashValues[slot];
+		}
+	}
+	const int nodeIndex = findNodeIndex(valueString(key));
+	if (nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
+		predictedSlot = nodeIndex;
+		return m_hashValues[static_cast<size_t>(nodeIndex)];
+	}
+	predictedSlot = -1;
+	return valueNil();
+}
+
+int Table::setStringKey(StringId key, const Value& value) {
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
 		removeFromHash(keyValue);
-		bumpVersion();
-		return;
+		return -1;
 	}
 	const int nodeIndex = findNodeIndex(keyValue);
 	if (nodeIndex >= 0) {
@@ -568,14 +574,27 @@ void Table::setStringKey(StringId key, const Value& value) {
 			--m_hashDeadCount;
 		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
-		bumpVersion();
-		return;
+		return nodeIndex;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
 		rehash(keyValue, value);
 	}
-	rawSet(keyValue, value);
-	bumpVersion();
+	return rawSet(keyValue, value);
+}
+
+void Table::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
+	if (!isNil(value)
+		&& predictedSlot >= 0
+		&& static_cast<size_t>(predictedSlot) < m_hashSize) {
+		const size_t slot = static_cast<size_t>(predictedSlot);
+		if (valueIsString(m_hashKeys[slot])
+			&& asStringId(m_hashKeys[slot]) == key
+			&& !isNil(m_hashValues[slot])) {
+			m_hashValues[slot] = value;
+			return;
+		}
+	}
+	predictedSlot = setStringKey(key, value);
 }
 
 int Table::length() const {
@@ -588,7 +607,6 @@ void Table::clear() {
 	m_arrayLength = 0;
 	allocateHash(0);
 	m_hashFree = -1;
-	bumpVersion();
 	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
 
@@ -669,7 +687,6 @@ uint32_t Table::restoreRuntimeState(const TableRuntimeState& state) {
 	}
 	m_hashFree = state.hashFree;
 	metatable = state.metatable;
-	bumpVersion();
 	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 	return maxDeadKeyHashId;
 }
@@ -684,7 +701,6 @@ void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
 	m_arrayLength = 0;
 	allocateHash(hashCapacity);
 	m_hashFree = hashCapacity > 0 ? static_cast<int>(hashCapacity) - 1 : -1;
-	bumpVersion();
 	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 }
 

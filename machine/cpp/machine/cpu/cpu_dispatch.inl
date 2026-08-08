@@ -87,8 +87,7 @@ DISPATCH_LABEL(SETI) {
 
 DISPATCH_LABEL(GETFIELD) {
 	SET_REGISTER_FAST(a, loadTableFieldIndexCached(
-		*decodedPage,
-		TABLE_CACHE_INDEX(),
+		TABLE_CACHE_SLOT(),
 		REG(b),
 		asStringId(IMAGE.constPool[static_cast<size_t>(c)])
 	));
@@ -96,7 +95,8 @@ DISPATCH_LABEL(GETFIELD) {
 }
 
 DISPATCH_LABEL(SETFIELD) {
-	storeTableFieldIndex(
+	storeTableFieldIndexCached(
+		TABLE_CACHE_SLOT(),
 		REG(a),
 		asStringId(IMAGE.constPool[static_cast<size_t>(b)]),
 		readRK(IMAGE, registers, rkC)
@@ -108,7 +108,7 @@ DISPATCH_LABEL(SELF) {
 	const Value base = REG(b);
 	const StringId key = asStringId(IMAGE.constPool[static_cast<size_t>(c)]);
 	SET_REGISTER_FAST(a + 1, base);
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(*decodedPage, TABLE_CACHE_INDEX(), base, key));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_SLOT(), base, key));
 	DISPATCH_CONTINUE();
 }
 

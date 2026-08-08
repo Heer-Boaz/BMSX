@@ -12,6 +12,7 @@ namespace bmsx {
 class LuaHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
+inline constexpr int TABLE_INDEX_CHAIN_EXHAUSTED = -2;
 
 struct TableHashNodeState {
 	Value key = valueNil();
@@ -38,7 +39,9 @@ public:
 	Value getInteger(int index) const;
 	void setInteger(int index, const Value& value);
 	Value getStringKey(StringId key) const;
-	void setStringKey(StringId key, const Value& value);
+	Value getStringKeyCached(StringId key, int& predictedSlot) const;
+	int setStringKey(StringId key, const Value& value);
+	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
 	Table* metatableIndexTable(StringId indexKey) const {
 		if (!metatable) {
 			return nullptr;
@@ -65,6 +68,25 @@ public:
 			return table.getStringKey(key);
 		});
 	}
+	int resolveStringIndexCached(
+		StringId indexKey,
+		StringId key,
+		int predictedSlot,
+		Value& value
+	) const {
+		const Table* current = this;
+		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+			value = current->getStringKeyCached(key, predictedSlot);
+			if (!isNil(value)) {
+				return predictedSlot;
+			}
+			current = current->metatableIndexTable(indexKey);
+			if (!current) {
+				return -1;
+			}
+		}
+		return TABLE_INDEX_CHAIN_EXHAUSTED;
+	}
 	int length() const;
 	void clear();
 	template <typename Fn>
@@ -82,7 +104,6 @@ public:
 	}
 	template <typename ValueIsAlive>
 	void clearWeakEntries(bool weakKeys, bool weakValues, ValueIsAlive&& valueIsAlive) {
-		bool changed = false;
 		if (weakValues) {
 			for (size_t i = 0; i < m_array.size(); ++i) {
 				if (isNil(m_array[i]) || valueIsAlive(m_array[i])) {
@@ -92,7 +113,6 @@ public:
 				if (i < m_arrayLength) {
 					m_arrayLength = i;
 				}
-				changed = true;
 			}
 		}
 		for (size_t i = 0; i < m_hashSize; ++i) {
@@ -107,10 +127,6 @@ public:
 				continue;
 			}
 			markHashNodeDead(i);
-			changed = true;
-		}
-		if (changed) {
-			bumpVersion();
 		}
 	}
 	bool nextEntry(const Value& after, Value& key, Value& value) const;
@@ -120,13 +136,6 @@ public:
 	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 
 	Table* metatable = nullptr;
-	uint32_t version() const { return m_version; }
-	void bumpVersion() {
-		++m_version;
-		if (m_version == 0) {
-			m_version = 1;
-		}
-	}
 
 private:
 	struct HashStorageDeleter {
@@ -145,8 +154,8 @@ private:
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
 	void allocateHash(size_t size);
-	void rawSet(const Value& key, const Value& value);
-	void insertHash(const Value& key, const Value& value);
+	int rawSet(const Value& key, const Value& value);
+	int insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	template <typename Lookup>
@@ -175,7 +184,6 @@ private:
 	size_t m_hashSize = 0;
 	int m_hashFree = -1;
 	size_t m_hashDeadCount = 0;
-	uint32_t m_version = 1;
 };
 
 

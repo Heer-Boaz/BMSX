@@ -1,22 +1,10 @@
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { MappedBusSignals } from '../memory/bus_signals';
-import type { Closure } from './closure';
-import type { Table } from './table';
-import { ValueTag } from './value';
 import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
-
-export type TableLoadInlineCache = {
-	table: Table | null;
-	version: number;
-	valueTag: ValueTag;
-	valueScalar: number;
-	valueReference: Table | Closure | null;
-};
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
-export const NO_TABLE_LOAD_CACHE_INDEX = 0xffffffff;
 export const DECODED_REFRESH_DECODE = 1;
 export const DECODED_REFRESH_FUSION = 2;
 
@@ -61,12 +49,11 @@ export type DecodedInstructionPage = {
 	disp: Uint8Array;
 	sourceWords: Uint32Array;
 	bodyWords: Uint32Array;
-	tableCacheIndexes: Uint32Array;
+	tableCacheSlots: Int32Array;
 	refreshState: Uint8Array;
 	cacheable: boolean;
 	writeWatches: Uint8Array | null;
 	writeWatchIndex: number;
-	tableLoadCaches: TableLoadInlineCache[];
 };
 
 export type Blua32ExecutionImage = {
@@ -110,16 +97,15 @@ export function createDecodedInstructionPage(
 		disp: new Uint8Array(DECODED_PAGE_WORDS),
 		sourceWords: new Uint32Array(DECODED_PAGE_WORDS),
 		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
-		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
+		tableCacheSlots: new Int32Array(DECODED_PAGE_WORDS),
 		refreshState: new Uint8Array(DECODED_PAGE_WORDS),
 		cacheable,
 		writeWatches,
 		writeWatchIndex,
-		tableLoadCaches: [],
 	};
 	page.refreshState.fill(DECODED_REFRESH_DECODE);
 	page.ops.fill(OpCode.WIDE);
 	page.dispatchOps.fill(OpCode.WIDE);
-	page.tableCacheIndexes.fill(NO_TABLE_LOAD_CACHE_INDEX);
+	page.tableCacheSlots.fill(-1);
 	return page;
 }

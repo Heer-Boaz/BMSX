@@ -905,15 +905,9 @@ bool CPU::decodeInstruction(
 		);
 		decoded.disp = ext;
 		if (static_cast<OpCode>(op) == OpCode::GETFIELD
+			|| static_cast<OpCode>(op) == OpCode::SETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SELF) {
-			if (decoded.tableCacheIndex == UINT32_MAX) {
-				decoded.tableCacheIndex = static_cast<uint32_t>(
-					page.tableLoadCaches.size()
-				);
-				page.tableLoadCaches.emplace_back();
-			} else {
-				page.tableLoadCaches[decoded.tableCacheIndex] = TableLoadInlineCache{};
-			}
+			decoded.tableCacheSlot = -1;
 		}
 	}
 	decoded.dispatchOp = op;
@@ -1849,7 +1843,6 @@ void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
 	}
 	Table* table = asTable(target);
 	table->metatable = metatable;
-	table->bumpVersion();
 	out.push_back(target);
 }
 
@@ -2096,7 +2089,7 @@ RunResult CPU::runLoop(
 	}
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
-	const DecodedInstruction* decoded;
+	DecodedInstruction* decoded;
 	u32 pc = 0;
 	int a = 0;
 	int b = 0;
@@ -2230,7 +2223,7 @@ RunResult CPU::runLoop(
 #define SKIP_NEXT_INSTRUCTION() do { \
 	skipNextInstruction(FRAME); \
 } while (0)
-#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
+#define TABLE_CACHE_SLOT() (decoded->tableCacheSlot)
 #define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
@@ -2348,7 +2341,7 @@ dispatch_continue:
 #undef DISPATCH_CONTINUE
 #undef DISPATCH_LABEL
 #undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
+#undef TABLE_CACHE_SLOT
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
 #undef REG
@@ -2955,39 +2948,42 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 }
 
 Value CPU::loadTableFieldIndexCached(
-	DecodedInstructionPage& page,
-	int cacheIndex,
+	int& predictedSlot,
 	const Value& base,
 	StringId key
 ) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
 		if (!table->metatable) {
-			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
-			if (cache.table == table && cache.version == table->version()) {
-				return cache.value;
-			}
-			const Value value = table->getStringKey(key);
-			cache.table = table;
-			cache.version = table->version();
-			cache.value = value;
-			return value;
+			return table->getStringKeyCached(key, predictedSlot);
 		}
-		return resolveTableFieldIndex(table, key);
+		Value value;
+		predictedSlot = table->resolveStringIndexCached(
+			m_indexKey,
+			key,
+			predictedSlot,
+			value
+		);
+		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
+			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		}
+		return value;
 	}
 	if (valueIsString(base)) {
 		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = page.tableLoadCaches[static_cast<size_t>(cacheIndex)];
-			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
-				return cache.value;
-			}
-			const Value value = m_stringIndexTable->getStringKey(key);
-			cache.table = m_stringIndexTable;
-			cache.version = m_stringIndexTable->version();
-			cache.value = value;
-			return value;
+			return m_stringIndexTable->getStringKeyCached(key, predictedSlot);
 		}
-		return resolveTableFieldIndex(m_stringIndexTable, key);
+		Value value;
+		predictedSlot = m_stringIndexTable->resolveStringIndexCached(
+			m_indexKey,
+			key,
+			predictedSlot,
+			value
+		);
+		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
+			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		}
+		return value;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
@@ -3025,9 +3021,14 @@ void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& valu
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
-void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& value) {
+void CPU::storeTableFieldIndexCached(
+	int& predictedSlot,
+	const Value& base,
+	StringId key,
+	const Value& value
+) {
 	if (valueIsTable(base)) {
-		asTable(base)->setStringKey(key, value);
+		asTable(base)->setStringKeyCached(key, value, predictedSlot);
 		return;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -3143,13 +3144,6 @@ void CPU::markRoots(GcHeap& heap) {
 		Blua32ExecutionImage* image = executionImage.get();
 		for (Value value : image->constPool) {
 			heap.markValue(value);
-		}
-		for (auto& entry : image->decodedPages) {
-			for (TableLoadInlineCache& cache : entry.second.tableLoadCaches) {
-				cache.table = nullptr;
-				cache.version = 0;
-				cache.value = valueNil();
-			}
 		}
 	}
 	for (const auto& framePtr : m_frames) {

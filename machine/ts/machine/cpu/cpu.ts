@@ -112,7 +112,7 @@ import {
 	type ValueReference,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table } from './table';
+import { Table, TABLE_INDEX_CHAIN_EXHAUSTED } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
@@ -120,7 +120,6 @@ import {
 	DECODED_PAGE_WORDS,
 	DECODED_REFRESH_DECODE,
 	DECODED_REFRESH_FUSION,
-	NO_TABLE_LOAD_CACHE_INDEX,
 	createDecodedInstructionPage,
 	decodedDispatchOp,
 	DecodedDispatchOp,
@@ -711,28 +710,25 @@ export class CPU implements MappedPageInvalidator {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 		if (table.metatable) {
-			if (!table.resolveStringIndex(
+			const predictedSlot = table.resolveStringIndexCached(
 				this.indexKey,
 				key,
+				page.tableCacheSlots[pageOffset],
 				target,
 				targetIndex,
-			)) {
+			);
+			if (predictedSlot === TABLE_INDEX_CHAIN_EXHAUSTED) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 			}
+			page.tableCacheSlots[pageOffset] = predictedSlot;
 			return;
 		}
-		const cache = page.tableLoadCaches[page.tableCacheIndexes[pageOffset]];
-		const version = table.getVersion();
-		if (cache.table === table && cache.version === version) {
-			target.setEncoded(targetIndex, cache.valueTag, cache.valueScalar, cache.valueReference);
-			return;
-		}
-		table.loadStringKey(key, target, targetIndex);
-		cache.table = table;
-		cache.version = version;
-		cache.valueTag = target.getTag(targetIndex);
-		cache.valueScalar = target.getScalar(targetIndex);
-		cache.valueReference = target.getReference(targetIndex);
+		page.tableCacheSlots[pageOffset] = table.loadStringKeyCached(
+			key,
+			page.tableCacheSlots[pageOffset],
+			target,
+			targetIndex,
+		);
 	}
 
 	private storeTableIndex(
@@ -778,7 +774,9 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private storeTableFieldIndex(
+	private storeTableFieldIndexCached(
+		page: DecodedInstructionPage,
+		pageOffset: number,
 		baseTag: ValueTag,
 		baseTable: Table | null,
 		key: StringId,
@@ -788,7 +786,13 @@ export class CPU implements MappedPageInvalidator {
 	): void {
 		switch (baseTag) {
 			case ValueTag.Table:
-				baseTable!.storeStringKey(key, valueTag, valueScalar, valueReference);
+				page.tableCacheSlots[pageOffset] = baseTable!.storeStringKeyCached(
+					key,
+					page.tableCacheSlots[pageOffset],
+					valueTag,
+					valueScalar,
+					valueReference,
+				);
 				return;
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -1351,26 +1355,8 @@ export class CPU implements MappedPageInvalidator {
 				MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS),
 			);
 			page.disp[pageOffset] = ext;
-			if (op === OpCode.GETFIELD || op === OpCode.SELF) {
-				let cacheIndex = page.tableCacheIndexes[pageOffset];
-				if (cacheIndex === NO_TABLE_LOAD_CACHE_INDEX) {
-					cacheIndex = page.tableLoadCaches.length;
-					page.tableCacheIndexes[pageOffset] = cacheIndex;
-					page.tableLoadCaches.push({
-						table: null,
-						version: 0,
-						valueTag: ValueTag.Nil,
-						valueScalar: NaN,
-						valueReference: null,
-					});
-				} else {
-					const cache = page.tableLoadCaches[cacheIndex];
-					cache.table = null;
-					cache.version = 0;
-					cache.valueTag = ValueTag.Nil;
-					cache.valueScalar = NaN;
-					cache.valueReference = null;
-				}
+			if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
+				page.tableCacheSlots[pageOffset] = -1;
 			}
 		}
 		page.dispatchOps[pageOffset] = op;
@@ -2380,7 +2366,9 @@ export class CPU implements MappedPageInvalidator {
 						valueScalar = registers.getScalar(rkC);
 						valueReference = registers.getReference(rkC);
 					}
-					this.storeTableFieldIndex(
+					this.storeTableFieldIndexCached(
+						page,
+						pageOffset,
 						registers.getTag(a),
 						registers.getTable(a),
 						image.constScalars[b] as StringId,
@@ -4705,16 +4693,6 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		this.heapSeenImages.set(image, this.heapEpoch);
-		for (const page of image.decodedPages.values()) {
-			for (let index = 0; index < page.tableLoadCaches.length; index += 1) {
-				const cache = page.tableLoadCaches[index];
-				cache.table = null;
-				cache.version = 0;
-				cache.valueTag = ValueTag.Nil;
-				cache.valueScalar = NaN;
-				cache.valueReference = null;
-			}
-		}
 		for (let index = 0; index < image.constTags.length; index += 1) {
 			if (image.constTags[index] === ValueTag.String) {
 				this.stringPool.markReachable(image.constScalars[index] as StringId);

@@ -463,11 +463,11 @@ private:
 	Value resolveTableFieldIndex(Table* table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
 	Value loadTableIntegerIndex(const Value& base, int index);
-	Value loadTableFieldIndexCached(DecodedInstructionPage& page, int cacheIndex, const Value& base, StringId key);
+	Value loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key);
 	Value loadTableFieldIndex(const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
-	void storeTableFieldIndex(const Value& base, StringId key, const Value& value);
+	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);

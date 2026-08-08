@@ -50,7 +50,7 @@ struct DecodedInstruction {
 	int32_t sbx = 0;
 	int32_t rkB = 0;
 	int32_t rkC = 0;
-	uint32_t tableCacheIndex = UINT32_MAX;
+	int32_t tableCacheSlot = -1;
 	uint16_t a = 0;
 	uint16_t b = 0;
 	uint16_t c = 0;
@@ -74,12 +74,6 @@ struct Blua32FunctionRecordLatch {
 	u32 upvalueCount = 0;
 };
 
-struct TableLoadInlineCache {
-	Table* table = nullptr;
-	uint32_t version = 0;
-	Value value = valueNil();
-};
-
 constexpr size_t DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
 inline constexpr u8 DECODED_REFRESH_DECODE = 1u;
@@ -94,7 +88,6 @@ struct DecodedInstructionPage {
 
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
 	std::array<uint8_t, DECODED_PAGE_WORDS> refreshState{};
-	std::vector<TableLoadInlineCache> tableLoadCaches;
 	bool cacheable;
 	u8* writeWatch;
 };

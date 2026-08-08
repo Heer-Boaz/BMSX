@@ -29,6 +29,7 @@ const TABLE_ENTRY_MISSING = -1;
 const TABLE_HASH_ENTRY_BASE = -2;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
+export const TABLE_INDEX_CHAIN_EXHAUSTED = -2;
 
 export type TableRuntimeState = {
 	tags: Uint8Array;
@@ -70,7 +71,6 @@ export class Table {
 	private hashFree = -1;
 	private hashDeadCount = 0;
 	private tableMetatable: Table | null = null;
-	private version = 1;
 
 	private static readonly numberBuffer = new ArrayBuffer(8);
 	private static readonly float64View = new Float64Array(Table.numberBuffer);
@@ -111,7 +111,6 @@ export class Table {
 
 	public set metatable(metatable: Table | null) {
 		this.tableMetatable = metatable;
-		this.bumpVersion();
 	}
 
 	public get(key: Value): Value {
@@ -265,6 +264,44 @@ export class Table {
 		target.setNil(targetIndex);
 	}
 
+	public loadStringKeyCached(
+		key: StringId,
+		predictedSlot: number,
+		target: ValueWriteTarget,
+		targetIndex: number,
+	): number {
+		if (predictedSlot >= 0 && predictedSlot < this.hashSize) {
+			const keySlot = this.hashKeySlot(predictedSlot);
+			const valueSlot = this.hashValueSlot(predictedSlot);
+			if (this.tags[keySlot] === ValueTag.String
+				&& this.scalars[keySlot] === key
+				&& this.tags[valueSlot] !== ValueTag.Nil) {
+				target.setEncoded(
+					targetIndex,
+					this.tags[valueSlot],
+					this.scalars[valueSlot],
+					this.references[valueSlot],
+				);
+				return predictedSlot;
+			}
+		}
+		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		if (nodeIndex >= 0) {
+			const valueSlot = this.hashValueSlot(nodeIndex);
+			if (this.tags[valueSlot] !== ValueTag.Nil) {
+				target.setEncoded(
+					targetIndex,
+					this.tags[valueSlot],
+					this.scalars[valueSlot],
+					this.references[valueSlot],
+				);
+				return nodeIndex;
+			}
+		}
+		target.setNil(targetIndex);
+		return -1;
+	}
+
 	public metatableIndexTable(indexKey: StringId): Table | null {
 		const metatable = this.tableMetatable;
 		if (!metatable) {
@@ -345,6 +382,33 @@ export class Table {
 		return false;
 	}
 
+	public resolveStringIndexCached(
+		indexKey: StringId,
+		key: StringId,
+		predictedSlot: number,
+		target: ValueSlots,
+		targetIndex: number,
+	): number {
+		let current: Table = this;
+		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
+			predictedSlot = current.loadStringKeyCached(
+				key,
+				predictedSlot,
+				target,
+				targetIndex,
+			);
+			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+				return predictedSlot;
+			}
+			const next = current.metatableIndexTable(indexKey);
+			if (!next) {
+				return -1;
+			}
+			current = next;
+		}
+		return TABLE_INDEX_CHAIN_EXHAUSTED;
+	}
+
 	public setStringKey(key: StringId, value: Value): void {
 		this.setHostValue(ValueTag.String, key, null, value);
 	}
@@ -354,8 +418,31 @@ export class Table {
 		valueTag: ValueTag,
 		valueScalar: number,
 		valueReference: ValueReference,
-	): void {
-		this.store(
+	): number {
+		if (valueTag === ValueTag.Nil) {
+			this.removeFromHash(ValueTag.String, key, null);
+			return -1;
+		}
+		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		if (nodeIndex >= 0) {
+			const valueSlot = this.hashValueSlot(nodeIndex);
+			if (this.tags[valueSlot] === ValueTag.Nil) {
+				this.hashDeadCount -= 1;
+			}
+			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
+			return nodeIndex;
+		}
+		if (this.hashSize === 0 || this.hashFree < 0) {
+			this.rehash(
+				ValueTag.String,
+				key,
+				null,
+				valueTag,
+				valueScalar,
+				valueReference,
+			);
+		}
+		return this.rawSet(
 			ValueTag.String,
 			key,
 			null,
@@ -363,6 +450,28 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
+	}
+
+	public storeStringKeyCached(
+		key: StringId,
+		predictedSlot: number,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): number {
+		if (valueTag !== ValueTag.Nil
+			&& predictedSlot >= 0
+			&& predictedSlot < this.hashSize) {
+			const keySlot = this.hashKeySlot(predictedSlot);
+			const valueSlot = this.hashValueSlot(predictedSlot);
+			if (this.tags[keySlot] === ValueTag.String
+				&& this.scalars[keySlot] === key
+				&& this.tags[valueSlot] !== ValueTag.Nil) {
+				this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
+				return predictedSlot;
+			}
+		}
+		return this.storeStringKey(key, valueTag, valueScalar, valueReference);
 	}
 
 	public clear(): void {
@@ -376,7 +485,6 @@ export class Table {
 		this.hashNext = EMPTY_TABLE_HASH_NEXT;
 		this.hashFree = -1;
 		this.hashDeadCount = 0;
-		this.bumpVersion();
 		this.luaHeap.release(previousBytes - this.getTrackedHeapBytes());
 	}
 
@@ -417,7 +525,6 @@ export class Table {
 		weakValues: boolean,
 		valueIsAlive: StoredValuePredicate,
 	): void {
-		let changed = false;
 		if (weakValues) {
 			for (let index = 0; index < this.arrayCapacity; index += 1) {
 				const tag = this.tags[index];
@@ -429,7 +536,6 @@ export class Table {
 				if (index < this.arrayLength) {
 					this.arrayLength = index;
 				}
-				changed = true;
 			}
 		}
 		for (let index = 0; index < this.hashSize; index += 1) {
@@ -454,15 +560,7 @@ export class Table {
 				continue;
 			}
 			this.markHashNodeDead(index);
-			changed = true;
 		}
-		if (changed) {
-			this.bumpVersion();
-		}
-	}
-
-	public getVersion(): number {
-		return this.version;
 	}
 
 	public captureRuntimeState(): TableRuntimeState {
@@ -505,7 +603,6 @@ export class Table {
 		}
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
-		this.bumpVersion();
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 		return maxDeadKeyHashId;
 	}
@@ -529,7 +626,6 @@ export class Table {
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.hashFree = hashCapacity > 0 ? hashCapacity - 1 : -1;
 		this.hashDeadCount = 0;
-		this.bumpVersion();
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 	}
 
@@ -635,7 +731,6 @@ export class Table {
 				} else if (arrayIndex === this.arrayLength) {
 					this.updateArrayLengthFrom(this.arrayLength);
 				}
-				this.bumpVersion();
 				return;
 			}
 			if (valueTag === ValueTag.Nil) {
@@ -643,13 +738,11 @@ export class Table {
 				if (arrayIndex < this.arrayLength) {
 					this.arrayLength = arrayIndex;
 				}
-				this.bumpVersion();
 				return;
 			}
 		}
 		if (valueTag === ValueTag.Nil) {
 			this.removeFromHash(keyTag, keyScalar, keyReference);
-			this.bumpVersion();
 			return;
 		}
 		const nodeIndex = this.findNodeIndex(keyTag, keyScalar, keyReference);
@@ -659,7 +752,6 @@ export class Table {
 				this.hashDeadCount -= 1;
 			}
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
-			this.bumpVersion();
 			return;
 		}
 		if (this.hashSize === 0 || this.hashFree < 0) {
@@ -680,7 +772,6 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
-		this.bumpVersion();
 	}
 
 	private valueAt(slot: number): Value {
@@ -1021,7 +1112,7 @@ export class Table {
 		valueTag: ValueTag,
 		valueScalar: number,
 		valueReference: ValueReference,
-	): void {
+	): number {
 		const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
 		if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
 			this.setEncoded(arrayIndex, valueTag, valueScalar, valueReference);
@@ -1032,9 +1123,9 @@ export class Table {
 			} else if (arrayIndex === this.arrayLength) {
 				this.updateArrayLengthFrom(this.arrayLength);
 			}
-			return;
+			return -1;
 		}
-		this.insertHash(
+		const nodeIndex = this.insertHash(
 			keyTag,
 			keyScalar,
 			keyReference,
@@ -1045,6 +1136,7 @@ export class Table {
 		if (arrayIndex >= 0 && arrayIndex === this.arrayLength) {
 			this.updateArrayLengthFrom(this.arrayLength);
 		}
+		return nodeIndex;
 	}
 
 	private insertHash(
@@ -1054,7 +1146,7 @@ export class Table {
 		valueTag: ValueTag,
 		valueScalar: number,
 		valueReference: ValueReference,
-	): void {
+	): number {
 		if (this.hashDeadCount > 0 || this.hashSize === 0) {
 			this.rehash(
 				keyTag,
@@ -1064,7 +1156,7 @@ export class Table {
 				valueScalar,
 				valueReference,
 			);
-			this.rawSet(
+			return this.rawSet(
 				keyTag,
 				keyScalar,
 				keyReference,
@@ -1072,7 +1164,6 @@ export class Table {
 				valueScalar,
 				valueReference,
 			);
-			return;
 		}
 		const mask = this.hashSize - 1;
 		const mainIndex = (this.hashValue(keyTag, keyScalar, keyReference) & mask) >>> 0;
@@ -1082,7 +1173,7 @@ export class Table {
 			this.setEncoded(mainKeySlot, keyTag, keyScalar, keyReference);
 			this.setEncoded(mainValueSlot, valueTag, valueScalar, valueReference);
 			this.hashNext[mainIndex] = TABLE_HASH_NEXT_END;
-			return;
+			return mainIndex;
 		}
 		const freeIndex = this.getFreeIndex();
 		if (freeIndex < 0) {
@@ -1094,7 +1185,7 @@ export class Table {
 				valueScalar,
 				valueReference,
 			);
-			this.rawSet(
+			return this.rawSet(
 				keyTag,
 				keyScalar,
 				keyReference,
@@ -1102,7 +1193,6 @@ export class Table {
 				valueScalar,
 				valueReference,
 			);
-			return;
 		}
 		const freeKeySlot = this.hashKeySlot(freeIndex);
 		const freeValueSlot = this.hashValueSlot(freeIndex);
@@ -1135,12 +1225,13 @@ export class Table {
 			this.setEncoded(mainKeySlot, keyTag, keyScalar, keyReference);
 			this.setEncoded(mainValueSlot, valueTag, valueScalar, valueReference);
 			this.hashNext[mainIndex] = TABLE_HASH_NEXT_END;
-			return;
+			return mainIndex;
 		}
 		this.setEncoded(freeKeySlot, keyTag, keyScalar, keyReference);
 		this.setEncoded(freeValueSlot, valueTag, valueScalar, valueReference);
 		this.hashNext[freeIndex] = this.hashNext[mainIndex];
 		this.hashNext[mainIndex] = freeIndex;
+		return freeIndex;
 	}
 
 	private removeFromHash(
@@ -1268,10 +1359,4 @@ export class Table {
 		this.arrayLength = newLength;
 	}
 
-	private bumpVersion(): void {
-		this.version = (this.version + 1) >>> 0;
-		if (this.version === 0) {
-			this.version = 1;
-		}
-	}
 }
