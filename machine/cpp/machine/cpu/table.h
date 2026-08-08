@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <new>
 #include <vector>
@@ -36,6 +37,24 @@ public:
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
+	bool getNumberArrayKey(double key, Value& value) const {
+		int index = 0;
+		if (!getNumberArrayIndex(key, index)
+			|| index >= static_cast<int>(m_array.size())) {
+			return false;
+		}
+		value = m_array[static_cast<size_t>(index)];
+		return true;
+	}
+	bool setNumberArrayKey(double key, const Value& value) {
+		int index = 0;
+		if (!getNumberArrayIndex(key, index)
+			|| index >= static_cast<int>(m_array.size())) {
+			return false;
+		}
+		setArraySlot(static_cast<size_t>(index), value);
+		return true;
+	}
 	Value getInteger(int index) const;
 	void setInteger(int index, const Value& value);
 	Value getStringKey(StringId key) const;
@@ -142,7 +161,34 @@ private:
 		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
 	};
 
+	void setArraySlot(size_t slot, const Value& value) {
+		m_array[slot] = value;
+		if (isNil(value)) {
+			if (slot < m_arrayLength) {
+				m_arrayLength = slot;
+			}
+		} else if (slot == m_arrayLength) {
+			size_t newLength = m_arrayLength;
+			while (newLength < m_array.size() && !isNil(m_array[newLength])) {
+				++newLength;
+			}
+			m_arrayLength = newLength;
+		}
+	}
+
 	bool getArrayIndex(const Value& key, int& outIndex) const;
+	bool getNumberArrayIndex(double key, int& outIndex) const {
+		if (!(key >= 1.0
+			&& key <= static_cast<double>(std::numeric_limits<int>::max()))) {
+			return false;
+		}
+		const int index = static_cast<int>(key);
+		if (static_cast<double>(index) != key) {
+			return false;
+		}
+		outIndex = index - 1;
+		return true;
+	}
 	bool hasArrayIndex(size_t index) const;
 	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;

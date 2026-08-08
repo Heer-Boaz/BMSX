@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
@@ -44,22 +43,7 @@ bool Table::getArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
 		return false;
 	}
-	double n = asNumber(key);
-	if (!std::isfinite(n)) {
-		return false;
-	}
-	if (n < 1.0) {
-		return false;
-	}
-	if (n > static_cast<double>(std::numeric_limits<int>::max())) {
-		return false;
-	}
-	int index = static_cast<int>(n);
-	if (static_cast<double>(index) != n) {
-		return false;
-	}
-	outIndex = index - 1;
-	return true;
+	return getNumberArrayIndex(asNumber(key), outIndex);
 }
 
 bool Table::hasArrayIndex(size_t index) const {
@@ -274,18 +258,7 @@ int Table::rawSet(const Value& key, const Value& value) {
 	if (isArrayKey) {
 		size_t idx = static_cast<size_t>(index);
 		if (idx < m_array.size()) {
-			m_array[idx] = value;
-			if (isNil(value)) {
-				if (idx < m_arrayLength) {
-					m_arrayLength = idx;
-				}
-			} else if (idx == m_arrayLength) {
-				size_t newLength = m_arrayLength;
-				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
-					++newLength;
-				}
-				m_arrayLength = newLength;
-			}
+			setArraySlot(idx, value);
 			return -1;
 		}
 	}
@@ -443,23 +416,8 @@ void Table::set(const Value& key, const Value& value) {
 	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
 		const size_t idx = static_cast<size_t>(index);
-		if (isNil(value)) {
-			if (idx < m_array.size()) {
-				m_array[idx] = value;
-				if (idx < m_arrayLength) {
-					m_arrayLength = idx;
-				}
-				return;
-			}
-		} else if (idx < m_array.size()) {
-			m_array[idx] = value;
-			if (idx == m_arrayLength) {
-				size_t newLength = m_arrayLength;
-				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
-					++newLength;
-				}
-				m_arrayLength = newLength;
-			}
+		if (idx < m_array.size()) {
+			setArraySlot(idx, value);
 			return;
 		}
 	}

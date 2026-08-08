@@ -122,12 +122,28 @@ DISPATCH_LABEL(HALT) {
 DISPATCH_LABEL(GETT) {
 	const Value& tableValue = REG(b);
 	const Value& key = readRK(IMAGE, registers, rkC);
+	if (valueIsTable(tableValue) && valueIsNumber(key)) {
+		Table* table = asTable(tableValue);
+		Value value;
+		if (!table->metatable && table->getNumberArrayKey(asNumber(key), value)) {
+			SET_REGISTER_FAST(a, value);
+			DISPATCH_CONTINUE();
+		}
+	}
 	SET_REGISTER_FAST(a, loadTableIndex(tableValue, key));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETT) {
-	storeTableIndex(REG(a), readRK(IMAGE, registers, rkB), readRK(IMAGE, registers, rkC));
+	const Value& tableValue = REG(a);
+	const Value& key = readRK(IMAGE, registers, rkB);
+	const Value& value = readRK(IMAGE, registers, rkC);
+	if (valueIsTable(tableValue)
+		&& valueIsNumber(key)
+		&& asTable(tableValue)->setNumberArrayKey(asNumber(key), value)) {
+		DISPATCH_CONTINUE();
+	}
+	storeTableIndex(tableValue, key, value);
 	DISPATCH_CONTINUE();
 }
 
