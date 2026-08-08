@@ -429,6 +429,7 @@ private:
 	size_t m_capacity = 0;
 };
 
+void appendValueString(std::string& out, Value value, const StringPool& stringPool);
 std::string valueToString(Value value, const StringPool& stringPool);
 
 inline const char* valueTypeName(Value value) {

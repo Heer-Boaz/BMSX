@@ -12,6 +12,7 @@
 namespace bmsx {
 
 using StringId = uint32_t;
+class CPU;
 class LuaHeap;
 
 struct StringPoolStateEntry {
@@ -50,6 +51,9 @@ public:
 	void reclaimUnreachableTracked();
 
 private:
+	friend class CPU;
+	StringId internOwned(std::string&& value);
+
 	struct InternedString {
 		StringId id = 0;
 		std::string value;
@@ -72,7 +76,10 @@ private:
 	};
 
 	const InternedString& entry(StringId id) const;
-	InternedString& insert(StringId id, std::string_view value);
+	template <typename Text>
+	StringId internText(Text&& value, bool tracked);
+	template <typename Text>
+	InternedString& insert(StringId id, Text&& value);
 	void insertEntry(std::unique_ptr<InternedString> entry);
 	void trackStringEntry(InternedString& entry, size_t byteLength);
 	LuaHeap& m_luaHeap;

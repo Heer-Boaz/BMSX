@@ -236,19 +236,38 @@ DISPATCH_LABEL(SHR) {
 }
 
 DISPATCH_LABEL(CONCAT) {
-	std::string text = valueToString(readRK(FRAME, rkB), m_stringPool);
-	text += valueToString(readRK(FRAME, rkC), m_stringPool);
-	const StringId textId = m_stringPool.intern(text);
+	const Value left = readRK(FRAME, rkB);
+	const Value right = readRK(FRAME, rkC);
+	size_t stringByteCount = 0;
+	if (valueIsString(left)) {
+		stringByteCount += m_stringPool.toString(asStringId(left)).size();
+	}
+	if (valueIsString(right)) {
+		stringByteCount += m_stringPool.toString(asStringId(right)).size();
+	}
+	std::string text;
+	text.reserve(stringByteCount);
+	appendValueString(text, left, m_stringPool);
+	appendValueString(text, right, m_stringPool);
+	const StringId textId = m_stringPool.internOwned(std::move(text));
 	SET_REGISTER_FAST(a, valueString(textId));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(CONCATN) {
-	std::string text;
+	size_t stringByteCount = 0;
 	for (int index = 0; index < c; ++index) {
-		text += valueToString(REG(b + index), m_stringPool);
+		const Value value = REG(b + index);
+		if (valueIsString(value)) {
+			stringByteCount += m_stringPool.toString(asStringId(value)).size();
+		}
 	}
-	const StringId textId = m_stringPool.intern(text);
+	std::string text;
+	text.reserve(stringByteCount);
+	for (int index = 0; index < c; ++index) {
+		appendValueString(text, REG(b + index), m_stringPool);
+	}
+	const StringId textId = m_stringPool.internOwned(std::move(text));
 	SET_REGISTER_FAST(a, valueString(textId));
 	DISPATCH_CONTINUE();
 }

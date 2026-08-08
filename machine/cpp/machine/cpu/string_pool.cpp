@@ -3,6 +3,8 @@
 #include "common/utf8.h"
 #include "machine/cpu/lua_heap.h"
 
+#include <utility>
+
 namespace bmsx {
 
 StringPool::StringPool(LuaHeap& luaHeap)
@@ -22,11 +24,8 @@ bool StringPool::StringKeyEq::operator()(const std::string& lhs, const std::stri
 bool StringPool::StringKeyEq::operator()(const std::string& lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
 bool StringPool::StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 
-StringId StringPool::intern(std::string_view value) {
-	return intern(value, true);
-}
-
-StringId StringPool::intern(std::string_view value, bool tracked) {
+template <typename Text>
+StringId StringPool::internText(Text&& value, bool tracked) {
 	auto it = m_stringMap.find(value);
 	if (it != m_stringMap.end()) {
 		const StringId id = it->second;
@@ -42,11 +41,23 @@ StringId StringPool::intern(std::string_view value, bool tracked) {
 	if (tracked) {
 		m_luaHeap.reserve(byteLength);
 	}
-	InternedString& stringEntry = insert(m_nextId, value);
+	InternedString& stringEntry = insert(m_nextId, std::forward<Text>(value));
 	if (tracked) {
 		trackStringEntry(stringEntry, byteLength);
 	}
 	return stringEntry.id;
+}
+
+StringId StringPool::intern(std::string_view value) {
+	return internText(value, true);
+}
+
+StringId StringPool::intern(std::string_view value, bool tracked) {
+	return internText(value, tracked);
+}
+
+StringId StringPool::internOwned(std::string&& value) {
+	return internText(std::move(value), true);
 }
 
 std::optional<StringId> StringPool::find(std::string_view value) const {
@@ -124,10 +135,11 @@ const StringPool::InternedString& StringPool::entry(StringId id) const {
 	return *stringEntry;
 }
 
-StringPool::InternedString& StringPool::insert(StringId id, std::string_view value) {
+template <typename Text>
+StringPool::InternedString& StringPool::insert(StringId id, Text&& value) {
 	auto stringEntry = std::make_unique<InternedString>();
 	stringEntry->id = id;
-	stringEntry->value.assign(value.data(), value.size());
+	stringEntry->value = std::forward<Text>(value);
 	stringEntry->codepointCount = utf8CodepointCount(stringEntry->value);
 	InternedString& inserted = *stringEntry;
 	insertEntry(std::move(stringEntry));
