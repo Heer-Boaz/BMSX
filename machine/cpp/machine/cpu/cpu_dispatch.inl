@@ -324,10 +324,10 @@ DISPATCH_LABEL(LT) {
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
-	if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
-	} else {
+	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) < asNumber(rightValue);
+	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
+		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -339,10 +339,10 @@ DISPATCH_LABEL(LE) {
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
-	if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
-	} else {
+	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) <= asNumber(rightValue);
+	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
+		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();

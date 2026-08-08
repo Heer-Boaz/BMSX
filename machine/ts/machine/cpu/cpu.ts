@@ -2662,13 +2662,15 @@ export class CPU implements MappedPageInvalidator {
 						rightTag = registers.getTag(rkC);
 						rightScalar = registers.getScalar(rkC);
 					}
-					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
-						? utf8Compare(
-							this.stringPool.toString(leftScalar as StringId),
-							this.stringPool.toString(rightScalar as StringId),
-						) < 0
-						: (leftTag === ValueTag.Number ? leftScalar : NaN)
-							< (rightTag === ValueTag.Number ? rightScalar : NaN);
+					let ok = false;
+					if (leftTag === ValueTag.Number) {
+						ok = rightTag === ValueTag.Number && leftScalar < rightScalar;
+					} else if (leftTag === ValueTag.String) {
+						ok = rightTag === ValueTag.String && utf8Compare(
+								this.stringPool.toString(leftScalar as StringId),
+								this.stringPool.toString(rightScalar as StringId),
+							) < 0;
+					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -2771,13 +2773,15 @@ export class CPU implements MappedPageInvalidator {
 						rightTag = registers.getTag(rkC);
 						rightScalar = registers.getScalar(rkC);
 					}
-					const ok = leftTag === ValueTag.String && rightTag === ValueTag.String
-						? utf8Compare(
-							this.stringPool.toString(leftScalar as StringId),
-							this.stringPool.toString(rightScalar as StringId),
-						) <= 0
-						: (leftTag === ValueTag.Number ? leftScalar : NaN)
-							<= (rightTag === ValueTag.Number ? rightScalar : NaN);
+					let ok = false;
+					if (leftTag === ValueTag.Number) {
+						ok = rightTag === ValueTag.Number && leftScalar <= rightScalar;
+					} else if (leftTag === ValueTag.String) {
+						ok = rightTag === ValueTag.String && utf8Compare(
+								this.stringPool.toString(leftScalar as StringId),
+								this.stringPool.toString(rightScalar as StringId),
+							) <= 0;
+					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
