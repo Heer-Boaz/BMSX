@@ -2249,8 +2249,8 @@ RunResult CPU::runLoop(
 				switch (dispatchOp) {
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
-					const Value& shiftLeftValue = readRK(FRAME, rkB);
-					const Value& shiftRightValue = readRK(FRAME, rkC);
+					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
+					const Value& shiftRightValue = readRK(IMAGE, registers, rkC);
 					const int32_t shifted = dispatchOp
 						== static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor)
 						? static_cast<int32_t>(
@@ -2289,8 +2289,8 @@ RunResult CPU::runLoop(
 					instructionBudgetRemaining -= static_cast<int>(
 						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
 					);
-					const Value& xorLeftValue = readRK(FRAME, decoded->rkB);
-					const Value& xorRightValue = readRK(FRAME, decoded->rkC);
+					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->rkB);
+					const Value& xorRightValue = readRK(IMAGE, registers, decoded->rkC);
 					const int32_t xorResult = static_cast<int32_t>(
 						toU32(xorLeftValue) ^ toU32(xorRightValue)
 					);
@@ -2301,8 +2301,8 @@ RunResult CPU::runLoop(
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
-					const Value& addLeftValue = readRK(FRAME, rkB);
-					const Value& addRightValue = readRK(FRAME, rkC);
+					const Value& addLeftValue = readRK(IMAGE, registers, rkB);
+					const Value& addRightValue = readRK(IMAGE, registers, rkC);
 					SET_REGISTER_FAST(
 						a,
 						valueNumber(asNumber(addLeftValue) + asNumber(addRightValue))
@@ -2335,8 +2335,8 @@ RunResult CPU::runLoop(
 					instructionBudgetRemaining -= static_cast<int>(
 						BASE_CYCLES[static_cast<size_t>(OpCode::SHL)]
 					);
-					const Value& shiftLeftValue = readRK(FRAME, decoded->rkB);
-					const Value& shiftRightValue = readRK(FRAME, decoded->rkC);
+					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->rkB);
+					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->rkC);
 					const uint32_t shifted = toU32(shiftLeftValue)
 						<< (toU32(shiftRightValue) & 31u);
 					SET_REGISTER_FAST(
@@ -2897,14 +2897,6 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 		}
 		writeAddr += 4;
 	}
-}
-
-const Value& CPU::readRK(CallFrame& frame, int rk) {
-	if (rk < 0) {
-		const int index = -1 - rk;
-		return frame.executionImage->constPool[static_cast<size_t>(index)];
-	}
-	return frame.registers[static_cast<size_t>(rk)];
 }
 
 Value CPU::resolveTableIndex(Table* table, const Value& key) {

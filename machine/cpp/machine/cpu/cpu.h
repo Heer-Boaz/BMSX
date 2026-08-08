@@ -452,7 +452,12 @@ private:
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
-	const Value& readRK(CallFrame& frame, int rk);
+	static const Value& readRK(Blua32ExecutionImage& image, Value* registers, int rk) {
+		if (rk < 0) {
+			return image.constPool[static_cast<size_t>(-1 - rk)];
+		}
+		return registers[static_cast<size_t>(rk)];
+	}
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);

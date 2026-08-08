@@ -81,7 +81,7 @@ DISPATCH_LABEL(GETI) {
 }
 
 DISPATCH_LABEL(SETI) {
-	storeTableIntegerIndex(REG(a), b, readRK(FRAME, rkC));
+	storeTableIntegerIndex(REG(a), b, readRK(IMAGE, registers, rkC));
 	DISPATCH_CONTINUE();
 }
 
@@ -99,7 +99,7 @@ DISPATCH_LABEL(SETFIELD) {
 	storeTableFieldIndex(
 		REG(a),
 		asStringId(IMAGE.constPool[static_cast<size_t>(b)]),
-		readRK(FRAME, rkC)
+		readRK(IMAGE, registers, rkC)
 	);
 	DISPATCH_CONTINUE();
 }
@@ -119,13 +119,13 @@ DISPATCH_LABEL(HALT) {
 
 DISPATCH_LABEL(GETT) {
 	const Value& tableValue = REG(b);
-	const Value& key = readRK(FRAME, rkC);
+	const Value& key = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, loadTableIndex(tableValue, key));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETT) {
-	storeTableIndex(REG(a), readRK(FRAME, rkB), readRK(FRAME, rkC));
+	storeTableIndex(REG(a), readRK(IMAGE, registers, rkB), readRK(IMAGE, registers, rkC));
 	DISPATCH_CONTINUE();
 }
 
@@ -136,36 +136,36 @@ DISPATCH_LABEL(NEWT) {
 }
 
 DISPATCH_LABEL(ADD) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) + asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SUB) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) - asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MUL) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) * asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(DIV) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) / asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MOD) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const double left = asNumber(leftValue);
 	const double right = asNumber(rightValue);
 	SET_REGISTER_FAST(a, valueNumber(luaModulo(left, right)));
@@ -173,22 +173,22 @@ DISPATCH_LABEL(MOD) {
 }
 
 DISPATCH_LABEL(FLOORDIV) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(luaFloorDivide(asNumber(left), asNumber(right))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(POW) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(std::pow(asNumber(left), asNumber(right))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BAND) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left & right);
@@ -197,8 +197,8 @@ DISPATCH_LABEL(BAND) {
 }
 
 DISPATCH_LABEL(BOR) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left | right);
@@ -207,8 +207,8 @@ DISPATCH_LABEL(BOR) {
 }
 
 DISPATCH_LABEL(BXOR) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left ^ right);
@@ -217,8 +217,8 @@ DISPATCH_LABEL(BXOR) {
 }
 
 DISPATCH_LABEL(SHL) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
 	const uint32_t right = toU32(rightValue) & 31u;
 	const uint32_t result = left << right;
@@ -227,8 +227,8 @@ DISPATCH_LABEL(SHL) {
 }
 
 DISPATCH_LABEL(SHR) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const int32_t left = toI32(leftValue);
 	const uint32_t right = toU32(rightValue) & 31u;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(left >> right)));
@@ -236,8 +236,8 @@ DISPATCH_LABEL(SHR) {
 }
 
 DISPATCH_LABEL(CONCAT) {
-	const Value left = readRK(FRAME, rkB);
-	const Value right = readRK(FRAME, rkC);
+	const Value left = readRK(IMAGE, registers, rkB);
+	const Value right = readRK(IMAGE, registers, rkC);
 	size_t stringByteCount = 0;
 	if (valueIsString(left)) {
 		stringByteCount += m_stringPool.toString(asStringId(left)).size();
@@ -306,8 +306,8 @@ DISPATCH_LABEL(BNOT) {
 }
 
 DISPATCH_LABEL(EQ) {
-	const Value& left = readRK(FRAME, rkB);
-	const Value& right = readRK(FRAME, rkC);
+	const Value& left = readRK(IMAGE, registers, rkB);
+	const Value& right = readRK(IMAGE, registers, rkC);
 	bool eq = false;
 	if (valueIsNumber(left) && valueIsNumber(right)) {
 		eq = asNumber(left) == asNumber(right);
@@ -321,8 +321,8 @@ DISPATCH_LABEL(EQ) {
 }
 
 DISPATCH_LABEL(LT) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
 	if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
@@ -336,8 +336,8 @@ DISPATCH_LABEL(LT) {
 }
 
 DISPATCH_LABEL(LE) {
-	const Value& leftValue = readRK(FRAME, rkB);
-	const Value& rightValue = readRK(FRAME, rkC);
+	const Value& leftValue = readRK(IMAGE, registers, rkB);
+	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
 	if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
@@ -586,7 +586,7 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	const uint32_t addr = toU32(readRK(FRAME, rkB));
+	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
 		DISPATCH_CONTINUE();
@@ -611,7 +611,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	const uint32_t addr = toU32(readRK(FRAME, rkB));
+	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
@@ -637,7 +637,7 @@ DISPATCH_LABEL(STORE_MEM) {
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
-	const uint32_t addr = toU32(readRK(FRAME, rkB));
+	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
