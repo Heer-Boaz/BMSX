@@ -2825,16 +2825,21 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.VARARG: {
 					const b = page.b[pageOffset];
 					const count = b === 0 ? frame.varargCount : b;
-					for (let index = 0; index < count; index += 1) {
-						if (index < frame.varargCount) {
-							registers.copySlotFrom(this.stackRegisters, a + index, frame.varargBase + index);
-							this.bumpRegisterTop(frame, a + index);
-						} else {
-							this.setRegisterNilFast(frame, registers, a + index);
-						}
+					const copyCount = Math.min(count, frame.varargCount);
+					registers.copyRangeFrom(
+						this.stackRegisters,
+						a,
+						frame.varargBase,
+						copyCount,
+					);
+					for (let index = copyCount; index < count; index += 1) {
+						registers.setNil(a + index);
 					}
+					const nextTop = a + count;
 					if (b === 0) {
-						frame.top = a + count;
+						frame.top = nextTop;
+					} else if (nextTop > frame.top) {
+						frame.top = nextTop;
 					}
 					return;
 				}

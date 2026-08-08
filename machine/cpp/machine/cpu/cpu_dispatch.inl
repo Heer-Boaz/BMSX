@@ -14,8 +14,10 @@ DISPATCH_LABEL(LOADK) {
 }
 
 DISPATCH_LABEL(LOADNIL) {
-	for (int i = 0; i < b; ++i) {
-		SET_REGISTER_FAST(a + i, valueNil());
+	std::fill_n(registers + a, b, valueNil());
+	const int nextTop = a + b;
+	if (nextTop > FRAME.top) {
+		FRAME.top = nextTop;
 	}
 	DISPATCH_CONTINUE();
 }
@@ -440,13 +442,15 @@ DISPATCH_LABEL(SETUP) {
 }
 
 DISPATCH_LABEL(VARARG) {
-	int count = b == 0 ? FRAME.varargCount : b;
-	for (int i = 0; i < count; ++i) {
-		Value value = i < FRAME.varargCount ? m_stack[static_cast<size_t>(FRAME.varargBase + i)] : valueNil();
-		SET_REGISTER_FAST(a + i, value);
-	}
+	const int count = b == 0 ? FRAME.varargCount : b;
+	const int copyCount = std::min(count, FRAME.varargCount);
+	std::copy_n(m_stack.data() + FRAME.varargBase, copyCount, registers + a);
+	std::fill_n(registers + a + copyCount, count - copyCount, valueNil());
+	const int nextTop = a + count;
 	if (b == 0) {
-		FRAME.top = a + count;
+		FRAME.top = nextTop;
+	} else if (nextTop > FRAME.top) {
+		FRAME.top = nextTop;
 	}
 	DISPATCH_CONTINUE();
 }
