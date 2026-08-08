@@ -2190,54 +2190,30 @@ export class CPU implements MappedPageInvalidator {
 		const a = page.a[pageOffset];
 		switch (op) {
 				case DecodedDispatchOp.FusedShlBxor:
-				case DecodedDispatchOp.FusedShrBxor: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					const shifted = op === DecodedDispatchOp.FusedShlBxor
-						? left << (right & 31)
-						: left >> (right & 31);
-					this.setRegisterNumberFast(frame, registers, a, shifted);
-					if (this.instructionBudgetRemaining <= 0) {
-						return;
-					}
-					const pc = frame.pc;
-					const secondPage = this.decodedPageForFrame(frame, pc);
-					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
-						if (!this.decodeInstruction(
-							frame,
-							secondPage,
-							secondPageOffset,
-							pc,
-							false,
-						)) {
-							return;
-						}
-					}
-					const width = secondPage.widths[secondPageOffset];
-					this.currentInstructionPc = pc;
-					frame.pc = pc + width * INSTRUCTION_BYTES;
-					this.lastExecutionDomainId = image.executionDomainId;
-					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.BXOR];
-					const xorLeft = this.readRKNumber(frame, secondPage.rkB[secondPageOffset]);
-					const xorRight = this.readRKNumber(frame, secondPage.rkC[secondPageOffset]);
-					this.setRegisterNumberFast(
-						frame,
-						registers,
-						secondPage.a[secondPageOffset],
-						xorLeft ^ xorRight,
-					);
-					return;
-				}
+				case DecodedDispatchOp.FusedShrBxor:
 				case DecodedDispatchOp.FusedAddShl: {
 					const rkB = page.rkB[pageOffset];
 					const rkC = page.rkC[pageOffset];
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left + right);
+					const leftConstantIndex = -1 - rkB;
+					const left = rkB < 0
+						? image.constTags[leftConstantIndex] === ValueTag.Number
+							? image.constScalars[leftConstantIndex] : NaN
+						: registers.getNumber(rkB);
+					const rightConstantIndex = -1 - rkC;
+					const right = rkC < 0
+						? image.constTags[rightConstantIndex] === ValueTag.Number
+							? image.constScalars[rightConstantIndex] : NaN
+						: registers.getNumber(rkC);
+					const isAddShl = op === DecodedDispatchOp.FusedAddShl;
+					let firstResult: number;
+					if (isAddShl) {
+						firstResult = left + right;
+					} else if (op === DecodedDispatchOp.FusedShlBxor) {
+						firstResult = left << (right & 31);
+					} else {
+						firstResult = left >> (right & 31);
+					}
+					this.setRegisterNumberFast(frame, registers, a, firstResult);
 					if (this.instructionBudgetRemaining <= 0) {
 						return;
 					}
@@ -2260,14 +2236,29 @@ export class CPU implements MappedPageInvalidator {
 					frame.pc = pc + width * INSTRUCTION_BYTES;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					this.instructionBudgetRemaining -= BASE_CYCLES[OpCode.SHL];
-					const shiftLeft = this.readRKNumber(frame, secondPage.rkB[secondPageOffset]);
-					const shiftRight = this.readRKNumber(frame, secondPage.rkC[secondPageOffset]);
+					this.instructionBudgetRemaining -= BASE_CYCLES[
+						isAddShl ? OpCode.SHL : OpCode.BXOR
+					];
+					const secondRkB = secondPage.rkB[secondPageOffset];
+					const secondRkC = secondPage.rkC[secondPageOffset];
+					const secondLeftConstantIndex = -1 - secondRkB;
+					const secondLeft = secondRkB < 0
+						? image.constTags[secondLeftConstantIndex] === ValueTag.Number
+							? image.constScalars[secondLeftConstantIndex] : NaN
+						: registers.getNumber(secondRkB);
+					const secondRightConstantIndex = -1 - secondRkC;
+					const secondRight = secondRkC < 0
+						? image.constTags[secondRightConstantIndex] === ValueTag.Number
+							? image.constScalars[secondRightConstantIndex] : NaN
+						: registers.getNumber(secondRkC);
+					const secondResult = isAddShl
+						? secondLeft << (secondRight & 31)
+						: secondLeft ^ secondRight;
 					this.setRegisterNumberFast(
 						frame,
 						registers,
 						secondPage.a[secondPageOffset],
-						shiftLeft << (shiftRight & 31),
+						secondResult,
 					);
 					return;
 				}
