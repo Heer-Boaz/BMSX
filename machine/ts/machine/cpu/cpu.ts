@@ -3472,29 +3472,23 @@ export class CPU implements MappedPageInvalidator {
 		const registers = frame.registers;
 		let leftTag: ValueTag;
 		let leftScalar: number;
-		let leftReference: ValueReference;
 		if (left < 0) {
 			const constantIndex = -1 - left;
 			leftTag = image.constTags[constantIndex];
 			leftScalar = image.constScalars[constantIndex];
-			leftReference = null;
 		} else {
 			leftTag = registers.getTag(left);
 			leftScalar = registers.getScalar(left);
-			leftReference = registers.getReference(left);
 		}
 		let rightTag: ValueTag;
 		let rightScalar: number;
-		let rightReference: ValueReference;
 		if (right < 0) {
 			const constantIndex = -1 - right;
 			rightTag = image.constTags[constantIndex];
 			rightScalar = image.constScalars[constantIndex];
-			rightReference = null;
 		} else {
 			rightTag = registers.getTag(right);
 			rightScalar = registers.getScalar(right);
-			rightReference = registers.getReference(right);
 		}
 		if (leftTag !== rightTag) {
 			return false;
@@ -3511,7 +3505,7 @@ export class CPU implements MappedPageInvalidator {
 				return leftScalar === rightScalar;
 			case ValueTag.Table:
 			case ValueTag.Closure:
-				return leftReference === rightReference;
+				return registers.getReference(left) === registers.getReference(right);
 		}
 	}
 
