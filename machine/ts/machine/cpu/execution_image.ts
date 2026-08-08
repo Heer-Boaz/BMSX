@@ -4,6 +4,7 @@ import type { MappedBusSignals } from '../memory/bus_signals';
 import type { Closure } from './closure';
 import type { Table } from './table';
 import { ValueTag } from './value';
+import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 
 export type TableLoadInlineCache = {
 	table: Table | null;
@@ -13,10 +14,7 @@ export type TableLoadInlineCache = {
 	valueReference: Table | Closure | null;
 };
 
-export const DECODED_PAGE_BYTE_SHIFT = 10;
-export const DECODED_PAGE_BYTE_SIZE = 1 << DECODED_PAGE_BYTE_SHIFT;
-export const DECODED_PAGE_BYTE_MASK = DECODED_PAGE_BYTE_SIZE - 1;
-export const DECODED_PAGE_SHIFT = DECODED_PAGE_BYTE_SHIFT - 2;
+export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
 export const NO_TABLE_LOAD_CACHE_INDEX = 0xffffffff;
 
@@ -52,6 +50,16 @@ export function decodedInstructionNeedsRefresh(
 	pageOffset: number,
 	allowFusion: boolean,
 ): boolean {
+	const revisions = page.contentRevisions;
+	if (revisions === null) {
+		return true;
+	}
+	const revision = revisions[page.contentRevisionIndex];
+	if (page.decodedRevision !== revision) {
+		page.decodedRevision = revision;
+		page.decodeRequired.fill(1);
+		page.fusionRequired.fill(0);
+	}
 	return page.decodeRequired[pageOffset] !== 0
 		|| (allowFusion && page.fusionRequired[pageOffset] !== 0);
 }
@@ -73,7 +81,9 @@ export type DecodedInstructionPage = {
 	tableCacheIndexes: Uint32Array;
 	decodeRequired: Uint8Array;
 	fusionRequired: Uint8Array;
-	readOnly: boolean;
+	contentRevisions: Float64Array | null;
+	contentRevisionIndex: number;
+	decodedRevision: number;
 	tableLoadCaches: TableLoadInlineCache[];
 };
 
@@ -100,7 +110,10 @@ export type Blua32FunctionRecordLatch = {
 	upvalueCount: number;
 };
 
-export function createDecodedInstructionPage(): DecodedInstructionPage {
+export function createDecodedInstructionPage(
+	contentRevisions: Float64Array | null,
+	contentRevisionIndex: number,
+): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
 		ops: new Uint8Array(DECODED_PAGE_WORDS),
@@ -118,7 +131,9 @@ export function createDecodedInstructionPage(): DecodedInstructionPage {
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
 		decodeRequired: new Uint8Array(DECODED_PAGE_WORDS),
 		fusionRequired: new Uint8Array(DECODED_PAGE_WORDS),
-		readOnly: false,
+		contentRevisions,
+		contentRevisionIndex,
+		decodedRevision: contentRevisions === null ? 0 : contentRevisions[contentRevisionIndex],
 		tableLoadCaches: [],
 	};
 	page.decodeRequired.fill(1);

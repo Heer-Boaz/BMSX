@@ -91,6 +91,8 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(ramByteCount)
+	, m_systemRomRevisions(1u)
+	, m_ramPageRevisions(ramByteCount)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
@@ -100,6 +102,41 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 
 void Memory::installSystemRom(std::span<const u8> rom) {
 	m_systemRom = rom;
+	m_systemRomRevisions.touch(0u, 1u);
+}
+
+void Memory::bindMappedPage(
+	uint32_t addr,
+	MappedBusSignals busSignals,
+	MappedPageBinding& out
+) const {
+	out.key = addr;
+	if (addr < RAM_BASE) {
+		if (addr < SYSTEM_ROM_SIZE) {
+			out.revision = &m_systemRomRevisions.values[0];
+		} else {
+			out.revision = nullptr;
+		}
+		return;
+	}
+	if (addr < CART_ROM_BASE) {
+		if (addr < IO_BASE + m_ioSlots.size() * IO_WORD_SIZE) {
+			out.revision = nullptr;
+			return;
+		}
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset < m_ram.size()) {
+			out.revision = &m_ramPageRevisions.values[offset >> MAPPED_PAGE_BYTE_SHIFT];
+			return;
+		}
+		out.revision = nullptr;
+		return;
+	}
+	if (addr < CART_BUS_END) {
+		m_cartridgeController.bindMappedPage(addr, busSignals, out);
+		return;
+	}
+	out.revision = nullptr;
 }
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
@@ -150,6 +187,7 @@ MemorySaveState Memory::captureSaveState() const {
 
 void Memory::restoreSaveState(const MemorySaveState& state) {
 	std::memcpy(m_ram.data(), state.ram.data(), state.ram.size());
+	m_ramPageRevisions.touch(0u, m_ram.size());
 	m_busFaultCode = state.busFaultCode;
 	m_busFaultAddr = state.busFaultAddr;
 	m_busFaultAccess = state.busFaultAccess;
@@ -199,6 +237,7 @@ bool Memory::writeRamU8(uint32_t addr, u8 value) {
 		return false;
 	}
 	m_ram[offset] = value;
+	m_ramPageRevisions.touch(offset, 1u);
 	return true;
 }
 
@@ -215,6 +254,7 @@ bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
 	} else {
 		writeLE32(m_ram.data() + offset, value);
 	}
+	m_ramPageRevisions.touch(offset, byteLength);
 	return true;
 }
 
@@ -492,6 +532,7 @@ void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + length <= m_ram.size()) {
 			std::memcpy(m_ram.data() + offset, data, length);
+			m_ramPageRevisions.touch(offset, length);
 			return;
 		}
 	}

@@ -9,6 +9,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/memory/bus_signals.h"
+#include "machine/memory/mapped_page.h"
 #include "spec/blua32/execution_domain.h"
 #include "spec/blua32/opcode.h"
 
@@ -80,14 +81,13 @@ struct TableLoadInlineCache {
 	Value value = valueNil();
 };
 
-constexpr u32 DECODED_PAGE_BYTE_SHIFT = 10u;
-constexpr u32 DECODED_PAGE_BYTE_SIZE = 1u << DECODED_PAGE_BYTE_SHIFT;
-constexpr u32 DECODED_PAGE_BYTE_MASK = DECODED_PAGE_BYTE_SIZE - 1u;
-constexpr size_t DECODED_PAGE_SHIFT = DECODED_PAGE_BYTE_SHIFT - 2u;
+constexpr size_t DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
 
 struct DecodedInstructionPage {
-	DecodedInstructionPage() {
+	explicit DecodedInstructionPage(const u64* revision)
+		: contentRevision(revision)
+		, decodedRevision(revision ? *revision : 0u) {
 		decodeRequired.fill(1u);
 	}
 
@@ -95,14 +95,24 @@ struct DecodedInstructionPage {
 	std::array<uint8_t, DECODED_PAGE_WORDS> decodeRequired{};
 	std::array<uint8_t, DECODED_PAGE_WORDS> fusionRequired{};
 	std::vector<TableLoadInlineCache> tableLoadCaches;
-	bool readOnly = false;
+	const u64* contentRevision;
+	u64 decodedRevision;
 };
 
 inline bool decodedInstructionNeedsRefresh(
-	const DecodedInstructionPage& page,
+	DecodedInstructionPage& page,
 	size_t pageOffset,
 	bool allowFusion
 ) {
+	if (!page.contentRevision) {
+		return true;
+	}
+	const u64 revision = *page.contentRevision;
+	if (page.decodedRevision != revision) {
+		page.decodedRevision = revision;
+		page.decodeRequired.fill(1u);
+		page.fusionRequired.fill(0u);
+	}
 	return page.decodeRequired[pageOffset] != 0u
 		|| (allowFusion && page.fusionRequired[pageOffset] != 0u);
 }

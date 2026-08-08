@@ -100,6 +100,17 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 
+	const readMappedBusU32BE = memory.readMappedBusU32BE.bind(memory);
+	let instructionReadCount = 0;
+	memory.readMappedBusU32BE = (addr, busSignals, faultAccess): number => {
+		instructionReadCount += 1;
+		return readMappedBusU32BE(addr, busSignals, faultAccess);
+	};
+	cpu.beginCompletionCall(closure);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.equal(instructionReadCount, 0);
+
 	const replacement = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(replacement, 0, OpCode.K0, 0, 0, 0, 0);
 	writeInstruction(replacement, 1, OpCode.RET, 0, 1, 0, 0);
@@ -108,4 +119,5 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	assert.equal(instructionReadCount, 2);
 });

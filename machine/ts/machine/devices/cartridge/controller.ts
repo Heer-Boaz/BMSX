@@ -24,7 +24,11 @@ import {
 	CART_RAM_BASE,
 	CART_ROM_BASE,
 } from '../../../spec/bmsx/memory_map';
-import type { Memory } from '../../memory/memory';
+import type { MappedPageBinding, Memory } from '../../memory/memory';
+import {
+	MAPPED_PAGE_BYTE_SHIFT,
+	MappedPageRevisions,
+} from '../../memory/mapped_page';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
 import {
@@ -67,6 +71,8 @@ const CARTRIDGE_DREQ_MASK =
 
 export class CartridgeController {
 	private readonly slots: [CartridgeSlot, CartridgeSlot];
+	private readonly romRevisions: [MappedPageRevisions, MappedPageRevisions];
+	private readonly ramPageRevisions: [MappedPageRevisions, MappedPageRevisions];
 	private selectionWord = 0;
 	private irq!: IrqController;
 	private dma!: DmaController;
@@ -87,6 +93,14 @@ export class CartridgeController {
 				mailboxControlWord: 0,
 				mailboxIrqPending: false,
 			},
+		];
+		this.romRevisions = [
+			new MappedPageRevisions(1),
+			new MappedPageRevisions(1),
+		];
+		this.ramPageRevisions = [
+			new MappedPageRevisions(media[0].ramByteCount),
+			new MappedPageRevisions(media[1].ramByteCount),
 		];
 	}
 
@@ -111,6 +125,28 @@ export class CartridgeController {
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
 		this.slots[slotIndex]!.media.rom = rom;
+		this.romRevisions[slotIndex].touch(0, 1);
+	}
+
+	public bindMappedPage(address: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
+		const slotIndex = this.selectedSlot(busSignals);
+		out.key = address + (slotIndex + 1) * 0x100000000;
+		if (address < CART_RAM_BASE) {
+			out.revisions = this.romRevisions[slotIndex].values;
+			out.revisionIndex = 0;
+			return;
+		}
+		if (address < CART_MMIO_BASE) {
+			const revisions = this.ramPageRevisions[slotIndex].values;
+			const revisionIndex = (address - CART_RAM_BASE) >>> MAPPED_PAGE_BYTE_SHIFT;
+			if (revisionIndex < revisions.length) {
+				out.revisions = revisions;
+				out.revisionIndex = revisionIndex;
+				return;
+			}
+		}
+		out.revisions = null;
+		out.revisionIndex = 0;
 	}
 
 	public ramByteCount(): number {
@@ -140,8 +176,8 @@ export class CartridgeController {
 
 	public restoreState(state: CartridgeControllerState): void {
 		this.selectionWord = state.selectionWord >>> 0;
-		this.restoreSlot(this.slots[0], state.slots[0]);
-		this.restoreSlot(this.slots[1], state.slots[1]);
+		this.restoreSlot(0, this.slots[0], state.slots[0]);
+		this.restoreSlot(1, this.slots[1], state.slots[1]);
 		this.publishDreqLines();
 	}
 
@@ -186,24 +222,28 @@ export class CartridgeController {
 	}
 
 	public writeU8(address: number, value: number, busSignals: MappedBusSignals): void {
-		const slot = this.slots[this.selectedSlot(busSignals)]!;
+		const slotIndex = this.selectedSlot(busSignals);
+		const slot = this.slots[slotIndex]!;
 		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
 			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
 			const offset = address - CART_RAM_BASE;
 			if (offset < slot.ram.byteLength) {
 				slot.ram[offset] = value & 0xff;
+				this.ramPageRevisions[slotIndex].touch(offset, 1);
 			}
 		}
 	}
 
 	public writeU16(address: number, value: number, busSignals: MappedBusSignals): void {
 		if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-		const slot = this.slots[this.selectedSlot(busSignals)]!;
+		const slotIndex = this.selectedSlot(busSignals);
+		const slot = this.slots[slotIndex]!;
 		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
 		const ram = slot.ram;
 		const offset = address - CART_RAM_BASE;
 		if (offset + 2 <= ram.byteLength) {
 			writeLE16(ram, offset, value);
+			this.ramPageRevisions[slotIndex].touch(offset, 2);
 		}
 	}
 
@@ -215,6 +255,7 @@ export class CartridgeController {
 			const offset = address - CART_RAM_BASE;
 			if (offset + 4 <= slot.ram.byteLength) {
 				writeLE32(slot.ram, offset, value);
+				this.ramPageRevisions[slotIndex].touch(offset, 4);
 			}
 			return;
 		}
@@ -263,11 +304,12 @@ export class CartridgeController {
 		};
 	}
 
-	private restoreSlot(slot: CartridgeSlot, state: CartridgeSlotState): void {
+	private restoreSlot(slotIndex: number, slot: CartridgeSlot, state: CartridgeSlotState): void {
 		if (state.ram.byteLength !== slot.ram.byteLength) {
 			throw new Error('Cartridge RAM size does not match the inserted board.');
 		}
 		slot.ram.set(state.ram);
+		this.ramPageRevisions[slotIndex].touch(0, slot.ram.byteLength);
 		slot.mailboxDataWord = state.mailboxDataWord >>> 0;
 		slot.mailboxControlWord = state.mailboxControlWord >>> 0;
 		slot.mailboxIrqPending = state.mailboxIrqPending;

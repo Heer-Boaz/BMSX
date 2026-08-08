@@ -21,7 +21,12 @@ constexpr u32 CARTRIDGE_DREQ_MASK =
 
 } // namespace
 
-CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media) {
+CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media)
+	: m_romRevisions{MappedPageRevisions(1u), MappedPageRevisions(1u)}
+	, m_ramPageRevisions{
+		MappedPageRevisions(media[0].ramByteCount),
+		MappedPageRevisions(media[1].ramByteCount)
+	} {
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
 		const CartridgeSlotMedia& source = media[slotIndex];
 		Slot& slot = m_slots[slotIndex];
@@ -33,6 +38,34 @@ CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media) {
 
 void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
 	m_slots[slotIndex].media.rom = rom;
+	m_romRevisions[slotIndex].touch(0u, 1u);
+}
+
+void CartridgeController::bindMappedPage(
+	u32 address,
+	MappedBusSignals busSignals,
+	MappedPageBinding& out
+) const {
+	const u32 slotIndex = selectedSlot(busSignals);
+	out.key = static_cast<u64>(address)
+		| (static_cast<u64>(slotIndex + 1u) << 32u);
+	if (address < CART_RAM_BASE) {
+		out.revision = &m_romRevisions[slotIndex].values[0];
+		return;
+	}
+	if (address < CART_MMIO_BASE) {
+		const std::vector<u64>& revisions = m_ramPageRevisions[slotIndex].values;
+		const size_t revisionIndex = static_cast<size_t>(
+			(address - CART_RAM_BASE) >> MAPPED_PAGE_BYTE_SHIFT
+		);
+		if (revisionIndex < revisions.size()) {
+			out.revision = &revisions[revisionIndex];
+		} else {
+			out.revision = nullptr;
+		}
+		return;
+	}
+	out.revision = nullptr;
 }
 
 void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
@@ -69,7 +102,7 @@ CartridgeControllerState CartridgeController::captureState() const {
 void CartridgeController::restoreState(const CartridgeControllerState& state) {
 	m_selectionWord = state.selectionWord;
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		restoreSlot(m_slots[slotIndex], state.slots[slotIndex]);
+		restoreSlot(slotIndex, m_slots[slotIndex], state.slots[slotIndex]);
 	}
 	publishDreqLines();
 }
@@ -115,23 +148,27 @@ u32 CartridgeController::readU32(u32 address, MappedBusSignals busSignals) const
 }
 
 void CartridgeController::writeU8(u32 address, u8 value, MappedBusSignals busSignals) {
-	Slot& slot = m_slots[selectedSlot(busSignals)];
 	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
+		const u32 slotIndex = selectedSlot(busSignals);
+		Slot& slot = m_slots[slotIndex];
 		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 		if (offset < slot.ram.size()) {
 			slot.ram[offset] = value;
+			m_ramPageRevisions[slotIndex].touch(offset, 1u);
 		}
 	}
 }
 
 void CartridgeController::writeU16(u32 address, u32 value, MappedBusSignals busSignals) {
 	if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-	Slot& slot = m_slots[selectedSlot(busSignals)];
+	const u32 slotIndex = selectedSlot(busSignals);
+	Slot& slot = m_slots[slotIndex];
 	if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
 	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 	if (offset + 2u <= slot.ram.size()) {
 		writeLE16(slot.ram.data() + offset, static_cast<u16>(value));
+		m_ramPageRevisions[slotIndex].touch(offset, 2u);
 	}
 }
 
@@ -143,6 +180,7 @@ void CartridgeController::writeU32(u32 address, u32 value, MappedBusSignals busS
 		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
 		if (offset + 4u <= slot.ram.size()) {
 			writeLE32(slot.ram.data() + offset, value);
+			m_ramPageRevisions[slotIndex].touch(offset, 4u);
 		}
 		return;
 	}
@@ -276,11 +314,16 @@ CartridgeSlotState CartridgeController::captureSlot(const Slot& slot) {
 	return state;
 }
 
-void CartridgeController::restoreSlot(Slot& slot, const CartridgeSlotState& state) {
+void CartridgeController::restoreSlot(
+	u32 slotIndex,
+	Slot& slot,
+	const CartridgeSlotState& state
+) {
 	if (state.ram.size() != slot.ram.size()) {
 		throw BMSX_RUNTIME_ERROR("Cartridge RAM size does not match the inserted board.");
 	}
 	std::copy_n(state.ram.data(), slot.ram.size(), slot.ram.data());
+	m_ramPageRevisions[slotIndex].touch(0u, slot.ram.size());
 	slot.mailboxDataWord = state.mailboxDataWord;
 	slot.mailboxControlWord = state.mailboxControlWord;
 	slot.mailboxIrqPending = state.mailboxIrqPending;

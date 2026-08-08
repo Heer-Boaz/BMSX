@@ -75,6 +75,13 @@ import {
 	MAPPED_BUS_MASTER_DMA,
 	type MappedBusSignals,
 } from './bus_signals';
+import {
+	MAPPED_PAGE_BYTE_SHIFT,
+	MappedPageRevisions,
+	type MappedPageBinding,
+} from './mapped_page';
+
+export type { MappedPageBinding } from './mapped_page';
 
 export const enum MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other }
 
@@ -130,6 +137,8 @@ export class Memory {
 	private systemRom: Uint8Array;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
+	private readonly systemRomRevisions = new MappedPageRevisions(1);
+	private readonly ramPageRevisions: MappedPageRevisions;
 	private readonly ioSlots: Uint32Array;
 	private readonly ioReadContexts: unknown[];
 	private readonly ioWriteContexts: unknown[];
@@ -152,6 +161,7 @@ export class Memory {
 		this.systemRom = init.systemRom;
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
+		this.ramPageRevisions = new MappedPageRevisions(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -180,6 +190,35 @@ export class Memory {
 
 	public installSystemRom(rom: Uint8Array): void {
 		this.systemRom = rom;
+		this.systemRomRevisions.touch(0, 1);
+	}
+
+	public bindMappedPage(addr: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
+		out.key = addr;
+		out.revisionIndex = 0;
+		if (addr < RAM_BASE) {
+			out.revisions = addr < SYSTEM_ROM_SIZE ? this.systemRomRevisions.values : null;
+			return;
+		}
+		if (addr < CART_ROM_BASE) {
+			if (addr < IO_BASE + this.ioByteLength) {
+				out.revisions = null;
+				return;
+			}
+			const offset = addr - RAM_BASE;
+			if (offset < this.ram.byteLength) {
+				out.revisions = this.ramPageRevisions.values;
+				out.revisionIndex = offset >>> MAPPED_PAGE_BYTE_SHIFT;
+				return;
+			}
+			out.revisions = null;
+			return;
+		}
+		if (addr < CART_BUS_END) {
+			this.cartridgeController.bindMappedPage(addr, busSignals, out);
+			return;
+		}
+		out.revisions = null;
 	}
 
 	public mapIoRead<TContext>(addr: number, context: TContext, handler: IoReadHandler<TContext>): void {
@@ -238,6 +277,7 @@ export class Memory {
 
 	public restoreSaveState(state: MemorySaveState): void {
 		this.ram.set(state.ram);
+		this.ramPageRevisions.touch(0, this.ram.byteLength);
 		this.busFaultCode = state.busFaultCode >>> 0;
 		this.busFaultAddr = state.busFaultAddr >>> 0;
 		this.busFaultAccess = state.busFaultAccess >>> 0;
@@ -319,6 +359,7 @@ export class Memory {
 			return false;
 		}
 		this.ram[offset] = value & 0xff;
+		this.ramPageRevisions.touch(offset, 1);
 		return true;
 	}
 
@@ -335,6 +376,7 @@ export class Memory {
 		} else {
 			writeLE32(this.ram, offset, value);
 		}
+		this.ramPageRevisions.touch(offset, byteLength);
 		return true;
 	}
 
@@ -462,20 +504,6 @@ export class Memory {
 			| ((word >>> 8) & 0x0000ff00)
 			| ((word << 8) & 0x00ff0000)
 			| (word << 24)) >>> 0;
-	}
-
-	public mappedPageKey(addr: number, busSignals: MappedBusSignals): number {
-		if (addr >= CART_ROM_BASE && addr < CART_BUS_END) {
-			return addr + (this.cartridgeController.selectedSlot(busSignals) + 1) * 0x100000000;
-		}
-		return addr;
-	}
-
-	public mappedRangeIsReadOnly(addr: number, byteCount: number): boolean {
-		return (byteCount <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - byteCount)
-			|| (addr >= CART_ROM_BASE
-				&& byteCount <= CART_ROM_SIZE
-				&& addr - CART_ROM_BASE <= CART_ROM_SIZE - byteCount);
 	}
 
 	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
@@ -720,6 +748,7 @@ export class Memory {
 			const offset = addr - RAM_BASE;
 			if (offset + bytes.byteLength <= this.ram.byteLength) {
 				this.ram.set(bytes, offset);
+				this.ramPageRevisions.touch(offset, bytes.byteLength);
 				return;
 			}
 		}
@@ -731,6 +760,7 @@ export class Memory {
 			const offset = dstAddr - RAM_BASE;
 			if (offset + length <= this.ram.byteLength) {
 				this.ram.set(src.subarray(srcOffset, srcOffset + length), offset);
+				this.ramPageRevisions.touch(offset, length);
 				return;
 			}
 		}

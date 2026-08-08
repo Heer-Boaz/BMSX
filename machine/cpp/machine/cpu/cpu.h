@@ -33,6 +33,7 @@ class CPU;
 class GcHeap;
 class IrqController;
 class Memory;
+struct MappedPageBinding;
 
 struct Table;
 class BuiltinResultsScratchScope {
@@ -415,8 +416,7 @@ private:
 	void latchActiveExecutionImage(Blua32ExecutionImage& image);
 	DecodedInstructionPage& decodedPageForAddress(
 		Blua32ExecutionImage& image,
-		u64 pageKey,
-		u32 pageAddress
+		const MappedPageBinding& binding
 	);
 	DecodedInstructionPage* decodedPageForFrame(CallFrame& frame, u32 pc);
 	void decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);

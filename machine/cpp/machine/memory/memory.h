@@ -7,6 +7,7 @@
 
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
+#include "machine/memory/mapped_page.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "common/primitives.h"
@@ -42,6 +43,7 @@ public:
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	void installSystemRom(std::span<const u8> rom);
+	void bindMappedPage(uint32_t addr, MappedBusSignals busSignals, MappedPageBinding& out) const;
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {
@@ -80,19 +82,6 @@ public:
 		MappedBusSignals busSignals,
 		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32
 	) const;
-	u64 mappedPageKey(uint32_t addr, MappedBusSignals busSignals) const {
-		if (addr >= CART_ROM_BASE && addr < CART_BUS_END) {
-			return static_cast<u64>(addr)
-				| (static_cast<u64>(m_cartridgeController.selectedSlot(busSignals) + 1u) << 32u);
-		}
-		return addr;
-	}
-	bool mappedRangeIsReadOnly(uint32_t addr, uint32_t byteCount) const {
-		return (byteCount <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - byteCount)
-			|| (addr >= CART_ROM_BASE
-				&& byteCount <= CART_ROM_SIZE
-				&& addr - CART_ROM_BASE <= CART_ROM_SIZE - byteCount);
-	}
 	uint32_t readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const;
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;
@@ -128,6 +117,8 @@ private:
 	std::span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
+	MappedPageRevisions m_systemRomRevisions;
+	MappedPageRevisions m_ramPageRevisions;
 	mutable std::vector<u32> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;

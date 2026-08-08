@@ -1,5 +1,10 @@
 import { StringPool, type StringId } from './string_pool';
-import { NO_BLOCKED_MAPPED_WRITE, type Memory, type RomByteView } from '../memory/memory';
+import {
+	NO_BLOCKED_MAPPED_WRITE,
+	type MappedPageBinding,
+	type Memory,
+	type RomByteView,
+} from '../memory/memory';
 import {
 	MAPPED_BUS_MASTER_CPU,
 	mappedBusSignalsForCartridgeSlot,
@@ -85,6 +90,9 @@ import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
+import {
+	MAPPED_PAGE_BYTE_MASK,
+} from '../memory/mapped_page';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
@@ -104,8 +112,7 @@ import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
-	DECODED_PAGE_BYTE_MASK,
-	DECODED_PAGE_BYTE_SIZE,
+	DECODED_PAGE_WORDS,
 	NO_TABLE_LOAD_CACHE_INDEX,
 	createDecodedInstructionPage,
 	decodedDispatchOp,
@@ -423,6 +430,11 @@ export class CPU {
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
 	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
+	private readonly mappedPageBinding: MappedPageBinding = {
+		key: 0,
+		revisions: null,
+		revisionIndex: 0,
+	};
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
 		busSignals: MAPPED_BUS_MASTER_CPU,
@@ -1176,19 +1188,17 @@ export class CPU {
 
 	private decodedPageForAddress(
 		image: Blua32ExecutionImage,
-		pageKey: number,
-		pageAddress: number,
+		binding: MappedPageBinding,
 	): DecodedInstructionPage {
-		const existing = image.decodedPages.get(pageKey);
+		const existing = image.decodedPages.get(binding.key);
 		if (existing !== undefined) {
 			return existing;
 		}
-		const page = createDecodedInstructionPage();
-		page.readOnly = this.memory.mappedRangeIsReadOnly(
-			pageAddress,
-			DECODED_PAGE_BYTE_SIZE,
+		const page = createDecodedInstructionPage(
+			binding.revisions,
+			binding.revisionIndex,
 		);
-		image.decodedPages.set(pageKey, page);
+		image.decodedPages.set(binding.key, page);
 		return page;
 	}
 
@@ -1197,14 +1207,15 @@ export class CPU {
 			this.hardHalt();
 			return null;
 		}
-		const pageAddress = (pc & ~DECODED_PAGE_BYTE_MASK) >>> 0;
+		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 		const cached = frame.decodedPage;
 		if (cached !== null
 			&& frame.decodedPageAddress === pageAddress) {
 			return cached;
 		}
-		const pageKey = this.memory.mappedPageKey(pageAddress, this.executionBusSignals);
-		const page = this.decodedPageForAddress(frame.executionImage, pageKey, pageAddress);
+		const binding = this.mappedPageBinding;
+		this.memory.bindMappedPage(pageAddress, this.executionBusSignals, binding);
+		const page = this.decodedPageForAddress(frame.executionImage, binding);
 		frame.decodedPage = page;
 		frame.decodedPageAddress = pageAddress;
 		return page;
@@ -1328,10 +1339,18 @@ export class CPU {
 			}
 		}
 		page.dispatchOps[pageOffset] = op;
-		page.decodeRequired[pageOffset] = page.readOnly ? 0 : 1;
+		page.decodeRequired[pageOffset] = page.contentRevisions === null
+			|| (width === 2 && pageOffset === DECODED_PAGE_WORDS - 1)
+			? 1
+			: 0;
 		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
-		if (!allowFusion || !fusionCandidate || !page.readOnly) {
-			page.fusionRequired[pageOffset] = !allowFusion && fusionCandidate && page.readOnly ? 1 : 0;
+		if (!allowFusion) {
+			page.fusionRequired[pageOffset] = fusionCandidate
+				&& page.contentRevisions !== null ? 1 : 0;
+			return;
+		}
+		if (!fusionCandidate || page.contentRevisions === null) {
+			page.fusionRequired[pageOffset] = 0;
 			return;
 		}
 		const nextPc = pc + width * INSTRUCTION_BYTES;
@@ -1343,11 +1362,11 @@ export class CPU {
 		if (nextPage === null) {
 			return;
 		}
-		if (!nextPage.readOnly) {
+		if (nextPage.contentRevisions === null) {
 			page.fusionRequired[pageOffset] = 0;
 			return;
 		}
-		const nextPageOffset = (nextPc & DECODED_PAGE_BYTE_MASK) >>> 2;
+		const nextPageOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if (decodedInstructionNeedsRefresh(nextPage, nextPageOffset, false)) {
 			this.decodeInstruction(
 				frame,
@@ -1364,7 +1383,7 @@ export class CPU {
 			op as OpCode,
 			nextPage.ops[nextPageOffset] as OpCode,
 		);
-		page.fusionRequired[pageOffset] = 0;
+		page.fusionRequired[pageOffset] = nextPage === page ? 0 : 1;
 	}
 
 	private readFunctionRecord(
@@ -1703,7 +1722,7 @@ export class CPU {
 					if (page === null) {
 						return RunResult.Halted;
 					}
-					const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(page, pageOffset, true)) {
 						this.decodeInstruction(frame, page, pageOffset, pc, true);
 					}
@@ -1789,7 +1808,7 @@ export class CPU {
 						&& executionHook(image.executionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
-					const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
 						this.decodeInstruction(frame, page, pageOffset, pc, false);
 					}
@@ -1883,7 +1902,7 @@ export class CPU {
 		if (page === null) {
 			return;
 		}
-		const pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if (decodedInstructionNeedsRefresh(page, pageOffset, false)) {
 			this.decodeInstruction(frame, page, pageOffset, pc, false);
 		}
@@ -2132,7 +2151,7 @@ export class CPU {
 					if (secondPage === null) {
 						return;
 					}
-					const secondPageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
 						this.decodeInstruction(
 							frame,
@@ -2173,7 +2192,7 @@ export class CPU {
 					if (secondPage === null) {
 						return;
 					}
-					const secondPageOffset = (pc & DECODED_PAGE_BYTE_MASK) >>> 2;
+					const secondPageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if (decodedInstructionNeedsRefresh(secondPage, secondPageOffset, false)) {
 						this.decodeInstruction(
 							frame,

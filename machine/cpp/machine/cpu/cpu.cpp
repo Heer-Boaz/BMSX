@@ -715,15 +715,13 @@ void CPU::syncGlobalSlotsToTable() {
 
 
 DecodedInstructionPage& CPU::decodedPageForAddress(
-	Blua32ExecutionImage& image, u64 pageKey, u32 pageAddress
+	Blua32ExecutionImage& image,
+	const MappedPageBinding& binding
 ) {
-	auto [it, inserted] = image.decodedPages.try_emplace(pageKey);
-	if (inserted) {
-		it->second.readOnly = m_memory.mappedRangeIsReadOnly(
-			pageAddress,
-			DECODED_PAGE_BYTE_SIZE
-		);
-	}
+	auto it = image.decodedPages.try_emplace(
+		binding.key,
+		binding.revision
+	).first;
 	return it->second;
 }
 
@@ -732,16 +730,16 @@ DecodedInstructionPage* CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 		hardHalt();
 		return nullptr;
 	}
-	const u32 pageAddress = pc & ~DECODED_PAGE_BYTE_MASK;
+	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 	if (frame.decodedPage
 		&& frame.decodedPageAddress == pageAddress) {
 		return frame.decodedPage;
 	}
-	const u64 pageKey = m_memory.mappedPageKey(pageAddress, m_executionBusSignals);
+	MappedPageBinding binding;
+	m_memory.bindMappedPage(pageAddress, m_executionBusSignals, binding);
 	DecodedInstructionPage& page = decodedPageForAddress(
 		*frame.executionImage,
-		pageKey,
-		pageAddress
+		binding
 	);
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
@@ -873,14 +871,21 @@ void CPU::decodeInstruction(
 		}
 	}
 	decoded.dispatchOp = op;
-	page.decodeRequired[pageOffset] = page.readOnly ? 0u : 1u;
+	page.decodeRequired[pageOffset] = !page.contentRevision
+		|| (width == 2 && pageOffset == DECODED_PAGE_WORDS - 1u)
+		? 1u
+		: 0u;
 	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
 		|| static_cast<OpCode>(op) == OpCode::ADD
 		|| static_cast<OpCode>(op) == OpCode::SHR;
-	if (!allowFusion || !fusionCandidate || !page.readOnly) {
-		page.fusionRequired[pageOffset] = !allowFusion && fusionCandidate && page.readOnly
+	if (!allowFusion) {
+		page.fusionRequired[pageOffset] = fusionCandidate && page.contentRevision
 			? 1u
 			: 0u;
+		return;
+	}
+	if (!fusionCandidate || !page.contentRevision) {
+		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
 	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
@@ -892,11 +897,11 @@ void CPU::decodeInstruction(
 	if (!nextPage) {
 		return;
 	}
-	if (!nextPage->readOnly) {
+	if (!nextPage->contentRevision) {
 		page.fusionRequired[pageOffset] = 0u;
 		return;
 	}
-	const u32 nextOffset = (nextPc & DECODED_PAGE_BYTE_MASK) >> 2;
+	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if (decodedInstructionNeedsRefresh(*nextPage, nextOffset, false)) {
 		decodeInstruction(frame, *nextPage, nextOffset, nextPc, false);
 	}
@@ -905,7 +910,7 @@ void CPU::decodeInstruction(
 	}
 	const DecodedInstruction& successor = nextPage->words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
-	page.fusionRequired[pageOffset] = 0u;
+	page.fusionRequired[pageOffset] = nextPage == &page ? 0u : 1u;
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
@@ -913,7 +918,7 @@ void CPU::skipNextInstruction(CallFrame& frame) {
 	if (!page) {
 		return;
 	}
-	const u32 offset = (frame.pc & DECODED_PAGE_BYTE_MASK) >> 2;
+	const u32 offset = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if (decodedInstructionNeedsRefresh(*page, offset, false)) {
 		decodeInstruction(frame, *page, offset, frame.pc, false);
 	}
@@ -2102,7 +2107,7 @@ RunResult CPU::runLoop(
 				hardHalt();
 				return RunResult::Halted;
 			}
-			const u32 pageAddress = pc & ~DECODED_PAGE_BYTE_MASK;
+			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			DecodedInstructionPage* decodedPage = frame->decodedPage;
 			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
 				decodedPage = decodedPageForFrame(*frame, pc);
@@ -2114,7 +2119,7 @@ RunResult CPU::runLoop(
 					return RunResult::ExecutionStopped;
 				}
 			}
-			const u32 pageOffset = (pc & DECODED_PAGE_BYTE_MASK) >> 2;
+			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			if (decodedInstructionNeedsRefresh(
 				*decodedPage,
 				pageOffset,
@@ -2200,7 +2205,7 @@ RunResult CPU::runLoop(
 					if (!successorPage) {
 						return RunResult::Halted;
 					}
-					const u32 successorOffset = (successorPc & DECODED_PAGE_BYTE_MASK) >> 2;
+					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if (decodedInstructionNeedsRefresh(
 						*successorPage,
 						successorOffset,
@@ -2253,7 +2258,7 @@ RunResult CPU::runLoop(
 					if (!successorPage) {
 						return RunResult::Halted;
 					}
-					const u32 successorOffset = (successorPc & DECODED_PAGE_BYTE_MASK) >> 2;
+					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if (decodedInstructionNeedsRefresh(
 						*successorPage,
 						successorOffset,
