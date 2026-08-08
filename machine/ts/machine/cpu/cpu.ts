@@ -3445,23 +3445,12 @@ export class CPU implements MappedPageInvalidator {
 		image: Blua32ExecutionImage,
 		constantIndex: number,
 	): void {
-		switch (image.constTags[constantIndex]) {
-			case ValueTag.Nil:
-				registers.setNil(registerIndex);
-				break;
-			case ValueTag.False:
-				registers.setBool(registerIndex, false);
-				break;
-			case ValueTag.True:
-				registers.setBool(registerIndex, true);
-				break;
-			case ValueTag.Number:
-				registers.setNumber(registerIndex, image.constScalars[constantIndex]);
-				break;
-			case ValueTag.String:
-				registers.setStringId(registerIndex, image.constScalars[constantIndex] as StringId);
-				break;
-		}
+		registers.setEncoded(
+			registerIndex,
+			image.constTags[constantIndex],
+			image.constScalars[constantIndex],
+			null,
+		);
 		this.bumpRegisterTop(frame, registerIndex);
 	}
 
