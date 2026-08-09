@@ -6,7 +6,7 @@ local syntax<const> = require('compiler/syntax')
 local compiler<const> = {}
 
 local constant_register<const> = function(parameter_count, const_index)
-	return parameter_count + const_index - 1
+	return parameter_count + const_index - 2
 end
 
 local immediate_table_index<const> = function(expression, value)
@@ -21,8 +21,8 @@ end
 local add_constant<const> = function(state, expression, value)
 	local index = state.constant_index_by_value[value]
 	if index == nil then
-		index = #state.constants + 1
-		state.constants[index] = value
+		index = #state.const_pool + 1
+		state.const_pool[index] = value
 		state.constant_index_by_value[value] = index
 	end
 	state.constant_index_by_expression[expression] = index
@@ -72,7 +72,7 @@ local prepare_codegen<const> = function(analysis)
 		value_by_expression = analysis.value_by_expression,
 		constant_index_by_expression = {},
 		immediate_index_by_expression = {},
-		constants = {},
+		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
 	local statements<const> = state.function_expression.body.statements
@@ -194,7 +194,7 @@ end
 
 local compile_function<const> = function(state)
 	local parameter_count<const> = state.parameter_count
-	local constant_count<const> = #state.constants
+	local constant_count<const> = #state.const_pool - 1
 	local instruction_words<const> = {}
 	for index = 0, constant_count - 1 do
 		bytecode.emit_abc(
@@ -253,25 +253,17 @@ local compile_chunk<const> = function(constant_count, const_pool_register)
 	}
 end
 
-local build_const_pool<const> = function(constants)
-	local const_pool<const> = { 0 }
-	for index = 1, #constants do
-		const_pool[index + 1] = constants[index]
-	end
-	return const_pool
-end
-
 function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local analysis<const> = semantic.analyze(chunk, chunk_name)
 	local state<const> = prepare_codegen(analysis)
-	local constants<const> = state.constants
+	local const_pool<const> = state.const_pool
 	return {
 		protos = {
-			compile_chunk(#constants, root_const_pool_register),
+			compile_chunk(#const_pool - 1, root_const_pool_register),
 			compile_function(state),
 		},
 		root_proto_index = 1,
-		const_pool = build_const_pool(constants),
+		const_pool = const_pool,
 		const_relocations = {
 			{ const_index = 1, proto_index = 2 },
 		},
