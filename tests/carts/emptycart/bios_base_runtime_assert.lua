@@ -76,6 +76,10 @@ function __bmsx_host_test.setup()
 return function(target, frame)
 	target["visual"]["color"] = frame["visual"]["color"]
 	target[-1] = -8
+	target["zero"] = 0
+	target["one"] = 1
+	target["minus_one"] = -1
+	target["wide_integer"] = 0x80000
 	target[&"field"] = &"value"
 	target[0x10] = 1.25e1
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065"
@@ -87,6 +91,9 @@ end
 	apply(loaded_target, { visual = { color = 0xff010203 } })
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
+	assert(loaded_target.zero == 0 and loaded_target.one == 1, 'load small integer literal mismatch')
+	assert(loaded_target.minus_one == -1, 'load negative-one literal mismatch')
+	assert(loaded_target.wide_integer == 0x80000, 'load wide integer literal mismatch')
 	assert(loaded_target.field == 'value', 'load string-id literal mismatch')
 	assert(loaded_target[0x10] == 12.5, 'load numeric literal mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A', 'load string escape mismatch')

@@ -18,6 +18,14 @@ local immediate_table_index<const> = function(expression, value)
 	end
 end
 
+local is_number_literal<const> = function(expression)
+	return expression.kind == syntax.number_literal_expression
+		or (
+			expression.kind == syntax.unary_expression
+			and expression.operator == syntax.unary_negate
+		)
+end
+
 local add_constant<const> = function(state, expression, value)
 	local index = state.constant_index_by_value[value]
 	if index == nil then
@@ -60,7 +68,15 @@ local prepare_value_operands<const> = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
-	add_constant(state, expression, state.value_by_expression[expression])
+	local value<const> = state.value_by_expression[expression]
+	if is_number_literal(expression)
+		and value >= isa.min_signed_bx
+		and value <= isa.max_signed_bx
+		and value % 1 == 0 then
+		state.immediate_number_by_expression[expression] = value
+		return
+	end
+	add_constant(state, expression, value)
 end
 
 local prepare_codegen<const> = function(analysis)
@@ -72,6 +88,7 @@ local prepare_codegen<const> = function(analysis)
 		value_by_expression = analysis.value_by_expression,
 		constant_index_by_expression = {},
 		immediate_index_by_expression = {},
+		immediate_number_by_expression = {},
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
@@ -145,6 +162,24 @@ local emit_value<const> = function(
 			0,
 			0
 		)
+		return
+	end
+	local immediate_number<const> = state.immediate_number_by_expression[expression]
+	if immediate_number ~= nil then
+		if immediate_number == 0 then
+			bytecode.emit_abc(instruction_words, isa.op_k0, target, 0, 0)
+		elseif immediate_number == 1 then
+			bytecode.emit_abc(instruction_words, isa.op_k1, target, 0, 0)
+		elseif immediate_number == -1 then
+			bytecode.emit_abc(instruction_words, isa.op_km1, target, 0, 0)
+		else
+			bytecode.emit_signed_abx(
+				instruction_words,
+				isa.op_ksmi,
+				target,
+				immediate_number
+			)
+		end
 		return
 	end
 	bytecode.emit_abc(

@@ -3,6 +3,12 @@ local isa<const> = require('bmsx/blua32')
 local bytecode<const> = {}
 
 local operand_mask<const> = (1 << isa.max_operand_bits) - 1
+local bx_mask<const> = (1 << isa.max_bx_bits) - 1
+local ext_bx_mask<const> = (1 << isa.ext_bx_bits) - 1
+local base_bx_bits<const> = isa.max_bx_bits + isa.ext_bx_bits
+local base_bx_mask<const> = (1 << base_bx_bits) - 1
+local base_sbx_sign_bit<const> = 1 << (base_bx_bits - 1)
+local wide_bx_mask<const> = (1 << (base_bx_bits + isa.max_operand_bits)) - 1
 
 local pack_word<const> = function(op, a, b, c, ext)
 	return ((ext & 0xff) << 24)
@@ -32,6 +38,32 @@ function bytecode.emit_abc(instruction_words, op, a, b, c)
 	instruction_words[#instruction_words + 1] = pack_word(op, a, b, c, ext)
 end
 
+function bytecode.emit_signed_abx(instruction_words, op, a, sbx)
+	local a_wide<const> = a >> isa.max_operand_bits
+	local has_wide<const> = a_wide ~= 0
+		or sbx < -base_sbx_sign_bit
+		or sbx >= base_sbx_sign_bit
+	local raw_bx<const> = sbx & (has_wide and wide_bx_mask or base_bx_mask)
+	if has_wide then
+		instruction_words[#instruction_words + 1] = pack_word(
+			isa.op_wide,
+			a_wide,
+			raw_bx >> base_bx_bits,
+			0,
+			0
+		)
+	end
+	local bx_low<const> = raw_bx & bx_mask
+	local bx_ext<const> = (raw_bx >> isa.max_bx_bits) & ext_bx_mask
+	instruction_words[#instruction_words + 1] = pack_word(
+		op,
+		a,
+		bx_low >> isa.max_operand_bits,
+		bx_low,
+		bx_ext
+	)
+end
+
 function bytecode.emit_closure_address_register(
 	instruction_words,
 	target,
@@ -39,7 +71,7 @@ function bytecode.emit_closure_address_register(
 )
 	local target_wide<const> = target >> isa.max_operand_bits
 	local address_wide<const> = address_register
-		>> (isa.max_operand_bits * 2 + isa.ext_bx_bits)
+		>> base_bx_bits
 	instruction_words[#instruction_words + 1] = pack_word(
 		isa.op_wide,
 		target_wide,
@@ -47,8 +79,8 @@ function bytecode.emit_closure_address_register(
 		isa.closure_address_register_wide_c,
 		0
 	)
-	local bx_low<const> = address_register & ((1 << (isa.max_operand_bits * 2)) - 1)
-	local bx_ext<const> = address_register >> (isa.max_operand_bits * 2)
+	local bx_low<const> = address_register & bx_mask
+	local bx_ext<const> = address_register >> isa.max_bx_bits
 	instruction_words[#instruction_words + 1] = pack_word(
 		isa.op_closure,
 		target,
