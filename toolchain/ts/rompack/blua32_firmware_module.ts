@@ -61,7 +61,6 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tupvalue_record_size = ${BLUA32_UPVALUE_RECORD_SIZE},`,
 	`\tupvalue_in_stack_mask = ${BLUA32_UPVALUE_IN_STACK_MASK},`,
 	`\top_wide = ${OpCode.WIDE},`,
-	`\top_mov = ${OpCode.MOV},`,
 	`\top_knil = ${OpCode.KNIL},`,
 	`\top_kfalse = ${OpCode.KFALSE},`,
 	`\top_ktrue = ${OpCode.KTRUE},`,

@@ -122,37 +122,36 @@ end
 local emit_path
 emit_path = function(state, instruction_words, expression, target)
 	if expression.kind == syntax.identifier_expression then
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_mov,
-			target,
-			state.parameter_register_by_expression[expression],
-			0
-		)
-		return
+		return state.parameter_register_by_expression[expression]
 	end
-	emit_path(state, instruction_words, expression.base, target)
+	local base_register<const> = emit_path(
+		state,
+		instruction_words,
+		expression.base,
+		target
+	)
 	local immediate_index<const> = state.immediate_index_by_expression[expression]
 	if immediate_index ~= nil then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_geti,
 			target,
-			target,
+			base_register,
 			immediate_index
 		)
-		return
+		return target
 	end
 	bytecode.emit_abc(
 		instruction_words,
 		isa.op_gett,
 		target,
-		target,
+		base_register,
 		constant_register(
 			state.parameter_count,
 			state.constant_index_by_expression[expression]
 		)
 	)
+	return target
 end
 
 local emit_value<const> = function(
@@ -165,12 +164,11 @@ local emit_value<const> = function(
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
 		or kind == syntax.index_expression then
-		emit_path(state, instruction_words, expression, target)
-		return
+		return emit_path(state, instruction_words, expression, target)
 	end
 	if kind == syntax.nil_literal_expression then
 		bytecode.emit_abc(instruction_words, isa.op_knil, target, 0, 0)
-		return
+		return target
 	end
 	if kind == syntax.boolean_literal_expression then
 		bytecode.emit_abc(
@@ -180,7 +178,7 @@ local emit_value<const> = function(
 			0,
 			0
 		)
-		return
+		return target
 	end
 	local immediate_number<const> = state.immediate_number_by_expression[expression]
 	if immediate_number ~= nil then
@@ -198,17 +196,11 @@ local emit_value<const> = function(
 				immediate_number
 			)
 		end
-		return
+		return target
 	end
-	bytecode.emit_abc(
-		instruction_words,
-		isa.op_mov,
-		target,
-		constant_register(
-			state.parameter_count,
-			state.constant_index_by_expression[expression]
-		),
-		0
+	return constant_register(
+		state.parameter_count,
+		state.constant_index_by_expression[expression]
 	)
 end
 
@@ -220,28 +212,38 @@ local emit_assignment<const> = function(
 	value_register
 )
 	local target<const> = statement.target
-	emit_path(state, instruction_words, target.base, target_register)
-	emit_value(state, instruction_words, statement.value, value_register)
+	local target_table_register<const> = emit_path(
+		state,
+		instruction_words,
+		target.base,
+		target_register
+	)
+	local assignment_value_register<const> = emit_value(
+		state,
+		instruction_words,
+		statement.value,
+		value_register
+	)
 	local immediate_index<const> = state.immediate_index_by_expression[target]
 	if immediate_index ~= nil then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_seti,
-			target_register,
+			target_table_register,
 			immediate_index,
-			value_register
+			assignment_value_register
 		)
 		return
 	end
 	bytecode.emit_abc(
 		instruction_words,
 		isa.op_sett,
-		target_register,
+		target_table_register,
 		constant_register(
 			state.parameter_count,
 			state.constant_index_by_expression[target]
 		),
-		value_register
+		assignment_value_register
 	)
 end
 
