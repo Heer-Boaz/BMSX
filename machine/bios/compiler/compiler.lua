@@ -292,9 +292,18 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local analysis<const> = semantic.analyze(chunk, chunk_name)
 	local state<const> = prepare_codegen(analysis)
 	local const_pool<const> = state.const_pool
+	local constant_count<const> = #const_pool - 1
+	local max_register = constant_count + 2
+	local function_max_register<const> = state.parameter_count + constant_count + 1
+	if function_max_register > max_register then
+		max_register = function_max_register
+	end
+	if max_register > isa.max_ext_register_a then
+		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
+	end
 	return {
 		protos = {
-			compile_chunk(#const_pool - 1, root_const_pool_register),
+			compile_chunk(constant_count, root_const_pool_register),
 			compile_function(state),
 		},
 		root_proto_index = 1,
