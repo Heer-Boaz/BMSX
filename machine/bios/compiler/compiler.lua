@@ -4,9 +4,11 @@ local semantic<const> = require('compiler/semantic')
 local syntax<const> = require('compiler/syntax')
 
 local compiler<const> = {}
+local function_address_pool_index<const> = 1
+local first_value_pool_index<const> = 2
 
 local constant_register<const> = function(parameter_count, const_index)
-	return parameter_count + const_index - 2
+	return parameter_count + const_index - first_value_pool_index
 end
 
 local immediate_table_index<const> = function(expression, value)
@@ -253,7 +255,7 @@ end
 
 local compile_function<const> = function(state)
 	local parameter_count<const> = state.parameter_count
-	local constant_count<const> = #state.const_pool - 1
+	local constant_count<const> = #state.const_pool - function_address_pool_index
 	local instruction_words<const> = {}
 	for index = 0, constant_count - 1 do
 		bytecode.emit_abc(
@@ -282,7 +284,7 @@ local compile_function<const> = function(state)
 
 	local upvalue_registers<const> = {}
 	for index = 1, constant_count do
-		upvalue_registers[index] = index + 1
+		upvalue_registers[index] = first_value_pool_index + index - 1
 	end
 	return {
 		instruction_words = instruction_words,
@@ -295,9 +297,10 @@ end
 local compile_chunk<const> = function(constant_count, captured_const_pool_register)
 	local instruction_words<const> = {}
 	local const_pool_register<const> = 0
-	local function_address_register<const> = 1
+	local function_address_register<const> = function_address_pool_index
+	local last_pool_index<const> = constant_count + function_address_pool_index
 	bytecode.emit_abc(instruction_words, isa.op_getup, const_pool_register, 0, 0)
-	for index = 1, constant_count + 1 do
+	for index = function_address_pool_index, last_pool_index do
 		bytecode.emit_abc(instruction_words, isa.op_geti, index, const_pool_register, index)
 	end
 	bytecode.emit_closure_address_register(
@@ -318,7 +321,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local analysis<const> = semantic.analyze(chunk, chunk_name)
 	local state<const> = prepare_codegen(analysis)
 	local const_pool<const> = state.const_pool
-	local constant_count<const> = #const_pool - 1
+	local constant_count<const> = #const_pool - function_address_pool_index
 	local max_stack<const> = isa.max_ext_register_a + 1
 	if constant_count + 2 > max_stack
 		or state.parameter_count + constant_count + 1 > max_stack then
@@ -337,7 +340,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 		root_proto_index = 1,
 		const_pool = const_pool,
 		const_relocations = {
-			{ const_index = 1, proto_index = 2 },
+			{ const_index = function_address_pool_index, proto_index = 2 },
 		},
 	}
 end
