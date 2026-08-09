@@ -33,16 +33,15 @@ local fail<const> = function(state, message, line, column)
 		.. tostring(line) .. ':' .. tostring(column))
 end
 
-local current<const> = function(state)
-	if state.index > state.length then
-		return 0
-	end
-	return byte(state.source, state.index)
-end
-
 local advance<const> = function(state)
-	local code<const> = current(state)
-	state.index = state.index + 1
+	local code<const> = state.current_code
+	local index<const> = state.index + 1
+	state.index = index
+	if index <= state.length then
+		state.current_code = byte(state.source, index)
+	else
+		state.current_code = 0
+	end
 	if code == 10 then
 		state.line = state.line + 1
 		state.column = 1
@@ -54,7 +53,7 @@ end
 
 local scan_identifier<const> = function(state)
 	local start<const> = state.index
-	while state.index <= state.length and is_identifier_part(current(state)) do
+	while state.index <= state.length and is_identifier_part(state.current_code) do
 		advance(state)
 	end
 	local text<const> = sub(state.source, start, state.index - 1)
@@ -69,7 +68,7 @@ local is_hex_digit<const> = function(code)
 end
 
 local scan_digits<const> = function(state)
-	while state.index <= state.length and is_digit(current(state)) do
+	while state.index <= state.length and is_digit(state.current_code) do
 		advance(state)
 	end
 end
@@ -77,22 +76,22 @@ end
 local scan_decimal_number<const> = function(state, line, column)
 	scan_digits(state)
 	if state.index < state.length
-		and current(state) == 46
+		and state.current_code == 46
 		and is_digit(byte(state.source, state.index + 1)) then
 		advance(state)
 		scan_digits(state)
 	end
 	if state.index <= state.length then
-		local code<const> = current(state)
+		local code<const> = state.current_code
 		if code == 69 or code == 101 then
 			advance(state)
 			if state.index <= state.length then
-				local sign<const> = current(state)
+				local sign<const> = state.current_code
 				if sign == 43 or sign == 45 then
 					advance(state)
 				end
 			end
-			if state.index > state.length or not is_digit(current(state)) then
+			if state.index > state.length or not is_digit(state.current_code) then
 				fail(state, 'invalid numeric literal exponent', line, column)
 			end
 			scan_digits(state)
@@ -103,17 +102,17 @@ end
 local scan_hex_integer<const> = function(state, line, column)
 	advance(state)
 	advance(state)
-	if state.index > state.length or not is_hex_digit(current(state)) then
+	if state.index > state.length or not is_hex_digit(state.current_code) then
 		fail(state, 'hexadecimal literal requires digits', line, column)
 	end
-	while state.index <= state.length and is_hex_digit(current(state)) do
+	while state.index <= state.length and is_hex_digit(state.current_code) do
 		advance(state)
 	end
 end
 
 local scan_number<const> = function(state, line, column)
 	local start<const> = state.index
-	if current(state) == 48 and state.index < state.length then
+	if state.current_code == 48 and state.index < state.length then
 		local prefix<const> = byte(state.source, state.index + 1)
 		if prefix == 88 or prefix == 120 then
 			scan_hex_integer(state, line, column)
@@ -173,7 +172,8 @@ local scan_string<const> = function(state, quote, line, column)
 			if is_digit(escape) then
 				local escaped = escape - 48
 				local digits = 1
-				while digits < 3 and state.index <= state.length and is_digit(current(state)) do
+				while digits < 3 and state.index <= state.length
+					and is_digit(state.current_code) do
 					escaped = escaped * 10 + advance(state) - 48
 					digits = digits + 1
 				end
@@ -196,14 +196,14 @@ end
 
 local skip_space_and_comments<const> = function(state)
 	while state.index <= state.length do
-		local code<const> = current(state)
+		local code<const> = state.current_code
 		if code == 32 or code == 9 or code == 10 or code == 13 then
 			advance(state)
 		elseif code == 45 and state.index < state.length
 			and byte(state.source, state.index + 1) == 45 then
 			advance(state)
 			advance(state)
-			while state.index <= state.length and current(state) ~= 10 do
+			while state.index <= state.length and state.current_code ~= 10 do
 				advance(state)
 			end
 		else
@@ -213,11 +213,17 @@ local skip_space_and_comments<const> = function(state)
 end
 
 function lexer.new(source, chunk_name)
+	local length<const> = #source
+	local current_code = 0
+	if length ~= 0 then
+		current_code = byte(source, 1)
+	end
 	return {
 		source = source,
 		chunk_name = chunk_name,
 		index = 1,
-		length = #source,
+		length = length,
+		current_code = current_code,
 		line = 1,
 		column = 1,
 		token_kind = token.eof,
@@ -238,7 +244,7 @@ function lexer.next(state)
 	local column<const> = state.column
 	state.token_line = line
 	state.token_column = column
-	local code<const> = current(state)
+	local code<const> = state.current_code
 	if is_upper(code) then
 		fail(state, 'upper-case identifiers are not allowed', line, column)
 	end
