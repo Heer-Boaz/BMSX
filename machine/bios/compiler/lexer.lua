@@ -8,20 +8,54 @@ local lexer<const> = {}
 local keyword_by_text<const> = token.keyword_by_text
 local single_character_by_code<const> = token.single_character_by_code
 
+local ascii_bell<const> = 7
+local ascii_backspace<const> = 8
+local ascii_horizontal_tab<const> = 9
+local ascii_line_feed<const> = 10
+local ascii_vertical_tab<const> = 11
+local ascii_form_feed<const> = 12
+local ascii_carriage_return<const> = 13
+local ascii_space<const> = 32
+local ascii_double_quote<const> = 34
+local ascii_dollar<const> = 36
+local ascii_single_quote<const> = 39
+local ascii_plus<const> = 43
+local ascii_minus<const> = 45
+local ascii_dot<const> = 46
+local ascii_digit_0<const> = 48
+local ascii_digit_9<const> = 57
+local ascii_upper_a<const> = 65
+local ascii_upper_e<const> = 69
+local ascii_upper_f<const> = 70
+local ascii_upper_x<const> = 88
+local ascii_upper_z<const> = 90
+local ascii_backslash<const> = 92
+local ascii_underscore<const> = 95
+local ascii_lower_a<const> = 97
+local ascii_lower_b<const> = 98
+local ascii_lower_e<const> = 101
+local ascii_lower_f<const> = 102
+local ascii_lower_n<const> = 110
+local ascii_lower_r<const> = 114
+local ascii_lower_t<const> = 116
+local ascii_lower_v<const> = 118
+local ascii_lower_x<const> = 120
+local ascii_lower_z<const> = 122
+
 local is_digit<const> = function(code)
-	return code >= 48 and code <= 57
+	return code >= ascii_digit_0 and code <= ascii_digit_9
 end
 
 local is_lower<const> = function(code)
-	return code >= 97 and code <= 122
+	return code >= ascii_lower_a and code <= ascii_lower_z
 end
 
 local is_upper<const> = function(code)
-	return code >= 65 and code <= 90
+	return code >= ascii_upper_a and code <= ascii_upper_z
 end
 
 local is_identifier_start<const> = function(code)
-	return is_lower(code) or code == 95 or code == 36
+	return is_lower(code) or code == ascii_underscore or code == ascii_dollar
 end
 
 local is_identifier_part<const> = function(code)
@@ -29,7 +63,8 @@ local is_identifier_part<const> = function(code)
 end
 
 local is_space<const> = function(code)
-	return code == 32 or (code >= 9 and code <= 13)
+	return code == ascii_space
+		or (code >= ascii_horizontal_tab and code <= ascii_carriage_return)
 end
 
 local fail<const> = function(state, message, line, column)
@@ -46,7 +81,7 @@ local advance<const> = function(state)
 	else
 		state.current_code = 0
 	end
-	if code == 10 then
+	if code == ascii_line_feed then
 		state.line = state.line + 1
 		state.column = 1
 	else
@@ -67,18 +102,18 @@ end
 
 local is_hex_digit<const> = function(code)
 	return is_digit(code)
-		or (code >= 65 and code <= 70)
-		or (code >= 97 and code <= 102)
+		or (code >= ascii_upper_a and code <= ascii_upper_f)
+		or (code >= ascii_lower_a and code <= ascii_lower_f)
 end
 
 local hex_digit_value<const> = function(code)
 	if is_digit(code) then
-		return code - 48
+		return code - ascii_digit_0
 	end
-	if code <= 70 then
-		return code - 65 + 10
+	if code <= ascii_upper_f then
+		return code - ascii_upper_a + 10
 	end
-	return code - 97 + 10
+	return code - ascii_lower_a + 10
 end
 
 local scan_digits<const> = function(state)
@@ -90,18 +125,18 @@ end
 local scan_decimal_number<const> = function(state, line, column)
 	scan_digits(state)
 	if state.index < state.length
-		and state.current_code == 46
+		and state.current_code == ascii_dot
 		and is_digit(byte(state.source, state.index + 1)) then
 		advance(state)
 		scan_digits(state)
 	end
 	if state.index <= state.length then
 		local code<const> = state.current_code
-		if code == 69 or code == 101 then
+		if code == ascii_upper_e or code == ascii_lower_e then
 			advance(state)
 			if state.index <= state.length then
 				local sign<const> = state.current_code
-				if sign == 43 or sign == 45 then
+				if sign == ascii_plus or sign == ascii_minus then
 					advance(state)
 				end
 			end
@@ -126,9 +161,9 @@ end
 
 local scan_number<const> = function(state, line, column)
 	local start<const> = state.index
-	if state.current_code == 48 and state.index < state.length then
+	if state.current_code == ascii_digit_0 and state.index < state.length then
 		local prefix<const> = byte(state.source, state.index + 1)
-		if prefix == 88 or prefix == 120 then
+		if prefix == ascii_upper_x or prefix == ascii_lower_x then
 			scan_hex_integer(state, line, column)
 		else
 			scan_decimal_number(state, line, column)
@@ -141,16 +176,16 @@ local scan_number<const> = function(state, line, column)
 end
 
 local escaped_code_by_code<const> = {
-	[34] = 34,
-	[39] = 39,
-	[92] = 92,
-	[97] = 7,
-	[98] = 8,
-	[102] = 12,
-	[110] = 10,
-	[114] = 13,
-	[116] = 9,
-	[118] = 11,
+	[ascii_double_quote] = ascii_double_quote,
+	[ascii_single_quote] = ascii_single_quote,
+	[ascii_backslash] = ascii_backslash,
+	[ascii_lower_a] = ascii_bell,
+	[ascii_lower_b] = ascii_backspace,
+	[ascii_lower_f] = ascii_form_feed,
+	[ascii_lower_n] = ascii_line_feed,
+	[ascii_lower_r] = ascii_carriage_return,
+	[ascii_lower_t] = ascii_horizontal_tab,
+	[ascii_lower_v] = ascii_vertical_tab,
 }
 
 local scan_hex_escape<const> = function(state, line, column)
@@ -179,10 +214,10 @@ local scan_string<const> = function(state, quote, line, column)
 			end
 			return concat(parts)
 		end
-		if code == 10 or code == 13 then
+		if code == ascii_line_feed or code == ascii_carriage_return then
 			fail(state, 'unfinished string', line, column)
 		end
-		if code == 92 then
+		if code == ascii_backslash then
 			if parts == nil then
 				parts = {}
 			end
@@ -195,20 +230,20 @@ local scan_string<const> = function(state, quote, line, column)
 			end
 			local escape<const> = advance(state)
 			if is_digit(escape) then
-				local escaped = escape - 48
+				local escaped = escape - ascii_digit_0
 				local digits = 1
 				while digits < 3 and state.index <= state.length
 					and is_digit(state.current_code) do
-					escaped = escaped * 10 + advance(state) - 48
+					escaped = escaped * 10 + advance(state) - ascii_digit_0
 					digits = digits + 1
 				end
 				if escaped > 255 then
 					fail(state, 'decimal escape too large', line, column)
 				end
 				parts[#parts + 1] = char(escaped)
-			elseif escape == 120 then
+			elseif escape == ascii_lower_x then
 				parts[#parts + 1] = char(scan_hex_escape(state, line, column))
-			elseif escape == 122 then
+			elseif escape == ascii_lower_z then
 				while state.index <= state.length and is_space(state.current_code) do
 					advance(state)
 				end
@@ -230,11 +265,12 @@ local skip_space_and_comments<const> = function(state)
 		local code<const> = state.current_code
 		if is_space(code) then
 			advance(state)
-		elseif code == 45 and state.index < state.length
-			and byte(state.source, state.index + 1) == 45 then
+		elseif code == ascii_minus and state.index < state.length
+			and byte(state.source, state.index + 1) == ascii_minus then
 			advance(state)
 			advance(state)
-			while state.index <= state.length and state.current_code ~= 10 do
+			while state.index <= state.length
+				and state.current_code ~= ascii_line_feed do
 				advance(state)
 			end
 		else
@@ -288,14 +324,14 @@ function lexer.next(state)
 		state.token_literal = scan_number(state, line, column)
 		return
 	end
-	if code == 46 and state.index < state.length
+	if code == ascii_dot and state.index < state.length
 		and is_digit(byte(state.source, state.index + 1)) then
 		state.token_kind = token.number
 		state.token_literal = scan_number(state, line, column)
 		return
 	end
 	advance(state)
-	if code == 34 or code == 39 then
+	if code == ascii_double_quote or code == ascii_single_quote then
 		state.token_kind = token.string
 		state.token_literal = scan_string(state, code, line, column)
 		return
