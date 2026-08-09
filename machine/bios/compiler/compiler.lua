@@ -75,7 +75,7 @@ local prepare_value_operands<const> = function(state, expression)
 		and value % 1 == 0 then
 		state.immediate_number_by_expression[expression] = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
-			state.uses_ksmi = true
+			return expression
 		end
 		return
 	end
@@ -92,15 +92,29 @@ local prepare_codegen<const> = function(analysis)
 		constant_index_by_expression = {},
 		immediate_index_by_expression = {},
 		immediate_number_by_expression = {},
-		uses_ksmi = false,
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
+	local ksmi_expressions
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
 		local statement<const> = statements[index]
 		prepare_path_operands(state, statement.target)
-		prepare_value_operands(state, statement.value)
+		local ksmi_expression<const> = prepare_value_operands(state, statement.value)
+		if ksmi_expression ~= nil then
+			if ksmi_expressions == nil then
+				ksmi_expressions = {}
+			end
+			ksmi_expressions[#ksmi_expressions + 1] = ksmi_expression
+		end
+	end
+	local value_register<const> = state.parameter_count + #state.const_pool
+	if ksmi_expressions ~= nil and value_register > isa.max_wide_operand then
+		for index = 1, #ksmi_expressions do
+			local expression<const> = ksmi_expressions[index]
+			state.immediate_number_by_expression[expression] = nil
+			add_constant(state, expression, state.value_by_expression[expression])
+		end
 	end
 	return state
 end
@@ -300,8 +314,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local root_max_register<const> = constant_count + 2
 	local function_max_register<const> = state.parameter_count + constant_count + 1
 	if root_max_register > isa.max_wide_operand
-		or function_max_register > isa.max_ext_register_a
-		or (state.uses_ksmi and function_max_register > isa.max_wide_operand) then
+		or function_max_register > isa.max_ext_register_a then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
 	return {
