@@ -288,6 +288,12 @@ function lexer.next(state)
 		state.token_literal = scan_number(state, line, column)
 		return
 	end
+	if code == 46 and state.index < state.length
+		and is_digit(byte(state.source, state.index + 1)) then
+		state.token_kind = token.number
+		state.token_literal = scan_number(state, line, column)
+		return
+	end
 	advance(state)
 	if code == 34 or code == 39 then
 		state.token_kind = token.string

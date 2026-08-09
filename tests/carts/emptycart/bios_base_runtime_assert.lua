@@ -83,6 +83,7 @@ return function(target, frame)
 	target["wide_integer"] = 0x80000
 	target[&"field"] = &"value"
 	target[0x10] = 1.25e1
+	target["leading_fraction"] = .5
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
 end;
@@ -98,6 +99,7 @@ end;
 	assert(loaded_target.wide_integer == 0x80000, 'load wide integer literal mismatch')
 	assert(loaded_target.field == 'value', 'load string-id literal mismatch')
 	assert(loaded_target[0x10] == 12.5, 'load numeric literal mismatch')
+	assert(loaded_target.leading_fraction == 0.5, 'load leading fraction mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
 	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')
