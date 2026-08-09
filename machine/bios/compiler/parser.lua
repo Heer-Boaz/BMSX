@@ -179,7 +179,6 @@ local parse_assignment_statement<const> = function(state)
 	local target<const> = parse_expression(state)
 	expect(state, token.equal)
 	local value<const> = parse_expression(state)
-	match(state, token.semicolon)
 	return {
 		kind = syntax.assignment_statement,
 		target = target,
@@ -213,7 +212,9 @@ parse_block = function(state, terminator)
 	local column<const> = state.token_column
 	local statements<const> = {}
 	while state.token_kind ~= terminator and state.token_kind ~= token.eof do
-		statements[#statements + 1] = parse_statement(state)
+		if not match(state, token.semicolon) then
+			statements[#statements + 1] = parse_statement(state)
+		end
 	end
 	return {
 		kind = syntax.block,

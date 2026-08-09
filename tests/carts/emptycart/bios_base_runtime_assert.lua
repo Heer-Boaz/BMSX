@@ -74,6 +74,7 @@ function __bmsx_host_test.setup()
 
 	local chunk<const>, load_error<const> = load([[
 return function(target, frame)
+	;
 	target["visual"]["color"] = frame["visual"]["color"]
 	target[-1] = -8
 	target["zero"] = 0
@@ -82,8 +83,8 @@ return function(target, frame)
 	target["wide_integer"] = 0x80000
 	target[&"field"] = &"value"
 	target[0x10] = 1.25e1
-	target["escaped"] = "line\nquote:\" slash:\\ dec:\065"
-end
+	target["escaped"] = "line\nquote:\" slash:\\ dec:\065";;
+end;
 	]], 'bios_base_runtime_assert.load', 't')
 	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
 	local apply<const> = chunk()
