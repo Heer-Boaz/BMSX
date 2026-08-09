@@ -3,6 +3,14 @@ local isa<const> = require('bmsx/blua32')
 local bytecode<const> = {}
 
 local operand_mask<const> = (1 << isa.max_operand_bits) - 1
+local op_mask<const> = (1 << isa.max_op_bits) - 1
+local b_shift<const> = isa.max_operand_bits
+local a_shift<const> = b_shift + isa.max_operand_bits
+local op_shift<const> = a_shift + isa.max_operand_bits
+local ext_shift<const> = op_shift + isa.max_op_bits
+local ext_b_shift<const> = isa.ext_c_bits
+local ext_a_shift<const> = ext_b_shift + isa.ext_b_bits
+local ext_mask<const> = (1 << (ext_a_shift + isa.ext_a_bits)) - 1
 local bx_mask<const> = (1 << isa.max_bx_bits) - 1
 local ext_bx_mask<const> = (1 << isa.ext_bx_bits) - 1
 local base_bx_bits<const> = isa.max_bx_bits + isa.ext_bx_bits
@@ -11,10 +19,10 @@ local base_sbx_sign_bit<const> = 1 << (base_bx_bits - 1)
 local wide_bx_mask<const> = (1 << (base_bx_bits + isa.max_operand_bits)) - 1
 
 local pack_word<const> = function(op, a, b, c, ext)
-	return ((ext & 0xff) << 24)
-		| ((op & 0x3f) << 18)
-		| ((a & operand_mask) << 12)
-		| ((b & operand_mask) << 6)
+	return ((ext & ext_mask) << ext_shift)
+		| ((op & op_mask) << op_shift)
+		| ((a & operand_mask) << a_shift)
+		| ((b & operand_mask) << b_shift)
 		| (c & operand_mask)
 end
 
@@ -34,7 +42,7 @@ function bytecode.emit_abc(instruction_words, op, a, b, c)
 			0
 		)
 	end
-	local ext<const> = (a_ext << 6) | (b_ext << 3) | c_ext
+	local ext<const> = (a_ext << ext_a_shift) | (b_ext << ext_b_shift) | c_ext
 	instruction_words[#instruction_words + 1] = pack_word(op, a, b, c, ext)
 end
 

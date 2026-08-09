@@ -17,8 +17,11 @@ function linker.link(program)
 			+ #proto.instruction_words * isa.instruction_bytes
 	end
 	local code_byte_offset<const> = (
-		function_record_byte_count + upvalue_byte_count + 3
-	) & -4
+		function_record_byte_count
+		+ upvalue_byte_count
+		+ isa.instruction_bytes
+		- 1
+	) & -isa.instruction_bytes
 	local function_table_address<const> = arena.allocate(
 		code_byte_offset + code_byte_count,
 		isa.function_alignment
