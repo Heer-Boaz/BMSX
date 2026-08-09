@@ -52,14 +52,14 @@ local advance<const> = function(state)
 	return code
 end
 
-local scan_identifier<const> = function(state, line, column)
+local scan_identifier<const> = function(state)
 	local start<const> = state.index
 	while state.index <= state.length and is_identifier_part(current(state)) do
 		advance(state)
 	end
 	local text<const> = sub(state.source, start, state.index - 1)
 	local kind<const> = keyword_by_text[text] or token.identifier
-	return { kind = kind, lexeme = text, line = line, column = column }
+	return kind, text
 end
 
 local is_hex_digit<const> = function(code)
@@ -124,12 +124,7 @@ local scan_number<const> = function(state, line, column)
 		scan_decimal_number(state, line, column)
 	end
 	local text<const> = sub(state.source, start, state.index - 1)
-	return {
-		kind = token.number,
-		literal = tonumber(text),
-		line = line,
-		column = column,
-	}
+	return tonumber(text)
 end
 
 local escaped_code_by_code<const> = {
@@ -153,17 +148,12 @@ local scan_string<const> = function(state, quote, line, column)
 		if code == quote then
 			local segment_end<const> = state.index - 2
 			if parts == nil then
-				return {
-					kind = token.string,
-					literal = sub(state.source, segment_start, segment_end),
-					line = line,
-					column = column,
-				}
+				return sub(state.source, segment_start, segment_end)
 			end
 			if segment_end >= segment_start then
 				parts[#parts + 1] = sub(state.source, segment_start, segment_end)
 			end
-			return { kind = token.string, literal = concat(parts), line = line, column = column }
+			return concat(parts)
 		end
 		if code == 10 or code == 13 then
 			fail(state, 'unfinished string', line, column)
@@ -230,33 +220,47 @@ function lexer.new(source, chunk_name)
 		length = #source,
 		line = 1,
 		column = 1,
+		token_kind = token.eof,
+		token_line = 1,
+		token_column = 1,
 	}
 end
 
 function lexer.next(state)
 	skip_space_and_comments(state)
 	if state.index > state.length then
-		return { kind = token.eof, line = state.line, column = state.column }
+		state.token_kind = token.eof
+		state.token_line = state.line
+		state.token_column = state.column
+		return
 	end
 	local line<const> = state.line
 	local column<const> = state.column
+	state.token_line = line
+	state.token_column = column
 	local code<const> = current(state)
 	if is_upper(code) then
 		fail(state, 'upper-case identifiers are not allowed', line, column)
 	end
 	if is_identifier_start(code) then
-		return scan_identifier(state, line, column)
+		state.token_kind, state.token_lexeme = scan_identifier(state)
+		return
 	end
 	if is_digit(code) then
-		return scan_number(state, line, column)
+		state.token_kind = token.number
+		state.token_literal = scan_number(state, line, column)
+		return
 	end
 	advance(state)
 	if code == 34 or code == 39 then
-		return scan_string(state, code, line, column)
+		state.token_kind = token.string
+		state.token_literal = scan_string(state, code, line, column)
+		return
 	end
 	local kind<const> = single_character_by_code[code]
 	if kind ~= nil then
-		return { kind = kind, line = line, column = column }
+		state.token_kind = kind
+		return
 	end
 	fail(state, 'unexpected character', line, column)
 end

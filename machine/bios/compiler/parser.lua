@@ -4,38 +4,53 @@ local token<const> = require('compiler/token')
 
 local parser<const> = {}
 
-local fail<const> = function(state, message, at)
+local fail<const> = function(state, message, line, column)
 	error('[load:' .. state.chunk_name .. '] ' .. message .. ' at '
-		.. tostring(at.line) .. ':' .. tostring(at.column))
-end
-
-local advance<const> = function(state)
-	local current<const> = state.current
-	state.current = lexer.next(state.lexer)
-	return current
+		.. tostring(line) .. ':' .. tostring(column))
 end
 
 local match<const> = function(state, kind)
-	if state.current.kind ~= kind then
+	if state.token_kind ~= kind then
 		return false
 	end
-	advance(state)
+	lexer.next(state)
 	return true
 end
 
 local expect<const> = function(state, kind)
-	if state.current.kind ~= kind then
-		fail(state, "expected '" .. token.name[kind] .. "'", state.current)
+	if state.token_kind ~= kind then
+		fail(
+			state,
+			"expected '" .. token.name[kind] .. "'",
+			state.token_line,
+			state.token_column
+		)
 	end
-	return advance(state)
+	lexer.next(state)
 end
 
-local identifier_expression<const> = function(identifier)
+local consume_identifier<const> = function(state)
+	if state.token_kind ~= token.identifier then
+		fail(
+			state,
+			"expected '" .. token.name[token.identifier] .. "'",
+			state.token_line,
+			state.token_column
+		)
+	end
+	local name<const> = state.token_lexeme
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	lexer.next(state)
+	return name, line, column
+end
+
+local identifier_expression<const> = function(name, line, column)
 	return {
 		kind = syntax.identifier_expression,
-		name = identifier.lexeme,
-		line = identifier.line,
-		column = identifier.column,
+		name = name,
+		line = line,
+		column = column,
 	}
 end
 
@@ -46,61 +61,75 @@ local parse_block
 local parse_unary_expression
 
 local parse_primary_expression<const> = function(state)
-	local current<const> = state.current
-	local kind<const> = current.kind
+	local kind<const> = state.token_kind
 	if kind == token.identifier then
-		return identifier_expression(advance(state))
+		local expression<const> = identifier_expression(
+			state.token_lexeme,
+			state.token_line,
+			state.token_column
+		)
+		lexer.next(state)
+		return expression
 	end
 	if kind == token.number then
-		advance(state)
-		return {
+		local expression<const> = {
 			kind = syntax.number_literal_expression,
-			value = current.literal,
-			line = current.line,
-			column = current.column,
+			value = state.token_literal,
+			line = state.token_line,
+			column = state.token_column,
 		}
+		lexer.next(state)
+		return expression
 	end
 	if kind == token.string then
-		advance(state)
-		return {
+		local expression<const> = {
 			kind = syntax.string_literal_expression,
-			value = current.literal,
-			line = current.line,
-			column = current.column,
+			value = state.token_literal,
+			line = state.token_line,
+			column = state.token_column,
 		}
+		lexer.next(state)
+		return expression
 	end
 	if kind == token.keyword_false or kind == token.keyword_true then
-		advance(state)
-		return {
+		local expression<const> = {
 			kind = syntax.boolean_literal_expression,
 			value = kind == token.keyword_true,
-			line = current.line,
-			column = current.column,
+			line = state.token_line,
+			column = state.token_column,
 		}
+		lexer.next(state)
+		return expression
 	end
 	if kind == token.keyword_nil then
-		advance(state)
-		return {
+		local expression<const> = {
 			kind = syntax.nil_literal_expression,
-			line = current.line,
-			column = current.column,
+			line = state.token_line,
+			column = state.token_column,
 		}
+		lexer.next(state)
+		return expression
 	end
 	if kind == token.keyword_function then
 		return parse_function_expression(state)
 	end
-	fail(state, 'unsupported expression', current)
+	fail(
+		state,
+		'unsupported expression',
+		state.token_line,
+		state.token_column
+	)
 end
 
 local parse_prefix_expression<const> = function(state)
 	local expression = parse_primary_expression(state)
 	while true do
 		if match(state, token.dot) then
-			local identifier<const> = expect(state, token.identifier)
+			local identifier<const> = consume_identifier(state)
 			expression = {
 				kind = syntax.member_expression,
 				base = expression,
-				identifier = identifier.lexeme,
+				identifier = identifier,
 				line = expression.line,
 				column = expression.column,
 			}
@@ -121,22 +150,24 @@ local parse_prefix_expression<const> = function(state)
 end
 
 parse_unary_expression = function(state)
-	local current<const> = state.current
+	local kind<const> = state.token_kind
 	local operator
-	if current.kind == token.minus then
+	if kind == token.minus then
 		operator = syntax.unary_negate
-	elseif current.kind == token.ampersand then
+	elseif kind == token.ampersand then
 		operator = syntax.unary_string_id
 	else
 		return parse_prefix_expression(state)
 	end
-	advance(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	lexer.next(state)
 	return {
 		kind = syntax.unary_expression,
 		operator = operator,
 		operand = parse_unary_expression(state),
-		line = current.line,
-		column = current.column,
+		line = line,
+		column = column,
 	}
 end
 
@@ -159,43 +190,54 @@ local parse_assignment_statement<const> = function(state)
 end
 
 local parse_return_statement<const> = function(state)
-	local return_token<const> = expect(state, token.keyword_return)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_return)
 	return {
 		kind = syntax.return_statement,
 		expressions = { parse_expression(state) },
-		line = return_token.line,
-		column = return_token.column,
+		line = line,
+		column = column,
 	}
 end
 
 parse_statement = function(state)
-	if state.current.kind == token.keyword_return then
+	if state.token_kind == token.keyword_return then
 		return parse_return_statement(state)
 	end
 	return parse_assignment_statement(state)
 end
 
 parse_block = function(state, terminator)
-	local first<const> = state.current
+	local line<const> = state.token_line
+	local column<const> = state.token_column
 	local statements<const> = {}
-	while state.current.kind ~= terminator and state.current.kind ~= token.eof do
+	while state.token_kind ~= terminator and state.token_kind ~= token.eof do
 		statements[#statements + 1] = parse_statement(state)
 	end
 	return {
 		kind = syntax.block,
 		statements = statements,
-		line = first.line,
-		column = first.column,
+		line = line,
+		column = column,
 	}
 end
 
 parse_function_expression = function(state)
-	local function_token<const> = expect(state, token.keyword_function)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_function)
 	expect(state, token.left_parenthesis)
 	local parameters<const> = {}
-	if state.current.kind ~= token.right_parenthesis then
+	if state.token_kind ~= token.right_parenthesis then
 		while true do
-			parameters[#parameters + 1] = identifier_expression(expect(state, token.identifier))
+			local name<const>, parameter_line<const>, parameter_column<const>
+				= consume_identifier(state)
+			parameters[#parameters + 1] = identifier_expression(
+				name,
+				parameter_line,
+				parameter_column
+			)
 			if not match(state, token.comma) then
 				break
 			end
@@ -208,26 +250,23 @@ parse_function_expression = function(state)
 		kind = syntax.function_expression,
 		parameters = parameters,
 		body = body,
-		line = function_token.line,
-		column = function_token.column,
+		line = line,
+		column = column,
 	}
 end
 
 function parser.parse(source, chunk_name)
-	local lexer_state<const> = lexer.new(source, chunk_name)
-	local state<const> = {
-		chunk_name = chunk_name,
-		lexer = lexer_state,
-		current = lexer.next(lexer_state),
-	}
-	local first<const> = state.current
+	local state<const> = lexer.new(source, chunk_name)
+	lexer.next(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
 	local body<const> = parse_block(state, token.eof)
 	expect(state, token.eof)
 	return {
 		kind = syntax.chunk,
 		body = body,
-		line = first.line,
-		column = first.column,
+		line = line,
+		column = column,
 	}
 end
 
