@@ -285,24 +285,25 @@ local compile_function<const> = function(state)
 	}
 end
 
-local compile_chunk<const> = function(constant_count, const_pool_register)
+local compile_chunk<const> = function(constant_count, captured_const_pool_register)
 	local instruction_words<const> = {}
-	bytecode.emit_abc(instruction_words, isa.op_getup, 0, 0, 0)
+	local const_pool_register<const> = 0
+	local function_address_register<const> = 1
+	bytecode.emit_abc(instruction_words, isa.op_getup, const_pool_register, 0, 0)
 	for index = 1, constant_count + 1 do
-		bytecode.emit_abc(instruction_words, isa.op_geti, index, 0, index)
+		bytecode.emit_abc(instruction_words, isa.op_geti, index, const_pool_register, index)
 	end
-	local closure_register<const> = constant_count + 2
 	bytecode.emit_closure_address_register(
 		instruction_words,
-		closure_register,
-		1
+		const_pool_register,
+		function_address_register
 	)
-	bytecode.emit_abc(instruction_words, isa.op_ret, closure_register, 1, 0)
+	bytecode.emit_abc(instruction_words, isa.op_ret, const_pool_register, 1, 0)
 	return {
 		instruction_words = instruction_words,
 		parameter_count = 0,
-		max_stack = closure_register + 1,
-		upvalue_registers = { const_pool_register },
+		max_stack = constant_count + 2,
+		upvalue_registers = { captured_const_pool_register },
 	}
 end
 
@@ -311,10 +312,8 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local state<const> = prepare_codegen(analysis)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - 1
-	local root_max_register<const> = constant_count + 2
 	local function_max_register<const> = state.parameter_count + constant_count + 1
-	if root_max_register > isa.max_wide_operand
-		or function_max_register > isa.max_ext_register_a then
+	if function_max_register > isa.max_ext_register_a then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
 	return {
