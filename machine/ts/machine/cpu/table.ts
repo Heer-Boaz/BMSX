@@ -224,6 +224,24 @@ export class Table {
 		target.setNil(targetIndex);
 	}
 
+	public loadIntegerArrayKey(
+		indexValue: number,
+		target: ValueWriteTarget,
+		targetIndex: number,
+	): boolean {
+		const index = indexValue - 1;
+		if (index < 0 || index >= this.arrayCapacity) {
+			return false;
+		}
+		target.setEncoded(
+			targetIndex,
+			this.tags[index],
+			this.scalars[index],
+			this.references[index],
+		);
+		return true;
+	}
+
 	public setInteger(indexValue: number, value: Value): void {
 		this.setHostValue(ValueTag.Number, indexValue, null, value);
 	}
@@ -242,6 +260,27 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
+	}
+
+	public storeIntegerArrayKey(
+		indexValue: number,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): boolean {
+		const index = indexValue - 1;
+		if (index < 0 || index >= this.arrayCapacity) {
+			return false;
+		}
+		this.setEncoded(index, valueTag, valueScalar, valueReference);
+		if (valueTag === ValueTag.Nil) {
+			if (index < this.arrayLength) {
+				this.arrayLength = index;
+			}
+		} else if (index === this.arrayLength) {
+			this.updateArrayLengthFrom(this.arrayLength);
+		}
+		return true;
 	}
 
 	public getStringKey(key: StringId): Value {

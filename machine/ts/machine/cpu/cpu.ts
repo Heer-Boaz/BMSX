@@ -2300,9 +2300,17 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.GETI: {
 					const b = page.b[pageOffset];
+					const baseTag = registers.getTag(b);
+					const table = registers.getTable(b);
+					if (baseTag === ValueTag.Table
+						&& table.metatable === null
+						&& table.loadIntegerArrayKey(page.c[pageOffset], registers, a)) {
+						this.bumpRegisterTop(frame, a);
+						return;
+					}
 					this.loadTableIntegerIndex(
-						registers.getTag(b),
-						registers.getTable(b),
+						baseTag,
+						table,
 						page.c[pageOffset],
 						registers,
 						a,
@@ -2312,6 +2320,8 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.SETI: {
 					const b = page.b[pageOffset];
+					const baseTag = registers.getTag(a);
+					const table = registers.getTable(a);
 					const rkC = page.rkC[pageOffset];
 					let valueTag: ValueTag;
 					let valueScalar: number;
@@ -2326,9 +2336,13 @@ export class CPU implements MappedPageInvalidator {
 						valueScalar = registers.getScalar(rkC);
 						valueReference = registers.getReference(rkC);
 					}
+					if (baseTag === ValueTag.Table
+						&& table.storeIntegerArrayKey(b, valueTag, valueScalar, valueReference)) {
+						return;
+					}
 					this.storeTableIntegerIndex(
-						registers.getTag(a),
-						registers.getTable(a),
+						baseTag,
+						table,
 						b,
 						valueTag,
 						valueScalar,
