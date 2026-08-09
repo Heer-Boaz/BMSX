@@ -28,6 +28,10 @@ local is_identifier_part<const> = function(code)
 	return is_identifier_start(code) or is_digit(code)
 end
 
+local is_space<const> = function(code)
+	return code == 32 or (code >= 9 and code <= 13)
+end
+
 local fail<const> = function(state, message, line, column)
 	error('[load:' .. state.chunk_name .. '] ' .. message .. ' at '
 		.. tostring(line) .. ':' .. tostring(column))
@@ -65,6 +69,16 @@ local is_hex_digit<const> = function(code)
 	return is_digit(code)
 		or (code >= 65 and code <= 70)
 		or (code >= 97 and code <= 102)
+end
+
+local hex_digit_value<const> = function(code)
+	if is_digit(code) then
+		return code - 48
+	end
+	if code <= 70 then
+		return code - 65 + 10
+	end
+	return code - 97 + 10
 end
 
 local scan_digits<const> = function(state)
@@ -139,6 +153,17 @@ local escaped_code_by_code<const> = {
 	[118] = 11,
 }
 
+local scan_hex_escape<const> = function(state, line, column)
+	local value = 0
+	for _ = 1, 2 do
+		if state.index > state.length or not is_hex_digit(state.current_code) then
+			fail(state, 'invalid hexadecimal escape', line, column)
+		end
+		value = value * 16 + hex_digit_value(advance(state))
+	end
+	return value
+end
+
 local scan_string<const> = function(state, quote, line, column)
 	local parts
 	local segment_start = state.index
@@ -181,6 +206,12 @@ local scan_string<const> = function(state, quote, line, column)
 					fail(state, 'decimal escape too large', line, column)
 				end
 				parts[#parts + 1] = char(escaped)
+			elseif escape == 120 then
+				parts[#parts + 1] = char(scan_hex_escape(state, line, column))
+			elseif escape == 122 then
+				while state.index <= state.length and is_space(state.current_code) do
+					advance(state)
+				end
 			else
 				local escaped_code<const> = escaped_code_by_code[escape]
 				if escaped_code == nil then
@@ -197,7 +228,7 @@ end
 local skip_space_and_comments<const> = function(state)
 	while state.index <= state.length do
 		local code<const> = state.current_code
-		if code == 32 or code == 9 or code == 10 or code == 13 then
+		if is_space(code) then
 			advance(state)
 		elseif code == 45 and state.index < state.length
 			and byte(state.source, state.index + 1) == 45 then
