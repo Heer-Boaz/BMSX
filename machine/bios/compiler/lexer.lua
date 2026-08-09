@@ -2,17 +2,11 @@ local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
 local concat<const> = require('table').concat
 local sub<const> = require('string/base').sub
+local token<const> = require('compiler/token')
 
 local lexer<const> = {}
-
-local keywords<const> = {
-	['end'] = 'end',
-	['false'] = 'false',
-	['function'] = 'function',
-	['nil'] = 'nil',
-	['return'] = 'return',
-	['true'] = 'true',
-}
+local keyword_by_text<const> = token.keyword_by_text
+local single_character_by_code<const> = token.single_character_by_code
 
 local is_digit<const> = function(code)
 	return code >= 48 and code <= 57
@@ -64,8 +58,8 @@ local scan_identifier<const> = function(state, line, column)
 		advance(state)
 	end
 	local text<const> = sub(state.source, start, state.index - 1)
-	local kind<const> = keywords[text] or 'identifier'
-	return { kind = kind, value = text, line = line, column = column }
+	local kind<const> = keyword_by_text[text] or token.identifier
+	return { kind = kind, lexeme = text, line = line, column = column }
 end
 
 local is_number_letter<const> = function(code)
@@ -93,7 +87,7 @@ local scan_number<const> = function(state, line, column)
 	if value == nil then
 		fail(state, 'invalid numeric literal', line, column)
 	end
-	return { kind = 'number', value = value, line = line, column = column }
+	return { kind = token.number, literal = value, line = line, column = column }
 end
 
 local escaped_code<const> = function(code)
@@ -116,8 +110,8 @@ local scan_string<const> = function(state, quote, line, column)
 			local segment_end<const> = state.index - 2
 			if parts == nil then
 				return {
-					kind = 'string',
-					value = sub(state.source, segment_start, segment_end),
+					kind = token.string,
+					literal = sub(state.source, segment_start, segment_end),
 					line = line,
 					column = column,
 				}
@@ -125,7 +119,7 @@ local scan_string<const> = function(state, quote, line, column)
 			if segment_end >= segment_start then
 				parts[#parts + 1] = sub(state.source, segment_start, segment_end)
 			end
-			return { kind = 'string', value = concat(parts), line = line, column = column }
+			return { kind = token.string, literal = concat(parts), line = line, column = column }
 		end
 		if code == 10 or code == 13 then
 			fail(state, 'unfinished string', line, column)
@@ -191,7 +185,7 @@ end
 function lexer.next(state)
 	skip_space_and_comments(state)
 	if state.index > state.length then
-		return { kind = 'eof', line = state.line, column = state.column }
+		return { kind = token.eof, line = state.line, column = state.column }
 	end
 	local line<const> = state.line
 	local column<const> = state.column
@@ -209,10 +203,9 @@ function lexer.next(state)
 	if code == 34 or code == 39 then
 		return scan_string(state, code, line, column)
 	end
-	if code == 40 or code == 41 or code == 44 or code == 45
-		or code == 46 or code == 59 or code == 61 or code == 91
-		or code == 93 or code == 38 then
-		return { kind = char(code), line = line, column = column }
+	local kind<const> = single_character_by_code[code]
+	if kind ~= nil then
+		return { kind = kind, line = line, column = column }
 	end
 	fail(state, 'unexpected character', line, column)
 end
