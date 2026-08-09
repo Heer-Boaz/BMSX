@@ -74,6 +74,9 @@ local prepare_value_operands<const> = function(state, expression)
 		and value <= isa.max_signed_bx
 		and value % 1 == 0 then
 		state.immediate_number_by_expression[expression] = value
+		if value ~= 0 and value ~= 1 and value ~= -1 then
+			state.uses_ksmi = true
+		end
 		return
 	end
 	add_constant(state, expression, value)
@@ -89,6 +92,7 @@ local prepare_codegen<const> = function(analysis)
 		constant_index_by_expression = {},
 		immediate_index_by_expression = {},
 		immediate_number_by_expression = {},
+		uses_ksmi = false,
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
@@ -293,12 +297,11 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local state<const> = prepare_codegen(analysis)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - 1
-	local max_register = constant_count + 2
+	local root_max_register<const> = constant_count + 2
 	local function_max_register<const> = state.parameter_count + constant_count + 1
-	if function_max_register > max_register then
-		max_register = function_max_register
-	end
-	if max_register > isa.max_ext_register_a then
+	if root_max_register > isa.max_wide_operand
+		or function_max_register > isa.max_ext_register_a
+		or (state.uses_ksmi and function_max_register > isa.max_wide_operand) then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
 	return {

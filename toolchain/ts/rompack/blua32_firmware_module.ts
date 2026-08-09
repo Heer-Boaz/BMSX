@@ -11,6 +11,7 @@ import {
 	MAX_OP_BITS,
 	MAX_OPERAND_BITS,
 	MAX_SIGNED_BX,
+	MAX_WIDE_OPERAND,
 	MIN_SIGNED_BX,
 } from '../../../machine/ts/spec/blua32/instruction_format';
 import {
@@ -39,6 +40,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tmax_bx_bits = ${MAX_BX_BITS},`,
 	`\tmax_ext_register_a = ${MAX_EXT_REGISTER_A},`,
 	`\tmax_ext_register_bc = ${MAX_EXT_REGISTER_BC},`,
+	`\tmax_wide_operand = ${MAX_WIDE_OPERAND},`,
 	`\tmin_signed_bx = ${MIN_SIGNED_BX},`,
 	`\tmax_signed_bx = ${MAX_SIGNED_BX},`,
 	`\text_a_bits = ${EXT_A_BITS},`,

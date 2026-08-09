@@ -26,6 +26,7 @@ constexpr int MAX_WIDE = MAX_LOW_OPERAND;
 constexpr int MAX_BASE_OPERAND_A = (1 << BASE_OPERAND_A_BITS) - 1;
 constexpr int MAX_BASE_OPERAND_BC = (1 << BASE_OPERAND_BC_BITS) - 1;
 constexpr int MAX_BASE_BX = (1 << BASE_BX_BITS) - 1;
+constexpr int MAX_WIDE_OPERAND = (MAX_WIDE << MAX_OPERAND_BITS) | MAX_LOW_OPERAND;
 constexpr int MAX_SIGNED_BX_BITS = BASE_BX_BITS + MAX_OPERAND_BITS;
 constexpr int SIGNED_BX_SIGN_BIT = 1 << (MAX_SIGNED_BX_BITS - 1);
 constexpr int MAX_SIGNED_BX = SIGNED_BX_SIGN_BIT - 1;
