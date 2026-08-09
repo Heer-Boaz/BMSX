@@ -77,7 +77,7 @@ local prepare_value_operands<const> = function(state, expression)
 		and value % 1 == 0 then
 		state.immediate_number_by_expression[expression] = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
-			return expression
+			return true
 		end
 		return
 	end
@@ -97,25 +97,24 @@ local prepare_codegen<const> = function(analysis)
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
-	local ksmi_expressions
+	local has_ksmi_expression = false
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
 		local statement<const> = statements[index]
 		prepare_path_operands(state, statement.target)
-		local ksmi_expression<const> = prepare_value_operands(state, statement.value)
-		if ksmi_expression ~= nil then
-			if ksmi_expressions == nil then
-				ksmi_expressions = {}
-			end
-			ksmi_expressions[#ksmi_expressions + 1] = ksmi_expression
+		if prepare_value_operands(state, statement.value) ~= nil then
+			has_ksmi_expression = true
 		end
 	end
 	local value_register<const> = state.parameter_count + #state.const_pool
-	if ksmi_expressions ~= nil and value_register > isa.max_wide_operand then
-		for index = 1, #ksmi_expressions do
-			local expression<const> = ksmi_expressions[index]
-			state.immediate_number_by_expression[expression] = nil
-			add_constant(state, expression, state.value_by_expression[expression])
+	if has_ksmi_expression and value_register > isa.max_wide_operand then
+		for index = 1, #statements do
+			local expression<const> = statements[index].value
+			local value<const> = state.immediate_number_by_expression[expression]
+			if value ~= nil and value ~= 0 and value ~= 1 and value ~= -1 then
+				state.immediate_number_by_expression[expression] = nil
+				add_constant(state, expression, value)
+			end
 		end
 	end
 	return state
