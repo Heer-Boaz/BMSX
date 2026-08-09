@@ -208,21 +208,24 @@ local emit_assignment<const> = function(
 	instruction_words,
 	state,
 	statement,
-	target_register,
-	value_register
+	scratch_register
 )
 	local target<const> = statement.target
 	local target_table_register<const> = emit_path(
 		state,
 		instruction_words,
 		target.base,
-		target_register
+		scratch_register
 	)
+	local value_target_register = scratch_register
+	if target_table_register == scratch_register then
+		value_target_register = value_target_register + 1
+	end
 	local assignment_value_register<const> = emit_value(
 		state,
 		instruction_words,
 		statement.value,
-		value_register
+		value_target_register
 	)
 	local immediate_index<const> = state.immediate_index_by_expression[target]
 	if immediate_index ~= nil then
@@ -233,18 +236,19 @@ local emit_assignment<const> = function(
 			immediate_index,
 			assignment_value_register
 		)
-		return
+	else
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_sett,
+			target_table_register,
+			constant_register(
+				state.parameter_count,
+				state.constant_index_by_expression[target]
+			),
+			assignment_value_register
+		)
 	end
-	bytecode.emit_abc(
-		instruction_words,
-		isa.op_sett,
-		target_table_register,
-		constant_register(
-			state.parameter_count,
-			state.constant_index_by_expression[target]
-		),
-		assignment_value_register
-	)
+	return assignment_value_register > scratch_register
 end
 
 local compile_function<const> = function(state)
@@ -260,20 +264,21 @@ local compile_function<const> = function(state)
 			0
 		)
 	end
-	local target_register<const> = parameter_count + constant_count
-	local value_register<const> = target_register + 1
+	local scratch_register<const> = parameter_count + constant_count
+	local uses_second_scratch = false
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
-		emit_assignment(
+		if emit_assignment(
 			instruction_words,
 			state,
 			statements[index],
-			target_register,
-			value_register
-		)
+			scratch_register
+		) then
+			uses_second_scratch = true
+		end
 	end
-	bytecode.emit_abc(instruction_words, isa.op_knil, target_register, 0, 0)
-	bytecode.emit_abc(instruction_words, isa.op_ret, target_register, 1, 0)
+	bytecode.emit_abc(instruction_words, isa.op_knil, scratch_register, 0, 0)
+	bytecode.emit_abc(instruction_words, isa.op_ret, scratch_register, 1, 0)
 
 	local upvalue_registers<const> = {}
 	for index = 1, constant_count do
@@ -282,7 +287,7 @@ local compile_function<const> = function(state)
 	return {
 		instruction_words = instruction_words,
 		parameter_count = parameter_count,
-		max_stack = value_register + 1,
+		max_stack = scratch_register + (uses_second_scratch and 2 or 1),
 		upvalue_registers = upvalue_registers,
 	}
 end
@@ -314,14 +319,20 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register)
 	local state<const> = prepare_codegen(analysis)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - 1
-	local function_max_register<const> = state.parameter_count + constant_count + 1
-	if function_max_register > isa.max_ext_register_a then
+	local max_stack<const> = isa.max_ext_register_a + 1
+	if constant_count + 2 > max_stack
+		or state.parameter_count + constant_count + 1 > max_stack then
+		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
+	end
+	local chunk_proto<const> = compile_chunk(constant_count, root_const_pool_register)
+	local function_proto<const> = compile_function(state)
+	if function_proto.max_stack > max_stack then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
 	return {
 		protos = {
-			compile_chunk(constant_count, root_const_pool_register),
-			compile_function(state),
+			chunk_proto,
+			function_proto,
 		},
 		root_proto_index = 1,
 		const_pool = const_pool,
