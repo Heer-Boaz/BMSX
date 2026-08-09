@@ -14,7 +14,7 @@ function linker.link(program)
 		upvalue_byte_count = upvalue_byte_count
 			+ #proto.upvalue_registers * isa.upvalue_record_size
 		code_byte_count = code_byte_count
-			+ #proto.words * isa.instruction_bytes
+			+ #proto.instruction_words * isa.instruction_bytes
 	end
 	local code_byte_offset<const> = (
 		function_record_byte_count + upvalue_byte_count + 3
@@ -45,7 +45,8 @@ function linker.link(program)
 			)
 			upvalue_address = upvalue_address + isa.upvalue_record_size
 		end
-		local proto_code_byte_count<const> = #proto.words * isa.instruction_bytes
+		local instruction_words<const> = proto.instruction_words
+		local proto_code_byte_count<const> = #instruction_words * isa.instruction_bytes
 		bytecode.write_function_record(
 			function_table_address + (index - 1) * isa.function_record_size,
 			code_address,
@@ -55,7 +56,7 @@ function linker.link(program)
 			proto_upvalue_address,
 			#upvalue_registers
 		)
-		bytecode.write(proto.words, code_address)
+		bytecode.write_instruction_words(instruction_words, code_address)
 		code_address = code_address + proto_code_byte_count
 	end
 

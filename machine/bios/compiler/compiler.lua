@@ -10,10 +10,10 @@ local constant_register<const> = function(parameter_count, const_index)
 end
 
 local emit_path
-emit_path = function(analysis, words, expression, target)
+emit_path = function(analysis, instruction_words, expression, target)
 	if expression.kind == syntax.identifier_expression then
 		bytecode.emit_abc(
-			words,
+			instruction_words,
 			isa.op_mov,
 			target,
 			analysis.parameter_register_by_expression[expression],
@@ -21,9 +21,9 @@ emit_path = function(analysis, words, expression, target)
 		)
 		return
 	end
-	emit_path(analysis, words, expression.base, target)
+	emit_path(analysis, instruction_words, expression.base, target)
 	bytecode.emit_abc(
-		words,
+		instruction_words,
 		isa.op_gett,
 		target,
 		target,
@@ -34,21 +34,26 @@ emit_path = function(analysis, words, expression, target)
 	)
 end
 
-local emit_value<const> = function(analysis, words, expression, target)
+local emit_value<const> = function(
+	analysis,
+	instruction_words,
+	expression,
+	target
+)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
 		or kind == syntax.index_expression then
-		emit_path(analysis, words, expression, target)
+		emit_path(analysis, instruction_words, expression, target)
 		return
 	end
 	if kind == syntax.nil_literal_expression then
-		bytecode.emit_abc(words, isa.op_knil, target, 0, 0)
+		bytecode.emit_abc(instruction_words, isa.op_knil, target, 0, 0)
 		return
 	end
 	if kind == syntax.boolean_literal_expression then
 		bytecode.emit_abc(
-			words,
+			instruction_words,
 			expression.value and isa.op_ktrue or isa.op_kfalse,
 			target,
 			0,
@@ -57,7 +62,7 @@ local emit_value<const> = function(analysis, words, expression, target)
 		return
 	end
 	bytecode.emit_abc(
-		words,
+		instruction_words,
 		isa.op_mov,
 		target,
 		constant_register(
@@ -69,17 +74,17 @@ local emit_value<const> = function(analysis, words, expression, target)
 end
 
 local emit_assignment<const> = function(
-	words,
+	instruction_words,
 	analysis,
 	statement,
 	target_register,
 	value_register
 )
 	local target<const> = statement.target
-	emit_path(analysis, words, target.base, target_register)
-	emit_value(analysis, words, statement.value, value_register)
+	emit_path(analysis, instruction_words, target.base, target_register)
+	emit_value(analysis, instruction_words, statement.value, value_register)
 	bytecode.emit_abc(
-		words,
+		instruction_words,
 		isa.op_sett,
 		target_register,
 		constant_register(
@@ -93,10 +98,10 @@ end
 local compile_function<const> = function(analysis)
 	local parameter_count<const> = analysis.parameter_count
 	local constant_count<const> = #analysis.constants
-	local words<const> = {}
+	local instruction_words<const> = {}
 	for index = 0, constant_count - 1 do
 		bytecode.emit_abc(
-			words,
+			instruction_words,
 			isa.op_getup,
 			parameter_count + index,
 			index,
@@ -108,22 +113,22 @@ local compile_function<const> = function(analysis)
 	local statements<const> = analysis.function_expression.body.statements
 	for index = 1, #statements do
 		emit_assignment(
-			words,
+			instruction_words,
 			analysis,
 			statements[index],
 			target_register,
 			value_register
 		)
 	end
-	bytecode.emit_abc(words, isa.op_knil, target_register, 0, 0)
-	bytecode.emit_abc(words, isa.op_ret, target_register, 1, 0)
+	bytecode.emit_abc(instruction_words, isa.op_knil, target_register, 0, 0)
+	bytecode.emit_abc(instruction_words, isa.op_ret, target_register, 1, 0)
 
 	local upvalue_registers<const> = {}
 	for index = 1, constant_count do
 		upvalue_registers[index] = index + 1
 	end
 	return {
-		words = words,
+		instruction_words = instruction_words,
 		parameter_count = parameter_count,
 		max_stack = value_register + 1,
 		upvalue_registers = upvalue_registers,
@@ -131,16 +136,20 @@ local compile_function<const> = function(analysis)
 end
 
 local compile_chunk<const> = function(constant_count, const_pool_register)
-	local words<const> = {}
-	bytecode.emit_abc(words, isa.op_getup, 0, 0, 0)
+	local instruction_words<const> = {}
+	bytecode.emit_abc(instruction_words, isa.op_getup, 0, 0, 0)
 	for index = 1, constant_count + 1 do
-		bytecode.emit_abc(words, isa.op_geti, index, 0, index)
+		bytecode.emit_abc(instruction_words, isa.op_geti, index, 0, index)
 	end
 	local closure_register<const> = constant_count + 2
-	bytecode.emit_closure_address_register(words, closure_register, 1)
-	bytecode.emit_abc(words, isa.op_ret, closure_register, 1, 0)
+	bytecode.emit_closure_address_register(
+		instruction_words,
+		closure_register,
+		1
+	)
+	bytecode.emit_abc(instruction_words, isa.op_ret, closure_register, 1, 0)
 	return {
-		words = words,
+		instruction_words = instruction_words,
 		parameter_count = 0,
 		max_stack = closure_register + 1,
 		upvalue_registers = { const_pool_register },

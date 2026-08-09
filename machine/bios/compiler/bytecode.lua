@@ -12,11 +12,7 @@ local pack_word<const> = function(op, a, b, c, ext)
 		| (c & operand_mask)
 end
 
-local append_word<const> = function(words, word)
-	words[#words + 1] = word
-end
-
-function bytecode.emit_abc(words, op, a, b, c)
+function bytecode.emit_abc(instruction_words, op, a, b, c)
 	local a_ext<const> = (a >> isa.max_operand_bits) & ((1 << isa.ext_a_bits) - 1)
 	local b_ext<const> = (b >> isa.max_operand_bits) & ((1 << isa.ext_b_bits) - 1)
 	local c_ext<const> = (c >> isa.max_operand_bits) & ((1 << isa.ext_c_bits) - 1)
@@ -24,37 +20,47 @@ function bytecode.emit_abc(words, op, a, b, c)
 	local b_wide<const> = b >> (isa.max_operand_bits + isa.ext_b_bits)
 	local c_wide<const> = c >> (isa.max_operand_bits + isa.ext_c_bits)
 	if a_wide ~= 0 or b_wide ~= 0 or c_wide ~= 0 then
-		append_word(words, pack_word(isa.op_wide, a_wide, b_wide, c_wide, 0))
+		instruction_words[#instruction_words + 1] = pack_word(
+			isa.op_wide,
+			a_wide,
+			b_wide,
+			c_wide,
+			0
+		)
 	end
 	local ext<const> = (a_ext << 6) | (b_ext << 3) | c_ext
-	append_word(words, pack_word(op, a, b, c, ext))
+	instruction_words[#instruction_words + 1] = pack_word(op, a, b, c, ext)
 end
 
-function bytecode.emit_closure_address_register(words, target, address_register)
+function bytecode.emit_closure_address_register(
+	instruction_words,
+	target,
+	address_register
+)
 	local target_wide<const> = target >> isa.max_operand_bits
 	local address_wide<const> = address_register
 		>> (isa.max_operand_bits * 2 + isa.ext_bx_bits)
-	append_word(words, pack_word(
+	instruction_words[#instruction_words + 1] = pack_word(
 		isa.op_wide,
 		target_wide,
 		address_wide,
 		isa.closure_address_register_wide_c,
 		0
-	))
+	)
 	local bx_low<const> = address_register & ((1 << (isa.max_operand_bits * 2)) - 1)
 	local bx_ext<const> = address_register >> (isa.max_operand_bits * 2)
-	append_word(words, pack_word(
+	instruction_words[#instruction_words + 1] = pack_word(
 		isa.op_closure,
 		target,
 		bx_low >> isa.max_operand_bits,
 		bx_low,
 		bx_ext
-	))
+	)
 end
 
-function bytecode.write(words, address)
-	for index = 1, #words do
-		local word<const> = words[index]
+function bytecode.write_instruction_words(instruction_words, address)
+	for index = 1, #instruction_words do
+		local word<const> = instruction_words[index]
 		mem32le[address] = ((word >> 24) & 0x000000ff)
 			| ((word >> 8) & 0x0000ff00)
 			| ((word << 8) & 0x00ff0000)
