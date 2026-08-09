@@ -77,6 +77,8 @@ return function(target, frame)
 	target["visual"]["color"] = frame["visual"]["color"]
 	target[-1] = -8
 	target[&"field"] = &"value"
+	target[0x10] = 1.25e1
+	target["escaped"] = "line\nquote:\" slash:\\ dec:\065"
 end
 	]], 'bios_base_runtime_assert.load', 't')
 	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
@@ -86,8 +88,22 @@ end
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
 	assert(loaded_target.field == 'value', 'load string-id literal mismatch')
+	assert(loaded_target[0x10] == 12.5, 'load numeric literal mismatch')
+	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
 	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')
+	local malformed_number<const> = load(
+		'return function(target) target[1e] = 1 end',
+		'bios_base_runtime_assert.number',
+		't'
+	)
+	assert(malformed_number == nil, 'load accepted a malformed numeric literal')
+	local invalid_escape<const> = load(
+		'return function(target) target["x"] = "\\q" end',
+		'bios_base_runtime_assert.escape',
+		't'
+	)
+	assert(invalid_escape == nil, 'load accepted an invalid escape sequence')
 	local binary_chunk<const>, binary_error<const> = load('return function() end', nil, 'b')
 	assert(binary_chunk == nil and type(binary_error) == 'string', 'load mode contract mismatch')
 end

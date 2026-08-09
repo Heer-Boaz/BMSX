@@ -30,7 +30,7 @@ end
 
 local fail<const> = function(state, message, line, column)
 	error('[load:' .. state.chunk_name .. '] ' .. message .. ' at '
-		.. tostring(line or state.line) .. ':' .. tostring(column or state.column))
+		.. tostring(line) .. ':' .. tostring(column))
 end
 
 local current<const> = function(state)
@@ -62,44 +62,88 @@ local scan_identifier<const> = function(state, line, column)
 	return { kind = kind, lexeme = text, line = line, column = column }
 end
 
-local is_number_letter<const> = function(code)
-	return code == 88 or code == 120
-		or code == 80 or code == 112
-		or code == 69 or code == 101
+local is_hex_digit<const> = function(code)
+	return is_digit(code)
 		or (code >= 65 and code <= 70)
 		or (code >= 97 and code <= 102)
 end
 
-local scan_number<const> = function(state, line, column)
-	local start<const> = state.index
-	local previous = 0
-	while state.index <= state.length do
-		local code<const> = current(state)
-		local exponent_sign<const> = (code == 43 or code == 45)
-			and (previous == 69 or previous == 101 or previous == 80 or previous == 112)
-		if not is_digit(code) and code ~= 46 and not is_number_letter(code) and not exponent_sign then
-			break
-		end
-		previous = advance(state)
+local scan_digits<const> = function(state)
+	while state.index <= state.length and is_digit(current(state)) do
+		advance(state)
 	end
-	local text<const> = sub(state.source, start, state.index - 1)
-	local value<const> = tonumber(text)
-	if value == nil then
-		fail(state, 'invalid numeric literal', line, column)
-	end
-	return { kind = token.number, literal = value, line = line, column = column }
 end
 
-local escaped_code<const> = function(code)
-	if code == 97 then return 7 end
-	if code == 98 then return 8 end
-	if code == 102 then return 12 end
-	if code == 110 then return 10 end
-	if code == 114 then return 13 end
-	if code == 116 then return 9 end
-	if code == 118 then return 11 end
-	return code
+local scan_decimal_number<const> = function(state, line, column)
+	scan_digits(state)
+	if state.index < state.length
+		and current(state) == 46
+		and is_digit(byte(state.source, state.index + 1)) then
+		advance(state)
+		scan_digits(state)
+	end
+	if state.index <= state.length then
+		local code<const> = current(state)
+		if code == 69 or code == 101 then
+			advance(state)
+			if state.index <= state.length then
+				local sign<const> = current(state)
+				if sign == 43 or sign == 45 then
+					advance(state)
+				end
+			end
+			if state.index > state.length or not is_digit(current(state)) then
+				fail(state, 'invalid numeric literal exponent', line, column)
+			end
+			scan_digits(state)
+		end
+	end
 end
+
+local scan_hex_integer<const> = function(state, line, column)
+	advance(state)
+	advance(state)
+	if state.index > state.length or not is_hex_digit(current(state)) then
+		fail(state, 'hexadecimal literal requires digits', line, column)
+	end
+	while state.index <= state.length and is_hex_digit(current(state)) do
+		advance(state)
+	end
+end
+
+local scan_number<const> = function(state, line, column)
+	local start<const> = state.index
+	if current(state) == 48 and state.index < state.length then
+		local prefix<const> = byte(state.source, state.index + 1)
+		if prefix == 88 or prefix == 120 then
+			scan_hex_integer(state, line, column)
+		else
+			scan_decimal_number(state, line, column)
+		end
+	else
+		scan_decimal_number(state, line, column)
+	end
+	local text<const> = sub(state.source, start, state.index - 1)
+	return {
+		kind = token.number,
+		literal = tonumber(text),
+		line = line,
+		column = column,
+	}
+end
+
+local escaped_code_by_code<const> = {
+	[34] = 34,
+	[39] = 39,
+	[92] = 92,
+	[97] = 7,
+	[98] = 8,
+	[102] = 12,
+	[110] = 10,
+	[114] = 13,
+	[116] = 9,
+	[118] = 11,
+}
 
 local scan_string<const> = function(state, quote, line, column)
 	local parts
@@ -143,9 +187,16 @@ local scan_string<const> = function(state, quote, line, column)
 					escaped = escaped * 10 + advance(state) - 48
 					digits = digits + 1
 				end
+				if escaped > 255 then
+					fail(state, 'decimal escape too large', line, column)
+				end
 				parts[#parts + 1] = char(escaped)
 			else
-				parts[#parts + 1] = char(escaped_code(escape))
+				local escaped_code<const> = escaped_code_by_code[escape]
+				if escaped_code == nil then
+					fail(state, 'invalid escape sequence', line, column)
+				end
+				parts[#parts + 1] = char(escaped_code)
 			end
 			segment_start = state.index
 		end
