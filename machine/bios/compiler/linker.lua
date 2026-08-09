@@ -4,6 +4,29 @@ local isa<const> = require('bmsx/blua32')
 
 local linker<const> = {}
 
+local write_function_record<const> = function(
+	address,
+	code_address,
+	code_byte_count,
+	num_params,
+	max_stack,
+	upvalue_table_address,
+	upvalue_count
+)
+	mem32le[address + isa.function_code_address_offset] = code_address
+	mem32le[address + isa.function_code_byte_count_offset] = code_byte_count
+	mem32le[address + isa.function_num_params_offset] = num_params
+	mem32le[address + isa.function_max_stack_offset] = max_stack
+	mem32le[address + isa.function_flags_offset] = 0
+	mem32le[address + isa.function_upvalue_table_address_offset] = upvalue_table_address
+	mem32le[address + isa.function_upvalue_count_offset] = upvalue_count
+	mem32le[address + isa.function_reserved_offset] = 0
+end
+
+local write_stack_upvalue_record<const> = function(address, register_index)
+	mem32le[address] = isa.upvalue_in_stack_mask | register_index
+end
+
 function linker.link(program)
 	local protos<const> = program.protos
 	local function_record_byte_count<const> = #protos * isa.function_record_size
@@ -42,7 +65,7 @@ function linker.link(program)
 		local upvalue_registers<const> = proto.upvalue_registers
 		local proto_upvalue_address<const> = upvalue_address
 		for upvalue_index = 1, #upvalue_registers do
-			bytecode.write_stack_upvalue(
+			write_stack_upvalue_record(
 				upvalue_address,
 				upvalue_registers[upvalue_index]
 			)
@@ -50,7 +73,7 @@ function linker.link(program)
 		end
 		local instruction_words<const> = proto.instruction_words
 		local proto_code_byte_count<const> = #instruction_words * isa.instruction_bytes
-		bytecode.write_function_record(
+		write_function_record(
 			function_table_address + (index - 1) * isa.function_record_size,
 			code_address,
 			proto_code_byte_count,
