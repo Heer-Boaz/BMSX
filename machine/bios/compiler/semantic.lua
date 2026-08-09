@@ -34,17 +34,6 @@ local bind_parameters<const> = function(state)
 	end
 end
 
-local add_constant<const> = function(state, value)
-	local index = state.constant_index_by_value[value]
-	if index ~= nil then
-		return index
-	end
-	index = #state.constants + 1
-	state.constants[index] = value
-	state.constant_index_by_value[value] = index
-	return index
-end
-
 local literal_value<const> = function(state, expression, path_key)
 	local kind<const> = expression.kind
 	if kind == syntax.number_literal_expression
@@ -87,17 +76,15 @@ bind_path = function(state, expression)
 	end
 	if kind == syntax.member_expression then
 		bind_path(state, expression.base)
-		state.constant_index_by_expression[expression] = add_constant(
-			state,
-			expression.identifier
-		)
+		state.key_value_by_expression[expression] = expression.identifier
 		return
 	end
 	if kind == syntax.index_expression then
 		bind_path(state, expression.base)
-		state.constant_index_by_expression[expression] = add_constant(
+		state.key_value_by_expression[expression] = literal_value(
 			state,
-			literal_value(state, expression.index, true)
+			expression.index,
+			true
 		)
 		return
 	end
@@ -116,9 +103,10 @@ local bind_value<const> = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
-	state.constant_index_by_expression[expression] = add_constant(
+	state.value_by_expression[expression] = literal_value(
 		state,
-		literal_value(state, expression, false)
+		expression,
+		false
 	)
 end
 
@@ -142,9 +130,8 @@ function semantic.analyze(chunk, chunk_name)
 		parameter_count = #function_expression.parameters,
 		parameter_register_by_name = {},
 		parameter_register_by_expression = {},
-		constant_index_by_expression = {},
-		constants = {},
-		constant_index_by_value = {},
+		key_value_by_expression = {},
+		value_by_expression = {},
 	}
 	bind_parameters(state)
 	local statements<const> = function_expression.body.statements

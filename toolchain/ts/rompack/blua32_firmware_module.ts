@@ -5,6 +5,7 @@ import {
 	EXT_BX_BITS,
 	EXT_C_BITS,
 	INSTRUCTION_BYTES,
+	MAX_EXT_REGISTER_BC,
 	MAX_OPERAND_BITS,
 } from '../../../machine/ts/spec/blua32/instruction_format';
 import {
@@ -29,6 +30,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	'return {',
 	`\tinstruction_bytes = ${INSTRUCTION_BYTES},`,
 	`\tmax_operand_bits = ${MAX_OPERAND_BITS},`,
+	`\tmax_ext_register_bc = ${MAX_EXT_REGISTER_BC},`,
 	`\text_a_bits = ${EXT_A_BITS},`,
 	`\text_b_bits = ${EXT_B_BITS},`,
 	`\text_bx_bits = ${EXT_BX_BITS},`,
@@ -57,6 +59,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_getup = ${OpCode.GETUP},`,
 	`\top_ret = ${OpCode.RET},`,
 	`\top_geti = ${OpCode.GETI},`,
+	`\top_seti = ${OpCode.SETI},`,
 	'}',
 	'',
 ].join('\n');
