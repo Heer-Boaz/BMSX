@@ -54,10 +54,10 @@
 --    `_dispose()` is the object-owned final component and subscription teardown
 --    called by world after that removal.
 --
--- 5. set_space() IS NOT despawn. Use it only to temporarily hide/show objects.
---    Moving an object to a non-active space hides it from gameplay queries
---    without destroying it (components and subscriptions persist).
---    Pattern: move enemies to 'transition' during screen transitions, not despawn.
+-- 5. set_space() IS NOT despawn.
+--    Moving an object to a non-active space removes it from the selected
+--    space's retained system views without destroying it. Components and
+--    subscriptions persist until the object's space is selected again.
 local componentclass<const> = require('cartlib/component/componentclass')
 local eventemitter<const> = require('cartlib/eventemitter')
 

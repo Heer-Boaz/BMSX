@@ -25,11 +25,14 @@
 --
 --      RIGHT — reactive subscription:
 --        function hero:bind()
---          self.events:on('overlap.begin', function(e)
---            if e.other_layer == enemy_layer then
---              self:take_damage()
---            end
---          end)
+--          self.events:on({
+--            event = 'overlap.begin',
+--            handler = function(_event_type, _emitter, payload)
+--              if payload.other_layer == enemy_layer then
+--                self:take_damage()
+--              end
+--            end,
+--          })
 --        end
 --
 -- 2. OVERLAP EVENT PAYLOAD FIELDS
