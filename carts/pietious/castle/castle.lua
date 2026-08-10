@@ -323,34 +323,24 @@ end
 function castle:sync_current_room_seal_instance()
 	local room<const> = self.room
 	local seal<const> = room.seal
-	if seal == nil then
-		return
-	end
-	local active_space<const> = world.active_space_id
-
-	local seal_instance = world:get(seal.id)
-	local keep_seal_instance = false
-	if self:has_tag(castle_tags.seal_active) then
-		keep_seal_instance = true
-	end
-	if self:has_tag(castle_tags.seal_sequence) then
-		keep_seal_instance = true
-	end
+	local seal_instance = self.seal_instance
+	local keep_seal_instance<const> = seal ~= nil
+		and room.seal_dissolve_step < 6
+		and self:has_tag(castle_tags.seal_active)
 	if not keep_seal_instance then
 		if seal_instance ~= nil then
 			seal_instance:mark_for_disposal()
+			self.seal_instance = nil
 		end
 		return
+	end
+	if seal_instance ~= nil and seal_instance.id ~= seal.id then
+		seal_instance:mark_for_disposal()
+		seal_instance = nil
+		self.seal_instance = nil
 	end
 
 	local dissolve_step<const> = room.seal_dissolve_step
-	if dissolve_step >= 6 then
-		if seal_instance ~= nil then
-			seal_instance:mark_for_disposal()
-		end
-		return
-	end
-
 	local sprite_id
 	if dissolve_step > 0 then
 		sprite_id = 'seal_dissolve_' .. tostring(dissolve_step)
@@ -361,15 +351,12 @@ function castle:sync_current_room_seal_instance()
 	if seal_instance == nil then
 		seal_instance = world:spawn('seal', {
 			id = seal.id,
-			space_id = active_space,
+			space_id = world.active_space_id,
 			pos = { x = seal.x, y = seal.y, z = 23 },
 		})
+		self.seal_instance = seal_instance
 	else
-		seal_instance:set_space(active_space)
-		if not seal_instance.active then
-			seal_instance:activate()
-		end
-		seal_instance.visible = true
+		seal_instance:set_space(world.active_space_id)
 		seal_instance.x = seal.x
 		seal_instance.y = seal.y
 		seal_instance:set_z(23)
