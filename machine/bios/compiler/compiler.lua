@@ -35,7 +35,7 @@ local add_constant<const> = function(state, expression, value)
 		state.const_pool[index] = value
 		state.constant_index_by_value[value] = index
 	end
-	state.constant_index_by_expression[expression] = index
+	expression.constant_index = index
 end
 
 local prepare_path_operands
@@ -44,14 +44,14 @@ prepare_path_operands = function(state, expression)
 		return
 	end
 	prepare_path_operands(state, expression.base)
-	local key_value<const> = state.key_value_by_expression[expression]
+	local key_value<const> = expression.key_value
 	if expression.kind == syntax.index_expression then
 		local immediate_index<const> = immediate_table_index(
 			expression.index,
 			key_value
 		)
 		if immediate_index ~= nil then
-			state.immediate_index_by_expression[expression] = immediate_index
+			expression.immediate_index = immediate_index
 			return
 		end
 	end
@@ -70,12 +70,12 @@ local prepare_value_operands<const> = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
-	local value<const> = state.value_by_expression[expression]
+	local value<const> = expression.constant_value
 	if is_number_literal(expression)
 		and value >= isa.min_signed_bx
 		and value <= isa.max_signed_bx
 		and value % 1 == 0 then
-		state.immediate_number_by_expression[expression] = value
+		expression.immediate_number = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
 			return true
 		end
@@ -84,16 +84,10 @@ local prepare_value_operands<const> = function(state, expression)
 	add_constant(state, expression, value)
 end
 
-local prepare_codegen<const> = function(analysis)
+local prepare_codegen<const> = function(function_expression)
 	local state<const> = {
-		function_expression = analysis.function_expression,
-		parameter_count = analysis.parameter_count,
-		parameter_register_by_expression = analysis.parameter_register_by_expression,
-		key_value_by_expression = analysis.key_value_by_expression,
-		value_by_expression = analysis.value_by_expression,
-		constant_index_by_expression = {},
-		immediate_index_by_expression = {},
-		immediate_number_by_expression = {},
+		function_expression = function_expression,
+		parameter_count = #function_expression.parameters,
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
@@ -110,9 +104,9 @@ local prepare_codegen<const> = function(analysis)
 	if has_ksmi_expression and value_register > isa.max_wide_operand then
 		for index = 1, #statements do
 			local expression<const> = statements[index].value
-			local value<const> = state.immediate_number_by_expression[expression]
+			local value<const> = expression.immediate_number
 			if value ~= nil and value ~= 0 and value ~= 1 and value ~= -1 then
-				state.immediate_number_by_expression[expression] = nil
+				expression.immediate_number = nil
 				add_constant(state, expression, value)
 			end
 		end
@@ -123,7 +117,7 @@ end
 local emit_path
 emit_path = function(state, instruction_words, expression, target)
 	if expression.kind == syntax.identifier_expression then
-		return state.parameter_register_by_expression[expression]
+		return expression.parameter_register
 	end
 	local base_register<const> = emit_path(
 		state,
@@ -131,7 +125,7 @@ emit_path = function(state, instruction_words, expression, target)
 		expression.base,
 		target
 	)
-	local immediate_index<const> = state.immediate_index_by_expression[expression]
+	local immediate_index<const> = expression.immediate_index
 	if immediate_index ~= nil then
 		bytecode.emit_abc(
 			instruction_words,
@@ -149,7 +143,7 @@ emit_path = function(state, instruction_words, expression, target)
 		base_register,
 		constant_register(
 			state.parameter_count,
-			state.constant_index_by_expression[expression]
+			expression.constant_index
 		)
 	)
 	return target
@@ -181,7 +175,7 @@ local emit_value<const> = function(
 		)
 		return target
 	end
-	local immediate_number<const> = state.immediate_number_by_expression[expression]
+	local immediate_number<const> = expression.immediate_number
 	if immediate_number ~= nil then
 		if immediate_number == 0 then
 			bytecode.emit_abc(instruction_words, isa.op_k0, target, 0, 0)
@@ -201,7 +195,7 @@ local emit_value<const> = function(
 	end
 	return constant_register(
 		state.parameter_count,
-		state.constant_index_by_expression[expression]
+		expression.constant_index
 	)
 end
 
@@ -228,7 +222,7 @@ local emit_assignment<const> = function(
 		statement.value,
 		value_target_register
 	)
-	local immediate_index<const> = state.immediate_index_by_expression[target]
+	local immediate_index<const> = target.immediate_index
 	if immediate_index ~= nil then
 		bytecode.emit_abc(
 			instruction_words,
@@ -244,7 +238,7 @@ local emit_assignment<const> = function(
 			target_table_register,
 			constant_register(
 				state.parameter_count,
-				state.constant_index_by_expression[target]
+				target.constant_index
 			),
 			assignment_value_register
 		)
@@ -317,8 +311,8 @@ local compile_chunk<const> = function(constant_count, captured_const_pool_regist
 end
 
 function compiler.compile(chunk, chunk_name, root_const_pool_register)
-	local analysis<const> = semantic.analyze(chunk, chunk_name)
-	local state<const> = prepare_codegen(analysis)
+	local function_expression<const> = semantic.bind(chunk, chunk_name)
+	local state<const> = prepare_codegen(function_expression)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - function_address_pool_index
 	local max_stack<const> = isa.max_ext_register_a + 1

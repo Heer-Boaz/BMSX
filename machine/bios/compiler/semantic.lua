@@ -19,8 +19,8 @@ local returned_function<const> = function(chunk, chunk_name)
 	return expressions[1]
 end
 
-local bind_parameters<const> = function(state)
-	local parameters<const> = state.function_expression.parameters
+local bind_parameters<const> = function(state, function_expression)
+	local parameters<const> = function_expression.parameters
 	for index = 1, #parameters do
 		local parameter<const> = parameters[index]
 		if state.parameter_register_by_name[parameter.name] ~= nil then
@@ -71,17 +71,17 @@ bind_path = function(state, expression)
 				expression
 			)
 		end
-		state.parameter_register_by_expression[expression] = register
+		expression.parameter_register = register
 		return
 	end
 	if kind == syntax.member_expression then
 		bind_path(state, expression.base)
-		state.key_value_by_expression[expression] = expression.identifier
+		expression.key_value = expression.identifier
 		return
 	end
 	if kind == syntax.index_expression then
 		bind_path(state, expression.base)
-		state.key_value_by_expression[expression] = literal_value(
+		expression.key_value = literal_value(
 			state,
 			expression.index,
 			true
@@ -103,7 +103,7 @@ local bind_value<const> = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
-	state.value_by_expression[expression] = literal_value(
+	expression.constant_value = literal_value(
 		state,
 		expression,
 		false
@@ -122,23 +122,18 @@ local bind_assignment<const> = function(state, statement)
 	bind_value(state, statement.value)
 end
 
-function semantic.analyze(chunk, chunk_name)
+function semantic.bind(chunk, chunk_name)
 	local function_expression<const> = returned_function(chunk, chunk_name)
 	local state<const> = {
 		chunk_name = chunk_name,
-		function_expression = function_expression,
-		parameter_count = #function_expression.parameters,
 		parameter_register_by_name = {},
-		parameter_register_by_expression = {},
-		key_value_by_expression = {},
-		value_by_expression = {},
 	}
-	bind_parameters(state)
+	bind_parameters(state, function_expression)
 	local statements<const> = function_expression.body.statements
 	for index = 1, #statements do
 		bind_assignment(state, statements[index])
 	end
-	return state
+	return function_expression
 end
 
 return semantic
