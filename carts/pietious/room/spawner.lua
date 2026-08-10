@@ -128,7 +128,7 @@ local spawn_enemies<const> = function(room)
 	local castle<const> = world:get('c')
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
-		local defeated<const> = def.persistent_defeat and progression.get(castle, def.id)
+		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
 		local should_spawn<const> = not defeated and matches_conditions
 		local existing<const> = world:get(def.id)
@@ -205,7 +205,7 @@ end
 
 function room_spawner.spawn_all_for_room(room)
 	local room_objects<const> = world:objects_by_tag('rs')
-	for i = 1, #room_objects do
+	for i = #room_objects, 1, -1 do
 		local obj<const> = room_objects[i]
 		if obj.rs_room_number ~= room.room_number then
 			obj:mark_for_disposal()
@@ -224,7 +224,7 @@ end
 
 function room_spawner.despawn_previous()
 	local room_objects<const> = world:objects_by_tag('rs')
-	for i = 1, #room_objects do
+	for i = #room_objects, 1, -1 do
 		room_objects[i]:mark_for_disposal()
 	end
 end

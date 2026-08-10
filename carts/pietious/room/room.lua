@@ -545,7 +545,6 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.room_number = template.room_number
 	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
-	room_state.custom = template.custom
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0
 	room_state.world_width = room_width

@@ -39,6 +39,7 @@ local build_progression_program<const> = function()
 	local condition_name_set<const> = {}
 	local condition_names<const> = {}
 	local world1_marspein_destroyed_keys<const> = {}
+	local region_enemy_reset_actions<const> = {}
 	local persistent_item_ids<const> = {}
 
 	for _, room_template in pairs(castle_map.room_templates) do
@@ -47,7 +48,7 @@ local build_progression_program<const> = function()
 		for i = 1, #enemies do
 			local enemy_def<const> = enemies[i]
 			filters[#filters + 1] = enemy_def.conditions
-			if enemy_def.persistent_defeat then
+			if enemy_def.retain_defeat_in_region then
 				rules[#rules + 1] = {
 					id = enemy_def.id,
 					on = 'damage.resolved',
@@ -60,6 +61,10 @@ local build_progression_program<const> = function()
 					set = {
 						{ key = enemy_def.id, value = true },
 					},
+				}
+				region_enemy_reset_actions[#region_enemy_reset_actions + 1] = {
+					key = enemy_def.id,
+					value = false,
 				}
 			end
 			if enemy_def.trigger ~= nil and not condition_name_set[enemy_def.trigger] then
@@ -126,6 +131,11 @@ local build_progression_program<const> = function()
 			{ op = 'apply_room_condition' },
 		},
 	}
+	rules[#rules + 1] = {
+		id = 'room.region_enter.enemy_reset',
+		on = 'room.region_enter',
+		set = region_enemy_reset_actions,
+	}
 
 	rules[#rules + 1] = {
 		id = 'cloud_1_destroyed',
@@ -149,12 +159,7 @@ local build_progression_program<const> = function()
 	}
 	rules[#rules + 1] = {
 		id = 'r109.stairs.set',
-		on = 'damage.resolved',
-		when_event = {
-			equals = {
-				destroyed = true,
-			},
-		},
+		on = 'room.condition_set',
 		when_all = stairs_latch_conditions,
 		set = {
 			{ key = 'r109.stairs', value = true },
@@ -621,6 +626,7 @@ end
 
 function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now)
 	local room<const> = current_room()
+	local previous_world_number<const> = castle_map.room_templates[switch.from_room_number].world_number
 	self.current_room_number = switch.to_room_number
 	room.map_id = map_id
 	room.map_x = map_x
@@ -628,6 +634,9 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	room.last_room_switch = switch
 	self:reset_room_encounter_tags()
 	self:sync_world_entrance_states_for_room(room)
+	if previous_world_number ~= room.world_number then
+		self.events:emit('room.region_enter')
+	end
 	self:refresh_current_room_customizations()
 	room_spawner.spawn_all_for_room(room)
 	if emit_room_enter_now == nil or emit_room_enter_now then
