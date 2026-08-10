@@ -102,18 +102,9 @@ function worldobject:set_z(z)
 end
 
 -- set_space(space_id): moves this object into the named world space.
---   Useful for temporarily hiding an object from the active space (e.g. moving
---   enemies to a 'transition' space during a screen-transition animation and
---   back to 'main' on exit).  The object stays alive and subscribed; it is
---   simply excluded from the default active world queries.
---
---   PATTERN (enemies during shrine transition):
---     self.events:on('shrine_transition_enter', function()
---       self:set_space('transition')
---     end)
---     self.events:on('shrine_transition_exit', function()
---       self:set_space('main')
---     end)
+--   The object stays alive and subscribed. Its components and definition stop
+--   appearing in retained views while another space is selected, then reappear
+--   when its own space becomes active again.
 function worldobject:set_space(space_id)
 	return self.world:set_object_space(self, space_id)
 end

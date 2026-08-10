@@ -9,7 +9,7 @@ local timelineapply<const> = require('cartlib/timeline/apply')
 --
 -- 1. ALWAYS USE A PLAIN def TABLE; NEVER CALL timeline.new() IN CART CODE.
 --    When declaring a timeline inside an FSM state's `timelines` block, pass
---    a plain Lua table to the `def` field.  The FSM runtime calls
+--    a plain Lua table to the `def` field. The owner's timeline component calls
 --    timeline.new(def) internally.  The `id` field inside `def` is optional
 --    and defaults to the timeline's dictionary key in the `timelines` table.
 --
@@ -249,10 +249,10 @@ local compile_frame_appliers<const> = function(self)
 end
 
 -- timeline.new(def): construct a timeline object from a definition table.
--- In cart code this is called automatically by the FSM runtime when a state's
--- `timelines` block contains a `def` table.  Do NOT call timeline.new()
--- directly in cart code — pass a plain table to `def` and let the FSM handle
--- construction.  See DESIGN PRINCIPLES rule 1 at the top of this file.
+-- In cart code this is called automatically by the owner's timeline component
+-- when a state's `timelines` block contains a `def` table. Do NOT call timeline.new()
+-- directly in cart code — pass a plain table to `def` and let the component
+-- handle construction. See DESIGN PRINCIPLES rule 1 at the top of this file.
 function timeline.new(def)
 	local self<const> = setmetatable({}, timeline)
 	self.def = def

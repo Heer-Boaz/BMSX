@@ -17,12 +17,6 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
-## Cart-side SDK
-
-| ID | Opdracht | Klaar wanneer |
-| --- | --- | --- |
-| `CARTLIB-SURFACE-01` | Toets het resterende publieke cartlib-oppervlak aan de actuele linkergraph en ownergrenzen. Verwijder alleen bewezen obsolete of cart-specifieke modules; generieke capabilities zoals velocity- en screen-boundarycomponenten blijven cartlib. | Iedere bereikbare module heeft een gedeelde cart-SDK-owner of is naar zijn concrete cart verplaatst, zonder compatibilitylaag, parallelle feature-index of handmatige modulelijst. |
-
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |

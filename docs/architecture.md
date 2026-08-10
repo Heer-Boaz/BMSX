@@ -3557,6 +3557,13 @@ all-purpose system facade and does not inject SDK aliases into the guest global
 registerfile. The Lua compiler owns the exact literal-`require` dependency graph
 and reachable-module traversal; ROM authoring only maps canonical module paths
 to source files and supplies a module when that graph reaches it.
+The `cartlib` source root is therefore a resolver namespace, not a module
+manifest: an unreferenced generic capability adds no cartridge code and does
+not require a feature index. Screen-boundary components, including the optional
+prohibit-leaving-screen policy, remain reusable SDK modules without being
+forced into an existing cart. IDE object hints follow the same live API:
+`prefab.define` declares a class and `world:spawn` produces an object, while the
+generic value returned by `registry:get` is not classified as a world object.
 `cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge write.
 `cartlib/world/prefab` owns prefab definitions. `world` owns construction and
 the complete live spawn transition. A definition names its concrete object

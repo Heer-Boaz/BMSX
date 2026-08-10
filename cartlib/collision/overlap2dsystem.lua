@@ -20,13 +20,13 @@
 --
 --      WRONG — manual loop every frame:
 --        function hero:update(delta_time)
---          for enemy in objects_by_tag('enemy') do
---            if collision2d.collides(self.collider, enemy.collider) then ...
+--          for i = 1, #self.enemies do
+--            if collision2d.collides(self.collider, self.enemies[i].collider) then ...
 --
 --      RIGHT — reactive subscription:
 --        function hero:bind()
---          self:on('overlap.begin', function(e)
---            if e.other_layer == LAYER_ENEMY then
+--          self.events:on('overlap.begin', function(e)
+--            if e.other_layer == enemy_layer then
 --              self:take_damage()
 --            end
 --          end)

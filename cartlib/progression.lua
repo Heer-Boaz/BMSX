@@ -22,7 +22,7 @@
 --          filters = { bonus_filter },
 --          handlers = {},
 --      })
---      progression.mount(castle, program)
+--      progression.mount(campaign, program)
 --    Unmount it from the context's unbind() teardown.
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
@@ -30,8 +30,8 @@
 --    the exact event names referenced by mounted programs).
 --
 --    STEP 3 — query state:
---      if progression.get(castle, 'bonus_active') then ... end
---      progression.matches(castle, bonus_filter)
+--      if progression.get(campaign, 'bonus_active') then ... end
+--      progression.matches(campaign, bonus_filter)
 --
 -- 3. RULE ANATOMY.
 --    Each rule is a table with these fields:

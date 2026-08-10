@@ -41,8 +41,8 @@
 --
 -- 3. SHARED TIMELINE DEFINITIONS.
 --    Timeline private to one state: declare inside that state's `timelines`
---    block using a `def` sub-table.  The runtime calls timeline.new(def)
---    automatically — no manual timeline.new() call is needed in cart code.
+--    block using a `def` sub-table. The owner's timeline component constructs
+--    the runtime — no manual timeline.new() call is needed in cart code.
 --
 --    Timeline shared by multiple states: declare once in the root-level
 --    `timelines` block of the FSM (before `states`) with `autoplay = false`
