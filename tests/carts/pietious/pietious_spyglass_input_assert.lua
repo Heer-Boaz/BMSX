@@ -1,4 +1,5 @@
 local world<const> = require('cartlib/world/world')
+local registry<const> = require('cartlib/registry')
 local player_abilities<const> = require('player/abilities')
 
 __bmsx_host_test = __bmsx_host_test or {
@@ -7,16 +8,16 @@ __bmsx_host_test = __bmsx_host_test or {
 }
 
 function __bmsx_host_test.setup()
-	return host.new_game()
+	return host.press('Enter', 2)
 end
 
 function __bmsx_host_test.ready()
-	return world:get('c') ~= nil and world:get('room') ~= nil and world:get('pietolon') ~= nil and world:get('d') ~= nil
+	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
 	local test<const> = __bmsx_host_test
-	local player<const> = world:get('pietolon')
+	local player<const> = registry:get('pietolon')
 	if test.phase == 'boot' then
 		test.frames = test.frames + 1
 		if not test.ready() then
@@ -43,6 +44,6 @@ function __bmsx_host_test.update(_frame, _current_music)
 		return false
 	end
 	assert(player.pepernoot_projectile_sequence == 0, 'spyglass b press fired pepernoot')
-	assert(world:get('pepernoot_1_1') == nil, 'spyglass b press spawned pepernoot')
+	assert(registry:get('pepernoot_1_1') == nil, 'spyglass b press spawned pepernoot')
 	return true
 end

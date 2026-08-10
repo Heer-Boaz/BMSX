@@ -3628,7 +3628,10 @@ tags are ordinary Registry keys; Registry does not branch on entry kind.
 `cartlib/world/prefab` separately owns prefab definitions, while each
 space materializes only the active definition views requested by configured
 systems. Registry's module exports its single owner directly, not a constructible
-class plus `instance` facade, and `world` has no shadow identity index.
+class plus `instance` facade, and `world` has no shadow identity index or
+forwarding query API. Dynamic identity and generic-key queries address Registry
+directly; systems and other long-lived gameplay owners retain direct object or
+active-view references instead of querying per frame.
 
 Registry lifecycle is not a savegame classification boundary. Machine save-state
 captures the complete guest runtime graph, including Registry tables and the Lua

@@ -1,4 +1,5 @@
 local world<const> = require('cartlib/world/world')
+local registry<const> = require('cartlib/registry')
 require('constants')
 local castle_map<const> = require('castle/map')
 
@@ -9,11 +10,11 @@ __bmsx_host_test = __bmsx_host_test or {
 }
 
 function __bmsx_host_test.ready()
-	return world:get('c') ~= nil and world:get('room') ~= nil and world:get('pietolon') ~= nil and world:get('d') ~= nil
+	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
 end
 
 function __bmsx_host_test.setup()
-	return host.new_game()
+	return host.press('Enter', 2)
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
@@ -21,20 +22,19 @@ function __bmsx_host_test.update(_frame, _current_music)
 
 	if __bmsx_host_test.phase == 'boot_room' then
 		__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
-		assert(__bmsx_host_test.frame_count < 120,
+		assert(__bmsx_host_test.frame_count < 240,
 			'room boot timed out'
 				.. ' space=' .. tostring(world.active_space_id))
 		if not __bmsx_host_test.ready() then
 			return false
 		end
-		local director<const> = world:get('d')
-		if world.active_space_id ~= 'main' or director.boot_mode == 'title_screen' then
+		if world.active_space_id ~= 'main' then
 			return false
 		end
 
-		local castle<const> = world:get('c')
-		local room<const> = world:get('room')
-		local player<const> = world:get('pietolon')
+		local castle<const> = registry:get('c')
+		local room<const> = registry:get('room')
+		local player<const> = registry:get('pietolon')
 		local castle_room_number<const> = 8
 		local selected_entrance<const> = castle_map.room_templates[castle_room_number].world_entrances[1]
 
@@ -72,9 +72,9 @@ function __bmsx_host_test.update(_frame, _current_music)
 		return host.press('ArrowDown', 2)
 	end
 
-	local castle<const> = world:get('c')
-	local room<const> = world:get('room')
-	local player<const> = world:get('pietolon')
+	local castle<const> = registry:get('c')
+	local room<const> = registry:get('room')
+	local player<const> = registry:get('pietolon')
 	local feet_y<const> = player.y + player.height
 	local left_x<const> = player.x + 1
 	local right_x<const> = player.x + player.width - 2

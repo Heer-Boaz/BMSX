@@ -1,5 +1,6 @@
 local world<const> = require('cartlib/world/world')
 local progression<const> = require('cartlib/progression')
+local registry<const> = require('cartlib/registry')
 require('constants')
 
 local room_spawner<const> = {}
@@ -7,7 +8,7 @@ local room_spawner<const> = {}
 local spawn_rocks<const> = function(room)
 	for i = 1, #room.rocks do
 		local def<const> = room.rocks[i]
-		local existing<const> = world:get(def.id)
+		local existing<const> = registry:get(def.id)
 		if not room.destroyed_rock_ids[def.id] then
 			if existing == nil then
 				local obj<const> = world:spawn('rock', {
@@ -30,7 +31,7 @@ local spawn_lithographs<const> = function(room)
 	local instance_count = 0
 	for i = 1, #room.lithographs do
 		local def<const> = room.lithographs[i]
-		local existing = world:get(def.id)
+		local existing = registry:get(def.id)
 		if existing == nil then
 			existing = world:spawn('lithograph', {
 				id = def.id,
@@ -53,7 +54,7 @@ end
 local spawn_shrines<const> = function(room)
 	for i = 1, #room.shrines do
 		local def<const> = room.shrines[i]
-		local existing<const> = world:get(def.id)
+		local existing<const> = registry:get(def.id)
 		if existing == nil then
 			local obj<const> = world:spawn('room_shrine', {
 				id = def.id,
@@ -71,7 +72,7 @@ local spawn_draaideuren<const> = function(room)
 	local instance_count = 0
 	for i = 1, #room.draaideuren do
 		local def<const> = room.draaideuren[i]
-		local existing = world:get(def.id)
+		local existing = registry:get(def.id)
 		if existing == nil then
 			existing = world:spawn('draaideur', {
 				id = def.id,
@@ -98,7 +99,7 @@ local spawn_world_entrances<const> = function(room)
 	local castle<const> = room.castle
 	for i = 1, #room.world_entrances do
 		local def<const> = room.world_entrances[i]
-		local existing<const> = world:get(def.id)
+		local existing<const> = registry:get(def.id)
 		if existing == nil then
 			local entrance<const> = world:spawn('world_entrance', {
 				id = def.id,
@@ -124,7 +125,7 @@ local spawn_items<const> = function(room)
 		local already_owned<const> = player.inventory_items[def.item_type]
 
 		local should_spawn<const> = not picked and matches_conditions and not already_owned
-		local existing<const> = world:get(def.id)
+		local existing<const> = registry:get(def.id)
 		if should_spawn then
 			if existing == nil then
 				local obj<const> = world:spawn('world_item', {
@@ -156,7 +157,7 @@ local spawn_enemies<const> = function(room)
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
 		local should_spawn<const> = not defeated and matches_conditions
-		local existing = world:get(def.id)
+		local existing = registry:get(def.id)
 		if should_spawn then
 			if existing == nil then
 				existing = world:spawn('enemy.' .. def.kind, {
@@ -206,7 +207,7 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 			local item_id<const> = 'drop.' .. def.id
 			local picked<const> = progression.get(castle, 'item_picked_' .. item_id)
 			local already_owned<const> = player.inventory_items[item_type]
-			if not picked and not already_owned and world:get(item_id) == nil then
+			if not picked and not already_owned and registry:get(item_id) == nil then
 				local obj<const> = world:spawn('world_item', {
 					id = item_id,
 					space_id = 'main',
@@ -225,7 +226,7 @@ end
 
 local spawn_rock_drops<const> = function(room)
 	for id, drop in pairs(room.rock_drops) do
-		if drop.room_number == room.room_number and world:get(id) == nil then
+		if drop.room_number == room.room_number and registry:get(id) == nil then
 			local obj<const> = world:spawn('world_item', {
 				id = id,
 				space_id = 'main',
@@ -243,7 +244,7 @@ local spawn_rock_drops<const> = function(room)
 end
 
 function room_spawner.spawn_all_for_room(room)
-	local room_objects<const> = world:objects_by_tag('rs')
+	local room_objects<const> = registry:entries('rs')
 	for i = #room_objects, 1, -1 do
 		local obj<const> = room_objects[i]
 		if obj.rs_room_number ~= room.room_number then

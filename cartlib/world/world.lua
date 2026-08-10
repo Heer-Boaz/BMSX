@@ -18,7 +18,7 @@
 -- 3. QUERY SCOPE IS EXPLICIT.
 --    Systems and long-lived cart queries retain active_*_view() results; the
 --    selected space swaps each view's dense backing array at its barrier.
---    Cart-wide tag lookup remains a Registry-backed world query.
+--    Cart-wide identity and key queries address Registry directly.
 --
 -- 4. THE MODULE RETURNS THE CART WORLD.
 --    Access it via require('cartlib/world/world'); carts do not create another world.
@@ -657,18 +657,6 @@ function worldclass:_flush_disposals()
 	end
 	self._pending_disposal_count = 0
 	self._flushing_disposals = false
-end
-
--- world:get(id): returns the current live object with this id, or nil.
---   The central Registry owns this direct lookup. An object marked for disposal
---   during a tick group remains part of that group's retained snapshot until
---   its barrier.
-function worldclass:get(id)
-	return registry:get(id)
-end
-
-function worldclass:objects_by_tag(tag)
-	return registry:entries(tag)
 end
 
 function worldclass:_open_mutation_barrier()
