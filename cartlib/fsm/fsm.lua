@@ -134,7 +134,6 @@
 --     restrict to events from a specific source object.
 
 local clear_map<const> = require('cartlib/util/clear_map')
-local timelinemodule<const> = require('cartlib/timeline/timeline')
 local input<const> = require('cartlib/input/input')
 
 local statedefinition<const> = {}

@@ -79,7 +79,6 @@ local compile_track_runner<const> = function(track)
 		local phase<const> = track.phase or 0
 		local period_inv<const> = 1 / track.period
 		local ease<const> = track.ease
-		local path<const> = track.path
 		local set_value<const> = compile_target_setter(track.path)
 		if track.wave == 'pingpong' then
 			return function(target, params, _event, time_seconds)

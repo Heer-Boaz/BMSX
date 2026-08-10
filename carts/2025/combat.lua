@@ -334,12 +334,6 @@ function combat.define_fsm()
 		return '/combat_exchange_hit'
 	end
 
-	local finish_combat_focus<const> = function(self)
-		hide_combat_visuals(self.combat_visuals)
-		clear_texts(self.texts)
-		return '/combat_results_setup'
-	end
-
 	local finish_combat_results_fade_in<const> = function(self)
 		local bg<const> = self.combat_results_visual
 		bg.visible = true
@@ -1180,7 +1174,11 @@ function combat.define_fsm()
 		input_event_handlers = {
 			{
 				pattern = 'b[jp]',
-				go = '/combat_results_setup',
+				go = function(self)
+					hide_combat_visuals(self.combat_visuals)
+					clear_texts(self.texts)
+					return '/combat_results_setup'
+				end,
 			},
 		},
 		on = {
@@ -1191,9 +1189,7 @@ function combat.define_fsm()
 				end,
 			},
 			['combat_focus.done'] = {
-				go = function(self)
-					return '/combat_results_setup'
-				end,
+				go = '/combat_results_setup',
 			},
 		},
 	}
