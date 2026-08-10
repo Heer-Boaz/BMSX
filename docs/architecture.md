@@ -229,12 +229,15 @@ BIOS does not build a runtime TOC object graph for them.
 
 `load` is a BIOS-owned guest service. Its compiler, arena, lexer and BLua32
 emitter live under `machine/bios/compiler` and execute as firmware Lua. The
-current compiler accepts the generated assignment-function subset used by
-timeline specialization: one returned function whose body contains direct
-assignments through parameter-rooted table paths. It emits ordinary function
-records, upvalue records and instruction words into system `.bss`; the CPU has
-no source parser, compiler callback, runtime-image installer or `load` branch.
-`loadstring` is not currently published.
+current compiler accepts one returned function with lexical locals, path reads
+and writes, calls, arithmetic and comparison expressions, short-circuit
+`and`/`or`, and block-scoped `if`/`elseif`/`else` control flow. That surface
+contains the generated assignment functions used by timeline specialization
+without making the timeline module a parser or code emitter. The firmware
+compiler emits ordinary function records, upvalue records and instruction
+words into system `.bss`; the CPU has no source parser, compiler callback,
+runtime-image installer or `load` branch. `loadstring` is not currently
+published.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
