@@ -46,12 +46,12 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		local rm<const> = world:get('room')
+		local rm<const> = self.room
 		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, collision_flags_solid_mask) then
 			self.direction = 'right'
 		end
 	else
-		local rm<const> = world:get('room')
+		local rm<const> = self.room
 		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, collision_flags_solid_mask) then
 			self.direction = 'left'
 		end
@@ -60,7 +60,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	local noot_ticks = node.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player<const> = world:get('pietolon')
+		local player<const> = self.player
 		local source_x<const> = self.x + 12
 		local source_y<const> = self.y + 8
 		local target_x<const> = player.x
@@ -69,6 +69,9 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor<const> = math.random(1, 2)
 		world:spawn('enemy.nootfoe', {
+			castle = self.castle,
+			room = self.room,
+			player = player,
 			direction = delta_x < 0 and 'left' or 'right',
 			speed_x_num = delta_x,
 			speed_y_num = delta_y,

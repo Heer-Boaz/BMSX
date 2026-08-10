@@ -47,7 +47,7 @@ function stafffoe.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
 	for i = 0, 3 do
@@ -55,6 +55,9 @@ function stafffoe.bt_tick(self, blackboard)
 		local speed_x_num<const> = staff_shot_speed_x[vector_index]
 		local speed_y_num<const> = staff_shot_speed_y[vector_index]
 		world:spawn('enemy.staffspawn', {
+			castle = self.castle,
+			room = self.room,
+			player = player,
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,
 			speed_y_num = speed_y_num,
@@ -69,7 +72,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	world:get('c').events:emit('staffspawn')
+	self.castle.events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 	return 'RUNNING'

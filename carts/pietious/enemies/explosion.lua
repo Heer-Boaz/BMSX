@@ -48,6 +48,8 @@ function enemy_explosion:spawn_loot()
 	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	world:spawn('loot_drop', {
 		id = loot_id,
+		room = self.room,
+		player = self.player,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },

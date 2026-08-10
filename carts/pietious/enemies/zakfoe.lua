@@ -1,6 +1,5 @@
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
@@ -47,7 +46,7 @@ function zakfoe.bt_tick(self, blackboard)
 		self.current_vertical_speed = self.current_vertical_speed + enemy_zak_vertical_speed_step
 
 		if self.direction == 'left' then
-			local rm<const> = world:get('room')
+			local rm<const> = self.room
 			if self.x < 0
 				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
@@ -55,7 +54,7 @@ function zakfoe.bt_tick(self, blackboard)
 				self.direction = 'right'
 			end
 		else
-			local rm<const> = world:get('room')
+			local rm<const> = self.room
 			if self.x + 14 >= rm.world_width
 				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)

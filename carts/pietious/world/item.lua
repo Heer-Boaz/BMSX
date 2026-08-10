@@ -2,7 +2,6 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local world_item<const> = {}
@@ -15,7 +14,7 @@ function world_item:ctor()
 end
 
 function world_item:onspawn(_pos)
-	self.x, self.y = world:get('room'):snap_world_to_tile(self.x, self.y)
+	self.x, self.y = self.room:snap_world_to_tile(self.x, self.y)
 end
 
 local define_world_item_fsm<const> = function()
@@ -26,7 +25,7 @@ local define_world_item_fsm<const> = function()
 				if combat_overlap.classify_player_contact(event) ~= 'body' then
 					return
 				end
-				local player<const> = world:get('pietolon')
+				local player<const> = self.player
 				local item_id = self.item_id
 				if item_id == nil then
 					item_id = self.id
@@ -35,7 +34,7 @@ local define_world_item_fsm<const> = function()
 					return
 				end
 				if self.rock_drop_id ~= nil then
-					world:get('room').rock_drops[self.rock_drop_id] = nil
+					self.room.rock_drops[self.rock_drop_id] = nil
 				end
 				self:mark_for_disposal()
 			end,

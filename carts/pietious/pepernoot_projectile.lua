@@ -14,7 +14,6 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local tilecollisioncomponent<const> = require('cartlib/collision/tilecollisioncomponent')
 local worldobject<const> = require('cartlib/world/worldobject')
@@ -32,7 +31,7 @@ function pepernoot_projectile:ctor()
 	self:add_component(tilecollisioncomponent.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
-			local collision_flags<const> = world:get('room'):collision_flags_at_world(owner.x, owner.y)
+			local collision_flags<const> = owner.room:collision_flags_at_world(owner.x, owner.y)
 			if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
 				return nil
 			end
@@ -46,14 +45,14 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:onspawn(pos)
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset_x = snapped_x - self.x
 	self.sprite_component.offset_y = snapped_y - self.y
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset_x = snapped_x - self.x
 	self.sprite_component.offset_y = snapped_y - self.y
@@ -63,7 +62,7 @@ function pepernoot_projectile:update_motion()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	self.x = self.x + (self.direction * secondary_weapon_pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 

@@ -1,6 +1,5 @@
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
@@ -43,7 +42,7 @@ function crossfoe:ctor()
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks or enemy_cross_wait_before_fly_steps
@@ -62,12 +61,12 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	end
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
-	world:get('c').events:emit('cross')
+	self.castle.events:emit('cross')
 	return 'RUNNING'
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
@@ -78,14 +77,14 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
 		or next_left < 0
-		or next_right > world:get('room').world_width
+		or next_right > self.room.world_width
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
 		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
 		node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
 		node.cross_turn_ticks = enemy_cross_turn_steps
-		world:get('c').events:emit('crossland')
+		self.castle.events:emit('crossland')
 		return 'RUNNING'
 	end
 

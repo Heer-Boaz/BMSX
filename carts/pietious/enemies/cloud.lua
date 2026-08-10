@@ -29,7 +29,7 @@ end
 
 function cloud.bt_tick(self, blackboard)
 	local node<const> = blackboard.node_data
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	if self.cloud_anim_frame == 2 then
 		self:set_imgid('cloud_2')
 	else
@@ -87,7 +87,7 @@ function cloud.bt_tick(self, blackboard)
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= world:get('room').world_width then
+		if self.x + 22 >= room.world_width then
 			self.direction = 'left'
 		end
 	end
@@ -103,6 +103,9 @@ function cloud.bt_tick(self, blackboard)
 				random_y = math.random(-5, 4)
 			end
 			world:spawn('enemy.vlokfoe', {
+				castle = self.castle,
+				room = room,
+				player = self.player,
 				direction = random_x < 0 and 'left' or 'right',
 				speed_x_num = random_x,
 				speed_y_num = random_y,

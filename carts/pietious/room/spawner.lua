@@ -13,6 +13,8 @@ local spawn_rocks<const> = function(room)
 				local obj<const> = world:spawn('rock', {
 					id = def.id,
 					space_id = 'main',
+					room = room,
+					player = room.player,
 					pos = { x = def.x, y = def.y, z = 140 },
 					item_type = def.item_type,
 					rs_room_number = room.room_number,
@@ -74,6 +76,8 @@ local spawn_draaideuren<const> = function(room)
 			existing = world:spawn('draaideur', {
 				id = def.id,
 				space_id = 'main',
+				castle = room.castle,
+				player = room.player,
 				pos = { x = def.x, y = def.y, z = 22 },
 				kind = def.kind,
 				tile_x = def.tile_x,
@@ -99,6 +103,7 @@ local spawn_world_entrances<const> = function(room)
 			local entrance<const> = world:spawn('world_entrance', {
 				id = def.id,
 				space_id = 'main',
+				castle = castle,
 				pos = { x = def.x, y = def.y, z = 22 },
 				target = def.target,
 				rs_room_number = room.room_number,
@@ -125,6 +130,8 @@ local spawn_items<const> = function(room)
 				local obj<const> = world:spawn('world_item', {
 					id = def.id,
 					space_id = 'main',
+					room = room,
+					player = player,
 					pos = { x = def.x, y = def.y, z = 130 },
 					item_id = def.id,
 					item_type = def.item_type,
@@ -155,6 +162,9 @@ local spawn_enemies<const> = function(room)
 				existing = world:spawn('enemy.' .. def.kind, {
 					id = def.id,
 					space_id = 'main',
+					castle = castle,
+					room = room,
+					player = room.player,
 					pos = { x = def.x, y = def.y, z = def.draw_z },
 					trigger = def.trigger,
 					conditions = def.conditions,
@@ -200,6 +210,8 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 				local obj<const> = world:spawn('world_item', {
 					id = item_id,
 					space_id = 'main',
+					room = room,
+					player = player,
 					pos = { x = def.x, y = def.y + world_item_drop_offset_y[item_type], z = 130 },
 					item_id = item_id,
 					item_type = item_type,
@@ -217,6 +229,8 @@ local spawn_rock_drops<const> = function(room)
 			local obj<const> = world:spawn('world_item', {
 				id = id,
 				space_id = 'main',
+				room = room,
+				player = room.player,
 				pos = { x = drop.x, y = drop.y, z = 130 },
 				item_id = id,
 				item_type = drop.item_type,

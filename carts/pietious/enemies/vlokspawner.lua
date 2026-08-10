@@ -23,9 +23,12 @@ function vlokspawner.bt_tick(self, blackboard)
 		return 'RUNNING'
 	end
 
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	local random_x<const> = math.random(-5, 4)
 	world:spawn('enemy.vlokfoe', {
+		castle = self.castle,
+		room = room,
+		player = self.player,
 		direction = random_x < 0 and 'left' or 'right',
 		speed_x_num = random_x * 2,
 		speed_y_num = 5,

@@ -41,12 +41,12 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-	local room<const> = world:get('room')
+	local room<const> = self.room
 	room:mark_rock_destroyed(self.id)
 	if self.item_type == nil then
 		return
 	end
-	if world:get('pietolon').inventory_items[self.item_type] then
+	if self.player.inventory_items[self.item_type] then
 		return
 	end
 	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]
@@ -64,6 +64,8 @@ function rock:begin_break()
 	local drop<const> = world:spawn('world_item', {
 		id = id,
 		space_id = 'main',
+		room = room,
+		player = self.player,
 		pos = { x = self.x, y = drop_y, z = 130 },
 		item_id = id,
 		item_type = self.item_type,

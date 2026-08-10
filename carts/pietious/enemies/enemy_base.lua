@@ -81,9 +81,9 @@ function enemy_base.bind(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	local room<const> = world:get('room')
 	world:spawn('enemy_explosion', {
-		room_number = world:get('c').current_room_number,
+		room = self.room,
+		player = self.player,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
@@ -106,7 +106,7 @@ function enemy_base.process_damage_result(self, result)
 	if result.destroyed then
 		self:spawn_death_effect()
 		if self.trigger ~= nil then
-			world:get('c').events:emit('room.condition_set', {
+			self.castle.events:emit('room.condition_set', {
 				room_number = result.room_number,
 				condition = self.trigger,
 			})
@@ -117,7 +117,7 @@ function enemy_base.process_damage_result(self, result)
 end
 
 function enemy_base.on_overlap(self, event)
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local contact_kind<const> = combat_overlap.classify_player_contact(event)
 	if contact_kind == nil then
 		return

@@ -1,7 +1,6 @@
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
-local world<const> = require('cartlib/world/world')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
@@ -24,7 +23,7 @@ function nootfoe:ctor()
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
 	self:set_imgid('muzieknootfoe')
 	self.sprite_component.color = self.noot_color
-	world:get('c').events:emit('muzieknootspawn')
+	self.castle.events:emit('muzieknootspawn')
 	enemy_base.setup_projectile_boundary(self)
 end
 
