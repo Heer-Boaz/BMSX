@@ -28,7 +28,7 @@ import {
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { encodeFixedCallArgCount, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 
 export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	'module<const>',
@@ -48,6 +48,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\text_bx_bits = ${EXT_BX_BITS},`,
 	`\text_c_bits = ${EXT_C_BITS},`,
 	`\tclosure_address_register_wide_c = ${CLOSURE_ADDRESS_REGISTER_WIDE_C},`,
+	`\tfixed_call_arg_count_bias = ${encodeFixedCallArgCount(0)},`,
 	`\tfunction_alignment = ${BLUA32_FUNCTION_ALIGNMENT},`,
 	`\tfunction_record_size = ${BLUA32_FUNCTION_RECORD_SIZE},`,
 	`\tfunction_code_address_offset = ${BLUA32_FUNCTION_CODE_ADDRESS_OFFSET},`,
@@ -61,6 +62,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tupvalue_record_size = ${BLUA32_UPVALUE_RECORD_SIZE},`,
 	`\tupvalue_in_stack_mask = ${BLUA32_UPVALUE_IN_STACK_MASK},`,
 	`\top_wide = ${OpCode.WIDE},`,
+	`\top_mov = ${OpCode.MOV},`,
 	`\top_knil = ${OpCode.KNIL},`,
 	`\top_kfalse = ${OpCode.KFALSE},`,
 	`\top_ktrue = ${OpCode.KTRUE},`,
@@ -77,6 +79,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_mod = ${OpCode.MOD},`,
 	`\top_floor_divide = ${OpCode.FLOORDIV},`,
 	`\top_unm = ${OpCode.UNM},`,
+	`\top_call = ${OpCode.CALL},`,
 	`\top_closure = ${OpCode.CLOSURE},`,
 	`\top_getup = ${OpCode.GETUP},`,
 	`\top_ret = ${OpCode.RET},`,

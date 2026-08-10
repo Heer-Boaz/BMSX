@@ -34,7 +34,7 @@ local bind_parameters<const> = function(state, function_expression)
 	end
 end
 
-local literal_value<const> = function(state, expression, path_key)
+local literal_value<const> = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.number_literal_expression
 		or kind == syntax.string_literal_expression then
@@ -53,12 +53,12 @@ local literal_value<const> = function(state, expression, path_key)
 	end
 	fail(
 		state.chunk_name,
-		path_key and 'path keys must be string or numeric literals'
-			or 'unsupported literal expression',
+		'unsupported literal expression',
 		expression
 	)
 end
 
+local bind_value
 local bind_path
 bind_path = function(state, expression)
 	local kind<const> = expression.kind
@@ -81,17 +81,16 @@ bind_path = function(state, expression)
 	end
 	if kind == syntax.index_expression then
 		bind_path(state, expression.base)
-		expression.key_value = literal_value(
-			state,
-			expression.index,
-			true
-		)
+		local index<const> = expression.index
+		bind_value(state, index)
+		if index.constant_value ~= nil then
+			expression.key_value = index.constant_value
+		end
 		return
 	end
 	fail(state.chunk_name, 'paths must start at a function parameter', expression)
 end
 
-local bind_value
 bind_value = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
@@ -109,6 +108,14 @@ bind_value = function(state, expression)
 		bind_value(state, expression.right)
 		return
 	end
+	if kind == syntax.call_expression then
+		bind_value(state, expression.callee)
+		local arguments<const> = expression.arguments
+		for index = 1, #arguments do
+			bind_value(state, arguments[index])
+		end
+		return
+	end
 	if kind == syntax.unary_expression
 		and expression.operator == syntax.unary_negate
 		and expression.operand.kind ~= syntax.number_literal_expression then
@@ -117,8 +124,7 @@ bind_value = function(state, expression)
 	end
 	expression.constant_value = literal_value(
 		state,
-		expression,
-		false
+		expression
 	)
 end
 

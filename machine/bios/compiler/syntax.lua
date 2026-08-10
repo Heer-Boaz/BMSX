@@ -13,6 +13,7 @@ local syntax<const> = {
 	nil_literal_expression = 12,
 	unary_expression = 13,
 	binary_expression = 14,
+	call_expression = 15,
 
 	unary_negate = 1,
 	unary_string_id = 2,

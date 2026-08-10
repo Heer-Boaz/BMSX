@@ -49,12 +49,17 @@ local add_constant<const> = function(state, expression, value)
 end
 
 local prepare_path_operands
+local prepare_value_operands
 prepare_path_operands = function(state, expression)
 	if expression.kind == syntax.identifier_expression then
 		return
 	end
 	prepare_path_operands(state, expression.base)
 	local key_value<const> = expression.key_value
+	if expression.kind == syntax.index_expression and key_value == nil then
+		prepare_value_operands(state, expression.index)
+		return
+	end
 	if expression.kind == syntax.index_expression then
 		local immediate_index<const> = immediate_table_index(
 			expression.index,
@@ -68,7 +73,6 @@ prepare_path_operands = function(state, expression)
 	add_constant(state, expression, key_value)
 end
 
-local prepare_value_operands
 prepare_value_operands = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
@@ -84,6 +88,14 @@ prepare_value_operands = function(state, expression)
 	if kind == syntax.binary_expression then
 		prepare_value_operands(state, expression.left)
 		prepare_value_operands(state, expression.right)
+		return
+	end
+	if kind == syntax.call_expression then
+		prepare_value_operands(state, expression.callee)
+		local arguments<const> = expression.arguments
+		for index = 1, #arguments do
+			prepare_value_operands(state, arguments[index])
+		end
 		return
 	end
 	if kind == syntax.unary_expression
@@ -107,12 +119,31 @@ end
 
 local materialize_wide_immediates
 materialize_wide_immediates = function(state, expression)
-	if expression.kind == syntax.binary_expression then
+	local kind<const> = expression.kind
+	if kind == syntax.identifier_expression then
+		return
+	end
+	if kind == syntax.member_expression or kind == syntax.index_expression then
+		materialize_wide_immediates(state, expression.base)
+		if kind == syntax.index_expression and expression.key_value == nil then
+			materialize_wide_immediates(state, expression.index)
+		end
+		return
+	end
+	if kind == syntax.binary_expression then
 		materialize_wide_immediates(state, expression.left)
 		materialize_wide_immediates(state, expression.right)
 		return
 	end
-	if expression.kind == syntax.unary_expression
+	if kind == syntax.call_expression then
+		materialize_wide_immediates(state, expression.callee)
+		local arguments<const> = expression.arguments
+		for index = 1, #arguments do
+			materialize_wide_immediates(state, arguments[index])
+		end
+		return
+	end
+	if kind == syntax.unary_expression
 		and expression.constant_value == nil then
 		materialize_wide_immediates(state, expression.operand)
 		return
@@ -142,7 +173,9 @@ local prepare_codegen<const> = function(function_expression)
 		- function_address_pool_index
 	if first_temporary_register > isa.max_wide_operand then
 		for index = 1, #statements do
-			materialize_wide_immediates(state, statements[index].value)
+			local statement<const> = statements[index]
+			materialize_wide_immediates(state, statement.target)
+			materialize_wide_immediates(state, statement.value)
 		end
 	end
 	return state
@@ -158,6 +191,7 @@ local reserve_register<const> = function(state)
 	return register
 end
 
+local emit_value
 local emit_path
 emit_path = function(state, instruction_words, expression, target)
 	if expression.kind == syntax.identifier_expression then
@@ -169,6 +203,30 @@ emit_path = function(state, instruction_words, expression, target)
 		expression.base,
 		target
 	)
+	if expression.kind == syntax.index_expression
+		and expression.key_value == nil then
+		local index_target = target
+		if base_register == target then
+			index_target = reserve_register(state)
+		end
+		local index_register<const> = emit_value(
+			state,
+			instruction_words,
+			expression.index,
+			index_target
+		)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_gett,
+			target,
+			base_register,
+			index_register
+		)
+		if index_target ~= target then
+			state.free_register = index_target
+		end
+		return target
+	end
 	local immediate_index<const> = expression.immediate_index
 	if immediate_index ~= nil then
 		bytecode.emit_abc(
@@ -193,7 +251,56 @@ emit_path = function(state, instruction_words, expression, target)
 	return target
 end
 
-local emit_value
+local emit_call_expression<const> = function(
+	state,
+	instruction_words,
+	expression,
+	target
+)
+	local callee_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.callee,
+		target
+	)
+	if callee_register ~= target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			callee_register,
+			0
+		)
+	end
+	local arguments<const> = expression.arguments
+	for index = 1, #arguments do
+		local argument_target<const> = reserve_register(state)
+		local argument_register<const> = emit_value(
+			state,
+			instruction_words,
+			arguments[index],
+			argument_target
+		)
+		if argument_register ~= argument_target then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_mov,
+				argument_target,
+				argument_register,
+				0
+			)
+		end
+	end
+	bytecode.emit_abc(
+		instruction_words,
+		isa.op_call,
+		target,
+		#arguments + isa.fixed_call_arg_count_bias,
+		1
+	)
+	state.free_register = target + 1
+	return target
+end
 
 local emit_binary_expression<const> = function(
 	state,
@@ -244,6 +351,14 @@ emit_value = function(
 	end
 	if kind == syntax.binary_expression then
 		return emit_binary_expression(
+			state,
+			instruction_words,
+			expression,
+			target
+		)
+	end
+	if kind == syntax.call_expression then
+		return emit_call_expression(
 			state,
 			instruction_words,
 			expression,
@@ -318,8 +433,27 @@ local emit_assignment<const> = function(
 		target.base,
 		temporary_base
 	)
+	local target_index_register
+	if target.kind == syntax.index_expression
+		and target.key_value == nil then
+		local index_target = temporary_base
+		if target_table_register == temporary_base then
+			index_target = reserve_register(state)
+		end
+		target_index_register = emit_value(
+			state,
+			instruction_words,
+			target.index,
+			index_target
+		)
+		if index_target ~= temporary_base
+			and target_index_register ~= index_target then
+			state.free_register = index_target
+		end
+	end
 	local value_target_register = temporary_base
-	if target_table_register == temporary_base then
+	if target_table_register == temporary_base
+		or target_index_register == temporary_base then
 		value_target_register = reserve_register(state)
 	end
 	local assignment_value_register<const> = emit_value(
@@ -328,13 +462,20 @@ local emit_assignment<const> = function(
 		statement.value,
 		value_target_register
 	)
-	local immediate_index<const> = target.immediate_index
-	if immediate_index ~= nil then
+	if target_index_register ~= nil then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_sett,
+			target_table_register,
+			target_index_register,
+			assignment_value_register
+		)
+	elseif target.immediate_index ~= nil then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_seti,
 			target_table_register,
-			immediate_index,
+			target.immediate_index,
 			assignment_value_register
 		)
 	else

@@ -162,6 +162,24 @@ local parse_prefix_expression<const> = function(state)
 				line = expression.line,
 				column = expression.column,
 			}
+		elseif match(state, token.left_parenthesis) then
+			local arguments<const> = {}
+			if state.token_kind ~= token.right_parenthesis then
+				while true do
+					arguments[#arguments + 1] = parse_expression(state)
+					if not match(state, token.comma) then
+						break
+					end
+				end
+			end
+			expect(state, token.right_parenthesis)
+			expression = {
+				kind = syntax.call_expression,
+				callee = expression,
+				arguments = arguments,
+				line = expression.line,
+				column = expression.column,
+			}
 		else
 			return expression
 		end
