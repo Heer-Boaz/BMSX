@@ -5,7 +5,6 @@ local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
-local world<const> = require('cartlib/world/world')
 local apply_transition_frame<const> = timelinebuilders.apply_transition_frame
 local build_transition_fade_in_frames<const> = timelinebuilders.build_transition_fade_in_frames
 local build_fade_frames<const> = timelinebuilders.build_fade_frames
@@ -122,7 +121,7 @@ function transition.register_states(states)
 	end
 
 	local finish_transition_fade_in<const> = function(self)
-		world:get(bg_id).surface_component.color = p3_white_color
+		self.background.surface_component.color = p3_white_color
 		hide_transition_layers(self.transition_visual)
 		return '/run_node'
 	end
@@ -143,12 +142,12 @@ function transition.register_states(states)
 	states.transition = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			world:get(text_main_id):clear_text()
-			world:get(text_choice_id):clear_text()
-			world:get(text_prompt_id):clear_text()
-			world:get(text_transition_id):set_text({ node.label }, { typed = false, snap = true })
-			reset_text_colors()
-			local transition_text<const> = world:get(text_transition_id)
+			self.text_main:clear_text()
+			self.text_choice:clear_text()
+			self.text_prompt:clear_text()
+			self.text_transition:set_text({ node.label }, { typed = false, snap = true })
+			reset_text_colors(self)
+			local transition_text<const> = self.text_transition
 			self.transition_center_x = transition_text.text_component.offset_x
 			self.transition_target_bg = story[node.next].bg
 			transition_text.text_component.offset_x = screen_width
@@ -197,9 +196,9 @@ function transition.register_states(states)
 				finish_frame = overgang_frame_count - 1
 			end
 			self.transition_finish_frame = finish_frame
-			show_background(nil)
+			show_background(self.background, nil)
 			local overlay<const> = self.transition_visual.overlay
-			local background<const> = world:get(bg_id)
+			local background<const> = self.background
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
@@ -226,7 +225,7 @@ function transition.register_states(states)
 			accent.height = self.transition_accent.height
 			accent.color = 0
 			if self.skip_transition_fade then
-				apply_background(self.transition_target_bg)
+				apply_background(self.background, self.transition_target_bg)
 				background.surface_component.color = p3_black_color
 			else
 				background.surface_component.color = p3_white_color
@@ -282,7 +281,7 @@ function transition.register_states(states)
 					if self.skip_transition_fade then
 						return
 					end
-					apply_background(self.transition_target_bg)
+					apply_background(self.background, self.transition_target_bg)
 				end,
 			},
 			['timeline.end.' .. overgang_timelineid] = {
@@ -293,7 +292,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self.timelines:stop(overgang_timelineid)
-			world:get(text_transition_id):clear_text()
+			self.text_transition:clear_text()
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
 				hide_transition_layers(self.transition_visual)
 				return
@@ -304,8 +303,8 @@ function transition.register_states(states)
 
 	states.transition_fade_in = {
 		entering_state = function(self)
-			world:get(text_transition_id):clear_text()
-			local background<const> = show_background(nil)
+			self.text_transition:clear_text()
+			local background<const> = show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)
 			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
@@ -337,7 +336,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self.timelines:stop(overgang_post_fade_in_timelineid)
-			world:get(bg_id).surface_component.color = p3_white_color
+			self.background.surface_component.color = p3_white_color
 			hide_transition_layers(self.transition_visual)
 		end,
 	}
@@ -345,8 +344,8 @@ function transition.register_states(states)
 	states.fade = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			clear_texts(text_ids_all)
-			reset_text_colors()
+			clear_texts(self.texts)
+			reset_text_colors(self)
 			local next_node<const> = story[node.next]
 			local next_kind<const> = next_node.kind
 			self.fade_hold_black = fade_hold_black_kinds[next_kind]
@@ -364,10 +363,10 @@ function transition.register_states(states)
 			if self.fade_target_bg ~= nil then
 				texture_residency.preload_background(self.fade_target_bg)
 			end
-			show_background(nil)
+			show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)
 			local overlay<const> = self.transition_visual.overlay
-			local background<const> = world:get(bg_id)
+			local background<const> = self.background
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
@@ -410,7 +409,7 @@ function transition.register_states(states)
 					if self.fade_hold_black then
 						return
 					end
-					apply_background(self.fade_target_bg)
+					apply_background(self.background, self.fade_target_bg)
 				end,
 			},
 			['timeline.end.' .. fade_timelineid] = {

@@ -34,6 +34,18 @@ local irq_apu<const> = 0x0020
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
+local background_definition_id<const> = 'p3.bg'
+local text_main_definition_id<const> = 'p3.text.main'
+local text_choice_definition_id<const> = 'p3.text.choice'
+local text_prompt_definition_id<const> = 'p3.text.prompt'
+local text_transition_definition_id<const> = 'p3.text.transition'
+local text_results_definition_id<const> = 'p3.text.results'
+local monster_definition_id<const> = 'p3.combat.monster'
+local maya_a_definition_id<const> = 'p3.combat.maya_a'
+local maya_b_definition_id<const> = 'p3.combat.maya_b'
+local all_out_definition_id<const> = 'p3.combat.all_out'
+local all_out_portrait_definition_id<const> = 'p3.combat.all_out_portrait'
+local combat_director_definition_id<const> = combat_module.director_definition_id
 
 local surface_object_class<const> = {}
 
@@ -50,8 +62,7 @@ local dialogue_node_kinds<const> = {
 local world_events<const> = eventemitter.events_of('world')
 
 local director_def_id<const> = 'p3.director'
-local director_fsm_id<const> = 'p3.director.fsm'
-local combat_director_instance = nil
+local story_director_fsm_id<const> = 'p3.director.fsm'
 
 local director<const> = {}
 director.__index = director
@@ -126,8 +137,6 @@ local build_director_fsm<const> = function()
 	local states<const> = {
 		boot = {
 			entering_state = function(self)
-					self.transition_visual = create_transition_visuals()
-					self.combat_results_visual = create_rect_state()
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}
 				self.inline_next = nil
@@ -135,8 +144,7 @@ local build_director_fsm<const> = function()
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
 				self.fade_hold_black = false
-				clear_texts(text_ids_all)
-				hide_combat_sprites()
+				clear_texts(self.texts)
 				return '/run_node'
 			end,
 		},
@@ -165,7 +173,7 @@ local build_director_fsm<const> = function()
 					return '/fade'
 				end
 				if node.kind == 'combat' then
-					combat_director_instance:start_combat(self.node_id, self.skip_combat_fade_in)
+					self.combat_director:start_combat(self.node_id, self.skip_combat_fade_in)
 					world_events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
 					self.skip_combat_fade_in = false
 					return '/combat_wait'
@@ -175,6 +183,7 @@ local build_director_fsm<const> = function()
 		combat_wait = {
 			on = {
 				['combat.end'] = {
+					emitter = combat_director_definition_id,
 					go = function(self, _state, event)
 						self.node_id = event.next_node_id
 						self.just_finished_combat = true
@@ -191,7 +200,7 @@ local build_director_fsm<const> = function()
 	transition_module.register_states(states)
 	dialogue_module.register_states(states)
 
-	fsmlibrary.register(director_fsm_id, {
+	fsmlibrary.register(story_director_fsm_id, {
 		initial = 'boot',
 		states = states,
 	})
@@ -203,7 +212,7 @@ local register_director<const> = function()
 		components = {
 			customvisualcomponent.new,
 			timelinecomponent.new,
-			fsmcomponent.factory({ director_fsm_id }),
+			fsmcomponent.factory({ story_director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,
@@ -240,57 +249,57 @@ local register_director<const> = function()
 		},
 	})
 	prefab.define({
-		def_id = 'p3.bg',
+			def_id = background_definition_id,
 		class = surface_object_class,
 		components = { surfacecomponent.new },
 	})
 	prefab.define({
-		def_id = 'p3.text.main',
+			def_id = text_main_definition_id,
 		class = textobject,
 		base = textobject,
 	})
 	prefab.define({
-		def_id = 'p3.text.choice',
+			def_id = text_choice_definition_id,
 		class = textobject,
 		base = textobject,
 	})
 	prefab.define({
-		def_id = 'p3.text.prompt',
+			def_id = text_prompt_definition_id,
 		class = textobject,
 		base = textobject,
 	})
 	prefab.define({
-		def_id = 'p3.text.transition',
+			def_id = text_transition_definition_id,
 		class = textobject,
 		base = textobject,
 	})
 	prefab.define({
-		def_id = 'p3.text.results',
+			def_id = text_results_definition_id,
 		class = textobject,
 		base = textobject,
 	})
 	prefab.define({
-		def_id = 'p3.combat.monster',
+			def_id = monster_definition_id,
 		class = spriteobject,
 		base = spriteobject,
 	})
 	prefab.define({
-		def_id = 'p3.combat.maya_a',
+			def_id = maya_a_definition_id,
 		class = spriteobject,
 		base = spriteobject,
 	})
 	prefab.define({
-		def_id = 'p3.combat.maya_b',
+			def_id = maya_b_definition_id,
 		class = spriteobject,
 		base = spriteobject,
 	})
 	prefab.define({
-		def_id = 'p3.combat.all_out',
+			def_id = all_out_definition_id,
 		class = surface_object_class,
 		components = { surfacecomponent.new },
 	})
 	prefab.define({
-		def_id = 'p3.combat.all_out_portrait',
+			def_id = all_out_portrait_definition_id,
 		class = spriteobject,
 		base = spriteobject,
 	})
@@ -319,21 +328,21 @@ function new_game()
 	local choice_top<const> = h - (line_height * (prompt_lines + choice_lines))
 	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	world:spawn('p3.bg', {
-		id = bg_id,
+	local background<const> = world:spawn(background_definition_id, {
+		id = background_definition_id,
 		pos = { x = 0, y = 0, z = 0 },
 		visible = false,
 	})
 
 	local horizontal_margin<const> = w / 10
-	world:spawn('p3.text.main', {
-		id = text_main_id,
+	local text_main<const> = world:spawn(text_main_definition_id, {
+		id = text_main_definition_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		blank_lines = 1,
 		pos = { z = 1000 },
 	})
-	world:spawn('p3.text.choice', {
-		id = text_choice_id,
+	local text_choice<const> = world:spawn(text_choice_definition_id, {
+		id = text_choice_definition_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		blank_lines = 1,
 		pos = { z = 1001 },
@@ -341,62 +350,101 @@ function new_game()
 		highlight_pulse_enabled = true,
 		highlight_jitter_enabled = false,
 	})
-	world:spawn('p3.text.prompt', {
-		id = text_prompt_id,
+	local text_prompt<const> = world:spawn(text_prompt_definition_id, {
+		id = text_prompt_definition_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		blank_lines = 1,
 		pos = { z = 1002 },
 	})
-	world:spawn('p3.text.transition', {
-		id = text_transition_id,
+	local text_transition<const> = world:spawn(text_transition_definition_id, {
+		id = text_transition_definition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		blank_lines = 1,
 		pos = { z = 900 },
 		text_color = p3_ink_color,
 		normal_bg_color = p3_white_color,
 	})
-	world:spawn('p3.text.results', {
-		id = text_results_id,
+	local text_results<const> = world:spawn(text_results_definition_id, {
+		id = text_results_definition_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		blank_lines = 1,
 		pos = { z = 1003 },
 	})
 
-	clear_texts(text_ids_all)
+	local texts<const> = { text_main, text_choice, text_prompt, text_transition, text_results }
+	local story_texts<const> = { text_main, text_choice, text_prompt, text_transition }
+	local choice_prompt_texts<const> = { text_choice, text_prompt }
+	local transition_result_texts<const> = { text_transition, text_results }
 
-	world:spawn('p3.combat.monster', {
-		id = combat_monster_id,
+	local monster<const> = world:spawn(monster_definition_id, {
+		id = monster_definition_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	world:spawn('p3.combat.maya_a', {
-		id = combat_maya_a_id,
+	local maya_a<const> = world:spawn(maya_a_definition_id, {
+		id = maya_a_definition_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	world:spawn('p3.combat.maya_b', {
-		id = combat_maya_b_id,
+	local maya_b<const> = world:spawn(maya_b_definition_id, {
+		id = maya_b_definition_id,
 		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	world:spawn('p3.combat.all_out', {
-		id = combat_all_out_id,
+	local all_out<const> = world:spawn(all_out_definition_id, {
+		id = all_out_definition_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
-	world:spawn('p3.combat.all_out_portrait', {
-		id = combat_all_out_portrait_id,
+	local all_out_portrait<const> = world:spawn(all_out_portrait_definition_id, {
+		id = all_out_portrait_definition_id,
 		pos = { x = 0, y = 0, z = 750 },
 		imgid = 'maya_v_s',
 		visible = false,
 	})
 
-	combat_director_instance = world:spawn(combat_director_def_id, { id = combat_director_instance_id })
-	world:spawn(director_def_id, { id = director_instance_id })
+	local combat_visuals<const> = { monster, maya_a, maya_b, all_out, all_out_portrait }
+	local transition_visual<const> = create_transition_visuals()
+	local combat_results_visual<const> = create_rect_state()
+	local combat_director_instance<const> = world:spawn(combat_director_definition_id, {
+		id = combat_director_definition_id,
+		background = background,
+		text_main = text_main,
+		text_choice = text_choice,
+		text_prompt = text_prompt,
+		text_transition = text_transition,
+		text_results = text_results,
+		texts = texts,
+		story_texts = story_texts,
+		choice_prompt_texts = choice_prompt_texts,
+		transition_result_texts = transition_result_texts,
+		monster = monster,
+		maya_a = maya_a,
+		maya_b = maya_b,
+		all_out = all_out,
+		all_out_portrait = all_out_portrait,
+		combat_visuals = combat_visuals,
+		transition_visual = transition_visual,
+		combat_results_visual = combat_results_visual,
+	})
+	world:spawn(director_def_id, {
+		id = director_def_id,
+		combat_director = combat_director_instance,
+		background = background,
+		text_main = text_main,
+		text_choice = text_choice,
+		text_prompt = text_prompt,
+		text_transition = text_transition,
+		text_results = text_results,
+		texts = texts,
+		combat_visuals = combat_visuals,
+		transition_visual = transition_visual,
+		combat_results_visual = combat_results_visual,
+	})
 end
 
 init()

@@ -1,4 +1,7 @@
 local combat<const> = {}
+local director_definition_id<const> = 'p3.combat.director'
+local combat_director_fsm_id<const> = 'p3.combat.director.fsm'
+combat.director_definition_id = director_definition_id
 require('globals')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local fsmlibrary<const> = require('cartlib/fsm/library')
@@ -9,7 +12,6 @@ local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
-local world<const> = require('cartlib/world/world')
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local input<const> = require('cartlib/input/input')
@@ -145,8 +147,8 @@ end
 local apply_combat_parallax<const> = function(self)
 	local momentum<const> = self.combat_parallax_momentum_steps
 	local offset_base_y<const> = self.combat_parallax_offset_base_y
-	apply_combat_parallax_sprite(world:get(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
-	apply_combat_parallax_sprite(world:get(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
+	apply_combat_parallax_sprite(self.monster, -(10 + momentum) / 15, offset_base_y)
+	apply_combat_parallax_sprite(self.maya_a, (10 - momentum) / 15, offset_base_y)
 end
 
 local refresh_combat_parallax<const> = function(self)
@@ -186,20 +188,20 @@ function combat_director:apply_combat_round(node)
 		choice_lines[i] = round.options[i].label
 	end
 	stagger.play(self, 'combat', {
-		bg = world:get(bg_id),
+		bg = self.background,
 		bg_dim = false,
 		pose_targets = {
-			world:get(combat_maya_a_id),
+			self.maya_a,
 		},
-		text_main = world:get(text_main_id),
-		text_choice = world:get(text_choice_id),
-		text_prompt = world:get(text_prompt_id),
+		text_main = self.text_main,
+		text_choice = self.text_choice,
+		text_prompt = self.text_prompt,
 		text_lines = round.prompt,
 		text_choice_lines = choice_lines,
 		text_typed = true,
 	})
 	self.choice_index = 1
-	world:get(text_prompt_id):clear_text()
+	self.text_prompt:clear_text()
 end
 
 function combat_director:reset_combat_parallax()
@@ -215,8 +217,8 @@ end
 
 function combat_director:activate_combat_parallax_transform()
 	self.combat_parallax_transform_active = true
-	local monster<const> = world:get(combat_monster_id)
-	local maya_a<const> = world:get(combat_maya_a_id)
+	local monster<const> = self.monster
+	local maya_a<const> = self.maya_a
 	monster.visible = true
 	maya_a.visible = true
 	apply_combat_parallax(self)
@@ -224,8 +226,8 @@ end
 
 function combat_director:clear_combat_parallax_transform()
 	self.combat_parallax_transform_active = false
-	local monster<const> = world:get(combat_monster_id)
-	local maya_a<const> = world:get(combat_maya_a_id)
+	local monster<const> = self.monster
+	local maya_a<const> = self.maya_a
 	monster.sprite_component.draw_offset_y = 0
 	monster.sprite_component.draw_scale_x = 1
 	monster.sprite_component.draw_scale_y = 1
@@ -252,8 +254,8 @@ function combat_director:push_combat_momentum(side, power)
 end
 
 function combat_director:skip_typing()
-	if world:get(text_main_id):is_typing() then
-		world:get(text_main_id):reveal_text()
+	if self.text_main:is_typing() then
+		self.text_main:reveal_text()
 		input.consume(1, 'b')
 		return true
 	end
@@ -271,7 +273,6 @@ function combat.define_fsm()
 				slash_thickness = 0,
 				slash_color = p3_white_color,
 			}
-			hide_combat_sprites()
 			return '/idle'
 		end,
 	}
@@ -287,15 +288,15 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		entering_state = function()
-			hide_combat_sprites()
+		entering_state = function(self)
+			hide_combat_visuals(self.combat_visuals)
 		end,
 	}
 
 	states.combat_done = {
 		entering_state = function(self)
 			self:disable_combat_parallax()
-			world:get(director_instance_id).events:emit('combat.end', {
+			self.events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
 				monster_imgid = self.combat_monster_imgid,
@@ -315,7 +316,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_hit<const> = function(self)
-		local monster<const> = world:get(combat_monster_id)
+		local monster<const> = self.monster
 		monster.sprite_component.color = p3_white_color
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
@@ -325,7 +326,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_dodge<const> = function(self)
-		local monster<const> = world:get(combat_monster_id)
+		local monster<const> = self.monster
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
 		monster.sprite_component.scale_x = 1
@@ -334,34 +335,33 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_focus<const> = function(self)
-		hide_combat_sprites()
-		clear_texts(text_ids_all)
+		hide_combat_visuals(self.combat_visuals)
+		clear_texts(self.texts)
 		return '/combat_results_setup'
 	end
 
 	local finish_combat_results_fade_in<const> = function(self)
-		local bg<const> = world:get(director_instance_id).combat_results_visual
+		local bg<const> = self.combat_results_visual
 		bg.visible = true
 		bg.color = combat_results_bg_visible_color
-		local maya_b<const> = world:get(combat_maya_b_id)
+		local maya_b<const> = self.maya_b
 		maya_b.sprite_component.color = p3_white_color
 		maya_b.x = self.combat_results_maya_target_x
-		local results<const> = world:get(text_results_id)
+		local results<const> = self.text_results
 		results.text_component.color = p3_white_color
 		results.text_component.offset_x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
 	local finish_combat_results_fade_out<const> = function(self)
-		local maya_b<const> = world:get(combat_maya_b_id)
+		local maya_b<const> = self.maya_b
 		maya_b.visible = false
 		maya_b:set_z(combat_maya_z)
-		world:get(text_results_id):clear_text()
-		local director<const> = world:get(director_instance_id)
-		local bg<const> = director.combat_results_visual
+		self.text_results:clear_text()
+		local bg<const> = self.combat_results_visual
 		bg.visible = false
 		bg.color = p3_black_color
-		hide_combat_sprites()
+		hide_combat_visuals(self.combat_visuals)
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
 			texture_residency.replace_background(story[story[self.node_id].next].bg)
@@ -378,7 +378,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_exit_fade_in<const> = function(self)
-		local bg<const> = world:get(bg_id)
+		local bg<const> = self.background
 		bg.surface_component.color = p3_white_color
 		return '/combat_done'
 	end
@@ -392,9 +392,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			clear_texts(text_ids_all)
-			hide_combat_sprites()
-			local transition_visual<const> = world:get(director_instance_id).transition_visual
+			clear_texts(self.texts)
+			hide_combat_visuals(self.combat_visuals)
+			local transition_visual<const> = self.transition_visual
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
@@ -412,7 +412,7 @@ function combat.define_fsm()
 			{ pattern = 'b[jp]', go = '/combat_init' },
 		},
 		leaving_state = function(self)
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
+			local overlay<const> = self.transition_visual.overlay
 			overlay.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
@@ -428,8 +428,8 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			clear_texts(text_ids_core)
-			local transition_visual<const> = world:get(director_instance_id).transition_visual
+			clear_texts(self.story_texts)
+			local transition_visual<const> = self.transition_visual
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
@@ -451,18 +451,18 @@ function combat.define_fsm()
 	states.combat_init = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			clear_texts(text_ids_transition_results)
-			reset_text_colors()
-			hide_transition_layers(world:get(director_instance_id).transition_visual)
+			clear_texts(self.transition_result_texts)
+			reset_text_colors(self)
+			hide_transition_layers(self.transition_visual)
 
-			local bg<const> = world:get(bg_id)
+			local bg<const> = self.background
 			bg.visible = false
 
 			self.combat_round_index = 1
 			self.combat_points = 0
 			self.combat_max_points = #node.rounds
 
-			local monster<const> = world:get(combat_monster_id)
+			local monster<const> = self.monster
 			texture_residency.load_combat_workset(node.monster_imgid)
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
@@ -480,7 +480,7 @@ function combat.define_fsm()
 			self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
 			self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
 
-			local maya_a<const> = world:get(combat_maya_a_id)
+			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
@@ -491,13 +491,13 @@ function combat.define_fsm()
 			self.combat_maya_a_start_x = screen_width
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
-			local all_out<const> = world:get(combat_all_out_id)
+			local all_out<const> = self.all_out
 			all_out.visible = false
 			all_out.x = 0
 			all_out.y = 0
 			all_out:set_z(800)
 
-			local maya_b<const> = world:get(combat_maya_b_id)
+			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.color = p3_white_color
@@ -525,9 +525,9 @@ function combat.define_fsm()
 				},
 			},
 		entering_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local maya_b<const> = world:get(combat_maya_b_id)
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local maya_b<const> = self.maya_b
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -567,21 +567,21 @@ function combat.define_fsm()
 			{ pattern = 'b[jp]', go = '/combat_round' },
 		},
 		leaving_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
+			local monster<const> = self.monster
 			monster.sprite_component.scale_x = 1
 			monster.sprite_component.scale_y = 1
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.visible = true
 
-			local maya_a<const> = world:get(combat_maya_a_id)
+			local maya_a<const> = self.maya_a
 			maya_a.sprite_component.scale_x = 1
 			maya_a.sprite_component.scale_y = 1
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
 			maya_a.visible = true
 
-			local maya_b<const> = world:get(combat_maya_b_id)
+			local maya_b<const> = self.maya_b
 			maya_b.sprite_component.scale_x = 1
 			maya_b.sprite_component.scale_y = 1
 			maya_b.visible = false
@@ -593,17 +593,17 @@ function combat.define_fsm()
 	states.combat_round = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			clear_texts(text_ids_transition_results)
-			local bg<const> = world:get(bg_id)
+			clear_texts(self.transition_result_texts)
+			local bg<const> = self.background
 			bg.visible = false
-			local monster<const> = world:get(combat_monster_id)
+			local monster<const> = self.monster
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = true
-			local maya_a<const> = world:get(combat_maya_a_id)
+			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
 			maya_a.visible = true
-			world:get(combat_all_out_id).visible = false
-			local maya_b<const> = world:get(combat_maya_b_id)
+			self.all_out.visible = false
+			local maya_b<const> = self.maya_b
 			maya_b.visible = false
 			self:apply_combat_round(node)
 			self.timelines:play(combat_hover_timelineid, {
@@ -621,12 +621,12 @@ function combat.define_fsm()
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = world:get(text_main_id)
+			local main<const> = self.text_main
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					world:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
-					world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					self.text_prompt:set_text(prompt_select, immediate_text_opts)
+					self.text_choice:set_highlighted_line(self.choice_index - 1)
 				end
 				return
 			end
@@ -638,8 +638,8 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
-					if not world:get(text_main_id):is_typing() then
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not self.text_main:is_typing() then
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -650,8 +650,8 @@ function combat.define_fsm()
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					self.choice_index = math.min(#round.options, self.choice_index + 1)
-					if not world:get(text_main_id):is_typing() then
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not self.text_main:is_typing() then
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -660,8 +660,8 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
-						world:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+						self.text_prompt:set_text(prompt_select, immediate_text_opts)
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -669,7 +669,7 @@ function combat.define_fsm()
 				pattern = 'a[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
-					if world:get(text_main_id):is_typing() then return end
+					if self.text_main:is_typing() then return end
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					local option<const> = round.options[self.choice_index]
@@ -702,11 +702,11 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			clear_texts(text_ids_choice_prompt)
-			world:get(text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
+			clear_texts(self.choice_prompt_texts)
+			self.text_main:set_text({ 'RAAK!' }, { typed = false, snap = true })
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.sprite_component.scale_x = 1
@@ -755,10 +755,10 @@ function combat.define_fsm()
 			},
 		},
 			entering_state = function(self)
-				clear_texts(text_ids_choice_prompt)
-				world:get(text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
-				local monster<const> = world:get(combat_monster_id)
-				local maya_a<const> = world:get(combat_maya_a_id)
+				clear_texts(self.choice_prompt_texts)
+				self.text_main:set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
+				local monster<const> = self.monster
+				local maya_a<const> = self.maya_a
 				monster.sprite_component.scale_x = 1
 				monster.sprite_component.scale_y = 1
 				self.combat_dodge_dir = -self.combat_dodge_dir
@@ -797,10 +797,10 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
-			clear_texts(text_ids_choice_prompt)
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local overlay<const> = self.transition_visual.overlay
+			clear_texts(self.choice_prompt_texts)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
 			maya_a.visible = true
@@ -867,9 +867,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local overlay<const> = self.transition_visual.overlay
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -899,10 +899,10 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
-			clear_texts(text_ids_choice_prompt)
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local overlay<const> = self.transition_visual.overlay
+			clear_texts(self.choice_prompt_texts)
 			monster.visible = true
 			maya_a.visible = true
 			monster.x = self.combat_monster_base_x
@@ -968,9 +968,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local overlay<const> = world:get(director_instance_id).transition_visual.overlay
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local overlay<const> = self.transition_visual.overlay
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -989,14 +989,14 @@ function combat.define_fsm()
 
 	states.combat_all_out_prompt = {
 		entering_state = function(self)
-			clear_texts(text_ids_choice_prompt)
-			world:get(text_main_id):set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
-			world:get(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
+			clear_texts(self.choice_prompt_texts)
+			self.text_main:set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
+			self.text_choice:set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
-			world:get(text_choice_id).highlight_jitter_enabled = true
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local portrait<const> = world:get(combat_all_out_portrait_id)
+			self.text_choice.highlight_jitter_enabled = true
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local portrait<const> = self.all_out_portrait
 			portrait:set_imgid('maya_v_s')
 			portrait.visible = true
 			portrait:set_z(750)
@@ -1033,12 +1033,12 @@ function combat.define_fsm()
 			self:activate_combat_parallax_transform()
 		end,
 		update = function(self)
-			local main<const> = world:get(text_main_id)
+			local main<const> = self.text_main
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					world:get(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
-					world:get(text_choice_id):set_highlighted_line(0)
+					self.text_prompt:set_text(prompt_attack, immediate_text_opts)
+					self.text_choice:set_highlighted_line(0)
 				end
 				return
 			end
@@ -1049,15 +1049,15 @@ function combat.define_fsm()
 				pattern = 'b[jp]',
 				go = function(self)
 					if self:skip_typing() then
-						world:get(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
-						world:get(text_choice_id):set_highlighted_line(0)
+						self.text_prompt:set_text(prompt_attack, immediate_text_opts)
+						self.text_choice:set_highlighted_line(0)
 					end
 				end
 			},
 				{
 					pattern = 'a[jp]',
 					go = function(self)
-						if world:get(text_main_id):is_typing() then return end
+						if self.text_main:is_typing() then return end
 						return '/combat_all_out'
 					end,
 				},
@@ -1066,11 +1066,11 @@ function combat.define_fsm()
 			self.timelines:stop(combat_hover_timelineid)
 			self.timelines:stop(combat_all_out_prompt_timelineid)
 			self:clear_combat_parallax_transform()
-			local portrait<const> = world:get(combat_all_out_portrait_id)
+			local portrait<const> = self.all_out_portrait
 			portrait.visible = false
 			portrait.sprite_component.scale_x = 1
 			portrait.sprite_component.scale_y = 1
-			world:get(text_choice_id).highlight_jitter_enabled = false
+			self.text_choice.highlight_jitter_enabled = false
 		end,
 	}
 
@@ -1084,17 +1084,17 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			self:disable_combat_parallax()
-			clear_texts(text_ids_all)
-			local all_out<const> = world:get(combat_all_out_id)
+			clear_texts(self.texts)
+			local all_out<const> = self.all_out
 			texture_residency.load_all_out()
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
 			all_out:set_z(800)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local maya_b<const> = world:get(combat_maya_b_id)
-			local bg<const> = world:get(bg_id)
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local maya_b<const> = self.maya_b
+			local bg<const> = self.background
 			self.all_out_shake_all_out_x = all_out.x
 			self.all_out_shake_all_out_y = all_out.y
 			self.all_out_shake_monster_x = monster.x
@@ -1140,11 +1140,11 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local all_out<const> = world:get(combat_all_out_id)
-			local monster<const> = world:get(combat_monster_id)
-			local maya_a<const> = world:get(combat_maya_a_id)
-			local maya_b<const> = world:get(combat_maya_b_id)
-			local bg<const> = world:get(bg_id)
+			local all_out<const> = self.all_out
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			local maya_b<const> = self.maya_b
+			local bg<const> = self.background
 			all_out.x = self.all_out_shake_all_out_x
 			all_out.y = self.all_out_shake_all_out_y
 			all_out.visible = false
@@ -1161,7 +1161,7 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 		entering_state = function(self)
-			local monster<const> = world:get(combat_monster_id)
+			local monster<const> = self.monster
 			monster.visible = true
 
 			self.timelines:play(combat_focus_timelineid, {
@@ -1186,8 +1186,8 @@ function combat.define_fsm()
 		on = {
 			['combat_focus.snap'] = {
 				go = function(self)
-					hide_combat_sprites()
-					clear_texts(text_ids_all)
+					hide_combat_visuals(self.combat_visuals)
+					clear_texts(self.texts)
 				end,
 			},
 			['combat_focus.done'] = {
@@ -1204,21 +1204,21 @@ function combat.define_fsm()
 			local node<const> = story[self.node_id]
 			local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
-			world:get(director_instance_id).events:emit('combat.results', {
+			self.events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
 				monster_imgid = self.combat_monster_imgid,
 			})
 
-			clear_texts(text_ids_core)
+			clear_texts(self.story_texts)
 
-			local monster<const> = world:get(combat_monster_id)
+			local monster<const> = self.monster
 			monster.visible = false
-			local maya_a<const> = world:get(combat_maya_a_id)
+			local maya_a<const> = self.maya_a
 			maya_a.visible = false
-			local all_out<const> = world:get(combat_all_out_id)
+			local all_out<const> = self.all_out
 			all_out.visible = false
 
-			local bg<const> = world:get(director_instance_id).combat_results_visual
+			local bg<const> = self.combat_results_visual
 			bg.visible = true
 			bg.x = 0
 			bg.y = 0
@@ -1226,7 +1226,7 @@ function combat.define_fsm()
 			bg.height = screen_height
 			bg.color = p3_black_color
 
-			local maya_b<const> = world:get(combat_maya_b_id)
+			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b:set_z(combat_results_maya_z)
@@ -1241,8 +1241,8 @@ function combat.define_fsm()
 				local effect<const> = rewards[i]
 				lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 			end
-			world:get(text_results_id):set_text(lines, { typed = false, snap = true })
-			local results<const> = world:get(text_results_id)
+			self.text_results:set_text(lines, { typed = false, snap = true })
+			local results<const> = self.text_results
 			results.text_component.color = p3_black_color
 			self.combat_results_text_target_x = results.text_component.offset_x / 2
 			self.combat_results_text_start_x = -screen_width
@@ -1268,9 +1268,9 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = world:get(director_instance_id).combat_results_visual,
-					maya_b = world:get(combat_maya_b_id),
-					results = world:get(text_results_id),
+					bg = self.combat_results_visual,
+					maya_b = self.maya_b,
+					results = self.text_results,
 				},
 				params = {
 					maya_start_x = self.combat_results_maya_start_x,
@@ -1318,14 +1318,14 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			clear_texts(text_ids_core)
+			clear_texts(self.story_texts)
 			self.timelines:play(combat_results_fade_out_timelineid, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = world:get(director_instance_id).combat_results_visual,
-					maya_b = world:get(combat_maya_b_id),
-					results = world:get(text_results_id),
+					bg = self.combat_results_visual,
+					maya_b = self.maya_b,
+					results = self.text_results,
 				},
 			})
 		end,
@@ -1353,7 +1353,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local bg<const> = show_background(self.combat_exit_target_bg)
+			local bg<const> = show_background(self.background, self.combat_exit_target_bg)
 			bg.surface_component.color = p3_black_color
 			self.timelines:play(combat_exit_fade_in_timelineid, { rewind = true, snap_to_start = true, target = bg })
 		end,
@@ -1367,7 +1367,7 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg<const> = world:get(bg_id)
+			local bg<const> = self.background
 			bg.surface_component.color = p3_white_color
 		end,
 	}
@@ -1480,8 +1480,7 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			-- Fade timelines. These use a fixed target (bg_id / etc.) that is only
-			-- valid at runtime, so individual states call play_timeline manually.
+			-- Fade timelines bind their retained targets when the state starts.
 			[combat_fade_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_fade_frames(),
@@ -1525,7 +1524,7 @@ end
 
 function combat.register_director()
 	prefab.define({
-		def_id = combat_director_def_id,
+		def_id = director_definition_id,
 		class = combat_director,
 		components = {
 			timelinecomponent.new,

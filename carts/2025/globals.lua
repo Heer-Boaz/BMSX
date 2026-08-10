@@ -1,32 +1,11 @@
-bg_id = 'p3.bg'
 screen_width = 320
 screen_height = 240
-combat_monster_id = 'p3.combat.monster'
-combat_maya_a_id = 'p3.combat.maya_a'
-combat_maya_b_id = 'p3.combat.maya_b'
-combat_all_out_id = 'p3.combat.all_out'
-combat_all_out_portrait_id = 'p3.combat.all_out_portrait'
-text_main_id = 'p3.text.main'
-text_choice_id = 'p3.text.choice'
-text_prompt_id = 'p3.text.prompt'
-text_transition_id = 'p3.text.transition'
-text_results_id = 'p3.text.results'
-text_ids_all = { text_main_id, text_choice_id, text_prompt_id, text_transition_id, text_results_id }
-text_ids_core = { text_main_id, text_choice_id, text_prompt_id, text_transition_id }
-text_ids_choice_prompt = { text_choice_id, text_prompt_id }
-text_ids_transition_results = { text_transition_id, text_results_id }
-
-director_instance_id = 'p3.director'
-combat_director_def_id = 'p3.combat.director'
-combat_director_instance_id = 'p3.combat.director'
-combat_director_fsm_id = 'p3.combat.director.fsm'
 
 -- Transition/overgang timing is authored as a ROM data asset and read back via
 -- the build/link `bmsx/assets` symbols: the addresses inline to constants at this
 -- use site and `bin.decode` reads the packed bytes (no PICO-style runtime lookup).
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local world<const> = require('cartlib/world/world')
 local transition_config<const> = bin.decode(assets.data_transition_config_addr, 'transition_config')
 
 overgang_timelineid = transition_config.overgang_timelineid
@@ -215,36 +194,34 @@ p3_transition_palette_choice = p3_transition_palette_dialogue
 
 combat_results_bg_visible_color = p3_blue_color
 
-function clear_texts(text_ids)
-	for i = 1, #text_ids do
-		world:get(text_ids[i]):clear_text()
+function clear_texts(texts)
+	for i = 1, #texts do
+		texts[i]:clear_text()
 	end
 end
 
-function apply_background(id)
+function apply_background(background, id)
 	if id == nil then
 		return
 	end
-	local bg<const> = world:get(bg_id)
-	bg.surface_component:set_imgid(id)
+	background.surface_component:set_imgid(id)
 end
 
-function show_background(id)
-	local bg<const> = world:get(bg_id)
+function show_background(background, id)
 	if id ~= nil then
-		bg.surface_component:set_imgid(id)
+		background.surface_component:set_imgid(id)
 	end
-	bg.visible = true
-	bg.surface_component.color = p3_white_color
-	return bg
+	background.visible = true
+	background.surface_component.color = p3_white_color
+	return background
 end
 
-function reset_text_colors()
-	world:get(text_main_id).text_component.color = p3_white_color
-	world:get(text_choice_id).text_component.color = p3_white_color
-	world:get(text_prompt_id).text_component.color = p3_white_color
-	world:get(text_transition_id).text_component.color = p3_ink_color
-	world:get(text_results_id).text_component.color = p3_white_color
+function reset_text_colors(owner)
+	owner.text_main.text_component.color = p3_white_color
+	owner.text_choice.text_component.color = p3_white_color
+	owner.text_prompt.text_component.color = p3_white_color
+	owner.text_transition.text_component.color = p3_ink_color
+	owner.text_results.text_component.color = p3_white_color
 end
 
 function hide_transition_layers(transition_visual)
@@ -262,10 +239,8 @@ function hide_transition_layers(transition_visual)
 	accent.color = 0
 end
 
-function hide_combat_sprites()
-	world:get(combat_monster_id).visible = false
-	world:get(combat_maya_a_id).visible = false
-	world:get(combat_maya_b_id).visible = false
-	world:get(combat_all_out_id).visible = false
-	world:get(combat_all_out_portrait_id).visible = false
+function hide_combat_visuals(visuals)
+	for i = 1, #visuals do
+		visuals[i].visible = false
+	end
 end

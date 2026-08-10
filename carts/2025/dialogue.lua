@@ -4,7 +4,6 @@ local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
 local input<const> = require('cartlib/input/input')
-local world<const> = require('cartlib/world/world')
 local immediate_text_opts<const> = { typed = false, snap = true }
 
 local background_at_or_after<const> = function(node_id)
@@ -33,14 +32,14 @@ function dialogue.register_methods(director)
 
 	function director:show_dialogue_page(typed, prompt_lines)
 		local page<const> = self.pages[self.page_index]
-		world:get(text_choice_id):clear_text()
-		world:get(text_prompt_id):clear_text()
+		self.text_choice:clear_text()
+		self.text_prompt:clear_text()
 		stagger.play(self, 'calm', {
-			bg = world:get(bg_id),
+			bg = self.background,
 			bg_dim = false,
-			text_main = world:get(text_main_id),
-			text_choice = world:get(text_choice_id),
-			text_prompt = world:get(text_prompt_id),
+			text_main = self.text_main,
+			text_choice = self.text_choice,
+			text_prompt = self.text_prompt,
 			text_lines = page,
 			text_typed = typed,
 			text_prompt_lines = prompt_lines,
@@ -48,8 +47,8 @@ function dialogue.register_methods(director)
 	end
 
 	function director:skip_typing()
-		if world:get(text_main_id):is_typing() then
-			world:get(text_main_id):reveal_text()
+		if self.text_main:is_typing() then
+			self.text_main:reveal_text()
 			input.consume(1, 'b')
 			return true
 		end
@@ -62,11 +61,11 @@ function dialogue.register_methods(director)
 			choice_lines[i] = node.options[i].label
 		end
 		stagger.play(self, 'calm', {
-			bg = world:get(bg_id),
+			bg = self.background,
 			bg_dim = false,
-			text_main = world:get(text_main_id),
-			text_choice = world:get(text_choice_id),
-			text_prompt = world:get(text_prompt_id),
+			text_main = self.text_main,
+			text_choice = self.text_choice,
+			text_prompt = self.text_prompt,
 			text_lines = node.prompt,
 			text_choice_lines = choice_lines,
 			text_typed = true,
@@ -81,14 +80,14 @@ function dialogue.register_states(states)
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
 			hide_transition_layers(self.transition_visual)
-			show_background(node.bg)
+			show_background(self.background, node.bg)
 			local next_background<const> = background_at_or_after(node.next)
 			if next_background ~= node.bg then
 				texture_residency.preload_background(next_background)
 			end
-			hide_combat_sprites()
-			clear_texts(text_ids_all)
-			reset_text_colors()
+			hide_combat_visuals(self.combat_visuals)
+			clear_texts(self.texts)
+			reset_text_colors(self)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -107,21 +106,21 @@ function dialogue.register_states(states)
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
 			hide_transition_layers(self.transition_visual)
-			show_background(node.bg)
+			show_background(self.background, node.bg)
 			if node.kind ~= 'dialogue_inline' then
 				local next_background<const> = background_at_or_after(node.next)
 				if next_background ~= node.bg then
 					texture_residency.preload_background(next_background)
 				end
 			end
-			reset_text_colors()
+			reset_text_colors(self)
 			if node.kind == 'dialogue_inline' then
 				self.pages = self.inline_pages
 			else
 				self.pages = node.pages
 			end
 			self.page_index = 1
-			world:get(text_transition_id):clear_text()
+			self.text_transition:clear_text()
 			local prompt_lines<const> = node.typed and prompt_skip or dialogue_completion_prompt(self)
 			self:show_dialogue_page(node.typed, prompt_lines)
 		end,
@@ -130,11 +129,11 @@ function dialogue.register_states(states)
 				return
 			end
 
-			local main<const> = world:get(text_main_id)
+			local main<const> = self.text_main
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					world:get(text_prompt_id):set_text(dialogue_completion_prompt(self), immediate_text_opts)
+					self.text_prompt:set_text(dialogue_completion_prompt(self), immediate_text_opts)
 				end
 			end
 		end,
@@ -145,7 +144,7 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
-						world:get(text_prompt_id):set_text(dialogue_completion_prompt(self), immediate_text_opts)
+						self.text_prompt:set_text(dialogue_completion_prompt(self), immediate_text_opts)
 					end
 				end
 			},
@@ -153,7 +152,7 @@ function dialogue.register_states(states)
 				pattern = 'a[jp]',
 					go = function(self)
 						if self.stagger_blocked then return end
-						if world:get(text_main_id):is_typing() then return end
+						if self.text_main:is_typing() then return end
 
 						if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
@@ -180,9 +179,9 @@ function dialogue.register_states(states)
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
 			hide_transition_layers(self.transition_visual)
-			show_background(node.bg)
-			reset_text_colors()
-			world:get(text_transition_id):clear_text()
+			show_background(self.background, node.bg)
+			reset_text_colors(self)
+			self.text_transition:clear_text()
 			local total<const> = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
 			local title = nil
 			local total_line = nil
@@ -225,11 +224,11 @@ function dialogue.register_states(states)
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = world:get(text_main_id)
+			local main<const> = self.text_main
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					world:get(text_prompt_id):set_text(ending_completion_prompt(self), immediate_text_opts)
+					self.text_prompt:set_text(ending_completion_prompt(self), immediate_text_opts)
 				end
 			end
 		end,
@@ -240,7 +239,7 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
-						world:get(text_prompt_id):set_text(ending_completion_prompt(self), immediate_text_opts)
+						self.text_prompt:set_text(ending_completion_prompt(self), immediate_text_opts)
 					end
 				end
 			},
@@ -248,7 +247,7 @@ function dialogue.register_states(states)
 				pattern = 'a[jp]',
 					go = function(self)
 						if self.stagger_blocked then return end
-						if world:get(text_main_id):is_typing() then return end
+						if self.text_main:is_typing() then return end
 						if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node<const> = story[self.node_id]
@@ -268,21 +267,21 @@ function dialogue.register_states(states)
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
 			hide_transition_layers(self.transition_visual)
-			show_background(node.bg)
-			reset_text_colors()
-			world:get(text_prompt_id):clear_text()
+			show_background(self.background, node.bg)
+			reset_text_colors(self)
+			self.text_prompt:clear_text()
 			self:setup_choice_menu(node)
 		end,
 		update = function(self)
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = world:get(text_main_id)
-			local choice_text<const> = world:get(text_choice_id)
+			local main<const> = self.text_main
+			local choice_text<const> = self.text_choice
 			if main:is_typing() then
 				main:type_next()
 				if not main:is_typing() then
-					world:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
+					self.text_prompt:set_text(prompt_select, immediate_text_opts)
 					choice_text:set_highlighted_line(self.choice_index - 1)
 				end
 			end
@@ -294,8 +293,8 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
-					if not world:get(text_main_id):is_typing() then
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not self.text_main:is_typing() then
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -305,8 +304,8 @@ function dialogue.register_states(states)
 					if self.stagger_blocked then return end
 					local node<const> = story[self.node_id]
 					self.choice_index = math.min(#node.options, self.choice_index + 1)
-					if not world:get(text_main_id):is_typing() then
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					if not self.text_main:is_typing() then
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end,
 			},
@@ -315,8 +314,8 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self:skip_typing() then
-						world:get(text_prompt_id):set_text(prompt_select, immediate_text_opts)
-						world:get(text_choice_id):set_highlighted_line(self.choice_index - 1)
+						self.text_prompt:set_text(prompt_select, immediate_text_opts)
+						self.text_choice:set_highlighted_line(self.choice_index - 1)
 					end
 				end
 			},
@@ -324,7 +323,7 @@ function dialogue.register_states(states)
 				pattern = 'a[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
-					if world:get(text_main_id):is_typing() then return end
+					if self.text_main:is_typing() then return end
 					local node<const> = story[self.node_id]
 					local option<const> = node.options[self.choice_index]
 					local next_background<const> = background_at_or_after(option.next)
