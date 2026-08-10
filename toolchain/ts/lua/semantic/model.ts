@@ -394,15 +394,11 @@ type AssignmentTargetInfo = {
 const CARTLIB_CALL_NONE = 0;
 const CARTLIB_CALL_PREFAB_DEFINE = 1;
 const CARTLIB_CALL_WORLD_SPAWN = 2;
-const CARTLIB_CALL_WORLD_GET = 3;
-const CARTLIB_CALL_REGISTRY_GET = 4;
 
 type CartlibCallKind =
 	| typeof CARTLIB_CALL_NONE
 	| typeof CARTLIB_CALL_PREFAB_DEFINE
-	| typeof CARTLIB_CALL_WORLD_SPAWN
-	| typeof CARTLIB_CALL_WORLD_GET
-	| typeof CARTLIB_CALL_REGISTRY_GET;
+	| typeof CARTLIB_CALL_WORLD_SPAWN;
 
 type SemanticBuildResult = {
 	decls: InternalDecl[];
@@ -2215,10 +2211,6 @@ class SemanticBuilder {
 			}
 			return buildPrefabHintKey(prefabId);
 		}
-		if (callKind === CARTLIB_CALL_WORLD_GET || callKind === CARTLIB_CALL_REGISTRY_GET) {
-			const objectId = extractStringLiteral(callExpression.arguments[0]);
-			return objectId ? buildObjectHintKey(objectId) : null;
-		}
 		return null;
 	}
 
@@ -2273,14 +2265,9 @@ class SemanticBuilder {
 			return CARTLIB_CALL_NONE;
 		}
 		if (alias.module === 'cartlib/world/world' && totalMemberCount === 1) {
-			if (trailingMember === 'spawn') {
-				return CARTLIB_CALL_WORLD_SPAWN;
-			}
-			return trailingMember === 'get' ? CARTLIB_CALL_WORLD_GET : CARTLIB_CALL_NONE;
+			return trailingMember === 'spawn' ? CARTLIB_CALL_WORLD_SPAWN : CARTLIB_CALL_NONE;
 		}
-		return alias.module === 'cartlib/registry' && totalMemberCount === 1 && trailingMember === 'get_object'
-			? CARTLIB_CALL_REGISTRY_GET
-			: CARTLIB_CALL_NONE;
+		return CARTLIB_CALL_NONE;
 	}
 
 	private moduleAliasForName(name: string): ModuleAliasTarget {

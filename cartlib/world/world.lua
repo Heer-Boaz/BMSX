@@ -5,8 +5,8 @@
 --
 -- 1. SPACES partition the world into independently-updated subsets.
 --    The cart world module declares the fixed space topology once.
---    The 'active' space is set with world:set_space(id); default world queries
---    only see active objects in that space.
+--    The 'active' space is set with world:set_space(id); retained component and
+--    definition views follow that selected space at its structural barrier.
 --    Spaces are mutually exclusive world partitions, not render layers.
 --    Objects default to the active space at spawn unless they set .space_id.
 --
