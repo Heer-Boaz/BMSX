@@ -174,7 +174,7 @@ function player:activate_sword()
 	if self.sword_cooldown > 0 then
 		return false
 	end
-	self.timelines:seek('p.seq.s', 0)
+	self.timelines:get('p.seq.s'):set_frame(0)
 	self.events:emit('sword_start')
 	return true
 end
@@ -420,7 +420,7 @@ function player:ctor()
 	self.left_wall_collision_secondary = false
 	self.left_wall_collision = false
 	self.right_wall_collision = false
-	self.timelines:seek('p.seq.s', 0)
+	self.timelines:get('p.seq.s'):set_frame(0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self:clear_input_state()
@@ -437,18 +437,18 @@ function player:get_damage_state_imgid()
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
 			local dying_timeline<const> = self.timelines:get('p.tl.d')
-			dying_timeline:force_seek(self.death_timer)
+			dying_timeline:set_frame(self.death_timer)
 			return dying_timeline:value().imgid
 		end
 
 		if self:has_tag(state_tags.variant.hit_recovery) then
 			local hit_recovery_timeline<const> = self.timelines:get('p.tl.hr')
-			hit_recovery_timeline:force_seek(self.hit_recovery_timer)
+			hit_recovery_timeline:set_frame(self.hit_recovery_timer)
 			return hit_recovery_timeline:value().imgid
 		end
 
 		local hit_fall_timeline<const> = self.timelines:get('p.tl.hf')
-		hit_fall_timeline:force_seek(self.hit_substate)
+		hit_fall_timeline:set_frame(self.hit_substate)
 		return hit_fall_timeline:value().imgid
 	end
 	return nil
@@ -591,7 +591,7 @@ function player:update_facing_from_horizontal_input()
 end
 
 function player:cancel_sword()
-	self.timelines:seek('p.seq.s', 0)
+	self.timelines:get('p.seq.s'):set_frame(0)
 	self.events:emit('sword_cancel')
 end
 
@@ -643,7 +643,7 @@ function player:start_hit_invulnerability_sequence()
 	self.hit_invulnerability_timer = damage_hit_invulnerability_frames
 	self.hit_blink_on = true
 	self.timelines:get('p.seq.hi'):rewind()
-	self.timelines:get('p.seq.hb'):force_seek(0)
+	self.timelines:get('p.seq.hb'):set_frame(0)
 end
 
 function player:get_hit_direction_from_source(source_x)
@@ -1773,7 +1773,7 @@ end
 function player:reset_fall_substate_sequence()
 	self.fall_substate = 0
 	self.water_controlled_fall_dx_accum = 0
-	self.timelines:get('p.seq.f'):force_seek(0)
+	self.timelines:get('p.seq.f'):set_frame(0)
 end
 
 function player:advance_fall_substate_sequence()

@@ -411,9 +411,8 @@ function timeline:advance()
 	return self:advance_internal('advance', self.time_ms, false)
 end
 
--- timeline:seek(frame): move the playhead to an absolute frame index.
--- Does NOT fire frame markers for skipped frames.  Use force_seek() if you
--- need markers to fire (e.g. to sync tag state after a manual jump).
+-- timeline:seek(frame): queue one absolute frame for the owner's normal
+-- frame-event path. Skipped frames are not evaluated.
 function timeline:seek(frame)
 	clear_step_events(self)
 	return self:apply_frame(frame, 'seek', self.time_ms, false)
@@ -424,7 +423,9 @@ function timeline:snap_to_start()
 	return self:apply_frame(0, 'snap', self.time_ms, false)
 end
 
-function timeline:force_seek(frame)
+-- timeline:set_frame(frame): position the playhead without evaluating a frame.
+-- Sequence consumers use this when value() is the only desired output.
+function timeline:set_frame(frame)
 	clear_step_events(self)
 	local clamped<const> = clamp(frame, timelinestart_index, self.length - 1)
 	self.head = clamped

@@ -116,8 +116,13 @@ end
 
 function timelinecomponent:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:force_seek(frame)
-	return entry.instance
+	local instance<const> = entry.instance
+	if instance:seek(frame) ~= nil then
+		if timelinedispatch.process_instance_events(entry, self.parent, 0, process_timelineframe_payload) then
+			deactivate_timelineentry(self, instance.id)
+		end
+	end
+	return instance
 end
 
 function timelinecomponent:advance(id)
