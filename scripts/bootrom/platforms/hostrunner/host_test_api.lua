@@ -18,7 +18,4 @@ host = {
 	log = function(message)
 		return { log = message }
 	end,
-	new_game = function()
-		return { new_game = true }
-	end,
 }
