@@ -3569,8 +3569,9 @@ effect ids into those constructors before spawning; their component owner
 resolves the current registered definition when it constructs the runtime.
 Prefab does not interpret parallel feature lists. There is no string component
 registry, universal component module, prebuilt-instance branch, or
-compatibility lookup. The constructor may provide a component-local identity;
-otherwise world assigns its id when the component is published.
+compatibility lookup. A component constructor may provide only its semantic
+`id_local`; world assigns its numeric Registry id when the component is first
+published.
 `world:spawn()` obtains generated numeric object and component ids directly from
 Registry's shared monotonic counter,
 constructs the complete object and its components while unpublished, and
