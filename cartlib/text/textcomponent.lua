@@ -1,4 +1,4 @@
-local font_module<const> = require('cartlib/font')
+local fontcatalog<const> = require('cartlib/text/fontcatalog')
 local image<const> = require('cartlib/gx/image')
 local gp0<const> = require('cartlib/gx/gp0')
 local visualcomponent<const> = require('cartlib/component/visualcomponent')
@@ -11,8 +11,7 @@ setmetatable(textcomponent, { __index = visualcomponent })
 
 function textcomponent.new(opts)
 	local self<const> = setmetatable(visualcomponent.new(opts), textcomponent)
-	self.font = opts.font or font_module.get('default')
-	self.font_id = self.font.id
+	self.font = opts.font or fontcatalog.get('default')
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff
 	self.background_color = opts.background_color
@@ -40,7 +39,7 @@ function textcomponent:set_text(text)
 				glyph_line = {}
 				self.glyph_lines[1] = glyph_line
 			end
-			self.layout_line_widths[1] = font_module.write_glyph_line(self.font, text, glyph_line)
+			self.layout_line_widths[1] = fontcatalog.write_glyph_line(self.font, text, glyph_line)
 			self.glyph_line_count = 1
 			return
 		end
@@ -54,7 +53,7 @@ function textcomponent:set_text(text)
 			glyph_line = {}
 			glyph_lines[i] = glyph_line
 		end
-		layout_line_widths[i] = font_module.write_glyph_line(self.font, lines[i], glyph_line)
+		layout_line_widths[i] = fontcatalog.write_glyph_line(self.font, lines[i], glyph_line)
 	end
 	self.glyph_line_count = #lines
 end
@@ -64,7 +63,6 @@ function textcomponent:set_font(font)
 		return
 	end
 	self.font = font
-	self.font_id = font.id
 	self.line_height = font.line_height
 	self:set_text(self.text)
 end

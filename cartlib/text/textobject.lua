@@ -467,7 +467,6 @@ end
 
 function textobject:set_font(font)
 	self.text_component.font = font
-	self.text_component.font_id = font.id
 	self.text_component.line_height = line_advance(font, self.blank_lines)
 	if self.char_width_uses_font then
 		self.char_width = font.items[0x61].width
