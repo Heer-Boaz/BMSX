@@ -1,6 +1,7 @@
 import { load as loadYaml } from 'js-yaml';
 
 import { APU_SAMPLE_RATE_HZ } from '../../../machine/ts/spec/audio/apu';
+import { cookAemFilter, type AemFilterDefinition, type AemFilterWords } from './aem_filter';
 
 // Authoring-time AEM schema and validation. AEM may describe audio behavior,
 // but it is not the machine audio device or a host-side shortcut around MMIO.
@@ -67,6 +68,8 @@ type ModulationParams = {
 	playbackRateRange?: unknown;
 	filter?: AudioFilterParams;
 };
+
+type CookedModulationParams = ModulationParams & Partial<AemFilterWords>;
 
 export type AemValidationDataRecord = {
 	name: string;
@@ -367,8 +370,17 @@ function resolveDataPath(lookup: AemValidationLookup, path: string): unknown {
 function inlineModulationPresets(action: Record<string, unknown>, lookup: AemValidationLookup): void {
 	const presetPath = action.modulation_preset as string | undefined;
 	if (presetPath !== undefined) {
-		action.modulation_params = resolveDataPath(lookup, presetPath);
+		action.modulation_params = { ...(resolveDataPath(lookup, presetPath) as ModulationParams) };
 		delete action.modulation_preset;
+	}
+	const modulationParams = action.modulation_params as CookedModulationParams | undefined;
+	if (modulationParams?.filter !== undefined) {
+		const filterWords = cookAemFilter(modulationParams.filter as AemFilterDefinition);
+		delete modulationParams.filter;
+		modulationParams.filter_control = filterWords.filter_control;
+		modulationParams.filter_b0_b1 = filterWords.filter_b0_b1;
+		modulationParams.filter_b2_a1 = filterWords.filter_b2_a1;
+		modulationParams.filter_a2 = filterWords.filter_a2;
 	}
 	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
 	if (sequence !== undefined) {

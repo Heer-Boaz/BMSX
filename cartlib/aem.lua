@@ -2,7 +2,6 @@
 -- Cart Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('cartlib/apu')
-local aem_biquad<const> = require('cartlib/aem_biquad')
 local eventemitter<const> = require('cartlib/eventemitter')
 local compile_matcher<const> = require('cartlib/eventmatcher').compile
 local romdir<const> = require('cartlib/romdir')
@@ -95,12 +94,12 @@ local compile_modulation<const> = function(compiled, params)
 		compiled.rate_range_span = rate_range[2] - rate_range[1]
 	end
 
-	local filter<const> = params.filter
-	if filter ~= nil then
-		compiled.filter_control,
-			compiled.filter_b0_b1,
-			compiled.filter_b2_a1,
-			compiled.filter_a2 = aem_biquad.design(filter)
+	local filter_control<const> = params.filter_control
+	if filter_control ~= nil then
+		compiled.filter_control = filter_control
+		compiled.filter_b0_b1 = params.filter_b0_b1
+		compiled.filter_b2_a1 = params.filter_b2_a1
+		compiled.filter_a2 = params.filter_a2
 	end
 end
 

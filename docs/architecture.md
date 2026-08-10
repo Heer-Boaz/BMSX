@@ -3393,10 +3393,11 @@ then reinstates those four delay words. TS and C++ use the same integer
 datapath and exact raw-word vectors. The sample loop performs no trigonometry,
 host-number validation, table construction, or allocation.
 
-AEM keeps its author-facing filter names and parameters in cartlib. During AEM
-rule compilation, `cartlib/aem_biquad.lua` uses the resident `math` library to
-design the section once. `cartlib/apu.lua`, the cart-side APU ABI owner, rounds
-and saturates each coefficient to signed Q14 and packs the four hardware words.
+AEM resources keep their author-facing filter names and parameters until ROM
+production. `toolchain/ts/rompack/aem_filter.ts` designs the section, rounds and
+saturates each coefficient to signed Q14, and writes the four raw hardware
+words into the packed event map. Cartlib consumes those words directly; it does
+not carry filter-design or coefficient-encoding code in the cartridge runtime.
 The AEM tooling rejects non-positive Q and frequencies outside the open
 interval from zero to the APU Nyquist frequency; no runtime clamp repairs
 invalid authored data. This split follows the production pattern of separating
