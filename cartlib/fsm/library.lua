@@ -5,13 +5,14 @@
 --
 -- 1. PUBLISH ONCE PER EXPLICIT CART INITIALIZATION, ATTACH MANY TIMES.
 --    A 'machine_name' maps to a single compiled state_definition. The cart's
---    explicit init function registers each blueprint. A replacement rebinds
---    retained runtime trees without resetting their live state. Prefabs attach
---    the runtime component only to objects that list the definition in `fsms`.
+--    explicitly called entry initialization registers each blueprint; its
+--    <init> marker exposes that same closure to Hot Resume tooling. A
+--    replacement rebinds retained runtime trees without resetting live state.
 --
--- 2. THE @build_fsm DECORATOR IS THE PREFERRED PATTERN.
---    In TypeScript/annotated Lua, @build_fsm on a function auto-registers the
---    result. Prefer that over explicit registration in cart code.
+-- 2. PREFABS ATTACH THE CONCRETE COMPONENT.
+--    fsmcomponent.factory() binds the selected machine ids into the prefab's
+--    component constructor. The component resolves their current definitions
+--    when the world constructs the object.
 
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local fsm<const> = require('cartlib/fsm/fsm')

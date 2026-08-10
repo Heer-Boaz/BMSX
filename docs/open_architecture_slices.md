@@ -21,7 +21,8 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `CARTLIB-SURFACE-01` | Verwijder ongebruikte pre-GTE-code, verplaats aantoonbaar cart-specifieke utilities naar hun cart en vernietig centrale registries die modules hardcoded per implementatiefeature (`with_fsm`, `with_bt`, enz.) groeperen. | Iedere module-owner declareert zijn eigen compositie, geen compatibilitylaag blijft achter en alle nog publieke cartlibmodules bezitten herbruikbare console-SDK-functionaliteit. |
+| `CARTLIB-SURFACE-01` | Toets het resterende publieke cartlib-oppervlak aan de actuele linkergraph en ownergrenzen. Verwijder alleen bewezen obsolete of cart-specifieke modules; generieke capabilities zoals velocity- en screen-boundarycomponenten blijven cartlib. | Iedere bereikbare module heeft een gedeelde cart-SDK-owner of is naar zijn concrete cart verplaatst, zonder compatibilitylaag, parallelle feature-index of handmatige modulelijst. |
+| `CARTLIB-HOT-LOOKUP-01` | Verwijder herhaalde string-/id-lookups uit framecallbacks door stabiele ownerreferenties bij constructie of binding te bewaren en systemen retained views te laten gebruiken. Registry blijft de ene generieke identity/key-index; world krijgt geen schaduwindex en Registry-internals lekken niet naar carts. | De representatieve gameplayhotpaths roepen geen dunne `world -> registry`-queryketen per object/per frame aan en introduceren geen allocatie, facade of duplicaatindex. |
 
 ## Vereist een interactieve backend of fysieke target
 

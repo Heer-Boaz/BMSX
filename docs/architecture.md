@@ -3568,11 +3568,11 @@ effect ids into those constructors before spawning; their component owner
 resolves the current registered definition when it constructs the runtime.
 Prefab does not interpret parallel feature lists. There is no string component
 registry, universal component module, prebuilt-instance branch, or
-compatibility lookup. Component ids are materialized by the object at the
-attachment boundary, after the constructor has supplied its component-local
-identity. `world:spawn()` obtains generated object ids from Registry, reserves
-the base object before attaching components or running the prefab constructor,
-and publishes it only after construction. The world-object
+compatibility lookup. The constructor may provide a component-local identity;
+otherwise world assigns its id when the component is published.
+`world:spawn()` obtains generated object ids from Registry's monotonic counter,
+constructs the complete object and its components while unpublished, and
+publishes their identities and indexes only after construction. The world-object
 base does not import a global world to allocate its own identity. The world
 component base owns only attachment state, activation
 reconciliation, event unbinding, IDs, and enabled state. Rendering, text,
@@ -3620,12 +3620,14 @@ component key every frame. Cartlib does not prewarm a hardcoded list of built-in
 component kinds, and neither extension path requires modifying a cartlib
 registry.
 
-The central Registry is the only cart-wide id, prefab-definition,
-component-class and tag index. It owns retained dense buckets for published
-world objects, components and persistent cart services. Its module exports that
-single owner directly, not a constructible class plus `instance` facade.
-`world:get()` and unqualified definition/tag queries read those buckets directly;
-`world` has no shadow identity index.
+The central Registry is the only cart-wide identity and generic key index. It
+owns the direct id map and retained dense key buckets for published world
+objects, components and persistent cart services. Component classes and object
+tags are ordinary Registry keys; Registry does not branch on entry kind.
+`cartlib/world/prefab` separately owns prefab definitions, while each
+space materializes only the active definition views requested by configured
+systems. Registry's module exports its single owner directly, not a constructible
+class plus `instance` facade, and `world` has no shadow identity index.
 
 Registry lifecycle is not a savegame classification boundary. Machine save-state
 captures the complete guest runtime graph, including Registry tables and the Lua
@@ -3634,13 +3636,13 @@ snapshot. Cartlib has no separate game-save contract, object-graph serializer or
 `registry_persistent` classification.
 
 `world` owns lifecycle and the fixed map of spaces; each `space` object owns its
-own dense object, active-object, definition, tag, component and visual storage
+own dense active-object, requested definition, component and visual storage
 plus the indices required to mutate those arrays. `world` selects spaces and
 coordinates barriers but does not reach into their backing tables. Component storage is
 materialized only for component classes selected by configured systems; visuals
-retain their separate render-facing dense list. Spawn admission reserves ids
-before publication, and Registry, space and system views receive only complete
-objects and their attached components.
+retain their separate render-facing dense list. Spawn assigns identity before
+construction but admits it to Registry, space and system views only after the
+object and its attached components are complete.
 
 Sprite collision association is explicit: a collider owns the selected
 image/flip raw GEO shape reference, while the sprite only holds render state.
