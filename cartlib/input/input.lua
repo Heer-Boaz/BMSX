@@ -11,6 +11,10 @@ local input<const> = {}
 local source_keyboard<const> = 1
 local source_gamepad<const> = 2
 local source_pointer<const> = 3
+local pointer_buttons<const>: *word = 0x0800008c
+local pointer_position_x_q16<const>: *word = 0x08000090
+local pointer_position_y_q16<const>: *word = 0x08000094
+local pointer_wheel_q16<const>: *word = 0x08000098
 local gamepad_bits<const> = {
 	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
 	['lb'] = 0x00000004, ['rb'] = 0x00000005, ['lt'] = 0x00000006, ['rt'] = 0x00000007,
@@ -152,15 +156,15 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	end
 	local bit<const> = pointer_bits[button]
 	if bit then
-		state.level_addr = 0x0800008c
+		state.level_addr = pointer_buttons
 		state.level_mask = 1 << bit
 	elseif button == 'pointer_position' then
-		state.value_x_addr = 0x08000090
-		state.value_y_addr = 0x08000094
+		state.value_x_addr = pointer_position_x_q16
+		state.value_y_addr = pointer_position_y_q16
 	elseif button == 'pointer_delta' then
 		state.is_pointer_delta = true
 	elseif button == 'pointer_wheel' then
-		state.value_addr = 0x08000098
+		state.value_addr = pointer_wheel_q16
 		state.pressed_from_value = true
 	end
 end
@@ -385,15 +389,18 @@ end
 -- need the value here; pure value inputs derive pressed from the value/delta.
 local sample_value_button<const> = function(player, state)
 	if state.value_addr ~= 0 then
-		state.value_q16 = mem[state.value_addr]
+		local value<const>: *word = state.value_addr
+		state.value_q16 = *value
 	end
 	if state.value_x_addr ~= 0 then
-		state.value_x_q16 = mem[state.value_x_addr]
-		state.value_y_q16 = mem[state.value_y_addr]
+		local value_x<const>: *word = state.value_x_addr
+		local value_y<const>: *word = state.value_y_addr
+		state.value_x_q16 = *value_x
+		state.value_y_q16 = *value_y
 	end
 	if state.is_pointer_delta then
-		local x<const> = mem[0x08000090]
-		local y<const> = mem[0x08000094]
+		local x<const> = *pointer_position_x_q16
+		local y<const> = *pointer_position_y_q16
 		state.value_x_q16 = x - state.prev_x_q16
 		state.value_y_q16 = y - state.prev_y_q16
 		state.prev_x_q16 = x
@@ -429,7 +436,8 @@ end
 
 sample_new_button_state = function(player, state)
 	if state.level_addr ~= 0 then
-		local pressed<const> = (mem[state.level_addr] & state.level_mask) ~= 0
+		local level<const>: *word = state.level_addr
+		local pressed<const> = (*level & state.level_mask) ~= 0
 		if pressed ~= state.pressed then
 			apply_digital_edge(player, state, pressed)
 		end
@@ -455,7 +463,8 @@ local sample_player<const> = function(player)
 		local word_list<const> = player.word_list[source_index]
 		for w = 1, #word_list do
 			local group<const> = word_list[w]
-			local cur<const> = mem[group.addr]
+			local level<const>: *word = group.addr
+			local cur<const> = *level
 			if cur ~= group.prev or group.dirty then
 				local states<const> = group.states
 				for s = 1, #states do

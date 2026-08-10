@@ -12,6 +12,9 @@ local slot_sfx<const> = 0
 local slot_music_a<const> = 1
 local slot_music_b<const> = 2
 local slot_ui<const> = 3
+local apu_event_kind<const>: *word = 0x0800017c
+local apu_event_slot<const>: *word = 0x08000180
+local apu_event_source_addr<const>: *word = 0x08000184
 local route_slot<const> = {
 	sfx = slot_sfx,
 	music = slot_music_a,
@@ -724,9 +727,9 @@ local reload_from_rom<const> = function()
 end
 
 local on_apu_irq<const> = function()
-	local kind<const> = mem[0x0800017c]
-	local slot<const> = mem[0x08000180]
-	local source_addr<const> = mem[0x08000184]
+	local kind<const> = *apu_event_kind
+	local slot<const> = *apu_event_slot
+	local source_addr<const> = *apu_event_source_addr
 
 	if kind ~= 0x00000001 then
 		return

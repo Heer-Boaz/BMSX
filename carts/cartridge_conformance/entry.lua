@@ -24,7 +24,8 @@ local mailbox_status<const>: *word = 0x30f00008
 local mailbox_irq_ack<const>: *word = 0x30f0000c
 local cart_ram_probe<const>: *word = 0x30000000
 local cart_replay_step<const>: *word = 0x30000004
-local cart_rom_base<const> = 0x10000000
+local cart_rom<const>: *u32 = 0x10000000
+local cart_blua32_image_index<const> = 8
 local irq_dma0_done<const> = 0x00000001
 local irq_cartridge_slot1<const> = 0x00000400
 local mailbox_control_irq_trigger<const> = 0x00000001
@@ -44,10 +45,10 @@ assert(*cart_status == 0x00010003, 'mixed-socket boot selection mismatch')
 assert(*slot0_board == 3 and *slot1_board == 3, 'cartridge board words mismatch')
 assert(*slot0_ram_bytes == 256 and *slot1_ram_bytes == 256, 'cartridge RAM capacities mismatch')
 *cart_select = 0
-assert(mem32le[cart_rom_base + 32] == 0, 'data cartridge exposed a BLua32 image')
+assert(cart_rom[cart_blua32_image_index] == 0, 'data cartridge exposed a BLua32 image')
 *cart_ram_probe = 0x10203040
 *cart_select = 1
-assert(mem32le[cart_rom_base + 32] ~= 0, 'boot cartridge did not expose its BLua32 header')
+assert(cart_rom[cart_blua32_image_index] ~= 0, 'boot cartridge did not expose its BLua32 header')
 *cart_ram_probe = 0x50607080
 *cart_select = 0
 assert(*cart_ram_probe == 0x10203040, 'slot 0 cartridge RAM decode mismatch')

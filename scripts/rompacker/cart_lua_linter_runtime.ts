@@ -10,6 +10,7 @@ import { lintAstExplicitTruthyComparisonPattern } from '../lint/rules/common/exp
 import { lintAstOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
 import { lintCallNewlineNormalizationPattern } from '../lint/rules/code_quality/newline_normalization_pattern';
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
+import { lintDeprecatedMemoryAccessPattern } from '../lint/rules/lua_cart/deprecated_memory_access_pattern';
 import { lintFunctionBodyRequireCall } from '../lint/rules/lua_cart/function_body_require_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
@@ -103,6 +104,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'forbidden_dispatch_pattern',
 	'forbidden_matches_state_path_pattern',
 	'forbidden_math_floor_pattern',
+	'deprecated_memory_access_pattern',
 	'function_body_require_pattern',
 	'forbidden_random_helper_pattern',
 	'forbidden_render_module_require_pattern',
@@ -357,6 +359,7 @@ export function lintExpression(
 	lintAstOrNilFallbackPattern(expression, issues, pushIssue);
 	lintAstExplicitTruthyComparisonPattern(expression, issues, pushIssue);
 	lintForbiddenMathFloorPattern(expression, issues, pushIssue);
+	lintDeprecatedMemoryAccessPattern(expression, issues, pushIssue);
 	lintStringOrChainComparisonPattern(expression, issues);
 	lintActionTriggeredBoolChainPattern(expression, issues);
 	if (topLevel) {

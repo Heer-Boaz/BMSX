@@ -766,7 +766,7 @@ function monitor_commands.next_row(row)
 		return row_more
 	end
 
-	local address = *monitor_command_address
+	local address: *word = *monitor_command_address
 	local remaining = *monitor_command_remaining
 	local column<const> = write_hex(row, 0, address, palette_accent)
 	local target<const>: *u16 = row
@@ -778,7 +778,7 @@ function monitor_commands.next_row(row)
 	end
 	for index = 0, words - 1 do
 		target[output_column] = ascii_space | (palette_text << 8)
-		output_column = write_hex(target, output_column + 1, mem[address], palette_text)
+		output_column = write_hex(target, output_column + 1, *address, palette_text)
 		address = address + 4
 	end
 	remaining = remaining - words

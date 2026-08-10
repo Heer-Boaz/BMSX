@@ -24,11 +24,13 @@ local input_control<const>: *word = 0x08000064
 
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_boot_header_size<const> = 60
-local cart_blua32_image_offset<const> = 32
-local cart_blua32_startup_offset<const> = 40
+local cart_rom_magic_index<const> = 0
+local cart_rom_header_size_index<const> = 1
+local cart_blua32_image_index<const> = 8
+local cart_blua32_startup_index<const> = 10
 local cart_select<const>: *word = 0x0801041c
 local cart_status<const>: *word = 0x08010420
-local cart_rom_base<const> = 0x10000000
+local cart_rom<const>: *word = 0x10000000
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
 local input_arm<const> = 0x00000001
@@ -57,11 +59,11 @@ local scan_cartridges<const> = function()
 		if (status & (1 << slot)) ~= 0 then
 			state = cart_state_invalid
 			*cart_select = slot
-			if mem[cart_rom_base] == cart_rom_magic
-				and mem[cart_rom_base + 4] >= cart_rom_boot_header_size
-				and mem[cart_rom_base + cart_blua32_image_offset] ~= 0
-				and mem[cart_rom_base + cart_blua32_startup_offset] ~= 0 then
-				return cart_state_ready, mem[cart_rom_base + cart_blua32_startup_offset]
+			if cart_rom[cart_rom_magic_index] == cart_rom_magic
+				and cart_rom[cart_rom_header_size_index] >= cart_rom_boot_header_size
+				and cart_rom[cart_blua32_image_index] ~= 0
+				and cart_rom[cart_blua32_startup_index] ~= 0 then
+				return cart_state_ready, cart_rom[cart_blua32_startup_index]
 			end
 		end
 	end

@@ -1,6 +1,6 @@
 local interrupts<const> = {}
 local handlers<const> = {}
-local irq_ack_addr<const> = 0x08000004
+local irq_ack<const>: *word = 0x08000004
 
 function interrupts.dispatch(flags)
 	local ack = 0
@@ -11,7 +11,7 @@ function interrupts.dispatch(flags)
 		end
 	end
 	if ack ~= 0 then
-		mem[irq_ack_addr] = ack
+		*irq_ack = ack
 	end
 	return ack
 end

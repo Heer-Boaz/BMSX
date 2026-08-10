@@ -27,7 +27,8 @@ local new_reader<const> = function(addr, label)
 end
 
 local read_u8<const> = function(reader)
-	local value<const> = mem8[reader.pos]
+	local source<const>: *u8 = reader.pos
+	local value<const> = *source
 	reader.pos = reader.pos + 1
 	return value
 end
@@ -63,16 +64,18 @@ local read_string<const> = function(reader)
 	local out<const> = {}
 	local chunk<const> = {}
 	local chunk_len = 0
-	local finish<const> = reader.pos + length
-	while reader.pos < finish do
+	local source: *u8 = reader.pos
+	local finish<const> = source + length
+	while source < finish do
 		chunk_len = chunk_len + 1
-		chunk[chunk_len] = mem8[reader.pos]
-		reader.pos = reader.pos + 1
+		chunk[chunk_len] = *source
+		source = source + 1
 		if chunk_len == 256 then
 			out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 			chunk_len = 0
 		end
 	end
+	reader.pos = finish
 	if chunk_len > 0 then
 		out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 	end
@@ -91,10 +94,12 @@ end
 local read_binary<const> = function(reader)
 	local length<const> = read_varuint(reader)
 	local values<const> = {}
+	local source: *u8 = reader.pos
 	for index = 1, length do
-		values[index] = mem8[reader.pos]
-		reader.pos = reader.pos + 1
+		values[index] = *source
+		source = source + 1
 	end
+	reader.pos = source
 	return values
 end
 
@@ -171,7 +176,8 @@ function bin.decode_with_props(addr, prop_names, label)
 end
 
 function bin.read_metadata_prop_names(addr)
-	local count<const> = mem[addr + 8]
+	local header<const>: *word = addr
+	local count<const> = header[2]
 	local reader<const> = new_reader(addr + metadata_header_size, 'ROM metadata')
 	local names<const> = {}
 	for index = 1, count do

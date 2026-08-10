@@ -62,6 +62,7 @@ import { requireExtensionPatternRule } from './require_lua_extension_pattern';
 import { branchUninitializedLocalPatternRule } from './branch_uninitialized_local_pattern';
 import { forbiddenRenderWrapperCallPatternRule } from './forbidden_render_wrapper_call_pattern';
 import { forbiddenRenderModuleRequirePatternRule } from './forbidden_render_module_require_pattern';
+import { deprecatedMemoryAccessPatternRule } from './deprecated_memory_access_pattern';
 
 export { ensurePatternRule };
 export { syntaxErrorPatternRule };
@@ -126,6 +127,7 @@ export { requireExtensionPatternRule };
 export { branchUninitializedLocalPatternRule };
 export { forbiddenRenderWrapperCallPatternRule };
 export { forbiddenRenderModuleRequirePatternRule };
+export { deprecatedMemoryAccessPatternRule };
 
 export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	ensurePatternRule,
@@ -191,5 +193,6 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	branchUninitializedLocalPatternRule,
 	forbiddenRenderWrapperCallPatternRule,
 	forbiddenRenderModuleRequirePatternRule,
+	deprecatedMemoryAccessPatternRule,
 ] as const;
 export const CART_ONLY_LINT_RULES = ruleNames(CART_ONLY_LINT_RULE_DEFINITIONS);

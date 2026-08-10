@@ -7,6 +7,22 @@ local romdir<const> = {}
 local toc_header_size<const> = 48
 local toc_entry_size<const> = 88
 local toc_invalid_u32<const> = 0xffffffff
+local rom_header_toc_index<const> = 4
+local rom_header_metadata_index<const> = 16
+local rom_header_metadata_length_index<const> = 17
+local toc_header_entry_count_index<const> = 3
+local toc_entry_token_lo_index<const> = 0
+local toc_entry_token_hi_index<const> = 1
+local toc_entry_kind_index<const> = 2
+local toc_entry_op_index<const> = 3
+local toc_entry_resid_index<const> = 4
+local toc_entry_resid_length_index<const> = 5
+local toc_entry_data_start_index<const> = 10
+local toc_entry_data_end_index<const> = 11
+local toc_entry_metadata_start_index<const> = 14
+local toc_entry_metadata_end_index<const> = 15
+local toc_entry_collision_start_index<const> = 18
+local toc_entry_collision_end_index<const> = 19
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
 local u32_mod<const> = 0x100000000
@@ -35,11 +51,12 @@ local kind_name_by_id<const> = {
 }
 
 local read_header<const> = function(rom_base)
+	local header<const>: *word = rom_base
 	return {
 		rom_base = rom_base,
-		toc_off = mem[rom_base + 16],
-		metadata_off = mem[rom_base + 64],
-		metadata_len = mem[rom_base + 68],
+		toc_off = header[rom_header_toc_index],
+		metadata_off = header[rom_header_metadata_index],
+		metadata_len = header[rom_header_metadata_length_index],
 	}
 end
 
@@ -68,13 +85,13 @@ local read_toc_string<const> = function(toc_base, string_table_offset, offset, l
 	if length == 0 then
 		return ''
 	end
-	local source<const> = toc_base + string_table_offset + offset
+	local source<const>: *u8 = toc_base + string_table_offset + offset
 	local out<const> = {}
 	local chunk<const> = {}
 	local chunk_len = 0
 	for index = 0, length - 1 do
 		chunk_len = chunk_len + 1
-		chunk[chunk_len] = mem8[source + index]
+		chunk[chunk_len] = source[index]
 		if chunk_len == 256 then
 			out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
 			chunk_len = 0
@@ -98,7 +115,8 @@ end
 local parse_rom<const> = function(header)
 	parse_metadata_header(header)
 	local toc_base<const> = header.rom_base + header.toc_off
-	local entry_count<const> = mem[toc_base + 12]
+	local toc<const>: *word = toc_base
+	local entry_count<const> = toc[toc_header_entry_count_index]
 	local string_table_offset<const> = toc_header_size + entry_count * toc_entry_size
 
 	local rom<const> = {
@@ -108,18 +126,37 @@ local parse_rom<const> = function(header)
 	}
 	for index = 0, entry_count - 1 do
 		local entry_base<const> = toc_base + toc_header_size + index * toc_entry_size
-		local payload_addr<const>, payload_len<const> = entry_span(header.rom_base, mem[entry_base + 40], mem[entry_base + 44])
-		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(header.rom_base, mem[entry_base + 56], mem[entry_base + 60])
-		local collision_addr<const> = entry_span(header.rom_base, mem[entry_base + 72], mem[entry_base + 76])
-		local id<const> = read_toc_string(toc_base, string_table_offset, mem[entry_base + 16], mem[entry_base + 20])
+		local packed_entry<const>: *word = entry_base
+		local payload_addr<const>, payload_len<const> = entry_span(
+			header.rom_base,
+			packed_entry[toc_entry_data_start_index],
+			packed_entry[toc_entry_data_end_index]
+		)
+		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(
+			header.rom_base,
+			packed_entry[toc_entry_metadata_start_index],
+			packed_entry[toc_entry_metadata_end_index]
+		)
+		local collision_addr<const> = entry_span(
+			header.rom_base,
+			packed_entry[toc_entry_collision_start_index],
+			packed_entry[toc_entry_collision_end_index]
+		)
+		local id<const> = read_toc_string(
+			toc_base,
+			string_table_offset,
+			packed_entry[toc_entry_resid_index],
+			packed_entry[toc_entry_resid_length_index]
+		)
+		local kind<const> = packed_entry[toc_entry_kind_index]
 		local entry<const> = {
 			id = id,
-			token_lo = mem[entry_base],
-			token_hi = mem[entry_base + 4],
-			kind = mem[entry_base + 8],
-			op = mem[entry_base + 12],
+			token_lo = packed_entry[toc_entry_token_lo_index],
+			token_hi = packed_entry[toc_entry_token_hi_index],
+			kind = kind,
+			op = packed_entry[toc_entry_op_index],
 			rom = rom,
-			type = kind_name_by_id[mem[entry_base + 8]],
+			type = kind_name_by_id[kind],
 			addr = payload_addr,
 			len = payload_len,
 			meta_start = meta_start,
