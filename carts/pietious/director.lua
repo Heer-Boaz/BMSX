@@ -96,7 +96,7 @@ end
 function director:set_active_space(space_id)
 	world:set_space(space_id)
 	self:set_space(space_id)
-	world:get('ui'):set_space(space_id)
+	self.ui:set_space(space_id)
 end
 
 -- disable-next-line single_line_method_pattern -- named director state hook enters this transition from data-driven flow.

@@ -61,8 +61,7 @@ local irq_mask_register<const>: *word = 0x08000008
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
 
-local grant_starting_loadout<const> = function()
-	local player<const> = world:get('pietolon')
+local grant_starting_loadout<const> = function(player, castle)
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -74,7 +73,6 @@ local grant_starting_loadout<const> = function()
 	player:equip_subweapon('pepernoot')
 	player.weapon_level = hud_weapon_level
 	player:emit_weapon_changed()
-	local castle<const> = world:get('c')
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)
@@ -83,24 +81,39 @@ end
 local create_world<const> = function(director_boot_mode)
 	world:clear()
 
-	local c<const> = world:spawn('castle', { id = 'c', })
-
-	world:spawn('room', { id = 'room', })
-
-	world:spawn('player', {
+	local castle<const> = world:spawn('castle', { id = 'c', })
+	local room<const> = world:spawn('room', { id = 'room', castle = castle, })
+	castle.room = room
+	local player<const> = world:spawn('player', {
 		id = 'pietolon',
+		castle = castle,
+		room = room,
 		pos = { x = player_start_x, y = player_start_y, z = 140 },
 	})
-	grant_starting_loadout()
-	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
+	room.player = player
+	grant_starting_loadout(player, castle)
+	castle:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
 
 	world:spawn('transition', { id = 'transition', space_id = 'transition', })
 	world:spawn('shrine', { id = 'shrine', space_id = 'shrine', })
 	world:spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
-	world:spawn('item_screen', { id = 'item_screen', space_id = 'item', })
-	world:spawn('ui', { id = 'ui', pos = { z = draw_z_hud }, })
+	world:spawn('item_screen', {
+		id = 'item_screen',
+		space_id = 'item',
+		castle = castle,
+		room = room,
+		player = player,
+	})
+	local ui<const> = world:spawn('ui', { id = 'ui', player = player, pos = { z = draw_z_hud }, })
 	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
-	world:spawn('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
+	local director<const> = world:spawn('director', {
+		id = 'd',
+		boot_mode = director_boot_mode,
+		ui = ui,
+		pos = { z = draw_z_director_effect },
+	})
+	player.director = director
+	room.director = director
 end
 
 function new_game()

@@ -6,7 +6,6 @@ local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
 
@@ -94,8 +93,8 @@ function item_screen:item_position_px(item_type)
 end
 
 function item_screen:draw_inventory_items(draw)
-	local player<const> = world:get('pietolon')
-	local world_number<const> = world:get('room').world_number
+	local player<const> = self.player
+	local world_number<const> = self.room.world_number
 	for i = 1, #inventory_item_order do
 		local item_type<const> = inventory_item_order[i]
 		if player.inventory_items[item_type] then
@@ -117,8 +116,8 @@ function item_screen:draw_secondary_weapon_selector(draw)
 end
 
 function item_screen:draw_map(draw)
-	local player<const> = world:get('pietolon')
-	local room<const> = world:get('room')
+	local player<const> = self.player
+	local room<const> = self.room
 	local world_number<const> = room.world_number
 	if world_number <= 0 then
 		return
@@ -134,7 +133,7 @@ function item_screen:draw_map(draw)
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
 		local source
-		if self.map_highlight and proxy.room_number == world:get('c').current_room_number then
+		if self.map_highlight and proxy.room_number == self.castle.current_room_number then
 			source = sources.room_proxy_red
 		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
 			source = sources.room_proxy_blue
@@ -148,7 +147,7 @@ function item_screen:draw_map(draw)
 end
 
 function item_screen:apply_selected_secondary_weapon()
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local selected_weapon<const> = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
 	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
@@ -156,7 +155,7 @@ function item_screen:apply_selected_secondary_weapon()
 end
 
 function item_screen:shift_secondary_weapon_selection(direction)
-	local player<const> = world:get('pietolon')
+	local player<const> = self.player
 	local previous_index<const> = self.secondary_weapon_selection_index
 	if direction > 0 then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do

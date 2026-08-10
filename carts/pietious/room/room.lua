@@ -599,7 +599,7 @@ function room_object:patch_rows(rows)
 end
 
 function room_object:apply_progression_command(command)
-	if command.room_number ~= nil and command.room_number ~= world:get('c').current_room_number then
+	if command.room_number ~= nil and command.room_number ~= self.castle.current_room_number then
 		return false
 	end
 	if command.op == 'room.patch_rows' then
@@ -680,9 +680,9 @@ function room_object:collision_flags_at_tile(tx, ty, include_elevator)
 end
 
 function room_object:overlaps_active_elevator(x, y, w, h)
-	local elevator_count<const> = world:get('c').elevator_count
-	for i = 1, elevator_count do
-		local platform<const> = world:get('e.p' .. tostring(i))
+	local elevators<const> = self.castle.elevators
+	for i = 1, #elevators do
+		local platform<const> = elevators[i]
 		if platform.current_room_number == self.room_number
 			and rect_overlaps(x, y, w, h, platform.x, platform.y, room_tile_size4, room_tile_size2)
 		then
@@ -836,7 +836,7 @@ function room_object:find_near_lithograph(player)
 end
 
 function room_object:switch_room(direction)
-	local from_room_number<const> = world:get('c').current_room_number
+	local from_room_number<const> = self.castle.current_room_number
 	local target_room_number<const> = self.room_links[direction]
 
 	if target_room_number < 0 then
@@ -1009,7 +1009,7 @@ function room_object:render_room(draw)
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
-	local director<const> = world:get('d')
+	local director<const> = self.director
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
@@ -1020,7 +1020,7 @@ end
 local room_runtime_state_name<const> = function(room_state)
 	local world_number<const> = room_state.world_number or 0
 	if world_number ~= 0 then
-		local castle<const> = world:get('c')
+		local castle<const> = room_state.castle
 		if castle:has_tag('c.daemon.fight') then
 			return 'daemon_fight'
 		end

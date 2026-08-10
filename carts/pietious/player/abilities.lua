@@ -53,7 +53,7 @@ actioneffects.register_effect('pepernoot', {
 		return true
 	end,
 	handler = function(owner)
-		local room<const> = world:get('room')
+		local room<const> = owner.room
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
@@ -62,7 +62,7 @@ actioneffects.register_effect('pepernoot', {
 		world:spawn('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
-			room_number = world:get('c').current_room_number,
+			room_number = owner.castle.current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
@@ -76,10 +76,10 @@ actioneffects.register_effect('pepernoot', {
 actioneffects.register_effect('spyglass', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(owner)
-		return world:get('room'):find_near_lithograph(owner) ~= nil
+		return owner.room:find_near_lithograph(owner) ~= nil
 	end,
 	handler = function(owner)
-		local lithograph<const> = world:get('room'):find_near_lithograph(owner)
+		local lithograph<const> = owner.room:find_near_lithograph(owner)
 		owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
@@ -89,7 +89,7 @@ actioneffects.register_effect('spyglass', {
 actioneffects.register_effect('halo', {
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(owner)
-		local castle<const> = world:get('c')
+		local castle<const> = owner.castle
 		if not owner.inventory_items.halo then
 			return false
 		end
@@ -99,8 +99,8 @@ actioneffects.register_effect('halo', {
 		return true
 	end,
 	handler = function(owner)
-		local castle<const> = world:get('c')
-		local from_world<const> = (world:get('room').world_number or 0) ~= 0
+		local castle<const> = owner.castle
+		local from_world<const> = (owner.room.world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			owner:begin_waiting_halo_banner()

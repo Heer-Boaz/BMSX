@@ -33,7 +33,7 @@ local spawn_lithographs<const> = function(room)
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 10 },
 				text = def.text,
-				room_number = world:get('c').current_room_number,
+				room_number = room.castle.current_room_number,
 				rs_room_number = room.room_number,
 			})
 			obj:add_tag('rs')
@@ -75,7 +75,7 @@ local spawn_draaideuren<const> = function(room)
 end
 
 local spawn_world_entrances<const> = function(room)
-	local castle<const> = world:get('c')
+	local castle<const> = room.castle
 	for i = 1, #room.world_entrances do
 		local def<const> = room.world_entrances[i]
 		local existing<const> = world:get(def.id)
@@ -94,8 +94,8 @@ local spawn_world_entrances<const> = function(room)
 end
 
 local spawn_items<const> = function(room)
-	local castle<const> = world:get('c')
-	local player<const> = world:get('pietolon')
+	local castle<const> = room.castle
+	local player<const> = room.player
 	for i = 1, #room.items do
 		local def<const> = room.items[i]
 		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
@@ -125,7 +125,7 @@ local spawn_items<const> = function(room)
 end
 
 local spawn_enemies<const> = function(room)
-	local castle<const> = world:get('c')
+	local castle<const> = room.castle
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
@@ -162,8 +162,8 @@ local spawn_enemies<const> = function(room)
 end
 
 local spawn_destroyed_rock_inventory_items<const> = function(room)
-	local castle<const> = world:get('c')
-	local player<const> = world:get('pietolon')
+	local castle<const> = room.castle
+	local player<const> = room.player
 	for i = 1, #room.inventory_rocks do
 		local def<const> = room.inventory_rocks[i]
 		local item_type<const> = def.item_type
