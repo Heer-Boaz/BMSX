@@ -12,6 +12,7 @@ rodata transfer_source: word[4] = {
 bss transfer_result: word[4]
 
 local irq_mask<const>: *word = 0x08000008
+local apu_status<const>: *word = 0x08000178
 local cart_select<const>: *word = 0x0801041c
 local cart_status<const>: *word = 0x08010420
 local slot0_board<const>: *word = 0x08010424
@@ -26,6 +27,7 @@ local cart_ram_probe<const>: *word = 0x30000000
 local cart_replay_step<const>: *word = 0x30000004
 local cart_rom<const>: *u32 = 0x10000000
 local cart_blua32_image_index<const> = 8
+local apu_status_transfer_busy<const> = 0x00000400
 local irq_dma0_done<const> = 0x00000001
 local irq_cartridge_slot1<const> = 0x00000400
 local mailbox_control_irq_trigger<const> = 0x00000001
@@ -76,6 +78,8 @@ local upload_sequence<const> = dma_completion_count
 apu.upload(&transfer_source, 0, 4)
 while dma_completion_count == upload_sequence do
 	halt_until_irq
+end
+while (*apu_status & apu_status_transfer_busy) ~= 0 do
 end
 local download_sequence<const> = dma_completion_count
 apu.download(&transfer_result, 0, 4)
