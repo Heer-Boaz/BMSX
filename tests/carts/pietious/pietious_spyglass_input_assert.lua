@@ -1,6 +1,6 @@
 local world<const> = require('cartlib/world/world')
 local registry<const> = require('cartlib/registry')
-local player_abilities<const> = require('player/abilities')
+local player_actioneffects<const> = require('player/actioneffects')
 
 __bmsx_host_test = __bmsx_host_test or {
 	phase = 'boot',
@@ -29,8 +29,8 @@ function __bmsx_host_test.update(_frame, _current_music)
 			return false
 		end
 		player:equip_subweapon('spyglass')
-		assert(player:has_tag(player_abilities.equip_tags.spyglass), 'spyglass tag missing')
-		assert(not player:has_tag(player_abilities.equip_tags.pepernoot), 'pepernoot tag survived spyglass selection')
+		assert(player:has_tag(player_actioneffects.equip_tags.spyglass), 'spyglass tag missing')
+		assert(not player:has_tag(player_actioneffects.equip_tags.pepernoot), 'pepernoot tag survived spyglass selection')
 		test.phase = 'press'
 		return false
 	end

@@ -2,38 +2,26 @@ local world<const> = require('cartlib/world/world')
 require('constants')
 local actioneffects<const> = require('cartlib/actioneffects')
 
-local player_abilities<const> = {}
+local player_actioneffects<const> = {}
 
-player_abilities.tags = {
+player_actioneffects.tags = {
 	sword_activation_allowed = 'g.sa',
 	stairs_action_allowed = 'g.saa',
 }
 
-player_abilities.equip_tags = {
+player_actioneffects.equip_tags = {
 	pepernoot = 'eq.pn',
 	spyglass = 'eq.spy',
 }
 
-player_abilities.command_ids = {
-	activate_sword = 'cmd.ability.activate.sword',
+player_actioneffects.command_ids = {
+	activate_sword = 'cmd.actioneffect.activate.sword',
 }
-
-function player_abilities.activate_sword(owner)
-	if not owner:has_tag(player_abilities.tags.sword_activation_allowed) then
-		return false
-	end
-	if owner.sword_cooldown > 0 then
-		return false
-	end
-	owner.timelines:seek('p.seq.s', 0)
-	owner.events:emit('sword_start')
-	return true
-end
 
 actioneffects.register_effect('pepernoot', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(owner)
-		if not owner:has_tag(player_abilities.tags.stairs_action_allowed) then
+		if not owner:has_tag(player_actioneffects.tags.stairs_action_allowed) then
 			return false
 		end
 		local live_count = 0
@@ -113,7 +101,7 @@ actioneffects.register_effect('halo', {
 	end,
 })
 
-function player_abilities.build_input_actioneffect_program()
+function player_actioneffects.build_input_actioneffect_program()
 	return {
 		eval = 'all',
 		bindings = {
@@ -121,7 +109,7 @@ function player_abilities.build_input_actioneffect_program()
 				name = 'pepernoot',
 				when = {
 					mode = {
-						tag = player_abilities.equip_tags.pepernoot,
+						tag = player_actioneffects.equip_tags.pepernoot,
 					},
 				},
 				on = { press = 'b[jp]' },
@@ -135,7 +123,7 @@ function player_abilities.build_input_actioneffect_program()
 				name = 'spyglass',
 				when = {
 					mode = {
-						tag = player_abilities.equip_tags.spyglass,
+						tag = player_actioneffects.equip_tags.spyglass,
 					},
 				},
 				on = { press = 'b[jp]' },
@@ -151,7 +139,7 @@ function player_abilities.build_input_actioneffect_program()
 				go = {
 					press = {
 						['dispatch.command'] = {
-							event = player_abilities.command_ids.activate_sword,
+							event = player_actioneffects.command_ids.activate_sword,
 						},
 					},
 				},
@@ -160,17 +148,4 @@ function player_abilities.build_input_actioneffect_program()
 	}
 end
 
-function player_abilities.attach_player_methods(player)
-	function player:equip_subweapon(id)
-		local next_id<const> = id
-		self:remove_tag(player_abilities.equip_tags.pepernoot)
-		self:remove_tag(player_abilities.equip_tags.spyglass)
-		self.secondary_weapon = next_id
-		local grant_tag<const> = player_abilities.equip_tags[next_id or 'none']
-		if grant_tag ~= nil then
-			self:add_tag(grant_tag)
-		end
-	end
-end
-
-return player_abilities
+return player_actioneffects

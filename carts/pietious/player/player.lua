@@ -91,7 +91,7 @@ local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/ac
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local collision2d<const> = require('cartlib/collision/collision2d')
-local player_abilities<const> = require('player/abilities')
+local player_actioneffects<const> = require('player/actioneffects')
 
 local input<const> = require('cartlib/input/input')
 
@@ -135,8 +135,8 @@ local state_tags<const> = {
 	group = {
 		stairs = 'g.st',
 		sword = 'g.sw',
-		sword_activation_allowed = player_abilities.tags.sword_activation_allowed,
-		stairs_action_allowed = player_abilities.tags.stairs_action_allowed,
+		sword_activation_allowed = player_actioneffects.tags.sword_activation_allowed,
+		stairs_action_allowed = player_actioneffects.tags.stairs_action_allowed,
 		damage_lock = 'g.dl',
 		transition_lock = 'g.tr',
 		damage_visual = 'g.dv',
@@ -157,7 +157,27 @@ local state_tags<const> = {
 	},
 }
 
-player_abilities.attach_player_methods(player)
+function player:equip_subweapon(id)
+	self:remove_tag(player_actioneffects.equip_tags.pepernoot)
+	self:remove_tag(player_actioneffects.equip_tags.spyglass)
+	self.secondary_weapon = id
+	local grant_tag<const> = player_actioneffects.equip_tags[id or 'none']
+	if grant_tag ~= nil then
+		self:add_tag(grant_tag)
+	end
+end
+
+function player:activate_sword()
+	if not self:has_tag(player_actioneffects.tags.sword_activation_allowed) then
+		return false
+	end
+	if self.sword_cooldown > 0 then
+		return false
+	end
+	self.timelines:seek('p.seq.s', 0)
+	self.events:emit('sword_start')
+	return true
+end
 
 local player_hit_fall_frames<const> = {
 	{ imgid = 'pietolon_hit_r' },
@@ -365,7 +385,7 @@ function player:ctor()
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
 	self:add_component(inputactioneffectcomponent.new({
-		program = player_abilities.build_input_actioneffect_program(),
+		program = player_actioneffects.build_input_actioneffect_program(),
 	}))
 	self:set_imgid('pietolon_stand_r')
 	self.width = player_width
@@ -3132,8 +3152,8 @@ local define_player_fsm<const> = function()
 		-- 'seal_dissolution' → /freeze: entered on seal break, restores via
 		-- pop_and_transition() on 'seal_flash_done' (see freeze state above).
 		on = {
-			[player_abilities.command_ids.activate_sword] = function(self)
-				player_abilities.activate_sword(self)
+			[player_actioneffects.command_ids.activate_sword] = function(self)
+				self:activate_sword()
 			end,
 			['player.world_emerge'] = {
 				emitter = 'd',

@@ -11,7 +11,7 @@ local customvisualcomponent<const> = require('cartlib/component/customvisualcomp
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 require('constants')
-local player_abilities<const> = require('player/abilities')
+local player_actioneffects<const> = require('player/actioneffects')
 
 local player<const> = {}
 player.__index = player
@@ -679,7 +679,7 @@ function player:update_runtime()
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
-		self.actioneffects:trigger(player_abilities.effect_ids.fire_salvo)
+		self.actioneffects:trigger(player_actioneffects.effect_ids.fire_salvo)
 	end
 	self:update_weapons()
 	self:emit_metric()
@@ -825,7 +825,7 @@ local register_player_definition<const> = function()
 			customvisualcomponent.new,
 			timelinecomponent.new,
 			fsmcomponent.factory({ ids_player_fsm }),
-			actioneffectcomponent.factory({ player_abilities.effect_ids.fire_salvo }),
+			actioneffectcomponent.factory({ player_actioneffects.effect_ids.fire_salvo }),
 		},
 		defaults = {
 			player_index = 1,
