@@ -16,6 +16,20 @@ local opcode_by_binary_operator<const> = {
 	[syntax.binary_modulus] = isa.op_mod,
 }
 
+local opcode_by_comparison_operator<const> = {
+	[syntax.binary_equal] = isa.op_eq,
+	[syntax.binary_not_equal] = isa.op_eq,
+	[syntax.binary_less] = isa.op_lt,
+	[syntax.binary_less_equal] = isa.op_le,
+	[syntax.binary_greater] = isa.op_lt,
+	[syntax.binary_greater_equal] = isa.op_le,
+}
+
+local opcode_by_unary_operator<const> = {
+	[syntax.unary_negate] = isa.op_unm,
+	[syntax.unary_not] = isa.op_not,
+}
+
 local constant_register<const> = function(parameter_count, const_index)
 	return parameter_count + const_index - first_value_pool_index
 end
@@ -375,12 +389,84 @@ local emit_call_expression<const> = function(
 	return target
 end
 
+local emit_comparison_expression<const> = function(
+	state,
+	instruction_words,
+	expression,
+	target
+)
+	local temporary_base<const> = state.free_register
+	local left_register = emit_value(
+		state,
+		instruction_words,
+		expression.left,
+		target
+	)
+	local right_target = target
+	if left_register == target then
+		right_target = reserve_register(state)
+	end
+	local right_register = emit_value(
+		state,
+		instruction_words,
+		expression.right,
+		right_target
+	)
+	if left_register == target then
+		local copy_register<const> = reserve_register(state)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			copy_register,
+			left_register,
+			0
+		)
+		left_register = copy_register
+	end
+	if right_register == target then
+		local copy_register<const> = reserve_register(state)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			copy_register,
+			right_register,
+			0
+		)
+		right_register = copy_register
+	end
+	local operator<const> = expression.operator
+	if operator == syntax.binary_greater
+		or operator == syntax.binary_greater_equal then
+		left_register, right_register = right_register, left_register
+	end
+	bytecode.emit_abc(instruction_words, isa.op_kfalse, target, 0, 0)
+	bytecode.emit_abc(
+		instruction_words,
+		opcode_by_comparison_operator[operator],
+		operator == syntax.binary_not_equal and 0 or 1,
+		left_register,
+		right_register
+	)
+	bytecode.emit_abc(instruction_words, isa.op_ktrue, target, 0, 0)
+	state.free_register = temporary_base
+	return target
+end
+
 local emit_binary_expression<const> = function(
 	state,
 	instruction_words,
 	expression,
 	target
 )
+	local opcode<const> = opcode_by_binary_operator[expression.operator]
+	if opcode == nil then
+		return emit_comparison_expression(
+			state,
+			instruction_words,
+			expression,
+			target
+		)
+	end
 	local left_register<const> = emit_value(
 		state,
 		instruction_words,
@@ -399,7 +485,7 @@ local emit_binary_expression<const> = function(
 	)
 	bytecode.emit_abc(
 		instruction_words,
-		opcode_by_binary_operator[expression.operator],
+		opcode,
 		target,
 		left_register,
 		right_register
@@ -448,7 +534,7 @@ emit_value = function(
 		)
 		bytecode.emit_abc(
 			instruction_words,
-			isa.op_unm,
+			opcode_by_unary_operator[expression.operator],
 			target,
 			operand_register,
 			0

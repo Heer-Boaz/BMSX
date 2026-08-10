@@ -25,6 +25,9 @@ local ascii_dot<const> = 46
 local ascii_slash<const> = 47
 local ascii_digit_0<const> = 48
 local ascii_digit_9<const> = 57
+local ascii_less<const> = 60
+local ascii_equal<const> = 61
+local ascii_greater<const> = 62
 local ascii_upper_a<const> = 65
 local ascii_upper_e<const> = 69
 local ascii_upper_f<const> = 70
@@ -42,6 +45,7 @@ local ascii_lower_t<const> = 116
 local ascii_lower_v<const> = 118
 local ascii_lower_x<const> = 120
 local ascii_lower_z<const> = 122
+local ascii_tilde<const> = 126
 
 local is_digit<const> = function(code)
 	return code >= ascii_digit_0 and code <= ascii_digit_9
@@ -341,6 +345,23 @@ function lexer.next(state)
 		advance(state)
 		state.token_kind = token.floor_divide
 		return
+	end
+	if state.current_code == ascii_equal then
+		local combined_kind
+		if code == ascii_equal then
+			combined_kind = token.equal_equal
+		elseif code == ascii_tilde then
+			combined_kind = token.not_equal
+		elseif code == ascii_less then
+			combined_kind = token.less_equal
+		elseif code == ascii_greater then
+			combined_kind = token.greater_equal
+		end
+		if combined_kind ~= nil then
+			advance(state)
+			state.token_kind = combined_kind
+			return
+		end
 	end
 	local kind<const> = single_character_by_code[code]
 	if kind ~= nil then

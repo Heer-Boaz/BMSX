@@ -98,6 +98,12 @@ return function(target, frame)
 	local scaled = scale(frame["left"] + 1, 3)
 	scaled = scaled + 2
 	target["called"] = scaled
+	target["less"] = frame["left"] < scaled
+	target["equal"] = scaled == 26
+	target["not_equal"] = scaled ~= 26
+	target["greater"] = scaled > frame["right"]
+	target["greater_equal"] = scaled >= frame["right"]
+	target["not_less"] = not target["less"]
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
@@ -133,6 +139,10 @@ end;
 	assert(loaded_target.dynamic == 9, 'load dynamic table index mismatch')
 	assert(loaded_target.called == 26, 'load local assignment mismatch')
 	assert(loaded_result == 26, 'load explicit return mismatch')
+	assert(loaded_target.less and loaded_target.equal, 'load comparison mismatch')
+	assert(not loaded_target.not_equal, 'load not-equal comparison mismatch')
+	assert(loaded_target.greater and loaded_target.greater_equal, 'load reversed comparison mismatch')
+	assert(not loaded_target.not_less, 'load unary not mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')

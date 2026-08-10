@@ -130,10 +130,17 @@ bind_value = function(state, expression)
 		end
 		return
 	end
-	if kind == syntax.unary_expression
-		and expression.operator == syntax.unary_negate
-		and expression.operand.kind ~= syntax.number_literal_expression then
-		bind_value(state, expression.operand)
+	if kind == syntax.unary_expression then
+		local operator<const> = expression.operator
+		local operand_kind<const> = expression.operand.kind
+		if (operator == syntax.unary_negate
+				and operand_kind == syntax.number_literal_expression)
+			or (operator == syntax.unary_string_id
+				and operand_kind == syntax.string_literal_expression) then
+			expression.constant_value = literal_value(state, expression)
+		else
+			bind_value(state, expression.operand)
+		end
 		return
 	end
 	expression.constant_value = literal_value(

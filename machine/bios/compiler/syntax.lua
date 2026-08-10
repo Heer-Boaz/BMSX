@@ -18,6 +18,7 @@ local syntax<const> = {
 
 	unary_negate = 1,
 	unary_string_id = 2,
+	unary_not = 3,
 
 	binary_add = 1,
 	binary_subtract = 2,
@@ -25,6 +26,12 @@ local syntax<const> = {
 	binary_divide = 4,
 	binary_floor_divide = 5,
 	binary_modulus = 6,
+	binary_equal = 7,
+	binary_not_equal = 8,
+	binary_less = 9,
+	binary_less_equal = 10,
+	binary_greater = 11,
+	binary_greater_equal = 12,
 }
 
 return syntax
