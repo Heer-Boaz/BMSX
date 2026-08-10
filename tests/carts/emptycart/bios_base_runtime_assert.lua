@@ -72,8 +72,13 @@ function __bmsx_host_test.setup()
 	local error_ok<const>, error_value<const> = pcall(error, 'vm-error')
 	assert(not error_ok and error_value == 'vm-error', 'error/pcall mismatch')
 
+	local load_touch_count = 0
 	local load_environment<const> = {
 		scale = function(value, factor) return value * factor end,
+		touch = function(value)
+			load_touch_count = load_touch_count + 1
+			return value
+		end,
 	}
 	local chunk<const>, load_error<const> = load([=[
 return function(target, frame)
@@ -104,6 +109,10 @@ return function(target, frame)
 	target["greater"] = scaled > frame["right"]
 	target["greater_equal"] = scaled >= frame["right"]
 	target["not_less"] = not target["less"]
+	target["and_value"] = frame["left"] and touch(frame["right"])
+	target["and_short"] = frame["missing"] and touch(100)
+	target["or_value"] = frame["missing"] or frame["right"]
+	target["or_short"] = frame["left"] or touch(200)
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
@@ -143,6 +152,9 @@ end;
 	assert(not loaded_target.not_equal, 'load not-equal comparison mismatch')
 	assert(loaded_target.greater and loaded_target.greater_equal, 'load reversed comparison mismatch')
 	assert(not loaded_target.not_less, 'load unary not mismatch')
+	assert(loaded_target.and_value == 20 and loaded_target.and_short == nil, 'load and value mismatch')
+	assert(loaded_target.or_value == 20 and loaded_target.or_short == 7, 'load or value mismatch')
+	assert(load_touch_count == 1, 'load logical expression did not short circuit')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')

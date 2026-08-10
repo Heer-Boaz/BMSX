@@ -337,6 +337,62 @@ emit_path = function(state, instruction_words, expression, target)
 	return target
 end
 
+local emit_logical_expression<const> = function(
+	state,
+	instruction_words,
+	expression,
+	target
+)
+	local left_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.left,
+		target
+	)
+	if left_register ~= target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			left_register,
+			0
+		)
+	end
+	local operator<const> = expression.operator
+	local jump_opcode<const> = operator == syntax.binary_and
+		and isa.op_jmpifnot
+		or isa.op_jmpif
+	local jump_index<const> = bytecode.emit_signed_abx(
+		instruction_words,
+		jump_opcode,
+		target,
+		0
+	)
+	local right_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.right,
+		target
+	)
+	if right_register ~= target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			right_register,
+			0
+		)
+	end
+	bytecode.patch_branch(
+		instruction_words,
+		jump_index,
+		jump_opcode,
+		target,
+		#instruction_words - jump_index
+	)
+	return target
+end
+
 local emit_call_expression<const> = function(
 	state,
 	instruction_words,
@@ -458,7 +514,16 @@ local emit_binary_expression<const> = function(
 	expression,
 	target
 )
-	local opcode<const> = opcode_by_binary_operator[expression.operator]
+	local operator<const> = expression.operator
+	if operator == syntax.binary_and or operator == syntax.binary_or then
+		return emit_logical_expression(
+			state,
+			instruction_words,
+			expression,
+			target
+		)
+	end
+	local opcode<const> = opcode_by_binary_operator[operator]
 	if opcode == nil then
 		return emit_comparison_expression(
 			state,

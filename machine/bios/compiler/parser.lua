@@ -62,6 +62,8 @@ local parse_unary_expression
 local parse_multiplicative_expression
 local parse_additive_expression
 local parse_comparison_expression
+local parse_and_expression
+local parse_or_expression
 
 local additive_operator_by_token<const> = {
 	[token.plus] = syntax.binary_add,
@@ -82,6 +84,14 @@ local comparison_operator_by_token<const> = {
 	[token.less_equal] = syntax.binary_less_equal,
 	[token.greater] = syntax.binary_greater,
 	[token.greater_equal] = syntax.binary_greater_equal,
+}
+
+local and_operator_by_token<const> = {
+	[token.keyword_and] = syntax.binary_and,
+}
+
+local or_operator_by_token<const> = {
+	[token.keyword_or] = syntax.binary_or,
 }
 
 local parse_primary_expression<const> = function(state)
@@ -267,8 +277,24 @@ parse_comparison_expression = function(state)
 	)
 end
 
+parse_and_expression = function(state)
+	return parse_left_associative_expression(
+		state,
+		parse_comparison_expression,
+		and_operator_by_token
+	)
+end
+
+parse_or_expression = function(state)
+	return parse_left_associative_expression(
+		state,
+		parse_and_expression,
+		or_operator_by_token
+	)
+end
+
 parse_expression = function(state)
-	return parse_comparison_expression(state)
+	return parse_or_expression(state)
 end
 
 local parse_assignment_statement<const> = function(state)

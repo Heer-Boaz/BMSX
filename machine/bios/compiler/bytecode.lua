@@ -26,6 +26,35 @@ local pack_word<const> = function(op, a, b, c, ext)
 		| (c & operand_mask)
 end
 
+local write_signed_abx<const> = function(
+	instruction_words,
+	instruction_index,
+	op,
+	a,
+	sbx,
+	has_wide
+)
+	local raw_bx<const> = sbx & (has_wide and wide_bx_mask or base_bx_mask)
+	if has_wide then
+		instruction_words[instruction_index - 1] = pack_word(
+			isa.op_wide,
+			a >> isa.max_operand_bits,
+			raw_bx >> base_bx_bits,
+			0,
+			0
+		)
+	end
+	local bx_low<const> = raw_bx & bx_mask
+	local bx_ext<const> = (raw_bx >> isa.max_bx_bits) & ext_bx_mask
+	instruction_words[instruction_index] = pack_word(
+		op,
+		a,
+		bx_low >> isa.max_operand_bits,
+		bx_low,
+		bx_ext
+	)
+end
+
 function bytecode.emit_abc(instruction_words, op, a, b, c)
 	local a_ext<const> = (a >> isa.max_operand_bits) & ((1 << isa.ext_a_bits) - 1)
 	local b_ext<const> = (b >> isa.max_operand_bits) & ((1 << isa.ext_b_bits) - 1)
@@ -47,28 +76,32 @@ function bytecode.emit_abc(instruction_words, op, a, b, c)
 end
 
 function bytecode.emit_signed_abx(instruction_words, op, a, sbx)
-	local a_wide<const> = a >> isa.max_operand_bits
-	local has_wide<const> = a_wide ~= 0
+	local has_wide<const> = a >> isa.max_operand_bits ~= 0
 		or sbx < -base_sbx_sign_bit
 		or sbx >= base_sbx_sign_bit
-	local raw_bx<const> = sbx & (has_wide and wide_bx_mask or base_bx_mask)
-	if has_wide then
-		instruction_words[#instruction_words + 1] = pack_word(
-			isa.op_wide,
-			a_wide,
-			raw_bx >> base_bx_bits,
-			0,
-			0
-		)
-	end
-	local bx_low<const> = raw_bx & bx_mask
-	local bx_ext<const> = (raw_bx >> isa.max_bx_bits) & ext_bx_mask
-	instruction_words[#instruction_words + 1] = pack_word(
+	local instruction_index<const> = #instruction_words + (has_wide and 2 or 1)
+	write_signed_abx(
+		instruction_words,
+		instruction_index,
 		op,
 		a,
-		bx_low >> isa.max_operand_bits,
-		bx_low,
-		bx_ext
+		sbx,
+		has_wide
+	)
+	return instruction_index
+end
+
+-- Runtime-compiled code lives in the 256 KiB compiler arena, so a branch
+-- displacement always fits the base signed Bx field. A WIDE prefix here can
+-- therefore only belong to the condition register and is already present.
+function bytecode.patch_branch(instruction_words, instruction_index, op, a, sbx)
+	write_signed_abx(
+		instruction_words,
+		instruction_index,
+		op,
+		a,
+		sbx,
+		a >> isa.max_operand_bits ~= 0
 	)
 end
 
