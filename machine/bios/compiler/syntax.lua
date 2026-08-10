@@ -14,6 +14,7 @@ local syntax<const> = {
 	unary_expression = 13,
 	binary_expression = 14,
 	call_expression = 15,
+	local_statement = 16,
 
 	unary_negate = 1,
 	unary_string_id = 2,

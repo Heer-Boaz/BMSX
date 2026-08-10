@@ -264,19 +264,48 @@ local parse_assignment_statement<const> = function(state)
 	}
 end
 
+local parse_local_statement<const> = function(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_local)
+	local name<const>, name_line<const>, name_column<const>
+		= consume_identifier(state)
+	local initializer
+	if match(state, token.equal) then
+		initializer = parse_expression(state)
+	end
+	return {
+		kind = syntax.local_statement,
+		name = identifier_expression(name, name_line, name_column),
+		initializer = initializer,
+		line = line,
+		column = column,
+	}
+end
+
 local parse_return_statement<const> = function(state)
 	local line<const> = state.token_line
 	local column<const> = state.token_column
 	expect(state, token.keyword_return)
+	local expressions<const> = {}
+	local kind<const> = state.token_kind
+	if kind ~= token.semicolon
+		and kind ~= token.keyword_end
+		and kind ~= token.eof then
+		expressions[1] = parse_expression(state)
+	end
 	return {
 		kind = syntax.return_statement,
-		expressions = { parse_expression(state) },
+		expressions = expressions,
 		line = line,
 		column = column,
 	}
 end
 
 parse_statement = function(state)
+	if state.token_kind == token.keyword_local then
+		return parse_local_statement(state)
+	end
 	if state.token_kind == token.keyword_return then
 		return parse_return_statement(state)
 	end

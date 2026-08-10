@@ -21,9 +21,10 @@ local token<const> = {
 	keyword_false = 20,
 	keyword_function = 21,
 	keyword_nil = 22,
-	keyword_return = 23,
-	keyword_true = 24,
-	eof = 25,
+	keyword_local = 23,
+	keyword_return = 24,
+	keyword_true = 25,
+	eof = 26,
 }
 
 token.keyword_by_text = {
@@ -31,6 +32,7 @@ token.keyword_by_text = {
 	['false'] = token.keyword_false,
 	['function'] = token.keyword_function,
 	['nil'] = token.keyword_nil,
+	['local'] = token.keyword_local,
 	['return'] = token.keyword_return,
 	['true'] = token.keyword_true,
 }
@@ -75,6 +77,7 @@ token.name = {
 	[token.keyword_false] = 'false',
 	[token.keyword_function] = 'function',
 	[token.keyword_nil] = 'nil',
+	[token.keyword_local] = 'local',
 	[token.keyword_return] = 'return',
 	[token.keyword_true] = 'true',
 	[token.eof] = 'end of input',

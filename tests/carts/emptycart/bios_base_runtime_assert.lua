@@ -92,15 +92,18 @@ return function(target, frame)
 	target["modulus"] = frame["right"] % 6
 	target["negated"] = -frame["left"]
 	target[frame["output_key"]] = frame["values"][frame["index"] + 1]
-	target["called"] = frame["scale"](frame["left"] + 1, 3)
+	local scaled = frame["scale"](frame["left"] + 1, 3)
+	scaled = scaled + 2
+	target["called"] = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
+	return scaled
 end;
 	]=], 'bios_base_runtime_assert.load', 't')
 	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
 	local apply<const> = chunk()
 	local loaded_target<const> = { visual = {} }
-	apply(loaded_target, {
+	local loaded_result<const> = apply(loaded_target, {
 		visual = { color = 0xff010203 },
 		left = 7,
 		right = 20,
@@ -125,7 +128,8 @@ end;
 	assert(loaded_target.modulus == 2, 'load modulus mismatch')
 	assert(loaded_target.negated == -7, 'load dynamic unary mismatch')
 	assert(loaded_target.dynamic == 9, 'load dynamic table index mismatch')
-	assert(loaded_target.called == 24, 'load call expression mismatch')
+	assert(loaded_target.called == 26, 'load local assignment mismatch')
+	assert(loaded_result == 26, 'load explicit return mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
 	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')

@@ -60,18 +60,28 @@ end
 
 local bind_value
 local bind_path
+local bind_identifier<const> = function(state, expression)
+	local local_slot<const> = state.local_slot_by_name[expression.name]
+	if local_slot ~= nil then
+		expression.local_slot = local_slot
+		return
+	end
+	local register<const> = state.parameter_register_by_name[expression.name]
+	if register ~= nil then
+		expression.parameter_register = register
+		return
+	end
+	fail(
+		state.chunk_name,
+		"unknown local or function parameter '" .. expression.name .. "'",
+		expression
+	)
+end
+
 bind_path = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression then
-		local register<const> = state.parameter_register_by_name[expression.name]
-		if register == nil then
-			fail(
-				state.chunk_name,
-				"unknown function parameter '" .. expression.name .. "'",
-				expression
-			)
-		end
-		expression.parameter_register = register
+		bind_identifier(state, expression)
 		return
 	end
 	if kind == syntax.member_expression then
@@ -129,15 +139,40 @@ bind_value = function(state, expression)
 end
 
 local bind_assignment<const> = function(state, statement)
-	if statement.kind ~= syntax.assignment_statement then
-		fail(state.chunk_name, 'function body only supports assignments', statement)
-	end
 	local target<const> = statement.target
 	bind_path(state, target)
-	if target.kind == syntax.identifier_expression then
-		fail(state.chunk_name, 'direct parameter assignment is unsupported', target)
-	end
 	bind_value(state, statement.value)
+end
+
+local bind_local_statement<const> = function(state, statement)
+	local initializer<const> = statement.initializer
+	if initializer ~= nil then
+		bind_value(state, initializer)
+	end
+	local local_slot<const> = state.local_count
+	state.local_count = local_slot + 1
+	statement.name.local_slot = local_slot
+	state.local_slot_by_name[statement.name.name] = local_slot
+end
+
+local bind_return_statement<const> = function(state, statement)
+	local expressions<const> = statement.expressions
+	for index = 1, #expressions do
+		bind_value(state, expressions[index])
+	end
+end
+
+local bind_statement<const> = function(state, statement)
+	local kind<const> = statement.kind
+	if kind == syntax.assignment_statement then
+		bind_assignment(state, statement)
+	elseif kind == syntax.local_statement then
+		bind_local_statement(state, statement)
+	elseif kind == syntax.return_statement then
+		bind_return_statement(state, statement)
+	else
+		fail(state.chunk_name, 'unsupported function statement', statement)
+	end
 end
 
 function semantic.bind(chunk, chunk_name)
@@ -145,12 +180,20 @@ function semantic.bind(chunk, chunk_name)
 	local state<const> = {
 		chunk_name = chunk_name,
 		parameter_register_by_name = {},
+		local_slot_by_name = {},
+		local_count = 0,
 	}
 	bind_parameters(state, function_expression)
 	local statements<const> = function_expression.body.statements
 	for index = 1, #statements do
-		bind_assignment(state, statements[index])
+		local statement<const> = statements[index]
+		if statement.kind == syntax.return_statement
+			and index ~= #statements then
+			fail(state.chunk_name, 'return must be the final function statement', statement)
+		end
+		bind_statement(state, statement)
 	end
+	function_expression.local_count = state.local_count
 	return function_expression
 end
 
