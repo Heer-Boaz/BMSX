@@ -145,6 +145,26 @@ test('cart lua linter reserves local function declarations for init participants
 	);
 });
 
+test('cart lua linter rejects one-off assignment helpers', async () => {
+	await withCartLintFixture(
+		'cart_lua_linter_single_use_assignment_helper',
+		[
+			'local write_record<const> = function(address, value)',
+			'\trecords[address] = value',
+			'end',
+			'write_record(0x02000000, 1)',
+		].join('\n'),
+		async root => {
+			for (const profile of ['cart', 'bios'] as const) {
+				await assert.rejects(
+					lintCartSources({ roots: [root], profile }),
+					/Small one-off local helper "write_record" is forbidden\./,
+				);
+			}
+		},
+	);
+});
+
 test('cart lua linter rejects newline normalization calls', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_newline_normalization',

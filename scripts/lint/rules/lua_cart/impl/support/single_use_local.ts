@@ -25,21 +25,18 @@ export function isTrivialSingleUseLocalHelperFunctionExpression(expression: Cart
 	if (getRangeLineSpan(expression) > SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES) {
 		return false;
 	}
-	if (expression.parameters.length !== 0) {
-		return false;
-	}
 	const bodyStatements = expression.body.body;
 	if (bodyStatements.length !== 1) {
 		return false;
 	}
 	const onlyStatement = bodyStatements[0];
-	if (onlyStatement.kind !== SyntaxKind.ReturnStatement) {
+	if (onlyStatement.kind === SyntaxKind.AssignmentStatement) {
+		return onlyStatement.left.length === 1 && onlyStatement.right.length === 1;
+	}
+	if (expression.parameters.length !== 0 || onlyStatement.kind !== SyntaxKind.ReturnStatement) {
 		return false;
 	}
-	if (onlyStatement.expressions.length !== 1) {
-		return false;
-	}
-	return true;
+	return onlyStatement.expressions.length === 1;
 }
 
 export function resolveSingleUseLocalReportKindForValue(expression: Expression | undefined): SingleUseLocalReportKind | null {
