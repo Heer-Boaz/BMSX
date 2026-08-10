@@ -7,6 +7,15 @@ local compiler<const> = {}
 local function_address_pool_index<const> = 1
 local first_value_pool_index<const> = 2
 
+local opcode_by_binary_operator<const> = {
+	[syntax.binary_add] = isa.op_add,
+	[syntax.binary_subtract] = isa.op_sub,
+	[syntax.binary_multiply] = isa.op_mul,
+	[syntax.binary_divide] = isa.op_div,
+	[syntax.binary_floor_divide] = isa.op_floor_divide,
+	[syntax.binary_modulus] = isa.op_mod,
+}
+
 local constant_register<const> = function(parameter_count, const_index)
 	return parameter_count + const_index - first_value_pool_index
 end
@@ -25,6 +34,7 @@ local is_number_literal<const> = function(expression)
 		or (
 			expression.kind == syntax.unary_expression
 			and expression.operator == syntax.unary_negate
+			and expression.operand.kind == syntax.number_literal_expression
 		)
 end
 
@@ -58,7 +68,8 @@ prepare_path_operands = function(state, expression)
 	add_constant(state, expression, key_value)
 end
 
-local prepare_value_operands<const> = function(state, expression)
+local prepare_value_operands
+prepare_value_operands = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
@@ -70,6 +81,16 @@ local prepare_value_operands<const> = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
+	if kind == syntax.binary_expression then
+		prepare_value_operands(state, expression.left)
+		prepare_value_operands(state, expression.right)
+		return
+	end
+	if kind == syntax.unary_expression
+		and expression.constant_value == nil then
+		prepare_value_operands(state, expression.operand)
+		return
+	end
 	local value<const> = expression.constant_value
 	if is_number_literal(expression)
 		and value >= isa.min_signed_bx
@@ -77,11 +98,30 @@ local prepare_value_operands<const> = function(state, expression)
 		and value % 1 == 0 then
 		expression.immediate_number = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
-			return true
+			return
 		end
 		return
 	end
 	add_constant(state, expression, value)
+end
+
+local materialize_wide_immediates
+materialize_wide_immediates = function(state, expression)
+	if expression.kind == syntax.binary_expression then
+		materialize_wide_immediates(state, expression.left)
+		materialize_wide_immediates(state, expression.right)
+		return
+	end
+	if expression.kind == syntax.unary_expression
+		and expression.constant_value == nil then
+		materialize_wide_immediates(state, expression.operand)
+		return
+	end
+	local value<const> = expression.immediate_number
+	if value ~= nil and value ~= 0 and value ~= 1 and value ~= -1 then
+		expression.immediate_number = nil
+		add_constant(state, expression, value)
+	end
 end
 
 local prepare_codegen<const> = function(function_expression)
@@ -91,27 +131,31 @@ local prepare_codegen<const> = function(function_expression)
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
-	local has_ksmi_expression = false
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
 		local statement<const> = statements[index]
 		prepare_path_operands(state, statement.target)
-		if prepare_value_operands(state, statement.value) ~= nil then
-			has_ksmi_expression = true
-		end
+		prepare_value_operands(state, statement.value)
 	end
-	local value_register<const> = state.parameter_count + #state.const_pool
-	if has_ksmi_expression and value_register > isa.max_wide_operand then
+	local first_temporary_register<const> = state.parameter_count
+		+ #state.const_pool
+		- function_address_pool_index
+	if first_temporary_register > isa.max_wide_operand then
 		for index = 1, #statements do
-			local expression<const> = statements[index].value
-			local value<const> = expression.immediate_number
-			if value ~= nil and value ~= 0 and value ~= 1 and value ~= -1 then
-				expression.immediate_number = nil
-				add_constant(state, expression, value)
-			end
+			materialize_wide_immediates(state, statements[index].value)
 		end
 	end
 	return state
+end
+
+local reserve_register<const> = function(state)
+	local register<const> = state.free_register
+	local free_register<const> = register + 1
+	state.free_register = free_register
+	if free_register > state.max_stack then
+		state.max_stack = free_register
+	end
+	return register
 end
 
 local emit_path
@@ -149,7 +193,44 @@ emit_path = function(state, instruction_words, expression, target)
 	return target
 end
 
-local emit_value<const> = function(
+local emit_value
+
+local emit_binary_expression<const> = function(
+	state,
+	instruction_words,
+	expression,
+	target
+)
+	local left_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.left,
+		target
+	)
+	local right_target = target
+	if left_register == target then
+		right_target = reserve_register(state)
+	end
+	local right_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.right,
+		right_target
+	)
+	bytecode.emit_abc(
+		instruction_words,
+		opcode_by_binary_operator[expression.operator],
+		target,
+		left_register,
+		right_register
+	)
+	if right_target ~= target then
+		state.free_register = right_target
+	end
+	return target
+end
+
+emit_value = function(
 	state,
 	instruction_words,
 	expression,
@@ -160,6 +241,31 @@ local emit_value<const> = function(
 		or kind == syntax.member_expression
 		or kind == syntax.index_expression then
 		return emit_path(state, instruction_words, expression, target)
+	end
+	if kind == syntax.binary_expression then
+		return emit_binary_expression(
+			state,
+			instruction_words,
+			expression,
+			target
+		)
+	end
+	if kind == syntax.unary_expression
+		and expression.constant_value == nil then
+		local operand_register<const> = emit_value(
+			state,
+			instruction_words,
+			expression.operand,
+			target
+		)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_unm,
+			target,
+			operand_register,
+			0
+		)
+		return target
 	end
 	if kind == syntax.nil_literal_expression then
 		bytecode.emit_abc(instruction_words, isa.op_knil, target, 0, 0)
@@ -200,21 +306,21 @@ local emit_value<const> = function(
 end
 
 local emit_assignment<const> = function(
-	instruction_words,
 	state,
-	statement,
-	scratch_register
+	instruction_words,
+	statement
 )
+	local temporary_base<const> = reserve_register(state)
 	local target<const> = statement.target
 	local target_table_register<const> = emit_path(
 		state,
 		instruction_words,
 		target.base,
-		scratch_register
+		temporary_base
 	)
-	local value_target_register = scratch_register
-	if target_table_register == scratch_register then
-		value_target_register = value_target_register + 1
+	local value_target_register = temporary_base
+	if target_table_register == temporary_base then
+		value_target_register = reserve_register(state)
 	end
 	local assignment_value_register<const> = emit_value(
 		state,
@@ -243,7 +349,7 @@ local emit_assignment<const> = function(
 			assignment_value_register
 		)
 	end
-	return assignment_value_register > scratch_register
+	state.free_register = temporary_base
 end
 
 local compile_function<const> = function(state)
@@ -259,21 +365,20 @@ local compile_function<const> = function(state)
 			0
 		)
 	end
-	local scratch_register<const> = parameter_count + constant_count
-	local uses_second_scratch = false
+	local first_temporary_register<const> = parameter_count + constant_count
+	state.free_register = first_temporary_register
+	state.max_stack = first_temporary_register
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
-		if emit_assignment(
-			instruction_words,
+		emit_assignment(
 			state,
-			statements[index],
-			scratch_register
-		) then
-			uses_second_scratch = true
-		end
+			instruction_words,
+			statements[index]
+		)
 	end
-	bytecode.emit_abc(instruction_words, isa.op_knil, scratch_register, 0, 0)
-	bytecode.emit_abc(instruction_words, isa.op_ret, scratch_register, 1, 0)
+	local return_register<const> = reserve_register(state)
+	bytecode.emit_abc(instruction_words, isa.op_knil, return_register, 0, 0)
+	bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
 
 	local upvalue_registers<const> = {}
 	for index = 1, constant_count do
@@ -282,7 +387,7 @@ local compile_function<const> = function(state)
 	return {
 		instruction_words = instruction_words,
 		parameter_count = parameter_count,
-		max_stack = scratch_register + (uses_second_scratch and 2 or 1),
+		max_stack = state.max_stack,
 		upvalue_registers = upvalue_registers,
 	}
 end

@@ -91,7 +91,8 @@ bind_path = function(state, expression)
 	fail(state.chunk_name, 'paths must start at a function parameter', expression)
 end
 
-local bind_value<const> = function(state, expression)
+local bind_value
+bind_value = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
@@ -101,6 +102,17 @@ local bind_value<const> = function(state, expression)
 	end
 	if kind == syntax.nil_literal_expression
 		or kind == syntax.boolean_literal_expression then
+		return
+	end
+	if kind == syntax.binary_expression then
+		bind_value(state, expression.left)
+		bind_value(state, expression.right)
+		return
+	end
+	if kind == syntax.unary_expression
+		and expression.operator == syntax.unary_negate
+		and expression.operand.kind ~= syntax.number_literal_expression then
+		bind_value(state, expression.operand)
 		return
 	end
 	expression.constant_value = literal_value(

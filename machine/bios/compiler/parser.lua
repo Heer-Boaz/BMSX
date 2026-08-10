@@ -59,6 +59,20 @@ local parse_function_expression
 local parse_statement
 local parse_block
 local parse_unary_expression
+local parse_multiplicative_expression
+local parse_additive_expression
+
+local additive_operator_by_token<const> = {
+	[token.plus] = syntax.binary_add,
+	[token.minus] = syntax.binary_subtract,
+}
+
+local multiplicative_operator_by_token<const> = {
+	[token.star] = syntax.binary_multiply,
+	[token.slash] = syntax.binary_divide,
+	[token.floor_divide] = syntax.binary_floor_divide,
+	[token.percent] = syntax.binary_modulus,
+}
 
 local parse_primary_expression<const> = function(state)
 	local kind<const> = state.token_kind
@@ -112,6 +126,11 @@ local parse_primary_expression<const> = function(state)
 	end
 	if kind == token.keyword_function then
 		return parse_function_expression(state)
+	end
+	if match(state, token.left_parenthesis) then
+		local expression<const> = parse_expression(state)
+		expect(state, token.right_parenthesis)
+		return expression
 	end
 	fail(
 		state,
@@ -171,8 +190,47 @@ parse_unary_expression = function(state)
 	}
 end
 
+local parse_left_associative_expression<const> = function(
+	state,
+	parse_operand,
+	operator_by_token
+)
+	local expression = parse_operand(state)
+	while true do
+		local operator<const> = operator_by_token[state.token_kind]
+		if operator == nil then
+			return expression
+		end
+		lexer.next(state)
+		expression = {
+			kind = syntax.binary_expression,
+			operator = operator,
+			left = expression,
+			right = parse_operand(state),
+			line = expression.line,
+			column = expression.column,
+		}
+	end
+end
+
+parse_multiplicative_expression = function(state)
+	return parse_left_associative_expression(
+		state,
+		parse_unary_expression,
+		multiplicative_operator_by_token
+	)
+end
+
+parse_additive_expression = function(state)
+	return parse_left_associative_expression(
+		state,
+		parse_multiplicative_expression,
+		additive_operator_by_token
+	)
+end
+
 parse_expression = function(state)
-	return parse_unary_expression(state)
+	return parse_additive_expression(state)
 end
 
 local parse_assignment_statement<const> = function(state)

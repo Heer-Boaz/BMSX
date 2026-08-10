@@ -22,6 +22,7 @@ local ascii_single_quote<const> = 39
 local ascii_plus<const> = 43
 local ascii_minus<const> = 45
 local ascii_dot<const> = 46
+local ascii_slash<const> = 47
 local ascii_digit_0<const> = 48
 local ascii_digit_9<const> = 57
 local ascii_upper_a<const> = 65
@@ -334,6 +335,11 @@ function lexer.next(state)
 	if code == ascii_double_quote or code == ascii_single_quote then
 		state.token_kind = token.string
 		state.token_literal = scan_string(state, code, line, column)
+		return
+	end
+	if code == ascii_slash and state.current_code == ascii_slash then
+		advance(state)
+		state.token_kind = token.floor_divide
 		return
 	end
 	local kind<const> = single_character_by_code[code]

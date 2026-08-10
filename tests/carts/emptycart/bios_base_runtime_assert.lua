@@ -84,6 +84,13 @@ return function(target, frame)
 	target[&"field"] = &"value"
 	target[0x10] = 1.25e1
 	target["leading_fraction"] = .5
+	target["sum"] = frame["left"] + frame["right"] * 2
+	target["grouped"] = (frame["left"] + frame["right"]) * 2
+	target["difference"] = frame["right"] - frame["left"] - 2
+	target["division"] = frame["right"] / 2
+	target["floor_division"] = frame["right"] // 6
+	target["modulus"] = frame["right"] % 6
+	target["negated"] = -frame["left"]
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
 end;
@@ -91,7 +98,11 @@ end;
 	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
 	local apply<const> = chunk()
 	local loaded_target<const> = { visual = {} }
-	apply(loaded_target, { visual = { color = 0xff010203 } })
+	apply(loaded_target, {
+		visual = { color = 0xff010203 },
+		left = 7,
+		right = 20,
+	})
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
 	assert(loaded_target.zero == 0 and loaded_target.one == 1, 'load small integer literal mismatch')
@@ -100,6 +111,13 @@ end;
 	assert(loaded_target.field == 'value', 'load string-id literal mismatch')
 	assert(loaded_target[0x10] == 12.5, 'load numeric literal mismatch')
 	assert(loaded_target.leading_fraction == 0.5, 'load leading fraction mismatch')
+	assert(loaded_target.sum == 47, 'load arithmetic precedence mismatch')
+	assert(loaded_target.grouped == 54, 'load grouped arithmetic mismatch')
+	assert(loaded_target.difference == 11, 'load subtraction associativity mismatch')
+	assert(loaded_target.division == 10, 'load division mismatch')
+	assert(loaded_target.floor_division == 3, 'load floor division mismatch')
+	assert(loaded_target.modulus == 2, 'load modulus mismatch')
+	assert(loaded_target.negated == -7, 'load dynamic unary mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
 	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')

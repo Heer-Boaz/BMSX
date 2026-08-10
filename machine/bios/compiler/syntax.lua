@@ -12,9 +12,17 @@ local syntax<const> = {
 	boolean_literal_expression = 11,
 	nil_literal_expression = 12,
 	unary_expression = 13,
+	binary_expression = 14,
 
 	unary_negate = 1,
 	unary_string_id = 2,
+
+	binary_add = 1,
+	binary_subtract = 2,
+	binary_multiply = 3,
+	binary_divide = 4,
+	binary_floor_divide = 5,
+	binary_modulus = 6,
 }
 
 return syntax
