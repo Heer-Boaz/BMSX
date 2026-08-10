@@ -100,13 +100,15 @@ local compile_track_runner<const> = function(track)
 end
 
 function timelineapply.compile_tracks(tracks)
+	local count<const> = #tracks
+	if count == 1 then
+		return compile_track_runner(tracks[1])
+	end
 	local runners<const> = {}
-	for i = 1, #tracks do
+	for i = 1, count do
 		runners[i] = compile_track_runner(tracks[i])
 	end
-	local count<const> = #runners
-	return function(target, params, event)
-		local time_seconds<const> = event.time_ms * 0.001
+	return function(target, params, event, time_seconds)
 		for i = 1, count do
 			runners[i](target, params, event, time_seconds)
 		end

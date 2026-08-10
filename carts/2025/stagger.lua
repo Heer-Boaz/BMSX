@@ -84,9 +84,9 @@ local pose_apply<const> = function(entry, scale, nudge)
 	obj.y = entry.base_y + nudge
 end
 
-local stagger_track<const> = function(target, params, event)
+local stagger_track<const> = function(target, params, _event, time_seconds)
 	local cfg<const> = params.cfg
-	local t<const> = event.time_ms * 0.001
+	local t<const> = time_seconds
 	local bg<const> = params.bg
 	local text_main<const> = params.text_main
 	local text_choice<const> = params.text_choice

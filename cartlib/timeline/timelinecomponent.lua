@@ -39,7 +39,7 @@ local process_timelineframe_payload<const> = function(_, entry, owner, payload)
 	local target<const> = entry.target or owner
 	local track_runner<const> = entry.instance.compiled_track_runner
 	if track_runner ~= nil then
-		track_runner(target, entry.params, payload)
+		track_runner(target, entry.params, payload, payload.time_ms * 0.001)
 	end
 	local apply_function<const> = entry.apply_function
 	if apply_function ~= nil then
