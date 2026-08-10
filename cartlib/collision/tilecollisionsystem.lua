@@ -28,7 +28,7 @@ end
 
 function tilecollisionsystem:update()
 	local components<const> = self._component_view.components
-	for i = #components, 1, -1 do
+	for i = 1, #components do
 		local component<const> = components[i]
 		local obj<const> = component.parent
 		local current_payload<const> = component.current_payload
