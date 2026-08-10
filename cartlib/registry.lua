@@ -25,8 +25,8 @@ local add_index<const> = function(self, entry, key)
 end
 
 function registry:next_id()
-	local id<const> = self._id_counter
-	self._id_counter = id + 1
+	local id<const> = self._id_counter + 1
+	self._id_counter = id
 	return id
 end
 

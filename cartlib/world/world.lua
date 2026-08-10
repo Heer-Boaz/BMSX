@@ -388,7 +388,7 @@ end
 function worldclass:_commit_component_attach(comp)
 	comp._attach_pending = nil
 	if comp.id == nil then
-		comp.id = comp.parent.id .. '_component_' .. tostring(registry:next_id())
+		comp.id = registry:next_id()
 	end
 	registry:register(comp)
 	local classes<const> = componentclass.chain(getmetatable(comp))
@@ -517,7 +517,7 @@ function worldclass:_commit_spawn(obj)
 	for i = 1, #components do
 		local comp<const> = components[i]
 		if comp.id == nil then
-			comp.id = obj.id .. '_component_' .. tostring(registry:next_id())
+			comp.id = registry:next_id()
 		end
 		registry:register(comp)
 		local classes<const> = componentclass.chain(getmetatable(comp))
@@ -558,7 +558,7 @@ function worldclass:spawn(definition_id, options)
 	apply_construction_values(construction_options, definition.defaults)
 	apply_construction_values(construction_options, options)
 	construction_options.definition_id = definition_id
-	construction_options.id = construction_options.id or definition_id .. '_' .. tostring(registry:next_id())
+	construction_options.id = construction_options.id or registry:next_id()
 
 	local obj<const> = definition.base.new(construction_options)
 	obj.world = self

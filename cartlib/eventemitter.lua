@@ -57,7 +57,7 @@
 --      end }
 --
 -- 4. EMITTER FILTER.
---    The `emitter` field in on() filters by emitter id (string) or object
+--    The `emitter` field in on() filters by emitter id or object
 --    reference.  Always supply it when the event name is not globally unique
 --    (e.g. short names such as 'ready', 'done', 'update') to avoid reacting
 --    to unrelated emitters of the same event name.
@@ -197,7 +197,7 @@ end
 --                                    and payload as direct Lua values.
 --   subscriber          (object)  — strongly recommended; used by
 --                                    remove_subscriber() for cleanup.
---   emitter             (string|object) — filter; only fire for this emitter.
+--   emitter             (id|object) — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
 function eventemitter:on(spec, default_subscriber, default_emitter)
 	local name<const> = spec.event
