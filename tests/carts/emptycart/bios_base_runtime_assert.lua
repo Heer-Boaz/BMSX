@@ -72,6 +72,9 @@ function __bmsx_host_test.setup()
 	local error_ok<const>, error_value<const> = pcall(error, 'vm-error')
 	assert(not error_ok and error_value == 'vm-error', 'error/pcall mismatch')
 
+	local load_environment<const> = {
+		scale = function(value, factor) return value * factor end,
+	}
 	local chunk<const>, load_error<const> = load([=[
 return function(target, frame)
 	;
@@ -92,14 +95,15 @@ return function(target, frame)
 	target["modulus"] = frame["right"] % 6
 	target["negated"] = -frame["left"]
 	target[frame["output_key"]] = frame["values"][frame["index"] + 1]
-	local scaled = frame["scale"](frame["left"] + 1, 3)
+	local scaled = scale(frame["left"] + 1, 3)
 	scaled = scaled + 2
 	target["called"] = scaled
+	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
 	return scaled
 end;
-	]=], 'bios_base_runtime_assert.load', 't')
+	]=], 'bios_base_runtime_assert.load', 't', load_environment)
 	assert(chunk ~= nil and load_error == nil, 'load rejected supported text')
 	local apply<const> = chunk()
 	local loaded_target<const> = { visual = {} }
@@ -110,7 +114,6 @@ end;
 		output_key = 'dynamic',
 		values = { 4, 9, 16 },
 		index = 1,
-		scale = function(value, factor) return value * factor end,
 	})
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
@@ -130,6 +133,7 @@ end;
 	assert(loaded_target.dynamic == 9, 'load dynamic table index mismatch')
 	assert(loaded_target.called == 26, 'load local assignment mismatch')
 	assert(loaded_result == 26, 'load explicit return mismatch')
+	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
 	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')

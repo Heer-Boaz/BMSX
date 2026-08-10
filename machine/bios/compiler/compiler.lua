@@ -38,20 +38,26 @@ local is_number_literal<const> = function(expression)
 		)
 end
 
-local add_constant<const> = function(state, expression, value)
+local add_constant<const> = function(state, value)
 	local index = state.constant_index_by_value[value]
 	if index == nil then
 		index = #state.const_pool + 1
 		state.const_pool[index] = value
 		state.constant_index_by_value[value] = index
 	end
-	expression.constant_index = index
+	return index
 end
 
 local prepare_path_operands
 local prepare_value_operands
 prepare_path_operands = function(state, expression)
 	if expression.kind == syntax.identifier_expression then
+		if expression.environment_key ~= nil then
+			expression.constant_index = add_constant(
+				state,
+				expression.environment_key
+			)
+		end
 		return
 	end
 	prepare_path_operands(state, expression.base)
@@ -70,7 +76,7 @@ prepare_path_operands = function(state, expression)
 			return
 		end
 	end
-	add_constant(state, expression, key_value)
+	expression.constant_index = add_constant(state, key_value)
 end
 
 prepare_value_operands = function(state, expression)
@@ -114,7 +120,7 @@ prepare_value_operands = function(state, expression)
 		end
 		return
 	end
-	add_constant(state, expression, value)
+	expression.constant_index = add_constant(state, value)
 end
 
 local materialize_wide_immediates
@@ -151,7 +157,7 @@ materialize_wide_immediates = function(state, expression)
 	local value<const> = expression.immediate_number
 	if value ~= nil and value ~= 0 and value ~= 1 and value ~= -1 then
 		expression.immediate_number = nil
-		add_constant(state, expression, value)
+		expression.constant_index = add_constant(state, value)
 	end
 end
 
@@ -193,7 +199,7 @@ local materialize_statement_immediates<const> = function(state, statement)
 	end
 end
 
-local prepare_codegen<const> = function(function_expression)
+local prepare_codegen<const> = function(function_expression, environment)
 	local state<const> = {
 		function_expression = function_expression,
 		parameter_count = #function_expression.parameters,
@@ -201,6 +207,9 @@ local prepare_codegen<const> = function(function_expression)
 		const_pool = { 0 },
 		constant_index_by_value = {},
 	}
+	if environment ~= nil then
+		state.environment_constant_index = add_constant(state, environment)
+	end
 	local statements<const> = state.function_expression.body.statements
 	for index = 1, #statements do
 		prepare_statement_operands(state, statements[index])
@@ -234,10 +243,30 @@ local identifier_register<const> = function(state, expression)
 	return state.local_register_base + expression.local_slot
 end
 
+local environment_register<const> = function(state)
+	return constant_register(
+		state.parameter_count,
+		state.environment_constant_index
+	)
+end
+
 local emit_value
 local emit_path
 emit_path = function(state, instruction_words, expression, target)
 	if expression.kind == syntax.identifier_expression then
+		if expression.environment_key ~= nil then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_gett,
+				target,
+				environment_register(state),
+				constant_register(
+					state.parameter_count,
+					expression.constant_index
+				)
+			)
+			return target
+		end
 		return identifier_register(state, expression)
 	end
 	local base_register<const> = emit_path(
@@ -471,6 +500,27 @@ local emit_assignment<const> = function(
 )
 	local target<const> = statement.target
 	if target.kind == syntax.identifier_expression then
+		if target.environment_key ~= nil then
+			local temporary_base<const> = reserve_register(state)
+			local value_register<const> = emit_value(
+				state,
+				instruction_words,
+				statement.value,
+				temporary_base
+			)
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_sett,
+				environment_register(state),
+				constant_register(
+					state.parameter_count,
+					target.constant_index
+				),
+				value_register
+			)
+			state.free_register = temporary_base
+			return
+		end
 		local target_register<const> = identifier_register(state, target)
 		local value_register<const> = emit_value(
 			state,
@@ -684,9 +734,13 @@ local compile_chunk<const> = function(constant_count, captured_const_pool_regist
 	}
 end
 
-function compiler.compile(chunk, chunk_name, root_const_pool_register)
-	local function_expression<const> = semantic.bind(chunk, chunk_name)
-	local state<const> = prepare_codegen(function_expression)
+function compiler.compile(chunk, chunk_name, root_const_pool_register, environment)
+	local function_expression<const> = semantic.bind(
+		chunk,
+		chunk_name,
+		environment ~= nil
+	)
+	local state<const> = prepare_codegen(function_expression, environment)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - function_address_pool_index
 	local max_stack<const> = isa.max_ext_register_a + 1

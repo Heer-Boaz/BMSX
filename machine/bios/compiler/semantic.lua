@@ -71,6 +71,10 @@ local bind_identifier<const> = function(state, expression)
 		expression.parameter_register = register
 		return
 	end
+	if state.has_environment then
+		expression.environment_key = expression.name
+		return
+	end
 	fail(
 		state.chunk_name,
 		"unknown local or function parameter '" .. expression.name .. "'",
@@ -175,13 +179,14 @@ local bind_statement<const> = function(state, statement)
 	end
 end
 
-function semantic.bind(chunk, chunk_name)
+function semantic.bind(chunk, chunk_name, has_environment)
 	local function_expression<const> = returned_function(chunk, chunk_name)
 	local state<const> = {
 		chunk_name = chunk_name,
 		parameter_register_by_name = {},
 		local_slot_by_name = {},
 		local_count = 0,
+		has_environment = has_environment,
 	}
 	bind_parameters(state, function_expression)
 	local statements<const> = function_expression.body.statements
