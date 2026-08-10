@@ -2,7 +2,6 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
@@ -58,10 +57,6 @@ local stair_left_tiles<const> = {
 local stair_right_tiles<const> = {
 	[tile_chars.stair_right] = true,
 	[tile_chars.stair_right_alt] = true,
-}
-local breakable_wall_kinds<const> = {
-	breakablewall = true,
-	disappearingwall = true,
 }
 local rock_tile_width<const> = rock_width / room_tile_size
 local rock_tile_height<const> = rock_height / room_tile_size
@@ -245,7 +240,7 @@ local pillar_themes<const> = {
 	},
 }
 
-local build_screen_rows<const> = function(map_rows, draaideuren, tile_size, origin_x, origin_y)
+local build_screen_rows<const> = function(map_rows, draaideuren)
 	local screen_rows<const> = {}
 	for y = 1, #map_rows do
 		screen_rows[y] = map_rows[y]
@@ -253,8 +248,8 @@ local build_screen_rows<const> = function(map_rows, draaideuren, tile_size, orig
 
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		local tx<const> = ((draaideur.x - origin_x) // tile_size) + 1
-		local ty<const> = ((draaideur.y - origin_y) // tile_size) + 1
+		local tx<const> = draaideur.tile_x
+		local ty<const> = draaideur.tile_y
 		for row = ty, ty + 2 do
 			local line<const> = screen_rows[row]
 			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
@@ -534,13 +529,7 @@ local refresh_room_geometry<const> = function(room_state)
 end
 
 local apply_room_template<const> = function(room_state, template)
-	local map_rows<const> = build_screen_rows(
-		template.map_rows,
-		template.draaideuren,
-		room_tile_size,
-		room_tile_origin_x,
-		room_tile_origin_y
-	)
+	local map_rows<const> = build_screen_rows(template.map_rows, template.draaideuren)
 
 	room_state.room_number = template.room_number
 	room_state.world_number = template.world_number
@@ -698,38 +687,26 @@ function room_object:is_active_elevator_at_tile(tx, ty)
 end
 
 function room_object:overlaps_active_breakable_wall(x, y, w, h)
-	local enemy_defs<const> = self.enemies
-	for i = 1, #enemy_defs do
-		local enemy_def<const> = enemy_defs[i]
-		if breakable_wall_kinds[enemy_def.kind] then
-			local wall<const> = world:get(enemy_def.id)
-			if wall ~= nil and wall.active and wall.space_id == 'main' then
-				local wall_width<const> = enemy_def.width_tiles * self.tile_size
-				local wall_height<const> = enemy_def.height_tiles * self.tile_size
-				if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
-					return true
-				end
-			end
+	local walls<const> = self.wall_instances
+	for i = 1, #walls do
+		local wall<const> = walls[i]
+		if rect_overlaps(x, y, w, h, wall.x, wall.y, wall.sx, wall.sy) then
+			return true
 		end
 	end
 	return false
 end
 
 function room_object:overlaps_active_draaideur(x, y, w, h)
-	local tx0, ty0 = self:world_to_tile(x, y)
-	local tx1, ty1 = self:world_to_tile(x + w - 1, y + h - 1)
-	if tx1 < tx0 then
-		tx0, tx1 = tx1, tx0
-	end
-	if ty1 < ty0 then
-		ty0, ty1 = ty1, ty0
-	end
-
-	for ty = ty0, ty1 do
-		for tx = tx0, tx1 do
-			if self:is_active_draaideur_at_tile(tx, ty) then
-				return true
-			end
+	local draaideuren<const> = self.draaideur_instances
+	local tile_size<const> = self.tile_size
+	local door_height<const> = tile_size * 3
+	for i = 1, #draaideuren do
+		local draaideur<const> = draaideuren[i]
+		if draaideur.state >= 0
+		and rect_overlaps(x, y, w, h, draaideur.x, draaideur.y, tile_size, door_height)
+		then
+			return true
 		end
 	end
 	return false
@@ -743,16 +720,15 @@ function room_object:is_active_draaideur_at_tile(tx, ty)
 		return false
 	end
 
-	local draaideuren<const> = self.draaideuren
+	local draaideuren<const> = self.draaideur_instances
 	for i = 1, #draaideuren do
-		local door_def<const> = draaideuren[i]
-		local door_tx<const> = ((door_def.x - self.tile_origin_x) // self.tile_size) + 1
-		local door_ty<const> = ((door_def.y - self.tile_origin_y) // self.tile_size) + 1
-		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
-			local draaideur<const> = world:get(door_def.id)
-			if draaideur ~= nil and draaideur.state >= 0 then
-				return true
-			end
+		local draaideur<const> = draaideuren[i]
+		if tx == draaideur.tile_x
+		and ty >= draaideur.tile_y
+		and ty <= draaideur.tile_y + 2
+		and draaideur.state >= 0
+		then
+			return true
 		end
 	end
 	return false
@@ -815,14 +791,14 @@ function room_object:overlaps_solid_rect(x, y, w, h)
 end
 
 function room_object:find_near_lithograph(player)
-	local lithograph_defs<const> = self.lithographs
+	local lithographs<const> = self.lithograph_instances
 	local player_left<const> = player.x
 	local player_top<const> = player.y
 	local player_right<const> = player.x + player.width
 	local player_bottom<const> = player.y + player.height
 
-	for i = 1, #lithograph_defs do
-		local lithograph<const> = world:get(lithograph_defs[i].id)
+	for i = 1, #lithographs do
+		local lithograph<const> = lithographs[i]
 		local area_left<const> = lithograph.x + lithograph_hit_left_px
 		local area_top<const> = lithograph.y + lithograph_hit_top_px
 		local area_right<const> = lithograph.x + lithograph_hit_right_px
@@ -860,6 +836,9 @@ end
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self.rock_drops = {}
+	self.wall_instances = {}
+	self.draaideur_instances = {}
+	self.lithograph_instances = {}
 	self.logic_rows = {}
 	self.room_tile_count = 0
 	self.water_tile_count = 0

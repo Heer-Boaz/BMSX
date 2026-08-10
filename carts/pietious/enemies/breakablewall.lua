@@ -33,7 +33,6 @@ function breakablewall:process_damage_result(result)
 			condition = self.trigger,
 			play_appearance = true,
 		})
-		self:mark_for_disposal()
 		return
 	end
 end

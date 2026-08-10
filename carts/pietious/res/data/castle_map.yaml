@@ -1084,7 +1084,7 @@
     y: 15
     trigger: staff2destroyed
     retain_defeat_in_region: true
-  - type: draaideur
+  - type: draaideur_blauw
     x: 15
     y: 2
 108:

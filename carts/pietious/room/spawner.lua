@@ -24,11 +24,13 @@ local spawn_rocks<const> = function(room)
 end
 
 local spawn_lithographs<const> = function(room)
+	local instances<const> = room.lithograph_instances
+	local instance_count = 0
 	for i = 1, #room.lithographs do
 		local def<const> = room.lithographs[i]
-		local existing<const> = world:get(def.id)
+		local existing = world:get(def.id)
 		if existing == nil then
-			local obj<const> = world:spawn('lithograph', {
+			existing = world:spawn('lithograph', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 10 },
@@ -36,8 +38,13 @@ local spawn_lithographs<const> = function(room)
 				room_number = room.castle.current_room_number,
 				rs_room_number = room.room_number,
 			})
-			obj:add_tag('rs')
+			existing:add_tag('rs')
 		end
+		instance_count = instance_count + 1
+		instances[instance_count] = existing
+	end
+	for i = instance_count + 1, #instances do
+		instances[i] = nil
 	end
 end
 
@@ -58,19 +65,28 @@ local spawn_shrines<const> = function(room)
 end
 
 local spawn_draaideuren<const> = function(room)
+	local instances<const> = room.draaideur_instances
+	local instance_count = 0
 	for i = 1, #room.draaideuren do
 		local def<const> = room.draaideuren[i]
-		local existing<const> = world:get(def.id)
+		local existing = world:get(def.id)
 		if existing == nil then
-			local obj<const> = world:spawn('draaideur', {
+			existing = world:spawn('draaideur', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 22 },
 				kind = def.kind,
+				tile_x = def.tile_x,
+				tile_y = def.tile_y,
 				rs_room_number = room.room_number,
 			})
-			obj:add_tag('rs')
+			existing:add_tag('rs')
 		end
+		instance_count = instance_count + 1
+		instances[instance_count] = existing
+	end
+	for i = instance_count + 1, #instances do
+		instances[i] = nil
 	end
 end
 
@@ -126,15 +142,17 @@ end
 
 local spawn_enemies<const> = function(room)
 	local castle<const> = room.castle
+	local walls<const> = room.wall_instances
+	local wall_count = 0
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
 		local should_spawn<const> = not defeated and matches_conditions
-		local existing<const> = world:get(def.id)
+		local existing = world:get(def.id)
 		if should_spawn then
 			if existing == nil then
-				local obj<const> = world:spawn('enemy.' .. def.kind, {
+				existing = world:spawn('enemy.' .. def.kind, {
 					id = def.id,
 					space_id = 'main',
 					pos = { x = def.x, y = def.y, z = def.draw_z },
@@ -151,13 +169,20 @@ local spawn_enemies<const> = function(room)
 					tiletype = def.tiletype,
 					rs_room_number = room.room_number,
 				})
-				obj:add_tag('rs')
+				existing:add_tag('rs')
+			end
+			if def.blocks_room_collision then
+				wall_count = wall_count + 1
+				walls[wall_count] = existing
 			end
 		else
 			if existing ~= nil then
 				existing:mark_for_disposal()
 			end
 		end
+	end
+	for i = wall_count + 1, #walls do
+		walls[i] = nil
 	end
 end
 
@@ -220,13 +245,6 @@ function room_spawner.spawn_all_for_room(room)
 	spawn_world_entrances(room)
 	spawn_items(room)
 	spawn_enemies(room)
-end
-
-function room_spawner.despawn_previous()
-	local room_objects<const> = world:objects_by_tag('rs')
-	for i = #room_objects, 1, -1 do
-		room_objects[i]:mark_for_disposal()
-	end
 end
 
 return room_spawner
