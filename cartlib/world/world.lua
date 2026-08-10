@@ -664,36 +664,41 @@ function worldclass:_open_mutation_barrier()
 end
 
 function worldclass:_flush_structural_mutations()
-	if (self._pending_mutation_mask & mutation_admission) ~= 0 then
-		self:_flush_admissions()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
-	end
-	if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
-		self:_flush_component_attaches()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_attach
-	end
-	if (self._pending_mutation_mask & mutation_object) ~= 0 then
-		self:_flush_objects()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_object
-	end
-	if (self._pending_mutation_mask & mutation_component) ~= 0 then
-		self:_flush_components()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component
-	end
-	if (self._pending_mutation_mask & mutation_tag) ~= 0 then
-		self:_flush_tags()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_tag
-	end
-	if (self._pending_mutation_mask & mutation_component_detach) ~= 0 then
-		self:_flush_component_detaches()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_detach
-	end
-	if (self._pending_mutation_mask & mutation_active_space) ~= 0 then
-		local pending_space_id<const> = self._pending_space_id
-		self._pending_space_id = nil
-		self:_commit_active_space(pending_space_id)
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_active_space
-	end
+	-- Lifecycle hooks may enqueue an earlier mutation kind while a later kind
+	-- commits. Claim each kind before applying it and drain the whole cascade at
+	-- this barrier so no Registry or space index remains stale for another group.
+	repeat
+		if (self._pending_mutation_mask & mutation_admission) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
+			self:_flush_admissions()
+		end
+		if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_attach
+			self:_flush_component_attaches()
+		end
+		if (self._pending_mutation_mask & mutation_object) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_object
+			self:_flush_objects()
+		end
+		if (self._pending_mutation_mask & mutation_component) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component
+			self:_flush_components()
+		end
+		if (self._pending_mutation_mask & mutation_tag) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_tag
+			self:_flush_tags()
+		end
+		if (self._pending_mutation_mask & mutation_component_detach) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_detach
+			self:_flush_component_detaches()
+		end
+		if (self._pending_mutation_mask & mutation_active_space) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_active_space
+			local pending_space_id<const> = self._pending_space_id
+			self._pending_space_id = nil
+			self:_commit_active_space(pending_space_id)
+		end
+	until self._pending_mutation_mask == 0
 end
 
 function worldclass:_commit_mutation_barrier()
