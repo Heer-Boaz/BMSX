@@ -29,17 +29,19 @@ end
 
 function new_game()
 	world:clear()
-	world:spawn(stage_module.stage_def_id, {
+	local stage<const> = world:spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 	world:spawn(director_module.director_def_id, {
 		id = director_module.director_instance_id,
+		stage = stage,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 	world:spawn(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		player_index = 1,
+		stage = stage,
 		pos = { x = player_start_x, y = player_start_y, z = 70 },
 	})
 end

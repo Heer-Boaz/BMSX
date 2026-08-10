@@ -2,7 +2,6 @@ local bool01<const> = require('cartlib/util/bool01')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 require('constants')
 
 local director<const> = {}
@@ -45,7 +44,6 @@ end
 
 function director:reset_runtime()
 	self.frame = 0
-	self.stage = world:get(ids_stage_instance)
 end
 
 function director:update_runtime()

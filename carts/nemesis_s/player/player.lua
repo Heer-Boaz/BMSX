@@ -10,7 +10,6 @@ local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
 local swap_remove<const> = require('cartlib/util/swap_remove')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local player_abilities<const> = require('player/abilities')
 
@@ -139,7 +138,6 @@ function player:initialize_weapon_slots()
 end
 
 function player:reset_runtime()
-	self.stage = world:get(ids_stage_instance)
 	self.frame = 0
 	self.x = player_start_x
 	self.y = player_start_y
