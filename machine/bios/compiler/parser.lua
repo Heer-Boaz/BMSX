@@ -65,6 +65,28 @@ local parse_comparison_expression
 local parse_and_expression
 local parse_or_expression
 
+local end_terminators<const> = {
+	[token.keyword_end] = true,
+}
+
+local if_clause_terminators<const> = {
+	[token.keyword_else] = true,
+	[token.keyword_elseif] = true,
+	[token.keyword_end] = true,
+}
+
+local return_terminators<const> = {
+	[token.semicolon] = true,
+	[token.keyword_else] = true,
+	[token.keyword_elseif] = true,
+	[token.keyword_end] = true,
+	[token.eof] = true,
+}
+
+local eof_terminators<const> = {
+	[token.eof] = true,
+}
+
 local additive_operator_by_token<const> = {
 	[token.plus] = syntax.binary_add,
 	[token.minus] = syntax.binary_subtract,
@@ -334,10 +356,7 @@ local parse_return_statement<const> = function(state)
 	local column<const> = state.token_column
 	expect(state, token.keyword_return)
 	local expressions<const> = {}
-	local kind<const> = state.token_kind
-	if kind ~= token.semicolon
-		and kind ~= token.keyword_end
-		and kind ~= token.eof then
+	if return_terminators[state.token_kind] == nil then
 		expressions[1] = parse_expression(state)
 	end
 	return {
@@ -348,7 +367,40 @@ local parse_return_statement<const> = function(state)
 	}
 end
 
+local parse_if_statement<const> = function(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_if)
+	local clauses<const> = {}
+	while true do
+		local condition<const> = parse_expression(state)
+		expect(state, token.keyword_then)
+		clauses[#clauses + 1] = {
+			condition = condition,
+			block = parse_block(state, if_clause_terminators),
+		}
+		if not match(state, token.keyword_elseif) then
+			break
+		end
+	end
+	if match(state, token.keyword_else) then
+		clauses[#clauses + 1] = {
+			block = parse_block(state, end_terminators),
+		}
+	end
+	expect(state, token.keyword_end)
+	return {
+		kind = syntax.if_statement,
+		clauses = clauses,
+		line = line,
+		column = column,
+	}
+end
+
 parse_statement = function(state)
+	if state.token_kind == token.keyword_if then
+		return parse_if_statement(state)
+	end
 	if state.token_kind == token.keyword_local then
 		return parse_local_statement(state)
 	end
@@ -358,11 +410,11 @@ parse_statement = function(state)
 	return parse_assignment_statement(state)
 end
 
-parse_block = function(state, terminator)
+parse_block = function(state, terminators)
 	local line<const> = state.token_line
 	local column<const> = state.token_column
 	local statements<const> = {}
-	while state.token_kind ~= terminator and state.token_kind ~= token.eof do
+	while terminators[state.token_kind] == nil and state.token_kind ~= token.eof do
 		if not match(state, token.semicolon) then
 			statements[#statements + 1] = parse_statement(state)
 		end
@@ -396,7 +448,7 @@ parse_function_expression = function(state)
 		end
 	end
 	expect(state, token.right_parenthesis)
-	local body<const> = parse_block(state, token.keyword_end)
+	local body<const> = parse_block(state, end_terminators)
 	expect(state, token.keyword_end)
 	return {
 		kind = syntax.function_expression,
@@ -412,7 +464,7 @@ function parser.parse(source, chunk_name)
 	lexer.next(state)
 	local line<const> = state.token_line
 	local column<const> = state.token_column
-	local body<const> = parse_block(state, token.eof)
+	local body<const> = parse_block(state, eof_terminators)
 	expect(state, token.eof)
 	return {
 		kind = syntax.chunk,

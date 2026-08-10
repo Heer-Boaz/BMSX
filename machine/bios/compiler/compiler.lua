@@ -175,7 +175,15 @@ materialize_wide_immediates = function(state, expression)
 	end
 end
 
-local prepare_statement_operands<const> = function(state, statement)
+local prepare_statement_operands
+local prepare_block_operands<const> = function(state, block)
+	local statements<const> = block.statements
+	for index = 1, #statements do
+		prepare_statement_operands(state, statements[index])
+	end
+end
+
+prepare_statement_operands = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		prepare_path_operands(state, statement.target)
@@ -188,13 +196,32 @@ local prepare_statement_operands<const> = function(state, statement)
 		end
 		return
 	end
+	if kind == syntax.if_statement then
+		local clauses<const> = statement.clauses
+		for index = 1, #clauses do
+			local clause<const> = clauses[index]
+			if clause.condition ~= nil then
+				prepare_value_operands(state, clause.condition)
+			end
+			prepare_block_operands(state, clause.block)
+		end
+		return
+	end
 	local expressions<const> = statement.expressions
 	for index = 1, #expressions do
 		prepare_value_operands(state, expressions[index])
 	end
 end
 
-local materialize_statement_immediates<const> = function(state, statement)
+local materialize_statement_immediates
+local materialize_block_immediates<const> = function(state, block)
+	local statements<const> = block.statements
+	for index = 1, #statements do
+		materialize_statement_immediates(state, statements[index])
+	end
+end
+
+materialize_statement_immediates = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		materialize_wide_immediates(state, statement.target)
@@ -204,6 +231,17 @@ local materialize_statement_immediates<const> = function(state, statement)
 	if kind == syntax.local_statement then
 		if statement.initializer ~= nil then
 			materialize_wide_immediates(state, statement.initializer)
+		end
+		return
+	end
+	if kind == syntax.if_statement then
+		local clauses<const> = statement.clauses
+		for index = 1, #clauses do
+			local clause<const> = clauses[index]
+			if clause.condition ~= nil then
+				materialize_wide_immediates(state, clause.condition)
+			end
+			materialize_block_immediates(state, clause.block)
 		end
 		return
 	end
@@ -224,18 +262,13 @@ local prepare_codegen<const> = function(function_expression, environment)
 	if environment ~= nil then
 		state.environment_constant_index = add_constant(state, environment)
 	end
-	local statements<const> = state.function_expression.body.statements
-	for index = 1, #statements do
-		prepare_statement_operands(state, statements[index])
-	end
+	prepare_block_operands(state, state.function_expression.body)
 	local first_temporary_register<const> = state.parameter_count
 		+ #state.const_pool
 		- function_address_pool_index
 		+ state.local_count
 	if first_temporary_register > isa.max_wide_operand then
-		for index = 1, #statements do
-			materialize_statement_immediates(state, statements[index])
-		end
+		materialize_block_immediates(state, state.function_expression.body)
 	end
 	return state
 end
@@ -386,8 +419,6 @@ local emit_logical_expression<const> = function(
 	bytecode.patch_branch(
 		instruction_words,
 		jump_index,
-		jump_opcode,
-		target,
 		#instruction_words - jump_index
 	)
 	return target
@@ -400,17 +431,23 @@ local emit_call_expression<const> = function(
 	target
 )
 	local temporary_base<const> = state.free_register
+	local use_target<const> = target >= state.temporary_register_base
+		and target + 1 == temporary_base
+	local call_base = target
+	if not use_target then
+		call_base = reserve_register(state)
+	end
 	local callee_register<const> = emit_value(
 		state,
 		instruction_words,
 		expression.callee,
-		target
+		call_base
 	)
-	if callee_register ~= target then
+	if callee_register ~= call_base then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_mov,
-			target,
+			call_base,
 			callee_register,
 			0
 		)
@@ -437,21 +474,30 @@ local emit_call_expression<const> = function(
 	bytecode.emit_abc(
 		instruction_words,
 		isa.op_call,
-		target,
+		call_base,
 		#arguments + isa.fixed_call_arg_count_bias,
 		1
 	)
+	if not use_target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			call_base,
+			0
+		)
+	end
 	state.free_register = temporary_base
 	return target
 end
 
-local emit_comparison_expression<const> = function(
+local prepare_comparison_operands<const> = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_will_be_overwritten
 )
-	local temporary_base<const> = state.free_register
 	local left_register = emit_value(
 		state,
 		instruction_words,
@@ -468,7 +514,7 @@ local emit_comparison_expression<const> = function(
 		expression.right,
 		right_target
 	)
-	if left_register == target then
+	if target_will_be_overwritten and left_register == target then
 		local copy_register<const> = reserve_register(state)
 		bytecode.emit_abc(
 			instruction_words,
@@ -479,7 +525,7 @@ local emit_comparison_expression<const> = function(
 		)
 		left_register = copy_register
 	end
-	if right_register == target then
+	if target_will_be_overwritten and right_register == target then
 		local copy_register<const> = reserve_register(state)
 		bytecode.emit_abc(
 			instruction_words,
@@ -495,6 +541,25 @@ local emit_comparison_expression<const> = function(
 		or operator == syntax.binary_greater_equal then
 		left_register, right_register = right_register, left_register
 	end
+	return left_register, right_register
+end
+
+local emit_comparison_expression<const> = function(
+	state,
+	instruction_words,
+	expression,
+	target
+)
+	local temporary_base<const> = state.free_register
+	local left_register<const>, right_register<const>
+		= prepare_comparison_operands(
+			state,
+			instruction_words,
+			expression,
+			target,
+			true
+		)
+	local operator<const> = expression.operator
 	bytecode.emit_abc(instruction_words, isa.op_kfalse, target, 0, 0)
 	bytecode.emit_abc(
 		instruction_words,
@@ -810,14 +875,223 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 	bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
 end
 
-local emit_statement<const> = function(state, instruction_words, statement)
+local emit_statement
+local emit_block
+
+local patch_jumps<const> = function(instruction_words, jumps)
+	local target_index<const> = #instruction_words + 1
+	for index = 1, #jumps do
+		local jump_index<const> = jumps[index]
+		bytecode.patch_branch(
+			instruction_words,
+			jump_index,
+			target_index - jump_index - 1
+		)
+	end
+end
+
+local emit_condition_jumps
+emit_condition_jumps = function(
+	state,
+	instruction_words,
+	expression,
+	jump_on_truthy,
+	jumps
+)
+	local kind<const> = expression.kind
+	if kind == syntax.unary_expression
+		and expression.operator == syntax.unary_not then
+		emit_condition_jumps(
+			state,
+			instruction_words,
+			expression.operand,
+			not jump_on_truthy,
+			jumps
+		)
+		return
+	end
+	if kind == syntax.binary_expression then
+		local operator<const> = expression.operator
+		if operator == syntax.binary_and then
+			if jump_on_truthy then
+				local false_jumps<const> = {}
+				emit_condition_jumps(
+					state,
+					instruction_words,
+					expression.left,
+					false,
+					false_jumps
+				)
+				emit_condition_jumps(
+					state,
+					instruction_words,
+					expression.right,
+					true,
+					jumps
+				)
+				patch_jumps(instruction_words, false_jumps)
+				return
+			end
+			emit_condition_jumps(
+				state,
+				instruction_words,
+				expression.left,
+				false,
+				jumps
+			)
+			emit_condition_jumps(
+				state,
+				instruction_words,
+				expression.right,
+				false,
+				jumps
+			)
+			return
+		end
+		if operator == syntax.binary_or then
+			if jump_on_truthy then
+				emit_condition_jumps(
+					state,
+					instruction_words,
+					expression.left,
+					true,
+					jumps
+				)
+				emit_condition_jumps(
+					state,
+					instruction_words,
+					expression.right,
+					true,
+					jumps
+				)
+				return
+			end
+			local true_jumps<const> = {}
+			emit_condition_jumps(
+				state,
+				instruction_words,
+				expression.left,
+				true,
+				true_jumps
+			)
+			emit_condition_jumps(
+				state,
+				instruction_words,
+				expression.right,
+				false,
+				jumps
+			)
+			patch_jumps(instruction_words, true_jumps)
+			return
+		end
+		local comparison_opcode<const> = opcode_by_comparison_operator[operator]
+		if comparison_opcode ~= nil then
+			local temporary_base<const> = state.free_register
+			local target<const> = reserve_register(state)
+			local left_register<const>, right_register<const>
+				= prepare_comparison_operands(
+					state,
+					instruction_words,
+					expression,
+					target,
+					false
+				)
+			local expected_result = jump_on_truthy
+			if operator == syntax.binary_not_equal then
+				expected_result = not expected_result
+			end
+			bytecode.emit_abc(
+				instruction_words,
+				comparison_opcode,
+				expected_result and 1 or 0,
+				left_register,
+				right_register
+			)
+			jumps[#jumps + 1] = bytecode.emit_signed_abx(
+				instruction_words,
+				isa.op_jmp,
+				0,
+				0
+			)
+			state.free_register = temporary_base
+			return
+		end
+	end
+	local temporary_base<const> = state.free_register
+	local condition_register<const> = reserve_register(state)
+	local value_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression,
+		condition_register
+	)
+	if value_register ~= condition_register then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			condition_register,
+			value_register,
+			0
+		)
+	end
+	jumps[#jumps + 1] = bytecode.emit_signed_abx(
+		instruction_words,
+		jump_on_truthy and isa.op_jmpif or isa.op_jmpifnot,
+		condition_register,
+		0
+	)
+	state.free_register = temporary_base
+end
+
+local emit_if_statement<const> = function(state, instruction_words, statement)
+	local end_jumps<const> = {}
+	local clauses<const> = statement.clauses
+	for index = 1, #clauses do
+		local clause<const> = clauses[index]
+		if clause.condition ~= nil then
+			local next_clause_jumps<const> = {}
+			emit_condition_jumps(
+				state,
+				instruction_words,
+				clause.condition,
+				false,
+				next_clause_jumps
+			)
+			emit_block(state, instruction_words, clause.block)
+			if index < #clauses then
+				end_jumps[#end_jumps + 1] = bytecode.emit_signed_abx(
+					instruction_words,
+					isa.op_jmp,
+					0,
+					0
+				)
+			end
+			patch_jumps(instruction_words, next_clause_jumps)
+		else
+			emit_block(state, instruction_words, clause.block)
+		end
+	end
+	patch_jumps(instruction_words, end_jumps)
+end
+
+emit_statement = function(state, instruction_words, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		emit_assignment(state, instruction_words, statement)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)
+	elseif kind == syntax.if_statement then
+		emit_if_statement(state, instruction_words, statement)
 	else
 		emit_return_statement(state, instruction_words, statement)
+	end
+end
+
+emit_block = function(state, instruction_words, block)
+	local statements<const> = block.statements
+	for index = 1, #statements do
+		emit_statement(state, instruction_words, statements[index])
+		state.free_register = state.temporary_register_base
 	end
 end
 
@@ -837,12 +1111,11 @@ local compile_function<const> = function(state)
 	state.local_register_base = parameter_count + constant_count
 	local first_temporary_register<const> = state.local_register_base
 		+ state.local_count
+	state.temporary_register_base = first_temporary_register
 	state.free_register = first_temporary_register
 	state.max_stack = first_temporary_register
 	local statements<const> = state.function_expression.body.statements
-	for index = 1, #statements do
-		emit_statement(state, instruction_words, statements[index])
-	end
+	emit_block(state, instruction_words, state.function_expression.body)
 	if #statements == 0
 		or statements[#statements].kind ~= syntax.return_statement then
 		local return_register<const> = reserve_register(state)

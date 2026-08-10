@@ -113,6 +113,31 @@ return function(target, frame)
 	target["and_short"] = frame["missing"] and touch(100)
 	target["or_value"] = frame["missing"] or frame["right"]
 	target["or_short"] = frame["left"] or touch(200)
+	local branch_value = 0
+	if frame["left"] < 0 then
+		branch_value = 1
+	elseif frame["left"] == 7 and frame["right"] == 20 then
+		local scoped_value = frame["right"] + 2
+		target["scoped_value"] = scoped_value
+		branch_value = 2
+	else
+		branch_value = 3
+	end
+	target["branch_value"] = branch_value
+	if frame["missing"] and touch(300) then
+		target["else_value"] = 1
+	else
+		target["else_value"] = 2
+	end
+	if frame["left"] or touch(400) then
+		target["or_branch"] = true
+	end
+	local shadowed = 5
+	if frame["left"] then
+		local shadowed = frame["right"]
+		target["inner_shadow"] = shadowed
+	end
+	target["outer_shadow"] = shadowed
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
@@ -155,6 +180,9 @@ end;
 	assert(loaded_target.and_value == 20 and loaded_target.and_short == nil, 'load and value mismatch')
 	assert(loaded_target.or_value == 20 and loaded_target.or_short == 7, 'load or value mismatch')
 	assert(load_touch_count == 1, 'load logical expression did not short circuit')
+	assert(loaded_target.branch_value == 2 and loaded_target.scoped_value == 22, 'load conditional branch mismatch')
+	assert(loaded_target.else_value == 2 and loaded_target.or_branch, 'load conditional short circuit mismatch')
+	assert(loaded_target.inner_shadow == 20 and loaded_target.outer_shadow == 5, 'load block scope mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')

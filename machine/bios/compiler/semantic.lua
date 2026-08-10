@@ -60,10 +60,12 @@ end
 
 local bind_value
 local bind_path
+local bind_statement
+local bind_block
 local bind_identifier<const> = function(state, expression)
-	local local_slot<const> = state.local_slot_by_name[expression.name]
-	if local_slot ~= nil then
-		expression.local_slot = local_slot
+	local local_binding<const> = state.local_binding_by_name[expression.name]
+	if local_binding ~= nil then
+		expression.local_slot = local_binding.slot
 		return
 	end
 	local register<const> = state.parameter_register_by_name[expression.name]
@@ -160,10 +162,22 @@ local bind_local_statement<const> = function(state, statement)
 	if initializer ~= nil then
 		bind_value(state, initializer)
 	end
-	local local_slot<const> = state.local_count
-	state.local_count = local_slot + 1
+	local local_slot<const> = state.active_local_count
+	local active_local_count<const> = local_slot + 1
+	state.active_local_count = active_local_count
+	if active_local_count > state.max_local_count then
+		state.max_local_count = active_local_count
+	end
 	statement.name.local_slot = local_slot
-	state.local_slot_by_name[statement.name.name] = local_slot
+	local name<const> = statement.name.name
+	local binding<const> = {
+		name = name,
+		slot = local_slot,
+		previous = state.local_binding_by_name[name],
+	}
+	state.local_binding_by_name[name] = binding
+	local scope_bindings<const> = state.scope.bindings
+	scope_bindings[#scope_bindings + 1] = binding
 end
 
 local bind_return_statement<const> = function(state, statement)
@@ -173,7 +187,18 @@ local bind_return_statement<const> = function(state, statement)
 	end
 end
 
-local bind_statement<const> = function(state, statement)
+local bind_if_statement<const> = function(state, statement)
+	local clauses<const> = statement.clauses
+	for index = 1, #clauses do
+		local clause<const> = clauses[index]
+		if clause.condition ~= nil then
+			bind_value(state, clause.condition)
+		end
+		bind_block(state, clause.block)
+	end
+end
+
+bind_statement = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		bind_assignment(state, statement)
@@ -181,9 +206,35 @@ local bind_statement<const> = function(state, statement)
 		bind_local_statement(state, statement)
 	elseif kind == syntax.return_statement then
 		bind_return_statement(state, statement)
+	elseif kind == syntax.if_statement then
+		bind_if_statement(state, statement)
 	else
 		fail(state.chunk_name, 'unsupported function statement', statement)
 	end
+end
+
+bind_block = function(state, block)
+	local scope<const> = {
+		previous = state.scope,
+		local_base = state.active_local_count,
+		bindings = {},
+	}
+	state.scope = scope
+	local statements<const> = block.statements
+	for index = 1, #statements do
+		local statement<const> = statements[index]
+		if statement.kind == syntax.return_statement and index ~= #statements then
+			fail(state.chunk_name, 'return must be the final block statement', statement)
+		end
+		bind_statement(state, statement)
+	end
+	local bindings<const> = scope.bindings
+	for index = #bindings, 1, -1 do
+		local binding<const> = bindings[index]
+		state.local_binding_by_name[binding.name] = binding.previous
+	end
+	state.active_local_count = scope.local_base
+	state.scope = scope.previous
 end
 
 function semantic.bind(chunk, chunk_name, has_environment)
@@ -191,21 +242,15 @@ function semantic.bind(chunk, chunk_name, has_environment)
 	local state<const> = {
 		chunk_name = chunk_name,
 		parameter_register_by_name = {},
-		local_slot_by_name = {},
-		local_count = 0,
+		local_binding_by_name = {},
+		active_local_count = 0,
+		max_local_count = 0,
+		scope = nil,
 		has_environment = has_environment,
 	}
 	bind_parameters(state, function_expression)
-	local statements<const> = function_expression.body.statements
-	for index = 1, #statements do
-		local statement<const> = statements[index]
-		if statement.kind == syntax.return_statement
-			and index ~= #statements then
-			fail(state.chunk_name, 'return must be the final function statement', statement)
-		end
-		bind_statement(state, statement)
-	end
-	function_expression.local_count = state.local_count
+	bind_block(state, function_expression.body)
+	function_expression.local_count = state.max_local_count
 	return function_expression
 end
 

@@ -94,14 +94,27 @@ end
 -- Runtime-compiled code lives in the 256 KiB compiler arena, so a branch
 -- displacement always fits the base signed Bx field. A WIDE prefix here can
 -- therefore only belong to the condition register and is already present.
-function bytecode.patch_branch(instruction_words, instruction_index, op, a, sbx)
+
+function bytecode.patch_branch(instruction_words, instruction_index, sbx)
+	local instruction_word<const> = instruction_words[instruction_index]
+	local op<const> = (instruction_word >> op_shift) & op_mask
+	local a = (instruction_word >> a_shift) & operand_mask
+	local previous_word<const> = instruction_words[instruction_index - 1]
+	local has_wide<const> = previous_word ~= nil
+		and ((previous_word >> op_shift) & op_mask) == isa.op_wide
+	if has_wide then
+		a = a | (
+			((previous_word >> a_shift) & operand_mask)
+			<< isa.max_operand_bits
+		)
+	end
 	write_signed_abx(
 		instruction_words,
 		instruction_index,
 		op,
 		a,
 		sbx,
-		a >> isa.max_operand_bits ~= 0
+		has_wide
 	)
 end
 
