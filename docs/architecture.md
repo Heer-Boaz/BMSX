@@ -3627,6 +3627,21 @@ explicit cart callback escape hatch, and `wave` is a compiled procedural
 sample. Additional interpolation modes extend `value`; they do not become
 parallel public track kinds.
 
+`linear` value interpolation is a numeric channel, not reflection over Lua
+values. Admission sorts frame- or millisecond-domain keys and precomputes each
+segment's value delta and reciprocal span. Evaluation clamps to the outer keys,
+binary-searches the immutable channel inside that range, and writes the scalar
+result through the track's already-compiled binding setter or explicit apply
+function. It allocates no runtime key, segment, or result tables. Vector,
+quaternion, path and pose channels must retain their domain representation and
+interpolation rules instead of adding dynamic type classification to this scalar
+channel. This follows Unreal MovieScene's sorted
+[channel data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/Channels/FMovieSceneChannelData)
+and channel-specific
+[evaluation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EvaluateChannel),
+and Godot's specialized numeric, vector and quaternion interpolation paths in
+[`Animation`](https://github.com/godotengine/godot/blob/master/scene/resources/animation.cpp).
+
 Event and value keys, and both tag boundaries, may address an exact frame (or
 normalized frame position) or timeline-local `time_ms`. Admission partitions
 those domains into sorted immutable programs: frame buckets retain the cheap

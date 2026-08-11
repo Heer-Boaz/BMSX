@@ -36,6 +36,12 @@ local empty_steps<const> = {
 	time_tracks = {},
 	time_track_count = 0,
 }
+local empty_linear_channels<const> = {
+	tracks = {},
+	track_count = 0,
+	time_tracks = {},
+	time_track_count = 0,
+}
 local empty_prepared<const> = {
 	primary_sample_runner = nil,
 	sample_groups = empty_groups,
@@ -44,6 +50,7 @@ local empty_prepared<const> = {
 	event_defs = empty_defs,
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
+	linear_defs = empty_defs,
 }
 track_program.empty = {
 	primary_sample_runner = nil,
@@ -53,6 +60,7 @@ track_program.empty = {
 	events = empty_events,
 	tags = empty_tags,
 	steps = empty_steps,
+	linear_channels = empty_linear_channels,
 }
 local sin<const> = math.sin
 local pi<const> = math.pi
@@ -145,22 +153,9 @@ local sampled_track_compilers<const> = {
 -- Value is the authored track role; interpolation selects its compiled
 -- evaluator. New interpolation modes therefore do not become parallel public
 -- track kinds.
-local value_track_preparers<const> = {
-	step = function(defs, track, binding_index_by_id)
-		local binding_index = 1
-		if track.binding ~= nil then
-			binding_index = binding_index_by_id[track.binding]
-		end
-		local apply = track.apply
-		if apply == nil then
-			apply = timeline_apply.compile_setter(track.path)
-		end
-		defs[#defs + 1] = {
-			binding_index = binding_index,
-			apply = apply,
-			keys = track.keys,
-		}
-	end,
+local value_definition_list_by_interpolation<const> = {
+	step = 'step_defs',
+	linear = 'linear_defs',
 }
 
 local add_sample_track<const> = function(groups, track, binding_index_by_id)
@@ -207,6 +202,13 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local event_defs<const> = {}
 	local tag_defs<const> = {}
 	local step_defs<const> = {}
+	local linear_defs<const> = {}
+	local prepared<const> = {
+		event_defs = event_defs,
+		tag_defs = tag_defs,
+		step_defs = step_defs,
+		linear_defs = linear_defs,
+	}
 	for index = 1, #track_defs do
 		local track<const> = track_defs[index]
 		local kind<const> = track.kind
@@ -215,21 +217,30 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
 		elseif kind == 'value' then
-			value_track_preparers[track.interpolation](step_defs, track, binding_index_by_id)
+			local defs<const> = prepared[value_definition_list_by_interpolation[track.interpolation]]
+			local binding_index = 1
+			if track.binding ~= nil then
+				binding_index = binding_index_by_id[track.binding]
+			end
+			local apply = track.apply
+			if apply == nil then
+				apply = timeline_apply.compile_setter(track.path)
+			end
+			defs[#defs + 1] = {
+				binding_index = binding_index,
+				apply = apply,
+				keys = track.keys,
+			}
 		else
 			add_sample_track(sample_groups, track, binding_index_by_id)
 		end
 	end
 	local primary_sample_runner<const>, compiled_sample_groups<const> = compile_sample_groups(sample_groups)
-	return {
-		primary_sample_runner = primary_sample_runner,
-		sample_groups = compiled_sample_groups,
-		sample_group_count = #compiled_sample_groups,
-		sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs,
-		event_defs = event_defs,
-		tag_defs = tag_defs,
-		step_defs = step_defs,
-	}
+	prepared.primary_sample_runner = primary_sample_runner
+	prepared.sample_groups = compiled_sample_groups
+	prepared.sample_group_count = #compiled_sample_groups
+	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #linear_defs
+	return prepared
 end
 
 local compile_events<const> = function(event_defs, length)
@@ -478,6 +489,66 @@ local compile_steps<const> = function(step_defs, length)
 	}
 end
 
+local compile_linear_channels<const> = function(linear_defs, length)
+	if #linear_defs == 0 then
+		return empty_linear_channels
+	end
+	local tracks<const> = {}
+	local time_tracks<const> = {}
+	for track_index = 1, #linear_defs do
+		local linear_def<const> = linear_defs[track_index]
+		local time_domain<const> = linear_def.keys[1].time_ms ~= nil
+		local keys<const> = {}
+		for key_index = 1, #linear_def.keys do
+			local key_def<const> = linear_def.keys[key_index]
+			local key<const> = { value = key_def.value, order = key_index }
+			if time_domain then
+				key.time_ms = key_def.time_ms
+			else
+				key.frame = frame_at(key_def, length)
+			end
+			keys[key_index] = key
+		end
+		if time_domain then
+			table.sort(keys, compare_time_key)
+		else
+			table.sort(keys, compare_key)
+		end
+		for key_index = 1, #keys do
+			keys[key_index].order = nil
+		end
+		for key_index = 1, #keys - 1 do
+			local key<const> = keys[key_index]
+			local next_key<const> = keys[key_index + 1]
+			local span
+			if time_domain then
+				span = next_key.time_ms - key.time_ms
+			else
+				span = next_key.frame - key.frame
+			end
+			key.value_delta = next_key.value - key.value
+			key.span_inv = 1 / span
+		end
+		local track<const> = {
+			binding_index = linear_def.binding_index,
+			apply = linear_def.apply,
+			keys = keys,
+			key_count = #keys,
+		}
+		if time_domain then
+			time_tracks[#time_tracks + 1] = track
+		else
+			tracks[#tracks + 1] = track
+		end
+	end
+	return {
+		tracks = tracks,
+		track_count = #tracks,
+		time_tracks = time_tracks,
+		time_track_count = #time_tracks,
+	}
+end
+
 function track_program.compile(prepared, length)
 	if prepared == empty_prepared then
 		return track_program.empty
@@ -486,10 +557,11 @@ function track_program.compile(prepared, length)
 		primary_sample_runner = prepared.primary_sample_runner,
 		sample_groups = prepared.sample_groups,
 		sample_group_count = prepared.sample_group_count,
-		value_track_count = prepared.sample_track_count + #prepared.step_defs,
+		value_track_count = prepared.sample_track_count + #prepared.step_defs + #prepared.linear_defs,
 		events = compile_events(prepared.event_defs, length),
 		tags = compile_tags(prepared.tag_defs, length),
 		steps = compile_steps(prepared.step_defs, length),
+		linear_channels = compile_linear_channels(prepared.linear_defs, length),
 	}
 end
 
