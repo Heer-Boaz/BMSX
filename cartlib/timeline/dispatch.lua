@@ -33,6 +33,7 @@ local dispatch_evaluation<const> = function(entry, owner, evaluation, on_evaluat
 		payload.method = evaluation.method
 		payload.direction = evaluation.direction
 		payload.wrapped = evaluation.wrapped
+		payload.initial = evaluation.initial
 	end
 	on_evaluation(entry, owner, evaluation, payload)
 	if tracks.events.count > 0 or tracks.events.time_count > 0 then
@@ -72,6 +73,7 @@ function timeline_dispatch.init_entry(entry)
 		frame_payload.method = 0
 		frame_payload.direction = 0
 		frame_payload.wrapped = false
+		frame_payload.initial = false
 		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
 		end_payload.timeline_id = timeline_id

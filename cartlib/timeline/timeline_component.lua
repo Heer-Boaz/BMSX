@@ -2,6 +2,7 @@ local basecomponent<const> = require('cartlib/component/basecomponent')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
+local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
 
@@ -37,22 +38,30 @@ local deactivate_timeline_entry<const> = function(self, id)
 	end
 end
 
-local process_timeline_evaluation<const> = function(entry, _owner, evaluation, payload)
+local process_timeline_evaluation
+process_timeline_evaluation = function(entry, owner, evaluation, payload)
 	local program<const> = entry.instance.program
 	if program.tracks.value_track_count > 0 then
 		timeline_track_evaluator.evaluate_values(entry, evaluation)
 	end
-	if not evaluation.sample then
-		return
+	if evaluation.sample then
+		local apply_function<const> = program.apply_function
+		if apply_function ~= nil then
+			apply_function(entry.primary_binding, payload.frame_value, entry.params, evaluation)
+		end
+		local frame_appliers<const> = program.frame_appliers
+		if frame_appliers ~= nil then
+			frame_appliers[payload.frame_index + 1](entry.primary_binding, payload.frame_value)
+		end
 	end
-	local apply_function<const> = program.apply_function
-	if apply_function ~= nil then
-		apply_function(entry.primary_binding, payload.frame_value, entry.params, evaluation)
+	if program.subsequences.clip_count > 0 then
+		timeline_sequence_evaluator.evaluate(entry, owner, evaluation, process_timeline_evaluation)
 	end
-	local frame_appliers<const> = program.frame_appliers
-	if frame_appliers ~= nil then
-		frame_appliers[payload.frame_index + 1](entry.primary_binding, payload.frame_value)
-	end
+end
+
+local clear_entry_state<const> = function(entry, owner)
+	timeline_track_evaluator.clear_tags(entry, owner)
+	timeline_sequence_evaluator.clear_entry(entry, owner)
 end
 
 local resolve_timeline_bindings<const> = function(entry, program, primary_binding, binding_overrides)
@@ -79,6 +88,7 @@ local process_evaluations<const> = function(self, entry)
 		process_timeline_evaluation
 	)
 	if stopped then
+		clear_entry_state(entry, self.parent)
 		deactivate_timeline_entry(self, entry.instance.id)
 	end
 	return stopped
@@ -119,12 +129,13 @@ function timeline_component:define(id, definition)
 		}
 		self._entries_by_id[id] = entry
 		timeline_dispatch.init_entry(entry)
+		timeline_sequence_evaluator.init_entry(entry)
 		return
 	end
 	local previous_program<const> = entry.instance.program
 	local active<const> = self._active_index_by_id[id] ~= nil
 	if active then
-		timeline_track_evaluator.clear_tags(entry, self.parent)
+		clear_entry_state(entry, self.parent)
 	end
 	if active and program.frame_builder ~= nil then
 		program = timeline_program.build(program, entry.params)
@@ -153,13 +164,23 @@ function timeline_component:define(id, definition)
 		entry.params = program.default_params
 	end
 	timeline_dispatch.init_entry(entry)
-	if active and entry.instance.head >= 0 then
-		timeline_track_evaluator.sync_tags(
-			entry,
-			self.parent,
-			entry.instance.head,
-			entry.instance.position_ms
-		)
+	timeline_sequence_evaluator.init_entry(entry)
+	if active then
+		timeline_sequence_evaluator.bind_entry(entry, self.parent)
+		if entry.instance.head >= 0 then
+			timeline_track_evaluator.sync_tags(
+				entry,
+				self.parent,
+				entry.instance.head,
+				entry.instance.position_ms
+			)
+			timeline_sequence_evaluator.sync_entry(
+				entry,
+				self.parent,
+				entry.instance.position_ms,
+				process_timeline_evaluation
+			)
+		end
 	end
 end
 
@@ -246,13 +267,15 @@ function timeline_component:play(id, opts)
 	entry.params = params
 	resolve_timeline_bindings(entry, program, target, bindings)
 	if rewind or program.frame_builder ~= nil then
-		timeline_track_evaluator.clear_tags(entry, owner)
+		clear_entry_state(entry, owner)
 	end
 	if program.frame_builder ~= nil then
 		instance:build(params)
 		program = instance.program
 		timeline_dispatch.init_entry(entry)
+		timeline_sequence_evaluator.init_entry(entry)
 	end
+	timeline_sequence_evaluator.bind_entry(entry, owner)
 	if rewind then
 		instance:rewind()
 	end
@@ -266,7 +289,7 @@ end
 
 function timeline_component:stop(id)
 	local entry<const> = self._entries_by_id[id]
-	timeline_track_evaluator.clear_tags(entry, self.parent)
+	clear_entry_state(entry, self.parent)
 	deactivate_timeline_entry(self, id)
 end
 

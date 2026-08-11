@@ -84,11 +84,16 @@ local emit_event_bucket<const> = function(events, owner, frame, direction)
 	end
 end
 
-local emit_event_range<const> = function(events, owner, previous, current, direction)
+local emit_event_range<const> = function(events, owner, previous, current, direction, include_previous)
 	local keys<const> = events.keys
 	local count<const> = events.count
 	if direction > 0 then
-		local first<const> = first_frame_after(keys, count, previous)
+		local first
+		if include_previous then
+			first = first_frame_at(keys, count, previous)
+		else
+			first = first_frame_after(keys, count, previous)
+		end
 		local finish<const> = first_frame_after(keys, count, current) - 1
 		for index = first, finish do
 			local key<const> = keys[index]
@@ -97,7 +102,12 @@ local emit_event_range<const> = function(events, owner, previous, current, direc
 			end
 		end
 	else
-		local first<const> = first_frame_at(keys, count, previous) - 1
+		local first
+		if include_previous then
+			first = first_frame_after(keys, count, previous) - 1
+		else
+			first = first_frame_at(keys, count, previous) - 1
+		end
 		local finish<const> = first_frame_at(keys, count, current)
 		for index = first, finish, -1 do
 			local key<const> = keys[index]
@@ -126,7 +136,12 @@ local emit_time_event_range<const> = function(events, owner, previous, current, 
 			end
 		end
 	elseif direction < 0 then
-		local first<const> = first_time_at(keys, count, previous) - 1
+		local first
+		if include_previous then
+			first = first_time_after(keys, count, previous) - 1
+		else
+			first = first_time_at(keys, count, previous) - 1
+		end
 		local finish<const> = first_time_at(keys, count, current)
 		for index = first, finish, -1 do
 			local key<const> = keys[index]
@@ -145,16 +160,18 @@ function track_evaluator.emit_events(entry, owner, evaluation)
 	local events<const> = program.tracks.events
 	local previous<const> = evaluation.previous_frame
 	local current<const> = evaluation.frame
-	if previous ~= current then
+	if evaluation.initial then
+		emit_event_range(events, owner, previous, current, evaluation.direction, true)
+	elseif previous ~= current then
 		if evaluation.wrapped then
-			emit_event_range(events, owner, previous, program.length - 1, 1)
-			emit_event_range(events, owner, -1, current, 1)
+			emit_event_range(events, owner, previous, program.length - 1, 1, false)
+			emit_event_range(events, owner, 0, current, 1, true)
 		elseif evaluation.direction > 0 and current == previous + 1 then
 			emit_event_bucket(events, owner, current, 1)
 		elseif evaluation.direction < 0 and current == previous - 1 then
 			emit_event_bucket(events, owner, current, -1)
 		else
-			emit_event_range(events, owner, previous, current, evaluation.direction)
+			emit_event_range(events, owner, previous, current, evaluation.direction, false)
 		end
 	end
 	if events.time_count == 0 then
@@ -162,7 +179,9 @@ function track_evaluator.emit_events(entry, owner, evaluation)
 	end
 	local previous_time_ms<const> = evaluation.previous_time_ms
 	local time_ms<const> = evaluation.time_ms
-	if evaluation.wrapped then
+	if evaluation.initial then
+		emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, true)
+	elseif evaluation.wrapped then
 		emit_time_event_range(events, owner, previous_time_ms, program.duration_ms, 1, false)
 		emit_time_event_range(events, owner, 0, time_ms, 1, true)
 	elseif previous < 0 then
@@ -298,6 +317,9 @@ function track_evaluator.evaluate_tags(entry, owner, evaluation)
 	end
 	local previous<const> = evaluation.previous_frame
 	local current<const> = evaluation.frame
+	if evaluation.initial then
+		track_evaluator.sync_tags(entry, owner, previous, evaluation.previous_time_ms)
+	end
 	if previous ~= current then
 		if evaluation.wrapped then
 			apply_tag_range(entry, owner, previous, program.length - 1, 1)
@@ -393,7 +415,8 @@ function track_evaluator.evaluate_values(entry, evaluation)
 	if evaluation.sample and steps.track_count > 0 then
 		local previous<const> = evaluation.previous_frame
 		local current<const> = evaluation.frame
-		if evaluation.method ~= play_update_method
+		if evaluation.initial
+		or evaluation.method ~= play_update_method
 			or evaluation.wrapped
 			or current > previous + 1
 			or current < previous - 1 then
@@ -407,7 +430,8 @@ function track_evaluator.evaluate_values(entry, evaluation)
 	if steps.time_track_count > 0 then
 		local previous_time_ms<const> = evaluation.previous_time_ms
 		local time_ms<const> = evaluation.time_ms
-		if evaluation.method ~= play_update_method
+		if evaluation.initial
+		or evaluation.method ~= play_update_method
 			or evaluation.wrapped
 			or evaluation.previous_frame < 0
 			or time_ms <= previous_time_ms then

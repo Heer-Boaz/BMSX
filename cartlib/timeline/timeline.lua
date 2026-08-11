@@ -33,7 +33,8 @@ local write_evaluation<const> = function(
 	direction,
 	sample,
 	ended,
-	wrapped
+	wrapped,
+	initial
 )
 	local count<const> = self.evaluation_count + 1
 	local evaluation = self.evaluations[count]
@@ -50,6 +51,7 @@ local write_evaluation<const> = function(
 	evaluation.sample = sample
 	evaluation.ended = ended
 	evaluation.wrapped = wrapped
+	evaluation.initial = initial
 	if sample then
 		evaluation.value = timeline_program.frame_value(self.program, frame)
 	end
@@ -163,6 +165,7 @@ local update_continuous<const> = function(self, delta_time)
 			self.direction,
 			true,
 			false,
+			false,
 			false
 		)
 		return self
@@ -186,6 +189,7 @@ local update_continuous<const> = function(self, delta_time)
 			1,
 			true,
 			ended,
+			false,
 			false
 		)
 		return self
@@ -204,7 +208,8 @@ local update_continuous<const> = function(self, delta_time)
 				1,
 				true,
 				true,
-				true
+				true,
+				false
 			)
 			previous_frame = frame
 			previous_time_ms = 0
@@ -220,6 +225,7 @@ local update_continuous<const> = function(self, delta_time)
 				play_update_method,
 				1,
 				true,
+				false,
 				false,
 				false
 			)
@@ -261,6 +267,7 @@ local update_continuous<const> = function(self, delta_time)
 			direction,
 			true,
 			ended,
+			false,
 			false
 		)
 		previous_frame = frame
@@ -328,6 +335,7 @@ local move_to<const> = function(self, frame, method)
 		direction,
 		true,
 		false,
+		false,
 		false
 	)
 	return self
@@ -392,6 +400,7 @@ local move_time<const> = function(self, requested_time_ms, method)
 		direction,
 		true,
 		false,
+		false,
 		false
 	)
 	return self
@@ -403,6 +412,59 @@ end
 
 function timeline:scrub_time(time_ms)
 	return move_time(self, time_ms, scrub_update_method)
+end
+
+-- Evaluates one externally controlled, contiguous local-time range. Nested
+-- sequence clips use this path instead of advancing an autonomous transport.
+function timeline:evaluate_time_range(previous_time_ms, time_ms, method, direction, initial, ended)
+	clear_evaluations(self)
+	local program<const> = self.program
+	local duration_ms<const> = program.duration_ms
+	if duration_ms ~= nil then
+		previous_time_ms = clamp(previous_time_ms, 0, duration_ms)
+		time_ms = clamp(time_ms, 0, duration_ms)
+	end
+	local previous_frame
+	local frame
+	if program.continuous then
+		previous_frame = self.head
+		if previous_frame < 0 then
+			previous_frame = 0
+		end
+		frame = previous_frame
+	else
+		previous_frame = (previous_time_ms / program.frame_duration) // 1
+		if previous_frame >= program.length then
+			previous_frame = program.length - 1
+		end
+		frame = (time_ms / program.frame_duration) // 1
+		if frame >= program.length then
+			frame = program.length - 1
+		end
+	end
+	local sample<const> = program.continuous or initial or frame ~= previous_frame
+	self.head = frame
+	if program.continuous then
+		self.frame_elapsed = 0
+	else
+		self.frame_elapsed = time_ms - frame * program.frame_duration
+	end
+	self.position_ms = time_ms
+	self.ended = ended
+	write_evaluation(
+		self,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		method,
+		direction,
+		sample,
+		ended,
+		false,
+		initial
+	)
+	return self
 end
 
 function timeline:snap_to_start()
@@ -422,6 +484,7 @@ function timeline:snap_to_start()
 		play_update_method,
 		1,
 		true,
+		false,
 		false,
 		false
 	)
@@ -501,7 +564,8 @@ function timeline:advance_internal(preserve_elapsed)
 		traversal_direction,
 		sample,
 		ended,
-		wrapped
+		wrapped,
+		false
 	)
 	return self
 end

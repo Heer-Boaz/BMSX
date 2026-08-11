@@ -1,5 +1,6 @@
 local clock<const> = require('cartlib/clock')
 local timeline_apply<const> = require('cartlib/timeline/apply')
+local timeline_sequence_program<const> = require('cartlib/timeline/sequence_program')
 local timeline_track_program<const> = require('cartlib/timeline/track_program')
 
 -- A definition is admitted into immutable evaluation data. Timeline instances
@@ -87,8 +88,9 @@ function timeline_program.compile(definition)
 	end
 	local frame_source<const> = definition.frames
 	local track_defs<const> = definition.tracks or empty_defs
+	local subsequence_defs<const> = definition.subsequences or empty_defs
 	local continuous = definition.continuous
-	if continuous == nil and frame_source == nil and #track_defs > 0 then
+	if continuous == nil and frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
 		continuous = true
 	end
 	local frame_duration = definition.frame_duration
@@ -105,6 +107,11 @@ function timeline_program.compile(definition)
 	end
 	local binding_ids<const>, binding_index_by_id<const> = compile_bindings(definition.bindings or empty_defs)
 	local prepared_tracks<const> = timeline_track_program.prepare(track_defs, binding_index_by_id)
+	local subsequences<const> = timeline_sequence_program.compile(
+		subsequence_defs,
+		binding_index_by_id,
+		timeline_program.compile
+	)
 	local apply_function
 	if type(definition.apply) == 'function' then
 		apply_function = definition.apply
@@ -124,6 +131,7 @@ function timeline_program.compile(definition)
 		binding_count = #binding_ids,
 		prepared_tracks = prepared_tracks,
 		tracks = timeline_track_program.empty,
+		subsequences = subsequences,
 		apply_frames = apply_frames,
 		apply_function = apply_function,
 		default_binding = definition.target,
@@ -131,11 +139,14 @@ function timeline_program.compile(definition)
 		frames = {},
 		length = 0,
 	}
+	if program.duration_ms == nil and subsequences.clip_count > 0 then
+		program.duration_ms = subsequences.duration_ms
+	end
 	if frame_builder ~= nil then
 		program_by_definition[definition] = program
 		return program
 	end
-	if frame_source == nil and #track_defs > 0 then
+	if frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
 		local compiled<const> = compile_frame_data(program, empty_frames)
 		program_by_definition[definition] = compiled
 		return compiled

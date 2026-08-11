@@ -3651,10 +3651,25 @@ the sampled destination. The range is timeline position, not accumulated wall
 time, and replaces parallel reason strings, jumped flags and repeated tick
 deltas.
 
-A nested sequence compiles a child-program reference plus a parent-to-child
-time transform and evaluates that child in the same pass; it does not call back
+A nested sequence is authored in the parent definition's `subsequences` array.
+Each clip has an authored `id`, `start_time_ms`, `duration_ms`, a child
+`sequence`, and optional `clip_in_ms`, `time_scale`, `params`, and binding-name
+remaps. Admission compiles that into a shared child-program reference, a dense
+parent-binding index map, a parent-to-child time transform, and clip references
+sorted by both interval boundaries. A parent entry retains the child entries
+and its dense active-clip set. Normal play therefore visits only retained
+active clips and boundaries crossed by the current range; jump and scrub take
+the deliberately colder destination-query path. Candidate storage and child
+evaluation records are retained and reused.
+
+The child is evaluated recursively in the same pass; it does not call back
 through `timeline_component`, allocate another ECS system, or retain editor
-objects. Seekable audio and media tracks consume the same local range and
+objects. A newly entered clip reconstructs persistent child state at its source
+position, samples the destination, and traverses only one-shot keys inside the
+mapped clip range. A play range that crosses an entire clip still evaluates its
+endpoint, whereas jump and scrub suppress the crossed one-shot keys. Child
+binding names map to equal parent binding names unless the clip explicitly
+remaps them. Seekable audio and media tracks consume the same local range and
 method. This follows Unreal MovieScene's explicit
 [play/jump/scrub method](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EUpdatePositionMethod)
 and [nested time transforms](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneSequenceTransform),
