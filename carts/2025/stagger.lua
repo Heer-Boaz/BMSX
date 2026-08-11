@@ -147,8 +147,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 		return timelineid
 	end
 	local total<const> = cfg.text_start + cfg.text_duration
-	owner.timelines:define({
-		id = timelineid,
+	owner.timelines:define(timelineid, {
 		continuous = true,
 		playback_mode = 'once',
 		duration_seconds = total,

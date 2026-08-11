@@ -1372,8 +1372,8 @@ function combat.define_fsm()
 	--
 	-- DEFINING timelines
 	--   All timelines are declared once here, at the FSM root, using `def = { ... }`.
-	--   The cart library calls timeline.new(def) internally — no timeline.new() call needed
-	--   in cart code. The `id` field in `def` is optional; it defaults to the key.
+	--   The dictionary key is the timeline identity; `def` contains only authored
+	--   evaluation data and is compiled by the owner's timeline component.
 	--   autoplay = false at root level: registration only, no automatic playback.
 	--
 	-- PER-STATE BEHAVIOUR (in individual state `timelines` blocks, no `def`)

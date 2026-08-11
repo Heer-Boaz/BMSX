@@ -250,8 +250,7 @@ function transition.register_states(states)
 				start_x = w,
 				end_x = -w,
 			}
-			self.timelines:define({
-				id = overgang_timelineid,
+			self.timelines:define(overgang_timelineid, {
 				frames = timeline.range(self.transition_finish_frame + 1),
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
@@ -308,8 +307,7 @@ function transition.register_states(states)
 			hide_transition_layers(self.transition_visual)
 			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
-			self.timelines:define({
-				id = overgang_post_fade_in_timelineid,
+			self.timelines:define(overgang_post_fade_in_timelineid, {
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
@@ -381,8 +379,7 @@ function transition.register_states(states)
 				hold_black = self.fade_hold_black,
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})
-			self.timelines:define({
-				id = fade_timelineid,
+			self.timelines:define(fade_timelineid, {
 				frames = frames,
 				ticks_per_frame = fade_ticks_per_frame,
 				playback_mode = 'once',

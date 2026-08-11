@@ -214,7 +214,7 @@ local compile_bindings<const> = function(binding_defs)
 	return ids, index_by_id
 end
 
-function timelineprogram.compile(definition)
+function timelineprogram.compile(id, definition)
 	local frame_source<const> = definition.frames
 	local tracks<const> = definition.tracks
 	local continuous = definition.continuous
@@ -249,7 +249,7 @@ function timelineprogram.compile(definition)
 	end
 	local apply_frames<const> = definition.apply ~= nil and apply_function == nil
 	local program<const> = {
-		id = definition.id,
+		id = id,
 		repetitions = definition.repetitions or 1,
 		frame_builder = frame_builder,
 		marker_defs = definition.markers or empty_defs,

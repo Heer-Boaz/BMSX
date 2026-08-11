@@ -593,10 +593,7 @@ local build_timelinebindings<const> = function(owner, definitions)
 		local id<const> = config.id or key
 		local definition<const> = config.def
 		if definition then
-			if definition.id == nil then
-				definition.id = id
-			end
-			owner.timelines:define(definition)
+			owner.timelines:define(id, definition)
 		end
 		bindings[#bindings + 1] = {
 			id = id,

@@ -110,8 +110,8 @@ function timelinecomponent:on_detach()
 	end
 end
 
-function timelinecomponent:define(definition)
-	local program = timelineprogram.compile(definition)
+function timelinecomponent:define(id, definition)
+	local program = timelineprogram.compile(id, definition)
 	local entry = self._entries_by_id[program.id]
 	if entry == nil then
 		local instance<const> = timeline.new(program)
