@@ -11,15 +11,8 @@ local acquire_payload<const> = function(state, payloads)
 	return payload
 end
 
-local dispatch_evaluation<const> = function(entry, owner, evaluation, on_evaluation)
+local dispatch_evaluation<const> = function(entry, owner, evaluation)
 	local state<const> = entry.timeline_dispatch_state
-	-- Persistent state is reconstructed first, then sampled values are applied,
-	-- then one-shot events traverse the evaluation range. Event handlers and
-	-- frame observers therefore see the final state at the sampled position.
-	local tracks<const> = entry.instance.program.tracks
-	if tracks.tags.tag_count > 0 then
-		timeline_track_evaluator.evaluate_tags(entry, owner, evaluation)
-	end
 	local payload
 	if evaluation.sample then
 		payload = acquire_payload(state, state.frame_payloads)
@@ -33,10 +26,9 @@ local dispatch_evaluation<const> = function(entry, owner, evaluation, on_evaluat
 		payload.wrapped = evaluation.wrapped
 		payload.initial = evaluation.initial
 	end
-	on_evaluation(entry, owner, evaluation, payload)
-	if tracks.events.count > 0 or tracks.events.time_count > 0 then
-		timeline_track_evaluator.emit_events(entry, owner, evaluation)
-	end
+	-- The admitted program preserves the phase order: persistent state,
+	-- sampled values, nested sequences, then one-shot events.
+	entry.instance.program.evaluate(entry, owner, evaluation, payload)
 	if evaluation.sample then
 		owner.events:emit(state.scoped_frame_event_type, payload)
 		state.depth = state.depth - 1
@@ -94,11 +86,11 @@ function timeline_dispatch.init_entry(entry)
 	timeline_track_evaluator.init_entry(entry)
 end
 
-function timeline_dispatch.process_instance_evaluations(entry, owner, on_evaluation)
+function timeline_dispatch.process_instance_evaluations(entry, owner)
 	local instance<const> = entry.instance
 	for index = 1, instance.evaluation_count do
 		local evaluation<const> = instance.evaluations[index]
-		dispatch_evaluation(entry, owner, evaluation, on_evaluation)
+		dispatch_evaluation(entry, owner, evaluation)
 		if evaluation.ended then
 			dispatch_end(entry, owner, evaluation)
 		end

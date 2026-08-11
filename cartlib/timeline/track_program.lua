@@ -1,6 +1,7 @@
 local easing<const> = require('cartlib/easing')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
+local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 
 -- Track definitions are classified and specialized once. Runtime evaluation
 -- consumes these dense phase programs without inspecting authored track kinds.
@@ -42,16 +43,21 @@ local empty_prepared<const> = {
 	sample_groups = empty_groups,
 	sample_group_count = 0,
 	sample_track_count = 0,
+	value_track_count = 0,
+	value_runner = nil,
+	has_frame_steps = false,
+	has_time_steps = false,
 	event_defs = empty_defs,
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
-	scalar_defs = empty_defs,
+	scalar_program = scalar_channel.empty_program,
 }
 track_program.empty = {
 	primary_sample_runner = nil,
 	sample_groups = empty_groups,
 	sample_group_count = 0,
 	value_track_count = 0,
+	value_runner = nil,
 	events = empty_events,
 	tags = empty_tags,
 	steps = empty_steps,
@@ -145,15 +151,6 @@ local sampled_track_compilers<const> = {
 	wave = compile_wave,
 }
 
--- Value is the authored track role; interpolation selects its compiled
--- evaluator. New interpolation modes therefore do not become parallel public
--- track kinds.
-local value_definition_list_by_interpolation<const> = {
-	step = 'step_defs',
-	linear = 'scalar_defs',
-	cubic = 'scalar_defs',
-}
-
 local add_sample_track<const> = function(groups, track, binding_index_by_id)
 	local binding_index = 1
 	if track.binding ~= nil then
@@ -199,11 +196,12 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local tag_defs<const> = {}
 	local step_defs<const> = {}
 	local scalar_defs<const> = {}
+	local has_frame_steps = false
+	local has_time_steps = false
 	local prepared<const> = {
 		event_defs = event_defs,
 		tag_defs = tag_defs,
 		step_defs = step_defs,
-		scalar_defs = scalar_defs,
 	}
 	for index = 1, #track_defs do
 		local track<const> = track_defs[index]
@@ -214,7 +212,10 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			tag_defs[#tag_defs + 1] = track
 		elseif kind == 'value' then
 			local interpolation<const> = track.interpolation
-			local defs<const> = prepared[value_definition_list_by_interpolation[interpolation]]
+			local defs = scalar_defs
+			if interpolation == 'step' then
+				defs = step_defs
+			end
 			local binding_index = 1
 			if track.binding ~= nil then
 				binding_index = binding_index_by_id[track.binding]
@@ -232,6 +233,13 @@ function track_program.prepare(track_defs, binding_index_by_id)
 				interpolation = interpolation,
 				keys = track.keys,
 			}
+			if interpolation == 'step' then
+				if track.keys[1].time_ms ~= nil then
+					has_time_steps = true
+				else
+					has_frame_steps = true
+				end
+			end
 		else
 			add_sample_track(sample_groups, track, binding_index_by_id)
 		end
@@ -241,6 +249,13 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.sample_groups = compiled_sample_groups
 	prepared.sample_group_count = #compiled_sample_groups
 	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #scalar_defs
+	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
+	prepared.has_frame_steps = has_frame_steps
+	prepared.has_time_steps = has_time_steps
+	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
+	if prepared.value_track_count > 0 then
+		prepared.value_runner = timeline_track_evaluator.compile_values(prepared)
+	end
 	return prepared
 end
 
@@ -494,17 +509,19 @@ function track_program.compile(prepared, length)
 	if prepared == empty_prepared then
 		return track_program.empty
 	end
-	local scalar_channels<const> = scalar_channel.compile(prepared.scalar_defs, length)
-	return {
+	local scalar_channels<const> = scalar_channel.compile(prepared.scalar_program, length)
+	local tracks<const> = {
 		primary_sample_runner = prepared.primary_sample_runner,
 		sample_groups = prepared.sample_groups,
 		sample_group_count = prepared.sample_group_count,
-		value_track_count = prepared.sample_track_count + #prepared.step_defs + #prepared.scalar_defs,
+		value_track_count = prepared.value_track_count,
+		value_runner = prepared.value_runner,
 		events = compile_events(prepared.event_defs, length),
 		tags = compile_tags(prepared.tag_defs, length),
 		steps = compile_steps(prepared.step_defs, length),
 		scalar_channels = scalar_channels,
 	}
+	return tracks
 end
 
 return track_program

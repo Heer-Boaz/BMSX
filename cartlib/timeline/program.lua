@@ -1,70 +1,18 @@
 local clock<const> = require('cartlib/clock')
-local timeline_apply<const> = require('cartlib/timeline/apply')
+local timeline_evaluation_program<const> = require('cartlib/timeline/evaluation_program')
+local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_program<const> = require('cartlib/timeline/sequence_program')
 local timeline_track_program<const> = require('cartlib/timeline/track_program')
 
 -- A definition is admitted into immutable evaluation data. Timeline instances
 -- retain only transport state and atomically replace this program on rebind.
 local timeline_program<const> = {}
-timeline_program.playback_mode = {
-	once = 0,
-	loop = 1,
-	pingpong = 2,
-}
-local playback_mode_by_name<const> = timeline_program.playback_mode
+local playback_mode_by_name<const> = timeline_playback.mode
 local empty_defs<const> = {}
-local empty_frames<const> = {}
 local primary_binding_ids<const> = { 'target' }
 local primary_binding_index_by_id<const> = { target = 1 }
 local program_by_definition<const> = setmetatable({}, { __mode = 'k' })
-
-local expand_frames<const> = function(frames, repetitions)
-	if frames.__timelinerange then
-		if repetitions <= 1 then
-			return frames
-		end
-		return {
-			__timelinerange = true,
-			length = frames.length * repetitions,
-			source_length = frames.source_length,
-		}
-	end
-	if repetitions <= 1 then
-		return frames
-	end
-	local expanded<const> = {}
-	for _ = 1, repetitions do
-		for index = 1, #frames do
-			expanded[#expanded + 1] = frames[index]
-		end
-	end
-	return expanded
-end
-
-local compile_frame_data<const> = function(program, frame_source)
-	local compiled<const> = {}
-	for key, value in pairs(program) do
-		compiled[key] = value
-	end
-	compiled.frames = expand_frames(frame_source, program.repetitions)
-	if compiled.frames.__timelinerange then
-		compiled.length = compiled.frames.length
-		compiled.range_source_length = compiled.frames.source_length
-	else
-		compiled.length = #compiled.frames
-		compiled.range_source_length = nil
-	end
-	if not compiled.continuous then
-		compiled.duration_ms = compiled.length * compiled.frame_duration
-	end
-	compiled.tracks = timeline_track_program.compile(program.prepared_tracks, compiled.length)
-	if program.apply_frames then
-		compiled.frame_appliers = timeline_apply.compile_frames(compiled.frames)
-	else
-		compiled.frame_appliers = nil
-	end
-	return compiled
-end
 
 local compile_bindings<const> = function(binding_defs)
 	if #binding_defs == 0 then
@@ -140,6 +88,7 @@ function timeline_program.compile(definition)
 		frames = {},
 		length = 0,
 	}
+	program.evaluate = timeline_evaluation_program.compile(program)
 	if program.duration_ms == nil and subsequences.clip_count > 0 then
 		program.duration_ms = subsequences.duration_ms
 	end
@@ -148,27 +97,16 @@ function timeline_program.compile(definition)
 		return program
 	end
 	if frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
-		local compiled<const> = compile_frame_data(program, empty_frames)
+		local compiled<const> = timeline_frame_program.compile(
+			program,
+			timeline_frame_program.empty_frames
+		)
 		program_by_definition[definition] = compiled
 		return compiled
 	end
-	local compiled<const> = compile_frame_data(program, frame_source)
+	local compiled<const> = timeline_frame_program.compile(program, frame_source)
 	program_by_definition[definition] = compiled
 	return compiled
-end
-
-function timeline_program.build(program, params)
-	return compile_frame_data(program, program.frame_builder(params))
-end
-
-function timeline_program.frame_value(program, index)
-	if index < 0 or index >= program.length then
-		return nil
-	end
-	if program.range_source_length ~= nil then
-		return index % program.range_source_length
-	end
-	return program.frames[index + 1]
 end
 
 return timeline_program

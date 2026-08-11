@@ -1,14 +1,11 @@
 local clamp<const> = require('cartlib/util/clamp')
-local timeline_program<const> = require('cartlib/timeline/program')
+local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
 
-local timelinestart_index<const> = -1
-local update_method<const> = {
-	play = 0,
-	jump = 1,
-	scrub = 2,
-}
-local playback_mode<const> = timeline_program.playback_mode
+local timelinestart_index<const> = timeline_playback.start_index
+local update_method<const> = timeline_playback.update_method
+local playback_mode<const> = timeline_playback.mode
 local playback_once<const> = playback_mode.once
 local playback_loop<const> = playback_mode.loop
 local playback_pingpong<const> = playback_mode.pingpong
@@ -56,7 +53,7 @@ local write_evaluation<const> = function(
 	evaluation.wrapped = wrapped
 	evaluation.initial = initial
 	if sample then
-		evaluation.value = timeline_program.frame_value(self.program, frame)
+		evaluation.value = timeline_frame_program.value(self.program, frame)
 	end
 	self.evaluation_count = count
 	if wrapped then
@@ -128,12 +125,12 @@ function timeline:rebind_program(program)
 end
 
 function timeline:build(params)
-	self.program = timeline_program.build(self.program, params)
+	self.program = timeline_frame_program.build(self.program, params)
 	self:rewind()
 end
 
 function timeline:value()
-	return timeline_program.frame_value(self.program, self.head)
+	return timeline_frame_program.value(self.program, self.head)
 end
 
 function timeline:rewind()

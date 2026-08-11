@@ -1,10 +1,11 @@
 local clamp<const> = require('cartlib/util/clamp')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
-local timeline_program<const> = require('cartlib/timeline/program')
+local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
-local play_update_method<const> = timeline_module.update_method.play
+local play_update_method<const> = timeline_playback.update_method.play
 
 -- Nested clips retain child runtime entries, resolved binding slots and active
 -- interval state under their parent entry. They never become ECS systems or
@@ -170,7 +171,7 @@ function sequence_evaluator.bind_entry(entry, owner)
 				clear_child(child_entry, owner)
 				remove_active_clip(state, clip_index)
 			end
-			child_entry.instance:rebind_program(timeline_program.build(clip.program, child_entry.params))
+			child_entry.instance:rebind_program(timeline_frame_program.build(clip.program, child_entry.params))
 			child_entry.instance:rewind()
 			timeline_dispatch.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
@@ -221,8 +222,7 @@ local process_clip<const> = function(
 	clip_index,
 	previous_time_ms,
 	time_ms,
-	method,
-	on_evaluation
+	method
 )
 	local sequence<const> = entry.instance.program.subsequences
 	local clip<const> = sequence.clips[clip_index]
@@ -240,7 +240,7 @@ local process_clip<const> = function(
 		initial,
 		method == play_update_method and not destination_active
 	)
-	timeline_dispatch.process_instance_evaluations(child_entry, owner, on_evaluation)
+	timeline_dispatch.process_instance_evaluations(child_entry, owner)
 	if destination_active then
 		activate_clip(state, clip_index)
 	else
@@ -249,7 +249,7 @@ local process_clip<const> = function(
 	end
 end
 
-local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time_ms, initial, on_evaluation)
+local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time_ms, initial)
 	local sequence<const> = entry.instance.program.subsequences
 	local state<const> = entry.sequence_state
 	local direction = 0
@@ -293,13 +293,12 @@ local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time
 			state.candidates[index],
 			previous_time_ms,
 			time_ms,
-			play_update_method,
-			on_evaluation
+			play_update_method
 		)
 	end
 end
 
-local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, method, on_evaluation)
+local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, method)
 	local sequence<const> = entry.instance.program.subsequences
 	local state<const> = entry.sequence_state
 	for clip_index = 1, sequence.clip_count do
@@ -311,8 +310,7 @@ local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, met
 				clip_index,
 				previous_time_ms,
 				time_ms,
-				method,
-				on_evaluation
+				method
 			)
 		elseif state.active_index_by_clip[clip_index] ~= nil then
 			clear_child(state.entries[clip_index], owner)
@@ -321,19 +319,14 @@ local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, met
 	end
 end
 
-function sequence_evaluator.evaluate(entry, owner, evaluation, on_evaluation)
-	local sequence<const> = entry.instance.program.subsequences
-	if sequence.clip_count == 0 then
-		return
-	end
+function sequence_evaluator.evaluate(entry, owner, evaluation)
 	if evaluation.method ~= play_update_method then
 		evaluate_at(
 			entry,
 			owner,
 			evaluation.previous_time_ms,
 			evaluation.time_ms,
-			evaluation.method,
-			on_evaluation
+			evaluation.method
 		)
 		return
 	end
@@ -345,22 +338,20 @@ function sequence_evaluator.evaluate(entry, owner, evaluation, on_evaluation)
 				owner,
 				evaluation.previous_time_ms,
 				duration_ms,
-				evaluation.initial,
-				on_evaluation
+				evaluation.initial
 			)
 			clear_active_clips(entry, owner)
-			evaluate_play_range(entry, owner, 0, evaluation.time_ms, true, on_evaluation)
+			evaluate_play_range(entry, owner, 0, evaluation.time_ms, true)
 		else
 			evaluate_play_range(
 				entry,
 				owner,
 				evaluation.previous_time_ms,
 				0,
-				evaluation.initial,
-				on_evaluation
+				evaluation.initial
 			)
 			clear_active_clips(entry, owner)
-			evaluate_play_range(entry, owner, duration_ms, evaluation.time_ms, true, on_evaluation)
+			evaluate_play_range(entry, owner, duration_ms, evaluation.time_ms, true)
 		end
 		return
 	end
@@ -369,14 +360,13 @@ function sequence_evaluator.evaluate(entry, owner, evaluation, on_evaluation)
 		owner,
 		evaluation.previous_time_ms,
 		evaluation.time_ms,
-		evaluation.initial or evaluation.previous_frame < 0,
-		on_evaluation
+		evaluation.initial or evaluation.previous_frame < 0
 	)
 end
 
-function sequence_evaluator.sync_entry(entry, owner, time_ms, on_evaluation)
+function sequence_evaluator.sync_entry(entry, owner, time_ms)
 	if entry.instance.program.subsequences.clip_count > 0 then
-		evaluate_at(entry, owner, time_ms, time_ms, timeline_module.update_method.jump, on_evaluation)
+		evaluate_at(entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
 	end
 end
 

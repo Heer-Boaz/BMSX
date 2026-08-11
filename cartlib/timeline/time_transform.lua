@@ -1,11 +1,11 @@
-local timeline_program<const> = require('cartlib/timeline/program')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 
 -- A clip transform is a linear parent-to-child mapping followed by an optional
 -- time warp. The evaluator emits monotonic child ranges at every warp boundary
 -- so downstream track code never has to infer skipped turns.
 local time_transform<const> = {}
-local playback_loop<const> = timeline_program.playback_mode.loop
-local playback_pingpong<const> = timeline_program.playback_mode.pingpong
+local playback_loop<const> = timeline_playback.mode.loop
+local playback_pingpong<const> = timeline_playback.mode.pingpong
 
 local child_time_at<const> = function(clip, parent_time_ms)
 	return parent_time_ms * clip.time_scale + clip.time_offset_ms

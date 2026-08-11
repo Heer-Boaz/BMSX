@@ -1,4 +1,5 @@
 local basecomponent<const> = require('cartlib/component/basecomponent')
+local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
@@ -38,27 +39,6 @@ local deactivate_timeline_entry<const> = function(self, id)
 	end
 end
 
-local process_timeline_evaluation
-process_timeline_evaluation = function(entry, owner, evaluation, payload)
-	local program<const> = entry.instance.program
-	if program.tracks.value_track_count > 0 then
-		timeline_track_evaluator.evaluate_values(entry, evaluation)
-	end
-	if evaluation.sample then
-		local apply_function<const> = program.apply_function
-		if apply_function ~= nil then
-			apply_function(entry.primary_binding, payload.frame_value, entry.params, evaluation)
-		end
-		local frame_appliers<const> = program.frame_appliers
-		if frame_appliers ~= nil then
-			frame_appliers[payload.frame_index + 1](entry.primary_binding, payload.frame_value)
-		end
-	end
-	if program.subsequences.clip_count > 0 then
-		timeline_sequence_evaluator.evaluate(entry, owner, evaluation, process_timeline_evaluation)
-	end
-end
-
 local clear_entry_state<const> = function(entry, owner)
 	timeline_track_evaluator.clear_tags(entry, owner)
 	timeline_sequence_evaluator.clear_entry(entry, owner)
@@ -84,8 +64,7 @@ end
 local process_evaluations<const> = function(self, entry)
 	local stopped<const> = timeline_dispatch.process_instance_evaluations(
 		entry,
-		self.parent,
-		process_timeline_evaluation
+		self.parent
 	)
 	if stopped then
 		clear_entry_state(entry, self.parent)
@@ -138,7 +117,7 @@ function timeline_component:define(id, definition)
 		clear_entry_state(entry, self.parent)
 	end
 	if active and program.frame_builder ~= nil then
-		program = timeline_program.build(program, entry.params)
+		program = timeline_frame_program.build(program, entry.params)
 	end
 	entry.instance:rebind_program(program)
 	if active then
@@ -177,8 +156,7 @@ function timeline_component:define(id, definition)
 			timeline_sequence_evaluator.sync_entry(
 				entry,
 				self.parent,
-				entry.instance.position_ms,
-				process_timeline_evaluation
+				entry.instance.position_ms
 			)
 		end
 	end

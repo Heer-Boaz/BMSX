@@ -4,6 +4,15 @@
 local scalar_channel<const> = {}
 local format<const> = string.format
 
+scalar_channel.empty_program = {
+	track_count = 0,
+	linear_tracks = {},
+	linear_time_tracks = {},
+	cubic_tracks = {},
+	cubic_time_tracks = {},
+	runner = nil,
+}
+
 scalar_channel.empty = {
 	track_count = 0,
 	linear_tracks = {},
@@ -43,7 +52,7 @@ local append_scalar_track<const> = function(
 		parts[#parts + 1] = track_expression
 		parts[#parts + 1] = '["keys"]\n'
 	end
-	local key_count<const> = track.key_count
+	local key_count<const> = #track.keys
 	if key_count == 1 then
 		parts[#parts + 1] = 'value = keys[1]["value"]\n'
 	else
@@ -120,7 +129,7 @@ local analyze_tracks<const> = function(analysis, tracks, time_domain)
 		else
 			analysis.has_secondary_binding = true
 		end
-		local key_count<const> = track.key_count
+		local key_count<const> = #track.keys
 		if time_domain then
 			if key_count > analysis.time_max_key_count then
 				analysis.time_max_key_count = key_count
@@ -199,7 +208,6 @@ local finalize_tracks<const> = function(tracks)
 		local track<const> = tracks[index]
 		track.binding_index = nil
 		track.path = nil
-		track.key_count = nil
 	end
 end
 
@@ -224,9 +232,9 @@ local frame_at<const> = function(position, length)
 	return (position.u * (length - 1)) // 1
 end
 
-function scalar_channel.compile(definitions, length)
+function scalar_channel.prepare(definitions)
 	if #definitions == 0 then
-		return scalar_channel.empty
+		return scalar_channel.empty_program
 	end
 	local linear_tracks<const> = {}
 	local linear_time_tracks<const> = {}
@@ -236,6 +244,33 @@ function scalar_channel.compile(definitions, length)
 		local definition<const> = definitions[track_index]
 		local interpolation<const> = definition.interpolation
 		local time_domain<const> = definition.keys[1].time_ms ~= nil
+		if interpolation == 'linear' then
+			if time_domain then
+				linear_time_tracks[#linear_time_tracks + 1] = definition
+			else
+				linear_tracks[#linear_tracks + 1] = definition
+			end
+		elseif time_domain then
+			cubic_time_tracks[#cubic_time_tracks + 1] = definition
+		else
+			cubic_tracks[#cubic_tracks + 1] = definition
+		end
+	end
+	local program<const> = {
+		track_count = #definitions,
+		linear_tracks = linear_tracks,
+		linear_time_tracks = linear_time_tracks,
+		cubic_tracks = cubic_tracks,
+		cubic_time_tracks = cubic_time_tracks,
+	}
+	program.runner = compile_runner(program)
+	return program
+end
+
+local compile_tracks<const> = function(definitions, length, time_domain, cubic)
+	local tracks<const> = {}
+	for track_index = 1, #definitions do
+		local definition<const> = definitions[track_index]
 		local keys<const> = {}
 		for key_index = 1, #definition.keys do
 			local source<const> = definition.keys[key_index]
@@ -248,7 +283,7 @@ function scalar_channel.compile(definitions, length)
 			else
 				key.frame = frame_at(source, length)
 			end
-			if interpolation == 'cubic' then
+			if cubic then
 				key.arrive_tangent = source.arrive_tangent
 				key.leave_tangent = source.leave_tangent
 			end
@@ -272,50 +307,49 @@ function scalar_channel.compile(definitions, length)
 				span = next_key.frame - key.frame
 			end
 			key.span_inv = 1 / span
-			if interpolation == 'linear' then
-				key.value_delta = next_key.value - key.value
-			else
+			if cubic then
 				local leave<const> = key.leave_tangent * span
 				local arrive<const> = next_key.arrive_tangent * span
 				key.cubic3 = 2 * key.value - 2 * next_key.value + leave + arrive
 				key.cubic2 = -3 * key.value + 3 * next_key.value - 2 * leave - arrive
 				key.cubic1 = leave
+			else
+				key.value_delta = next_key.value - key.value
 			end
 		end
-		if interpolation == 'cubic' then
+		if cubic then
 			for key_index = 1, #keys do
 				local key<const> = keys[key_index]
 				key.arrive_tangent = nil
 				key.leave_tangent = nil
 			end
 		end
-		local track<const> = {
+		tracks[track_index] = {
 			binding_index = definition.binding_index,
 			apply = definition.apply,
 			path = definition.path,
 			keys = keys,
-			key_count = #keys,
 		}
-		if interpolation == 'linear' then
-			if time_domain then
-				linear_time_tracks[#linear_time_tracks + 1] = track
-			else
-				linear_tracks[#linear_tracks + 1] = track
-			end
-		elseif time_domain then
-			cubic_time_tracks[#cubic_time_tracks + 1] = track
-		else
-			cubic_tracks[#cubic_tracks + 1] = track
-		end
 	end
+	return tracks
+end
+
+function scalar_channel.compile(program, length)
+	if program == scalar_channel.empty_program then
+		return scalar_channel.empty
+	end
+	local linear_tracks<const> = compile_tracks(program.linear_tracks, length, false, false)
+	local linear_time_tracks<const> = compile_tracks(program.linear_time_tracks, length, true, false)
+	local cubic_tracks<const> = compile_tracks(program.cubic_tracks, length, false, true)
+	local cubic_time_tracks<const> = compile_tracks(program.cubic_time_tracks, length, true, true)
 	local channels<const> = {
-		track_count = #definitions,
+		track_count = program.track_count,
 		linear_tracks = linear_tracks,
 		linear_time_tracks = linear_time_tracks,
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
+		runner = program.runner,
 	}
-	channels.runner = compile_runner(channels)
 	finalize_tracks(linear_tracks)
 	finalize_tracks(linear_time_tracks)
 	finalize_tracks(cubic_tracks)

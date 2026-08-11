@@ -1,10 +1,10 @@
 -- Runtime track evaluation is split into persistent, sampled, and one-shot
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
-local timeline_module<const> = require('cartlib/timeline/timeline')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local track_evaluator<const> = {}
-local play_update_method<const> = timeline_module.update_method.play
+local play_update_method<const> = timeline_playback.update_method.play
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -488,11 +488,8 @@ local apply_time_step_range<const> = function(entry, steps, previous_time_ms, ti
 	end
 end
 
-function track_evaluator.evaluate_values(entry, evaluation)
-	local tracks<const> = entry.instance.program.tracks
-	local params<const> = entry.params
-	local steps<const> = tracks.steps
-	if evaluation.sample and steps.track_count > 0 then
+local evaluate_frame_steps<const> = function(entry, steps, params, evaluation)
+	if evaluation.sample then
 		local previous<const> = evaluation.previous_frame
 		local current<const> = evaluation.frame
 		if evaluation.initial
@@ -507,38 +504,77 @@ function track_evaluator.evaluate_values(entry, evaluation)
 			apply_step_bucket(entry, steps.reverse_by_frame[previous], params, evaluation)
 		end
 	end
-	if steps.time_track_count > 0 then
-		local previous_time_ms<const> = evaluation.previous_time_ms
-		local time_ms<const> = evaluation.time_ms
-		if evaluation.initial
-		or evaluation.method ~= play_update_method
-			or evaluation.wrapped
-			or evaluation.previous_frame < 0
-			or time_ms <= previous_time_ms then
-			sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
+end
+
+local evaluate_time_steps<const> = function(entry, steps, params, evaluation)
+	local previous_time_ms<const> = evaluation.previous_time_ms
+	local time_ms<const> = evaluation.time_ms
+	if evaluation.initial
+	or evaluation.method ~= play_update_method
+		or evaluation.wrapped
+		or evaluation.previous_frame < 0
+		or time_ms <= previous_time_ms then
+		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
+	else
+		apply_time_step_range(entry, steps, previous_time_ms, time_ms, params, evaluation)
+	end
+end
+
+local evaluate_sample_groups<const> = function(entry, tracks, params, evaluation, time_seconds)
+	local bindings<const> = entry.bindings
+	local groups<const> = tracks.sample_groups
+	for index = 1, tracks.sample_group_count do
+		local group<const> = groups[index]
+		group.runner(bindings[group.binding_index], params, evaluation, time_seconds)
+	end
+end
+
+function track_evaluator.compile_values(program)
+	local has_frame_steps<const> = program.has_frame_steps
+	local has_time_steps<const> = program.has_time_steps
+	local scalar_program<const> = program.scalar_program
+	local has_scalar_channels<const> = scalar_program.track_count > 0
+	local primary_sample_runner<const> = program.primary_sample_runner
+	local has_sample_groups<const> = program.sample_group_count > 0
+	local has_sample_tracks<const> = primary_sample_runner ~= nil or has_sample_groups
+	local parts<const> = { 'return function(entry, evaluation)\n' }
+	if has_frame_steps or has_time_steps or has_scalar_channels or has_sample_groups then
+		parts[#parts + 1] = 'local tracks = entry["instance"]["program"]["tracks"]\n'
+	end
+	if has_frame_steps or has_time_steps or has_sample_tracks then
+		parts[#parts + 1] = 'local params = entry["params"]\n'
+	end
+	if has_frame_steps then
+		parts[#parts + 1] = 'evaluate_frame_steps(entry, tracks["steps"], params, evaluation)\n'
+	end
+	if has_time_steps then
+		parts[#parts + 1] = 'evaluate_time_steps(entry, tracks["steps"], params, evaluation)\n'
+	end
+	if has_scalar_channels then
+		parts[#parts + 1] = 'scalar_runner(tracks["scalar_channels"], entry, evaluation)\n'
+	end
+	if has_sample_tracks then
+		parts[#parts + 1] = 'if evaluation["sample"] then\nlocal time_seconds = evaluation["time_ms"] * 0.001\n'
+		if primary_sample_runner ~= nil then
+			parts[#parts + 1] = 'primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)\n'
 		else
-			apply_time_step_range(entry, steps, previous_time_ms, time_ms, params, evaluation)
+			parts[#parts + 1] = 'evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)\n'
 		end
+		parts[#parts + 1] = 'end\n'
 	end
-	local scalar_channels<const> = tracks.scalar_channels
-	if scalar_channels.track_count > 0 then
-		scalar_channels.runner(scalar_channels, entry, evaluation)
-	end
-	if not evaluation.sample then
-		return
-	end
-	local time_seconds<const> = evaluation.time_ms * 0.001
-	local primary_sample_runner<const> = tracks.primary_sample_runner
-	if primary_sample_runner ~= nil then
-		primary_sample_runner(entry.primary_binding, params, evaluation, time_seconds)
-	elseif tracks.sample_group_count > 0 then
-		local bindings<const> = entry.bindings
-		local groups<const> = tracks.sample_groups
-		for index = 1, tracks.sample_group_count do
-			local group<const> = groups[index]
-			group.runner(bindings[group.binding_index], params, evaluation, time_seconds)
-		end
-	end
+	parts[#parts + 1] = 'end'
+	return load(
+		table.concat(parts),
+		'[timeline.track_values]',
+		't',
+		{
+			evaluate_frame_steps = evaluate_frame_steps,
+			evaluate_time_steps = evaluate_time_steps,
+			scalar_runner = scalar_program.runner,
+			primary_sample_runner = primary_sample_runner,
+			evaluate_sample_groups = evaluate_sample_groups,
+		}
+	)()
 end
 
 function track_evaluator.init_entry(entry)
