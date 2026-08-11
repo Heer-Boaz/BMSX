@@ -230,9 +230,9 @@ BIOS does not build a runtime TOC object graph for them.
 `load` is a BIOS-owned guest service. Its compiler, arena, lexer and BLua32
 emitter live under `machine/bios/compiler` and execute as firmware Lua. The
 current compiler accepts one returned function with lexical locals, path reads
-and writes, call expressions and statements, arithmetic and comparison expressions, short-circuit
-`and`/`or`, block-scoped `if`/`elseif`/`else`, and nested `while` loops with
-lexically bound `break`. That surface
+and writes, call expressions and statements, arithmetic and comparison
+expressions, short-circuit `and`/`or`, block-scoped `if`/`elseif`/`else`,
+numeric `for`, and nested `while` loops with lexically bound `break`. That surface
 contains the generated assignment functions used by timeline specialization
 without making the timeline module a parser or code emitter. The firmware
 compiler emits ordinary function records, upvalue records and instruction

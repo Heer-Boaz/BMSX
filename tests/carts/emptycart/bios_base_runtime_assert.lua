@@ -74,6 +74,7 @@ function __bmsx_host_test.setup()
 
 	local load_touch_count = 0
 	local load_call_value = 0
+	local load_for_header_count = 0
 	local load_environment<const> = {
 		scale = function(value, factor) return value * factor end,
 		touch = function(value)
@@ -82,6 +83,10 @@ function __bmsx_host_test.setup()
 		end,
 		record = function(value)
 			load_call_value = value
+		end,
+		for_value = function(value)
+			load_for_header_count = load_for_header_count + 1
+			return value
 		end,
 	}
 	local chunk<const>, load_error<const> = load([=[
@@ -170,6 +175,29 @@ return function(target, frame)
 	while frame["missing"] and touch(500) do
 		target["unreachable_loop"] = true
 	end
+	local for_sum = 0
+	for index = for_value(1), for_value(frame["for_limit"]), for_value(1) do
+		for_sum = for_sum + index
+	end
+	target["for_sum"] = for_sum
+	local reverse_sum = 0
+	for index = 5, 1, -2 do
+		reverse_sum = reverse_sum + index
+	end
+	target["reverse_for_sum"] = reverse_sum
+	local dynamic_reverse_sum = 0
+	for index = 5, 1, frame["reverse_step"] do
+		dynamic_reverse_sum = dynamic_reverse_sum + index
+	end
+	target["dynamic_reverse_for_sum"] = dynamic_reverse_sum
+	local broken_for_sum = 0
+	for index = 1, 8, 2 do
+		if index == 7 then
+			break
+		end
+		broken_for_sum = broken_for_sum + index
+	end
+	target["broken_for_sum"] = broken_for_sum
 	record(frame["right"])
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
@@ -189,6 +217,8 @@ end;
 		index = 1,
 		loop_count = 8,
 		loop_break = 5,
+		for_limit = 4,
+		reverse_step = -2,
 	})
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
@@ -221,6 +251,10 @@ end;
 	assert(loaded_target.while_index == 5 and loaded_target.while_sum == 10, 'load while/break mismatch')
 	assert(loaded_target.nested_sum == 6, 'load nested break mismatch')
 	assert(loaded_target.unreachable_loop == nil, 'load while condition mismatch')
+	assert(loaded_target.for_sum == 10 and load_for_header_count == 3, 'load numeric for mismatch')
+	assert(loaded_target.reverse_for_sum == 9, 'load descending numeric for mismatch')
+	assert(loaded_target.dynamic_reverse_for_sum == 9, 'load dynamic numeric for mismatch')
+	assert(loaded_target.broken_for_sum == 9, 'load numeric for break mismatch')
 	assert(load_call_value == 20, 'load call statement mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')

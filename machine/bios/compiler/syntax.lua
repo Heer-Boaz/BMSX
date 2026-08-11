@@ -19,6 +19,7 @@ local syntax<const> = {
 	while_statement = 18,
 	break_statement = 19,
 	call_statement = 20,
+	numeric_for_statement = 21,
 
 	unary_negate = 1,
 	unary_string_id = 2,

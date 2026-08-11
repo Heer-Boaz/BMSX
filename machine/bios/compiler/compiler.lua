@@ -216,6 +216,19 @@ prepare_statement_operands = function(state, statement)
 		prepare_block_operands(state, statement.block)
 		return
 	end
+	if kind == syntax.numeric_for_statement then
+		prepare_value_operands(state, statement.start_expression)
+		prepare_value_operands(state, statement.limit_expression)
+		local step_expression<const> = statement.step_expression
+		if step_expression ~= nil then
+			prepare_value_operands(state, step_expression)
+			if not is_number_literal(step_expression) then
+				statement.zero_constant_index = add_constant(state, 0)
+			end
+		end
+		prepare_block_operands(state, statement.block)
+		return
+	end
 	if kind == syntax.break_statement then
 		return
 	end
@@ -263,6 +276,15 @@ materialize_statement_immediates = function(state, statement)
 	end
 	if kind == syntax.while_statement then
 		materialize_wide_immediates(state, statement.condition)
+		materialize_block_immediates(state, statement.block)
+		return
+	end
+	if kind == syntax.numeric_for_statement then
+		materialize_wide_immediates(state, statement.start_expression)
+		materialize_wide_immediates(state, statement.limit_expression)
+		if statement.step_expression ~= nil then
+			materialize_wide_immediates(state, statement.step_expression)
+		end
 		materialize_block_immediates(state, statement.block)
 		return
 	end
@@ -1128,6 +1150,190 @@ local emit_while_statement<const> = function(state, instruction_words, statement
 	patch_jumps(instruction_words, break_jumps)
 end
 
+local emit_numeric_for_statement<const> = function(
+	state,
+	instruction_words,
+	statement
+)
+	local index_register<const> = identifier_register(state, statement.variable)
+	local limit_register<const> = state.local_register_base
+		+ statement.limit_local_slot
+	local step_register<const> = state.local_register_base
+		+ statement.step_local_slot
+	local start_register<const> = emit_value(
+		state,
+		instruction_words,
+		statement.start_expression,
+		index_register
+	)
+	if start_register ~= index_register then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			index_register,
+			start_register,
+			0
+		)
+	end
+	local limit_value_register<const> = emit_value(
+		state,
+		instruction_words,
+		statement.limit_expression,
+		limit_register
+	)
+	if limit_value_register ~= limit_register then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			limit_register,
+			limit_value_register,
+			0
+		)
+	end
+	local step_expression<const> = statement.step_expression
+	if step_expression == nil then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_k1,
+			step_register,
+			0,
+			0
+		)
+	else
+		local step_value_register<const> = emit_value(
+			state,
+			instruction_words,
+			step_expression,
+			step_register
+		)
+		if step_value_register ~= step_register then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_mov,
+				step_register,
+				step_value_register,
+				0
+			)
+		end
+	end
+
+	local positive_step
+	if step_expression == nil then
+		positive_step = true
+	elseif is_number_literal(step_expression) then
+		positive_step = step_expression.constant_value > 0
+	end
+	local loop_start<const> = #instruction_words + 1
+	local exit_jumps<const> = {}
+	if positive_step ~= nil then
+		local exit_left_register = index_register
+		local exit_right_register = limit_register
+		if positive_step then
+			exit_left_register = limit_register
+			exit_right_register = index_register
+		end
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_lt,
+			1,
+			exit_left_register,
+			exit_right_register
+		)
+		exit_jumps[1] = bytecode.emit_signed_abx(
+			instruction_words,
+			isa.op_jmp,
+			0,
+			0
+		)
+	else
+		local zero_register<const> = constant_register(
+			state.parameter_count,
+			statement.zero_constant_index
+		)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_lt,
+			0,
+			zero_register,
+			step_register
+		)
+		local negative_check_jump<const> = bytecode.emit_signed_abx(
+			instruction_words,
+			isa.op_jmp,
+			0,
+			0
+		)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_lt,
+			1,
+			limit_register,
+			index_register
+		)
+		exit_jumps[1] = bytecode.emit_signed_abx(
+			instruction_words,
+			isa.op_jmp,
+			0,
+			0
+		)
+		local body_jump<const> = bytecode.emit_signed_abx(
+			instruction_words,
+			isa.op_jmp,
+			0,
+			0
+		)
+		bytecode.patch_branch(
+			instruction_words,
+			negative_check_jump,
+			#instruction_words - negative_check_jump
+		)
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_lt,
+			1,
+			index_register,
+			limit_register
+		)
+		exit_jumps[2] = bytecode.emit_signed_abx(
+			instruction_words,
+			isa.op_jmp,
+			0,
+			0
+		)
+		bytecode.patch_branch(
+			instruction_words,
+			body_jump,
+			#instruction_words - body_jump
+		)
+	end
+
+	local break_jumps<const> = {}
+	local loop_stack<const> = state.loop_stack
+	loop_stack[#loop_stack + 1] = break_jumps
+	emit_block(state, instruction_words, statement.block)
+	loop_stack[#loop_stack] = nil
+	bytecode.emit_abc(
+		instruction_words,
+		isa.op_add,
+		index_register,
+		index_register,
+		step_register
+	)
+	local back_jump<const> = bytecode.emit_signed_abx(
+		instruction_words,
+		isa.op_jmp,
+		0,
+		0
+	)
+	bytecode.patch_branch(
+		instruction_words,
+		back_jump,
+		loop_start - back_jump - 1
+	)
+	patch_jumps(instruction_words, exit_jumps)
+	patch_jumps(instruction_words, break_jumps)
+end
+
 local emit_break_statement<const> = function(state, instruction_words)
 	local loop_stack<const> = state.loop_stack
 	local break_jumps<const> = loop_stack[#loop_stack]
@@ -1157,6 +1363,8 @@ emit_statement = function(state, instruction_words, statement)
 		emit_if_statement(state, instruction_words, statement)
 	elseif kind == syntax.while_statement then
 		emit_while_statement(state, instruction_words, statement)
+	elseif kind == syntax.numeric_for_statement then
+		emit_numeric_for_statement(state, instruction_words, statement)
 	elseif kind == syntax.break_statement then
 		emit_break_statement(state, instruction_words)
 	else

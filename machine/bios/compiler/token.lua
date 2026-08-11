@@ -41,6 +41,7 @@ local token<const> = {
 	keyword_break = 40,
 	keyword_do = 41,
 	keyword_while = 42,
+	keyword_for = 43,
 }
 
 token.keyword_by_text = {
@@ -51,6 +52,7 @@ token.keyword_by_text = {
 	['elseif'] = token.keyword_elseif,
 	['end'] = token.keyword_end,
 	['false'] = token.keyword_false,
+	['for'] = token.keyword_for,
 	['function'] = token.keyword_function,
 	['if'] = token.keyword_if,
 	['nil'] = token.keyword_nil,
@@ -114,6 +116,7 @@ token.name = {
 	[token.keyword_elseif] = 'elseif',
 	[token.keyword_end] = 'end',
 	[token.keyword_false] = 'false',
+	[token.keyword_for] = 'for',
 	[token.keyword_function] = 'function',
 	[token.keyword_if] = 'if',
 	[token.keyword_nil] = 'nil',

@@ -411,6 +411,35 @@ local parse_if_statement<const> = function(state)
 	}
 end
 
+local parse_numeric_for_statement<const> = function(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_for)
+	local name<const>, name_line<const>, name_column<const>
+		= consume_identifier(state)
+	expect(state, token.equal)
+	local start_expression<const> = parse_expression(state)
+	expect(state, token.comma)
+	local limit_expression<const> = parse_expression(state)
+	local step_expression
+	if match(state, token.comma) then
+		step_expression = parse_expression(state)
+	end
+	expect(state, token.keyword_do)
+	local block<const> = parse_block(state, end_terminators)
+	expect(state, token.keyword_end)
+	return {
+		kind = syntax.numeric_for_statement,
+		variable = identifier_expression(name, name_line, name_column),
+		start_expression = start_expression,
+		limit_expression = limit_expression,
+		step_expression = step_expression,
+		block = block,
+		line = line,
+		column = column,
+	}
+end
+
 local parse_while_statement<const> = function(state)
 	local line<const> = state.token_line
 	local column<const> = state.token_column
@@ -441,6 +470,9 @@ end
 parse_statement = function(state)
 	if state.token_kind == token.keyword_if then
 		return parse_if_statement(state)
+	end
+	if state.token_kind == token.keyword_for then
+		return parse_numeric_for_statement(state)
 	end
 	if state.token_kind == token.keyword_while then
 		return parse_while_statement(state)

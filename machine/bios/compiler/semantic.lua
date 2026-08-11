@@ -62,6 +62,51 @@ local bind_value
 local bind_path
 local bind_statement
 local bind_block
+
+local begin_scope<const> = function(state)
+	local scope<const> = {
+		previous = state.scope,
+		local_base = state.active_local_count,
+		bindings = {},
+	}
+	state.scope = scope
+	return scope
+end
+
+local end_scope<const> = function(state, scope)
+	local bindings<const> = scope.bindings
+	for index = #bindings, 1, -1 do
+		local binding<const> = bindings[index]
+		state.local_binding_by_name[binding.name] = binding.previous
+	end
+	state.active_local_count = scope.local_base
+	state.scope = scope.previous
+end
+
+local reserve_local_slot<const> = function(state)
+	local slot<const> = state.active_local_count
+	local active_local_count<const> = slot + 1
+	state.active_local_count = active_local_count
+	if active_local_count > state.max_local_count then
+		state.max_local_count = active_local_count
+	end
+	return slot
+end
+
+local bind_local_identifier<const> = function(state, identifier)
+	local slot<const> = reserve_local_slot(state)
+	identifier.local_slot = slot
+	local name<const> = identifier.name
+	local binding<const> = {
+		name = name,
+		slot = slot,
+		previous = state.local_binding_by_name[name],
+	}
+	state.local_binding_by_name[name] = binding
+	local bindings<const> = state.scope.bindings
+	bindings[#bindings + 1] = binding
+end
+
 local bind_identifier<const> = function(state, expression)
 	local local_binding<const> = state.local_binding_by_name[expression.name]
 	if local_binding ~= nil then
@@ -162,22 +207,7 @@ local bind_local_statement<const> = function(state, statement)
 	if initializer ~= nil then
 		bind_value(state, initializer)
 	end
-	local local_slot<const> = state.active_local_count
-	local active_local_count<const> = local_slot + 1
-	state.active_local_count = active_local_count
-	if active_local_count > state.max_local_count then
-		state.max_local_count = active_local_count
-	end
-	statement.name.local_slot = local_slot
-	local name<const> = statement.name.name
-	local binding<const> = {
-		name = name,
-		slot = local_slot,
-		previous = state.local_binding_by_name[name],
-	}
-	state.local_binding_by_name[name] = binding
-	local scope_bindings<const> = state.scope.bindings
-	scope_bindings[#scope_bindings + 1] = binding
+	bind_local_identifier(state, statement.name)
 end
 
 local bind_return_statement<const> = function(state, statement)
@@ -205,6 +235,23 @@ local bind_while_statement<const> = function(state, statement)
 	state.loop_depth = state.loop_depth - 1
 end
 
+local bind_numeric_for_statement<const> = function(state, statement)
+	bind_value(state, statement.start_expression)
+	bind_value(state, statement.limit_expression)
+	local step_expression<const> = statement.step_expression
+	if step_expression ~= nil then
+		bind_value(state, step_expression)
+	end
+	local scope<const> = begin_scope(state)
+	bind_local_identifier(state, statement.variable)
+	statement.limit_local_slot = reserve_local_slot(state)
+	statement.step_local_slot = reserve_local_slot(state)
+	state.loop_depth = state.loop_depth + 1
+	bind_block(state, statement.block)
+	state.loop_depth = state.loop_depth - 1
+	end_scope(state, scope)
+end
+
 bind_statement = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
@@ -219,6 +266,8 @@ bind_statement = function(state, statement)
 		bind_if_statement(state, statement)
 	elseif kind == syntax.while_statement then
 		bind_while_statement(state, statement)
+	elseif kind == syntax.numeric_for_statement then
+		bind_numeric_for_statement(state, statement)
 	elseif kind == syntax.break_statement then
 		if state.loop_depth == 0 then
 			fail(state.chunk_name, 'break outside loop', statement)
@@ -229,12 +278,7 @@ bind_statement = function(state, statement)
 end
 
 bind_block = function(state, block)
-	local scope<const> = {
-		previous = state.scope,
-		local_base = state.active_local_count,
-		bindings = {},
-	}
-	state.scope = scope
+	local scope<const> = begin_scope(state)
 	local statements<const> = block.statements
 	for index = 1, #statements do
 		local statement<const> = statements[index]
@@ -243,13 +287,7 @@ bind_block = function(state, block)
 		end
 		bind_statement(state, statement)
 	end
-	local bindings<const> = scope.bindings
-	for index = #bindings, 1, -1 do
-		local binding<const> = bindings[index]
-		state.local_binding_by_name[binding.name] = binding.previous
-	end
-	state.active_local_count = scope.local_base
-	state.scope = scope.previous
+	end_scope(state, scope)
 end
 
 function semantic.bind(chunk, chunk_name, has_environment)
