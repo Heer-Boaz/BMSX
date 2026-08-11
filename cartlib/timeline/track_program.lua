@@ -46,6 +46,7 @@ local empty_prepared<const> = {
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
 	scalar_defs = empty_defs,
+	scalar_runner = nil,
 }
 track_program.empty = {
 	primary_sample_runner = nil,
@@ -204,6 +205,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		tag_defs = tag_defs,
 		step_defs = step_defs,
 		scalar_defs = scalar_defs,
+		scalar_runner = nil,
 	}
 	for index = 1, #track_defs do
 		local track<const> = track_defs[index]
@@ -213,19 +215,23 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
 		elseif kind == 'value' then
-			local defs<const> = prepared[value_definition_list_by_interpolation[track.interpolation]]
+			local interpolation<const> = track.interpolation
+			local defs<const> = prepared[value_definition_list_by_interpolation[interpolation]]
 			local binding_index = 1
 			if track.binding ~= nil then
 				binding_index = binding_index_by_id[track.binding]
 			end
 			local apply = track.apply
-			if apply == nil then
+			local path = track.path
+			if interpolation == 'step' and apply == nil then
 				apply = timeline_apply.compile_setter(track.path)
+				path = nil
 			end
 			defs[#defs + 1] = {
 				binding_index = binding_index,
 				apply = apply,
-				interpolation = track.interpolation,
+				path = path,
+				interpolation = interpolation,
 				keys = track.keys,
 			}
 		else
@@ -237,6 +243,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.sample_groups = compiled_sample_groups
 	prepared.sample_group_count = #compiled_sample_groups
 	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #scalar_defs
+	if #scalar_defs > 0 then
+		prepared.scalar_runner = timeline_apply.compile_scalar_runner(scalar_defs)
+	end
 	return prepared
 end
 
@@ -490,6 +499,11 @@ function track_program.compile(prepared, length)
 	if prepared == empty_prepared then
 		return track_program.empty
 	end
+	local scalar_channels<const> = scalar_channel.compile(
+		prepared.scalar_defs,
+		length,
+		prepared.scalar_runner
+	)
 	return {
 		primary_sample_runner = prepared.primary_sample_runner,
 		sample_groups = prepared.sample_groups,
@@ -498,7 +512,7 @@ function track_program.compile(prepared, length)
 		events = compile_events(prepared.event_defs, length),
 		tags = compile_tags(prepared.tag_defs, length),
 		steps = compile_steps(prepared.step_defs, length),
-		scalar_channels = scalar_channel.compile(prepared.scalar_defs, length),
+		scalar_channels = scalar_channels,
 	}
 end
 

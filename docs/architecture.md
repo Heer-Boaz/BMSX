@@ -3634,12 +3634,18 @@ millisecond-domain keys and compiles distinct linear and cubic track arrays, so
 the update path never dispatches on an interpolation name. Linear segments
 retain their value delta and reciprocal span. Cubic keys author explicit
 `leave_tangent` and `arrive_tangent` slopes in value per frame or millisecond;
-admission converts each segment to normalized Hermite coefficients. Evaluation
-clamps to the outer keys, binary-searches the immutable channel inside that
-range, and writes the scalar result through the track's already-compiled binding
-setter or explicit apply function. It allocates no runtime key, segment, or
-result tables. Generic step channels remain distinct because their values need
-not be numeric. Vector, quaternion, path and pose channels must retain their
+admission uses firmware `load` to compile one shared scalar runner for the
+immutable track definition, then converts each segment to normalized Hermite
+coefficients for the admitted frame data. Parameterized frame builds therefore
+rebuild their length-dependent key data while reusing the compiled runner.
+The runner contains only the admitted frame/time and linear/cubic lanes, bakes
+binding slots and key counts into its code, specializes one- and two-key
+channels, and emits direct stores for static property paths. Explicit apply
+functions remain the callback escape hatch. Evaluation clamps to the outer
+keys and binary-searches larger immutable channels without a per-track domain,
+interpolation, binding, or setter dispatch. It allocates no runtime key,
+segment, result, or callback table. Generic step channels remain distinct
+because their values need not be numeric. Vector, quaternion, path and pose channels must retain their
 domain representation and interpolation rules instead of adding dynamic type
 classification to the scalar channel. This follows Unreal MovieScene's sorted
 [channel data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/Channels/FMovieSceneChannelData)

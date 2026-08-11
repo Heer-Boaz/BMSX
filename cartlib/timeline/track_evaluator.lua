@@ -2,7 +2,6 @@
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 
 local track_evaluator<const> = {}
 local play_update_method<const> = timeline_module.update_method.play
@@ -523,7 +522,7 @@ function track_evaluator.evaluate_values(entry, evaluation)
 	end
 	local scalar_channels<const> = tracks.scalar_channels
 	if scalar_channels.track_count > 0 then
-		scalar_channel.evaluate(scalar_channels, entry, evaluation)
+		scalar_channels.runner(scalar_channels, entry, evaluation)
 	end
 	if not evaluation.sample then
 		return

@@ -6,14 +6,20 @@ local scalar_channel<const> = {}
 scalar_channel.empty = {
 	track_count = 0,
 	linear_tracks = {},
-	linear_track_count = 0,
 	linear_time_tracks = {},
-	linear_time_track_count = 0,
 	cubic_tracks = {},
-	cubic_track_count = 0,
 	cubic_time_tracks = {},
-	cubic_time_track_count = 0,
+	runner = nil,
 }
+
+local finalize_tracks<const> = function(tracks)
+	for index = 1, #tracks do
+		local track<const> = tracks[index]
+		track.binding_index = nil
+		track.path = nil
+		track.key_count = nil
+	end
+end
 
 local compare_frame_key<const> = function(left, right)
 	if left.frame == right.frame then
@@ -36,7 +42,7 @@ local frame_at<const> = function(position, length)
 	return (position.u * (length - 1)) // 1
 end
 
-function scalar_channel.compile(definitions, length)
+function scalar_channel.compile(definitions, length, runner)
 	if #definitions == 0 then
 		return scalar_channel.empty
 	end
@@ -104,6 +110,7 @@ function scalar_channel.compile(definitions, length)
 		local track<const> = {
 			binding_index = definition.binding_index,
 			apply = definition.apply,
+			path = definition.path,
 			keys = keys,
 			key_count = #keys,
 		}
@@ -119,164 +126,19 @@ function scalar_channel.compile(definitions, length)
 			cubic_tracks[#cubic_tracks + 1] = track
 		end
 	end
-	return {
+	local channels<const> = {
 		track_count = #definitions,
 		linear_tracks = linear_tracks,
-		linear_track_count = #linear_tracks,
 		linear_time_tracks = linear_time_tracks,
-		linear_time_track_count = #linear_time_tracks,
 		cubic_tracks = cubic_tracks,
-		cubic_track_count = #cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
-		cubic_time_track_count = #cubic_time_tracks,
 	}
-end
-
-local first_frame_after<const> = function(keys, count, frame)
-	local low = 1
-	local high = count + 1
-	while low < high do
-		local middle<const> = (low + high) // 2
-		if keys[middle].frame <= frame then
-			low = middle + 1
-		else
-			high = middle
-		end
-	end
-	return low
-end
-
-local first_time_after<const> = function(keys, count, time_ms)
-	local low = 1
-	local high = count + 1
-	while low < high do
-		local middle<const> = (low + high) // 2
-		if keys[middle].time_ms <= time_ms then
-			low = middle + 1
-		else
-			high = middle
-		end
-	end
-	return low
-end
-
--- Domain and interpolation are split during compilation. The four direct loops
--- below intentionally avoid a per-track mode branch or sampler closure on the
--- 50 Hz path.
-function scalar_channel.evaluate(channels, entry, evaluation)
-	local params<const> = entry.params
-	local primary_binding<const> = entry.primary_binding
-	local bindings<const> = entry.bindings
-	if evaluation.sample then
-		local frame<const> = evaluation.frame
-		local tracks<const> = channels.linear_tracks
-		for track_index = 1, channels.linear_track_count do
-			local track<const> = tracks[track_index]
-			local keys<const> = track.keys
-			local key_count<const> = track.key_count
-			local first_key<const> = keys[1]
-			local value
-			if frame <= first_key.frame then
-				value = first_key.value
-			else
-				local last_key<const> = keys[key_count]
-				if frame >= last_key.frame then
-					value = last_key.value
-				else
-					local key<const> = keys[first_frame_after(keys, key_count, frame) - 1]
-					value = key.value + key.value_delta * ((frame - key.frame) * key.span_inv)
-				end
-			end
-			local binding
-			if track.binding_index == 1 then
-				binding = primary_binding
-			else
-				binding = bindings[track.binding_index]
-			end
-			track.apply(binding, value, params, evaluation)
-		end
-		local cubic_tracks<const> = channels.cubic_tracks
-		for track_index = 1, channels.cubic_track_count do
-			local track<const> = cubic_tracks[track_index]
-			local keys<const> = track.keys
-			local key_count<const> = track.key_count
-			local first_key<const> = keys[1]
-			local value
-			if frame <= first_key.frame then
-				value = first_key.value
-			else
-				local last_key<const> = keys[key_count]
-				if frame >= last_key.frame then
-					value = last_key.value
-				else
-					local key<const> = keys[first_frame_after(keys, key_count, frame) - 1]
-					local u<const> = (frame - key.frame) * key.span_inv
-					value = ((key.cubic3 * u + key.cubic2) * u + key.cubic1) * u + key.value
-				end
-			end
-			local binding
-			if track.binding_index == 1 then
-				binding = primary_binding
-			else
-				binding = bindings[track.binding_index]
-			end
-			track.apply(binding, value, params, evaluation)
-		end
-	end
-	local time_ms<const> = evaluation.time_ms
-	local time_tracks<const> = channels.linear_time_tracks
-	for track_index = 1, channels.linear_time_track_count do
-		local track<const> = time_tracks[track_index]
-		local keys<const> = track.keys
-		local key_count<const> = track.key_count
-		local first_key<const> = keys[1]
-		local value
-		if time_ms <= first_key.time_ms then
-			value = first_key.value
-		else
-			local last_key<const> = keys[key_count]
-			if time_ms >= last_key.time_ms then
-				value = last_key.value
-			else
-				local key<const> = keys[first_time_after(keys, key_count, time_ms) - 1]
-				value = key.value + key.value_delta * ((time_ms - key.time_ms) * key.span_inv)
-			end
-		end
-		local binding
-		if track.binding_index == 1 then
-			binding = primary_binding
-		else
-			binding = bindings[track.binding_index]
-		end
-		track.apply(binding, value, params, evaluation)
-	end
-	local cubic_time_tracks<const> = channels.cubic_time_tracks
-	for track_index = 1, channels.cubic_time_track_count do
-		local track<const> = cubic_time_tracks[track_index]
-		local keys<const> = track.keys
-		local key_count<const> = track.key_count
-		local first_key<const> = keys[1]
-		local value
-		if time_ms <= first_key.time_ms then
-			value = first_key.value
-		else
-			local last_key<const> = keys[key_count]
-			if time_ms >= last_key.time_ms then
-				value = last_key.value
-			else
-				local key<const> = keys[first_time_after(keys, key_count, time_ms) - 1]
-				local u<const> = (time_ms - key.time_ms) * key.span_inv
-				value = ((key.cubic3 * u + key.cubic2) * u + key.cubic1) * u + key.value
-			end
-		end
-		local binding
-		if track.binding_index == 1 then
-			binding = primary_binding
-		else
-			binding = bindings[track.binding_index]
-		end
-		track.apply(binding, value, params, evaluation)
-	end
+	channels.runner = runner
+	finalize_tracks(linear_tracks)
+	finalize_tracks(linear_time_tracks)
+	finalize_tracks(cubic_tracks)
+	finalize_tracks(cubic_time_tracks)
+	return channels
 end
 
 return scalar_channel
