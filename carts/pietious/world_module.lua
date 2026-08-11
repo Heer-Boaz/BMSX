@@ -8,7 +8,7 @@ local overlap2dsystem<const> = require('cartlib/collision/overlap2dsystem')
 local screenboundarycapturesystem<const> = require('cartlib/physics/screenboundarycapturesystem')
 local screenboundarysystem<const> = require('cartlib/physics/screenboundarysystem')
 local tilecollisionsystem<const> = require('cartlib/collision/tilecollisionsystem')
-local timelinesystem<const> = require('cartlib/timeline/timelinesystem')
+local timeline_system<const> = require('cartlib/timeline/timeline_system')
 
 return {
 	spaces = {
@@ -30,7 +30,7 @@ return {
 		screenboundarysystem,
 		overlap2dsystem,
 		tilecollisionsystem,
-		timelinesystem,
+		timeline_system,
 		elevatorsystem,
 	},
 }

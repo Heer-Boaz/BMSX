@@ -142,12 +142,12 @@ local stagger_track<const> = function(target, params, _event, time_seconds)
 end
 
 local ensure_timeline<const> = function(owner, preset_id, cfg)
-	local timelineid<const> = stagger_timelineprefix .. preset_id
-	if owner.timelines:get(timelineid) then
-		return timelineid
+	local timeline_id<const> = stagger_timelineprefix .. preset_id
+	if owner.timelines:get(timeline_id) then
+		return timeline_id
 	end
 	local total<const> = cfg.text_start + cfg.text_duration
-	owner.timelines:define(timelineid, {
+	owner.timelines:define(timeline_id, {
 		continuous = true,
 		playback_mode = 'once',
 		duration_seconds = total,
@@ -155,7 +155,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 			stagger_track,
 		},
 	})
-	return timelineid
+	return timeline_id
 end
 
 local build_pose_targets<const> = function(pose_targets)
@@ -192,7 +192,7 @@ function stagger.play(owner, preset_id, opts)
 		text_from = 0,
 		text_to = 1,
 	}
-	local timelineid<const> = ensure_timeline(owner, preset_id, timelinecfg)
+	local timeline_id<const> = ensure_timeline(owner, preset_id, timelinecfg)
 	local bg<const> = opts.bg
 	local text_main<const> = opts.text_main
 	local text_choice<const> = opts.text_choice
@@ -233,8 +233,8 @@ function stagger.play(owner, preset_id, opts)
 	end
 
 	owner.stagger_blocked = timelinecfg.text_start > 0
-	owner.timelines:stop(timelineid)
-	owner.timelines:play(timelineid, {
+	owner.timelines:stop(timeline_id)
+	owner.timelines:play(timeline_id, {
 		rewind = true,
 		snap_to_start = true,
 		params = {

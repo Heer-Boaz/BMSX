@@ -8,7 +8,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 require('constants')
 local player_actioneffects<const> = require('player/actioneffects')
@@ -16,7 +16,7 @@ local player_actioneffects<const> = require('player/actioneffects')
 local player<const> = {}
 player.__index = player
 
-local option_animation_timelineid<const> = 'player_option_animation'
+local option_animation_timeline_id<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
 local sources<const> = {
@@ -793,7 +793,7 @@ local define_player_fsm<const> = function()
 					},
 					},
 				timelines = {
-					[option_animation_timelineid] = {
+					[option_animation_timeline_id] = {
 						def = {
 							frames = {
 								{ option_anim_index = 1 },
@@ -823,7 +823,7 @@ local register_player_definition<const> = function()
 		class = player,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			fsmcomponent.factory({ ids_player_fsm }),
 			actioneffectcomponent.factory({ player_actioneffects.effect_ids.fire_salvo }),
 		},

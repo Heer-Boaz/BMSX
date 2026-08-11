@@ -8,21 +8,21 @@ local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 local room<const> = {}
-local water_surface_timelineid<const> = 'r.ws'
+local water_surface_timeline_id<const> = 'r.ws'
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
 local water_body_imgid<const> = 'water_body_msx'
-local water_surface_timelineframe_defs<const> = {
+local water_surface_timeline_frame_defs<const> = {
 	{ value = 1, hold = 1 },
 }
 for i = 1, 63 do
 	local suffix<const> = string.format('%02d', i)
 	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
-	water_surface_timelineframe_defs[i + 1] = { value = i + 1, hold = 1 }
+	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
 end
 local tile_chars<const> = {
 	wall = string.byte('#'),
@@ -1114,15 +1114,15 @@ local define_room_fsm<const> = function()
 				states = {
 					active = {
 						timelines = {
-							[water_surface_timelineid] = {
+							[water_surface_timeline_id] = {
 								def = {
 									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
-									frames = timeline.build_frame_sequence(water_surface_timelineframe_defs),
+									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
 									playback_mode = 'loop',
 								},
 								autoplay = true,
 								on_frame = function(self)
-									self:sync_water_surface_frame(self.timelines:get(water_surface_timelineid):value())
+									self:sync_water_surface_frame(self.timelines:get(water_surface_timeline_id):value())
 								end,
 							},
 						},
@@ -1152,7 +1152,7 @@ local register_room_definition<const> = function()
 		class = room_object,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			fsmcomponent.factory({ 'room' }),
 		},
 		defaults = {

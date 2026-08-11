@@ -1,12 +1,12 @@
 source: 2025 transition/overgang timing config
-overgang_timelineid: overgang
+overgang_timeline_id: overgang
 overgang_in_frames: 24
 overgang_hold_frames: 48
 overgang_out_frames: 24
 overgang_frame_duration: 20
 overgang_fade_out_frames: 18
 overgang_fade_in_frames: 18
-overgang_post_fade_in_timelineid: overgang_post_fade_in
+overgang_post_fade_in_timeline_id: overgang_post_fade_in
 transition_panel_in_frames: 6
 transition_panel_hold_frames: 10
 transition_panel_out_frames: 6

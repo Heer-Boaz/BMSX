@@ -1,5 +1,5 @@
 local clamp<const> = require('cartlib/util/clamp')
-local timelineprogram<const> = require('cartlib/timeline/program')
+local timeline_program<const> = require('cartlib/timeline/program')
 
 local timelinestart_index<const> = -1
 
@@ -39,7 +39,7 @@ local write_evaluation<const> = function(
 	evaluation.wrapped = wrapped
 	evaluation.jumped = jumped
 	if sample then
-		evaluation.value = timelineprogram.frame_value(self.program, current)
+		evaluation.value = timeline_program.frame_value(self.program, current)
 	end
 	self.evaluation_count = count
 	if wrapped then
@@ -112,12 +112,12 @@ function timeline:rebind_program(program)
 end
 
 function timeline:build(params)
-	self.program = timelineprogram.build(self.program, params)
+	self.program = timeline_program.build(self.program, params)
 	self:rewind()
 end
 
 function timeline:value()
-	return timelineprogram.frame_value(self.program, self.head)
+	return timeline_program.frame_value(self.program, self.head)
 end
 
 function timeline:rewind()

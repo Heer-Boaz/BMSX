@@ -89,7 +89,7 @@ local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffect
 local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
 local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local collision2d<const> = require('cartlib/collision/collision2d')
 local player_actioneffects<const> = require('player/actioneffects')
 
@@ -183,7 +183,7 @@ local player_hit_fall_frames<const> = {
 	{ imgid = 'pietolon_hit_r' },
 }
 local player_sword_end_event<const> = 'sword.end'
-local player_shrine_exit_timelineid<const> = 'p.tl.sx'
+local player_shrine_exit_timeline_id<const> = 'p.tl.sx'
 local player_tags<const> = {
 	in_water = 'p.w',
 }
@@ -347,24 +347,24 @@ function player:define_runtime_timelines()
 	self.timelines:define('p.seq.s', {
 		frames = timeline.range(sword_duration_frames + 1),
 		playback_mode = 'once',
-		autotick = false,
+		auto_tick = false,
 	})
 	self.timelines:define('p.seq.hi', {
 		frames = timeline.range(damage_hit_invulnerability_frames),
 		playback_mode = 'once',
-		autotick = false,
+		auto_tick = false,
 	})
 	self.timelines:define('p.seq.hb', {
 		frames = timeline.range(damage_hit_blink_switch_frames),
 		playback_mode = 'loop',
-		autotick = false,
+		auto_tick = false,
 	})
 	self.timelines:define('p.seq.f', {
 		frames = timeline.range(12),
 		playback_mode = 'once',
-		autotick = false,
+		auto_tick = false,
 	})
-	self.timelines:define(player_shrine_exit_timelineid, {
+	self.timelines:define(player_shrine_exit_timeline_id, {
 		frames = build_shrine_exit_transition_frames(),
 		playback_mode = 'once',
 		apply = true,
@@ -2924,7 +2924,7 @@ local define_player_fsm<const> = function()
 				state_tags.group.damage_lock,
 			},
 			timelines = {
-				[player_shrine_exit_timelineid] = {
+				[player_shrine_exit_timeline_id] = {
 					autoplay = true,
 					stop_on_exit = true,
 					play_options = {
@@ -3197,7 +3197,7 @@ local register_player_definition<const> = function()
 		class = player,
 		base = spriteobject,
 		components = {
-			timelinecomponent.new,
+			timeline_component.new,
 			fsmcomponent.factory({ 'player' }),
 		},
 		defaults = {

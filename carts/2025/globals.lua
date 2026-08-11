@@ -8,7 +8,7 @@ local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 local transition_config<const> = bin.decode(assets.data_transition_config_addr, 'transition_config')
 
-overgang_timelineid = transition_config.overgang_timelineid
+overgang_timeline_id = transition_config.overgang_timeline_id
 overgang_in_frames = transition_config.overgang_in_frames
 overgang_hold_frames = transition_config.overgang_hold_frames
 overgang_out_frames = transition_config.overgang_out_frames
@@ -16,7 +16,7 @@ overgang_frame_count = overgang_in_frames + overgang_hold_frames + overgang_out_
 overgang_frame_duration = transition_config.overgang_frame_duration
 overgang_fade_out_frames = transition_config.overgang_fade_out_frames
 overgang_fade_in_frames = transition_config.overgang_fade_in_frames
-overgang_post_fade_in_timelineid = transition_config.overgang_post_fade_in_timelineid
+overgang_post_fade_in_timeline_id = transition_config.overgang_post_fade_in_timeline_id
 transition_panel_in_frames = transition_config.transition_panel_in_frames
 transition_panel_hold_frames = transition_config.transition_panel_hold_frames
 transition_panel_out_frames = transition_config.transition_panel_out_frames
@@ -28,13 +28,13 @@ transition_text_in_frames = transition_config.transition_text_in_frames
 transition_text_hold_frames = transition_config.transition_text_hold_frames
 transition_text_out_frames = transition_config.transition_text_out_frames
 
-combat_fade_timelineid = 'combat_fade'
+combat_fade_timeline_id = 'combat_fade'
 combat_fade_out_frames = 10
 combat_fade_hold_frames = 4
 combat_fade_in_frames = 10
 combat_fade_frame_count = combat_fade_out_frames + combat_fade_hold_frames + combat_fade_in_frames
 combat_fade_frame_duration = 20
-combat_intro_timelineid = 'combat_intro'
+combat_intro_timeline_id = 'combat_intro'
 combat_intro_maya_b_frames = 14
 combat_intro_reveal_frames = 26
 combat_intro_frame_duration = 24
@@ -49,8 +49,8 @@ combat_intro_monster_arc_y = 8
 combat_intro_maya_a_arc_x = -12
 combat_intro_maya_a_arc_y = -4
 combat_intro_maya_b_arc_y = -6
-combat_focus_timelineid = 'combat_focus'
-combat_hover_timelineid = 'combat_hover'
+combat_focus_timeline_id = 'combat_focus'
+combat_hover_timeline_id = 'combat_hover'
 combat_focus_zoom_frames = 8
 	combat_focus_vanish_frames = 12
 	combat_focus_frame_duration = 24
@@ -63,14 +63,14 @@ combat_focus_zoom_frames = 8
 	combat_focus_vanish_arc_y = 0
 	combat_focus_vanish_lift = 6
 
-fade_timelineid = 'fade'
+fade_timeline_id = 'fade'
 fade_out_frames = 18
 fade_hold_frames = 12
 fade_in_frames = 18
 fade_frame_count = fade_out_frames + fade_hold_frames + fade_in_frames
 fade_frame_duration = 20
 
-combat_hit_timelineid = 'combat_hit'
+combat_hit_timeline_id = 'combat_hit'
 combat_hit_frame_count = 16
 combat_hit_frame_duration = 24
 combat_hit_stop_frames = 2
@@ -97,7 +97,7 @@ director_visual_z = 850
 combat_maya_z = 300
 combat_results_maya_z = 900
 
-combat_dodge_timelineid = 'combat_dodge'
+combat_dodge_timeline_id = 'combat_dodge'
 combat_dodge_frame_count = 22
 combat_dodge_frame_duration = 24
 combat_dodge_anticipation_frames = 4
@@ -108,10 +108,10 @@ combat_dodge_anticipation_scale_y = 0.03
 combat_dodge_move_scale_x = 0.07
 combat_dodge_move_scale_y = -0.05
 
-combat_exchange_hit_timelineid = 'combat_exchange_hit'
+combat_exchange_hit_timeline_id = 'combat_exchange_hit'
 combat_exchange_hit_frame_count = 22
 combat_exchange_hit_frame_duration = 24
-combat_exchange_miss_timelineid = 'combat_exchange_miss'
+combat_exchange_miss_timeline_id = 'combat_exchange_miss'
 combat_exchange_miss_frame_count = 28
 combat_exchange_miss_frame_duration = 24
 combat_exchange_anticipate_frames = 3
@@ -141,21 +141,21 @@ combat_exchange_miss_dodge_bob_period_frames = 6
 combat_exchange_miss_dodge_scale_x = -0.05
 combat_exchange_miss_dodge_scale_y = 0.08
 
-combat_all_out_timelineid = 'combat_all_out'
+combat_all_out_timeline_id = 'combat_all_out'
 combat_all_out_frame_count = 150
 combat_all_out_frame_duration = 1
 combat_all_out_pulse_period_frames = 16
 combat_all_out_pulse_amp = 0.14
 
-combat_results_fade_out_timelineid = 'combat_results_fade_out'
+combat_results_fade_out_timeline_id = 'combat_results_fade_out'
 combat_results_fade_out_frames = 18
 combat_results_fade_out_frame_duration = 32
 
-combat_exit_fade_in_timelineid = 'combat_exit_fade_in'
+combat_exit_fade_in_timeline_id = 'combat_exit_fade_in'
 combat_exit_fade_in_frames = 18
 combat_exit_fade_in_frame_duration = 32
 
-combat_results_fade_in_timelineid = 'combat_results_fade_in'
+combat_results_fade_in_timeline_id = 'combat_results_fade_in'
 combat_results_fade_in_frames = 18
 combat_results_fade_in_frame_duration = 32
 

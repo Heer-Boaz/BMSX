@@ -1,12 +1,12 @@
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 
-local timelinedispatch<const> = {}
+local timeline_dispatch<const> = {}
 
 local acquire_payload<const> = function(state, payloads)
 	local depth<const> = state.depth + 1
 	state.depth = depth
 	local payload<const> = payloads:get(depth)
-	payload.timelineid = state.timelineid
+	payload.timeline_id = state.timeline_id
 	return payload
 end
 
@@ -95,7 +95,7 @@ local emit_traversed_markers<const> = function(program, owner, evaluation)
 end
 
 local apply_window_boundary<const> = function(entry, owner, boundary, direction)
-	local state<const> = entry.timelinedispatch_state
+	local state<const> = entry.timeline_dispatch_state
 	local interval<const> = boundary.interval
 	local tag_index<const> = interval.tag_index
 	local counts<const> = state.window_tag_counts
@@ -153,7 +153,7 @@ end
 
 local sync_windows_at<const> = function(entry, owner, frame)
 	local windows<const> = entry.instance.program.windows
-	local state<const> = entry.timelinedispatch_state
+	local state<const> = entry.timeline_dispatch_state
 	local target_counts<const> = state.window_target_counts
 	for index = 1, windows.tag_count do
 		target_counts[index] = 0
@@ -201,7 +201,7 @@ local apply_timeline_windows<const> = function(entry, owner, evaluation)
 end
 
 local dispatch_frame<const> = function(entry, owner, evaluation, delta_time, on_frame_payload, context)
-	local state<const> = entry.timelinedispatch_state
+	local state<const> = entry.timeline_dispatch_state
 	local payload<const> = acquire_payload(state, state.frame_payloads)
 	payload.previous_frame = evaluation.previous
 	payload.frame_index = evaluation.current
@@ -225,7 +225,7 @@ local dispatch_frame<const> = function(entry, owner, evaluation, delta_time, on_
 end
 
 local dispatch_end<const> = function(entry, owner, evaluation)
-	local state<const> = entry.timelinedispatch_state
+	local state<const> = entry.timeline_dispatch_state
 	local payload<const> = acquire_payload(state, state.end_payloads)
 	local program<const> = entry.instance.program
 	payload.frame_index = evaluation.current
@@ -237,13 +237,13 @@ local dispatch_end<const> = function(entry, owner, evaluation)
 	return program.playback_mode == 'once'
 end
 
-function timelinedispatch.init_entry(entry)
-	local state = entry.timelinedispatch_state
-	local timelineid<const> = entry.instance.id
+function timeline_dispatch.init_entry(entry)
+	local state = entry.timeline_dispatch_state
+	local timeline_id<const> = entry.instance.id
 	if state == nil then
 		local frame_payloads<const> = scratch_record_batch.new(1)
 		local frame_payload<const> = frame_payloads.items[1]
-		frame_payload.timelineid = timelineid
+		frame_payload.timeline_id = timeline_id
 		frame_payload.previous_frame = -1
 		frame_payload.frame_index = 0
 		frame_payload.frame_value = false
@@ -255,7 +255,7 @@ function timelinedispatch.init_entry(entry)
 		frame_payload.time_ms = 0
 		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
-		end_payload.timelineid = timelineid
+		end_payload.timeline_id = timeline_id
 		end_payload.frame_index = 0
 		end_payload.mode = false
 		end_payload.wrapped = false
@@ -264,15 +264,15 @@ function timelinedispatch.init_entry(entry)
 			frame_payloads = frame_payloads,
 			end_payloads = end_payloads,
 			depth = 0,
-			timelineid = timelineid,
-			scoped_frame_event_type = 'timeline.frame.' .. timelineid,
-			scoped_end_event_type = 'timeline.end.' .. timelineid,
+			timeline_id = timeline_id,
+			scoped_frame_event_type = 'timeline.frame.' .. timeline_id,
+			scoped_end_event_type = 'timeline.end.' .. timeline_id,
 		}
-		entry.timelinedispatch_state = state
+		entry.timeline_dispatch_state = state
 	else
-		state.timelineid = timelineid
-		state.scoped_frame_event_type = 'timeline.frame.' .. timelineid
-		state.scoped_end_event_type = 'timeline.end.' .. timelineid
+		state.timeline_id = timeline_id
+		state.scoped_frame_event_type = 'timeline.frame.' .. timeline_id
+		state.scoped_end_event_type = 'timeline.end.' .. timeline_id
 	end
 	local tag_count<const> = entry.instance.program.windows.tag_count
 	if tag_count > 0 then
@@ -291,8 +291,8 @@ function timelinedispatch.init_entry(entry)
 	end
 end
 
-function timelinedispatch.clear_windows(entry, owner)
-	local state<const> = entry.timelinedispatch_state
+function timeline_dispatch.clear_windows(entry, owner)
+	local state<const> = entry.timeline_dispatch_state
 	local windows<const> = entry.instance.program.windows
 	for index = 1, windows.tag_count do
 		if state.window_tag_counts[index] > 0 then
@@ -302,11 +302,11 @@ function timelinedispatch.clear_windows(entry, owner)
 	end
 end
 
-function timelinedispatch.sync_windows(entry, owner, frame)
+function timeline_dispatch.sync_windows(entry, owner, frame)
 	sync_windows_at(entry, owner, frame)
 end
 
-function timelinedispatch.process_instance_evaluations(entry, owner, delta_time, on_frame_payload, context)
+function timeline_dispatch.process_instance_evaluations(entry, owner, delta_time, on_frame_payload, context)
 	local instance<const> = entry.instance
 	local stop = false
 	for index = 1, instance.evaluation_count do
@@ -322,4 +322,4 @@ function timelinedispatch.process_instance_evaluations(entry, owner, delta_time,
 	return stop
 end
 
-return timelinedispatch
+return timeline_dispatch

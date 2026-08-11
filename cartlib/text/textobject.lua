@@ -3,7 +3,7 @@
 
 local worldobject<const> = require('cartlib/world/worldobject')
 local textcomponent<const> = require('cartlib/text/textcomponent')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
@@ -36,8 +36,8 @@ function textobjectcomponent:set_font(font)
 	self.parent:set_font(font)
 end
 
-local highlight_move_timelineid<const> = 'hmove'
-local highlight_vibe_timelineid<const> = 'hvibe'
+local highlight_move_timeline_id<const> = 'hmove'
+local highlight_vibe_timeline_id<const> = 'hvibe'
 local text_object_fsm_id<const> = 'text_object'
 local text_object_machine_ids<const> = { text_object_fsm_id }
 local text_object_state_idle<const> = 'idle'
@@ -196,7 +196,7 @@ fsmlibrary.register(text_object_fsm_id, {
 		[state_tags.group.typing] = { state_tags.variant.typing },
 	},
 	timelines = {
-		[highlight_move_timelineid] = {
+		[highlight_move_timeline_id] = {
 			def = {
 				frames = build_highlight_move_frames,
 				frame_duration = highlight_move_frame_duration,
@@ -205,7 +205,7 @@ fsmlibrary.register(text_object_fsm_id, {
 			},
 			autoplay = false,
 		},
-		[highlight_vibe_timelineid] = {
+		[highlight_vibe_timeline_id] = {
 			def = {
 				playback_mode = 'loop',
 				tracks = {
@@ -275,7 +275,7 @@ fsmlibrary.register(text_object_fsm_id, {
 
 function textobject.new(opts)
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
-	self:add_component(timelinecomponent.new({ parent = self }))
+	self:add_component(timeline_component.new({ parent = self }))
 	self:add_component(fsmcomponent.new({ parent = self }, text_object_machine_ids))
 	self.is_text_object = true
 	self.text = { '' }
@@ -409,7 +409,7 @@ function textobject:update_highlight_animation()
 		return
 	end
 	if not self.highlight_move_enabled then
-		self.timelines:stop(highlight_move_timelineid)
+		self.timelines:stop(highlight_move_timeline_id)
 		self.highlight_anim_y = target_y
 		self.highlight_anim_h = target_h
 		self.highlight_target_y = target_y
@@ -425,7 +425,7 @@ function textobject:update_highlight_animation()
 		self.highlight_target_y = target_y
 		self.highlight_target_h = target_h
 		self.highlight_last_line_index = self.highlighted_line_index
-		self.timelines:play(highlight_move_timelineid, {
+		self.timelines:play(highlight_move_timeline_id, {
 			rewind = true,
 			snap_to_start = true,
 			params = {

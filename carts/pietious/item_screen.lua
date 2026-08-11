@@ -5,7 +5,7 @@ local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local castle_map<const> = require('castle/map')
 
@@ -27,7 +27,7 @@ end
 local item_offset_x<const> = 11
 local item_offset_y<const> = 6
 local selector_blink_frames<const> = 5
-local selector_blink_timelineid<const> = 'item_screen.blink'
+local selector_blink_timeline_id<const> = 'item_screen.blink'
 local map_title_x<const> = 49
 
 local secondary_weapon_order<const> = {
@@ -212,7 +212,7 @@ local define_item_screen_fsm<const> = function()
 			open = {
 				entering_state = item_screen.reset_for_open,
 				timelines = {
-					[selector_blink_timelineid] = {
+					[selector_blink_timeline_id] = {
 						def = {
 							frames = timeline.range(selector_blink_frames),
 							playback_mode = 'loop',
@@ -254,7 +254,7 @@ local register_item_screen_definition<const> = function()
 		class = item_screen,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			fsmcomponent.factory({ 'item_screen' }),
 		},
 		defaults = {

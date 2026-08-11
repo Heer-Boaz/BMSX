@@ -423,12 +423,12 @@ function castle:begin_seal_dissolution()
 	room.seal_dissolve_step = 0
 	room:rebuild_room_tiles()
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:apply_seal_timelineframe(1)
+	self:apply_seal_timeline_frame(1)
 	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end
 
-function castle:apply_seal_timelineframe(frame)
+function castle:apply_seal_timeline_frame(frame)
 	local room<const> = self.room
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
@@ -797,7 +797,7 @@ local define_castle_fsm<const> = function()
 			[director_seal_frame_event] = {
 				emitter = 'd',
 				go = function(self, _state, event)
-					self:apply_seal_timelineframe(event.frame_value + 1)
+					self:apply_seal_timeline_frame(event.frame_value + 1)
 				end,
 			},
 			['world_entrance.opening_2'] = {

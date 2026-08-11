@@ -1,11 +1,11 @@
 local clamp<const> = require('cartlib/util/clamp')
 local clock<const> = require('cartlib/clock')
-local timelineapply<const> = require('cartlib/timeline/apply')
+local timeline_apply<const> = require('cartlib/timeline/apply')
 
 -- Definitions are admitted once into immutable evaluation data. Timeline
 -- instances retain only transport state and replace this program atomically on
 -- a live definition rebind.
-local timelineprogram<const> = {}
+local timeline_program<const> = {}
 local empty_defs<const> = {}
 local empty_track_groups<const> = {}
 local primary_binding_ids<const> = { 'target' }
@@ -192,7 +192,7 @@ local compile_frame_data<const> = function(program, frame_source)
 	compiled.markers = compile_markers(program.marker_defs, compiled.length)
 	compiled.windows = compile_windows(program.window_defs, compiled.length)
 	if program.apply_frames then
-		compiled.frame_appliers = timelineapply.compile_frames(compiled.frames)
+		compiled.frame_appliers = timeline_apply.compile_frames(compiled.frames)
 	else
 		compiled.frame_appliers = nil
 	end
@@ -214,7 +214,7 @@ local compile_bindings<const> = function(binding_defs)
 	return ids, index_by_id
 end
 
-function timelineprogram.compile(id, definition)
+function timeline_program.compile(id, definition)
 	local frame_source<const> = definition.frames
 	local tracks<const> = definition.tracks
 	local continuous = definition.continuous
@@ -225,7 +225,7 @@ function timelineprogram.compile(id, definition)
 	if frame_duration == nil then
 		frame_duration = clock.frame_milliseconds()
 	end
-	local auto_tick = definition.autotick
+	local auto_tick = definition.auto_tick
 	if auto_tick == nil then
 		auto_tick = continuous or frame_duration ~= 0
 	end
@@ -237,7 +237,7 @@ function timelineprogram.compile(id, definition)
 	local primary_track_runner
 	local track_groups = empty_track_groups
 	if tracks ~= nil then
-		local compiled_primary<const>, compiled_groups<const> = timelineapply.compile_track_program(tracks, binding_index_by_id)
+		local compiled_primary<const>, compiled_groups<const> = timeline_apply.compile_track_program(tracks, binding_index_by_id)
 		primary_track_runner = compiled_primary
 		if compiled_groups ~= nil then
 			track_groups = compiled_groups
@@ -283,11 +283,11 @@ function timelineprogram.compile(id, definition)
 	return compile_frame_data(program, frame_source)
 end
 
-function timelineprogram.build(program, params)
+function timeline_program.build(program, params)
 	return compile_frame_data(program, program.frame_builder(params))
 end
 
-function timelineprogram.frame_value(program, index)
+function timeline_program.frame_value(program, index)
 	if index < 0 or index >= program.length then
 		return nil
 	end
@@ -297,4 +297,4 @@ function timelineprogram.frame_value(program, index)
 	return program.frames[index + 1]
 end
 
-return timelineprogram
+return timeline_program

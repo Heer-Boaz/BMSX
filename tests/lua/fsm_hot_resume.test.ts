@@ -26,7 +26,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
 	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
-	['cartlib/timeline/timelinecomponent', 'cartlib/timeline/timelinecomponent.lua'],
+	['cartlib/timeline/timeline_component', 'cartlib/timeline/timeline_component.lua'],
 	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
 	['cartlib/util/scratch_record_batch', 'cartlib/util/scratch_record_batch.lua'],
@@ -76,7 +76,7 @@ local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/eventemitter')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/fsmcomponent')
-local timeline_component<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local behaviour_tree<const> = require('cartlib/behaviourtree/bt')
 local behaviour_tree_component<const> = require('cartlib/behaviourtree/btcomponent')
 local behaviour_tree_library<const> = require('cartlib/behaviourtree/library')

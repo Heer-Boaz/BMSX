@@ -581,7 +581,7 @@ local build_state_tag_lookup<const> = function(tags)
 	return lookup
 end
 
-local build_timelinebindings<const> = function(owner, definitions)
+local build_timeline_bindings<const> = function(owner, definitions)
 	if not definitions then
 		return nil
 	end
@@ -639,7 +639,7 @@ function state.new(definition, target, parent)
 	-- Current child state is cached directly so the frame hot path does not keep
 	-- reloading states[self.current_id] from the state map on every recursive step.
 	self.current_state = nil
-	self.timelinebindings = build_timelinebindings(target, definition.timelines)
+	self.timeline_bindings = build_timeline_bindings(target, definition.timelines)
 	if self.root == self then
 		-- The machine root owns whole compiled transition requests. Queuing a
 		-- path plan rather than individual state ids keeps hierarchical paths
@@ -673,7 +673,7 @@ local rebind_definition_tree
 rebind_definition_tree = function(self, definition)
 	self.definition = definition
 	self.def_id = definition.def_id
-	self.timelinebindings = build_timelinebindings(self.target, definition.timelines)
+	self.timeline_bindings = build_timeline_bindings(self.target, definition.timelines)
 	self.tag_list = definition.tags
 	self.tag_lookup = build_state_tag_lookup(definition.tags)
 	self.input_bindings = build_input_bindings(self.target, definition)
@@ -740,7 +740,7 @@ function state:timeline(id)
 end
 
 function state:activate_timelines()
-	local bindings<const> = self.timelinebindings
+	local bindings<const> = self.timeline_bindings
 	if not bindings then
 		return
 	end
@@ -753,7 +753,7 @@ function state:activate_timelines()
 end
 
 function state:deactivate_timelines()
-	local bindings<const> = self.timelinebindings
+	local bindings<const> = self.timeline_bindings
 	if not bindings then
 		return
 	end

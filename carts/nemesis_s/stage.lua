@@ -6,7 +6,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -616,7 +616,7 @@ local register_stage_definition<const> = function()
 		class = stage,
 		components = {
 			customvisualcomponent.new,
-			timelinecomponent.new,
+			timeline_component.new,
 			fsmcomponent.factory({ ids_stage_fsm }),
 		},
 	})

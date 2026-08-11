@@ -1,4 +1,4 @@
-local timelineapply<const> = {}
+local timeline_apply<const> = {}
 local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = math.sin
 local pi<const> = math.pi
@@ -44,7 +44,7 @@ local compile_frame_apply<const> = function(frame, shape_cache)
 	return apply_frame
 end
 
-function timelineapply.compile_frames(frames)
+function timeline_apply.compile_frames(frames)
 	local frame_appliers<const> = {}
 	local applier_by_frame<const> = {}
 	local shape_cache<const> = {}
@@ -111,7 +111,7 @@ local combine_track_runners<const> = function(runners)
 	end
 end
 
-function timelineapply.compile_track_program(tracks, binding_index_by_id)
+function timeline_apply.compile_track_program(tracks, binding_index_by_id)
 	if #tracks == 1 then
 		local track<const> = tracks[1]
 		local binding_index = 1
@@ -150,4 +150,4 @@ function timelineapply.compile_track_program(tracks, binding_index_by_id)
 	return nil, groups
 end
 
-return timelineapply
+return timeline_apply

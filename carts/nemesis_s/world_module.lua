@@ -2,7 +2,7 @@ local actioneffectsystem<const> = require('cartlib/actioneffects/actioneffectsys
 local fsmsystem<const> = require('cartlib/fsm/fsmsystem')
 local inputactioneffectsystem<const> = require('cartlib/input/actioneffect/system')
 local inputsystem<const> = require('cartlib/input/inputsystem')
-local timelinesystem<const> = require('cartlib/timeline/timelinesystem')
+local timeline_system<const> = require('cartlib/timeline/timeline_system')
 
 return {
 	spaces = { 'main' },
@@ -11,6 +11,6 @@ return {
 		inputactioneffectsystem,
 		actioneffectsystem,
 		fsmsystem,
-		timelinesystem,
+		timeline_system,
 	},
 }

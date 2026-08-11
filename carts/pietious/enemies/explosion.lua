@@ -3,7 +3,7 @@ local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local spriteobject<const> = require('cartlib/sprite')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local worldobject<const> = require('cartlib/world/worldobject')
 
@@ -22,7 +22,7 @@ local explosion_frames<const> = {
 }
 
 local loot_spawn_sequence = 0
-local explosion_timelineid<const> = 'enemy_explosion.timeline.explosion'
+local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
 
 local loot_value_for_type<const> = function(loot_type)
 	if loot_type == 'life' then
@@ -64,7 +64,7 @@ end
 local define_enemy_explosion_fsm<const> = function()
 	fsmlibrary.register('enemy_explosion', {
 		timelines = {
-			[explosion_timelineid] = {
+			[explosion_timeline_id] = {
 				def = {
 					frames = explosion_frames,
 					frame_duration = enemy_explosion_frame_duration,
@@ -90,7 +90,7 @@ local define_enemy_explosion_fsm<const> = function()
 		states = {
 			animating = {
 				entering_state = function(self)
-					self.timelines:play(explosion_timelineid, { rewind = true, snap_to_start = true })
+					self.timelines:play(explosion_timeline_id, { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -102,7 +102,7 @@ local register_enemy_explosion_definition<const> = function()
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
 		base = spriteobject,
-		components = { timelinecomponent.new, fsmcomponent.factory({ 'enemy_explosion' }) },
+		components = { timeline_component.new, fsmcomponent.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,
 		},

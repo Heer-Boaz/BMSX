@@ -3,15 +3,15 @@ local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/timelinecomponent')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local spritecomponent<const> = require('cartlib/component/spritecomponent')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
 
-local sparkle_timelineid<const> = 'title_screen.sparkle'
-local start_timelineid<const> = 'title_screen.start'
+local sparkle_timeline_id<const> = 'title_screen.sparkle'
+local start_timeline_id<const> = 'title_screen.start'
 
 local title_exit_events<const> = {
 	'title_wait',
@@ -166,7 +166,7 @@ local define_title_screen_fsm<const> = function()
 					self:set_imgid('title_screen')
 				end,
 				timelines = {
-					[sparkle_timelineid] = {
+					[sparkle_timeline_id] = {
 						def = {
 							frames = build_title_sparkle_frames(),
 							playback_mode = 'once',
@@ -193,7 +193,7 @@ local define_title_screen_fsm<const> = function()
 			},
 			starting = {
 				timelines = {
-					[start_timelineid] = {
+					[start_timeline_id] = {
 						def = {
 							frames = build_title_start_frames(),
 							playback_mode = 'once',
@@ -205,7 +205,7 @@ local define_title_screen_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_frame = function(self)
-							self:set_imgid(self.timelines:get(start_timelineid):value().sprite_id)
+							self:set_imgid(self.timelines:get(start_timeline_id):value().sprite_id)
 						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')
@@ -223,7 +223,7 @@ local register_title_screen_definition<const> = function()
 		def_id = 'title_screen',
 		class = title_screen,
 		base = spriteobject,
-		components = { timelinecomponent.new, fsmcomponent.factory({ 'title_screen' }) },
+		components = { timeline_component.new, fsmcomponent.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})
 end
