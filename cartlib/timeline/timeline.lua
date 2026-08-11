@@ -1,5 +1,6 @@
 local clamp<const> = require('cartlib/util/clamp')
 local timeline_program<const> = require('cartlib/timeline/program')
+local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
 
 local timelinestart_index<const> = -1
 local update_method<const> = {
@@ -30,6 +31,7 @@ local write_evaluation<const> = function(
 	previous_time_ms,
 	time_ms,
 	method,
+	mode,
 	direction,
 	sample,
 	ended,
@@ -47,6 +49,7 @@ local write_evaluation<const> = function(
 	evaluation.previous_time_ms = previous_time_ms
 	evaluation.time_ms = time_ms
 	evaluation.method = method
+	evaluation.playback_mode = mode
 	evaluation.direction = direction
 	evaluation.sample = sample
 	evaluation.ended = ended
@@ -162,6 +165,7 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
+			program.playback_mode,
 			self.direction,
 			true,
 			false,
@@ -186,6 +190,7 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
+			mode,
 			1,
 			true,
 			ended,
@@ -205,6 +210,7 @@ local update_continuous<const> = function(self, delta_time)
 				previous_time_ms,
 				0,
 				play_update_method,
+				mode,
 				1,
 				true,
 				true,
@@ -223,6 +229,7 @@ local update_continuous<const> = function(self, delta_time)
 				previous_time_ms,
 				time_ms,
 				play_update_method,
+				mode,
 				1,
 				true,
 				false,
@@ -264,6 +271,7 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
+			mode,
 			direction,
 			true,
 			ended,
@@ -311,8 +319,9 @@ end
 
 local move_to<const> = function(self, frame, method)
 	clear_evaluations(self)
+	local program<const> = self.program
 	local previous_frame<const> = self.head
-	local current_frame<const> = clamp(frame, 0, self.program.length - 1)
+	local current_frame<const> = clamp(frame, 0, program.length - 1)
 	local direction = 0
 	if current_frame > previous_frame then
 		direction = 1
@@ -320,7 +329,7 @@ local move_to<const> = function(self, frame, method)
 		direction = -1
 	end
 	local previous_time_ms<const> = self.position_ms
-	local time_ms<const> = current_frame * self.program.frame_duration
+	local time_ms<const> = current_frame * program.frame_duration
 	self.head = current_frame
 	self.frame_elapsed = 0
 	self.position_ms = time_ms
@@ -332,6 +341,7 @@ local move_to<const> = function(self, frame, method)
 		previous_time_ms,
 		time_ms,
 		method,
+		program.playback_mode,
 		direction,
 		true,
 		false,
@@ -397,6 +407,7 @@ local move_time<const> = function(self, requested_time_ms, method)
 		previous_time_ms,
 		time_ms,
 		method,
+		program.playback_mode,
 		direction,
 		true,
 		false,
@@ -414,10 +425,17 @@ function timeline:scrub_time(time_ms)
 	return move_time(self, time_ms, scrub_update_method)
 end
 
--- Evaluates one externally controlled, contiguous local-time range. Nested
--- sequence clips use this path instead of advancing an autonomous transport.
-function timeline:evaluate_time_range(previous_time_ms, time_ms, method, direction, initial, ended)
-	clear_evaluations(self)
+local write_external_time_range<const> = function(
+	self,
+	previous_time_ms,
+	time_ms,
+	method,
+	mode,
+	direction,
+	initial,
+	ended,
+	wrapped
+)
 	local program<const> = self.program
 	local duration_ms<const> = program.duration_ms
 	if duration_ms ~= nil then
@@ -450,7 +468,7 @@ function timeline:evaluate_time_range(previous_time_ms, time_ms, method, directi
 		self.frame_elapsed = time_ms - frame * program.frame_duration
 	end
 	self.position_ms = time_ms
-	self.ended = ended
+	self.direction = direction
 	write_evaluation(
 		self,
 		previous_frame,
@@ -458,12 +476,32 @@ function timeline:evaluate_time_range(previous_time_ms, time_ms, method, directi
 		previous_time_ms,
 		time_ms,
 		method,
+		mode,
 		direction,
 		sample,
 		ended,
-		false,
+		wrapped,
 		initial
 	)
+	return self
+end
+
+-- Evaluates a compiled clip transform. Linear, loop and ping-pong mappings all
+-- emit into the same retained evaluation batch.
+function timeline:evaluate_clip_range(clip, previous_parent_time_ms, parent_time_ms, method, initial, ended)
+	clear_evaluations(self)
+	timeline_time_transform.evaluate(
+		clip,
+		previous_parent_time_ms,
+		parent_time_ms,
+		method,
+		method == play_update_method,
+		initial,
+		ended,
+		self,
+		write_external_time_range
+	)
+	self.ended = ended
 	return self
 end
 
@@ -482,6 +520,7 @@ function timeline:snap_to_start()
 		previous_time_ms,
 		0,
 		play_update_method,
+		self.program.playback_mode,
 		1,
 		true,
 		false,
@@ -561,6 +600,7 @@ function timeline:advance_internal(preserve_elapsed)
 		previous_time_ms,
 		time_ms,
 		play_update_method,
+		program.playback_mode,
 		traversal_direction,
 		sample,
 		ended,

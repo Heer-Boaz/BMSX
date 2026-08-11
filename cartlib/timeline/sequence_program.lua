@@ -25,7 +25,7 @@ local compare_end<const> = function(left, right)
 	return left.end_time_ms < right.end_time_ms
 end
 
-function sequence_program.compile(definitions, parent_binding_index_by_id, compile_timeline)
+function sequence_program.compile(definitions, parent_binding_index_by_id, playback_mode_by_name, compile_timeline)
 	if #definitions == 0 then
 		return sequence_program.empty
 	end
@@ -48,6 +48,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, compi
 		end
 		local start_time_ms<const> = definition.start_time_ms or 0
 		local end_time_ms<const> = start_time_ms + definition.duration_ms
+		local clip_in_ms<const> = definition.clip_in_ms or 0
 		local time_scale<const> = definition.time_scale or 1
 		local direction = 1
 		if time_scale < 0 then
@@ -58,9 +59,10 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, compi
 			order = index,
 			start_time_ms = start_time_ms,
 			end_time_ms = end_time_ms,
-			clip_in_ms = definition.clip_in_ms or 0,
 			time_scale = time_scale,
+			time_offset_ms = clip_in_ms - start_time_ms * time_scale,
 			direction = direction,
+			playback_mode = playback_mode_by_name[definition.playback_mode or 'once'],
 			program = program,
 			binding_indices = binding_indices,
 			params = definition.params,

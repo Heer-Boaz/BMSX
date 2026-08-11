@@ -215,10 +215,6 @@ local sort_candidates<const> = function(state)
 	end
 end
 
-local child_time_at<const> = function(clip, parent_time_ms)
-	return clip.clip_in_ms + (parent_time_ms - clip.start_time_ms) * clip.time_scale
-end
-
 local process_clip<const> = function(
 	entry,
 	owner,
@@ -226,7 +222,6 @@ local process_clip<const> = function(
 	previous_time_ms,
 	time_ms,
 	method,
-	direction,
 	on_evaluation
 )
 	local sequence<const> = entry.instance.program.subsequences
@@ -237,17 +232,13 @@ local process_clip<const> = function(
 	local source_time_ms<const> = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
-	local child_direction = direction * clip.direction
-	if child_direction == 0 then
-		child_direction = clip.direction
-	end
-	child_entry.instance:evaluate_time_range(
-		child_time_at(clip, source_time_ms),
-		child_time_at(clip, destination_time_ms),
+	child_entry.instance:evaluate_clip_range(
+		clip,
+		source_time_ms,
+		destination_time_ms,
 		method,
-		child_direction,
 		initial,
-		not destination_active
+		method == play_update_method and not destination_active
 	)
 	timeline_dispatch.process_instance_evaluations(child_entry, owner, on_evaluation)
 	if destination_active then
@@ -303,13 +294,12 @@ local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time
 			previous_time_ms,
 			time_ms,
 			play_update_method,
-			direction,
 			on_evaluation
 		)
 	end
 end
 
-local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, method, direction, on_evaluation)
+local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, method, on_evaluation)
 	local sequence<const> = entry.instance.program.subsequences
 	local state<const> = entry.sequence_state
 	for clip_index = 1, sequence.clip_count do
@@ -322,7 +312,6 @@ local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, met
 				previous_time_ms,
 				time_ms,
 				method,
-				direction,
 				on_evaluation
 			)
 		elseif state.active_index_by_clip[clip_index] ~= nil then
@@ -344,22 +333,35 @@ function sequence_evaluator.evaluate(entry, owner, evaluation, on_evaluation)
 			evaluation.previous_time_ms,
 			evaluation.time_ms,
 			evaluation.method,
-			evaluation.direction,
 			on_evaluation
 		)
 		return
 	end
 	if evaluation.wrapped then
-		evaluate_play_range(
-			entry,
-			owner,
-			evaluation.previous_time_ms,
-			entry.instance.program.duration_ms,
-			false,
-			on_evaluation
-		)
-		clear_active_clips(entry, owner)
-		evaluate_play_range(entry, owner, 0, evaluation.time_ms, true, on_evaluation)
+		local duration_ms<const> = entry.instance.program.duration_ms
+		if evaluation.direction > 0 then
+			evaluate_play_range(
+				entry,
+				owner,
+				evaluation.previous_time_ms,
+				duration_ms,
+				evaluation.initial,
+				on_evaluation
+			)
+			clear_active_clips(entry, owner)
+			evaluate_play_range(entry, owner, 0, evaluation.time_ms, true, on_evaluation)
+		else
+			evaluate_play_range(
+				entry,
+				owner,
+				evaluation.previous_time_ms,
+				0,
+				evaluation.initial,
+				on_evaluation
+			)
+			clear_active_clips(entry, owner)
+			evaluate_play_range(entry, owner, duration_ms, evaluation.time_ms, true, on_evaluation)
+		end
 		return
 	end
 	evaluate_play_range(
@@ -374,7 +376,7 @@ end
 
 function sequence_evaluator.sync_entry(entry, owner, time_ms, on_evaluation)
 	if entry.instance.program.subsequences.clip_count > 0 then
-		evaluate_at(entry, owner, time_ms, time_ms, timeline_module.update_method.jump, 0, on_evaluation)
+		evaluate_at(entry, owner, time_ms, time_ms, timeline_module.update_method.jump, on_evaluation)
 	end
 end
 

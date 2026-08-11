@@ -3615,7 +3615,9 @@ frame observer runs last. A normal advance traverses event keys. A seek samples
 the destination and reconstructs persistent state without replaying crossed
 one-shot events. The transport and dispatcher reuse their evaluation and
 payload records, and the steady update path allocates no tables. `set_frame` is
-position-only and does not masquerade as an evaluated seek.
+position-only and does not masquerade as an evaluated seek. Transport owns the
+stopped state; dispatch emits every retained boundary evaluation and never
+infers lifecycle from a program's authored playback mode.
 
 Track names describe authored roles rather than evaluator algorithms. A
 `value` track selects interpolation separately; the current `step`
@@ -3653,26 +3655,32 @@ deltas.
 
 A nested sequence is authored in the parent definition's `subsequences` array.
 Each clip has an authored `id`, `start_time_ms`, `duration_ms`, a child
-`sequence`, and optional `clip_in_ms`, `time_scale`, `params`, and binding-name
-remaps. Admission compiles that into a shared child-program reference, a dense
-parent-binding index map, a parent-to-child time transform, and clip references
-sorted by both interval boundaries. A parent entry retains the child entries
-and its dense active-clip set. Normal play therefore visits only retained
-active clips and boundaries crossed by the current range; jump and scrub take
-the deliberately colder destination-query path. Candidate storage and child
-evaluation records are retained and reused.
+`sequence`, and optional `clip_in_ms`, `time_scale`, `playback_mode`, `params`,
+and binding-name remaps. Admission compiles that into a shared child-program
+reference, a dense parent-binding index map, a linear parent-to-child transform,
+a numeric once/loop/ping-pong warp, and clip references sorted by both interval
+boundaries. The clip selects its warp explicitly; the child program's autonomous
+root transport mode is not reused implicitly. A parent entry retains the child
+entries and its dense active-clip set. Normal play therefore visits only
+retained active clips and boundaries crossed by the current range; jump and
+scrub take the deliberately colder destination-query path. Candidate storage
+and child evaluation records are retained and reused.
 
 The child is evaluated recursively in the same pass; it does not call back
 through `timeline_component`, allocate another ECS system, or retain editor
 objects. A newly entered clip reconstructs persistent child state at its source
 position, samples the destination, and traverses only one-shot keys inside the
 mapped clip range. A play range that crosses an entire clip still evaluates its
-endpoint, whereas jump and scrub suppress the crossed one-shot keys. Child
-binding names map to equal parent binding names unless the clip explicitly
-remaps them. Seekable audio and media tracks consume the same local range and
-method. This follows Unreal MovieScene's explicit
+endpoint. Loop wraps and ping-pong turns split play into monotonic retained child
+ranges, including multiple boundaries crossed by one parent update. Jump and
+scrub map directly to one destination evaluation: they neither walk intermediate
+warp boundaries nor emit their end notifications or one-shot keys. Child binding
+names map to equal parent binding names unless the clip explicitly remaps them.
+Seekable audio and media tracks consume the same local range and method. This
+follows Unreal MovieScene's explicit
 [play/jump/scrub method](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EUpdatePositionMethod)
 and [nested time transforms](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneSequenceTransform),
+including its explicit [loop time warp](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneTimeWarping),
 Godot's distinct
 [sampled, discrete and seek paths](https://github.com/godotengine/godot/blob/master/scene/animation/animation_mixer.cpp),
 and Unity Timeline's

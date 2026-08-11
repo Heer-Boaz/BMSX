@@ -28,6 +28,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
+	['cartlib/timeline/time_transform', 'cartlib/timeline/time_transform.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
 	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
 	['cartlib/timeline/sequence_evaluator', 'cartlib/timeline/sequence_evaluator.lua'],

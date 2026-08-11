@@ -1,9 +1,7 @@
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
-local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 
 local timeline_dispatch<const> = {}
-local playback_once<const> = timeline_program.playback_mode.once
 
 local acquire_payload<const> = function(state, payloads)
 	local depth<const> = state.depth + 1
@@ -48,14 +46,12 @@ end
 local dispatch_end<const> = function(entry, owner, evaluation)
 	local state<const> = entry.timeline_dispatch_state
 	local payload<const> = acquire_payload(state, state.end_payloads)
-	local program<const> = entry.instance.program
 	payload.frame_index = evaluation.frame
-	payload.mode = program.playback_mode
+	payload.mode = evaluation.playback_mode
 	payload.wrapped = evaluation.wrapped
 	payload.time_ms = evaluation.time_ms
 	owner.events:emit(state.scoped_end_event_type, payload)
 	state.depth = state.depth - 1
-	return program.playback_mode == playback_once
 end
 
 function timeline_dispatch.init_entry(entry)
@@ -100,16 +96,14 @@ end
 
 function timeline_dispatch.process_instance_evaluations(entry, owner, on_evaluation)
 	local instance<const> = entry.instance
-	local stop = false
 	for index = 1, instance.evaluation_count do
 		local evaluation<const> = instance.evaluations[index]
 		dispatch_evaluation(entry, owner, evaluation, on_evaluation)
-		if evaluation.ended and dispatch_end(entry, owner, evaluation) then
-			stop = true
-			break
+		if evaluation.ended then
+			dispatch_end(entry, owner, evaluation)
 		end
 	end
-	return stop
+	return instance.ended
 end
 
 return timeline_dispatch

@@ -110,6 +110,7 @@ function timeline_program.compile(definition)
 	local subsequences<const> = timeline_sequence_program.compile(
 		subsequence_defs,
 		binding_index_by_id,
+		playback_mode_by_name,
 		timeline_program.compile
 	)
 	local apply_function
