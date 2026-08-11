@@ -1,7 +1,10 @@
 -- Runtime track evaluation is split into persistent, sampled, and one-shot
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
+local timeline_module<const> = require('cartlib/timeline/timeline')
+
 local track_evaluator<const> = {}
+local play_update_method<const> = timeline_module.update_method.play
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -78,13 +81,13 @@ local emit_event_range<const> = function(events, owner, previous, current, direc
 end
 
 function track_evaluator.emit_events(entry, owner, evaluation)
-	if evaluation.jumped or evaluation.previous == evaluation.current then
+	if evaluation.method ~= play_update_method or evaluation.previous_frame == evaluation.frame then
 		return
 	end
 	local program<const> = entry.instance.program
 	local events<const> = program.tracks.events
-	local previous<const> = evaluation.previous
-	local current<const> = evaluation.current
+	local previous<const> = evaluation.previous_frame
+	local current<const> = evaluation.frame
 	if evaluation.wrapped then
 		emit_event_range(events, owner, previous, program.length - 1, 1)
 		emit_event_range(events, owner, -1, current, 1)
@@ -186,12 +189,12 @@ end
 
 function track_evaluator.evaluate_tags(entry, owner, evaluation)
 	local program<const> = entry.instance.program
-	if evaluation.jumped then
-		track_evaluator.sync_tags(entry, owner, evaluation.current)
+	if evaluation.method ~= play_update_method then
+		track_evaluator.sync_tags(entry, owner, evaluation.frame)
 		return
 	end
-	local previous<const> = evaluation.previous
-	local current<const> = evaluation.current
+	local previous<const> = evaluation.previous_frame
+	local current<const> = evaluation.frame
 	if previous == current then
 		return
 	end
@@ -248,9 +251,12 @@ function track_evaluator.evaluate_values(entry, evaluation)
 	local params<const> = entry.params
 	local steps<const> = tracks.steps
 	if steps.track_count > 0 then
-		local previous<const> = evaluation.previous
-		local current<const> = evaluation.current
-		if evaluation.jumped or evaluation.wrapped or current > previous + 1 or current < previous - 1 then
+		local previous<const> = evaluation.previous_frame
+		local current<const> = evaluation.frame
+		if evaluation.method ~= play_update_method
+			or evaluation.wrapped
+			or current > previous + 1
+			or current < previous - 1 then
 			sample_step_tracks(entry, steps, current, params, evaluation)
 		elseif evaluation.direction > 0 then
 			apply_step_bucket(entry, steps.by_frame[current], params, evaluation)

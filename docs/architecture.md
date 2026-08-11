@@ -3630,12 +3630,18 @@ owners. An explicit apply callback may still drive raw source coordinates or
 other cart-owned values, so retaining image identity by default does not remove
 low-level author control.
 
-Before nested sequences or seekable audio/media tracks are admitted, transport
-evaluation must carry one explicit local-time range and update method (play,
-jump, or scrub). A nested sequence compiles a child-program reference plus a
-parent-to-child time transform and evaluates that child in the same pass; it
-does not call back through `timeline_component`, allocate another ECS system,
-or retain editor objects. This follows Unreal MovieScene's explicit
+Each retained transport evaluation carries both its directed frame range and
+its directed timeline-local millisecond range, plus one numeric update method:
+play, jump, or scrub. Play traverses one-shot keys; jump and scrub reconstruct
+the sampled destination. The range is timeline position, not accumulated wall
+time, and replaces parallel reason strings, jumped flags and repeated tick
+deltas.
+
+A nested sequence compiles a child-program reference plus a parent-to-child
+time transform and evaluates that child in the same pass; it does not call back
+through `timeline_component`, allocate another ECS system, or retain editor
+objects. Seekable audio and media tracks consume the same local range and
+method. This follows Unreal MovieScene's explicit
 [play/jump/scrub method](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EUpdatePositionMethod)
 and [nested time transforms](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneSequenceTransform),
 Godot's distinct

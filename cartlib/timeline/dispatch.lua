@@ -11,18 +11,17 @@ local acquire_payload<const> = function(state, payloads)
 	return payload
 end
 
-local dispatch_frame<const> = function(entry, owner, evaluation, delta_time, on_frame)
+local dispatch_frame<const> = function(entry, owner, evaluation, on_frame)
 	local state<const> = entry.timeline_dispatch_state
 	local payload<const> = acquire_payload(state, state.frame_payloads)
-	payload.previous_frame = evaluation.previous
-	payload.frame_index = evaluation.current
+	payload.previous_frame = evaluation.previous_frame
+	payload.frame_index = evaluation.frame
 	payload.frame_value = evaluation.value
-	payload.reason = evaluation.reason
-	payload.direction = evaluation.direction
-	payload.jumped = evaluation.jumped
-	payload.wrapped = evaluation.wrapped
-	payload.delta_time = delta_time
+	payload.previous_time_ms = evaluation.previous_time_ms
 	payload.time_ms = evaluation.time_ms
+	payload.method = evaluation.method
+	payload.direction = evaluation.direction
+	payload.wrapped = evaluation.wrapped
 
 	-- Persistent state is reconstructed first, then sampled values are applied,
 	-- then one-shot events traverse the evaluation range. Event handlers and
@@ -43,7 +42,7 @@ local dispatch_end<const> = function(entry, owner, evaluation)
 	local state<const> = entry.timeline_dispatch_state
 	local payload<const> = acquire_payload(state, state.end_payloads)
 	local program<const> = entry.instance.program
-	payload.frame_index = evaluation.current
+	payload.frame_index = evaluation.frame
 	payload.mode = program.playback_mode
 	payload.wrapped = evaluation.wrapped
 	payload.time_ms = evaluation.time_ms
@@ -62,12 +61,11 @@ function timeline_dispatch.init_entry(entry)
 		frame_payload.previous_frame = -1
 		frame_payload.frame_index = 0
 		frame_payload.frame_value = false
-		frame_payload.reason = false
-		frame_payload.direction = 0
-		frame_payload.jumped = false
-		frame_payload.wrapped = false
-		frame_payload.delta_time = 0
+		frame_payload.previous_time_ms = 0
 		frame_payload.time_ms = 0
+		frame_payload.method = 0
+		frame_payload.direction = 0
+		frame_payload.wrapped = false
 		local end_payloads<const> = scratch_record_batch.new(1)
 		local end_payload<const> = end_payloads.items[1]
 		end_payload.timeline_id = timeline_id
@@ -92,13 +90,13 @@ function timeline_dispatch.init_entry(entry)
 	timeline_track_evaluator.init_entry(entry)
 end
 
-function timeline_dispatch.process_instance_evaluations(entry, owner, delta_time, on_frame)
+function timeline_dispatch.process_instance_evaluations(entry, owner, on_frame)
 	local instance<const> = entry.instance
 	local stop = false
 	for index = 1, instance.evaluation_count do
 		local evaluation<const> = instance.evaluations[index]
 		if evaluation.sample then
-			dispatch_frame(entry, owner, evaluation, delta_time, on_frame)
+			dispatch_frame(entry, owner, evaluation, on_frame)
 		end
 		if evaluation.ended and dispatch_end(entry, owner, evaluation) then
 			stop = true

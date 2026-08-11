@@ -69,11 +69,10 @@ local resolve_timeline_bindings<const> = function(entry, program, primary_bindin
 	end
 end
 
-local process_evaluations<const> = function(self, entry, delta_time)
+local process_evaluations<const> = function(self, entry)
 	local stopped<const> = timeline_dispatch.process_instance_evaluations(
 		entry,
 		self.parent,
-		delta_time,
 		process_timeline_frame
 	)
 	if stopped then
@@ -164,28 +163,28 @@ end
 function timeline_component:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
 	entry.instance:seek(frame)
-	process_evaluations(self, entry, 0)
+	process_evaluations(self, entry)
 	return entry.instance
 end
 
 function timeline_component:seek_to_end(id)
 	local entry<const> = self._entries_by_id[id]
 	entry.instance:seek(entry.instance.program.length - 1)
-	process_evaluations(self, entry, 0)
+	process_evaluations(self, entry)
 	return entry.instance
 end
 
 function timeline_component:advance_to(id, frame)
 	local entry<const> = self._entries_by_id[id]
 	entry.instance:advance_to(frame)
-	process_evaluations(self, entry, 0)
+	process_evaluations(self, entry)
 	return entry.instance
 end
 
 function timeline_component:advance(id)
 	local entry<const> = self._entries_by_id[id]
 	if entry.instance:advance() ~= nil then
-		process_evaluations(self, entry, 0)
+		process_evaluations(self, entry)
 	end
 	return entry.instance
 end
@@ -237,7 +236,7 @@ function timeline_component:play(id, opts)
 	end
 	if snap and program.length > 0 then
 		instance:snap_to_start()
-		process_evaluations(self, entry, 0)
+		process_evaluations(self, entry)
 	end
 	activate_timeline_entry(self, entry)
 	return instance
@@ -254,7 +253,7 @@ function timeline_component:tick_active(delta_time)
 	while index <= self._active_count do
 		local entry<const> = self._active_entries[index]
 		if entry.instance:update(delta_time) ~= nil then
-			if not process_evaluations(self, entry, delta_time) then
+			if not process_evaluations(self, entry) then
 				index = index + 1
 			end
 		else

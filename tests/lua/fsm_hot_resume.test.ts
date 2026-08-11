@@ -161,7 +161,7 @@ assert(target.timeline_value == 101)
 local timeline_before<const> = timelines:get('hot_timeline')
 local timeline_entry_before<const> = timelines._active_entries[1]
 local timeline_head_before<const> = timeline_before.head
-local timeline_time_before<const> = timeline_before.time_ms
+local timeline_position_before<const> = timeline_before.position_ms
 
 local active_data<const> = active.data
 active_data.retained = 73
@@ -221,7 +221,7 @@ assert(#history_after == 1 and history_after[1] == 'idle')
 assert(target.tags.old_active == nil and target.tags.new_active == true)
 assert(timelines:get('hot_timeline') == timeline_before)
 assert(timelines._active_entries[1] == timeline_entry_before)
-assert(timeline_before.head == timeline_head_before and timeline_before.time_ms == timeline_time_before)
+assert(timeline_before.head == timeline_head_before and timeline_before.position_ms == timeline_position_before)
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)
 assert(state_machines._state_paths == nil)

@@ -45,6 +45,9 @@ local compile_frame_data<const> = function(program, frame_source)
 		compiled.length = #compiled.frames
 		compiled.range_source_length = nil
 	end
+	if not compiled.continuous then
+		compiled.duration_ms = compiled.length * compiled.frame_duration
+	end
 	compiled.tracks = timeline_track_program.compile(program.prepared_tracks, compiled.length)
 	if program.apply_frames then
 		compiled.frame_appliers = timeline_apply.compile_frames(compiled.frames)
