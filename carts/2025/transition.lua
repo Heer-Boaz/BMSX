@@ -1,5 +1,6 @@
 local transition<const> = {}
 require('globals')
+local surface_component<const> = require('cartlib/component/surfacecomponent')
 local gp0<const> = require('cartlib/gx/gp0')
 local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
@@ -8,6 +9,7 @@ local timelinebuilders<const> = require('timelinebuilders')
 local apply_transition_frame<const> = timelinebuilders.apply_transition_frame
 local build_transition_fade_in_frames<const> = timelinebuilders.build_transition_fade_in_frames
 local build_fade_frames<const> = timelinebuilders.build_fade_frames
+local background_binding_ids<const> = { 'background' }
 
 function transition.register_states(states)
 	local fade_hold_black_kinds<const> = {
@@ -247,42 +249,49 @@ function transition.register_states(states)
 				panels = self.transition_panels,
 				accent = self.transition_accent,
 				center_x = self.transition_center_x,
-				start_x = w,
-				end_x = -w,
-			}
-			self.timelines:define(overgang_timeline_id, {
+					start_x = w,
+					end_x = -w,
+				}
+				local tracks<const> = {}
+				if self.transition_target_bg ~= nil then
+					tracks[1] = {
+						kind = 'step',
+						binding = 'background',
+						apply = surface_component.set_imgid,
+						keys = {
+							{ frame = overgang_fade_out_frames - 1, value = self.transition_target_bg },
+						},
+					}
+				end
+				self.timelines:define(overgang_timeline_id, {
 				frames = timeline.range(self.transition_finish_frame + 1),
 				frame_duration = overgang_frame_duration,
 				playback_mode = 'once',
+				bindings = background_binding_ids,
 				target = target,
 				params = transition_params,
 				apply = apply_transition_frame,
-				markers = {
-					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg', direction = 'forward' },
-				},
+					tracks = tracks,
 			})
 			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
 			-- Snapping here consumes that frame during state entry and shifts the authored cadence.
-			self.timelines:play(overgang_timeline_id, { rewind = true, snap_to_start = false })
+			self.timelines:play(overgang_timeline_id, {
+				rewind = true,
+				snap_to_start = false,
+				bindings = { background = background.surface_component },
+			})
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			{
 				pattern = 'b[jp]',
 				go = function(self)
+					self.timelines:seek_to_end(overgang_timeline_id)
 					return finish_transition(self)
 				end,
 			},
 		},
 		on = {
-			['transition.swap_bg'] = {
-				go = function(self)
-					if self.skip_transition_fade then
-						return
-					end
-					apply_background(self.background, self.transition_target_bg)
-				end,
-			},
 			['timeline.end.' .. overgang_timeline_id] = {
 				go = function(self)
 					return finish_transition(self)
@@ -321,6 +330,7 @@ function transition.register_states(states)
 			{
 				pattern = 'b[jp]',
 				go = function(self)
+					self.timelines:seek_to_end(overgang_post_fade_in_timeline_id)
 					return finish_transition_fade_in(self)
 				end,
 			},
@@ -379,36 +389,43 @@ function transition.register_states(states)
 				hold_black = self.fade_hold_black,
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})
+			local tracks<const> = {}
+			if not self.fade_hold_black then
+				tracks[1] = {
+					kind = 'step',
+					binding = 'background',
+					apply = surface_component.set_imgid,
+					keys = {
+						{ frame = fade_out_frames - 1, value = self.fade_target_bg },
+					},
+				}
+			end
 			self.timelines:define(fade_timeline_id, {
 				frames = frames,
 				frame_duration = fade_frame_duration,
 				playback_mode = 'once',
+				bindings = background_binding_ids,
 				target = target,
 				apply = true,
-				markers = {
-					{ frame = fade_out_frames - 1, event = 'fade.swap_bg', direction = 'forward' },
-				},
+				tracks = tracks,
 			})
-			self.timelines:play(fade_timeline_id, { rewind = true, snap_to_start = true })
+			self.timelines:play(fade_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				bindings = { background = background.surface_component },
+			})
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			{
 				pattern = 'b[jp]',
 				go = function(self)
+					self.timelines:seek_to_end(fade_timeline_id)
 					return finish_fade(self)
 				end,
 			},
 		},
 		on = {
-			['fade.swap_bg'] = {
-				go = function(self)
-					if self.fade_hold_black then
-						return
-					end
-					apply_background(self.background, self.fade_target_bg)
-				end,
-			},
 			['timeline.end.' .. fade_timeline_id] = {
 				go = function(self)
 					return finish_fade(self)

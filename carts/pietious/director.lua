@@ -284,8 +284,13 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_banner_prewait_frames),
 					playback_mode = 'once',
-					markers = {
-						{ frame = 0, event = banner_prewait_cue_event, direction = 'forward' },
+					tracks = {
+						{
+							kind = 'event',
+							keys = {
+								{ frame = 0, event = banner_prewait_cue_event, direction = 'forward' },
+							},
+						},
 					},
 				},
 				autoplay = false,
@@ -294,8 +299,13 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_world_banner_frames),
 					playback_mode = 'once',
-					markers = {
-						{ frame = 0, event = banner_world_show_event, direction = 'forward' },
+					tracks = {
+						{
+							kind = 'event',
+							keys = {
+								{ frame = 0, event = banner_world_show_event, direction = 'forward' },
+							},
+						},
 					},
 				},
 				autoplay = false,
@@ -304,8 +314,13 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_castle_banner_frames),
 					playback_mode = 'once',
-					markers = {
-						{ frame = 0, event = banner_castle_show_event, direction = 'forward' },
+					tracks = {
+						{
+							kind = 'event',
+							keys = {
+								{ frame = 0, event = banner_castle_show_event, direction = 'forward' },
+							},
+						},
 					},
 				},
 				autoplay = false,
@@ -328,8 +343,9 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(126),
 					playback_mode = 'once',
-					windows = {
+					tracks = {
 						{
+							kind = 'tag',
 							name = 'clouds',
 							tag = 'd.daemon.clouds',
 							start = { frame = 0 },
@@ -641,8 +657,13 @@ local define_director_fsm<const> = function()
 									def = {
 										frames = timeline.range(2),
 										playback_mode = 'once',
-										markers = {
-											{ frame = 1, event = item_screen_halo_request_event, direction = 'forward' },
+										tracks = {
+											{
+												kind = 'event',
+												keys = {
+													{ frame = 1, event = item_screen_halo_request_event, direction = 'forward' },
+												},
+											},
 										},
 									},
 									autoplay = true,
@@ -744,14 +765,16 @@ local define_director_fsm<const> = function()
 							def = {
 								frames = timeline.range(95),
 								playback_mode = 'once',
-								windows = {
+								tracks = {
 									{
+										kind = 'tag',
 										name = 'dissolve',
 										tag = 'd.seal.dissolve',
 										start = { frame = 31 },
 										['end'] = { frame = 94 },
 									},
 									{
+										kind = 'tag',
 										name = 'smoke',
 										tag = 'd.seal.smoke',
 										start = { frame = 63 },

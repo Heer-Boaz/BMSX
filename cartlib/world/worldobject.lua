@@ -220,7 +220,7 @@ end
 
 -- has_tag(tag): returns true if this object currently carries the given tag.
 -- Tags are plain-string keys set on self.tags.  The FSM also manages tags
--- automatically through state `tags` declarations and timeline windows.
+-- automatically through state declarations and timeline tag tracks.
 function worldobject:has_tag(tag)
 	return (self.tags[tag])
 end

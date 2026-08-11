@@ -1392,7 +1392,7 @@ function combat.define_fsm()
 				def = {
 					playback_mode = 'loop',
 					tracks = {
-						combat_hover_track,
+						{ kind = 'sample', apply = combat_hover_track },
 					},
 				},
 				autoplay = false,
@@ -1406,9 +1406,14 @@ function combat.define_fsm()
 					frame_duration = combat_focus_frame_duration,
 					playback_mode = 'once',
 					apply = true,
-					markers = {
-						{ frame = 0, event = 'combat_focus.snap', direction = 'forward' },
-						{ u = 1, event = 'combat_focus.done', direction = 'forward' },
+					tracks = {
+						{
+							kind = 'event',
+							keys = {
+								{ frame = 0, event = 'combat_focus.snap', direction = 'forward' },
+								{ u = 1, event = 'combat_focus.done', direction = 'forward' },
+							},
+						},
 					},
 				},
 				autoplay = false,

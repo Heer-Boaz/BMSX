@@ -68,8 +68,13 @@ local define_world_entrance_fsm<const> = function()
 						def = {
 							frames = timeline.range(world_entrance_open_step_frames * 2),
 							playback_mode = 'once',
-							markers = {
-								{ frame = world_entrance_open_step_frames, event = opening_half_event, direction = 'forward' },
+							tracks = {
+								{
+									kind = 'event',
+									keys = {
+										{ frame = world_entrance_open_step_frames, event = opening_half_event, direction = 'forward' },
+									},
+								},
 							},
 						},
 						autoplay = true,

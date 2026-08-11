@@ -216,8 +216,9 @@ function timeline:advance_to(frame)
 	return move_to(self, frame, 'advance_to', false)
 end
 
--- A seek samples the destination and reconstructs persistent windows without
--- firing one-shot markers crossed by the jump. advance_to() traverses them.
+-- A seek samples the destination and reconstructs persistent tag and step
+-- tracks without firing event keys crossed by the jump. advance_to() traverses
+-- those one-shot keys.
 function timeline:seek(frame)
 	return move_to(self, frame, 'seek', true)
 end

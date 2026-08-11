@@ -2,6 +2,7 @@ local basecomponent<const> = require('cartlib/component/basecomponent')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
+local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
 
 local timeline_component<const> = {}
@@ -36,24 +37,14 @@ local deactivate_timeline_entry<const> = function(self, id)
 	end
 end
 
-local process_timeline_frame_payload<const> = function(_, entry, _owner, payload)
+local process_timeline_frame<const> = function(entry, _owner, evaluation, payload)
 	local program<const> = entry.instance.program
-	local params<const> = entry.params
-	local primary_track_runner<const> = program.primary_track_runner
-	if primary_track_runner ~= nil then
-		primary_track_runner(entry.primary_binding, params, payload, payload.time_ms * 0.001)
-	elseif program.track_group_count > 0 then
-		local track_groups<const> = program.track_groups
-		local bindings<const> = entry.bindings
-		local time_seconds<const> = payload.time_ms * 0.001
-		for index = 1, program.track_group_count do
-			local group<const> = track_groups[index]
-			group.runner(bindings[group.binding_index], params, payload, time_seconds)
-		end
+	if program.tracks.value_track_count > 0 then
+		timeline_track_evaluator.evaluate_values(entry, evaluation)
 	end
 	local apply_function<const> = program.apply_function
 	if apply_function ~= nil then
-		apply_function(entry.primary_binding, payload.frame_value, params, payload)
+		apply_function(entry.primary_binding, payload.frame_value, entry.params, evaluation)
 	end
 	local frame_appliers<const> = program.frame_appliers
 	if frame_appliers ~= nil then
@@ -83,7 +74,7 @@ local process_evaluations<const> = function(self, entry, delta_time)
 		entry,
 		self.parent,
 		delta_time,
-		process_timeline_frame_payload
+		process_timeline_frame
 	)
 	if stopped then
 		deactivate_timeline_entry(self, entry.instance.id)
@@ -131,7 +122,7 @@ function timeline_component:define(id, definition)
 	local previous_program<const> = entry.instance.program
 	local active<const> = self._active_index_by_id[program.id] ~= nil
 	if active then
-		timeline_dispatch.clear_windows(entry, self.parent)
+		timeline_track_evaluator.clear_tags(entry, self.parent)
 	end
 	if active and program.frame_builder ~= nil then
 		program = timeline_program.build(program, entry.params)
@@ -161,7 +152,7 @@ function timeline_component:define(id, definition)
 	end
 	timeline_dispatch.init_entry(entry)
 	if active and entry.instance.head >= 0 then
-		timeline_dispatch.sync_windows(entry, self.parent, entry.instance.head)
+		timeline_track_evaluator.sync_tags(entry, self.parent, entry.instance.head)
 	end
 end
 
@@ -173,6 +164,13 @@ end
 function timeline_component:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
 	entry.instance:seek(frame)
+	process_evaluations(self, entry, 0)
+	return entry.instance
+end
+
+function timeline_component:seek_to_end(id)
+	local entry<const> = self._entries_by_id[id]
+	entry.instance:seek(entry.instance.program.length - 1)
 	process_evaluations(self, entry, 0)
 	return entry.instance
 end
@@ -227,7 +225,7 @@ function timeline_component:play(id, opts)
 	entry.params = params
 	resolve_timeline_bindings(entry, program, target, bindings)
 	if rewind or program.frame_builder ~= nil then
-		timeline_dispatch.clear_windows(entry, owner)
+		timeline_track_evaluator.clear_tags(entry, owner)
 	end
 	if program.frame_builder ~= nil then
 		instance:build(params)
@@ -247,7 +245,7 @@ end
 
 function timeline_component:stop(id)
 	local entry<const> = self._entries_by_id[id]
-	timeline_dispatch.clear_windows(entry, self.parent)
+	timeline_track_evaluator.clear_tags(entry, self.parent)
 	deactivate_timeline_entry(self, id)
 end
 

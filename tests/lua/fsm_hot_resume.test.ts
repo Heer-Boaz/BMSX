@@ -23,6 +23,9 @@ const CART_MODULE_FILES = [
 	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
 	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
+	['cartlib/easing', 'cartlib/easing.lua'],
+	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
+	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
 	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
@@ -57,7 +60,7 @@ const CART_STUB_MODULES = [
 		path: 'cartlib/timeline/apply',
 		source: `return {
 			compile_frames = function() error('unexpected compiled-frame timeline') end,
-			compile_track_program = function() error('unexpected track timeline') end,
+			compile_setter = function() error('unexpected property track') end,
 		}`,
 	},
 ] as const;
@@ -67,6 +70,7 @@ require('base')
 table = require('table')
 string = require('string/base')
 string.find = require('string/pattern').find
+math = { sin = function(value) return value end, pi = 3.141592653589793 }
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;

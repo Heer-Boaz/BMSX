@@ -150,9 +150,9 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 	owner.timelines:define(timeline_id, {
 		continuous = true,
 		playback_mode = 'once',
-		duration_seconds = total,
+		duration_ms = total * 1000,
 		tracks = {
-			stagger_track,
+			{ kind = 'sample', apply = stagger_track },
 		},
 	})
 	return timeline_id
