@@ -851,20 +851,22 @@ function action_parser.compile(src)
 		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
+	local body<const> = {}
+	append_evaluation(body, ast, 'result', 'win')
 	local parts<const> = {
 		'return function(get_state, context, win)\n',
-		'',
-		'',
 		'local result\n',
 	}
-	append_evaluation(parts, ast, 'result', 'win')
+	if body.uses_state then
+		parts[#parts + 1] = 'local state\n'
+	end
+	if body.uses_edge then
+		parts[#parts + 1] = 'local edge_ok\nlocal edge_eligible\nlocal edge_any\nlocal edge_all\n'
+	end
+	for index = 1, #body do
+		parts[#parts + 1] = body[index]
+	end
 	parts[#parts + 1] = 'return result\nend'
-	if parts.uses_state then
-		parts[2] = 'local state\n'
-	end
-	if parts.uses_edge then
-		parts[3] = 'local edge_ok\nlocal edge_eligible\nlocal edge_any\nlocal edge_all\n'
-	end
 	local program<const> = {
 		action_names = self.action_names,
 		evaluate = load(table.concat(parts), '[input.action]', 't')(),

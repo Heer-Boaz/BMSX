@@ -2,6 +2,7 @@
 -- evaluator. Generic step values remain track-program data because they may
 -- carry non-numeric cart values.
 local scalar_channel<const> = {}
+local format<const> = string.format
 
 scalar_channel.empty = {
 	track_count = 0,
@@ -11,6 +12,187 @@ scalar_channel.empty = {
 	cubic_time_tracks = {},
 	runner = nil,
 }
+
+local append_path<const> = function(parts, root, path)
+	parts[#parts + 1] = root
+	for index = 1, #path do
+		local key<const> = path[index]
+		parts[#parts + 1] = '['
+		parts[#parts + 1] = type(key) == 'number' and key or format('%q', key)
+		parts[#parts + 1] = ']'
+	end
+end
+
+local append_scalar_track<const> = function(
+	parts,
+	track_list_name,
+	track_index,
+	track,
+	position_key,
+	cubic
+)
+	local track_expression<const> = 'channels['
+		.. format('%q', track_list_name)
+		.. '][' .. tostring(track_index) .. ']'
+	if track.apply ~= nil then
+		parts[#parts + 1] = 'track = '
+		parts[#parts + 1] = track_expression
+		parts[#parts + 1] = '\nkeys = track["keys"]\n'
+	else
+		parts[#parts + 1] = 'keys = '
+		parts[#parts + 1] = track_expression
+		parts[#parts + 1] = '["keys"]\n'
+	end
+	local key_count<const> = track.key_count
+	if key_count == 1 then
+		parts[#parts + 1] = 'value = keys[1]["value"]\n'
+	else
+		parts[#parts + 1] = 'first_key = keys[1]\nif position <= first_key['
+		parts[#parts + 1] = format('%q', position_key)
+		parts[#parts + 1] = '] then\nvalue = first_key["value"]\nelse\nlast_key = keys['
+		parts[#parts + 1] = key_count
+		parts[#parts + 1] = ']\nif position >= last_key['
+		parts[#parts + 1] = format('%q', position_key)
+		parts[#parts + 1] = '] then\nvalue = last_key["value"]\nelse\n'
+		if key_count == 2 then
+			parts[#parts + 1] = 'key = first_key\n'
+		else
+			parts[#parts + 1] = 'low = 1\nhigh = '
+			parts[#parts + 1] = key_count + 1
+			parts[#parts + 1] = '\nwhile low < high do\nmiddle = (low + high) // 2\nif keys[middle]['
+			parts[#parts + 1] = format('%q', position_key)
+			parts[#parts + 1] = '] <= position then\nlow = middle + 1\nelse\nhigh = middle\nend\nend\nkey = keys[low - 1]\n'
+		end
+		if cubic then
+			parts[#parts + 1] = 'u = (position - key['
+			parts[#parts + 1] = format('%q', position_key)
+			parts[#parts + 1] = ']) * key["span_inv"]\nvalue = ((key["cubic3"] * u + key["cubic2"]) * u + key["cubic1"]) * u + key["value"]\n'
+		else
+			parts[#parts + 1] = 'value = key["value"] + key["value_delta"] * ((position - key['
+			parts[#parts + 1] = format('%q', position_key)
+			parts[#parts + 1] = ']) * key["span_inv"])\n'
+		end
+		parts[#parts + 1] = 'end\nend\n'
+	end
+	local binding_expression
+	if track.binding_index == 1 then
+		binding_expression = 'primary_binding'
+	else
+		binding_expression = 'bindings[' .. tostring(track.binding_index) .. ']'
+	end
+	if track.apply ~= nil then
+		parts[#parts + 1] = 'track["apply"]('
+		parts[#parts + 1] = binding_expression
+		parts[#parts + 1] = ', value, params, evaluation)\n'
+	else
+		append_path(parts, binding_expression, track.path)
+		parts[#parts + 1] = ' = value\n'
+	end
+end
+
+local append_scalar_lane<const> = function(
+	parts,
+	track_list_name,
+	tracks,
+	position_key,
+	cubic
+)
+	for track_index = 1, #tracks do
+		append_scalar_track(
+			parts,
+			track_list_name,
+			track_index,
+			tracks[track_index],
+			position_key,
+			cubic
+		)
+	end
+end
+
+local analyze_tracks<const> = function(analysis, tracks, time_domain)
+	for index = 1, #tracks do
+		local track<const> = tracks[index]
+		if track.apply ~= nil then
+			analysis.has_callback = true
+		end
+		if track.binding_index == 1 then
+			analysis.has_primary_binding = true
+		else
+			analysis.has_secondary_binding = true
+		end
+		local key_count<const> = track.key_count
+		if time_domain then
+			if key_count > analysis.time_max_key_count then
+				analysis.time_max_key_count = key_count
+			end
+		elseif key_count > analysis.frame_max_key_count then
+			analysis.frame_max_key_count = key_count
+		end
+		if key_count > analysis.max_key_count then
+			analysis.max_key_count = key_count
+		end
+	end
+end
+
+local compile_runner<const> = function(channels)
+	local linear_tracks<const> = channels.linear_tracks
+	local linear_time_tracks<const> = channels.linear_time_tracks
+	local cubic_tracks<const> = channels.cubic_tracks
+	local cubic_time_tracks<const> = channels.cubic_time_tracks
+	local analysis<const> = {
+		has_callback = false,
+		has_primary_binding = false,
+		has_secondary_binding = false,
+		frame_max_key_count = 0,
+		time_max_key_count = 0,
+		max_key_count = 0,
+	}
+	analyze_tracks(analysis, linear_tracks, false)
+	analyze_tracks(analysis, cubic_tracks, false)
+	analyze_tracks(analysis, linear_time_tracks, true)
+	analyze_tracks(analysis, cubic_time_tracks, true)
+
+	local parts<const> = {
+		'return function(channels, entry, evaluation)\n',
+		'local track\nlocal keys\nlocal value\n',
+	}
+	if analysis.has_primary_binding then
+		parts[#parts + 1] = 'local primary_binding = entry["primary_binding"]\n'
+	end
+	if analysis.has_secondary_binding then
+		parts[#parts + 1] = 'local bindings = entry["bindings"]\n'
+	end
+	if analysis.has_callback then
+		parts[#parts + 1] = 'local params = entry["params"]\n'
+	end
+	if analysis.max_key_count > 1 then
+		parts[#parts + 1] = 'local position\nlocal first_key\nlocal last_key\nlocal key\n'
+	end
+	if analysis.max_key_count > 2 then
+		parts[#parts + 1] = 'local low\nlocal high\nlocal middle\n'
+	end
+	if #cubic_tracks > 0 or #cubic_time_tracks > 0 then
+		parts[#parts + 1] = 'local u\n'
+	end
+	if #linear_tracks > 0 or #cubic_tracks > 0 then
+		parts[#parts + 1] = 'if evaluation["sample"] then\n'
+		if analysis.frame_max_key_count > 1 then
+			parts[#parts + 1] = 'position = evaluation["frame"]\n'
+		end
+		append_scalar_lane(parts, 'linear_tracks', linear_tracks, 'frame', false)
+		append_scalar_lane(parts, 'cubic_tracks', cubic_tracks, 'frame', true)
+		parts[#parts + 1] = 'end\n'
+	end
+	if #linear_time_tracks > 0 or #cubic_time_tracks > 0 then
+		if analysis.time_max_key_count > 1 then
+			parts[#parts + 1] = 'position = evaluation["time_ms"]\n'
+		end
+		append_scalar_lane(parts, 'linear_time_tracks', linear_time_tracks, 'time_ms', false)
+		append_scalar_lane(parts, 'cubic_time_tracks', cubic_time_tracks, 'time_ms', true)
+	end
+	parts[#parts + 1] = 'end'
+	return load(table.concat(parts), '[timeline.scalar_channel]', 't')()
+end
 
 local finalize_tracks<const> = function(tracks)
 	for index = 1, #tracks do
@@ -42,7 +224,7 @@ local frame_at<const> = function(position, length)
 	return (position.u * (length - 1)) // 1
 end
 
-function scalar_channel.compile(definitions, length, runner)
+function scalar_channel.compile(definitions, length)
 	if #definitions == 0 then
 		return scalar_channel.empty
 	end
@@ -133,7 +315,7 @@ function scalar_channel.compile(definitions, length, runner)
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
 	}
-	channels.runner = runner
+	channels.runner = compile_runner(channels)
 	finalize_tracks(linear_tracks)
 	finalize_tracks(linear_time_tracks)
 	finalize_tracks(cubic_tracks)
