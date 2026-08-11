@@ -319,17 +319,31 @@ parse_expression = function(state)
 	return parse_or_expression(state)
 end
 
-local parse_assignment_statement<const> = function(state)
-	local target<const> = parse_expression(state)
-	expect(state, token.equal)
-	local value<const> = parse_expression(state)
-	return {
-		kind = syntax.assignment_statement,
-		target = target,
-		value = value,
-		line = target.line,
-		column = target.column,
-	}
+local parse_assignment_or_call_statement<const> = function(state)
+	local expression<const> = parse_expression(state)
+	if match(state, token.equal) then
+		return {
+			kind = syntax.assignment_statement,
+			target = expression,
+			value = parse_expression(state),
+			line = expression.line,
+			column = expression.column,
+		}
+	end
+	if expression.kind == syntax.call_expression then
+		return {
+			kind = syntax.call_statement,
+			expression = expression,
+			line = expression.line,
+			column = expression.column,
+		}
+	end
+	fail(
+		state,
+		'expected assignment or function call',
+		expression.line,
+		expression.column
+	)
 end
 
 local parse_local_statement<const> = function(state)
@@ -440,7 +454,7 @@ parse_statement = function(state)
 	if state.token_kind == token.keyword_return then
 		return parse_return_statement(state)
 	end
-	return parse_assignment_statement(state)
+	return parse_assignment_or_call_statement(state)
 end
 
 parse_block = function(state, terminators)

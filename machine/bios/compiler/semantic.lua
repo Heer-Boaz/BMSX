@@ -209,6 +209,8 @@ bind_statement = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		bind_assignment(state, statement)
+	elseif kind == syntax.call_statement then
+		bind_value(state, statement.expression)
 	elseif kind == syntax.local_statement then
 		bind_local_statement(state, statement)
 	elseif kind == syntax.return_statement then

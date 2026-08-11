@@ -73,11 +73,15 @@ function __bmsx_host_test.setup()
 	assert(not error_ok and error_value == 'vm-error', 'error/pcall mismatch')
 
 	local load_touch_count = 0
+	local load_call_value = 0
 	local load_environment<const> = {
 		scale = function(value, factor) return value * factor end,
 		touch = function(value)
 			load_touch_count = load_touch_count + 1
 			return value
+		end,
+		record = function(value)
+			load_call_value = value
 		end,
 	}
 	local chunk<const>, load_error<const> = load([=[
@@ -166,6 +170,7 @@ return function(target, frame)
 	while frame["missing"] and touch(500) do
 		target["unreachable_loop"] = true
 	end
+	record(frame["right"])
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
@@ -216,6 +221,7 @@ end;
 	assert(loaded_target.while_index == 5 and loaded_target.while_sum == 10, 'load while/break mismatch')
 	assert(loaded_target.nested_sum == 6, 'load nested break mismatch')
 	assert(loaded_target.unreachable_loop == nil, 'load while condition mismatch')
+	assert(load_call_value == 20, 'load call statement mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')

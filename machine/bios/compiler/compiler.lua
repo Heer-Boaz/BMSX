@@ -190,6 +190,10 @@ prepare_statement_operands = function(state, statement)
 		prepare_value_operands(state, statement.value)
 		return
 	end
+	if kind == syntax.call_statement then
+		prepare_value_operands(state, statement.expression)
+		return
+	end
 	if kind == syntax.local_statement then
 		if statement.initializer ~= nil then
 			prepare_value_operands(state, statement.initializer)
@@ -234,6 +238,10 @@ materialize_statement_immediates = function(state, statement)
 	if kind == syntax.assignment_statement then
 		materialize_wide_immediates(state, statement.target)
 		materialize_wide_immediates(state, statement.value)
+		return
+	end
+	if kind == syntax.call_statement then
+		materialize_wide_immediates(state, statement.expression)
 		return
 	end
 	if kind == syntax.local_statement then
@@ -1135,6 +1143,14 @@ emit_statement = function(state, instruction_words, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
 		emit_assignment(state, instruction_words, statement)
+	elseif kind == syntax.call_statement then
+		local target<const> = reserve_register(state)
+		emit_call_expression(
+			state,
+			instruction_words,
+			statement.expression,
+			target
+		)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)
 	elseif kind == syntax.if_statement then
