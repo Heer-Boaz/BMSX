@@ -37,19 +37,44 @@ local deactivate_timelineentry<const> = function(self, id)
 end
 
 local process_timelineframe_payload<const> = function(_, entry, _owner, payload)
-	local target<const> = entry.target
 	local program<const> = entry.instance.program
-	local track_runner<const> = program.track_runner
-	if track_runner ~= nil then
-		track_runner(target, entry.params, payload, payload.time_ms * 0.001)
+	local params<const> = entry.params
+	local primary_track_runner<const> = program.primary_track_runner
+	if primary_track_runner ~= nil then
+		primary_track_runner(entry.primary_binding, params, payload, payload.time_ms * 0.001)
+	elseif program.track_group_count > 0 then
+		local track_groups<const> = program.track_groups
+		local bindings<const> = entry.bindings
+		local time_seconds<const> = payload.time_ms * 0.001
+		for index = 1, program.track_group_count do
+			local group<const> = track_groups[index]
+			group.runner(bindings[group.binding_index], params, payload, time_seconds)
+		end
 	end
 	local apply_function<const> = program.apply_function
 	if apply_function ~= nil then
-		apply_function(target, payload.frame_value, entry.params, payload)
+		apply_function(entry.primary_binding, payload.frame_value, params, payload)
 	end
 	local frame_appliers<const> = program.frame_appliers
 	if frame_appliers ~= nil then
-		frame_appliers[payload.frame_index + 1](target, payload.frame_value)
+		frame_appliers[payload.frame_index + 1](entry.primary_binding, payload.frame_value)
+	end
+end
+
+local resolve_timelinebindings<const> = function(entry, program, primary_binding, binding_overrides)
+	entry.primary_binding = primary_binding
+	if program.binding_count == 1 then
+		entry.bindings = nil
+		return
+	end
+	local bindings = entry.bindings
+	if bindings == nil then
+		bindings = {}
+		entry.bindings = bindings
+	end
+	bindings[1] = primary_binding
+	for index = 2, program.binding_count do
+		bindings[index] = binding_overrides[program.binding_ids[index]]
 	end
 end
 
@@ -90,19 +115,20 @@ function timelinecomponent:define(definition)
 	local entry = self._entries_by_id[program.id]
 	if entry == nil then
 		local instance<const> = timeline.new(program)
-		local target = program.default_target
-		if target == nil then
-			target = self.parent
+		local primary_binding = program.default_binding
+		if primary_binding == nil then
+			primary_binding = self.parent
 		end
 		entry = {
 			instance = instance,
-			target = target,
+			primary_binding = primary_binding,
 			params = program.default_params,
 		}
 		self._entries_by_id[program.id] = entry
 		timelinedispatch.init_entry(entry)
 		return
 	end
+	local previous_program<const> = entry.instance.program
 	local active<const> = self._active_index_by_id[program.id] ~= nil
 	if active then
 		timelinedispatch.clear_windows(entry, self.parent)
@@ -111,12 +137,26 @@ function timelinecomponent:define(definition)
 		program = timelineprogram.build(program, entry.params)
 	end
 	entry.instance:rebind_program(program)
-	if not active then
-		local target = program.default_target
-		if target == nil then
-			target = self.parent
+	if active then
+		if program.binding_count > 1 then
+			local previous_bindings<const> = entry.bindings
+			local bindings<const> = {}
+			bindings[1] = entry.primary_binding
+			for index = 2, program.binding_count do
+				local previous_index<const> = previous_program.binding_index_by_id[program.binding_ids[index]]
+				bindings[index] = previous_bindings[previous_index]
+			end
+			entry.bindings = bindings
+		else
+			entry.bindings = nil
 		end
-		entry.target = target
+	else
+		local primary_binding = program.default_binding
+		if primary_binding == nil then
+			primary_binding = self.parent
+		end
+		entry.primary_binding = primary_binding
+		entry.bindings = nil
 		entry.params = program.default_params
 	end
 	timelinedispatch.init_entry(entry)
@@ -160,11 +200,13 @@ function timelinecomponent:play(id, opts)
 	local snap
 	local params
 	local target
+	local bindings
 	if opts ~= nil then
 		rewind = opts.rewind
 		snap = opts.snap_to_start
 		params = opts.params
 		target = opts.target
+		bindings = opts.bindings
 	end
 	if rewind == nil then
 		rewind = true
@@ -177,13 +219,13 @@ function timelinecomponent:play(id, opts)
 		params = program.default_params
 	end
 	if target == nil then
-		target = program.default_target
+		target = program.default_binding
 		if target == nil then
 			target = owner
 		end
 	end
 	entry.params = params
-	entry.target = target
+	resolve_timelinebindings(entry, program, target, bindings)
 	if rewind or program.frame_builder ~= nil then
 		timelinedispatch.clear_windows(entry, owner)
 	end

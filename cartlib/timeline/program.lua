@@ -7,6 +7,9 @@ local timelineapply<const> = require('cartlib/timeline/apply')
 -- a live definition rebind.
 local timelineprogram<const> = {}
 local empty_defs<const> = {}
+local empty_track_groups<const> = {}
+local primary_binding_ids<const> = { 'target' }
+local primary_binding_index_by_id<const> = { target = 1 }
 local empty_markers<const> = { by_frame = {}, markers = {}, count = 0 }
 local empty_windows<const> = {
 	intervals = {},
@@ -196,6 +199,21 @@ local compile_frame_data<const> = function(program, frame_source)
 	return compiled
 end
 
+local compile_bindings<const> = function(binding_defs)
+	if #binding_defs == 0 then
+		return primary_binding_ids, primary_binding_index_by_id
+	end
+	local ids<const> = { 'target' }
+	local index_by_id<const> = { target = 1 }
+	for index = 1, #binding_defs do
+		local id<const> = binding_defs[index]
+		local binding_index<const> = #ids + 1
+		ids[binding_index] = id
+		index_by_id[id] = binding_index
+	end
+	return ids, index_by_id
+end
+
 function timelineprogram.compile(definition)
 	local frame_source<const> = definition.frames
 	local tracks<const> = definition.tracks
@@ -215,9 +233,15 @@ function timelineprogram.compile(definition)
 	if type(frame_source) == 'function' then
 		frame_builder = frame_source
 	end
-	local track_runner
+	local binding_ids<const>, binding_index_by_id<const> = compile_bindings(definition.bindings or empty_defs)
+	local primary_track_runner
+	local track_groups = empty_track_groups
 	if tracks ~= nil then
-		track_runner = timelineapply.compile_tracks(tracks)
+		local compiled_primary<const>, compiled_groups<const> = timelineapply.compile_track_program(tracks, binding_index_by_id)
+		primary_track_runner = compiled_primary
+		if compiled_groups ~= nil then
+			track_groups = compiled_groups
+		end
 	end
 	local apply_function
 	if type(definition.apply) == 'function' then
@@ -235,10 +259,15 @@ function timelineprogram.compile(definition)
 		continuous = continuous,
 		auto_tick = auto_tick,
 		duration_ms = definition.duration_ms or (definition.duration_seconds and (definition.duration_seconds * 1000)),
-		track_runner = track_runner,
+		binding_ids = binding_ids,
+		binding_index_by_id = binding_index_by_id,
+		binding_count = #binding_ids,
+		primary_track_runner = primary_track_runner,
+		track_groups = track_groups,
+		track_group_count = #track_groups,
 		apply_frames = apply_frames,
 		apply_function = apply_function,
-		default_target = definition.target,
+		default_binding = definition.target,
 		default_params = definition.params,
 		frames = {},
 		length = 0,
