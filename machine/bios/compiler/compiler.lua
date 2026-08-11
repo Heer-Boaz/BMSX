@@ -1455,9 +1455,8 @@ emit_block = function(state, instruction_words, block)
 	end
 end
 
-local compile_function<const> = function(state)
+local compile_function<const> = function(state, constant_count, code_owner_register)
 	local parameter_count<const> = state.parameter_count
-	local constant_count<const> = #state.const_pool - function_address_pool_index
 	local instruction_words<const> = {}
 	for index = 0, constant_count - 1 do
 		bytecode.emit_abc(
@@ -1488,6 +1487,7 @@ local compile_function<const> = function(state)
 	for index = 1, constant_count do
 		upvalue_registers[index] = first_value_pool_index + index - 1
 	end
+	upvalue_registers[constant_count + 1] = code_owner_register
 	return {
 		instruction_words = instruction_words,
 		parameter_count = parameter_count,
@@ -1528,14 +1528,21 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register, environme
 	local state<const> = prepare_codegen(function_expression, environment)
 	local const_pool<const> = state.const_pool
 	local constant_count<const> = #const_pool - function_address_pool_index
+	local code_owner_const_index<const> = #const_pool + 1
+	const_pool[code_owner_const_index] = false
+	local root_constant_count<const> = constant_count + 1
 	local max_stack<const> = isa.max_ext_register_a + 1
-	if constant_count + 2 > max_stack
+	if root_constant_count + 2 > max_stack
 		or state.parameter_count + constant_count
 			+ state.local_count + 1 > max_stack then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
-	local chunk_proto<const> = compile_chunk(constant_count, root_const_pool_register)
-	local function_proto<const> = compile_function(state)
+	local chunk_proto<const> = compile_chunk(root_constant_count, root_const_pool_register)
+	local function_proto<const> = compile_function(
+		state,
+		constant_count,
+		code_owner_const_index
+	)
 	if function_proto.max_stack > max_stack then
 		error('[load:' .. chunk_name .. '] function or expression needs too many registers')
 	end
@@ -1546,6 +1553,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register, environme
 		},
 		root_proto_index = 1,
 		const_pool = const_pool,
+		code_owner_const_index = code_owner_const_index,
 		const_relocations = {
 			{ const_index = function_address_pool_index, proto_index = 2 },
 		},

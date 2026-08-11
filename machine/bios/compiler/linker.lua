@@ -22,12 +22,13 @@ function linker.link(program)
 		+ isa.instruction_bytes
 		- 1
 	) & -isa.instruction_bytes
+	local const_pool<const> = program.const_pool
+	const_pool[program.code_owner_const_index] = const_pool
 	local function_table_address<const> = arena.allocate(
 		code_byte_offset + code_byte_count,
-		isa.function_alignment
+		const_pool
 	)
 
-	local const_pool<const> = program.const_pool
 	local const_relocations<const> = program.const_relocations
 	for index = 1, #const_relocations do
 		local relocation<const> = const_relocations[index]

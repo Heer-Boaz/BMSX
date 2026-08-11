@@ -12,9 +12,10 @@ export const enum BuiltinFunctionId {
 	PCall = 10,
 	XPCall = 11,
 	SetStringIndex = 12,
+	CollectGarbage = 13,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 13;
+export const BUILTIN_FUNCTION_COUNT = 14;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -35,4 +36,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_pcall', id: BuiltinFunctionId.PCall },
 	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
 	{ name: '__bmsx_set_string_index', id: BuiltinFunctionId.SetStringIndex },
+	{ name: '__bmsx_collect_garbage', id: BuiltinFunctionId.CollectGarbage },
 ];

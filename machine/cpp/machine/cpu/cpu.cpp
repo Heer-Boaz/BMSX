@@ -1595,6 +1595,9 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			}
 			m_stringIndexTable = asTable(args[0]);
 			break;
+		case BuiltinFunctionId::CollectGarbage:
+			collectHeap();
+			break;
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;

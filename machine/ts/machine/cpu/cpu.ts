@@ -3568,6 +3568,9 @@ export class CPU implements MappedPageInvalidator {
 				}
 				this.stringIndexTable = args.registers.getTable(args.base);
 				break;
+			case BuiltinFunctionId.CollectGarbage:
+				this.collectTrackedHeapBytes();
+				break;
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;
