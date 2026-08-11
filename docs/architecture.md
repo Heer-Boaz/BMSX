@@ -3594,6 +3594,57 @@ focused owners and are linked only when a cart selects them. Timelines are an
 explicit component capability rather than an allocation on every world object,
 and callers operate on that retained component directly.
 
+Timeline authoring, compilation, transport and evaluation are separate owners.
+`timeline/program` admits a cart definition into an immutable program;
+`timeline/timeline` retains only mutable transport state and reusable evaluation
+records; `timeline_component` owns resolved object bindings and active
+instances. Binding names are resolved once to dense slots. Authored track kinds
+are likewise dispatched only while compiling: the update path consumes
+specialized arrays and runners and never branches on a track-kind or binding-id
+string.
+
+The evaluation order is fixed. Persistent tags are reconciled first.
+Destination values, including step-interpolated state, and frame data are
+applied second; one-shot event keys traverse the played range third; the scoped
+frame observer runs last. A normal advance traverses event keys. A seek samples
+the destination and reconstructs persistent state without replaying crossed
+one-shot events. The transport and dispatcher reuse their evaluation and
+payload records, and the steady update path allocates no tables. `set_frame` is
+position-only and does not masquerade as an evaluated seek.
+
+Track names describe authored roles rather than evaluator algorithms. A
+`value` track selects interpolation separately; the current `step`
+interpolation retains the last key at the sampled position. `event` is a
+one-shot range track, `tag` is persistent interval state, `sample` is the
+explicit cart callback escape hatch, and `wave` is a compiled procedural
+sample. Additional interpolation modes extend `value`; they do not become
+parallel public track kinds.
+
+Future camera, path, animation, audio, media and nested-sequence support must
+extend this same program and evaluation pipeline rather than add per-feature ECS
+systems or a second sequencer facade. Their domain owners remain distinct: an
+animation owner retains poses, slots and blending; an audio owner retains voices
+and seek offsets; camera/path owners retain their models; GX image and source
+rectangle state remains render-owned. Timeline tracks bind and schedule those
+owners. An explicit apply callback may still drive raw source coordinates or
+other cart-owned values, so retaining image identity by default does not remove
+low-level author control.
+
+Before nested sequences or seekable audio/media tracks are admitted, transport
+evaluation must carry one explicit local-time range and update method (play,
+jump, or scrub). A nested sequence compiles a child-program reference plus a
+parent-to-child time transform and evaluates that child in the same pass; it
+does not call back through `timeline_component`, allocate another ECS system,
+or retain editor objects. This follows Unreal MovieScene's explicit
+[play/jump/scrub method](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EUpdatePositionMethod)
+and [nested time transforms](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneSequenceTransform),
+Godot's distinct
+[sampled, discrete and seek paths](https://github.com/godotengine/godot/blob/master/scene/animation/animation_mixer.cpp),
+and Unity Timeline's
+[compiled interval evaluation](https://github.com/needle-mirror/com.unity.timeline/blob/master/Runtime/TimelinePlayable.cs).
+Editor tooling may author and scrub the same program, but editor state is not
+part of the cart runtime.
+
 The event-emitter module exports its one persistent Registry-owned dispatcher
 directly. Per-owner event ports retain emitter identity but do not create a
 second dispatcher or expose a class-plus-`instance` facade. Cart events are

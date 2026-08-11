@@ -255,7 +255,8 @@ function transition.register_states(states)
 				local tracks<const> = {}
 				if self.transition_target_bg ~= nil then
 					tracks[1] = {
-						kind = 'step',
+						kind = 'value',
+						interpolation = 'step',
 						binding = 'background',
 						apply = surface_component.set_imgid,
 						keys = {
@@ -392,7 +393,8 @@ function transition.register_states(states)
 			local tracks<const> = {}
 			if not self.fade_hold_black then
 				tracks[1] = {
-					kind = 'step',
+					kind = 'value',
+					interpolation = 'step',
 					binding = 'background',
 					apply = surface_component.set_imgid,
 					keys = {

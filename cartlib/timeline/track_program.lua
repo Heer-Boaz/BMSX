@@ -111,6 +111,27 @@ local sampled_track_compilers<const> = {
 	wave = compile_wave,
 }
 
+-- Value is the authored track role; interpolation selects its compiled
+-- evaluator. New interpolation modes therefore do not become parallel public
+-- track kinds.
+local value_track_preparers<const> = {
+	step = function(defs, track, binding_index_by_id)
+		local binding_index = 1
+		if track.binding ~= nil then
+			binding_index = binding_index_by_id[track.binding]
+		end
+		local apply = track.apply
+		if apply == nil then
+			apply = timeline_apply.compile_setter(track.path)
+		end
+		defs[#defs + 1] = {
+			binding_index = binding_index,
+			apply = apply,
+			keys = track.keys,
+		}
+	end,
+}
+
 local add_sample_track<const> = function(groups, track, binding_index_by_id)
 	local binding_index = 1
 	if track.binding ~= nil then
@@ -162,20 +183,8 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			event_defs[#event_defs + 1] = track
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
-		elseif kind == 'step' then
-			local binding_index = 1
-			if track.binding ~= nil then
-				binding_index = binding_index_by_id[track.binding]
-			end
-			local apply = track.apply
-			if apply == nil then
-				apply = timeline_apply.compile_setter(track.path)
-			end
-			step_defs[#step_defs + 1] = {
-				binding_index = binding_index,
-				apply = apply,
-				keys = track.keys,
-			}
+		elseif kind == 'value' then
+			value_track_preparers[track.interpolation](step_defs, track, binding_index_by_id)
 		else
 			add_sample_track(sample_groups, track, binding_index_by_id)
 		end
