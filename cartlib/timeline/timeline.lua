@@ -98,9 +98,9 @@ local range<const> = function(frame_count)
 	}
 end
 
-function timeline.new(program)
+function timeline.new(id, program)
 	local self<const> = setmetatable({}, timeline)
-	self.id = program.id
+	self.id = id
 	self.program = program
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
@@ -114,7 +114,6 @@ function timeline.new(program)
 end
 
 function timeline:rebind_program(program)
-	self.id = program.id
 	self.program = program
 end
 

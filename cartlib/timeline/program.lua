@@ -8,6 +8,7 @@ local timeline_program<const> = {}
 local empty_defs<const> = {}
 local primary_binding_ids<const> = { 'target' }
 local primary_binding_index_by_id<const> = { target = 1 }
+local program_by_definition<const> = setmetatable({}, { __mode = 'k' })
 
 local expand_frames<const> = function(frames, repetitions)
 	if frames.__timelinerange then
@@ -72,7 +73,11 @@ local compile_bindings<const> = function(binding_defs)
 	return ids, index_by_id
 end
 
-function timeline_program.compile(id, definition)
+function timeline_program.compile(definition)
+	local cached<const> = program_by_definition[definition]
+	if cached ~= nil then
+		return cached
+	end
 	local frame_source<const> = definition.frames
 	local track_defs<const> = definition.tracks or empty_defs
 	local continuous = definition.continuous
@@ -99,7 +104,6 @@ function timeline_program.compile(id, definition)
 	end
 	local apply_frames<const> = definition.apply ~= nil and apply_function == nil
 	local program<const> = {
-		id = id,
 		repetitions = definition.repetitions or 1,
 		frame_builder = frame_builder,
 		frame_duration = frame_duration,
@@ -120,12 +124,17 @@ function timeline_program.compile(id, definition)
 		length = 0,
 	}
 	if frame_builder ~= nil then
+		program_by_definition[definition] = program
 		return program
 	end
 	if frame_source == nil and #track_defs > 0 then
-		return compile_frame_data(program, { {} })
+		local compiled<const> = compile_frame_data(program, { {} })
+		program_by_definition[definition] = compiled
+		return compiled
 	end
-	return compile_frame_data(program, frame_source)
+	local compiled<const> = compile_frame_data(program, frame_source)
+	program_by_definition[definition] = compiled
+	return compiled
 end
 
 function timeline_program.build(program, params)

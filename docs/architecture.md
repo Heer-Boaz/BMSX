@@ -3598,10 +3598,14 @@ Timeline authoring, compilation, transport and evaluation are separate owners.
 `timeline/program` admits a cart definition into an immutable program;
 `timeline/timeline` retains only mutable transport state and reusable evaluation
 records; `timeline_component` owns resolved object bindings and active
-instances. Binding names are resolved once to dense slots. Authored track kinds
-are likewise dispatched only while compiling: the update path consumes
-specialized arrays and runners and never branches on a track-kind or binding-id
-string.
+instances. The compiler caches by authored-definition identity, so entities
+that use the same static definition share one immutable program; timeline ids
+belong to component entries and instances rather than contaminating that shared
+program. A parameterized frame builder is the explicit exception: its built
+frame program belongs to the playing instance. Binding names are resolved once
+to dense slots. Authored track kinds are likewise dispatched only while
+compiling: the update path consumes specialized arrays and runners and never
+branches on a track-kind or binding-id string.
 
 The evaluation order is fixed. Persistent tags are reconciled first.
 Destination values, including step-interpolated state, and frame data are

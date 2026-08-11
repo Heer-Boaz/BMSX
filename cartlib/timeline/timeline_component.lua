@@ -101,10 +101,10 @@ function timeline_component:on_detach()
 end
 
 function timeline_component:define(id, definition)
-	local program = timeline_program.compile(id, definition)
-	local entry = self._entries_by_id[program.id]
+	local program = timeline_program.compile(definition)
+	local entry = self._entries_by_id[id]
 	if entry == nil then
-		local instance<const> = timeline.new(program)
+		local instance<const> = timeline.new(id, program)
 		local primary_binding = program.default_binding
 		if primary_binding == nil then
 			primary_binding = self.parent
@@ -114,12 +114,12 @@ function timeline_component:define(id, definition)
 			primary_binding = primary_binding,
 			params = program.default_params,
 		}
-		self._entries_by_id[program.id] = entry
+		self._entries_by_id[id] = entry
 		timeline_dispatch.init_entry(entry)
 		return
 	end
 	local previous_program<const> = entry.instance.program
-	local active<const> = self._active_index_by_id[program.id] ~= nil
+	local active<const> = self._active_index_by_id[id] ~= nil
 	if active then
 		timeline_track_evaluator.clear_tags(entry, self.parent)
 	end
