@@ -62,6 +62,7 @@ local bind_value
 local bind_path
 local bind_statement
 local bind_block
+local value_reads_identifier
 
 local begin_scope<const> = function(state)
 	local scope<const> = {
@@ -196,10 +197,54 @@ bind_value = function(state, expression)
 	)
 end
 
+value_reads_identifier = function(expression, identifier)
+	local kind<const> = expression.kind
+	if kind == syntax.identifier_expression then
+		if identifier.parameter_register ~= nil then
+			return expression.parameter_register == identifier.parameter_register
+		end
+		return expression.local_slot == identifier.local_slot
+	end
+	if kind == syntax.member_expression then
+		return value_reads_identifier(expression.base, identifier)
+	end
+	if kind == syntax.index_expression then
+		return value_reads_identifier(expression.base, identifier)
+			or value_reads_identifier(expression.index, identifier)
+	end
+	if kind == syntax.binary_expression then
+		return value_reads_identifier(expression.left, identifier)
+			or value_reads_identifier(expression.right, identifier)
+	end
+	if kind == syntax.call_expression then
+		if value_reads_identifier(expression.callee, identifier) then
+			return true
+		end
+		local arguments<const> = expression.arguments
+		for index = 1, #arguments do
+			if value_reads_identifier(arguments[index], identifier) then
+				return true
+			end
+		end
+		return false
+	end
+	if kind == syntax.unary_expression then
+		return value_reads_identifier(expression.operand, identifier)
+	end
+	return false
+end
+
 local bind_assignment<const> = function(state, statement)
 	local target<const> = statement.target
 	bind_path(state, target)
 	bind_value(state, statement.value)
+	if target.kind == syntax.identifier_expression
+		and target.environment_key == nil then
+		statement.value_reads_target = value_reads_identifier(
+			statement.value,
+			target
+		)
+	end
 end
 
 local bind_local_statement<const> = function(state, statement)

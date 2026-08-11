@@ -66,57 +66,6 @@ end
 local prepare_path_operands
 local prepare_value_operands
 
--- Direct register assignments may reuse their destination register. Mark the RHS
--- subtrees whose evaluation still depends on the destination's previous value.
-local mark_assignment_target_reads
-mark_assignment_target_reads = function(expression, target)
-	local kind<const> = expression.kind
-	local reads_target = false
-	if kind == syntax.identifier_expression then
-		if target.parameter_register ~= nil then
-			reads_target = expression.parameter_register == target.parameter_register
-		else
-			reads_target = expression.local_slot == target.local_slot
-		end
-	elseif kind == syntax.member_expression then
-		reads_target = mark_assignment_target_reads(expression.base, target)
-	elseif kind == syntax.index_expression then
-		local base_reads<const> = mark_assignment_target_reads(
-			expression.base,
-			target
-		)
-		local index_reads<const> = mark_assignment_target_reads(
-			expression.index,
-			target
-		)
-		reads_target = base_reads or index_reads
-	elseif kind == syntax.binary_expression then
-		local left_reads<const> = mark_assignment_target_reads(
-			expression.left,
-			target
-		)
-		local right_reads<const> = mark_assignment_target_reads(
-			expression.right,
-			target
-		)
-		reads_target = left_reads or right_reads
-	elseif kind == syntax.call_expression then
-		reads_target = mark_assignment_target_reads(expression.callee, target)
-		local arguments<const> = expression.arguments
-		for index = 1, #arguments do
-			if mark_assignment_target_reads(arguments[index], target) then
-				reads_target = true
-			end
-		end
-	elseif kind == syntax.unary_expression then
-		reads_target = mark_assignment_target_reads(expression.operand, target)
-	end
-	if reads_target then
-		expression.reads_assignment_target = true
-	end
-	return reads_target
-end
-
 prepare_path_operands = function(state, expression)
 	if expression.kind == syntax.identifier_expression then
 		if expression.environment_key ~= nil then
@@ -239,11 +188,6 @@ end
 prepare_statement_operands = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
-		local target<const> = statement.target
-		if target.kind == syntax.identifier_expression
-			and target.environment_key == nil then
-			mark_assignment_target_reads(statement.value, target)
-		end
 		prepare_path_operands(state, statement.target)
 		prepare_value_operands(state, statement.value)
 		return
@@ -405,7 +349,15 @@ local emit_value
 local emit_value_register
 local emit_path
 
-emit_path = function(state, instruction_words, expression, target)
+-- Temporary destinations may be reused while their operands are evaluated.
+-- Fixed destinations remain readable until the expression's final write.
+emit_path = function(
+	state,
+	instruction_words,
+	expression,
+	target,
+	target_is_temporary
+)
 	if expression.kind == syntax.identifier_expression then
 		if expression.environment_key ~= nil then
 			bytecode.emit_abc(
@@ -423,36 +375,40 @@ emit_path = function(state, instruction_words, expression, target)
 		return identifier_register(state, expression)
 	end
 	local temporary_base<const> = state.free_register
-	local base<const> = expression.base
-	local base_target = target
-	if target == state.assignment_target_register
-		and expression.kind == syntax.index_expression
-		and expression.key_value == nil
-		and expression.index.reads_assignment_target
-		and (
-			base.kind ~= syntax.identifier_expression
-			or base.environment_key ~= nil
-		) then
-		base_target = reserve_register(state)
-	end
-	local base_register<const> = emit_path(
-		state,
-		instruction_words,
-		base,
-		base_target
-	)
-	if expression.kind == syntax.index_expression
-		and expression.key_value == nil then
-		local index_target = target
-		if base_register == target then
-			index_target = reserve_register(state)
-		end
-		local index_register<const> = emit_value(
+	local base_register
+	if target_is_temporary then
+		base_register = emit_path(
 			state,
 			instruction_words,
-			expression.index,
-			index_target
+			expression.base,
+			target,
+			true
 		)
+	else
+		base_register = emit_value_register(
+			state,
+			instruction_words,
+			expression.base
+		)
+	end
+	if expression.kind == syntax.index_expression
+		and expression.key_value == nil then
+		local index_register
+		if base_register == target then
+			index_register = emit_value_register(
+				state,
+				instruction_words,
+				expression.index
+			)
+		else
+			index_register = emit_value(
+				state,
+				instruction_words,
+				expression.index,
+				target,
+				target_is_temporary
+			)
+		end
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_gett,
@@ -493,107 +449,51 @@ local emit_logical_expression<const> = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_is_temporary
 )
 	local temporary_base<const> = state.free_register
+	local result_target = target
+	if not target_is_temporary then
+		result_target = reserve_register(state)
+	end
+	local expression_temporary_base<const> = state.free_register
+	local left_register<const> = emit_value(
+		state,
+		instruction_words,
+		expression.left,
+		result_target,
+		true
+	)
+	if left_register ~= result_target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			result_target,
+			left_register,
+			0
+		)
+	end
 	local operator<const> = expression.operator
-	local jump_opcode<const> = operator == syntax.binary_and
-		and isa.op_jmpifnot
-		or isa.op_jmpif
-	local target_is_read_on_right<const>
-		= target == state.assignment_target_register
-		and expression.right.reads_assignment_target
-	local left_register
-	if target_is_read_on_right then
-		left_register = emit_value_register(
-			state,
-			instruction_words,
-			expression.left
-		)
-	else
-		left_register = emit_value(
-			state,
-			instruction_words,
-			expression.left,
-			target
-		)
-	end
-	if target_is_read_on_right
-		and left_register ~= target then
-		local short_jump<const> = bytecode.emit_signed_abx(
-			instruction_words,
-			jump_opcode,
-			left_register,
-			0
-		)
-		local right_register<const> = emit_value(
-			state,
-			instruction_words,
-			expression.right,
-			target
-		)
-		if right_register ~= target then
-			bytecode.emit_abc(
-				instruction_words,
-				isa.op_mov,
-				target,
-				right_register,
-				0
-			)
-		end
-		local end_jump<const> = bytecode.emit_signed_abx(
-			instruction_words,
-			isa.op_jmp,
-			0,
-			0
-		)
-		bytecode.patch_branch(
-			instruction_words,
-			short_jump,
-			#instruction_words - short_jump
-		)
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_mov,
-			target,
-			left_register,
-			0
-		)
-		bytecode.patch_branch(
-			instruction_words,
-			end_jump,
-			#instruction_words - end_jump
-		)
-		state.free_register = temporary_base
-		return target
-	end
-	if left_register ~= target then
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_mov,
-			target,
-			left_register,
-			0
-		)
-	end
 	local jump_index<const> = bytecode.emit_signed_abx(
 		instruction_words,
-		jump_opcode,
-		target,
+		operator == syntax.binary_and and isa.op_jmpifnot or isa.op_jmpif,
+		result_target,
 		0
 	)
-	state.free_register = temporary_base
+	state.free_register = expression_temporary_base
 	local right_register<const> = emit_value(
 		state,
 		instruction_words,
 		expression.right,
-		target
+		result_target,
+		true
 	)
-	if right_register ~= target then
+	if right_register ~= result_target then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_mov,
-			target,
+			result_target,
 			right_register,
 			0
 		)
@@ -603,6 +503,15 @@ local emit_logical_expression<const> = function(
 		jump_index,
 		#instruction_words - jump_index
 	)
+	if result_target ~= target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			result_target,
+			0
+		)
+	end
 	state.free_register = temporary_base
 	return target
 end
@@ -611,10 +520,12 @@ local emit_call_expression<const> = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_is_temporary
 )
 	local temporary_base<const> = state.free_register
-	local use_target<const> = target >= state.temporary_register_base
+	local use_target<const> = target_is_temporary
+		and target >= state.temporary_register_base
 		and target + 1 == temporary_base
 	local call_base = target
 	if not use_target then
@@ -624,7 +535,8 @@ local emit_call_expression<const> = function(
 		state,
 		instruction_words,
 		expression.callee,
-		call_base
+		call_base,
+		true
 	)
 	if callee_register ~= call_base then
 		bytecode.emit_abc(
@@ -642,7 +554,8 @@ local emit_call_expression<const> = function(
 			state,
 			instruction_words,
 			arguments[index],
-			argument_target
+			argument_target,
+			true
 		)
 		if argument_register ~= argument_target then
 			bytecode.emit_abc(
@@ -701,33 +614,23 @@ local emit_comparison_expression<const> = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_is_temporary
 )
 	local temporary_base<const> = state.free_register
-	local left_register, right_register
+	local left_register<const>, right_register<const>
 		= prepare_comparison_operands(
 			state,
 			instruction_words,
 			expression
 		)
-	if left_register == target or right_register == target then
-		local copy_register<const> = reserve_register(state)
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_mov,
-			copy_register,
-			target,
-			0
-		)
-		if left_register == target then
-			left_register = copy_register
-		end
-		if right_register == target then
-			right_register = copy_register
-		end
+	local result_target = target
+	if not target_is_temporary
+		and (left_register == target or right_register == target) then
+		result_target = reserve_register(state)
 	end
 	local operator<const> = expression.operator
-	bytecode.emit_abc(instruction_words, isa.op_kfalse, target, 0, 0)
+	bytecode.emit_abc(instruction_words, isa.op_kfalse, result_target, 0, 0)
 	bytecode.emit_abc(
 		instruction_words,
 		opcode_by_comparison_operator[operator],
@@ -735,7 +638,16 @@ local emit_comparison_expression<const> = function(
 		left_register,
 		right_register
 	)
-	bytecode.emit_abc(instruction_words, isa.op_ktrue, target, 0, 0)
+	bytecode.emit_abc(instruction_words, isa.op_ktrue, result_target, 0, 0)
+	if result_target ~= target then
+		bytecode.emit_abc(
+			instruction_words,
+			isa.op_mov,
+			target,
+			result_target,
+			0
+		)
+	end
 	state.free_register = temporary_base
 	return target
 end
@@ -744,7 +656,8 @@ local emit_binary_expression<const> = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_is_temporary
 )
 	local operator<const> = expression.operator
 	if operator == syntax.binary_and or operator == syntax.binary_or then
@@ -752,7 +665,8 @@ local emit_binary_expression<const> = function(
 			state,
 			instruction_words,
 			expression,
-			target
+			target,
+			target_is_temporary
 		)
 	end
 	local opcode<const> = opcode_by_binary_operator[operator]
@@ -761,7 +675,8 @@ local emit_binary_expression<const> = function(
 			state,
 			instruction_words,
 			expression,
-			target
+			target,
+			target_is_temporary
 		)
 	end
 	local temporary_base<const> = state.free_register
@@ -782,7 +697,8 @@ local emit_binary_expression<const> = function(
 			state,
 			instruction_words,
 			expression.right,
-			target
+			target,
+			target_is_temporary
 		)
 	end
 	bytecode.emit_abc(
@@ -800,20 +716,28 @@ emit_value = function(
 	state,
 	instruction_words,
 	expression,
-	target
+	target,
+	target_is_temporary
 )
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
 		or kind == syntax.index_expression then
-		return emit_path(state, instruction_words, expression, target)
+		return emit_path(
+			state,
+			instruction_words,
+			expression,
+			target,
+			target_is_temporary
+		)
 	end
 	if kind == syntax.binary_expression then
 		return emit_binary_expression(
 			state,
 			instruction_words,
 			expression,
-			target
+			target,
+			target_is_temporary
 		)
 	end
 	if kind == syntax.call_expression then
@@ -821,7 +745,8 @@ emit_value = function(
 			state,
 			instruction_words,
 			expression,
-			target
+			target,
+			target_is_temporary
 		)
 	end
 	if kind == syntax.unary_expression
@@ -830,7 +755,8 @@ emit_value = function(
 			state,
 			instruction_words,
 			expression.operand,
-			target
+			target,
+			target_is_temporary
 		)
 		bytecode.emit_abc(
 			instruction_words,
@@ -892,7 +818,7 @@ emit_value_register = function(state, instruction_words, expression)
 		)
 	end
 	local target<const> = reserve_register(state)
-	return emit_value(state, instruction_words, expression, target)
+	return emit_value(state, instruction_words, expression, target, true)
 end
 
 local emit_assignment<const> = function(
@@ -908,7 +834,8 @@ local emit_assignment<const> = function(
 				state,
 				instruction_words,
 				statement.value,
-				temporary_base
+				temporary_base,
+				true
 			)
 			bytecode.emit_abc(
 				instruction_words,
@@ -924,12 +851,12 @@ local emit_assignment<const> = function(
 			return
 		end
 		local target_register<const> = identifier_register(state, target)
-		state.assignment_target_register = target_register
 		local value_register<const> = emit_value(
 			state,
 			instruction_words,
 			statement.value,
-			target_register
+			target_register,
+			not statement.value_reads_target
 		)
 		if value_register ~= target_register then
 			bytecode.emit_abc(
@@ -940,7 +867,6 @@ local emit_assignment<const> = function(
 				0
 			)
 		end
-		state.assignment_target_register = nil
 		return
 	end
 	local temporary_base<const> = reserve_register(state)
@@ -948,7 +874,8 @@ local emit_assignment<const> = function(
 		state,
 		instruction_words,
 		target.base,
-		temporary_base
+		temporary_base,
+		true
 	)
 	local target_index_register
 	if target.kind == syntax.index_expression
@@ -961,7 +888,8 @@ local emit_assignment<const> = function(
 			state,
 			instruction_words,
 			target.index,
-			index_target
+			index_target,
+			true
 		)
 		if index_target ~= temporary_base
 			and target_index_register ~= index_target then
@@ -977,7 +905,8 @@ local emit_assignment<const> = function(
 		state,
 		instruction_words,
 		statement.value,
-		value_target_register
+		value_target_register,
+		true
 	)
 	if target_index_register ~= nil then
 		bytecode.emit_abc(
@@ -1027,7 +956,8 @@ local emit_local_statement<const> = function(state, instruction_words, statement
 		state,
 		instruction_words,
 		initializer,
-		target_register
+		target_register,
+		true
 	)
 	if value_register ~= target_register then
 		bytecode.emit_abc(
@@ -1058,7 +988,8 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		state,
 		instruction_words,
 		expressions[1],
-		return_target
+		return_target,
+		true
 	)
 	bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
 end
@@ -1208,7 +1139,8 @@ emit_condition_jumps = function(
 		state,
 		instruction_words,
 		expression,
-		condition_register
+		condition_register,
+		true
 	)
 	if value_register ~= condition_register then
 		bytecode.emit_abc(
@@ -1303,7 +1235,8 @@ local emit_numeric_for_statement<const> = function(
 		state,
 		instruction_words,
 		statement.start_expression,
-		index_register
+		index_register,
+		true
 	)
 	if start_register ~= index_register then
 		bytecode.emit_abc(
@@ -1318,7 +1251,8 @@ local emit_numeric_for_statement<const> = function(
 		state,
 		instruction_words,
 		statement.limit_expression,
-		limit_register
+		limit_register,
+		true
 	)
 	if limit_value_register ~= limit_register then
 		bytecode.emit_abc(
@@ -1343,7 +1277,8 @@ local emit_numeric_for_statement<const> = function(
 			state,
 			instruction_words,
 			step_expression,
-			step_register
+			step_register,
+			true
 		)
 		if step_value_register ~= step_register then
 			bytecode.emit_abc(
@@ -1494,7 +1429,8 @@ emit_statement = function(state, instruction_words, statement)
 			state,
 			instruction_words,
 			statement.expression,
-			target
+			target,
+			true
 		)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)
