@@ -148,6 +148,13 @@ return function(target, frame)
 		target["inner_shadow"] = shadowed
 	end
 	target["outer_shadow"] = shadowed
+	local preserved_logical = true
+	local left_logical = false
+	preserved_logical = left_logical or preserved_logical
+	target["preserved_logical"] = preserved_logical
+	local preserved_arithmetic = 7
+	preserved_arithmetic = scale(1, 1) + preserved_arithmetic
+	target["preserved_arithmetic"] = preserved_arithmetic
 	local while_index = 0
 	local while_sum = 0
 	while while_index < frame["loop_count"] do
@@ -250,6 +257,8 @@ end;
 	assert(loaded_target.branch_value == 2 and loaded_target.scoped_value == 22, 'load conditional branch mismatch')
 	assert(loaded_target.else_value == 2 and loaded_target.or_branch, 'load conditional short circuit mismatch')
 	assert(loaded_target.inner_shadow == 20 and loaded_target.outer_shadow == 5, 'load block scope mismatch')
+	assert(loaded_target.preserved_logical, 'load logical assignment clobbered its source local')
+	assert(loaded_target.preserved_arithmetic == 8, 'load arithmetic assignment clobbered its source local')
 	assert(loaded_target.while_index == 5 and loaded_target.while_sum == 10, 'load while/break mismatch')
 	assert(loaded_target.nested_sum == 6, 'load nested break mismatch')
 	assert(loaded_target.unreachable_loop == nil, 'load while condition mismatch')

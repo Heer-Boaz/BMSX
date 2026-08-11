@@ -785,11 +785,13 @@ local emit_assignment<const> = function(
 			return
 		end
 		local target_register<const> = identifier_register(state, target)
+		local temporary_base<const> = state.free_register
+		local value_target<const> = reserve_register(state)
 		local value_register<const> = emit_value(
 			state,
 			instruction_words,
 			statement.value,
-			target_register
+			value_target
 		)
 		if value_register ~= target_register then
 			bytecode.emit_abc(
@@ -800,6 +802,7 @@ local emit_assignment<const> = function(
 				0
 			)
 		end
+		state.free_register = temporary_base
 		return
 	end
 	local temporary_base<const> = reserve_register(state)
