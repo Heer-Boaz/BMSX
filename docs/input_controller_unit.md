@@ -96,9 +96,12 @@ line.
 Gameplay carts use `cartlib/input/input.lua` and
 `cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and
 owns explicitly configured players, mapping contexts, retained action/button
-state and MMIO sampling plans, consume state, guarded/repeat state, cached parser
-ASTs, and per-player bindings from AST action indices directly to action records.
-Expression evaluation is reentrant and has no module-global scratch state.
+state and MMIO sampling plans, consume state, guarded/repeat state, cached
+action-expression programs, and per-player bindings from compiled action
+indices directly to action records. Admission parses each expression once and
+uses firmware `load` to compile its short-circuiting evaluator. The update path
+therefore performs no AST traversal or node/modifier dispatch and allocates no
+scratch state.
 
 The Lua public surface is action-owned. `get_action_value(player, action)`
 returns the retained raw s16.16 scalar word, while `get_vector(player, action)`

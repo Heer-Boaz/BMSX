@@ -232,9 +232,9 @@ emitter live under `machine/bios/compiler` and execute as firmware Lua. The
 current compiler accepts one returned function with lexical locals, path reads
 and writes, call expressions and statements, length, arithmetic and comparison
 expressions, short-circuit `and`/`or`, block-scoped `if`/`elseif`/`else`,
-numeric `for`, and nested `while` loops with lexically bound `break`. That surface
-contains the generated assignment functions used by timeline specialization
-without making the timeline module a parser or code emitter. The firmware
+numeric `for`, and nested `while` loops with lexically bound `break`. Timeline
+and input admission generate specialized Lua functions against that surface;
+they do not duplicate the Lua parser, semantic binder or BLua32 emitter. The firmware
 compiler emits ordinary function records, upvalue records and instruction
 words into system `.bss`; the CPU has no source parser, compiler callback,
 runtime-image installer or `load` branch. `loadstring` is not currently
@@ -3503,9 +3503,17 @@ Gameplay/cart input semantics live in `cartlib/input/input.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
 owns the explicitly configured players, mapping contexts, retained action and
 button state, MMIO sampling plans, consume state, guarded/repeat evaluation,
-cached parser ASTs, and per-player expression bindings from AST action indices
-directly to retained action records. Expression evaluation is reentrant and has
-no module-global scratch state. Normal carts use this Lua engine layer.
+cached action-expression programs, and per-player expression bindings from
+compiled action indices directly to retained action records. Expression
+admission parses once, then uses firmware `load` to compile a short-circuiting
+evaluator with node kinds, modifiers, comparisons, edge masks, helper modes and
+literal windows removed from the update path. The evaluator fetches only states
+reached by boolean short circuiting and allocates no AST traversal or scratch
+state. This follows Unity Input System's split between
+[binding resolution](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputBindingResolver.cs)
+and its retained dense [action execution state](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputActionState.cs),
+implemented with BMSX's firmware compiler rather than a host-owned evaluator.
+Normal carts use this Lua engine layer.
 Bare-metal carts may intentionally read the raw keyboard/pointer/pad MMIO words
 directly and must not route through cartlib for ICU access. BIOS code may use raw
 ICU reads for boot UI, but it must not grow a gameplay PlayerInput framework.
