@@ -237,6 +237,8 @@ parse_unary_expression = function(state)
 		operator = syntax.unary_string_id
 	elseif kind == token.keyword_not then
 		operator = syntax.unary_not
+	elseif kind == token.hash then
+		operator = syntax.unary_length
 	else
 		return parse_prefix_expression(state)
 	end

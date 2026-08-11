@@ -109,6 +109,7 @@ return function(target, frame)
 	target["modulus"] = frame["right"] % 6
 	target["negated"] = -frame["left"]
 	target[frame["output_key"]] = frame["values"][frame["index"] + 1]
+	target["value_count"] = #frame["values"]
 	local scaled = scale(frame["left"] + 1, 3)
 	scaled = scaled + 2
 	target["called"] = scaled
@@ -236,6 +237,7 @@ end;
 	assert(loaded_target.modulus == 2, 'load modulus mismatch')
 	assert(loaded_target.negated == -7, 'load dynamic unary mismatch')
 	assert(loaded_target.dynamic == 9, 'load dynamic table index mismatch')
+	assert(loaded_target.value_count == 3, 'load length mismatch')
 	assert(loaded_target.called == 26, 'load local assignment mismatch')
 	assert(loaded_result == 26, 'load explicit return mismatch')
 	assert(loaded_target.less and loaded_target.equal, 'load comparison mismatch')

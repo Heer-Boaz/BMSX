@@ -24,6 +24,7 @@ local syntax<const> = {
 	unary_negate = 1,
 	unary_string_id = 2,
 	unary_not = 3,
+	unary_length = 4,
 
 	binary_add = 1,
 	binary_subtract = 2,

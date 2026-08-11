@@ -28,6 +28,7 @@ local opcode_by_comparison_operator<const> = {
 local opcode_by_unary_operator<const> = {
 	[syntax.unary_negate] = isa.op_unm,
 	[syntax.unary_not] = isa.op_not,
+	[syntax.unary_length] = isa.op_len,
 }
 
 local constant_register<const> = function(parameter_count, const_index)

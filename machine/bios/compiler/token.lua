@@ -42,6 +42,7 @@ local token<const> = {
 	keyword_do = 41,
 	keyword_while = 42,
 	keyword_for = 43,
+	hash = 44,
 }
 
 token.keyword_by_text = {
@@ -66,6 +67,7 @@ token.keyword_by_text = {
 }
 
 token.single_character_by_code = {
+	[35] = token.hash,
 	[37] = token.percent,
 	[38] = token.ampersand,
 	[40] = token.left_parenthesis,
@@ -96,6 +98,7 @@ token.name = {
 	[token.floor_divide] = '//',
 	[token.percent] = '%',
 	[token.ampersand] = '&',
+	[token.hash] = '#',
 	[token.equal] = '=',
 	[token.equal_equal] = '==',
 	[token.not_equal] = '~=',
