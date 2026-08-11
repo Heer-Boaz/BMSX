@@ -623,8 +623,7 @@ function player:update_hit_invulnerability()
 
 	local hit_blink_sequence<const> = self.timelines:get('p.seq.hb')
 	hit_blink_sequence:advance()
-	local hit_blink_event<const> = hit_blink_sequence.step_events[hit_blink_sequence.step_event_count]
-	if hit_blink_event ~= nil and hit_blink_event.kind == 'end' then
+	if hit_blink_sequence.wrapped then
 		self.hit_blink_on = not self.hit_blink_on
 	end
 	if self.hit_invulnerability_timer == 0 then

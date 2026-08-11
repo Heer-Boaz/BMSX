@@ -1,4 +1,5 @@
 local basecomponent<const> = require('cartlib/component/basecomponent')
+local timelineprogram<const> = require('cartlib/timeline/program')
 local timelinemodule<const> = require('cartlib/timeline/timeline')
 local timelinedispatch<const> = require('cartlib/timeline/dispatch')
 local timeline<const> = timelinemodule.timeline
@@ -35,20 +36,34 @@ local deactivate_timelineentry<const> = function(self, id)
 	end
 end
 
-local process_timelineframe_payload<const> = function(_, entry, owner, payload)
-	local target<const> = entry.target or owner
-	local track_runner<const> = entry.instance.compiled_track_runner
+local process_timelineframe_payload<const> = function(_, entry, _owner, payload)
+	local target<const> = entry.target
+	local program<const> = entry.instance.program
+	local track_runner<const> = program.track_runner
 	if track_runner ~= nil then
 		track_runner(target, entry.params, payload, payload.time_ms * 0.001)
 	end
-	local apply_function<const> = entry.apply_function
+	local apply_function<const> = program.apply_function
 	if apply_function ~= nil then
 		apply_function(target, payload.frame_value, entry.params, payload)
 	end
-	local frame_appliers<const> = entry.frame_appliers
+	local frame_appliers<const> = program.frame_appliers
 	if frame_appliers ~= nil then
 		frame_appliers[payload.frame_index + 1](target, payload.frame_value)
 	end
+end
+
+local process_evaluations<const> = function(self, entry, delta_time)
+	local stopped<const> = timelinedispatch.process_instance_evaluations(
+		entry,
+		self.parent,
+		delta_time,
+		process_timelineframe_payload
+	)
+	if stopped then
+		deactivate_timelineentry(self, entry.instance.id)
+	end
+	return stopped
 end
 
 function timelinecomponent.new(opts)
@@ -71,42 +86,43 @@ function timelinecomponent:on_detach()
 end
 
 function timelinecomponent:define(definition)
-	local replacement<const> = timeline.new(definition)
-	local entry = self._entries_by_id[replacement.id]
-	local instance = replacement
-	local active = false
-	if entry ~= nil then
-		active = self._active_index_by_id[replacement.id] ~= nil
-		if active and replacement.frame_builder then
-			replacement:build(entry.params)
+	local program = timelineprogram.compile(definition)
+	local entry = self._entries_by_id[program.id]
+	if entry == nil then
+		local instance<const> = timeline.new(program)
+		local target = program.default_target
+		if target == nil then
+			target = self.parent
 		end
-		instance = entry.instance
-		instance:rebind_definition(replacement)
-	else
 		entry = {
 			instance = instance,
-			target = instance.def.target,
-			params = instance.def.params,
+			target = target,
+			params = program.default_params,
 		}
-		self._entries_by_id[instance.id] = entry
+		self._entries_by_id[program.id] = entry
+		timelinedispatch.init_entry(entry)
+		return
 	end
-	local markers<const> = timelinemodule.compile_timelinemarkers(instance.def, instance.length)
-	local apply<const> = instance.def.apply
-	local apply_function
-	local frame_appliers
-	if type(apply) == 'function' then
-		apply_function = apply
-	elseif apply then
-		frame_appliers = instance.frame_appliers
+	local active<const> = self._active_index_by_id[program.id] ~= nil
+	if active then
+		timelinedispatch.clear_windows(entry, self.parent)
 	end
-	entry.markers = markers
-	entry.apply_function = apply_function
-	entry.frame_appliers = frame_appliers
+	if active and program.frame_builder ~= nil then
+		program = timelineprogram.build(program, entry.params)
+	end
+	entry.instance:rebind_program(program)
 	if not active then
-		entry.target = instance.def.target
-		entry.params = instance.def.params
+		local target = program.default_target
+		if target == nil then
+			target = self.parent
+		end
+		entry.target = target
+		entry.params = program.default_params
 	end
 	timelinedispatch.init_entry(entry)
+	if active and entry.instance.head >= 0 then
+		timelinedispatch.sync_windows(entry, self.parent, entry.instance.head)
+	end
 end
 
 function timelinecomponent:get(id)
@@ -116,24 +132,24 @@ end
 
 function timelinecomponent:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	local instance<const> = entry.instance
-	if instance:seek(frame) ~= nil then
-		if timelinedispatch.process_instance_events(entry, self.parent, 0, process_timelineframe_payload) then
-			deactivate_timelineentry(self, instance.id)
-		end
-	end
-	return instance
+	entry.instance:seek(frame)
+	process_evaluations(self, entry, 0)
+	return entry.instance
+end
+
+function timelinecomponent:advance_to(id, frame)
+	local entry<const> = self._entries_by_id[id]
+	entry.instance:advance_to(frame)
+	process_evaluations(self, entry, 0)
+	return entry.instance
 end
 
 function timelinecomponent:advance(id)
 	local entry<const> = self._entries_by_id[id]
-	local instance<const> = entry.instance
-	if instance:advance() ~= nil then
-		if timelinedispatch.process_instance_events(entry, self.parent, 0, process_timelineframe_payload) then
-			deactivate_timelineentry(self, instance.id)
-		end
+	if entry.instance:advance() ~= nil then
+		process_evaluations(self, entry, 0)
 	end
-	return instance
+	return entry.instance
 end
 
 function timelinecomponent:play(id, opts)
@@ -145,18 +161,10 @@ function timelinecomponent:play(id, opts)
 	local params
 	local target
 	if opts ~= nil then
-		if opts.rewind ~= nil then
-			rewind = opts.rewind
-		end
-		if opts.snap_to_start ~= nil then
-			snap = opts.snap_to_start
-		end
-		if opts.params ~= nil then
-			params = opts.params
-		end
-		if opts.target ~= nil then
-			target = opts.target
-		end
+		rewind = opts.rewind
+		snap = opts.snap_to_start
+		params = opts.params
+		target = opts.target
 	end
 	if rewind == nil then
 		rewind = true
@@ -164,33 +172,32 @@ function timelinecomponent:play(id, opts)
 	if snap == nil then
 		snap = true
 	end
+	local program = instance.program
 	if params == nil then
-		params = instance.def.params
+		params = program.default_params
 	end
 	if target == nil then
-		target = entry.target or owner
+		target = program.default_target
+		if target == nil then
+			target = owner
+		end
 	end
 	entry.params = params
 	entry.target = target
-	if instance.frame_builder then
-		instance:build(params)
-		entry.frame_appliers = instance.frame_appliers
-		entry.markers = timelinemodule.compile_timelinemarkers(instance.def, instance.length)
+	if rewind or program.frame_builder ~= nil then
+		timelinedispatch.clear_windows(entry, owner)
 	end
-	timelinedispatch.init_entry(entry)
+	if program.frame_builder ~= nil then
+		instance:build(params)
+		program = instance.program
+		timelinedispatch.init_entry(entry)
+	end
 	if rewind then
-		local controlled<const> = entry.markers.controlled_tags
-		for i = 1, #controlled do
-			owner:remove_tag(controlled[i])
-		end
 		instance:rewind()
 	end
-	if snap and instance.length > 0 then
-		if instance:snap_to_start() ~= nil then
-			if timelinedispatch.process_instance_events(entry, owner, 0, process_timelineframe_payload) then
-				deactivate_timelineentry(self, id)
-			end
-		end
+	if snap and program.length > 0 then
+		instance:snap_to_start()
+		process_evaluations(self, entry, 0)
 	end
 	activate_timelineentry(self, entry)
 	return instance
@@ -198,11 +205,7 @@ end
 
 function timelinecomponent:stop(id)
 	local entry<const> = self._entries_by_id[id]
-	local owner<const> = self.parent
-	local controlled<const> = entry.markers.controlled_tags
-	for i = 1, #controlled do
-		owner:remove_tag(controlled[i])
-	end
+	timelinedispatch.clear_windows(entry, self.parent)
 	deactivate_timelineentry(self, id)
 end
 
@@ -211,9 +214,7 @@ function timelinecomponent:tick_active(delta_time)
 	while index <= self._active_count do
 		local entry<const> = self._active_entries[index]
 		if entry.instance:update(delta_time) ~= nil then
-			if timelinedispatch.process_instance_events(entry, self.parent, delta_time, process_timelineframe_payload) then
-				deactivate_timelineentry(self, entry.instance.id)
-			else
+			if not process_evaluations(self, entry, delta_time) then
 				index = index + 1
 			end
 		else

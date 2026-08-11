@@ -259,7 +259,7 @@ function transition.register_states(states)
 				params = transition_params,
 				apply = apply_transition_frame,
 				markers = {
-					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
+					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg', direction = 'forward' },
 				},
 			})
 			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
@@ -389,7 +389,7 @@ function transition.register_states(states)
 				target = target,
 				apply = true,
 				markers = {
-					{ frame = fade_out_frames - 1, event = 'fade.swap_bg' },
+					{ frame = fade_out_frames - 1, event = 'fade.swap_bg', direction = 'forward' },
 				},
 			})
 			self.timelines:play(fade_timelineid, { rewind = true, snap_to_start = true })

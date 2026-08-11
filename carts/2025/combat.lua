@@ -1407,8 +1407,8 @@ function combat.define_fsm()
 					playback_mode = 'once',
 					apply = true,
 					markers = {
-						{ frame = 0, event = 'combat_focus.snap' },
-						{ u = 1, event = 'combat_focus.done' },
+						{ frame = 0, event = 'combat_focus.snap', direction = 'forward' },
+						{ u = 1, event = 'combat_focus.done', direction = 'forward' },
 					},
 				},
 				autoplay = false,

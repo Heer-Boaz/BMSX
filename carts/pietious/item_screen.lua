@@ -217,7 +217,7 @@ local define_item_screen_fsm<const> = function()
 							frames = timeline.range(selector_blink_frames),
 							playback_mode = 'loop',
 							markers = {
-								{ frame = selector_blink_frames - 1, event = 'item_screen.blink_toggle' },
+								{ frame = selector_blink_frames - 1, event = 'item_screen.blink_toggle', direction = 'forward' },
 							},
 						},
 						autoplay = true,
