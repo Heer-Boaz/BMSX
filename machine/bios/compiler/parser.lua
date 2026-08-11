@@ -397,9 +397,42 @@ local parse_if_statement<const> = function(state)
 	}
 end
 
+local parse_while_statement<const> = function(state)
+	local line<const> = state.token_line
+	local column<const> = state.token_column
+	expect(state, token.keyword_while)
+	local condition<const> = parse_expression(state)
+	expect(state, token.keyword_do)
+	local block<const> = parse_block(state, end_terminators)
+	expect(state, token.keyword_end)
+	return {
+		kind = syntax.while_statement,
+		condition = condition,
+		block = block,
+		line = line,
+		column = column,
+	}
+end
+
+local parse_break_statement<const> = function(state)
+	local statement<const> = {
+		kind = syntax.break_statement,
+		line = state.token_line,
+		column = state.token_column,
+	}
+	expect(state, token.keyword_break)
+	return statement
+end
+
 parse_statement = function(state)
 	if state.token_kind == token.keyword_if then
 		return parse_if_statement(state)
+	end
+	if state.token_kind == token.keyword_while then
+		return parse_while_statement(state)
+	end
+	if state.token_kind == token.keyword_break then
+		return parse_break_statement(state)
 	end
 	if state.token_kind == token.keyword_local then
 		return parse_local_statement(state)

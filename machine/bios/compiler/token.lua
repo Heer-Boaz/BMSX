@@ -38,10 +38,15 @@ local token<const> = {
 	keyword_if = 37,
 	keyword_then = 38,
 	eof = 39,
+	keyword_break = 40,
+	keyword_do = 41,
+	keyword_while = 42,
 }
 
 token.keyword_by_text = {
 	['and'] = token.keyword_and,
+	['break'] = token.keyword_break,
+	['do'] = token.keyword_do,
 	['else'] = token.keyword_else,
 	['elseif'] = token.keyword_elseif,
 	['end'] = token.keyword_end,
@@ -55,6 +60,7 @@ token.keyword_by_text = {
 	['return'] = token.keyword_return,
 	['then'] = token.keyword_then,
 	['true'] = token.keyword_true,
+	['while'] = token.keyword_while,
 }
 
 token.single_character_by_code = {
@@ -102,6 +108,8 @@ token.name = {
 	[token.number] = 'number',
 	[token.identifier] = 'identifier',
 	[token.keyword_and] = 'and',
+	[token.keyword_break] = 'break',
+	[token.keyword_do] = 'do',
 	[token.keyword_else] = 'else',
 	[token.keyword_elseif] = 'elseif',
 	[token.keyword_end] = 'end',
@@ -115,6 +123,7 @@ token.name = {
 	[token.keyword_return] = 'return',
 	[token.keyword_then] = 'then',
 	[token.keyword_true] = 'true',
+	[token.keyword_while] = 'while',
 	[token.eof] = 'end of input',
 }
 

@@ -138,6 +138,34 @@ return function(target, frame)
 		target["inner_shadow"] = shadowed
 	end
 	target["outer_shadow"] = shadowed
+	local while_index = 0
+	local while_sum = 0
+	while while_index < frame["loop_count"] do
+		while_index = while_index + 1
+		if while_index == frame["loop_break"] then
+			break
+		end
+		while_sum = while_sum + while_index
+	end
+	target["while_index"] = while_index
+	target["while_sum"] = while_sum
+	local outer_index = 0
+	local nested_sum = 0
+	while outer_index < 3 do
+		outer_index = outer_index + 1
+		local inner_index = 0
+		while true do
+			inner_index = inner_index + 1
+			if inner_index == outer_index then
+				break
+			end
+		end
+		nested_sum = nested_sum + inner_index
+	end
+	target["nested_sum"] = nested_sum
+	while frame["missing"] and touch(500) do
+		target["unreachable_loop"] = true
+	end
 	published = scaled
 	target["escaped"] = "line\nquote:\" slash:\\ dec:\065 hex:\x42 skip:\z
 		done";;
@@ -154,6 +182,8 @@ end;
 		output_key = 'dynamic',
 		values = { 4, 9, 16 },
 		index = 1,
+		loop_count = 8,
+		loop_break = 5,
 	})
 	assert(loaded_target.visual.color == 0xff010203, 'load parameter path mismatch')
 	assert(loaded_target[-1] == -8, 'load negative literal/index mismatch')
@@ -183,6 +213,9 @@ end;
 	assert(loaded_target.branch_value == 2 and loaded_target.scoped_value == 22, 'load conditional branch mismatch')
 	assert(loaded_target.else_value == 2 and loaded_target.or_branch, 'load conditional short circuit mismatch')
 	assert(loaded_target.inner_shadow == 20 and loaded_target.outer_shadow == 5, 'load block scope mismatch')
+	assert(loaded_target.while_index == 5 and loaded_target.while_sum == 10, 'load while/break mismatch')
+	assert(loaded_target.nested_sum == 6, 'load nested break mismatch')
+	assert(loaded_target.unreachable_loop == nil, 'load while condition mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
 	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
@@ -199,6 +232,12 @@ end;
 		't'
 	)
 	assert(invalid_escape == nil, 'load accepted an invalid escape sequence')
+	local invalid_break<const> = load(
+		'return function() break end',
+		'bios_base_runtime_assert.break',
+		't'
+	)
+	assert(invalid_break == nil, 'load accepted break outside loop')
 	local binary_chunk<const>, binary_error<const> = load('return function() end', nil, 'b')
 	assert(binary_chunk == nil and type(binary_error) == 'string', 'load mode contract mismatch')
 end

@@ -207,6 +207,14 @@ prepare_statement_operands = function(state, statement)
 		end
 		return
 	end
+	if kind == syntax.while_statement then
+		prepare_value_operands(state, statement.condition)
+		prepare_block_operands(state, statement.block)
+		return
+	end
+	if kind == syntax.break_statement then
+		return
+	end
 	local expressions<const> = statement.expressions
 	for index = 1, #expressions do
 		prepare_value_operands(state, expressions[index])
@@ -243,6 +251,14 @@ materialize_statement_immediates = function(state, statement)
 			end
 			materialize_block_immediates(state, clause.block)
 		end
+		return
+	end
+	if kind == syntax.while_statement then
+		materialize_wide_immediates(state, statement.condition)
+		materialize_block_immediates(state, statement.block)
+		return
+	end
+	if kind == syntax.break_statement then
 		return
 	end
 	local expressions<const> = statement.expressions
@@ -1074,6 +1090,47 @@ local emit_if_statement<const> = function(state, instruction_words, statement)
 	patch_jumps(instruction_words, end_jumps)
 end
 
+local emit_while_statement<const> = function(state, instruction_words, statement)
+	local loop_start<const> = #instruction_words + 1
+	local exit_jumps<const> = {}
+	emit_condition_jumps(
+		state,
+		instruction_words,
+		statement.condition,
+		false,
+		exit_jumps
+	)
+	local break_jumps<const> = {}
+	local loop_stack<const> = state.loop_stack
+	loop_stack[#loop_stack + 1] = break_jumps
+	emit_block(state, instruction_words, statement.block)
+	loop_stack[#loop_stack] = nil
+	local back_jump<const> = bytecode.emit_signed_abx(
+		instruction_words,
+		isa.op_jmp,
+		0,
+		0
+	)
+	bytecode.patch_branch(
+		instruction_words,
+		back_jump,
+		loop_start - back_jump - 1
+	)
+	patch_jumps(instruction_words, exit_jumps)
+	patch_jumps(instruction_words, break_jumps)
+end
+
+local emit_break_statement<const> = function(state, instruction_words)
+	local loop_stack<const> = state.loop_stack
+	local break_jumps<const> = loop_stack[#loop_stack]
+	break_jumps[#break_jumps + 1] = bytecode.emit_signed_abx(
+		instruction_words,
+		isa.op_jmp,
+		0,
+		0
+	)
+end
+
 emit_statement = function(state, instruction_words, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
@@ -1082,6 +1139,10 @@ emit_statement = function(state, instruction_words, statement)
 		emit_local_statement(state, instruction_words, statement)
 	elseif kind == syntax.if_statement then
 		emit_if_statement(state, instruction_words, statement)
+	elseif kind == syntax.while_statement then
+		emit_while_statement(state, instruction_words, statement)
+	elseif kind == syntax.break_statement then
+		emit_break_statement(state, instruction_words)
 	else
 		emit_return_statement(state, instruction_words, statement)
 	end
@@ -1114,6 +1175,7 @@ local compile_function<const> = function(state)
 	state.temporary_register_base = first_temporary_register
 	state.free_register = first_temporary_register
 	state.max_stack = first_temporary_register
+	state.loop_stack = {}
 	local statements<const> = state.function_expression.body.statements
 	emit_block(state, instruction_words, state.function_expression.body)
 	if #statements == 0

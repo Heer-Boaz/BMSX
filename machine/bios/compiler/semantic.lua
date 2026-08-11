@@ -198,6 +198,13 @@ local bind_if_statement<const> = function(state, statement)
 	end
 end
 
+local bind_while_statement<const> = function(state, statement)
+	bind_value(state, statement.condition)
+	state.loop_depth = state.loop_depth + 1
+	bind_block(state, statement.block)
+	state.loop_depth = state.loop_depth - 1
+end
+
 bind_statement = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
@@ -208,6 +215,12 @@ bind_statement = function(state, statement)
 		bind_return_statement(state, statement)
 	elseif kind == syntax.if_statement then
 		bind_if_statement(state, statement)
+	elseif kind == syntax.while_statement then
+		bind_while_statement(state, statement)
+	elseif kind == syntax.break_statement then
+		if state.loop_depth == 0 then
+			fail(state.chunk_name, 'break outside loop', statement)
+		end
 	else
 		fail(state.chunk_name, 'unsupported function statement', statement)
 	end
@@ -247,6 +260,7 @@ function semantic.bind(chunk, chunk_name, has_environment)
 		max_local_count = 0,
 		scope = nil,
 		has_environment = has_environment,
+		loop_depth = 0,
 	}
 	bind_parameters(state, function_expression)
 	bind_block(state, function_expression.body)
