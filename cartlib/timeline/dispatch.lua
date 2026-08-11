@@ -1,7 +1,9 @@
 local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
+local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 
 local timeline_dispatch<const> = {}
+local playback_once<const> = timeline_program.playback_mode.once
 
 local acquire_payload<const> = function(state, payloads)
 	local depth<const> = state.depth + 1
@@ -11,31 +13,35 @@ local acquire_payload<const> = function(state, payloads)
 	return payload
 end
 
-local dispatch_frame<const> = function(entry, owner, evaluation, on_frame)
+local dispatch_evaluation<const> = function(entry, owner, evaluation, on_evaluation)
 	local state<const> = entry.timeline_dispatch_state
-	local payload<const> = acquire_payload(state, state.frame_payloads)
-	payload.previous_frame = evaluation.previous_frame
-	payload.frame_index = evaluation.frame
-	payload.frame_value = evaluation.value
-	payload.previous_time_ms = evaluation.previous_time_ms
-	payload.time_ms = evaluation.time_ms
-	payload.method = evaluation.method
-	payload.direction = evaluation.direction
-	payload.wrapped = evaluation.wrapped
-
 	-- Persistent state is reconstructed first, then sampled values are applied,
 	-- then one-shot events traverse the evaluation range. Event handlers and
 	-- frame observers therefore see the final state at the sampled position.
 	local tracks<const> = entry.instance.program.tracks
-	if tracks.tags.interval_count > 0 then
+	if tracks.tags.tag_count > 0 then
 		timeline_track_evaluator.evaluate_tags(entry, owner, evaluation)
 	end
-	on_frame(entry, owner, evaluation, payload)
-	if tracks.events.count > 0 then
+	local payload
+	if evaluation.sample then
+		payload = acquire_payload(state, state.frame_payloads)
+		payload.previous_frame = evaluation.previous_frame
+		payload.frame_index = evaluation.frame
+		payload.frame_value = evaluation.value
+		payload.previous_time_ms = evaluation.previous_time_ms
+		payload.time_ms = evaluation.time_ms
+		payload.method = evaluation.method
+		payload.direction = evaluation.direction
+		payload.wrapped = evaluation.wrapped
+	end
+	on_evaluation(entry, owner, evaluation, payload)
+	if tracks.events.count > 0 or tracks.events.time_count > 0 then
 		timeline_track_evaluator.emit_events(entry, owner, evaluation)
 	end
-	owner.events:emit(state.scoped_frame_event_type, payload)
-	state.depth = state.depth - 1
+	if evaluation.sample then
+		owner.events:emit(state.scoped_frame_event_type, payload)
+		state.depth = state.depth - 1
+	end
 end
 
 local dispatch_end<const> = function(entry, owner, evaluation)
@@ -48,7 +54,7 @@ local dispatch_end<const> = function(entry, owner, evaluation)
 	payload.time_ms = evaluation.time_ms
 	owner.events:emit(state.scoped_end_event_type, payload)
 	state.depth = state.depth - 1
-	return program.playback_mode == 'once'
+	return program.playback_mode == playback_once
 end
 
 function timeline_dispatch.init_entry(entry)
@@ -90,14 +96,12 @@ function timeline_dispatch.init_entry(entry)
 	timeline_track_evaluator.init_entry(entry)
 end
 
-function timeline_dispatch.process_instance_evaluations(entry, owner, on_frame)
+function timeline_dispatch.process_instance_evaluations(entry, owner, on_evaluation)
 	local instance<const> = entry.instance
 	local stop = false
 	for index = 1, instance.evaluation_count do
 		local evaluation<const> = instance.evaluations[index]
-		if evaluation.sample then
-			dispatch_frame(entry, owner, evaluation, on_frame)
-		end
+		dispatch_evaluation(entry, owner, evaluation, on_evaluation)
 		if evaluation.ended and dispatch_end(entry, owner, evaluation) then
 			stop = true
 			break

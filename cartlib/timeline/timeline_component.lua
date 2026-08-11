@@ -37,10 +37,13 @@ local deactivate_timeline_entry<const> = function(self, id)
 	end
 end
 
-local process_timeline_frame<const> = function(entry, _owner, evaluation, payload)
+local process_timeline_evaluation<const> = function(entry, _owner, evaluation, payload)
 	local program<const> = entry.instance.program
 	if program.tracks.value_track_count > 0 then
 		timeline_track_evaluator.evaluate_values(entry, evaluation)
+	end
+	if not evaluation.sample then
+		return
 	end
 	local apply_function<const> = program.apply_function
 	if apply_function ~= nil then
@@ -73,7 +76,7 @@ local process_evaluations<const> = function(self, entry)
 	local stopped<const> = timeline_dispatch.process_instance_evaluations(
 		entry,
 		self.parent,
-		process_timeline_frame
+		process_timeline_evaluation
 	)
 	if stopped then
 		deactivate_timeline_entry(self, entry.instance.id)
@@ -151,7 +154,12 @@ function timeline_component:define(id, definition)
 	end
 	timeline_dispatch.init_entry(entry)
 	if active and entry.instance.head >= 0 then
-		timeline_track_evaluator.sync_tags(entry, self.parent, entry.instance.head)
+		timeline_track_evaluator.sync_tags(
+			entry,
+			self.parent,
+			entry.instance.head,
+			entry.instance.position_ms
+		)
 	end
 end
 
@@ -167,9 +175,23 @@ function timeline_component:seek(id, frame)
 	return entry.instance
 end
 
+function timeline_component:seek_time(id, time_ms)
+	local entry<const> = self._entries_by_id[id]
+	entry.instance:seek_time(time_ms)
+	process_evaluations(self, entry)
+	return entry.instance
+end
+
+function timeline_component:scrub_time(id, time_ms)
+	local entry<const> = self._entries_by_id[id]
+	entry.instance:scrub_time(time_ms)
+	process_evaluations(self, entry)
+	return entry.instance
+end
+
 function timeline_component:seek_to_end(id)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:seek(entry.instance.program.length - 1)
+	entry.instance:seek_time(entry.instance.program.duration_ms)
 	process_evaluations(self, entry)
 	return entry.instance
 end
@@ -234,7 +256,7 @@ function timeline_component:play(id, opts)
 	if rewind then
 		instance:rewind()
 	end
-	if snap and program.length > 0 then
+	if snap and (program.length > 0 or program.continuous) then
 		instance:snap_to_start()
 		process_evaluations(self, entry)
 	end

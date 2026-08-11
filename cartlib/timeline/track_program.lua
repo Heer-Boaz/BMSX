@@ -6,13 +6,23 @@ local timeline_apply<const> = require('cartlib/timeline/apply')
 local track_program<const> = {}
 local empty_defs<const> = {}
 local empty_groups<const> = {}
-local empty_events<const> = { by_frame = {}, keys = {}, count = 0 }
+local empty_events<const> = {
+	by_frame = {},
+	keys = {},
+	count = 0,
+	time_keys = {},
+	time_count = 0,
+}
 local empty_tags<const> = {
 	intervals = {},
 	interval_count = 0,
 	boundaries = {},
 	boundary_count = 0,
 	boundaries_by_frame = {},
+	time_intervals = {},
+	time_interval_count = 0,
+	time_boundaries = {},
+	time_boundary_count = 0,
 	tags = {},
 	tag_count = 0,
 }
@@ -21,6 +31,10 @@ local empty_steps<const> = {
 	reverse_by_frame = {},
 	tracks = {},
 	track_count = 0,
+	time_keys = {},
+	time_key_count = 0,
+	time_tracks = {},
+	time_track_count = 0,
 }
 local empty_prepared<const> = {
 	primary_sample_runner = nil,
@@ -31,7 +45,7 @@ local empty_prepared<const> = {
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
 }
-local empty_compiled<const> = {
+track_program.empty = {
 	primary_sample_runner = nil,
 	sample_groups = empty_groups,
 	sample_group_count = 0,
@@ -52,6 +66,13 @@ local compare_key<const> = function(left, right)
 	return left.frame < right.frame
 end
 
+local compare_time_key<const> = function(left, right)
+	if left.time_ms == right.time_ms then
+		return left.order < right.order
+	end
+	return left.time_ms < right.time_ms
+end
+
 local compare_boundary<const> = function(left, right)
 	if left.frame == right.frame then
 		if left.delta == right.delta then
@@ -60,6 +81,16 @@ local compare_boundary<const> = function(left, right)
 		return left.delta > right.delta
 	end
 	return left.frame < right.frame
+end
+
+local compare_time_boundary<const> = function(left, right)
+	if left.time_ms == right.time_ms then
+		if left.delta == right.delta then
+			return left.order < right.order
+		end
+		return left.delta > right.delta
+	end
+	return left.time_ms < right.time_ms
 end
 
 local frame_at<const> = function(position, length)
@@ -207,6 +238,7 @@ local compile_events<const> = function(event_defs, length)
 	end
 	local by_frame<const> = {}
 	local keys<const> = {}
+	local time_keys<const> = {}
 	local order = 0
 	for track_index = 1, #event_defs do
 		local defs<const> = event_defs[track_index].keys
@@ -214,27 +246,42 @@ local compile_events<const> = function(event_defs, length)
 			local key_def<const> = defs[key_index]
 			order = order + 1
 			local key<const> = {
-				frame = frame_at(key_def, length),
 				event = key_def.event,
 				payload = key_def.payload,
 				forward = event_forward_directions[key_def.direction],
 				backward = event_backward_directions[key_def.direction],
 				order = order,
 			}
-			keys[order] = key
-			local bucket = by_frame[key.frame]
-			if bucket == nil then
-				bucket = {}
-				by_frame[key.frame] = bucket
+			if key_def.time_ms ~= nil then
+				key.time_ms = key_def.time_ms
+				time_keys[#time_keys + 1] = key
+			else
+				key.frame = frame_at(key_def, length)
+				keys[#keys + 1] = key
+				local bucket = by_frame[key.frame]
+				if bucket == nil then
+					bucket = {}
+					by_frame[key.frame] = bucket
+				end
+				bucket[#bucket + 1] = key
 			end
-			bucket[#bucket + 1] = key
 		end
 	end
 	table.sort(keys, compare_key)
+	table.sort(time_keys, compare_time_key)
 	for index = 1, #keys do
 		keys[index].order = nil
 	end
-	return { by_frame = by_frame, keys = keys, count = #keys }
+	for index = 1, #time_keys do
+		time_keys[index].order = nil
+	end
+	return {
+		by_frame = by_frame,
+		keys = keys,
+		count = #keys,
+		time_keys = time_keys,
+		time_count = #time_keys,
+	}
 end
 
 local compile_tags<const> = function(tag_defs, length)
@@ -244,6 +291,8 @@ local compile_tags<const> = function(tag_defs, length)
 	local intervals<const> = {}
 	local boundaries<const> = {}
 	local boundaries_by_frame<const> = {}
+	local time_intervals<const> = {}
+	local time_boundaries<const> = {}
 	local tags<const> = {}
 	local tag_index_by_name<const> = {}
 	for index = 1, #tag_defs do
@@ -259,35 +308,67 @@ local compile_tags<const> = function(tag_defs, length)
 			start_event = 'timeline.tag.' .. tag_def.name .. '.start',
 			end_event = 'timeline.tag.' .. tag_def.name .. '.end',
 			tag_index = tag_index,
-			start_frame = frame_at(tag_def.start, length),
-			end_frame = frame_at(tag_def['end'], length),
 			start_payload = tag_def.start_payload,
 			end_payload = tag_def.end_payload,
 		}
-		intervals[index] = interval
-		local start_boundary<const> = { frame = interval.start_frame, delta = 1, interval = interval, order = index }
-		local end_boundary<const> = { frame = interval.end_frame, delta = -1, interval = interval, order = index }
-		boundaries[#boundaries + 1] = start_boundary
-		boundaries[#boundaries + 1] = end_boundary
-		local start_bucket = boundaries_by_frame[start_boundary.frame]
-		if start_bucket == nil then
-			start_bucket = {}
-			boundaries_by_frame[start_boundary.frame] = start_bucket
+		if tag_def.start.time_ms ~= nil then
+			interval.start_time_ms = tag_def.start.time_ms
+			interval.end_time_ms = tag_def['end'].time_ms
+			time_intervals[#time_intervals + 1] = interval
+			time_boundaries[#time_boundaries + 1] = {
+				time_ms = interval.start_time_ms,
+				delta = 1,
+				interval = interval,
+				order = index,
+			}
+			time_boundaries[#time_boundaries + 1] = {
+				time_ms = interval.end_time_ms,
+				delta = -1,
+				interval = interval,
+				order = index,
+			}
+		else
+			interval.start_frame = frame_at(tag_def.start, length)
+			interval.end_frame = frame_at(tag_def['end'], length)
+			intervals[#intervals + 1] = interval
+			local start_boundary<const> = {
+				frame = interval.start_frame,
+				delta = 1,
+				interval = interval,
+				order = index,
+			}
+			local end_boundary<const> = {
+				frame = interval.end_frame,
+				delta = -1,
+				interval = interval,
+				order = index,
+			}
+			boundaries[#boundaries + 1] = start_boundary
+			boundaries[#boundaries + 1] = end_boundary
+			local start_bucket = boundaries_by_frame[start_boundary.frame]
+			if start_bucket == nil then
+				start_bucket = {}
+				boundaries_by_frame[start_boundary.frame] = start_bucket
+			end
+			start_bucket[#start_bucket + 1] = start_boundary
+			local end_bucket = boundaries_by_frame[end_boundary.frame]
+			if end_bucket == nil then
+				end_bucket = {}
+				boundaries_by_frame[end_boundary.frame] = end_bucket
+			end
+			end_bucket[#end_bucket + 1] = end_boundary
 		end
-		start_bucket[#start_bucket + 1] = start_boundary
-		local end_bucket = boundaries_by_frame[end_boundary.frame]
-		if end_bucket == nil then
-			end_bucket = {}
-			boundaries_by_frame[end_boundary.frame] = end_bucket
-		end
-		end_bucket[#end_bucket + 1] = end_boundary
 	end
 	table.sort(boundaries, compare_boundary)
+	table.sort(time_boundaries, compare_time_boundary)
 	for _, bucket in pairs(boundaries_by_frame) do
 		table.sort(bucket, compare_boundary)
 	end
 	for index = 1, #boundaries do
 		boundaries[index].order = nil
+	end
+	for index = 1, #time_boundaries do
+		time_boundaries[index].order = nil
 	end
 	return {
 		intervals = intervals,
@@ -295,6 +376,10 @@ local compile_tags<const> = function(tag_defs, length)
 		boundaries = boundaries,
 		boundary_count = #boundaries,
 		boundaries_by_frame = boundaries_by_frame,
+		time_intervals = time_intervals,
+		time_interval_count = #time_intervals,
+		time_boundaries = time_boundaries,
+		time_boundary_count = #time_boundaries,
 		tags = tags,
 		tag_count = #tags,
 	}
@@ -307,43 +392,78 @@ local compile_steps<const> = function(step_defs, length)
 	local by_frame<const> = {}
 	local reverse_by_frame<const> = {}
 	local tracks<const> = {}
+	local time_keys<const> = {}
+	local time_tracks<const> = {}
+	local order = 0
 	for track_index = 1, #step_defs do
 		local step_def<const> = step_defs[track_index]
+		local time_domain<const> = step_def.keys[1].time_ms ~= nil
 		local keys<const> = {}
 		for key_index = 1, #step_def.keys do
 			local key_def<const> = step_def.keys[key_index]
-			keys[key_index] = {
-				frame = frame_at(key_def, length),
+			order = order + 1
+			local key<const> = {
 				value = key_def.value,
-				order = key_index,
+				order = order,
 			}
+			if time_domain then
+				key.time_ms = key_def.time_ms
+			else
+				key.frame = frame_at(key_def, length)
+			end
+			keys[key_index] = key
 		end
-		table.sort(keys, compare_key)
+		if time_domain then
+			table.sort(keys, compare_time_key)
+		else
+			table.sort(keys, compare_key)
+		end
 		local track<const> = {
 			binding_index = step_def.binding_index,
 			apply = step_def.apply,
 			keys = keys,
 			key_count = #keys,
 		}
-		tracks[track_index] = track
-		for key_index = 1, #keys do
-			local key<const> = keys[key_index]
-			key.track = track
-			key.order = nil
-			local bucket = by_frame[key.frame]
-			if bucket == nil then
-				bucket = {}
-				by_frame[key.frame] = bucket
+		if time_domain then
+			time_tracks[#time_tracks + 1] = track
+			for key_index = 1, #keys do
+				local key<const> = keys[key_index]
+				key.track = track
+				time_keys[#time_keys + 1] = key
 			end
-			bucket[#bucket + 1] = key
-			if key_index > 1 then
-				local reverse_bucket = reverse_by_frame[key.frame]
-				if reverse_bucket == nil then
-					reverse_bucket = {}
-					reverse_by_frame[key.frame] = reverse_bucket
+		else
+			tracks[#tracks + 1] = track
+			for key_index = 1, #keys do
+				local key<const> = keys[key_index]
+				key.track = track
+				local bucket = by_frame[key.frame]
+				if bucket == nil then
+					bucket = {}
+					by_frame[key.frame] = bucket
 				end
-				reverse_bucket[#reverse_bucket + 1] = keys[key_index - 1]
+				bucket[#bucket + 1] = key
+				if key_index > 1 then
+					local reverse_bucket = reverse_by_frame[key.frame]
+					if reverse_bucket == nil then
+						reverse_bucket = {}
+						reverse_by_frame[key.frame] = reverse_bucket
+					end
+					reverse_bucket[#reverse_bucket + 1] = keys[key_index - 1]
+				end
 			end
+		end
+	end
+	table.sort(time_keys, compare_time_key)
+	for index = 1, #tracks do
+		local keys<const> = tracks[index].keys
+		for key_index = 1, #keys do
+			keys[key_index].order = nil
+		end
+	end
+	for index = 1, #time_tracks do
+		local keys<const> = time_tracks[index].keys
+		for key_index = 1, #keys do
+			keys[key_index].order = nil
 		end
 	end
 	return {
@@ -351,12 +471,16 @@ local compile_steps<const> = function(step_defs, length)
 		reverse_by_frame = reverse_by_frame,
 		tracks = tracks,
 		track_count = #tracks,
+		time_keys = time_keys,
+		time_key_count = #time_keys,
+		time_tracks = time_tracks,
+		time_track_count = #time_tracks,
 	}
 end
 
 function track_program.compile(prepared, length)
-	if prepared == empty_prepared or length == 0 then
-		return empty_compiled
+	if prepared == empty_prepared then
+		return track_program.empty
 	end
 	return {
 		primary_sample_runner = prepared.primary_sample_runner,

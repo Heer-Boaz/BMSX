@@ -7,8 +7,13 @@ local update_method<const> = {
 	jump = 1,
 	scrub = 2,
 }
+local playback_mode<const> = timeline_program.playback_mode
+local playback_once<const> = playback_mode.once
+local playback_loop<const> = playback_mode.loop
+local playback_pingpong<const> = playback_mode.pingpong
 local play_update_method<const> = update_method.play
 local jump_update_method<const> = update_method.jump
+local scrub_update_method<const> = update_method.scrub
 
 local timeline<const> = {}
 timeline.__index = timeline
@@ -135,30 +140,46 @@ function timeline:rewind()
 	clear_evaluations(self)
 end
 
-function timeline:update(delta_time)
+local update_continuous<const> = function(self, delta_time)
 	local program<const> = self.program
-	if not program.auto_tick or self.ended then
-		return nil
+	local previous_frame = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
 	end
-	clear_evaluations(self)
-	if program.continuous then
-		local previous_time_ms<const> = self.position_ms
+	self.head = frame
+	local previous_time_ms = self.position_ms
+	local duration_ms<const> = program.duration_ms
+	if duration_ms == nil then
+		local time_ms<const> = previous_time_ms + delta_time * self.direction
+		self.position_ms = time_ms
+		write_evaluation(
+			self,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			play_update_method,
+			self.direction,
+			true,
+			false,
+			false
+		)
+		return self
+	end
+	local mode<const> = program.playback_mode
+	if mode == playback_once then
 		local time_ms = previous_time_ms + delta_time
-		local current = self.head
-		if current < 0 then
-			current = 0
-		end
-		self.head = current
-		local ended<const> = program.duration_ms ~= nil and time_ms >= program.duration_ms
+		local ended<const> = time_ms >= duration_ms
 		if ended then
-			time_ms = program.duration_ms
+			time_ms = duration_ms
 			self.ended = true
 		end
 		self.position_ms = time_ms
 		write_evaluation(
 			self,
-			current,
-			current,
+			previous_frame,
+			frame,
 			previous_time_ms,
 			time_ms,
 			play_update_method,
@@ -168,6 +189,95 @@ function timeline:update(delta_time)
 			false
 		)
 		return self
+	end
+	local remaining = delta_time
+	if mode == playback_loop then
+		while previous_time_ms + remaining >= duration_ms do
+			remaining = remaining - (duration_ms - previous_time_ms)
+			write_evaluation(
+				self,
+				previous_frame,
+				frame,
+				previous_time_ms,
+				0,
+				play_update_method,
+				1,
+				true,
+				true,
+				true
+			)
+			previous_frame = frame
+			previous_time_ms = 0
+		end
+		if remaining > 0 or self.evaluation_count == 0 then
+			local time_ms<const> = previous_time_ms + remaining
+			write_evaluation(
+				self,
+				previous_frame,
+				frame,
+				previous_time_ms,
+				time_ms,
+				play_update_method,
+				1,
+				true,
+				false,
+				false
+			)
+			previous_time_ms = time_ms
+		end
+		self.position_ms = previous_time_ms
+		return self
+	end
+	while remaining > 0 do
+		local direction<const> = self.direction
+		local boundary_ms
+		local distance_ms
+		if direction > 0 then
+			boundary_ms = duration_ms
+			distance_ms = duration_ms - previous_time_ms
+		else
+			boundary_ms = 0
+			distance_ms = previous_time_ms
+		end
+		local time_ms
+		local ended
+		if remaining >= distance_ms then
+			time_ms = boundary_ms
+			remaining = remaining - distance_ms
+			ended = true
+			self.direction = -direction
+		else
+			time_ms = previous_time_ms + remaining * direction
+			remaining = 0
+			ended = false
+		end
+		write_evaluation(
+			self,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			play_update_method,
+			direction,
+			true,
+			ended,
+			false
+		)
+		previous_frame = frame
+		previous_time_ms = time_ms
+	end
+	self.position_ms = previous_time_ms
+	return self
+end
+
+function timeline:update(delta_time)
+	local program<const> = self.program
+	if not program.auto_tick or self.ended then
+		return nil
+	end
+	clear_evaluations(self)
+	if program.continuous then
+		return update_continuous(self, delta_time)
 	end
 	self.frame_elapsed = self.frame_elapsed + delta_time
 	local frame_duration<const> = program.frame_duration
@@ -234,6 +344,67 @@ function timeline:seek(frame)
 	return move_to(self, frame, jump_update_method)
 end
 
+local move_time<const> = function(self, requested_time_ms, method)
+	clear_evaluations(self)
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	local time_ms
+	if program.duration_ms == nil then
+		if requested_time_ms < 0 then
+			time_ms = 0
+		else
+			time_ms = requested_time_ms
+		end
+	else
+		time_ms = clamp(requested_time_ms, 0, program.duration_ms)
+	end
+	local frame
+	if program.continuous then
+		frame = 0
+	else
+		frame = (time_ms / program.frame_duration) // 1
+		if frame >= program.length then
+			frame = program.length - 1
+		end
+	end
+	local direction = 0
+	if time_ms > previous_time_ms then
+		direction = 1
+	elseif time_ms < previous_time_ms then
+		direction = -1
+	end
+	self.head = frame
+	if program.continuous then
+		self.frame_elapsed = 0
+	else
+		self.frame_elapsed = time_ms - frame * program.frame_duration
+	end
+	self.position_ms = time_ms
+	self.ended = false
+	write_evaluation(
+		self,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		method,
+		direction,
+		true,
+		false,
+		false
+	)
+	return self
+end
+
+function timeline:seek_time(time_ms)
+	return move_time(self, time_ms, jump_update_method)
+end
+
+function timeline:scrub_time(time_ms)
+	return move_time(self, time_ms, scrub_update_method)
+end
+
 function timeline:snap_to_start()
 	clear_evaluations(self)
 	local previous_frame<const> = self.head
@@ -273,7 +444,7 @@ function timeline:advance_internal(preserve_elapsed)
 	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
-	local traversal_direction<const> = program.playback_mode == 'pingpong' and self.direction or 1
+	local traversal_direction<const> = program.playback_mode == playback_pingpong and self.direction or 1
 	local current_frame = previous_frame + (previous_frame == timelinestart_index and 1 or traversal_direction)
 	local sample = true
 	local ended = false
@@ -285,11 +456,11 @@ function timeline:advance_internal(preserve_elapsed)
 		ended = true
 	elseif current_frame > last_index then
 		ended = true
-		if program.playback_mode == 'loop' then
+		if program.playback_mode == playback_loop then
 			current_frame = 0
 			wrapped = true
 			self.direction = 1
-		elseif program.playback_mode == 'pingpong' then
+		elseif program.playback_mode == playback_pingpong then
 			current_frame = last_index
 			if last_index > 0 then
 				self.direction = -1
@@ -308,7 +479,7 @@ function timeline:advance_internal(preserve_elapsed)
 	local time_ms
 	if previous_frame == timelinestart_index or wrapped then
 		time_ms = 0
-	elseif ended and program.playback_mode ~= 'pingpong' then
+	elseif ended and program.playback_mode ~= playback_pingpong then
 		time_ms = program.duration_ms
 	elseif current_frame == previous_frame then
 		time_ms = previous_time_ms
@@ -338,6 +509,7 @@ end
 return {
 	timelinestart_index = timelinestart_index,
 	update_method = update_method,
+	playback_mode = playback_mode,
 	timeline = timeline,
 	range = range,
 	build_frame_sequence = build_frame_sequence,

@@ -3602,10 +3602,11 @@ instances. The compiler caches by authored-definition identity, so entities
 that use the same static definition share one immutable program; timeline ids
 belong to component entries and instances rather than contaminating that shared
 program. A parameterized frame builder is the explicit exception: its built
-frame program belongs to the playing instance. Binding names are resolved once
-to dense slots. Authored track kinds are likewise dispatched only while
-compiling: the update path consumes specialized arrays and runners and never
-branches on a track-kind or binding-id string.
+frame program belongs to the playing instance. Binding names and playback-mode
+names are resolved once to dense slots and numeric modes. Authored track kinds
+are likewise dispatched only while compiling: the update path consumes
+specialized arrays and runners and never branches on a track-kind, binding-id,
+or playback-mode string.
 
 The evaluation order is fixed. Persistent tags are reconciled first.
 Destination values, including step-interpolated state, and frame data are
@@ -3623,6 +3624,15 @@ one-shot range track, `tag` is persistent interval state, `sample` is the
 explicit cart callback escape hatch, and `wave` is a compiled procedural
 sample. Additional interpolation modes extend `value`; they do not become
 parallel public track kinds.
+
+Event and value keys, and both tag boundaries, may address an exact frame (or
+normalized frame position) or timeline-local `time_ms`. Admission partitions
+those domains into sorted immutable programs: frame buckets retain the cheap
+sprite-animation path, while time keys use binary range lookup and are sampled
+by the same evaluator. A track-only continuous program has no fabricated frame
+payload. Endpoint keys still evaluate on a terminal transport range even when
+there is no new frame sample. `seek_time` and `scrub_time` sample persistent
+destination state; only normal play traverses one-shot time keys.
 
 Future camera, path, animation, audio, media and nested-sequence support must
 extend this same program and evaluation pipeline rather than add per-feature ECS

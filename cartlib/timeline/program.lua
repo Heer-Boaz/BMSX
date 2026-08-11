@@ -5,7 +5,14 @@ local timeline_track_program<const> = require('cartlib/timeline/track_program')
 -- A definition is admitted into immutable evaluation data. Timeline instances
 -- retain only transport state and atomically replace this program on rebind.
 local timeline_program<const> = {}
+timeline_program.playback_mode = {
+	once = 0,
+	loop = 1,
+	pingpong = 2,
+}
+local playback_mode_by_name<const> = timeline_program.playback_mode
 local empty_defs<const> = {}
+local empty_frames<const> = {}
 local primary_binding_ids<const> = { 'target' }
 local primary_binding_index_by_id<const> = { target = 1 }
 local program_by_definition<const> = setmetatable({}, { __mode = 'k' })
@@ -103,11 +110,12 @@ function timeline_program.compile(definition)
 		apply_function = definition.apply
 	end
 	local apply_frames<const> = definition.apply ~= nil and apply_function == nil
+	local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
 	local program<const> = {
 		repetitions = definition.repetitions or 1,
 		frame_builder = frame_builder,
 		frame_duration = frame_duration,
-		playback_mode = definition.playback_mode or 'once',
+		playback_mode = playback_mode,
 		continuous = continuous,
 		auto_tick = auto_tick,
 		duration_ms = definition.duration_ms,
@@ -115,7 +123,7 @@ function timeline_program.compile(definition)
 		binding_index_by_id = binding_index_by_id,
 		binding_count = #binding_ids,
 		prepared_tracks = prepared_tracks,
-		tracks = timeline_track_program.compile(prepared_tracks, 0),
+		tracks = timeline_track_program.empty,
 		apply_frames = apply_frames,
 		apply_function = apply_function,
 		default_binding = definition.target,
@@ -128,7 +136,7 @@ function timeline_program.compile(definition)
 		return program
 	end
 	if frame_source == nil and #track_defs > 0 then
-		local compiled<const> = compile_frame_data(program, { {} })
+		local compiled<const> = compile_frame_data(program, empty_frames)
 		program_by_definition[definition] = compiled
 		return compiled
 	end
