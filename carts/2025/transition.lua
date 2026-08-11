@@ -252,7 +252,7 @@ function transition.register_states(states)
 			}
 			self.timelines:define(overgang_timelineid, {
 				frames = timeline.range(self.transition_finish_frame + 1),
-				ticks_per_frame = overgang_ticks_per_frame,
+				frame_duration = overgang_frame_duration,
 				playback_mode = 'once',
 				target = target,
 				params = transition_params,
@@ -309,7 +309,7 @@ function transition.register_states(states)
 			local frames<const> = build_transition_fade_in_frames()
 			self.timelines:define(overgang_post_fade_in_timelineid, {
 				frames = frames,
-				ticks_per_frame = overgang_ticks_per_frame,
+				frame_duration = overgang_frame_duration,
 				playback_mode = 'once',
 				target = background,
 				apply = true,
@@ -381,7 +381,7 @@ function transition.register_states(states)
 			})
 			self.timelines:define(fade_timelineid, {
 				frames = frames,
-				ticks_per_frame = fade_ticks_per_frame,
+				frame_duration = fade_frame_duration,
 				playback_mode = 'once',
 				target = target,
 				apply = true,

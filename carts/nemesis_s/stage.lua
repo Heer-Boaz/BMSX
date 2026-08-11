@@ -587,7 +587,7 @@ local define_stage_fsm<const> = function()
 								{ blink_turn = 'blue', yellow_blink = false, blue_blink = true },
 								{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
 							},
-							ticks_per_frame = stage_star_blink_gate_frames,
+							frame_duration = stage_star_blink_frame_duration,
 							playback_mode = 'loop',
 						},
 						autoplay = true,

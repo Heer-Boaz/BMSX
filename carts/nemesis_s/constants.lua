@@ -69,7 +69,7 @@ weapons_uplaser = {
 }
 
 stage_asset_id = 'nemesis_s_stage'
-stage_star_blink_gate_frames = 15
+stage_star_blink_frame_duration = 15
 stage_star_particle_z = 8
 assets_player_n = 'metallion_n'
 assets_player_u = 'metallion_u'

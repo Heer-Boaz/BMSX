@@ -96,7 +96,7 @@ function timeline.new(program)
 	self.id = program.id
 	self.program = program
 	self.head = timelinestart_index
-	self.ticks = 0
+	self.frame_elapsed = 0
 	self.time_ms = 0
 	self.ended = false
 	self.direction = 1
@@ -122,7 +122,7 @@ end
 
 function timeline:rewind()
 	self.head = timelinestart_index
-	self.ticks = 0
+	self.frame_elapsed = 0
 	self.time_ms = 0
 	self.ended = false
 	self.direction = 1
@@ -135,7 +135,7 @@ function timeline:update(delta_time)
 		return nil
 	end
 	clear_evaluations(self)
-	self.ticks = self.ticks + delta_time
+	self.frame_elapsed = self.frame_elapsed + delta_time
 	self.time_ms = self.time_ms + delta_time
 	if program.continuous then
 		local current = self.head
@@ -161,13 +161,13 @@ function timeline:update(delta_time)
 		)
 		return self
 	end
-	local ticks_per_frame<const> = program.ticks_per_frame
-	if ticks_per_frame <= 0 then
+	local frame_duration<const> = program.frame_duration
+	if frame_duration <= 0 then
 		return self:advance_internal('advance', self.time_ms, false)
 	end
-	while self.ticks >= ticks_per_frame do
-		self.ticks = self.ticks - ticks_per_frame
-		local event_time_ms<const> = self.time_ms - self.ticks
+	while self.frame_elapsed >= frame_duration do
+		self.frame_elapsed = self.frame_elapsed - frame_duration
+		local event_time_ms<const> = self.time_ms - self.frame_elapsed
 		self:advance_internal('advance', event_time_ms, true)
 		if self.ended then
 			break
@@ -195,7 +195,7 @@ local move_to<const> = function(self, frame, reason, jumped)
 		direction = -1
 	end
 	self.head = current
-	self.ticks = 0
+	self.frame_elapsed = 0
 	self.ended = false
 	write_evaluation(
 		self,
@@ -226,7 +226,7 @@ function timeline:snap_to_start()
 	clear_evaluations(self)
 	local previous<const> = self.head
 	self.head = 0
-	self.ticks = 0
+	self.frame_elapsed = 0
 	self.ended = false
 	write_evaluation(
 		self,
@@ -247,10 +247,10 @@ end
 function timeline:set_frame(frame)
 	clear_evaluations(self)
 	self.head = clamp(frame, timelinestart_index, self.program.length - 1)
-	self.ticks = 0
+	self.frame_elapsed = 0
 end
 
-function timeline:advance_internal(reason, event_time_ms, preserve_ticks)
+function timeline:advance_internal(reason, event_time_ms, preserve_elapsed)
 	local program<const> = self.program
 	local previous<const> = self.head
 	local traversal_direction<const> = program.playback_mode == 'pingpong' and self.direction or 1
@@ -286,8 +286,8 @@ function timeline:advance_internal(reason, event_time_ms, preserve_ticks)
 		return nil
 	end
 	self.head = current
-	if not preserve_ticks then
-		self.ticks = 0
+	if not preserve_elapsed then
+		self.frame_elapsed = 0
 	end
 	write_evaluation(
 		self,

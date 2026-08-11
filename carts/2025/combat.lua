@@ -1403,7 +1403,7 @@ function combat.define_fsm()
 			[combat_focus_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_focus_frames,
-					ticks_per_frame = combat_focus_ticks_per_frame,
+					frame_duration = combat_focus_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 					markers = {
@@ -1416,7 +1416,7 @@ function combat.define_fsm()
 			[combat_intro_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_intro_frames,
-					ticks_per_frame = combat_intro_ticks_per_frame,
+					frame_duration = combat_intro_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1425,7 +1425,7 @@ function combat.define_fsm()
 			[combat_hit_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_hit_frames,
-					ticks_per_frame = combat_hit_ticks_per_frame,
+					frame_duration = combat_hit_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1434,7 +1434,7 @@ function combat.define_fsm()
 			[combat_exchange_hit_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_exchange_frames,
-					ticks_per_frame = combat_exchange_hit_ticks_per_frame,
+					frame_duration = combat_exchange_hit_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1443,7 +1443,7 @@ function combat.define_fsm()
 			[combat_exchange_miss_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_exchange_frames,
-					ticks_per_frame = combat_exchange_miss_ticks_per_frame,
+					frame_duration = combat_exchange_miss_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1452,7 +1452,7 @@ function combat.define_fsm()
 			[combat_all_out_prompt_timelineid] = {
 				def = {
 					frames = build_all_out_prompt_portrait_frames,
-					ticks_per_frame = 16,
+					frame_duration = 16,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1461,7 +1461,7 @@ function combat.define_fsm()
 			[combat_dodge_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_dodge_frames,
-					ticks_per_frame = combat_dodge_ticks_per_frame,
+					frame_duration = combat_dodge_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1470,7 +1470,7 @@ function combat.define_fsm()
 			[combat_all_out_timelineid] = {
 				def = {
 					frames = build_all_out_screen_shake_frames,
-					ticks_per_frame = combat_all_out_ticks_per_frame,
+					frame_duration = combat_all_out_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1480,7 +1480,7 @@ function combat.define_fsm()
 			[combat_fade_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_fade_frames(),
-					ticks_per_frame = combat_fade_ticks_per_frame,
+					frame_duration = combat_fade_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1489,7 +1489,7 @@ function combat.define_fsm()
 			[combat_results_fade_in_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_results_fade_in_frames,
-					ticks_per_frame = combat_results_fade_in_ticks_per_frame,
+					frame_duration = combat_results_fade_in_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1498,7 +1498,7 @@ function combat.define_fsm()
 			[combat_results_fade_out_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_results_fade_out_frames(),
-					ticks_per_frame = combat_results_fade_out_ticks_per_frame,
+					frame_duration = combat_results_fade_out_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1507,7 +1507,7 @@ function combat.define_fsm()
 			[combat_exit_fade_in_timelineid] = {
 				def = {
 					frames = timelinebuilders.build_combat_exit_fade_in_frames(),
-					ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
+					frame_duration = combat_exit_fade_in_frame_duration,
 					playback_mode = 'once',
 					apply = true,
 				},

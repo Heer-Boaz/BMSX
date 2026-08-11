@@ -67,7 +67,7 @@ local define_enemy_explosion_fsm<const> = function()
 			[explosion_timelineid] = {
 				def = {
 					frames = explosion_frames,
-					ticks_per_frame = enemy_explosion_frame_steps,
+					frame_duration = enemy_explosion_frame_duration,
 					playback_mode = 'once',
 				},
 				autoplay = false,

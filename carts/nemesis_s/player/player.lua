@@ -801,7 +801,7 @@ local define_player_fsm<const> = function()
 								{ option_anim_index = 3 },
 								{ option_anim_index = 4 },
 							},
-							ticks_per_frame = 1,
+							frame_duration = 1,
 							playback_mode = 'loop',
 						},
 						autoplay = true,

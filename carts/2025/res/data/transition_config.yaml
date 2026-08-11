@@ -3,7 +3,7 @@ overgang_timelineid: overgang
 overgang_in_frames: 24
 overgang_hold_frames: 48
 overgang_out_frames: 24
-overgang_ticks_per_frame: 20
+overgang_frame_duration: 20
 overgang_fade_out_frames: 18
 overgang_fade_in_frames: 18
 overgang_post_fade_in_timelineid: overgang_post_fade_in

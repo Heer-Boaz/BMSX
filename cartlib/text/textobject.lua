@@ -50,7 +50,7 @@ local immediate_text_opts<const> = { typed = false, snap = true }
 local highlight_move_in_frames<const> = 6
 local highlight_move_settle_frames<const> = 3
 local highlight_move_overshoot<const> = 0.12
-local highlight_move_ticks_per_frame<const> = 12
+local highlight_move_frame_duration<const> = 12
 local state_tags<const> = {
 	variant = {
 		idle = 'v.i',
@@ -199,7 +199,7 @@ fsmlibrary.register(text_object_fsm_id, {
 		[highlight_move_timelineid] = {
 			def = {
 				frames = build_highlight_move_frames,
-				ticks_per_frame = highlight_move_ticks_per_frame,
+				frame_duration = highlight_move_frame_duration,
 				playback_mode = 'once',
 				apply = true,
 			},

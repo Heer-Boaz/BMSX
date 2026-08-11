@@ -23,6 +23,7 @@ const CART_MODULE_FILES = [
 	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
 	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
+	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
 	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
 	['cartlib/timeline/timelinecomponent', 'cartlib/timeline/timelinecomponent.lua'],
@@ -56,7 +57,7 @@ const CART_STUB_MODULES = [
 		path: 'cartlib/timeline/apply',
 		source: `return {
 			compile_frames = function() error('unexpected compiled-frame timeline') end,
-			compile_tracks = function() error('unexpected track timeline') end,
+			compile_track_program = function() error('unexpected track timeline') end,
 		}`,
 	},
 ] as const;
@@ -118,7 +119,7 @@ fsm_library.register('hot_machine', {
 						frames = function(params)
 							return { params.offset, params.offset + 1, params.offset + 2 }
 						end,
-						ticks_per_frame = 1,
+						frame_duration = 1,
 						apply = function(self, value)
 							self.timeline_value = 100 + value
 						end,
@@ -182,7 +183,7 @@ fsm_library.register('hot_machine', {
 						frames = function(params)
 							return { params.offset + 10, params.offset + 11, params.offset + 12 }
 						end,
-						ticks_per_frame = 1,
+						frame_duration = 1,
 						apply = function(self, value)
 							self.timeline_value = 1000 + value
 						end,

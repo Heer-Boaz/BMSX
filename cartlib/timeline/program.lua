@@ -221,13 +221,13 @@ function timelineprogram.compile(id, definition)
 	if continuous == nil and frame_source == nil and tracks ~= nil then
 		continuous = true
 	end
-	local ticks_per_frame = definition.ticks_per_frame
-	if ticks_per_frame == nil then
-		ticks_per_frame = clock.frame_milliseconds()
+	local frame_duration = definition.frame_duration
+	if frame_duration == nil then
+		frame_duration = clock.frame_milliseconds()
 	end
 	local auto_tick = definition.autotick
 	if auto_tick == nil then
-		auto_tick = continuous or ticks_per_frame ~= 0
+		auto_tick = continuous or frame_duration ~= 0
 	end
 	local frame_builder
 	if type(frame_source) == 'function' then
@@ -254,7 +254,7 @@ function timelineprogram.compile(id, definition)
 		frame_builder = frame_builder,
 		marker_defs = definition.markers or empty_defs,
 		window_defs = definition.windows or empty_defs,
-		ticks_per_frame = ticks_per_frame,
+		frame_duration = frame_duration,
 		playback_mode = definition.playback_mode or 'once',
 		continuous = continuous,
 		auto_tick = auto_tick,
