@@ -856,7 +856,7 @@ local emit_assignment<const> = function(
 			instruction_words,
 			statement.value,
 			target_register,
-			not statement.value_reads_target
+			false
 		)
 		if value_register ~= target_register then
 			bytecode.emit_abc(
