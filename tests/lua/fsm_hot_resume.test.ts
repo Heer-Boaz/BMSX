@@ -24,6 +24,7 @@ const CART_MODULE_FILES = [
 	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/easing', 'cartlib/easing.lua'],
+	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],

@@ -3627,17 +3627,24 @@ explicit cart callback escape hatch, and `wave` is a compiled procedural
 sample. Additional interpolation modes extend `value`; they do not become
 parallel public track kinds.
 
-`linear` value interpolation is a numeric channel, not reflection over Lua
-values. Admission sorts frame- or millisecond-domain keys and precomputes each
-segment's value delta and reciprocal span. Evaluation clamps to the outer keys,
-binary-searches the immutable channel inside that range, and writes the scalar
-result through the track's already-compiled binding setter or explicit apply
-function. It allocates no runtime key, segment, or result tables. Vector,
-quaternion, path and pose channels must retain their domain representation and
-interpolation rules instead of adding dynamic type classification to this scalar
-channel. This follows Unreal MovieScene's sorted
+`linear` and `cubic` value interpolation are numeric scalar channels, not
+reflection over Lua values. Their focused channel owner sorts frame- or
+millisecond-domain keys and compiles distinct linear and cubic track arrays, so
+the update path never dispatches on an interpolation name. Linear segments
+retain their value delta and reciprocal span. Cubic keys author explicit
+`leave_tangent` and `arrive_tangent` slopes in value per frame or millisecond;
+admission converts each segment to normalized Hermite coefficients. Evaluation
+clamps to the outer keys, binary-searches the immutable channel inside that
+range, and writes the scalar result through the track's already-compiled binding
+setter or explicit apply function. It allocates no runtime key, segment, or
+result tables. Generic step channels remain distinct because their values need
+not be numeric. Vector, quaternion, path and pose channels must retain their
+domain representation and interpolation rules instead of adding dynamic type
+classification to the scalar channel. This follows Unreal MovieScene's sorted
 [channel data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/Channels/FMovieSceneChannelData)
-and channel-specific
+and explicit
+[arrive/leave tangent data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneTangentData),
+and its channel-specific
 [evaluation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EvaluateChannel),
 and Godot's specialized numeric, vector and quaternion interpolation paths in
 [`Animation`](https://github.com/godotengine/godot/blob/master/scene/resources/animation.cpp).

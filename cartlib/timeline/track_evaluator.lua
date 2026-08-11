@@ -2,6 +2,7 @@
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
 local timeline_module<const> = require('cartlib/timeline/timeline')
+local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 
 local track_evaluator<const> = {}
 local play_update_method<const> = timeline_module.update_method.play
@@ -520,62 +521,9 @@ function track_evaluator.evaluate_values(entry, evaluation)
 			apply_time_step_range(entry, steps, previous_time_ms, time_ms, params, evaluation)
 		end
 	end
-	local linear_channels<const> = tracks.linear_channels
-	if evaluation.sample then
-		local linear_tracks<const> = linear_channels.tracks
-		local frame<const> = evaluation.frame
-		for track_index = 1, linear_channels.track_count do
-			local track<const> = linear_tracks[track_index]
-			local keys<const> = track.keys
-			local key_count<const> = track.key_count
-			local first_key<const> = keys[1]
-			local value
-			if frame <= first_key.frame then
-				value = first_key.value
-			else
-				local last_key<const> = keys[key_count]
-				if frame >= last_key.frame then
-					value = last_key.value
-				else
-					local key<const> = keys[first_frame_after(keys, key_count, frame) - 1]
-					value = key.value + key.value_delta * ((frame - key.frame) * key.span_inv)
-				end
-			end
-			local binding
-			if track.binding_index == 1 then
-				binding = entry.primary_binding
-			else
-				binding = entry.bindings[track.binding_index]
-			end
-			track.apply(binding, value, params, evaluation)
-		end
-	end
-	local time_ms<const> = evaluation.time_ms
-	local linear_time_tracks<const> = linear_channels.time_tracks
-	for track_index = 1, linear_channels.time_track_count do
-		local track<const> = linear_time_tracks[track_index]
-		local keys<const> = track.keys
-		local key_count<const> = track.key_count
-		local first_key<const> = keys[1]
-		local value
-		if time_ms <= first_key.time_ms then
-			value = first_key.value
-		else
-			local last_key<const> = keys[key_count]
-			if time_ms >= last_key.time_ms then
-				value = last_key.value
-			else
-				local key<const> = keys[first_time_after(keys, key_count, time_ms) - 1]
-				value = key.value + key.value_delta * ((time_ms - key.time_ms) * key.span_inv)
-			end
-		end
-		local binding
-		if track.binding_index == 1 then
-			binding = entry.primary_binding
-		else
-			binding = entry.bindings[track.binding_index]
-		end
-		track.apply(binding, value, params, evaluation)
+	local scalar_channels<const> = tracks.scalar_channels
+	if scalar_channels.track_count > 0 then
+		scalar_channel.evaluate(scalar_channels, entry, evaluation)
 	end
 	if not evaluation.sample then
 		return
