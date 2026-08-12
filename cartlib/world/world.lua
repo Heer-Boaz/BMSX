@@ -527,8 +527,6 @@ function worldclass:_commit_spawn(obj)
 	end
 	self:_add_worldobject(obj)
 	self:_reconcile_object(obj)
-	obj.events:emit('spawn', { pos = obj._spawn_position })
-	obj._spawn_position = nil
 end
 
 function worldclass:_flush_admissions()
@@ -590,7 +588,6 @@ function worldclass:spawn(definition_id, options)
 	end
 	obj:onspawn(pos)
 	obj:activate()
-	obj._spawn_position = pos
 	if not deferred then
 		if obj.marked_for_disposal then
 			self:_commit_disposal(obj)

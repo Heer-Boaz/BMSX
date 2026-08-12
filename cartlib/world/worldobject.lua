@@ -304,8 +304,8 @@ end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.
 -- Override for spawn-time setup.  Position (x, y, z) is already applied.
--- activate(), bind(), component activation, and the 'spawn' event are handled
--- automatically by world:spawn() after this returns — no super call needed.
+-- activate(), bind(), and component activation are handled automatically by
+-- world:spawn() after this returns — no super call needed.
 function worldobject:onspawn(pos)
 end
 
