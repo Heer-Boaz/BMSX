@@ -64,4 +64,28 @@ function timeline_apply.compile_setter(path)
 	return load(table.concat(parts), '[timeline.apply.setter]', 't')()
 end
 
+-- Step bindings are fixed by the compiled sequence program. Resolve that
+-- binding once here instead of branching for every crossed key at runtime.
+function timeline_apply.compile_step_apply(path, apply, binding_index)
+	if apply ~= nil then
+		if binding_index == 1 then
+			return function(entry, value, params, evaluation)
+				apply(entry.primary_binding, value, params, evaluation)
+			end
+		end
+		return function(entry, value, params, evaluation)
+			apply(entry.bindings[binding_index], value, params, evaluation)
+		end
+	end
+
+	local parts<const> = { 'return function(entry, value)\n' }
+	if binding_index == 1 then
+		append_path(parts, 'entry["primary_binding"]', path)
+	else
+		append_path(parts, 'entry["bindings"][' .. tostring(binding_index) .. ']', path)
+	end
+	parts[#parts + 1] = ' = value\nend'
+	return load(table.concat(parts), '[timeline.apply.step]', 't')()
+end
+
 return timeline_apply

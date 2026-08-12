@@ -427,23 +427,13 @@ function track_evaluator.evaluate_tags(entry, owner, evaluation)
 	end
 end
 
-local apply_step_key<const> = function(entry, key, params, evaluation)
-	local track<const> = key.track
-	local binding
-	if track.binding_index == 1 then
-		binding = entry.primary_binding
-	else
-		binding = entry.bindings[track.binding_index]
-	end
-	track.apply(binding, key.value, params, evaluation)
-end
-
 local apply_step_bucket<const> = function(entry, bucket, params, evaluation)
 	if bucket == nil then
 		return
 	end
 	for index = 1, #bucket do
-		apply_step_key(entry, bucket[index], params, evaluation)
+		local key<const> = bucket[index]
+		key.apply(entry, key.value, params, evaluation)
 	end
 end
 
@@ -458,7 +448,7 @@ local sample_step_tracks<const> = function(entry, steps, frame, params, evaluati
 	for index = 1, steps.track_count do
 		local key<const> = last_step_key_at(tracks[index], frame)
 		if key ~= nil then
-			apply_step_key(entry, key, params, evaluation)
+			key.apply(entry, key.value, params, evaluation)
 		end
 	end
 end
@@ -474,7 +464,7 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 	for index = 1, steps.time_track_count do
 		local key<const> = last_time_step_key_at(tracks[index], time_ms)
 		if key ~= nil then
-			apply_step_key(entry, key, params, evaluation)
+			key.apply(entry, key.value, params, evaluation)
 		end
 	end
 end
@@ -484,7 +474,8 @@ local apply_time_step_range<const> = function(entry, steps, previous_time_ms, ti
 	local first<const> = first_time_after(keys, steps.time_key_count, previous_time_ms)
 	local finish<const> = first_time_after(keys, steps.time_key_count, time_ms) - 1
 	for index = first, finish do
-		apply_step_key(entry, keys[index], params, evaluation)
+		local key<const> = keys[index]
+		key.apply(entry, key.value, params, evaluation)
 	end
 end
 

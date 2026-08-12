@@ -212,33 +212,28 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			tag_defs[#tag_defs + 1] = track
 		elseif kind == 'value' then
 			local interpolation<const> = track.interpolation
-			local defs = scalar_defs
-			if interpolation == 'step' then
-				defs = step_defs
-			end
 			local binding_index = 1
 			if track.binding ~= nil then
 				binding_index = binding_index_by_id[track.binding]
 			end
-			local apply = track.apply
-			local path = track.path
-			if interpolation == 'step' and apply == nil then
-				apply = timeline_apply.compile_setter(track.path)
-				path = nil
-			end
-			defs[#defs + 1] = {
-				binding_index = binding_index,
-				apply = apply,
-				path = path,
-				interpolation = interpolation,
-				keys = track.keys,
-			}
 			if interpolation == 'step' then
+				step_defs[#step_defs + 1] = {
+					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index),
+					keys = track.keys,
+				}
 				if track.keys[1].time_ms ~= nil then
 					has_time_steps = true
 				else
 					has_frame_steps = true
 				end
+			else
+				scalar_defs[#scalar_defs + 1] = {
+					binding_index = binding_index,
+					apply = track.apply,
+					path = track.path,
+					interpolation = interpolation,
+					keys = track.keys,
+				}
 			end
 		else
 			add_sample_track(sample_groups, track, binding_index_by_id)
@@ -445,24 +440,19 @@ local compile_steps<const> = function(step_defs, length)
 		else
 			table.sort(keys, compare_key)
 		end
-		local track<const> = {
-			binding_index = step_def.binding_index,
-			apply = step_def.apply,
-			keys = keys,
-			key_count = #keys,
-		}
+		local track<const> = { keys = keys, key_count = #keys }
 		if time_domain then
 			time_tracks[#time_tracks + 1] = track
 			for key_index = 1, #keys do
 				local key<const> = keys[key_index]
-				key.track = track
+				key.apply = step_def.apply
 				time_keys[#time_keys + 1] = key
 			end
 		else
 			tracks[#tracks + 1] = track
 			for key_index = 1, #keys do
 				local key<const> = keys[key_index]
-				key.track = track
+				key.apply = step_def.apply
 				local bucket = by_frame[key.frame]
 				if bucket == nil then
 					bucket = {}
