@@ -500,7 +500,7 @@ function worldclass:visual_depth_changed()
 	self._visual_revision = self._visual_revision + 1
 end
 
-local apply_construction_values<const> = function(target, values)
+local apply_spawn_values<const> = function(target, values)
 	for key, value in pairs(values) do
 		if key ~= 'pos' then
 			target[key] = value
@@ -552,17 +552,16 @@ end
 -- happens at the group barrier.
 function worldclass:spawn(definition_id, options)
 	local definition<const> = prefab.definition(definition_id)
-	local construction_options<const> = {}
-	apply_construction_values(construction_options, definition.defaults)
-	apply_construction_values(construction_options, options)
-	construction_options.definition_id = definition_id
-	construction_options.id = construction_options.id or registry:next_id()
+	local obj<const> = {}
+	apply_spawn_values(obj, definition.defaults)
+	apply_spawn_values(obj, options)
+	obj.definition_id = definition_id
+	obj.id = obj.id or registry:next_id()
 
-	local obj<const> = definition.base.new(construction_options)
+	setmetatable(obj, definition.instance_metatable)
+	definition.initialize(obj)
 	obj.world = self
 	obj.space_id = obj.space_id or self.active_space_id
-	apply_construction_values(obj, construction_options)
-	setmetatable(obj, definition.instance_metatable)
 	local component_options<const> = { parent = obj }
 	local component_factories<const> = definition.components
 	for index = 1, #component_factories do

@@ -114,7 +114,6 @@ function zakfoe.register()
 		components = { btcomponent.factory(root.id) },
 		defaults = {
 			trigger = nil,
-			conditions = {},
 			damage = 2,
 			max_health = 2,
 			health = 2,dangerous = true,

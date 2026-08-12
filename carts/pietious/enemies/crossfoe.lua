@@ -146,7 +146,6 @@ function crossfoe.register()
 		components = { btcomponent.factory(root.id) },
 		defaults = {
 			trigger = nil,
-			conditions = {},
 			damage = 4,
 			max_health = 3,
 			health = 3,

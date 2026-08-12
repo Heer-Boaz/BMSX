@@ -43,11 +43,11 @@ setmetatable(spriteobject, { __index = worldobject })
 local base_sprite_id<const> = 'base_sprite'
 local primary_collider_id<const> = 'primary'
 
-function spriteobject.new(opts)
-	local self<const> = setmetatable(worldobject.new(opts), spriteobject)
+function spriteobject.initialize(self)
+	worldobject.initialize(self)
 
 	self.sprite_component = spritecomponent.new({
-		imgid = opts.imgid,
+		imgid = self.imgid,
 		id_local = base_sprite_id,
 	})
 	self.collider = collider2dcomponent.new({ id_local = primary_collider_id })
@@ -55,12 +55,10 @@ function spriteobject.new(opts)
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
 	self.collider:set_sprite(self.sprite_component)
-	if opts.imgid ~= nil then
+	if self.imgid ~= nil then
 		self.sx = self.sprite_component.source_width
 		self.sy = self.sprite_component.source_height
 	end
-
-	return self
 end
 
 -- Sets the sprite component's semantic image id and updates the object's size

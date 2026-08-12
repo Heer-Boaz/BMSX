@@ -405,6 +405,7 @@ function player:ctor()
 	self:define_runtime_timelines()
 	self.inventory_items = {}
 	self.secondary_weapon = nil
+	self.enter_leave_shrine_text_lines = {}
 	self:equip_subweapon(self.secondary_weapon)
 	self.weapon_level = 0
 	self:apply_presentation_state()
@@ -3266,7 +3267,6 @@ local register_player_definition<const> = function()
 			to_enter_cut = 0,
 			enter_leave_anim_frame = 0,
 			enter_leave_world_target = nil,
-			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,
 			weapon_level = 0,

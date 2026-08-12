@@ -168,7 +168,6 @@ local spawn_enemies<const> = function(room)
 					player = room.player,
 					pos = { x = def.x, y = def.y, z = def.draw_z },
 					trigger = def.trigger,
-					conditions = def.conditions,
 					damage = def.damage,
 					health = def.health,
 					max_health = def.health,

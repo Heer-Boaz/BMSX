@@ -141,7 +141,6 @@ function cloud.register()
 		base = spriteobject,
 		components = { btcomponent.factory(root.id) },
 		defaults = {
-			conditions = {},
 			damage = 2,
 			max_health = 15,
 			health = 15,dangerous = true,

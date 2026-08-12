@@ -551,7 +551,6 @@ function castle:activate_current_room_daemon_fight()
 end
 
 function castle:ctor()
-	self.world_boss_defeated = {}
 	self.elevators = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
@@ -853,8 +852,6 @@ local register_castle_definition<const> = function()
 		defaults = {
 			id = 'c',
 			current_room_number = 0,
-			world_entrance_states = {},
-			world_boss_defeated = {},
 			room_enter_pending = false,
 		},
 	})

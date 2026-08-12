@@ -19,7 +19,7 @@ function prefab.define(definition)
 	end
 	definition.ctor = class.ctor
 	definition.instance_metatable = { __index = class }
-	definition.base = prototype
+	definition.initialize = prototype.initialize
 	definition.defaults = definition.defaults or empty_values
 	definition.components = definition.components or empty_components
 	definitions[definition.def_id] = definition

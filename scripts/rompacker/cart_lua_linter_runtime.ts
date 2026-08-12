@@ -29,6 +29,7 @@ import { lintContiguousMultiEmitPattern } from '../lint/rules/lua_cart/contiguou
 import { lintCrossFileLocalGlobalConstantPattern } from '../lint/rules/lua_cart/cross_file_local_global_constant_pattern';
 import { lintCrossObjectStateEventRelayPattern } from '../lint/rules/lua_cart/cross_object_state_event_relay_pattern';
 import { lintDefineFactoryTickEnabledAndSpaceIdPattern } from '../lint/rules/lua_cart/define_factory_tick_enabled_pattern';
+import { lintPrefabInlineDefaultTablePattern } from '../lint/rules/lua_cart/prefab_inline_default_table_pattern';
 import { lintDispatchFanoutLoopPattern } from '../lint/rules/lua_cart/dispatch_fanout_loop_pattern';
 import { lintEventHandlerDispatchPattern } from '../lint/rules/lua_cart/event_handler_dispatch_pattern';
 import { lintForbiddenDispatchPattern } from '../lint/rules/lua_cart/forbidden_dispatch_pattern';
@@ -131,6 +132,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'multi_has_tag_pattern',
 	'newline_normalization_pattern',
 	'or_nil_fallback_pattern',
+	'prefab_inline_default_table_pattern',
 	'pure_copy_function_pattern',
 	'repeated_statement_sequence_pattern',
 	'require_lua_extension_pattern',
@@ -201,6 +203,7 @@ export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'useless_assert_pattern',
 	'define_factory_tick_enabled_pattern',
 	'define_factory_space_id_pattern',
+	'prefab_inline_default_table_pattern',
 	'fsm_entering_state_visual_setup_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
@@ -377,6 +380,7 @@ export function lintExpression(
 			lintCrossObjectStateEventRelayPattern(expression, issues);
 			lintSetSpaceRoundtripPattern(expression, issues);
 			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, moduleCallKind, issues);
+			lintPrefabInlineDefaultTablePattern(expression, moduleCallKind, issues);
 			lintCallNewlineNormalizationPattern(expression, issues, pushIssue);
 			lintFsmDirectStateHandlerShorthandPattern(expression, moduleCallKind, issues);
 			lintFsmEventReemitHandlerPattern(expression, moduleCallKind, issues);

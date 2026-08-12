@@ -273,12 +273,14 @@ fsmlibrary.register(text_object_fsm_id, {
 	},
 })
 
-function textobject.new(opts)
-	local self<const> = setmetatable(worldobject.new(opts), textobject)
+function textobject.initialize(self)
+	worldobject.initialize(self)
 	self:add_component(timeline_component.new({ parent = self }))
 	self:add_component(fsmcomponent.new({ parent = self }, text_object_machine_ids))
 	self.is_text_object = true
-	self.text = { '' }
+	if self.text == nil then
+		self.text = { '' }
+	end
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
 	self.full_glyph_lines = {}
@@ -291,29 +293,35 @@ function textobject.new(opts)
 	self.highlight_target_y = nil
 	self.highlight_target_h = nil
 	self.highlight_last_line_index = nil
-	self.highlight_move_enabled = false
-	self.highlight_pulse_enabled = false
-	self.highlight_jitter_enabled = false
+	if self.highlight_move_enabled == nil then
+		self.highlight_move_enabled = false
+	end
+	if self.highlight_pulse_enabled == nil then
+		self.highlight_pulse_enabled = false
+	end
+	if self.highlight_jitter_enabled == nil then
+		self.highlight_jitter_enabled = false
+	end
 	self.highlight_vibe_scale = 1
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
 	self.wrapped_line_y_offsets = { 0 }
-	self.highlight_bg_color = opts.highlight_bg_color or 0xff000080
-	local font<const> = opts.font or font_module.get('default')
-	local dimensions<const> = opts.dimensions
+	self.highlight_bg_color = self.highlight_bg_color or 0xff000080
+	local font<const> = self.font or font_module.get('default')
+	local dimensions<const> = self.dimensions
 	self.dimensions = dimensions
-	self.char_width_uses_font = opts.char_width == nil
-	self.char_width = opts.char_width or font.items[0x61].width
-	self.blank_lines = opts.blank_lines or 0
+	self.char_width_uses_font = self.char_width == nil
+	self.char_width = self.char_width or font.items[0x61].width
+	self.blank_lines = self.blank_lines or 0
 	local line_height<const> = line_advance(font, self.blank_lines)
 	self.text_component = textobjectcomponent.new({
 		text = nil,
 		font = font,
 		line_height = line_height,
 		line_offsets = self.wrapped_line_y_offsets,
-		color = opts.text_color or 0xffffffff,
-		background_color = opts.normal_bg_color or 0xff000000,
+		color = self.text_color or 0xffffffff,
+		background_color = self.normal_bg_color or 0xff000000,
 		offset_y = self.dimensions.top,
 		offset_z = 1,
 	})
@@ -322,7 +330,6 @@ function textobject.new(opts)
 	self.text_component.line_widths = self.displayed_line_widths
 	self:add_component(self.text_component)
 	self:set_dimensions(self.dimensions)
-	return self
 end
 
 function textobject:onspawn(_pos)

@@ -77,7 +77,6 @@ function breakablewall.register()
 		},
 		defaults = {
 			trigger = nil,
-			conditions = {},
 			damage = 0,
 			max_health = 1,
 			health = 1,

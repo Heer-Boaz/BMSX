@@ -94,7 +94,6 @@ function stafffoe.register()
 		base = spriteobject,
 		components = { btcomponent.factory(root.id) },
 		defaults = {
-			conditions = {},
 			damage = 4,
 			max_health = 10,
 			health = 10,dangerous = true,

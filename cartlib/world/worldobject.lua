@@ -4,7 +4,7 @@
 -- DESIGN PRINCIPLES — object lifecycle and event subscription
 --
 -- 1. OBJECT LIFECYCLE ORDER.
---    new()        — allocates the object and its components; no event
+--    initialize() — initializes the object and its components; no event
 --                   subscriptions here; the object is not yet active.
 --    onspawn()    — called by world:spawn() after position is set from pos.
 --                   Override for spawn-time setup.  No super call needed.
@@ -64,24 +64,18 @@ local eventemitter<const> = require('cartlib/eventemitter')
 local worldobject<const> = {}
 worldobject.__index = worldobject
 
-function worldobject.new(opts)
-	local self<const> = setmetatable({}, worldobject)
-	self.definition_id = opts.definition_id
-	self.id = opts.id
-	self:set_pos(opts.x or 0, opts.y or 0, opts.z or 0)
-	self.sx = opts.sx or 0
-	self.sy = opts.sy or 0
-	self.sz = opts.sz or 0
-	self.visible = opts.visible == nil or opts.visible
+function worldobject.initialize(self)
+	self:set_pos(self.x or 0, self.y or 0, self.z or 0)
+	self.sx = self.sx or 0
+	self.sy = self.sy or 0
+	self.sz = self.sz or 0
+	self.visible = self.visible == nil or self.visible
 	self.active = false
-	self.player_index = opts.player_index
-	self.tags = opts.tags or {}
+	self.tags = self.tags or {}
 	self._components = {}
 	self._components_by_class = {}
 	self._bound = false
-	self.space_id = opts.space_id
 	self.events = eventemitter.events_of(self)
-	return self
 end
 
 -- set_pos(x, y, z?): sets world position. Each component falls back to the

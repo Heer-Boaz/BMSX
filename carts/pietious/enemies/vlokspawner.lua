@@ -61,7 +61,6 @@ function vlokspawner.register()
 		base = spriteobject,
 		components = { btcomponent.factory(root.id) },
 		defaults = {
-			conditions = {},
 			damage = 0,
 			max_health = 0,
 			health = 0,dangerous = false,

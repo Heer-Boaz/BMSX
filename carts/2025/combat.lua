@@ -1578,7 +1578,6 @@ function combat.register_director()
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = nil,
-			combat_rewards = {},
 		},
 	})
 end

@@ -36,7 +36,6 @@ function vlokfoe.register()
 		components = { btcomponent.factory(root.id) },
 		defaults = {
 			trigger = nil,
-			conditions = {},
 			damage = 2,
 			max_health = 1,
 			health = 1,dangerous = true,
