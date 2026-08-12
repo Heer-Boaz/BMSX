@@ -3,6 +3,7 @@ require('constants')
 local actioneffects<const> = require('cartlib/actioneffects')
 
 local player_actioneffects<const> = {}
+local _pepernoot_projectiles<const> = world:active_definition_view('pepernoot_projectile')
 
 player_actioneffects.tags = {
 	sword_activation_allowed = 'g.sa',
@@ -25,7 +26,7 @@ actioneffects.register_effect('pepernoot', {
 			return false
 		end
 		local live_count = 0
-		local projectiles<const> = world:active_definition_view('pepernoot_projectile').objects
+		local projectiles<const> = _pepernoot_projectiles.objects
 		for i = 1, #projectiles do
 			local proj<const> = projectiles[i]
 			if proj.owner_id == owner.id then
