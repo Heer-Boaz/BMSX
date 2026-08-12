@@ -9,15 +9,6 @@ setmetatable(inputactioneffectcomponent, { __index = basecomponent })
 function inputactioneffectcomponent.new(opts)
 	local self<const> = setmetatable(basecomponent.new(opts), inputactioneffectcomponent)
 	self.source_program = opts.program
-	self.binding_latch = {}
-	self.binding_touched = {}
-	self.custom_matches = {}
-	self.queued_commands = {}
-	self.queued_command_count = 0
-	self.queued_event_types = {}
-	self.queued_event_payloads = {}
-	self.queued_event_count = 0
-	self.last_frame = 0
 	return self
 end
 
@@ -29,29 +20,59 @@ function inputactioneffectcomponent:on_activate()
 			error('input effects on "' .. owner.id .. '" trigger an action-effect component that is not attached.')
 		end
 		self.program = program
+		if program.release_binding_count > 0 then
+			self.binding_latch = {}
+		end
+		if program.max_custom_count > 0 then
+			self.custom_matches = {}
+		end
+		if program.queued_command_capacity > 0 then
+			self.queued_commands = {}
+		end
+		if program.queued_event_capacity > 0 then
+			self.queued_event_types = {}
+			self.queued_event_payloads = {}
+		end
 	end
 	local program<const> = self.program
-	for i = 1, #program.bindings do
-		self.binding_latch[i] = false
-		self.binding_touched[i] = 0
+	if program.release_binding_count > 0 then
+		local binding_latch<const> = self.binding_latch
+		for i = 1, #program.bindings do
+			binding_latch[i] = false
+		end
+		self.last_frame = 0
 	end
-	for i = 1, program.max_custom_count do
-		self.custom_matches[i] = false
+	if program.max_custom_count > 0 then
+		local custom_matches<const> = self.custom_matches
+		for i = 1, program.max_custom_count do
+			custom_matches[i] = false
+		end
 	end
-	for i = 1, program.queued_command_capacity do
-		self.queued_commands[i] = false
+	if program.queued_command_capacity > 0 then
+		local queued_commands<const> = self.queued_commands
+		for i = 1, program.queued_command_capacity do
+			queued_commands[i] = false
+		end
+		self.queued_command_count = 0
 	end
-	for i = 1, program.queued_event_capacity do
-		self.queued_event_types[i] = false
-		self.queued_event_payloads[i] = false
+	if program.queued_event_capacity > 0 then
+		local queued_event_types<const> = self.queued_event_types
+		local queued_event_payloads<const> = self.queued_event_payloads
+		for i = 1, program.queued_event_capacity do
+			queued_event_types[i] = false
+			queued_event_payloads[i] = false
+		end
+		self.queued_event_count = 0
 	end
-	self.queued_command_count = 0
-	self.queued_event_count = 0
-	self.last_frame = 0
 end
 
 function inputactioneffectcomponent:on_detach()
 	self.program = nil
+	self.binding_latch = nil
+	self.custom_matches = nil
+	self.queued_commands = nil
+	self.queued_event_types = nil
+	self.queued_event_payloads = nil
 end
 
 return inputactioneffectcomponent

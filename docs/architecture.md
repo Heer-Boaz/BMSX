@@ -3509,7 +3509,10 @@ admission parses once, then uses firmware `load` to compile a short-circuiting
 evaluator with node kinds, modifiers, comparisons, edge masks, helper modes and
 literal windows removed from the update path. The evaluator fetches only states
 reached by boolean short circuiting and allocates no AST traversal or scratch
-state. This follows Unity Input System's split between
+state. Input-to-action-effect programs use the same admission boundary: authored
+mode, press/hold/release/custom and effect-slot shapes compile to one retained
+evaluator, while the input system only traverses its dense active component
+view. This follows Unity Input System's split between
 [binding resolution](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputBindingResolver.cs)
 and its retained dense [action execution state](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputActionState.cs),
 implemented with BMSX's firmware compiler rather than a host-owned evaluator.

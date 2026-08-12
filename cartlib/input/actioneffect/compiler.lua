@@ -1,4 +1,5 @@
 local input<const> = require('cartlib/input/input')
+local evaluation_program<const> = require('cartlib/input/actioneffect/evaluation_program')
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}
@@ -66,7 +67,8 @@ compile_effect_list = function(player_index, spec, slot)
 	local queued_event_capacity = 0
 	local queued_command_capacity = 0
 	for i = 1, count do
-		local executor<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect(player_index, spec[i], slot)
+		local executor<const>, uses_trigger<const>, event_count<const>, command_count<const>
+			= compile_effect(player_index, spec[i], slot)
 		executors[i] = executor
 		if uses_trigger then
 			uses_effect_triggers = true
@@ -134,7 +136,8 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 		custom = {}
 		for i = 1, #custom_source do
 			local entry<const> = custom_source[i]
-			local effect<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_effect_list(player_index, effects[entry.name], entry.name)
+			local effect<const>, uses_trigger<const>, event_count<const>, command_count<const>
+				= compile_effect_list(player_index, effects[entry.name], entry.name)
 			custom[i] = {
 				input = input.bind(player_index, entry.pattern),
 				effect = effect,
@@ -146,9 +149,12 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 			queued_command_capacity = queued_command_capacity + command_count
 		end
 	end
-	local press_effect<const>, press_uses_trigger<const>, press_events<const>, press_commands<const> = compile_effect_list(player_index, effects.press, 'press')
-	local hold_effect<const>, hold_uses_trigger<const>, hold_events<const>, hold_commands<const> = compile_effect_list(player_index, effects.hold, 'hold')
-	local release_effect<const>, release_uses_trigger<const>, release_events<const>, release_commands<const> = compile_effect_list(player_index, effects.release, 'release')
+	local press_effect<const>, press_uses_trigger<const>, press_events<const>, press_commands<const>
+		= compile_effect_list(player_index, effects.press, 'press')
+	local hold_effect<const>, hold_uses_trigger<const>, hold_events<const>, hold_commands<const>
+		= compile_effect_list(player_index, effects.hold, 'hold')
+	local release_effect<const>, release_uses_trigger<const>, release_events<const>, release_commands<const>
+		= compile_effect_list(player_index, effects.release, 'release')
 	queued_event_capacity = queued_event_capacity + press_events + hold_events + release_events
 	queued_command_capacity = queued_command_capacity + press_commands + hold_commands + release_commands
 	return {
@@ -178,12 +184,25 @@ function compiler.compile_program(owner, program)
 	local source<const> = program.bindings
 	local bindings<const> = {}
 	local max_custom_count = 0
+	local release_binding_count = 0
+	local has_press
+	local has_hold
 	local uses_effect_triggers
 	local queued_event_capacity = 0
 	local queued_command_capacity = 0
 	for i = 1, #source do
-		local binding<const>, uses_trigger<const>, event_count<const>, command_count<const> = compile_binding(owner, player_index, source[i], i)
+		local binding<const>, uses_trigger<const>, event_count<const>, command_count<const>
+			= compile_binding(owner, player_index, source[i], i)
 		bindings[i] = binding
+		if binding.press ~= nil then
+			has_press = true
+		end
+		if binding.hold ~= nil then
+			has_hold = true
+		end
+		if binding.release ~= nil then
+			release_binding_count = release_binding_count + 1
+		end
 		local custom_count<const> = #binding.custom
 		if custom_count > max_custom_count then
 			max_custom_count = custom_count
@@ -195,13 +214,22 @@ function compiler.compile_program(owner, program)
 		queued_command_capacity = queued_command_capacity + command_count
 	end
 	table.sort(bindings, binding_precedes)
-	return {
+	local compiled<const> = {
 		bindings = bindings,
 		stop_after_match = program.eval == nil or program.eval == 'first',
+		has_press = has_press,
+		has_hold = has_hold,
+		release_binding_count = release_binding_count,
 		max_custom_count = max_custom_count,
 		queued_event_capacity = queued_event_capacity,
 		queued_command_capacity = queued_command_capacity,
-	}, uses_effect_triggers
+	}
+	compiled.evaluate = evaluation_program.compile(compiled)
+	for i = 1, #bindings do
+		bindings[i].order = nil
+		bindings[i].priority = nil
+	end
+	return compiled, uses_effect_triggers
 end
 
 return compiler
