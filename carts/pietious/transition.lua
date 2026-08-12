@@ -15,11 +15,11 @@
 -- component is enabled by 'transition' and cleared/hidden by every other
 -- transition mode, so presentation performs no director-state polling.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local textcomponent<const> = require('cartlib/text/textcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
@@ -42,7 +42,7 @@ local transition_mode_events<const> = {
 }
 
 function transition:ctor()
-	local text<const> = self:get_component(textcomponent)
+	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(customvisualcomponent).producer = draw_transition_visual
+	self:get_component(custom_visual_component).producer = draw_transition_visual
 	self.timelines:define('transition.timeline', {
 		frames = timeline.range(flow_room_transition_frames),
 		playback_mode = 'once',
@@ -86,7 +86,7 @@ local define_transition_fsm<const> = function()
 			end,
 		}
 	end
-	fsmlibrary.register('transition', {
+	fsm_library.register('transition', {
 		initial = 'active',
 		on = on,
 		states = {
@@ -100,10 +100,10 @@ local register_transition_definition<const> = function()
 		def_id = 'transition',
 		class = transition,
 		components = {
-			customvisualcomponent.new,
-			textcomponent.new,
+			custom_visual_component.new,
+			text_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ 'transition' }),
+			fsm_component.factory({ 'transition' }),
 		},
 		defaults = {
 			id = 'transition',

@@ -1,9 +1,9 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local clamp<const> = require('cartlib/util/clamp')
 require('constants')
 
@@ -38,7 +38,7 @@ function ui:set_weapon_target(value)
 end
 
 function ui:ctor()
-	self:get_component(customvisualcomponent).producer = ui.draw_ui
+	self:get_component(custom_visual_component).producer = ui.draw_ui
 	local player<const> = self.player
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
@@ -100,7 +100,7 @@ function ui:draw_ui(draw)
 end
 
 local define_ui_fsm<const> = function()
-	fsmlibrary.register('ui', {
+	fsm_library.register('ui', {
 		initial = 'active',
 		on = {
 			['room'] = {
@@ -144,7 +144,7 @@ local register_ui_definition<const> = function()
 	prefab.define({
 		def_id = 'ui',
 		class = ui,
-		components = { customvisualcomponent.new, fsmcomponent.factory({ 'ui' }) },
+		components = { custom_visual_component.new, fsm_component.factory({ 'ui' }) },
 		defaults = {
 			hud_health_level = hud_health_level,
 			hud_health_target = hud_health_level,

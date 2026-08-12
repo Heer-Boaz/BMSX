@@ -1,11 +1,11 @@
 local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local bin<const> = require('cartlib/bin')
@@ -560,12 +560,12 @@ function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
-	self.stage_visual = self:get_component(customvisualcomponent)
+	self.stage_visual = self:get_component(custom_visual_component)
 	self.stage_visual.producer = stage.draw
 end
 
 local define_stage_fsm<const> = function()
-	fsmlibrary.register(ids_stage_fsm, {
+	fsm_library.register(ids_stage_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -620,9 +620,9 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ ids_stage_fsm }),
+			fsm_component.factory({ ids_stage_fsm }),
 		},
 	})
 end

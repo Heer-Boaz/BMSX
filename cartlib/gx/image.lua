@@ -1,4 +1,4 @@
-local romdir<const> = require('cartlib/romdir')
+local rom_dir<const> = require('cartlib/rom_dir')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_texture<const> = require('cartlib/gx/texture')
 
@@ -12,7 +12,7 @@ local fixed_direct16_texture<const> = {
 
 -- Image resolution selects a texture-mode-specific packet writer once.
 -- Ordinary image draws never redispatch on mode or scan page tiles; explicitly
--- producer-split large surfaces are handled by surfacecomponent instead.
+-- producer-split large surfaces are handled by surface_component instead.
 
 local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, blend_mode)
 	local texture<const> = source._texture
@@ -183,7 +183,7 @@ function image.resolve(id)
 	if cached then
 		return cached
 	end
-	local resource<const> = romdir.image(id)
+	local resource<const> = rom_dir.image(id)
 	local meta<const> = resource.imgmeta
 	local texture
 	local source_x

@@ -3,8 +3,8 @@ local director_definition_id<const> = 'p3.combat.director'
 local combat_director_fsm_id<const> = 'p3.combat.director.fsm'
 combat.director_definition_id = director_definition_id
 require('globals')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/world/prefab')
@@ -15,7 +15,7 @@ local timelinebuilders<const> = require('timelinebuilders')
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local input<const> = require('cartlib/input/input')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
@@ -121,7 +121,7 @@ local draw_combat_slash<const> = function(director, draw)
 end
 
 function combat_director:ctor()
-	self:add_component(customvisualcomponent.new({
+	self:add_component(custom_visual_component.new({
 		parent = self,
 		id_local = 'slash',
 		offset_z = combat_hit_slash_z,
@@ -1384,7 +1384,7 @@ function combat.define_fsm()
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_finished  — transition or action when the timeline finishes.
 	--   apply      — compiled sampled output owned by the timeline definition.
-	fsmlibrary.register(combat_director_fsm_id, {
+	fsm_library.register(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
@@ -1529,7 +1529,7 @@ function combat.register_director()
 		class = combat_director,
 		components = {
 			timeline_component.new,
-			fsmcomponent.factory({ combat_director_fsm_id }),
+			fsm_component.factory({ combat_director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,

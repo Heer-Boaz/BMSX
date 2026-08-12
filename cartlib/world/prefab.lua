@@ -1,4 +1,4 @@
-local worldobject<const> = require('cartlib/world/worldobject')
+local world_object<const> = require('cartlib/world/world_object')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -10,7 +10,7 @@ local empty_components<const> = {}
 -- constructors. World owns identity, construction and publication.
 
 function prefab.define(definition)
-	local prototype<const> = definition.base or worldobject
+	local prototype<const> = definition.base or world_object
 	local class<const> = definition.class
 	local class_metatable<const> = getmetatable(class)
 	if class_metatable then

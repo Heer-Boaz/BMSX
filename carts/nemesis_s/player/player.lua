@@ -1,13 +1,13 @@
 local actioneffects<const> = require('cartlib/actioneffects')
-local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
+local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 require('constants')
@@ -688,12 +688,12 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc<const> = self:get_component(customvisualcomponent)
+	local rc<const> = self:get_component(custom_visual_component)
 	rc.producer = player.draw_visual
 end
 
 local define_player_fsm<const> = function()
-	fsmlibrary.register(ids_player_fsm, {
+	fsm_library.register(ids_player_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -822,10 +822,10 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ ids_player_fsm }),
-			actioneffectcomponent.factory({ player_actioneffects.effect_ids.fire_salvo }),
+			fsm_component.factory({ ids_player_fsm }),
+			actioneffect_component.factory({ player_actioneffects.effect_ids.fire_salvo }),
 		},
 		defaults = {
 			player_index = 1,

@@ -1,6 +1,6 @@
-local eventemitter<const> = require('cartlib/eventemitter')
+local event_emitter<const> = require('cartlib/event_emitter')
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/timeline_component')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 __bmsx_host_test = {}
 
@@ -20,7 +20,7 @@ end
 function owner:remove_tag(tag)
 	self.tags[tag] = nil
 end
-owner.events = eventemitter.events_of(owner)
+owner.events = event_emitter.events_of(owner)
 
 local zero_count = 0
 local backward_count = 0
@@ -118,7 +118,7 @@ local child<const> = {
 }
 
 local camera<const> = { value = 0 }
-local timelines<const> = timelinecomponent.new({ parent = owner })
+local timelines<const> = timeline_component.new({ parent = owner })
 timelines:on_attach()
 
 local loop_count = 0

@@ -1,8 +1,8 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -37,12 +37,12 @@ function breakablewall:process_damage_result(result)
 end
 
 function breakablewall:ctor()
-	local collider<const> = self:get_component(collider2dcomponent)
+	local collider<const> = self:get_component(collider_2d_component)
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
 	self.sy = self.height_tiles * room_tile_size
-	local tile_layer<const> = self:get_component(tilelayercomponent)
+	local tile_layer<const> = self:get_component(tile_layer_component)
 	local tile_count<const> = self.width_tiles * self.height_tiles
 	tile_layer:fill(self.tiletype, tile_count, self.width_tiles)
 	tile_layer.tile_size = room_tile_size
@@ -51,7 +51,7 @@ function breakablewall:ctor()
 end
 
 function breakablewall.register()
-	fsmlibrary.register('breakablewall', {
+	fsm_library.register('breakablewall', {
 		initial = 'active',
 		on = {
 			['overlap.begin'] = function(self, _state, event)
@@ -71,9 +71,9 @@ function breakablewall.register()
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
 		components = {
-			collider2dcomponent.new,
-			tilelayercomponent.new,
-			fsmcomponent.factory({ 'breakablewall' }),
+			collider_2d_component.new,
+			tile_layer_component.new,
+			fsm_component.factory({ 'breakablewall' }),
 		},
 		defaults = {
 			trigger = nil,

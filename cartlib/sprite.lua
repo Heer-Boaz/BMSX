@@ -1,4 +1,4 @@
--- spriteobject built atop worldobject
+-- sprite_object built atop world_object
 --
 -- DESIGN PRINCIPLES — image suffixes and collision geometry
 --
@@ -22,9 +22,9 @@
 --
 -- 2. COLLISION IS DERIVED LAZILY FROM THE SPRITE METADATA.
 --    When set_imgid(id) is called, the packed collision geometry is later
---    read directly by the linked collider2dcomponent when collision code asks
+--    read directly by the linked collider_2d_component when collision code asks
 --    for the current shape.
---    No extra setup is needed in cart code — just ensure a collider2dcomponent
+--    No extra setup is needed in cart code — just ensure a collider_2d_component
 --    exists on the object.
 --
 -- 3. COLLISION LAYERS: carts program the collider's raw layer and mask words.
@@ -32,25 +32,25 @@
 --      self.collider.layer = collision_enemy_layer
 --      self.collider.mask = collision_enemy_mask
 
-local worldobject<const> = require('cartlib/world/worldobject')
-local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local spritecomponent<const> = require('cartlib/component/spritecomponent')
+local world_object<const> = require('cartlib/world/world_object')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 
-local spriteobject<const> = {}
-spriteobject.__index = spriteobject
-setmetatable(spriteobject, { __index = worldobject })
+local sprite_object<const> = {}
+sprite_object.__index = sprite_object
+setmetatable(sprite_object, { __index = world_object })
 
 local base_sprite_id<const> = 'base_sprite'
 local primary_collider_id<const> = 'primary'
 
-function spriteobject.initialize(self)
-	worldobject.initialize(self)
+function sprite_object.initialize(self)
+	world_object.initialize(self)
 
-	self.sprite_component = spritecomponent.new({
+	self.sprite_component = sprite_component.new({
 		imgid = self.imgid,
 		id_local = base_sprite_id,
 	})
-	self.collider = collider2dcomponent.new({ id_local = primary_collider_id })
+	self.collider = collider_2d_component.new({ id_local = primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
@@ -63,7 +63,7 @@ end
 
 -- Sets the sprite component's semantic image id and updates the object's size
 -- from the resolved image owned by that component.
-function spriteobject:set_imgid(id)
+function sprite_object:set_imgid(id)
 	if not self.sprite_component:set_imgid(id) then
 		return
 	end
@@ -74,4 +74,4 @@ function spriteobject:set_imgid(id)
 	self.sy = self.sprite_component.source_height
 end
 
-return spriteobject
+return sprite_object

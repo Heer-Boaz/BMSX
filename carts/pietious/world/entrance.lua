@@ -1,7 +1,7 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
@@ -44,7 +44,7 @@ function world_entrance:ctor()
 end
 
 local define_world_entrance_fsm<const> = function()
-	fsmlibrary.register('world_entrance', {
+	fsm_library.register('world_entrance', {
 		initial = 'closed',
 		states = {
 			closed = {
@@ -104,8 +104,8 @@ local register_world_entrance_definition<const> = function()
 	prefab.define({
 		def_id = 'world_entrance',
 		class = world_entrance,
-		base = spriteobject,
-		components = { timeline_component.new, fsmcomponent.factory({ 'world_entrance' }) },
+		base = sprite_object,
+		components = { timeline_component.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
 			target = nil,
 			entrance_state = 'closed',

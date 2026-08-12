@@ -1,7 +1,7 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
@@ -32,7 +32,7 @@ function daemon_cloud:stop_and_hide()
 end
 
 local define_daemon_cloud_fsm<const> = function()
-	fsmlibrary.register('daemon_cloud', {
+	fsm_library.register('daemon_cloud', {
 		initial = 'active',
 		states = {
 			active = {
@@ -46,7 +46,7 @@ local define_daemon_cloud_fsm<const> = function()
 								{ value = 'daemon_smoke_large', hold = 16 },
 							}),
 							playback_mode = 'once',
-							apply = spriteobject.set_imgid,
+							apply = sprite_object.set_imgid,
 						},
 						autoplay = false,
 						stop_on_exit = true,
@@ -65,8 +65,8 @@ local register_daemon_cloud_definition<const> = function()
 	prefab.define({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
-		base = spriteobject,
-		components = { timeline_component.new, fsmcomponent.factory({ 'daemon_cloud' }) },
+		base = sprite_object,
+		components = { timeline_component.new, fsm_component.factory({ 'daemon_cloud' }) },
 		defaults = {
 			daemon_cloud_fx = true,
 		},

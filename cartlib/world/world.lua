@@ -27,16 +27,16 @@
 --    Systems iterate retained dense arrays directly; world keeps active
 --    membership stable until the current group completes.
 
-local commandlist<const> = require('cartlib/gx/commandlist')
+local command_list<const> = require('cartlib/gx/command_list')
 local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local gp0<const> = require('cartlib/gx/gp0')
 local presentation_config<const> = require('bmsx/presentation_config')
-local componentclass<const> = require('cartlib/component/componentclass')
+local component_class_chain<const> = require('cartlib/component/component_class').chain
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local space<const> = require('cartlib/world/space')
-local systemmanager<const> = require('cartlib/world/systemmanager')
+local system_manager<const> = require('cartlib/world/system_manager')
 
 local world
 local clear_color<const> = 0xff000000
@@ -52,8 +52,8 @@ local mutation_active_space<const> = 0x40
 
 bss cartlib_render_commands: word[render_command_capacity]
 
-local worldclass<const> = {}
-worldclass.__index = worldclass
+local world_class<const> = {}
+world_class.__index = world_class
 
 local visual_depth_less<const> = function(a, b)
 	local a_depth<const> = a.parent.z + a.offset_z + a.draw_offset_z
@@ -64,28 +64,28 @@ local visual_depth_less<const> = function(a, b)
 	return a._visual_sequence < b._visual_sequence
 end
 
-function worldclass:_add_worldobject(obj)
+function world_class:_add_world_object(obj)
 	local objects<const> = self._objects
 	local index<const> = #objects + 1
 	objects[index] = obj
-	obj._worldobject_index = index
+	obj._world_object_index = index
 end
 
-function worldclass:_remove_worldobject(obj)
+function world_class:_remove_world_object(obj)
 	local objects<const> = self._objects
-	local index<const> = obj._worldobject_index
+	local index<const> = obj._world_object_index
 	local last_index<const> = #objects
 	if index < last_index then
 		local moved<const> = objects[last_index]
 		objects[index] = moved
-		moved._worldobject_index = index
+		moved._world_object_index = index
 	end
 	objects[last_index] = nil
-	obj._worldobject_index = nil
+	obj._world_object_index = nil
 end
 
-function worldclass.new()
-	local self<const> = setmetatable({}, worldclass)
+function world_class.new()
+	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
 	self._spaces = {}
 	self._space_order = {}
@@ -113,11 +113,11 @@ function worldclass.new()
 	self._active_space = nil
 	self._pending_space_id = nil
 	self._initial_space_id = nil
-	self._system_manager = systemmanager.new(self)
+	self._system_manager = system_manager.new(self)
 	self._mutation_barrier_open = false
 	self._visual_sequence = 0
 	self._visual_revision = 0
-	self._draw_commands = commandlist.new(cartlib_render_commands)
+	self._draw_commands = command_list.new(cartlib_render_commands)
 	self._render_visuals = {}
 	self._render_visual_count = 0
 	self._render_visual_revision = -1
@@ -126,12 +126,12 @@ function worldclass.new()
 	local draw_page<const> = presentation_config.draw_page
 	self._draw_page = draw_page
 	if display_page == draw_page then
-		self.render = worldclass._render_single_page
+		self.render = world_class._render_single_page
 		gx_display.origin(draw_page)
 		gx_gpu.draw_target(draw_page, self._page_size)
 		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
 	else
-		self.render = worldclass._render_double_page
+		self.render = world_class._render_double_page
 		self._display_page = display_page
 		gx_display.origin(display_page)
 		gx_gpu.draw_target(display_page, self._page_size)
@@ -142,7 +142,7 @@ function worldclass.new()
 	return self
 end
 
-function worldclass:_add_space(space_id)
+function world_class:_add_space(space_id)
 	local created<const> = space.new(space_id)
 	local definition_views<const> = self._active_definition_view_list
 	for view_index = 1, #definition_views do
@@ -156,7 +156,7 @@ function worldclass:_add_space(space_id)
 	self._space_order[#self._space_order + 1] = space_id
 end
 
-function worldclass:_commit_active_space(space_id)
+function world_class:_commit_active_space(space_id)
 	local active_space<const> = self._spaces[space_id]
 	self._active_space = active_space
 	local definition_views<const> = self._active_definition_view_list
@@ -172,7 +172,7 @@ function worldclass:_commit_active_space(space_id)
 	self._visual_revision = self._visual_revision + 1
 end
 
-function worldclass:configure(world_module)
+function world_class:configure(world_module)
 	self._system_manager:configure(world_module.systems)
 	local spaces<const> = world_module.spaces
 	for space_index = 1, #spaces do
@@ -184,7 +184,7 @@ function worldclass:configure(world_module)
 	self:_commit_active_space(initial_space_id)
 end
 
-function worldclass:active_component_view(component_class)
+function world_class:active_component_view(component_class)
 	local views<const> = self._active_component_views_by_class
 	local view<const> = views[component_class]
 	if view then
@@ -211,7 +211,7 @@ end
 
 -- Systems bind active definition views once at configuration time.
 -- The world swaps the retained bucket only when the active space commits.
-function worldclass:active_definition_view(definition_id)
+function world_class:active_definition_view(definition_id)
 	local views<const> = self._active_definition_views
 	local view<const> = views[definition_id]
 	if view then
@@ -238,7 +238,7 @@ end
 
 -- The semantic active-space value changes immediately. Retained membership
 -- views switch only at the current tick-group barrier.
-function worldclass:set_space(space_id)
+function world_class:set_space(space_id)
 	if self.active_space_id == space_id then
 		return space_id
 	end
@@ -252,7 +252,7 @@ function worldclass:set_space(space_id)
 	return space_id
 end
 
-function worldclass:reconcile_object_tag(obj, tag)
+function world_class:reconcile_object_tag(obj, tag)
 	if self._mutation_barrier_open then
 		local index<const> = self._pending_tag_count + 1
 		self._pending_tag_count = index
@@ -264,7 +264,7 @@ function worldclass:reconcile_object_tag(obj, tag)
 	end
 end
 
-function worldclass:set_object_space(obj, space_id)
+function world_class:set_object_space(obj, space_id)
 	if obj.space_id == space_id then
 		return space_id
 	end
@@ -273,7 +273,7 @@ function worldclass:set_object_space(obj, space_id)
 	return space_id
 end
 
-function worldclass:_queue_object_reconcile(obj)
+function world_class:_queue_object_reconcile(obj)
 	if obj._object_reconcile_pending then
 		return
 	end
@@ -286,9 +286,9 @@ end
 -- Keep active_objects stable for the whole tick group. Structural mutations
 -- are deferred to the tick-group boundary so gameplay systems can iterate the dense
 -- active list directly instead of relying on reverse-loop/remove workarounds.
-function worldclass:_reconcile_active_object(obj)
+function world_class:_reconcile_active_object(obj)
 	local target_space = nil
-	if obj._worldobject_index ~= nil and obj.active then
+	if obj._world_object_index ~= nil and obj.active then
 		target_space = obj._space
 	end
 	local active_space<const> = obj._active_space
@@ -302,9 +302,9 @@ function worldclass:_reconcile_active_object(obj)
 	end
 end
 
-function worldclass:_reconcile_object(obj)
+function world_class:_reconcile_object(obj)
 	local target_space = nil
-	if obj._worldobject_index ~= nil then
+	if obj._world_object_index ~= nil then
 		target_space = self._spaces[obj.space_id]
 	end
 	local current_space<const> = obj._space
@@ -333,7 +333,7 @@ function worldclass:_reconcile_object(obj)
 	end
 end
 
-function worldclass:reconcile_object(obj)
+function world_class:reconcile_object(obj)
 	if self._mutation_barrier_open then
 		self:_queue_object_reconcile(obj)
 	else
@@ -341,7 +341,7 @@ function worldclass:reconcile_object(obj)
 	end
 end
 
-function worldclass:_queue_component_reconcile(comp)
+function world_class:_queue_component_reconcile(comp)
 	if comp._component_reconcile_pending then
 		return
 	end
@@ -351,10 +351,10 @@ function worldclass:_queue_component_reconcile(comp)
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component
 end
 
-function worldclass:_reconcile_active_component(comp)
+function world_class:_reconcile_active_component(comp)
 	local parent<const> = comp.parent
 	local target_space = nil
-	if comp._attached and comp.enabled and parent._worldobject_index ~= nil and parent.active then
+	if comp._attached and comp.enabled and parent._world_object_index ~= nil and parent.active then
 		target_space = parent._space
 	end
 	local active_space<const> = comp._active_space
@@ -377,7 +377,7 @@ function worldclass:_reconcile_active_component(comp)
 	end
 end
 
-function worldclass:reconcile_component(comp)
+function world_class:reconcile_component(comp)
 	if self._mutation_barrier_open then
 		self:_queue_component_reconcile(comp)
 	else
@@ -385,14 +385,14 @@ function worldclass:reconcile_component(comp)
 	end
 end
 
-function worldclass:_commit_component_attach(comp)
+function world_class:_commit_component_attach(comp)
 	local parent<const> = comp.parent
 	parent:_attach_component(comp)
 	if comp.id == nil then
 		comp.id = registry:next_id()
 	end
 	registry:register(comp)
-	local classes<const> = componentclass.chain(getmetatable(comp))
+	local classes<const> = component_class_chain(getmetatable(comp))
 	for class_index = 1, #classes do
 		registry:index(comp, classes[class_index])
 	end
@@ -403,7 +403,7 @@ function worldclass:_commit_component_attach(comp)
 	end
 end
 
-function worldclass:attach_component(comp)
+function world_class:attach_component(comp)
 	comp._attach_pending = true
 	if not self._mutation_barrier_open then
 		self:_commit_component_attach(comp)
@@ -416,13 +416,13 @@ function worldclass:attach_component(comp)
 	return comp
 end
 
-function worldclass:_commit_component_detach(comp)
+function world_class:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
 	comp.parent:_detach_component(comp)
 	registry:deregister(comp)
 end
 
-function worldclass:detach_component(comp)
+function world_class:detach_component(comp)
 	if comp._attach_pending then
 		comp._attach_pending = nil
 		return
@@ -437,7 +437,7 @@ function worldclass:detach_component(comp)
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_detach
 end
 
-function worldclass:_flush_component_attaches()
+function world_class:_flush_component_attaches()
 	local pending<const> = self._pending_component_attaches
 	local index = 1
 	while index <= self._pending_component_attach_count do
@@ -451,7 +451,7 @@ function worldclass:_flush_component_attaches()
 	self._pending_component_attach_count = 0
 end
 
-function worldclass:_flush_component_detaches()
+function world_class:_flush_component_detaches()
 	local pending<const> = self._pending_component_detaches
 	local index = 1
 	while index <= self._pending_component_detach_count do
@@ -463,7 +463,7 @@ function worldclass:_flush_component_detaches()
 	self._pending_component_detach_count = 0
 end
 
-function worldclass:_flush_components()
+function world_class:_flush_components()
 	local pending<const> = self._pending_components
 	for i = 1, #pending do
 		local comp<const> = pending[i]
@@ -473,7 +473,7 @@ function worldclass:_flush_components()
 	end
 end
 
-function worldclass:_flush_objects()
+function world_class:_flush_objects()
 	local pending<const> = self._pending_objects
 	for i = 1, #pending do
 		local obj<const> = pending[i]
@@ -483,7 +483,7 @@ function worldclass:_flush_objects()
 	end
 end
 
-function worldclass:_flush_tags()
+function world_class:_flush_tags()
 	local objects<const> = self._pending_tag_objects
 	local names<const> = self._pending_tag_names
 	for index = 1, self._pending_tag_count do
@@ -496,7 +496,7 @@ function worldclass:_flush_tags()
 	self._pending_tag_count = 0
 end
 
-function worldclass:visual_depth_changed()
+function world_class:visual_depth_changed()
 	self._visual_revision = self._visual_revision + 1
 end
 
@@ -508,7 +508,7 @@ local apply_spawn_values<const> = function(target, values)
 	end
 end
 
-function worldclass:_commit_spawn(obj)
+function world_class:_commit_spawn(obj)
 	registry:register(obj)
 	for tag in pairs(obj.tags) do
 		registry:index(obj, tag)
@@ -520,16 +520,16 @@ function worldclass:_commit_spawn(obj)
 			comp.id = registry:next_id()
 		end
 		registry:register(comp)
-		local classes<const> = componentclass.chain(getmetatable(comp))
+		local classes<const> = component_class_chain(getmetatable(comp))
 		for class_index = 1, #classes do
 			registry:index(comp, classes[class_index])
 		end
 	end
-	self:_add_worldobject(obj)
+	self:_add_world_object(obj)
 	self:_reconcile_object(obj)
 end
 
-function worldclass:_flush_admissions()
+function world_class:_flush_admissions()
 	local pending<const> = self._pending_admissions
 	local index = 1
 	while index <= self._pending_admission_count do
@@ -550,7 +550,7 @@ end
 -- A prefab instance is fully constructed before Registry, space and system
 -- views publish it. During a tick group that publication or cancellation
 -- happens at the group barrier.
-function worldclass:spawn(definition_id, options)
+function world_class:spawn(definition_id, options)
 	local definition<const> = prefab.definition(definition_id)
 	local obj<const> = {}
 	apply_spawn_values(obj, definition.defaults)
@@ -597,9 +597,9 @@ function worldclass:spawn(definition_id, options)
 	return obj
 end
 
-function worldclass:_commit_disposal(obj)
+function world_class:_commit_disposal(obj)
 	local components<const> = obj._components
-	if obj._worldobject_index ~= nil then
+	if obj._world_object_index ~= nil then
 		for i = 1, #components do
 			self:_reconcile_active_component(components[i])
 		end
@@ -611,7 +611,7 @@ function worldclass:_commit_disposal(obj)
 		end
 		registry:deregister(obj)
 		obj._space = nil
-		self:_remove_worldobject(obj)
+		self:_remove_world_object(obj)
 	end
 
 	obj:ondespawn()
@@ -623,13 +623,13 @@ end
 --   Requests the object's terminal lifecycle transition. During a tick group
 --   the command commits at the group barrier; outside one it commits directly
 --   through the same operation.
-function worldclass:mark_for_disposal(obj)
+function world_class:mark_for_disposal(obj)
 	if obj.marked_for_disposal then
 		return
 	end
 	obj.marked_for_disposal = true
 	obj.active = false
-	if obj._worldobject_index == nil then
+	if obj._world_object_index == nil then
 		return
 	end
 	if not self._mutation_barrier_open and not self._flushing_disposals then
@@ -641,7 +641,7 @@ function worldclass:mark_for_disposal(obj)
 	self._pending_disposals[pending_count] = obj
 end
 
-function worldclass:_flush_disposals()
+function world_class:_flush_disposals()
 	local pending<const> = self._pending_disposals
 	self._flushing_disposals = true
 	local index = 1
@@ -655,11 +655,11 @@ function worldclass:_flush_disposals()
 	self._flushing_disposals = false
 end
 
-function worldclass:_open_mutation_barrier()
+function world_class:_open_mutation_barrier()
 	self._mutation_barrier_open = true
 end
 
-function worldclass:_flush_structural_mutations()
+function world_class:_flush_structural_mutations()
 	-- Lifecycle hooks may enqueue an earlier mutation kind while a later kind
 	-- commits. Claim each kind before applying it and drain the whole cascade at
 	-- this barrier so no Registry or space index remains stale for another group.
@@ -697,7 +697,7 @@ function worldclass:_flush_structural_mutations()
 	until self._pending_mutation_mask == 0
 end
 
-function worldclass:_commit_mutation_barrier()
+function world_class:_commit_mutation_barrier()
 	if self._pending_mutation_mask ~= 0 then
 		self:_flush_structural_mutations()
 	end
@@ -712,11 +712,11 @@ function worldclass:_commit_mutation_barrier()
 	end
 end
 
-function worldclass:update()
+function world_class:update()
 	self._system_manager:update()
 end
 
-function worldclass:_rebuild_render_visuals()
+function world_class:_rebuild_render_visuals()
 	local revision<const> = self._visual_revision
 	if revision == self._render_visual_revision then
 		return
@@ -736,9 +736,9 @@ function worldclass:_rebuild_render_visuals()
 	self._render_visual_revision = revision
 end
 
-function worldclass:_build_render_commands(draw_page)
+function world_class:_build_render_commands(draw_page)
 	local draw_commands<const> = self._draw_commands
-	commandlist.begin(draw_commands, gp0.draw_mode_blend_half)
+	command_list.begin(draw_commands, gp0.draw_mode_blend_half)
 	draw_commands:clear(draw_page, self._page_size, clear_color)
 	self:_rebuild_render_visuals()
 	local visuals<const> = self._render_visuals
@@ -750,22 +750,22 @@ function worldclass:_build_render_commands(draw_page)
 	end
 end
 
-function worldclass:_render_single_page()
+function world_class:_render_single_page()
 	self:_build_render_commands(self._draw_page)
-	commandlist.submit(self._draw_commands)
+	command_list.submit(self._draw_commands)
 end
 
-function worldclass:_render_double_page()
+function world_class:_render_double_page()
 	local draw_page<const> = self._draw_page
 	self:_build_render_commands(draw_page)
-	commandlist.submit_fenced(self._draw_commands)
+	command_list.submit_fenced(self._draw_commands)
 	gx_display.origin(draw_page)
 	self._draw_page = self._display_page
 	self._display_page = draw_page
 	gx_gpu.draw_target(self._draw_page, self._page_size)
 end
 
-function worldclass:_commit_clear()
+function world_class:_commit_clear()
 	self._visual_sequence = 0
 	local objects<const> = self._objects
 	while #objects > 0 do
@@ -775,7 +775,7 @@ function worldclass:_commit_clear()
 	self:set_space(self._initial_space_id)
 end
 
-function worldclass:clear()
+function world_class:clear()
 	if self._mutation_barrier_open or self._flushing_disposals then
 		local objects<const> = self._objects
 		for i = #objects, 1, -1 do
@@ -790,7 +790,7 @@ function worldclass:clear()
 	end
 	self:_commit_clear()
 end
-world = worldclass.new()
+world = world_class.new()
 world.id = 'world'
 registry:register(world)
 

@@ -44,7 +44,7 @@ export const FORBIDDEN_RANDOM_HELPER_NAME_PATTERN = /^(?:random|rand)(?:[_-]?(?:
 
 export const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
-	'worldobject',
+	'world_object',
 ]);
 
 export const SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES = 7;

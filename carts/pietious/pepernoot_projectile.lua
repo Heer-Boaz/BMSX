@@ -10,13 +10,13 @@
 -- This is the same pattern the player uses — temporary interruption with
 -- automatic state restoration.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 require('constants')
-local tilecollisioncomponent<const> = require('cartlib/collision/tilecollisioncomponent')
-local worldobject<const> = require('cartlib/world/worldobject')
+local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
+local world_object<const> = require('cartlib/world/world_object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -28,7 +28,7 @@ local state_tags<const> = {
 function pepernoot_projectile:ctor()
 	self.collider.layer = collision_projectile_layer
 	self.collider.mask = collision_projectile_mask
-	self:add_component(tilecollisioncomponent.new({
+	self:add_component(tile_collision_component.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
 			local collision_flags<const> = owner.room:collision_flags_at_world(owner.x, owner.y)
@@ -73,10 +73,10 @@ function pepernoot_projectile:update_motion()
 end
 
 local define_pepernoot_projectile_fsm<const> = function()
-	fsmlibrary.register('pepernoot_projectile', {
+	fsm_library.register('pepernoot_projectile', {
 		initial = 'active',
 		on = {
-			['tilecollision.begin'] = worldobject.mark_for_disposal,
+			['tilecollision.begin'] = world_object.mark_for_disposal,
 			['overlap.begin'] = function(self, _state, event)
 				if event.other_layer ~= collision_enemy_layer then
 					return
@@ -85,7 +85,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.mark_for_disposal,
+				go = world_object.mark_for_disposal,
 			},
 			['seal_dissolution'] = '/freeze',
 		},
@@ -109,8 +109,8 @@ local register_pepernoot_projectile_definition<const> = function()
 	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
-		base = spriteobject,
-		components = { fsmcomponent.factory({ 'pepernoot_projectile' }) },
+		base = sprite_object,
+		components = { fsm_component.factory({ 'pepernoot_projectile' }) },
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,

@@ -1,11 +1,11 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
-local worldobject<const> = require('cartlib/world/worldobject')
+local world_object<const> = require('cartlib/world/world_object')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
@@ -62,7 +62,7 @@ function enemy_explosion:ctor()
 end
 
 local define_enemy_explosion_fsm<const> = function()
-	fsmlibrary.register('enemy_explosion', {
+	fsm_library.register('enemy_explosion', {
 		timelines = {
 			[explosion_timeline_id] = {
 				def = {
@@ -82,7 +82,7 @@ local define_enemy_explosion_fsm<const> = function()
 		on = {
 			['room.switched'] = {
 				emitter = 'pietolon',
-				go = worldobject.mark_for_disposal,
+				go = world_object.mark_for_disposal,
 			},
 		},
 		states = {
@@ -99,8 +99,8 @@ local register_enemy_explosion_definition<const> = function()
 	prefab.define({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
-		base = spriteobject,
-		components = { timeline_component.new, fsmcomponent.factory({ 'enemy_explosion' }) },
+		base = sprite_object,
+		components = { timeline_component.new, fsm_component.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,
 		},

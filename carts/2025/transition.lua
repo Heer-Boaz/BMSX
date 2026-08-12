@@ -1,6 +1,6 @@
 local transition<const> = {}
 require('globals')
-local surface_component<const> = require('cartlib/component/surfacecomponent')
+local surface_component<const> = require('cartlib/component/surface_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')

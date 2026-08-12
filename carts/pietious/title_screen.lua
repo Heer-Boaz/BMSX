@@ -1,11 +1,11 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
-local spritecomponent<const> = require('cartlib/component/spritecomponent')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
@@ -134,7 +134,7 @@ function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:set_imgid('title_screen')
 	self:set_z(350)
-	self.sparkle_sprite = spritecomponent.new({
+	self.sparkle_sprite = sprite_component.new({
 		id_local = 'sparkle',
 		offset_z = 1,
 	})
@@ -160,7 +160,7 @@ local build_title_root_on<const> = function(show_path)
 end
 
 local define_title_screen_fsm<const> = function()
-	fsmlibrary.register('title_screen', {
+	fsm_library.register('title_screen', {
 		initial = 'hidden',
 		on = build_title_root_on('/idle'),
 		states = {
@@ -224,8 +224,8 @@ local register_title_screen_definition<const> = function()
 	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
-		base = spriteobject,
-		components = { timeline_component.new, fsmcomponent.factory({ 'title_screen' }) },
+		base = sprite_object,
+		components = { timeline_component.new, fsm_component.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})
 end

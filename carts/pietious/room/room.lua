@@ -1,13 +1,13 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/world/prefab')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 local room<const> = {}
@@ -846,7 +846,7 @@ function room_object:ctor()
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
 	self.last_water_surface_frame = 1
-	self.room_tile_layer = tilelayercomponent.new({
+	self.room_tile_layer = tile_layer_component.new({
 		id_local = 'room',
 		columns = 1,
 		tile_size = room_tile_size,
@@ -855,7 +855,7 @@ function room_object:ctor()
 		visible = false,
 	})
 	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = tilelayercomponent.new({
+	self.water_tile_layer = tile_layer_component.new({
 		id_local = 'water',
 		columns = 1,
 		tile_size = room_tile_size,
@@ -865,7 +865,7 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-	local room_effect<const> = self:get_component(customvisualcomponent)
+	local room_effect<const> = self:get_component(custom_visual_component)
 	room_effect:set_offset_z(draw_z_room_effect)
 	room_effect.producer = room_object.render_room
 end
@@ -1015,7 +1015,7 @@ local room_runtime_state_name<const> = function(room_state)
 end
 
 local define_room_fsm<const> = function()
-	fsmlibrary.register('room', {
+	fsm_library.register('room', {
 		initial = 'mode_state',
 		on = {
 			['room.switched'] = {
@@ -1149,9 +1149,9 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ 'room' }),
+			fsm_component.factory({ 'room' }),
 		},
 		defaults = {
 		},

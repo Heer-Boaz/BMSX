@@ -1,12 +1,12 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
-local worldobject<const> = require('cartlib/world/worldobject')
+local world_object<const> = require('cartlib/world/world_object')
 
 local castle<const> = {}
 
@@ -557,7 +557,7 @@ function castle:ctor()
 end
 
 function castle:unbind()
-	worldobject.unbind(self)
+	world_object.unbind(self)
 	progression.unmount(self)
 end
 
@@ -765,7 +765,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 end
 
 local define_castle_fsm<const> = function()
-	fsmlibrary.register('castle', {
+	fsm_library.register('castle', {
 		initial = 'active',
 		on = {
 			['seal_dissolution'] = {
@@ -841,7 +841,7 @@ local register_castle_definition<const> = function()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,
-		components = { fsmcomponent.factory({ 'castle' }) },
+		components = { fsm_component.factory({ 'castle' }) },
 		defaults = {
 			id = 'c',
 			current_room_number = 0,

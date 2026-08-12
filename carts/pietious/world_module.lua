@@ -1,13 +1,13 @@
-local actioneffectsystem<const> = require('cartlib/actioneffects/actioneffectsystem')
-local btsystem<const> = require('cartlib/behaviourtree/btsystem')
-local elevatorsystem<const> = require('elevator/system')
-local fsmsystem<const> = require('cartlib/fsm/fsmsystem')
-local inputactioneffectsystem<const> = require('cartlib/input/actioneffect/system')
-local inputsystem<const> = require('cartlib/input/inputsystem')
-local overlap2dsystem<const> = require('cartlib/collision/overlap2dsystem')
-local screenboundarycapturesystem<const> = require('cartlib/physics/screenboundarycapturesystem')
-local screenboundarysystem<const> = require('cartlib/physics/screenboundarysystem')
-local tilecollisionsystem<const> = require('cartlib/collision/tilecollisionsystem')
+local actioneffect_system<const> = require('cartlib/actioneffects/actioneffect_system')
+local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
+local elevator_system<const> = require('elevator/system')
+local fsm_system<const> = require('cartlib/fsm/fsm_system')
+local input_actioneffect_system<const> = require('cartlib/input/actioneffect/system')
+local input_system<const> = require('cartlib/input/input_system')
+local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
+local screen_boundary_capture_system<const> = require('cartlib/physics/screen_boundary_capture_system')
+local screen_boundary_system<const> = require('cartlib/physics/screen_boundary_system')
+local tile_collision_system<const> = require('cartlib/collision/tile_collision_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
 
 return {
@@ -21,16 +21,16 @@ return {
 		'ui',
 	},
 	systems = {
-		inputsystem,
-		btsystem,
-		inputactioneffectsystem,
-		actioneffectsystem,
-		fsmsystem,
-		screenboundarycapturesystem,
-		screenboundarysystem,
-		overlap2dsystem,
-		tilecollisionsystem,
+		input_system,
+		bt_system,
+		input_actioneffect_system,
+		actioneffect_system,
+		fsm_system,
+		screen_boundary_capture_system,
+		screen_boundary_system,
+		overlap_2d_system,
+		tile_collision_system,
 		timeline_system,
-		elevatorsystem,
+		elevator_system,
 	},
 }

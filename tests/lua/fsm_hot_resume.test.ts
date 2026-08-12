@@ -30,10 +30,10 @@ const SYSTEM_MODULE_FILES = [
 
 const CART_MODULE_FILES = [
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
-	['cartlib/component/componentclass', 'cartlib/component/componentclass.lua'],
+	['cartlib/component/component_class', 'cartlib/component/component_class.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
-	['cartlib/eventemitter', 'cartlib/eventemitter.lua'],
-	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
+	['cartlib/event_emitter', 'cartlib/event_emitter.lua'],
+	['cartlib/component/base_component', 'cartlib/component/base_component.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/easing', 'cartlib/easing.lua'],
 	['cartlib/timeline/playback', 'cartlib/timeline/playback.lua'],
@@ -53,10 +53,10 @@ const CART_MODULE_FILES = [
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
-	['cartlib/fsm/fsmcomponent', 'cartlib/fsm/fsmcomponent.lua'],
-	['cartlib/behaviourtree/bt', 'cartlib/behaviourtree/bt.lua'],
-	['cartlib/behaviourtree/btcomponent', 'cartlib/behaviourtree/btcomponent.lua'],
-	['cartlib/behaviourtree/library', 'cartlib/behaviourtree/library.lua'],
+	['cartlib/fsm/fsm_component', 'cartlib/fsm/fsm_component.lua'],
+	['cartlib/behaviour_tree/bt', 'cartlib/behaviour_tree/bt.lua'],
+	['cartlib/behaviour_tree/bt_component', 'cartlib/behaviour_tree/bt_component.lua'],
+	['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/library.lua'],
 ] as const;
 
 const SYSTEM_STUB_MODULES = [
@@ -93,13 +93,13 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 
 const CART_ENTRY_SOURCE = `
 local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/eventemitter')
+local events<const> = require('cartlib/event_emitter')
 local fsm_library<const> = require('cartlib/fsm/library')
-local state_machine_component<const> = require('cartlib/fsm/fsmcomponent')
+local state_machine_component<const> = require('cartlib/fsm/fsm_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local behaviour_tree<const> = require('cartlib/behaviourtree/bt')
-local behaviour_tree_component<const> = require('cartlib/behaviourtree/btcomponent')
-local behaviour_tree_library<const> = require('cartlib/behaviourtree/library')
+local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
+local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 
 local target<const> = {
 	id = 'hot_target',

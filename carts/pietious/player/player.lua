@@ -74,10 +74,10 @@
 --    and (for shrine exit) emits a reply event ('shrine_exit_done') when the
 --    exit animation timeline completes.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local velocity<const> = require('cartlib/velocity')
 local clamp<const> = require('cartlib/util/clamp')
@@ -85,12 +85,12 @@ local abs<const> = math.abs
 require('constants')
 local castle_map<const> = require('castle/map')
 local actioneffects<const> = require('cartlib/actioneffects')
-local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
-local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
-local spritecomponent<const> = require('cartlib/component/spritecomponent')
+local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffect_component')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local collision2d<const> = require('cartlib/collision/collision2d')
+local collision_2d<const> = require('cartlib/collision/collision_2d')
 local player_actioneffects<const> = require('player/actioneffects')
 
 local input<const> = require('cartlib/input/input')
@@ -372,11 +372,11 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(actioneffectcomponent.new({}))
+	self:add_component(actioneffect_component.new({}))
 	self.actioneffects:grant_effect('halo')
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
-	self:add_component(inputactioneffectcomponent.new({
+	self:add_component(input_actioneffect_component.new({
 		program = player_actioneffects.build_input_actioneffect_program(),
 	}))
 	self:set_imgid('pietolon_stand_r')
@@ -386,7 +386,7 @@ function player:ctor()
 	self.collider.layer = collision_player_layer
 	self.collider.mask = collision_player_mask
 
-	self.sword_collider = collider2dcomponent.new({
+	self.sword_collider = collider_2d_component.new({
 		id_local = 'sword',
 		layer = collision_projectile_layer,
 		mask = collision_projectile_mask,
@@ -394,7 +394,7 @@ function player:ctor()
 	self.sword_collider:set_enabled(false)
 	self:add_component(self.sword_collider)
 
-	self.sword_sprite = spritecomponent.new({
+	self.sword_sprite = sprite_component.new({
 		id_local = 'sword',
 		imgid = 'sword_r',
 		offset_z = 111,
@@ -1492,7 +1492,7 @@ function player:collides_with_elevator_at(x, y)
 	for i = 1, #elevators do
 		local platform<const> = elevators[i]
 		if platform.current_room_number == current_room_number
-		and collision2d.collides(self.collider, platform.collider)
+		and collision_2d.collides(self.collider, platform.collider)
 		then
 			self.x = old_x
 			self.y = old_y
@@ -1518,7 +1518,7 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	if platform.current_room_number ~= self.castle.current_room_number then
 		return false
 	end
-	if not collision2d.collides(self.collider, platform.collider) then
+	if not collision_2d.collides(self.collider, platform.collider) then
 		return false
 	end
 	if self.y <= previous_platform_y and self:has_feet_over_elevator_top(platform, self.x) then
@@ -3034,7 +3034,7 @@ local define_player_fsm<const> = function()
 		},
 	}
 
-	fsmlibrary.register('player', {
+	fsm_library.register('player', {
 		initial = 'quiet',
 		-- TAG DERIVATIONS — define group and visual tags from state variant tags.
 		--
@@ -3195,10 +3195,10 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = 'player',
 		class = player,
-		base = spriteobject,
+		base = sprite_object,
 		components = {
 			timeline_component.new,
-			fsmcomponent.factory({ 'player' }),
+			fsm_component.factory({ 'player' }),
 		},
 		defaults = {
 			imgid = 'pietolon_stand_r',

@@ -2,15 +2,15 @@
 -- Timeline ECS system.
 
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local basesystem<const> = require('cartlib/world/basesystem')
-local tickgroup<const> = require('cartlib/world/tickgroup')
+local base_system<const> = require('cartlib/world/base_system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
 local timeline_system<const> = {}
 timeline_system.__index = timeline_system
-setmetatable(timeline_system, { __index = basesystem })
+setmetatable(timeline_system, { __index = base_system })
 
 function timeline_system.new(world)
-	local self<const> = setmetatable(basesystem.new(tickgroup.animation, 0), timeline_system)
+	local self<const> = setmetatable(base_system.new(tick_group.animation, 0), timeline_system)
 	self._component_view = world:active_component_view(timeline_component)
 	return self
 end

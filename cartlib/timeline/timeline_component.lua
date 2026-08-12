@@ -1,4 +1,4 @@
-local basecomponent<const> = require('cartlib/component/basecomponent')
+local base_component<const> = require('cartlib/component/base_component')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
@@ -9,7 +9,7 @@ local timeline<const> = timeline_module.timeline
 local timeline_component<const> = {}
 timeline_component.__index = timeline_component
 timeline_component.unique = true
-setmetatable(timeline_component, { __index = basecomponent })
+setmetatable(timeline_component, { __index = base_component })
 
 local activate_timeline_entry<const> = function(self, entry)
 	local id<const> = entry.instance.id
@@ -85,7 +85,7 @@ local process_evaluations<const> = function(self, entry)
 end
 
 function timeline_component.new(opts)
-	local self<const> = setmetatable(basecomponent.new(opts), timeline_component)
+	local self<const> = setmetatable(base_component.new(opts), timeline_component)
 	self._entries_by_id = {}
 	self._active_entries = {}
 	self._active_count = 0

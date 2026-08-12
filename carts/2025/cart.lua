@@ -4,16 +4,16 @@ local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local surfacecomponent<const> = require('cartlib/component/surfacecomponent')
-local spriteobject<const> = require('cartlib/sprite')
-local textobject<const> = require('cartlib/text/textobject')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local surface_component<const> = require('cartlib/component/surface_component')
+local sprite_object<const> = require('cartlib/sprite')
+local text_object<const> = require('cartlib/text/text_object')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
@@ -49,7 +49,7 @@ local combat_director_definition_id<const> = combat_module.director_definition_i
 local surface_object_class<const> = {}
 
 function surface_object_class:ctor()
-	self.surface_component = self:get_component(surfacecomponent)
+	self.surface_component = self:get_component(surface_component)
 	if self.imgid then
 		self.surface_component:set_imgid(self.imgid)
 	end
@@ -117,7 +117,7 @@ local draw_director_visual<const> = function(parent, draw)
 end
 
 function director:ctor()
-	local transition_rc<const> = self:get_component(customvisualcomponent)
+	local transition_rc<const> = self:get_component(custom_visual_component)
 	transition_rc:set_offset_z(director_visual_z)
 	transition_rc.producer = draw_director_visual
 end
@@ -198,7 +198,7 @@ local build_director_fsm<const> = function()
 	transition_module.register_states(states)
 	dialogue_module.register_states(states)
 
-	fsmlibrary.register(story_director_fsm_id, {
+	fsm_library.register(story_director_fsm_id, {
 		initial = 'boot',
 		states = states,
 	})
@@ -208,9 +208,9 @@ local register_director<const> = function()
 		def_id = director_def_id,
 		class = director,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ story_director_fsm_id }),
+			fsm_component.factory({ story_director_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,
@@ -235,57 +235,57 @@ local register_director<const> = function()
 	prefab.define({
 			def_id = background_definition_id,
 		class = surface_object_class,
-		components = { surfacecomponent.new },
+		components = { surface_component.new },
 	})
 	prefab.define({
 			def_id = text_main_definition_id,
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 			def_id = text_choice_definition_id,
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 			def_id = text_prompt_definition_id,
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 			def_id = text_transition_definition_id,
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 			def_id = text_results_definition_id,
-		class = textobject,
-		base = textobject,
+		class = text_object,
+		base = text_object,
 	})
 	prefab.define({
 			def_id = monster_definition_id,
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 			def_id = maya_a_definition_id,
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 			def_id = maya_b_definition_id,
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 	prefab.define({
 			def_id = all_out_definition_id,
 		class = surface_object_class,
-		components = { surfacecomponent.new },
+		components = { surface_component.new },
 	})
 	prefab.define({
 			def_id = all_out_portrait_definition_id,
-		class = spriteobject,
-		base = spriteobject,
+		class = sprite_object,
+		base = sprite_object,
 	})
 end
 

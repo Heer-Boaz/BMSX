@@ -1,12 +1,12 @@
 -- shrine.lua
 -- shrine overlay renderer — displays text on the shrine screen.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spritecomponent<const> = require('cartlib/component/spritecomponent')
-local spriteobject<const> = require('cartlib/sprite')
-local textcomponent<const> = require('cartlib/text/textcomponent')
+local sprite_component<const> = require('cartlib/component/sprite_component')
+local sprite_object<const> = require('cartlib/sprite')
+local text_component<const> = require('cartlib/text/text_component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -14,11 +14,11 @@ local shrine<const> = {}
 shrine.__index = shrine
 
 function shrine:ctor()
-	self:add_component(spritecomponent.new({
+	self:add_component(sprite_component.new({
 		imgid = 'shrine_inside',
 		offset_y = room_tile_origin_y,
 	}))
-	local text<const> = self:get_component(textcomponent)
+	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_x = shrine_text_x
@@ -36,7 +36,7 @@ function room_shrine:ctor()
 end
 
 local define_shrine_fsm<const> = function()
-	fsmlibrary.register('shrine', {
+	fsm_library.register('shrine', {
 		initial = 'active',
 		on = {
 			['shrine'] = {
@@ -63,8 +63,8 @@ local register_shrine_definition<const> = function()
 		def_id = 'shrine',
 		class = shrine,
 		components = {
-			textcomponent.new,
-			fsmcomponent.factory({ 'shrine' }),
+			text_component.new,
+			fsm_component.factory({ 'shrine' }),
 		},
 		defaults = {
 			id = 'shrine',
@@ -76,7 +76,7 @@ local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
-		base = spriteobject,
+		base = sprite_object,
 		defaults = {
 		},
 	})

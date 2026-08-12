@@ -9,11 +9,11 @@
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
 -- the object already has an FSM.
 
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local spritecomponent<const> = require('cartlib/component/spritecomponent')
-local textcomponent<const> = require('cartlib/text/textcomponent')
+local sprite_component<const> = require('cartlib/component/sprite_component')
+local text_component<const> = require('cartlib/text/text_component')
 require('constants')
 local font_module<const> = require('cartlib/font')
 
@@ -21,12 +21,12 @@ local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
 
 function lithograph_screen:ctor()
-	self:add_component(spritecomponent.new({
+	self:add_component(sprite_component.new({
 		imgid = 'lithograph_mode',
 		offset_x = room_tile_size4,
 		offset_y = room_tile_origin_y + room_tile_size2,
 	}))
-	local text<const> = self:get_component(textcomponent)
+	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
 	text.offset_y = room_tile_origin_y + (room_tile_size * 6)
@@ -36,7 +36,7 @@ function lithograph_screen:ctor()
 end
 
 local define_lithograph_screen_fsm<const> = function()
-	fsmlibrary.register('lithograph_screen', {
+	fsm_library.register('lithograph_screen', {
 		initial = 'active',
 		on = {
 			['lithograph'] = {
@@ -63,8 +63,8 @@ local register_lithograph_screen_definition<const> = function()
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
 		components = {
-			textcomponent.new,
-			fsmcomponent.factory({ 'lithograph_screen' }),
+			text_component.new,
+			fsm_component.factory({ 'lithograph_screen' }),
 		},
 		defaults = {
 			id = 'lithograph',

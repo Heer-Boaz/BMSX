@@ -1,11 +1,11 @@
-local basesystem<const> = require('cartlib/world/basesystem')
-local tickgroup<const> = require('cartlib/world/tickgroup')
+local base_system<const> = require('cartlib/world/base_system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local elevatorsystem<const> = {}
-elevatorsystem.__index = elevatorsystem
-setmetatable(elevatorsystem, { __index = basesystem })
+local elevator_system<const> = {}
+elevator_system.__index = elevator_system
+setmetatable(elevator_system, { __index = base_system })
 
-function elevatorsystem:update()
+function elevator_system:update()
 	local elevators<const> = self._definition_view.objects
 	local elevator_count<const> = #elevators
 	if elevator_count == 0 then
@@ -21,10 +21,10 @@ function elevatorsystem:update()
 	player.vertical_elevator_id = player.next_vertical_elevator_id
 end
 
-function elevatorsystem.new(world)
-	local self<const> = setmetatable(basesystem.new(tickgroup.gameplay, 20), elevatorsystem)
+function elevator_system.new(world)
+	local self<const> = setmetatable(base_system.new(tick_group.gameplay, 20), elevator_system)
 	self._definition_view = world:active_definition_view('elevator_platform')
 	return self
 end
 
-return elevatorsystem
+return elevator_system

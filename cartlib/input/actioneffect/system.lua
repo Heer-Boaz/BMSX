@@ -1,19 +1,19 @@
-local inputactioneffectcomponent<const> = require('cartlib/input/actioneffect/actioneffectcomponent')
-local basesystem<const> = require('cartlib/world/basesystem')
-local tickgroup<const> = require('cartlib/world/tickgroup')
+local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffect_component')
+local base_system<const> = require('cartlib/world/base_system')
+local tick_group<const> = require('cartlib/world/tick_group')
 
-local inputactioneffectsystem<const> = {}
-inputactioneffectsystem.__index = inputactioneffectsystem
-setmetatable(inputactioneffectsystem, { __index = basesystem })
+local input_actioneffect_system<const> = {}
+input_actioneffect_system.__index = input_actioneffect_system
+setmetatable(input_actioneffect_system, { __index = base_system })
 
-function inputactioneffectsystem.new(world)
-	local self<const> = setmetatable(basesystem.new(tickgroup.input, 10), inputactioneffectsystem)
-	self._component_view = world:active_component_view(inputactioneffectcomponent)
+function input_actioneffect_system.new(world)
+	local self<const> = setmetatable(base_system.new(tick_group.input, 10), input_actioneffect_system)
+	self._component_view = world:active_component_view(input_actioneffect_component)
 	self.frame = 0
 	return self
 end
 
-function inputactioneffectsystem:update()
+function input_actioneffect_system:update()
 	local frame<const> = self.frame + 1
 	self.frame = frame
 	local components<const> = self._component_view.components
@@ -23,4 +23,4 @@ function inputactioneffectsystem:update()
 	end
 end
 
-return inputactioneffectsystem
+return input_actioneffect_system

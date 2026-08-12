@@ -1,6 +1,6 @@
 local prefab<const> = require('cartlib/world/prefab')
-local collider2dcomponent<const> = require('cartlib/collision/collider2dcomponent')
-local tilelayercomponent<const> = require('cartlib/component/tilelayercomponent')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 require('constants')
 
 local disappearingwall<const> = {}
@@ -12,11 +12,11 @@ function disappearingwall:update_wall_size()
 end
 
 function disappearingwall:ctor()
-	local collider<const> = self:get_component(collider2dcomponent)
+	local collider<const> = self:get_component(collider_2d_component)
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self:update_wall_size()
-	local tile_layer<const> = self:get_component(tilelayercomponent)
+	local tile_layer<const> = self:get_component(tile_layer_component)
 	local tile_count<const> = self.width_tiles * self.height_tiles
 	tile_layer:fill(self.tiletype, tile_count, self.width_tiles)
 	tile_layer.tile_size = room_tile_size
@@ -29,8 +29,8 @@ function disappearingwall.register()
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		components = {
-			collider2dcomponent.new,
-			tilelayercomponent.new,
+			collider_2d_component.new,
+			tile_layer_component.new,
 		},
 		defaults = {
 			trigger = nil,

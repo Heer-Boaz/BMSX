@@ -1,4 +1,4 @@
-local compile_matcher<const> = require('cartlib/eventmatcher').compile
+local compile_matcher<const> = require('cartlib/event_matcher').compile
 
 __bmsx_host_test = {}
 

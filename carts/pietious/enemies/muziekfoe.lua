@@ -1,12 +1,12 @@
 local prefab<const> = require('cartlib/world/prefab')
-local spriteobject<const> = require('cartlib/sprite')
+local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
-local behaviourtree<const> = require('cartlib/behaviourtree/bt')
-local bt_running<const> = behaviourtree.result.running
-local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
-local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
+local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
+local bt_running<const> = behaviour_tree.result.running
+local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
+local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 
@@ -104,13 +104,13 @@ end
 enemy_base.extend(muziekfoe, 'muziekfoe')
 
 function muziekfoe.register()
-	local root<const> = behaviourtree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)
-	behaviourtreelibrary.register(root)
+	local root<const> = behaviour_tree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)
+	behaviour_tree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
-		base = spriteobject,
-		components = { btcomponent.factory(root.id) },
+		base = sprite_object,
+		components = { bt_component.factory(root.id) },
 		defaults = {
 			damage = 4,
 			max_health = 3,

@@ -1,6 +1,6 @@
-local inputsystem<const> = require('cartlib/input/inputsystem')
+local input_system<const> = require('cartlib/input/input_system')
 
 return {
 	spaces = { 'main' },
-	systems = { inputsystem },
+	systems = { input_system },
 }

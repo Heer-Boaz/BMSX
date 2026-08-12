@@ -2,7 +2,7 @@ local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
-local screenboundarycomponent<const> = require('cartlib/physics/screenboundarycomponent')
+local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
 
 local enemy_base<const> = {}
 local damaging_contact_kinds<const> = {
@@ -20,7 +20,7 @@ end
 -- bind() below owns its event subscriptions after construction is complete.
 -- Call from the ctor of projectile-type enemies only (vlokfoe, nootfoe, etc.).
 function enemy_base.setup_projectile_boundary(self)
-	self:add_component(screenboundarycomponent.new({
+	self:add_component(screen_boundary_component.new({
 		left = 0,
 		top = room_hud_height,
 		right = room_width,
@@ -61,7 +61,7 @@ function enemy_base.bind(self)
 		end,
 	})
 
-	if self:get_component(screenboundarycomponent) ~= nil then
+	if self:get_component(screen_boundary_component) ~= nil then
 		self.events:on({
 			event = 'screen.leave',
 			subscriber = self,

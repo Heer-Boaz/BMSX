@@ -1,6 +1,6 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local imgdec<const> = require('cartlib/gx/imgdec')
-local romdir<const> = require('cartlib/romdir')
+local rom_dir<const> = require('cartlib/rom_dir')
 local texture_bindings<const> = require('bmsx/texture_bindings')
 
 local gx_texture<const> = {}
@@ -24,7 +24,7 @@ function gx_texture.resolve(texture_id)
 	if texture then
 		return texture
 	end
-	local resource<const> = romdir.texture(texture_id)
+	local resource<const> = rom_dir.texture(texture_id)
 	local meta<const> = resource.texturemeta
 	local resolved<const> = {
 		source_addr = resource.addr,
@@ -45,7 +45,7 @@ function gx_texture.resolve(texture_id)
 end
 
 local resolve_image_texture<const> = function(imgid)
-	return gx_texture.resolve(romdir.image(imgid).imgmeta.gx_texture_resid)
+	return gx_texture.resolve(rom_dir.image(imgid).imgmeta.gx_texture_resid)
 end
 
 local upload_texture<const> = function(texture, destination, clut_destination)

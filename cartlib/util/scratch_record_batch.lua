@@ -1,10 +1,10 @@
 -- scratch_record_batch.lua
 -- reusable scratch batch for small table-shaped records
 
-local scratchrecordbatch<const> = {}
-scratchrecordbatch.__index = scratchrecordbatch
+local scratch_record_batch<const> = {}
+scratch_record_batch.__index = scratch_record_batch
 
-function scratchrecordbatch.new(initial_capacity)
+function scratch_record_batch.new(initial_capacity)
 	local items<const> = {}
 	local count<const> = initial_capacity or 0
 	local i = 0
@@ -14,11 +14,11 @@ function scratchrecordbatch.new(initial_capacity)
 	end
 	return setmetatable({
 		items = items,
-	}, scratchrecordbatch)
+	}, scratch_record_batch)
 end
 
 -- disable-next-line ensure_local_alias_pattern -- this is the retained batch's high-water allocation, not an ensure wrapper.
-function scratchrecordbatch:get(index)
+function scratch_record_batch:get(index)
 	local item = self.items[index]
 	if item == nil then
 		item = {}
@@ -27,4 +27,4 @@ function scratchrecordbatch:get(index)
 	return item
 end
 
-return scratchrecordbatch
+return scratch_record_batch

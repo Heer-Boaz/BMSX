@@ -1,6 +1,6 @@
 local bool01<const> = require('cartlib/util/bool01')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 require('constants')
 
@@ -52,7 +52,7 @@ function director:update_runtime()
 end
 
 local define_director_fsm<const> = function()
-	fsmlibrary.register(ids_director_fsm, {
+	fsm_library.register(ids_director_fsm, {
 		initial = 'boot',
 		on = {
 			['star_blink_toggle'] = {
@@ -121,7 +121,7 @@ local register_director_definition<const> = function()
 	prefab.define({
 		def_id = ids_director_def,
 		class = director,
-		components = { fsmcomponent.factory({ ids_director_fsm }) },
+		components = { fsm_component.factory({ ids_director_fsm }) },
 		defaults = {
 			frame = 0,
 		},

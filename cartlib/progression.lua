@@ -26,7 +26,7 @@
 --    Unmount it from the context's unbind() teardown.
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
---    for events emitted to the global eventemitter; progression subscribes to
+--    for events emitted to the global event_emitter; progression subscribes to
 --    the exact event names referenced by mounted programs).
 --
 --    STEP 3 — query state:
@@ -38,7 +38,7 @@
 --      on          — event name (required); the event that can fire this rule
 --      when_all    — array of conditions ({key, equals}) that must
 --                    all be true on the state for the rule to fire
---      when_event  — event-matcher spec (see eventmatcher.lua) filtering event
+--      when_event  — event-matcher spec (see event_matcher.lua) filtering event
 --                    payload fields
 --      set         — array of {key, value} assignments applied when fired
 --      apply       — array of custom commands forwarded to program.handlers
@@ -52,10 +52,10 @@
 -- 5. DO NOT USE progression FOR FRAME-BY-FRAME GAME LOGIC.
 --    Progression is for persistent cross-room world-state transitions
 --    driven by named gameplay events.  Transient per-frame state belongs in the
---    object FSM or in worldobject fields directly.
+--    object FSM or in world_object fields directly.
 
-local eventemitter<const> = require('cartlib/eventemitter')
-local eventmatcher<const> = require('cartlib/eventmatcher')
+local event_emitter<const> = require('cartlib/event_emitter')
+local event_matcher<const> = require('cartlib/event_matcher')
 
 local progression<const> = {}
 local runtime_by_ctx<const> = {}
@@ -174,7 +174,7 @@ function progression.compile_program(program_spec)
 		local rule<const> = {
 			id = rule_def.id,
 			when_all = compile_predicates(state_program, rule_def.when_all),
-			when_event = eventmatcher.compile(rule_def.when_event),
+			when_event = event_matcher.compile(rule_def.when_event),
 			set = compile_set_actions(state_program, rule_def.set),
 			apply = compile_commands(handlers, rule_def.apply),
 			apply_once = (rule_def.apply_once),
@@ -286,7 +286,7 @@ local dispatch_event<const> = function(event_type, emitter, payload)
 		runtimes.removals_pending = nil
 		if write_index == 1 then
 			runtimes_by_event[event_type] = nil
-			eventemitter:off(event_type, dispatch_event, nil)
+			event_emitter:off(event_type, dispatch_event, nil)
 		end
 	end
 end
@@ -296,7 +296,7 @@ local add_runtime_subscription<const> = function(rt, event_name)
 	if runtimes == nil then
 		runtimes = { dispatch_depth = 0 }
 		runtimes_by_event[event_name] = runtimes
-		eventemitter:on({
+		event_emitter:on({
 			event = event_name,
 			handler = dispatch_event,
 			subscriber = progression,
@@ -323,7 +323,7 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 	if runtimes.dispatch_depth == 0 and #runtimes == 0 then
 		runtimes_by_event[event_name] = nil
-		eventemitter:off(event_name, dispatch_event, nil)
+		event_emitter:off(event_name, dispatch_event, nil)
 	end
 end
 

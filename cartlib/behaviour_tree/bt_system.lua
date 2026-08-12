@@ -1,0 +1,26 @@
+-- bt_system.lua
+-- Behaviour-tree ECS system.
+
+local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local base_system<const> = require('cartlib/world/base_system')
+local tick_group<const> = require('cartlib/world/tick_group')
+
+local bt_system<const> = {}
+bt_system.__index = bt_system
+setmetatable(bt_system, { __index = base_system })
+
+function bt_system.new(world)
+	local self<const> = setmetatable(base_system.new(tick_group.input, 0), bt_system)
+	self._component_view = world:active_component_view(bt_component)
+	return self
+end
+
+function bt_system:update()
+	local components<const> = self._component_view.components
+	for i = 1, #components do
+		local component<const> = components[i]
+		component.root:tick(component.parent, component)
+	end
+end
+
+return bt_system

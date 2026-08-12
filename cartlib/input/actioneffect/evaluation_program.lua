@@ -1,5 +1,5 @@
 local input<const> = require('cartlib/input/input')
-local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
+local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 
 local evaluation_program<const> = {}
 
@@ -26,7 +26,7 @@ local append_effect<const> = function(parts, effect, slot)
 			payload = trigger.payload
 		end
 		parts.uses_effect_triggers = true
-		parts.environment.try_trigger = actioneffectcomponent.try_trigger
+		parts.environment.try_trigger = actioneffect_component.try_trigger
 		parts[#parts + 1] = 'try_trigger(owner["actioneffects"], '
 		add_effect_operand(parts, id)
 		parts[#parts + 1] = ', '

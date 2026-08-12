@@ -1,9 +1,9 @@
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
@@ -73,7 +73,7 @@ local item_screen_mode_exit_events<const> = {
 }
 
 function item_screen:ctor()
-	self:get_component(customvisualcomponent).producer = item_screen.draw_screen
+	self:get_component(custom_visual_component).producer = item_screen.draw_screen
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
@@ -198,7 +198,7 @@ local define_item_screen_fsm<const> = function()
 			go = '/closed',
 		}
 	end
-	fsmlibrary.register('item_screen', {
+	fsm_library.register('item_screen', {
 		initial = 'closed',
 		states = {
 			closed = {
@@ -258,9 +258,9 @@ local register_item_screen_definition<const> = function()
 		def_id = 'item_screen',
 		class = item_screen,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ 'item_screen' }),
+			fsm_component.factory({ 'item_screen' }),
 		},
 		defaults = {
 			player_index = 1,

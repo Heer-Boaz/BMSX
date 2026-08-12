@@ -330,8 +330,8 @@ local lex<const> = function(src)
 	return out
 end
 
-local parserstate<const> = {}
-parserstate.__index = parserstate
+local parser_state<const> = {}
+parser_state.__index = parser_state
 
 local current<const> = function(self)
 	return self.tokens[self.index]
@@ -847,7 +847,7 @@ function action_parser.compile(src)
 		source = src,
 		action_names = {},
 		action_name_indices = {},
-	}, parserstate)
+	}, parser_state)
 	local ast<const> = parse_expr(self)
 	if current(self) then
 		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')

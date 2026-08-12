@@ -5,7 +5,7 @@ local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local aem<const> = require('cartlib/aem')
-local collision2d<const> = require('cartlib/collision/collision2d')
+local collision_2d<const> = require('cartlib/collision/collision_2d')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
@@ -128,7 +128,7 @@ end
 
 local function init<init>()
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
-	irq_module.register(irq_geo_done_error, collision2d.on_geo_irq)
+	irq_module.register(irq_geo_done_error, collision_2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	pietious_font.register_fonts()
 

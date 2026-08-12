@@ -1,4 +1,4 @@
-local componentclass<const> = require('cartlib/component/componentclass')
+local component_class_chain<const> = require('cartlib/component/component_class').chain
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local space<const> = {}
@@ -58,7 +58,7 @@ function space:register_component_class(component_class)
 		for component_index = 1, #components do
 			local component<const> = components[component_index]
 			if component._active_space == self then
-				local classes<const> = componentclass.chain(getmetatable(component))
+				local classes<const> = component_class_chain(getmetatable(component))
 				for class_index = 1, #classes do
 					if classes[class_index] == component_class then
 						dense_set.add(bucket, component)
@@ -109,7 +109,7 @@ end
 
 function space:activate_component(comp, visual_sequence)
 	comp._active_space = self
-	local classes<const> = componentclass.chain(getmetatable(comp))
+	local classes<const> = component_class_chain(getmetatable(comp))
 	local component_buckets<const> = self._active_components_by_class
 	for class_index = 1, #classes do
 		local bucket<const> = component_buckets[classes[class_index]]
@@ -140,7 +140,7 @@ function space:deactivate_component(comp)
 		comp._visual_sequence = nil
 	end
 
-	local classes<const> = componentclass.chain(getmetatable(comp))
+	local classes<const> = component_class_chain(getmetatable(comp))
 	local component_buckets<const> = self._active_components_by_class
 	for class_index = 1, #classes do
 		local bucket<const> = component_buckets[classes[class_index]]

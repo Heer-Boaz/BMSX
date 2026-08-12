@@ -51,9 +51,9 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
-local customvisualcomponent<const> = require('cartlib/component/customvisualcomponent')
-local fsmlibrary<const> = require('cartlib/fsm/library')
-local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -222,7 +222,7 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component(customvisualcomponent).producer = director.draw_visual
+	self:get_component(custom_visual_component).producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end
 
@@ -283,7 +283,7 @@ local define_director_fsm<const> = function()
 		return '/room'
 	end
 
-	fsmlibrary.register('director', {
+	fsm_library.register('director', {
 		-- daemon_timeline_id is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
 		-- (autoplay = false = registration only). Sample output is compiled into
@@ -956,9 +956,9 @@ local register_director_definition<const> = function()
 		def_id = 'director',
 		class = director,
 		components = {
-			customvisualcomponent.new,
+			custom_visual_component.new,
 			timeline_component.new,
-			fsmcomponent.factory({ 'director' }),
+			fsm_component.factory({ 'director' }),
 		},
 		defaults = {
 			id = 'd',

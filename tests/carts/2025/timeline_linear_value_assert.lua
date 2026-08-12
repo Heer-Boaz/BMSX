@@ -1,6 +1,6 @@
-local eventemitter<const> = require('cartlib/eventemitter')
+local event_emitter<const> = require('cartlib/event_emitter')
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local timelinecomponent<const> = require('cartlib/timeline/timeline_component')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 __bmsx_host_test = {}
 
@@ -15,9 +15,9 @@ function owner:add_tag()
 end
 function owner:remove_tag()
 end
-owner.events = eventemitter.events_of(owner)
+owner.events = event_emitter.events_of(owner)
 
-local timelines<const> = timelinecomponent.new({ parent = owner })
+local timelines<const> = timeline_component.new({ parent = owner })
 timelines:on_attach()
 local target<const> = { value = -1, method = -1 }
 timelines:define('time_linear', {

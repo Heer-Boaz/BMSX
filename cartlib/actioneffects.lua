@@ -1,11 +1,11 @@
-local actioneffectcomponent<const> = require('cartlib/actioneffects/actioneffectcomponent')
+local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local registry<const> = require('cartlib/registry')
 
 local actioneffects<const> = {}
 
 function actioneffects.register_effect(id, definition)
-	actioneffectcomponent.set_definition(id, definition)
-	local components<const> = registry:entries(actioneffectcomponent)
+	actioneffect_component.set_definition(id, definition)
+	local components<const> = registry:entries(actioneffect_component)
 	for i = 1, #components do
 		local actioneffect<const> = components[i]
 		if actioneffect.effects[id] ~= nil then

@@ -458,7 +458,7 @@ return first_image._texture == second_image._texture and 1 or 0, imgdec.last_upl
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
-			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
+			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
 			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
 			['cartlib/gx/gp0', readFileSync('cartlib/gx/gp0.lua', 'utf8')],
 			['cartlib/gx/imgdec', `

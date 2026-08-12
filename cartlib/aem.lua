@@ -2,9 +2,9 @@
 -- Cart Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('cartlib/apu')
-local eventemitter<const> = require('cartlib/eventemitter')
-local compile_matcher<const> = require('cartlib/eventmatcher').compile
-local romdir<const> = require('cartlib/romdir')
+local event_emitter<const> = require('cartlib/event_emitter')
+local compile_matcher<const> = require('cartlib/event_matcher').compile
+local rom_dir<const> = require('cartlib/rom_dir')
 
 local global_actor_key<const> = false
 local slot_sfx<const> = 0
@@ -58,7 +58,7 @@ local resolve_audio<const> = function(audio_cache, audio_id)
 	if audio ~= nil then
 		return audio
 	end
-	local record<const> = romdir.audio(audio_id)
+	local record<const> = rom_dir.audio(audio_id)
 	local meta<const> = record.audiometa
 	audio = {
 		source = apu.source(record),
@@ -719,10 +719,10 @@ end
 reset_audio_state()
 
 local rebind<const> = function()
-	eventemitter:remove_subscriber(handle_event)
-	events = merge_events(romdir.aem_event_maps())
+	event_emitter:remove_subscriber(handle_event)
+	events = merge_events(rom_dir.aem_event_maps())
 	for event_name in pairs(events) do
-		eventemitter:on({
+		event_emitter:on({
 			event = event_name,
 			handler = handle_event,
 			subscriber = handle_event,
@@ -731,7 +731,7 @@ local rebind<const> = function()
 end
 
 local reload_from_rom<const> = function()
-	romdir.reload_cartridge_directory()
+	rom_dir.reload_cartridge_directory()
 	rebind()
 end
 
