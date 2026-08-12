@@ -33,7 +33,7 @@ function surfacecomponent:draw(draw)
 	local tiles<const> = source._tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
-		image.draw(draw, tile, x + tile.offset_x, y + tile.offset_y, self.color, 0, gp0.draw_mode_blend_half)
+		tile:draw(draw, x + tile.offset_x, y + tile.offset_y, self.color, 0, gp0.draw_mode_blend_half)
 	end
 end
 

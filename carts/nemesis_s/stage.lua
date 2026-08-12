@@ -518,7 +518,7 @@ function stage:draw_star_particles(draw, stars, source, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		image.draw(draw, source, star.x, star.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		source:draw(draw, star.x, star.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 
@@ -539,7 +539,7 @@ function stage:draw(draw)
 		for stage_row = 1, self.tile_rows do
 			local source<const> = self.tile_tape[stage_row][stage_column]
 			if source ~= nil then
-				image.draw(draw, source, draw_x, (stage_row - 1) * tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
+				source:draw(draw, draw_x, (stage_row - 1) * tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
 			end
 		end
 	end

@@ -68,12 +68,11 @@ function spritecomponent:draw(draw)
 	local scale_x<const> = self.scale_x * self.draw_scale_x
 	local scale_y<const> = self.scale_y * self.draw_scale_y
 	if scale_x == 1 and scale_y == 1 then
-		image.draw(draw, source, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
+		source:draw(draw, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
 		return
 	end
-	image.draw_affine(
+	source:draw_affine(
 		draw,
-		source,
 		x, y,
 		self.source_width * scale_x, 0.0,
 		0.0, self.source_height * scale_y,

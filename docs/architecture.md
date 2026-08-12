@@ -2732,10 +2732,11 @@ Text layout is retained component state. Text, font, wrap or text-object dimensi
 mutation rebuilds wrapped lines, glyph references and widths. Typewriter state
 reveals those retained glyph references by index; neither typing nor steady
 presentation rescans strings. Image IDs resolve to retained texture-region
-sources during asset, component or state construction; presentation consumes
-those sources directly and never performs a ROM-directory lookup or lazy
-allocation. Sprite modulation remains one packed GX color word from cart
-producer through command submission.
+sources during asset, component or state construction. Resolution selects the
+direct16 or palette4 packet writer once; presentation consumes that prepared
+source directly without redispatching on texture mode, performing a ROM-directory
+lookup or allocating. Sprite modulation remains one packed GX color word from
+cart producer through command submission.
 
 GX GPU/GTE is the cart graphics ABI and the only cart graphics path
 executed by host render backends. The old cart-visible VDP/RPU firmware ABI and

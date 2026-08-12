@@ -86,16 +86,16 @@ function ui:draw_ui(draw)
 		return
 	end
 	local player<const> = self.player
-	image.draw(draw, sources.header, 0, 0, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	sources.header:draw(draw, 0, 0, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	for i = 0, (self.hud_health_level - 1) do
-		image.draw(draw, sources.health_stripe, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		sources.health_stripe:draw(draw, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		image.draw(draw, sources.weapon_stripe, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		sources.weapon_stripe:draw(draw, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
 	if equipped_source ~= nil then
-		image.draw(draw, equipped_source, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		equipped_source:draw(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 

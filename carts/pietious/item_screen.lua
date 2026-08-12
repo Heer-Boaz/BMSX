@@ -100,7 +100,7 @@ function item_screen:draw_inventory_items(draw)
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x<const>, y<const> = self:item_position_px(item_type)
-				image.draw(draw, sources.items[item_type], x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+				sources.items[item_type]:draw(draw, x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 			end
 		end
 	end
@@ -112,7 +112,7 @@ function item_screen:draw_secondary_weapon_selector(draw)
 	end
 	local x<const> = (14 * room_tile_size) + (self.secondary_weapon_selection_index * (3 * room_tile_size))
 	local y<const> = room_hud_height + (16 * room_tile_size) + room_tile_half - 1
-	image.draw(draw, sources.selector, x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	sources.selector:draw(draw, x, y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 end
 
 function item_screen:draw_map(draw)
@@ -128,7 +128,7 @@ function item_screen:draw_map(draw)
 
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	image.draw(draw, sources.map_title, map_title_x, 103 + room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	sources.map_title:draw(draw, map_title_x, 103 + room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
@@ -142,7 +142,7 @@ function item_screen:draw_map(draw)
 		end
 		local proxy_x<const> = (5 * room_tile_size) + (proxy.x * room_tile_size)
 		local proxy_y<const> = room_hud_height + (14 * room_tile_size) + room_tile_half + (proxy.y * room_tile_half)
-		image.draw(draw, source, proxy_x, proxy_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		source:draw(draw, proxy_x, proxy_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	end
 end
 
@@ -179,7 +179,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen(draw)
-	image.draw(draw, sources.screen_background, 0, room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	sources.screen_background:draw(draw, 0, room_hud_height, 0xffffffff, 0, gp0.draw_mode_blend_half)
 	self:draw_inventory_items(draw)
 	self:draw_secondary_weapon_selector(draw)
 	self:draw_map(draw)

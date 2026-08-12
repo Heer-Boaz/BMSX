@@ -72,15 +72,27 @@ end
 
 function tilelayercomponent:draw(draw)
 	local parent<const> = self.parent
-	image.draw_tiles(
-		draw,
-		self._sources,
-		self.tile_count,
-		self.columns,
-		self.tile_size,
-		parent.x + self.offset_x + self.draw_offset_x,
-		parent.y + self.offset_y + self.draw_offset_y,
-		gp0.draw_mode_blend_half)
+	local sources<const> = self._sources
+	local columns<const> = self.columns
+	local tile_size<const> = self.tile_size
+	local origin_x<const> = parent.x + self.offset_x + self.draw_offset_x
+	local target_x = origin_x
+	local target_y = parent.y + self.offset_y + self.draw_offset_y
+	local column = 0
+	for index = 1, self.tile_count do
+		local source<const> = sources[index]
+		if source then
+			source:draw(draw, target_x, target_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		end
+		column = column + 1
+		if column == columns then
+			column = 0
+			target_x = origin_x
+			target_y = target_y + tile_size
+		else
+			target_x = target_x + tile_size
+		end
+	end
 end
 
 return tilelayercomponent
