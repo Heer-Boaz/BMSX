@@ -3,10 +3,11 @@
 -- track kind or binding name is inspected on the update path.
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
-local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
+local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local track_evaluator<const> = {}
 local play_update_method<const> = timeline_playback.update_method.play
+local templates<const> = {}
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -522,6 +523,106 @@ local evaluate_sample_groups<const> = function(entry, tracks, params, evaluation
 	end
 end
 
+local emit_tracks_local<const> = function(printer, values)
+	if values.has_frame_steps
+	or values.has_time_steps
+	or values.has_scalar_channels
+	or values.has_sample_groups then
+		printer:emit(templates.tracks_local, values)
+	end
+end
+
+local emit_params_local<const> = function(printer, values)
+	if values.has_frame_steps or values.has_time_steps or values.has_sample_tracks then
+		printer:emit(templates.params_local, values)
+	end
+end
+
+local emit_frame_steps<const> = function(printer, values)
+	if values.has_frame_steps then
+		printer:emit(templates.frame_steps, values)
+	end
+end
+
+local emit_time_steps<const> = function(printer, values)
+	if values.has_time_steps then
+		printer:emit(templates.time_steps, values)
+	end
+end
+
+local emit_scalar_channels<const> = function(printer, values)
+	if values.has_scalar_channels then
+		printer:emit(templates.scalar_channels, values)
+	end
+end
+
+local emit_sample_body<const> = function(printer, values)
+	if values.primary_sample_runner ~= nil then
+		printer:emit(templates.primary_sample, values)
+	else
+		printer:emit(templates.sample_groups, values)
+	end
+end
+
+local emit_sample<const> = function(printer, values)
+	if values.has_sample_tracks then
+		printer:emit(templates.sample, values)
+	end
+end
+
+templates.tracks_local = lua_source_printer.compile_template(
+	'local tracks = entry["instance"]["program"]["tracks"]\n'
+)
+
+templates.params_local = lua_source_printer.compile_template(
+	'local params = entry["params"]\n'
+)
+
+templates.frame_steps = lua_source_printer.compile_template(
+	'evaluate_frame_steps(entry, tracks["steps"], params, evaluation)\n'
+)
+
+templates.time_steps = lua_source_printer.compile_template(
+	'evaluate_time_steps(entry, tracks["steps"], params, evaluation)\n'
+)
+
+templates.scalar_channels = lua_source_printer.compile_template(
+	'scalar_runner(tracks["scalar_channels"], entry, evaluation)\n'
+)
+
+templates.primary_sample = lua_source_printer.compile_template(
+	'primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)\n'
+)
+
+templates.sample_groups = lua_source_printer.compile_template(
+	'evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)\n'
+)
+
+templates.sample = lua_source_printer.compile_template([[
+	if evaluation["sample"] then
+		local time_seconds = evaluation["time_ms"] * 0.001
+		$body$
+	end
+]], { body = emit_sample_body })
+
+templates.value_runner = lua_source_printer.compile_template([[
+	return function(entry, evaluation)
+		$tracks_local$
+		$params_local$
+		$frame_steps$
+		$time_steps$
+		$scalar_channels$
+		$sample$
+	end
+]], {
+	tracks_local = emit_tracks_local,
+	params_local = emit_params_local,
+	frame_steps = emit_frame_steps,
+	time_steps = emit_time_steps,
+	scalar_channels = emit_scalar_channels,
+	sample = emit_sample,
+})
+
 function track_evaluator.compile_values(program)
 	local has_frame_steps<const> = program.has_frame_steps
 	local has_time_steps<const> = program.has_time_steps
@@ -530,36 +631,17 @@ function track_evaluator.compile_values(program)
 	local primary_sample_runner<const> = program.primary_sample_runner
 	local has_sample_groups<const> = program.sample_group_count > 0
 	local has_sample_tracks<const> = primary_sample_runner ~= nil or has_sample_groups
-	local writer<const> = lua_source_writer.new()
-	writer:begin_block('return function(entry, evaluation)')
-	if has_frame_steps or has_time_steps or has_scalar_channels or has_sample_groups then
-		writer:line('local tracks = entry["instance"]["program"]["tracks"]')
-	end
-	if has_frame_steps or has_time_steps or has_sample_tracks then
-		writer:line('local params = entry["params"]')
-	end
-	if has_frame_steps then
-		writer:line('evaluate_frame_steps(entry, tracks["steps"], params, evaluation)')
-	end
-	if has_time_steps then
-		writer:line('evaluate_time_steps(entry, tracks["steps"], params, evaluation)')
-	end
-	if has_scalar_channels then
-		writer:line('scalar_runner(tracks["scalar_channels"], entry, evaluation)')
-	end
-	if has_sample_tracks then
-		writer:begin_block('if evaluation["sample"] then')
-		writer:line('local time_seconds = evaluation["time_ms"] * 0.001')
-		if primary_sample_runner ~= nil then
-			writer:line('primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)')
-		else
-			writer:line('evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)')
-		end
-		writer:end_block()
-	end
-	writer:end_block()
+	local printer<const> = lua_source_printer.new()
+	printer:emit(templates.value_runner, {
+		has_frame_steps = has_frame_steps,
+		has_time_steps = has_time_steps,
+		has_scalar_channels = has_scalar_channels,
+		has_sample_groups = has_sample_groups,
+		has_sample_tracks = has_sample_tracks,
+		primary_sample_runner = primary_sample_runner,
+	})
 	return load(
-		writer:finish(),
+		printer:finish(),
 		'[timeline.track_values]',
 		't',
 		{

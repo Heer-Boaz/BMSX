@@ -1,30 +1,84 @@
 local timeline_apply<const> = {}
-local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
+local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
-local append_frame_assignments
-append_frame_assignments = function(writer, node, path)
+local emit_frame_path<const> = function(printer, values)
+	printer:print_raw('frame')
+	printer:print_path(values.path)
+end
+
+local emit_target_path<const> = function(printer, values)
+	printer:print_raw('target')
+	printer:print_path(values.path)
+end
+
+local emit_primary_binding_path<const> = function(printer, values)
+	printer:print_raw('entry["primary_binding"]')
+	printer:print_path(values.path)
+end
+
+local emit_indexed_binding_path<const> = function(printer, values)
+	printer:print_raw('entry["bindings"]')
+	printer:print_index(values.binding_index)
+	printer:print_path(values.path)
+end
+
+local templates<const> = {}
+
+templates.frame_assignment = lua_source_printer.compile_template(
+	'$target_path$ = $frame_path$\n',
+	{
+		target_path = emit_target_path,
+		frame_path = emit_frame_path,
+	}
+)
+
+local emit_frame_assignments
+emit_frame_assignments = function(printer, node, values)
+	local path<const> = values.path
 	for key, value in pairs(node) do
 		local path_index<const> = #path + 1
 		path[path_index] = key
 		if type(value) == 'table' then
-			append_frame_assignments(writer, value, path)
+			emit_frame_assignments(printer, value, values)
 		else
-			writer:start_line('target')
-			writer:write_path(path)
-			writer:write(' = frame')
-			writer:write_path(path)
-			writer:end_line('')
+			printer:emit(templates.frame_assignment, values)
 		end
 		path[path_index] = nil
 	end
 end
 
+local emit_frame_function_body<const> = function(printer, values)
+	emit_frame_assignments(printer, values.frame, values)
+end
+
+templates.frame_function = lua_source_printer.compile_template([[
+	return function(target, frame)
+		$assignments$
+	end
+]], { assignments = emit_frame_function_body })
+
+templates.setter_function = lua_source_printer.compile_template([[
+	return function(target, value)
+		$target_path$ = value
+	end
+]], { target_path = emit_target_path })
+
+templates.primary_step_function = lua_source_printer.compile_template([[
+	return function(entry, value)
+		$binding_path$ = value
+	end
+]], { binding_path = emit_primary_binding_path })
+
+templates.indexed_step_function = lua_source_printer.compile_template([[
+	return function(entry, value)
+		$binding_path$ = value
+	end
+]], { binding_path = emit_indexed_binding_path })
+
 local compile_frame_apply<const> = function(frame, shape_cache)
-	local writer<const> = lua_source_writer.new()
-	writer:begin_block('return function(target, frame)')
-	append_frame_assignments(writer, frame, {})
-	writer:end_block()
-	local source<const> = writer:finish()
+	local printer<const> = lua_source_printer.new()
+	printer:emit(templates.frame_function, { frame = frame, path = {} })
+	local source<const> = printer:finish()
 	local apply_frame = shape_cache[source]
 	if apply_frame == nil then
 		apply_frame = load(source, '[timeline.apply.frame]', 't')()
@@ -50,13 +104,9 @@ function timeline_apply.compile_frames(frames)
 end
 
 function timeline_apply.compile_setter(path)
-	local writer<const> = lua_source_writer.new()
-	writer:begin_block('return function(target, value)')
-	writer:start_line('target')
-	writer:write_path(path)
-	writer:end_line(' = value')
-	writer:end_block()
-	return load(writer:finish(), '[timeline.apply.setter]', 't')()
+	local printer<const> = lua_source_printer.new()
+	printer:emit(templates.setter_function, { path = path })
+	return load(printer:finish(), '[timeline.apply.setter]', 't')()
 end
 
 -- Step bindings are fixed by the compiled sequence program. Resolve that
@@ -73,19 +123,13 @@ function timeline_apply.compile_step_apply(path, apply, binding_index)
 		end
 	end
 
-	local writer<const> = lua_source_writer.new()
-	writer:begin_block('return function(entry, value)')
-	writer:start_line('entry')
-	if binding_index == 1 then
-		writer:write_index('primary_binding')
-	else
-		writer:write_index('bindings')
-		writer:write_index(binding_index)
+	local template = templates.primary_step_function
+	if binding_index ~= 1 then
+		template = templates.indexed_step_function
 	end
-	writer:write_path(path)
-	writer:end_line(' = value')
-	writer:end_block()
-	return load(writer:finish(), '[timeline.apply.step]', 't')()
+	local printer<const> = lua_source_printer.new()
+	printer:emit(template, { path = path, binding_index = binding_index })
+	return load(printer:finish(), '[timeline.apply.step]', 't')()
 end
 
 return timeline_apply

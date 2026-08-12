@@ -4,9 +4,10 @@
 -- so evaluation only searches again when traversal leaves that range. Generic
 -- step values remain track-program data because they may carry non-numeric
 -- cart values.
-local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
+local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local scalar_channel<const> = {}
+local templates<const> = {}
 
 scalar_channel.empty_program = {
 	track_count = 0,
@@ -29,123 +30,331 @@ scalar_channel.empty = {
 	runner = nil,
 }
 
-local append_scalar_track<const> = function(
-	writer,
-	track_list_name,
-	track_index,
-	track,
-	position_key,
-	cubic
-)
-	if track.apply ~= nil then
-		writer:start_line('track = channels')
-		writer:write_index(track_list_name)
-		writer:write_index(track_index)
-		writer:end_line('')
-		writer:line('keys = track["keys"]')
+local emit_track_list_index<const> = function(printer, values)
+	printer:print_index(values.track_list_name)
+end
+
+local emit_track_index<const> = function(printer, values)
+	printer:print_index(values.track_index)
+end
+
+local emit_position_index<const> = function(printer, values)
+	printer:print_index(values.position_key)
+end
+
+local emit_target_path<const> = function(printer, values)
+	printer:print_path(values.track.path)
+end
+
+local emit_segment<const> = function(printer, values)
+	if values.key_count == 2 then
+		printer:emit(templates.first_segment, values)
 	else
-		writer:start_line('keys = channels')
-		writer:write_index(track_list_name)
-		writer:write_index(track_index)
-		writer:end_line('["keys"]')
-	end
-	local key_count<const> = #track.keys
-	if key_count == 1 then
-		writer:line('value = keys[1]["value"]')
-	else
-		writer:line('first_key = keys[1]')
-		writer:start_line('if position <= first_key')
-		writer:write_index(position_key)
-		writer:finish_block_header(' then')
-		writer:line('value = first_key["value"]')
-		writer:next_block('else')
-		writer:start_line('last_key = keys[')
-		writer:write(key_count)
-		writer:end_line(']')
-		writer:start_line('if position >= last_key')
-		writer:write_index(position_key)
-		writer:finish_block_header(' then')
-		writer:line('value = last_key["value"]')
-		writer:next_block('else')
-		if key_count == 2 then
-			writer:line('key = first_key')
-		else
-			local cached_segment_index<const> = track.cached_segment_index
-			writer:start_line('key = cached_segments[')
-			writer:write(cached_segment_index)
-			writer:end_line(']')
-			writer:start_line('if position < key')
-			writer:write_index(position_key)
-			writer:finish_block_header(' or position >= key["segment_end"] then')
-			writer:line('low = 1')
-			writer:start_line('high = ')
-			writer:end_line(key_count + 1)
-			writer:begin_block('while low < high do')
-			writer:line('middle = (low + high) // 2')
-			writer:start_line('if keys[middle]')
-			writer:write_index(position_key)
-			writer:finish_block_header(' <= position then')
-			writer:line('low = middle + 1')
-			writer:next_block('else')
-			writer:line('high = middle')
-			writer:end_block()
-			writer:end_block()
-			writer:line('key = keys[low - 1]')
-			writer:start_line('cached_segments[')
-			writer:write(cached_segment_index)
-			writer:end_line('] = key')
-			writer:end_block()
-		end
-		if cubic then
-			writer:start_line('u = (position - key')
-			writer:write_index(position_key)
-			writer:end_line(') * key["span_inv"]')
-			writer:line('value = ((key["cubic3"] * u + key["cubic2"]) * u + key["cubic1"]) * u + key["value"]')
-		else
-			writer:start_line('value = key["value"] + key["value_delta"] * ((position - key')
-			writer:write_index(position_key)
-			writer:end_line(') * key["span_inv"])')
-		end
-		writer:end_block()
-		writer:end_block()
-	end
-	if track.apply ~= nil then
-		writer:start_line('track["apply"](')
-	else
-		writer:start_line('')
-	end
-	if track.binding_index == 1 then
-		writer:write('primary_binding')
-	else
-		writer:write('bindings')
-		writer:write_index(track.binding_index)
-	end
-	if track.apply ~= nil then
-		writer:end_line(', value, params, evaluation)')
-	else
-		writer:write_path(track.path)
-		writer:end_line(' = value')
+		printer:emit(templates.cached_segment, values)
 	end
 end
 
-local append_scalar_lane<const> = function(
-	writer,
-	track_list_name,
-	tracks,
-	position_key,
-	cubic
-)
-	for track_index = 1, #tracks do
-		append_scalar_track(
-			writer,
-			track_list_name,
-			track_index,
-			tracks[track_index],
-			position_key,
-			cubic
-		)
+local emit_interpolation<const> = function(printer, values)
+	if values.cubic then
+		printer:emit(templates.cubic_interpolation, values)
+	else
+		printer:emit(templates.linear_interpolation, values)
 	end
 end
+
+local emit_track_load<const> = function(printer, values)
+	if values.track.apply ~= nil then
+		printer:emit(templates.callback_track_load, values)
+	else
+		printer:emit(templates.assignment_track_load, values)
+	end
+end
+
+local emit_track_sample<const> = function(printer, values)
+	if values.key_count == 1 then
+		printer:emit(templates.single_key_sample, values)
+	else
+		printer:emit(templates.multi_key_sample, values)
+	end
+end
+
+local emit_track_output<const> = function(printer, values)
+	local track<const> = values.track
+	if track.apply ~= nil then
+		if track.binding_index == 1 then
+			printer:emit(templates.primary_callback_output, values)
+		else
+			printer:emit(templates.indexed_callback_output, values)
+		end
+	elseif track.binding_index == 1 then
+		printer:emit(templates.primary_assignment_output, values)
+	else
+		printer:emit(templates.indexed_assignment_output, values)
+	end
+end
+
+local emit_scalar_track<const> = function(printer, values)
+	local track<const> = values.track
+	local key_count<const> = #track.keys
+	values.key_count = key_count
+	values.key_count_plus_one = key_count + 1
+	values.cached_segment_index = track.cached_segment_index
+	values.binding_index = track.binding_index
+	printer:emit(templates.scalar_track, values)
+end
+
+local emit_scalar_lane<const> = function(printer, values, track_list_name, tracks, position_key, cubic)
+	values.track_list_name = track_list_name
+	values.position_key = position_key
+	values.cubic = cubic
+	for track_index = 1, #tracks do
+		values.track_index = track_index
+		values.track = tracks[track_index]
+		emit_scalar_track(printer, values)
+	end
+end
+
+local emit_locals<const> = function(printer, values)
+	local analysis<const> = values.analysis
+	printer:emit(templates.base_locals, values)
+	if analysis.has_callback then
+		printer:emit(templates.callback_locals, values)
+	end
+	if analysis.has_primary_binding then
+		printer:emit(templates.primary_binding_local, values)
+	end
+	if analysis.has_secondary_binding then
+		printer:emit(templates.secondary_binding_local, values)
+	end
+	if analysis.cached_segment_count > 0 then
+		printer:emit(templates.cached_segment_local, values)
+	end
+	if analysis.max_key_count > 1 then
+		printer:emit(templates.position_locals, values)
+	end
+	if analysis.max_key_count > 2 then
+		printer:emit(templates.search_locals, values)
+	end
+	if values.has_cubic_tracks then
+		printer:emit(templates.cubic_local, values)
+	end
+end
+
+local emit_frame_position<const> = function(printer, values)
+	if values.analysis.frame_max_key_count > 1 then
+		printer:emit(templates.frame_position, values)
+	end
+end
+
+local emit_frame_tracks<const> = function(printer, values)
+	local channels<const> = values.channels
+	emit_scalar_lane(printer, values, 'linear_tracks', channels.linear_tracks, 'frame', false)
+	emit_scalar_lane(printer, values, 'cubic_tracks', channels.cubic_tracks, 'frame', true)
+end
+
+local emit_frame_lane<const> = function(printer, values)
+	if values.has_frame_tracks then
+		printer:emit(templates.frame_lane, values)
+	end
+end
+
+local emit_time_position<const> = function(printer, values)
+	if values.analysis.time_max_key_count > 1 then
+		printer:emit(templates.time_position, values)
+	end
+end
+
+local emit_time_tracks<const> = function(printer, values)
+	local channels<const> = values.channels
+	emit_scalar_lane(printer, values, 'linear_time_tracks', channels.linear_time_tracks, 'time_ms', false)
+	emit_scalar_lane(printer, values, 'cubic_time_tracks', channels.cubic_time_tracks, 'time_ms', true)
+end
+
+local emit_time_lane<const> = function(printer, values)
+	if values.has_time_tracks then
+		printer:emit(templates.time_lane, values)
+	end
+end
+
+templates.base_locals = lua_source_printer.compile_template([[
+	local keys
+	local value
+]], {})
+
+templates.callback_locals = lua_source_printer.compile_template([[
+	local track
+	local params = entry["params"]
+]], {})
+
+templates.primary_binding_local = lua_source_printer.compile_template(
+	'local primary_binding = entry["primary_binding"]\n',
+	{}
+)
+
+templates.secondary_binding_local = lua_source_printer.compile_template(
+	'local bindings = entry["bindings"]\n',
+	{}
+)
+
+templates.cached_segment_local = lua_source_printer.compile_template(
+	'local cached_segments = entry["cached_scalar_segments"]\n',
+	{}
+)
+
+templates.position_locals = lua_source_printer.compile_template([[
+	local position
+	local first_key
+	local last_key
+	local key
+]], {})
+
+templates.search_locals = lua_source_printer.compile_template([[
+	local low
+	local high
+	local middle
+]], {})
+
+templates.cubic_local = lua_source_printer.compile_template('local u\n', {})
+
+templates.callback_track_load = lua_source_printer.compile_template([[
+	track = channels$track_list_index$$track_index$
+	keys = track["keys"]
+]], {
+	track_list_index = emit_track_list_index,
+	track_index = emit_track_index,
+})
+
+templates.assignment_track_load = lua_source_printer.compile_template(
+	'keys = channels$track_list_index$$track_index$["keys"]\n',
+	{
+		track_list_index = emit_track_list_index,
+		track_index = emit_track_index,
+	}
+)
+
+templates.single_key_sample = lua_source_printer.compile_template(
+	'value = keys[1]["value"]\n',
+	{}
+)
+
+templates.first_segment = lua_source_printer.compile_template('key = first_key\n', {})
+
+templates.cached_segment = lua_source_printer.compile_template([[
+	key = cached_segments[$cached_segment_index$]
+	if position < key$position_index$ or position >= key["segment_end"] then
+		low = 1
+		high = $key_count_plus_one$
+		while low < high do
+			middle = (low + high) // 2
+			if keys[middle]$position_index$ <= position then
+				low = middle + 1
+			else
+				high = middle
+			end
+		end
+		key = keys[low - 1]
+		cached_segments[$cached_segment_index$] = key
+	end
+]], { position_index = emit_position_index })
+
+templates.linear_interpolation = lua_source_printer.compile_template(
+	'value = key["value"] + key["value_delta"] * ((position - key$position_index$) * key["span_inv"])\n',
+	{ position_index = emit_position_index }
+)
+
+templates.cubic_interpolation = lua_source_printer.compile_template([[
+	u = (position - key$position_index$) * key["span_inv"]
+	value = ((key["cubic3"] * u + key["cubic2"]) * u + key["cubic1"]) * u + key["value"]
+]], { position_index = emit_position_index })
+
+templates.multi_key_sample = lua_source_printer.compile_template([[
+	first_key = keys[1]
+	if position <= first_key$position_index$ then
+		value = first_key["value"]
+	else
+		last_key = keys[$key_count$]
+		if position >= last_key$position_index$ then
+			value = last_key["value"]
+		else
+			$segment$
+			$interpolation$
+		end
+	end
+]], {
+	position_index = emit_position_index,
+	segment = emit_segment,
+	interpolation = emit_interpolation,
+})
+
+templates.primary_callback_output = lua_source_printer.compile_template(
+	'track["apply"](primary_binding, value, params, evaluation)\n',
+	{}
+)
+
+templates.indexed_callback_output = lua_source_printer.compile_template(
+	'track["apply"](bindings[$binding_index$], value, params, evaluation)\n',
+	{}
+)
+
+templates.primary_assignment_output = lua_source_printer.compile_template(
+	'primary_binding$target_path$ = value\n',
+	{ target_path = emit_target_path }
+)
+
+templates.indexed_assignment_output = lua_source_printer.compile_template(
+	'bindings[$binding_index$]$target_path$ = value\n',
+	{ target_path = emit_target_path }
+)
+
+templates.scalar_track = lua_source_printer.compile_template([[
+	$load$
+	$sample$
+	$output$
+]], {
+	load = emit_track_load,
+	sample = emit_track_sample,
+	output = emit_track_output,
+})
+
+templates.frame_position = lua_source_printer.compile_template(
+	'position = evaluation["frame"]\n',
+	{}
+)
+
+templates.time_position = lua_source_printer.compile_template(
+	'position = evaluation["time_ms"]\n',
+	{}
+)
+
+templates.frame_lane = lua_source_printer.compile_template([[
+	if evaluation["sample"] then
+		$position$
+		$tracks$
+	end
+]], {
+	position = emit_frame_position,
+	tracks = emit_frame_tracks,
+})
+
+templates.time_lane = lua_source_printer.compile_template([[
+	$position$
+	$tracks$
+]], {
+	position = emit_time_position,
+	tracks = emit_time_tracks,
+})
+
+templates.runner = lua_source_printer.compile_template([[
+	return function(channels, entry, evaluation)
+		$locals$
+		$frame_lane$
+		$time_lane$
+	end
+]], {
+	locals = emit_locals,
+	frame_lane = emit_frame_lane,
+	time_lane = emit_time_lane,
+})
 
 local analyze_tracks<const> = function(analysis, tracks, time_domain)
 	for index = 1, #tracks do
@@ -196,55 +405,15 @@ local compile_runner<const> = function(channels)
 	analyze_tracks(analysis, linear_time_tracks, true)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
-	local writer<const> = lua_source_writer.new()
-	writer:begin_block('return function(channels, entry, evaluation)')
-	writer:line('local track')
-	writer:line('local keys')
-	writer:line('local value')
-	if analysis.has_primary_binding then
-		writer:line('local primary_binding = entry["primary_binding"]')
-	end
-	if analysis.has_secondary_binding then
-		writer:line('local bindings = entry["bindings"]')
-	end
-	if analysis.has_callback then
-		writer:line('local params = entry["params"]')
-	end
-	if analysis.cached_segment_count > 0 then
-		writer:line('local cached_segments = entry["cached_scalar_segments"]')
-	end
-	if analysis.max_key_count > 1 then
-		writer:line('local position')
-		writer:line('local first_key')
-		writer:line('local last_key')
-		writer:line('local key')
-	end
-	if analysis.max_key_count > 2 then
-		writer:line('local low')
-		writer:line('local high')
-		writer:line('local middle')
-	end
-	if #cubic_tracks > 0 or #cubic_time_tracks > 0 then
-		writer:line('local u')
-	end
-	if #linear_tracks > 0 or #cubic_tracks > 0 then
-		writer:begin_block('if evaluation["sample"] then')
-		if analysis.frame_max_key_count > 1 then
-			writer:line('position = evaluation["frame"]')
-		end
-		append_scalar_lane(writer, 'linear_tracks', linear_tracks, 'frame', false)
-		append_scalar_lane(writer, 'cubic_tracks', cubic_tracks, 'frame', true)
-		writer:end_block()
-	end
-	if #linear_time_tracks > 0 or #cubic_time_tracks > 0 then
-		if analysis.time_max_key_count > 1 then
-			writer:line('position = evaluation["time_ms"]')
-		end
-		append_scalar_lane(writer, 'linear_time_tracks', linear_time_tracks, 'time_ms', false)
-		append_scalar_lane(writer, 'cubic_time_tracks', cubic_time_tracks, 'time_ms', true)
-	end
-	writer:end_block()
-	return load(writer:finish(), '[timeline.scalar_channel]', 't')(), analysis.cached_segment_count
+	local printer<const> = lua_source_printer.new()
+	printer:emit(templates.runner, {
+		analysis = analysis,
+		channels = channels,
+		has_cubic_tracks = #cubic_tracks > 0 or #cubic_time_tracks > 0,
+		has_frame_tracks = #linear_tracks > 0 or #cubic_tracks > 0,
+		has_time_tracks = #linear_time_tracks > 0 or #cubic_time_tracks > 0,
+	})
+	return load(printer:finish(), '[timeline.scalar_channel]', 't')(), analysis.cached_segment_count
 end
 
 local finalize_tracks<const> = function(tracks)
