@@ -1,4 +1,3 @@
-local easing<const> = require('cartlib/easing')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
@@ -7,7 +6,6 @@ local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluato
 -- consumes these dense phase programs without inspecting authored track kinds.
 local track_program<const> = {}
 local empty_defs<const> = {}
-local empty_groups<const> = {}
 local empty_event_lane<const> = {
 	by_frame = {},
 	keys = {},
@@ -43,9 +41,7 @@ local empty_steps<const> = {
 	time_track_count = 0,
 }
 local empty_prepared<const> = {
-	primary_sample_runner = nil,
-	sample_groups = empty_groups,
-	sample_group_count = 0,
+	sample_tracks = {},
 	sample_track_count = 0,
 	value_track_count = 0,
 	value_runner_factory = nil,
@@ -57,9 +53,6 @@ local empty_prepared<const> = {
 	scalar_program = scalar_channel.empty_program,
 }
 track_program.empty = {
-	primary_sample_runner = nil,
-	sample_groups = empty_groups,
-	sample_group_count = 0,
 	value_track_count = 0,
 	value_runner = nil,
 	events = empty_events,
@@ -67,8 +60,6 @@ track_program.empty = {
 	steps = empty_steps,
 	scalar_channels = scalar_channel.empty,
 }
-local sin<const> = math.sin
-local pi<const> = math.pi
 local event_forward_directions<const> = { forward = true, both = true }
 local event_backward_directions<const> = { backward = true, both = true }
 
@@ -113,89 +104,43 @@ local frame_at<const> = function(position, length)
 	return (position.u * (length - 1)) // 1
 end
 
-local combine_sample_runners<const> = function(runners)
-	local count<const> = #runners
-	if count == 1 then
-		return runners[1]
-	end
-	return function(target, params, evaluation, time_seconds)
-		for index = 1, count do
-			runners[index](target, params, evaluation, time_seconds)
-		end
-	end
-end
-
-local compile_wave<const> = function(track)
-	local base<const> = track.base
-	local base_is_param<const> = type(base) == 'string'
-	local amp<const> = track.amp
-	local phase<const> = track.phase or 0
-	local period_inv<const> = 1 / track.period
-	local ease<const> = track.ease
-	local set_value<const> = timeline_apply.compile_setter(track.path)
-	if track.wave == 'pingpong' then
-		return function(target, params, _evaluation, time_seconds)
-			local wave_value<const> = easing.pingpong01((time_seconds * period_inv) + phase)
-			local eased<const> = ease ~= nil and ease(wave_value) or wave_value
-			local base_value<const> = base_is_param and params[base] or base
-			set_value(target, base_value + ((eased - 0.5) * 2 * amp))
-		end
-	end
-	if track.wave == 'sin' then
-		return function(target, params, _evaluation, time_seconds)
-			local wave_value<const> = (sin(((time_seconds * period_inv) + phase) * (pi * 2)) + 1) * 0.5
-			local eased<const> = ease ~= nil and ease(wave_value) or wave_value
-			local base_value<const> = base_is_param and params[base] or base
-			set_value(target, base_value + ((eased - 0.5) * 2 * amp))
-		end
-	end
-end
-
-local sampled_track_compilers<const> = {
-	wave = compile_wave,
-}
-
-local add_sample_track<const> = function(groups, track, binding_index_by_id)
+local compile_sample_track<const> = function(track, binding_index_by_id)
 	local binding_index = 1
 	if track.binding ~= nil then
 		binding_index = binding_index_by_id[track.binding]
 	end
-	local group = groups[#groups]
-	if group == nil or group.binding_index ~= binding_index then
-		group = { binding_index = binding_index, runners = {} }
-		groups[#groups + 1] = group
-	end
-	local runners<const> = group.runners
 	if track.kind == 'sample' then
-		runners[#runners + 1] = track.apply
-	else
-		runners[#runners + 1] = sampled_track_compilers[track.kind](track)
-	end
-end
-
-local compile_sample_groups<const> = function(source_groups)
-	if #source_groups == 0 then
-		return nil, empty_groups
-	end
-	if #source_groups == 1 and source_groups[1].binding_index == 1 then
-		return combine_sample_runners(source_groups[1].runners), empty_groups
-	end
-	local groups<const> = {}
-	for index = 1, #source_groups do
-		local source<const> = source_groups[index]
-		groups[index] = {
-			binding_index = source.binding_index,
-			runner = combine_sample_runners(source.runners),
+		return {
+			kind = 'sample',
+			binding_index = binding_index,
+			apply = track.apply,
 		}
 	end
-	return nil, groups
+	local base = track.base
+	local base_param
+	if type(base) == 'string' then
+		base_param = base
+		base = nil
+	end
+	return {
+		kind = 'wave',
+		binding_index = binding_index,
+		path = track.path,
+		base = base,
+		base_param = base_param,
+		amp = track.amp,
+		phase = track.phase or 0,
+		period_inv = 1 / track.period,
+		wave = track.wave,
+		ease = track.ease,
+	}
 end
 
 function track_program.prepare(track_defs, binding_index_by_id)
 	if #track_defs == 0 then
 		return empty_prepared
 	end
-	local sample_groups<const> = {}
+	local sample_tracks<const> = {}
 	local event_defs<const> = {}
 	local tag_defs<const> = {}
 	local step_defs<const> = {}
@@ -240,13 +185,10 @@ function track_program.prepare(track_defs, binding_index_by_id)
 				}
 			end
 		else
-			add_sample_track(sample_groups, track, binding_index_by_id)
+			sample_tracks[#sample_tracks + 1] = compile_sample_track(track, binding_index_by_id)
 		end
 	end
-	local primary_sample_runner<const>, compiled_sample_groups<const> = compile_sample_groups(sample_groups)
-	prepared.primary_sample_runner = primary_sample_runner
-	prepared.sample_groups = compiled_sample_groups
-	prepared.sample_group_count = #compiled_sample_groups
+	prepared.sample_tracks = sample_tracks
 	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #scalar_defs
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
@@ -527,9 +469,6 @@ function track_program.compile(prepared, length)
 	end
 	local scalar_channels<const> = scalar_channel.compile(prepared.scalar_program, length)
 	local tracks<const> = {
-		primary_sample_runner = prepared.primary_sample_runner,
-		sample_groups = prepared.sample_groups,
-		sample_group_count = prepared.sample_group_count,
 		value_track_count = prepared.value_track_count,
 		value_runner = nil,
 		events = compile_events(prepared.event_defs, length),

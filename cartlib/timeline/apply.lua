@@ -57,12 +57,6 @@ templates.frame_function = lua_source_printer.compile_template([[
 	end
 ]], { assignments = emit_frame_function_body })
 
-templates.setter_function = lua_source_printer.compile_template([[
-	return function(target, value)
-		$target_path$ = value
-	end
-]], { target_path = emit_target_path })
-
 templates.primary_step_function = lua_source_printer.compile_template([[
 	return function(entry, value)
 		$binding_path$ = value
@@ -101,12 +95,6 @@ function timeline_apply.compile_frames(frames)
 		frame_appliers[i] = apply_frame
 	end
 	return frame_appliers
-end
-
-function timeline_apply.compile_setter(path)
-	local printer<const> = lua_source_printer.new()
-	printer:emit(templates.setter_function, { path = path })
-	return load(printer:finish(), '[timeline.apply.setter]', 't')()
 end
 
 -- Step bindings are fixed by the compiled sequence program. Resolve that

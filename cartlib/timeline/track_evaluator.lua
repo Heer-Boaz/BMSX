@@ -3,11 +3,15 @@
 -- track kind or binding name is inspected on the update path.
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
+local easing<const> = require('cartlib/easing')
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local track_evaluator<const> = {}
 local play_update_method<const> = timeline_playback.update_method.play
 local templates<const> = {}
+local pingpong01<const> = easing.pingpong01
+local sin<const> = math.sin
+local tau<const> = math.pi * 2
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -516,24 +520,12 @@ local evaluate_time_steps<const> = function(entry, steps, params, evaluation)
 	end
 end
 
-local evaluate_sample_groups<const> = function(entry, tracks, params, evaluation, time_seconds)
-	local bindings<const> = entry.bindings
-	local groups<const> = tracks.sample_groups
-	for index = 1, tracks.sample_group_count do
-		local group<const> = groups[index]
-		group.runner(bindings[group.binding_index], params, evaluation, time_seconds)
-	end
-end
-
 local emit_track_captures<const> = function(printer, values)
 	if values.has_frame_steps or values.has_time_steps then
 		printer:emit(templates.steps_capture, values)
 	end
 	if values.has_scalar_channels then
 		printer:emit(templates.scalar_channels_capture, values)
-	end
-	if values.has_sample_groups then
-		printer:emit(templates.sample_program_capture, values)
 	end
 end
 
@@ -547,15 +539,19 @@ local emit_dependency_captures<const> = function(printer, values)
 	if values.has_scalar_channels then
 		printer:emit(templates.scalar_runner_factory_capture, values)
 	end
-	if values.primary_sample_runner ~= nil then
-		printer:emit(templates.primary_sample_runner_capture, values)
-	elseif values.has_sample_groups then
-		printer:emit(templates.evaluate_sample_groups_capture, values)
+	if values.has_sample_tracks then
+		printer:emit(templates.sample_tracks_capture, values)
+	end
+	if values.has_pingpong_tracks then
+		printer:emit(templates.pingpong_capture, values)
+	end
+	if values.has_sin_tracks then
+		printer:emit(templates.sin_capture, values)
 	end
 end
 
 local emit_params_local<const> = function(printer, values)
-	if values.has_frame_steps or values.has_time_steps or values.has_sample_tracks then
+	if values.has_frame_steps or values.has_time_steps then
 		printer:emit(templates.params_local, values)
 	end
 end
@@ -578,11 +574,134 @@ local emit_scalar_channels<const> = function(printer, values)
 	end
 end
 
-local emit_sample_body<const> = function(printer, values)
-	if values.primary_sample_runner ~= nil then
-		printer:emit(templates.primary_sample, values)
+local emit_sample_callback_name<const> = function(printer, values)
+	printer:print_raw('sample_callback_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_base_name<const> = function(printer, values)
+	printer:print_raw('sample_base_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_amp_name<const> = function(printer, values)
+	printer:print_raw('sample_amp_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_phase_name<const> = function(printer, values)
+	printer:print_raw('sample_phase_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_period_inv_name<const> = function(printer, values)
+	printer:print_raw('sample_period_inv_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_ease_name<const> = function(printer, values)
+	printer:print_raw('sample_ease_')
+	printer:print_raw(values.sample_track_index)
+end
+
+local emit_sample_target<const> = function(printer, values)
+	local track<const> = values.sample_track
+	if track.binding_index == 1 then
+		printer:print_raw('primary_binding')
 	else
-		printer:emit(templates.sample_groups, values)
+		printer:print_raw('bindings')
+		printer:print_index(track.binding_index)
+	end
+end
+
+local emit_sample_target_path<const> = function(printer, values)
+	emit_sample_target(printer, values)
+	printer:print_path(values.sample_track.path)
+end
+
+local emit_sample_base<const> = function(printer, values)
+	local base_param<const> = values.sample_track.base_param
+	if base_param ~= nil then
+		printer:print_raw('params')
+		printer:print_index(base_param)
+	else
+		emit_sample_base_name(printer, values)
+	end
+end
+
+local emit_sample_track_capture<const> = function(printer, values)
+	local track<const> = values.sample_track
+	if track.kind == 'sample' then
+		printer:emit(templates.sample_callback_capture, values)
+		return
+	end
+	if track.base_param == nil then
+		printer:emit(templates.sample_base_capture, values)
+	end
+	printer:emit(templates.sample_wave_capture, values)
+	if track.ease ~= nil then
+		printer:emit(templates.sample_ease_capture, values)
+	end
+end
+
+local emit_sample_track_captures<const> = function(printer, values)
+	local tracks<const> = values.sample_tracks
+	for index = 1, #tracks do
+		values.sample_track_index = index
+		values.sample_track = tracks[index]
+		emit_sample_track_capture(printer, values)
+	end
+end
+
+local emit_sample_binding_locals<const> = function(printer, values)
+	if values.has_primary_sample_binding then
+		printer:emit(templates.primary_sample_binding_local, values)
+	end
+	if values.has_secondary_sample_binding then
+		printer:emit(templates.secondary_sample_binding_local, values)
+	end
+end
+
+local emit_sample_params_local<const> = function(printer, values)
+	if values.has_sample_params and not values.has_frame_steps and not values.has_time_steps then
+		printer:emit(templates.params_local, values)
+	end
+end
+
+local emit_sample_ease<const> = function(printer, values)
+	if values.sample_track.ease ~= nil then
+		printer:emit(templates.sample_ease, values)
+	end
+end
+
+local emit_sample_wave<const> = function(printer, values)
+	if values.sample_track.wave == 'pingpong' then
+		printer:emit(templates.sample_pingpong, values)
+	else
+		printer:emit(templates.sample_sin, values)
+	end
+end
+
+local emit_sample_track<const> = function(printer, values)
+	if values.sample_track.kind == 'sample' then
+		printer:emit(templates.sample_callback, values)
+		return
+	end
+	printer:emit(templates.sample_wave, values)
+end
+
+local emit_sample_tracks<const> = function(printer, values)
+	local tracks<const> = values.sample_tracks
+	for index = 1, #tracks do
+		values.sample_track_index = index
+		values.sample_track = tracks[index]
+		emit_sample_track(printer, values)
+	end
+end
+
+local emit_sample_wave_local<const> = function(printer, values)
+	if values.has_wave_tracks then
+		printer:emit(templates.sample_wave_local, values)
 	end
 end
 
@@ -601,10 +720,6 @@ templates.scalar_channels_capture = lua_source_printer.compile_template([[
 	local scalar_runner<const> = scalar_runner_factory(scalar_channels)
 ]])
 
-templates.sample_program_capture = lua_source_printer.compile_template(
-	'local sample_program<const> = tracks\n'
-)
-
 templates.evaluate_frame_steps_capture = lua_source_printer.compile_template(
 	'local evaluate_frame_steps<const> = evaluate_frame_steps\n'
 )
@@ -617,16 +732,46 @@ templates.scalar_runner_factory_capture = lua_source_printer.compile_template(
 	'local scalar_runner_factory<const> = scalar_runner_factory\n'
 )
 
-templates.primary_sample_runner_capture = lua_source_printer.compile_template(
-	'local primary_sample_runner<const> = primary_sample_runner\n'
+templates.sample_tracks_capture = lua_source_printer.compile_template(
+	'local sample_tracks<const> = sample_tracks\n'
 )
 
-templates.evaluate_sample_groups_capture = lua_source_printer.compile_template(
-	'local evaluate_sample_groups<const> = evaluate_sample_groups\n'
+templates.pingpong_capture = lua_source_printer.compile_template(
+	'local pingpong01<const> = pingpong01\n'
+)
+
+templates.sin_capture = lua_source_printer.compile_template([[
+	local sin<const> = sin
+	local tau<const> = tau
+]])
+
+templates.sample_callback_capture = lua_source_printer.compile_template(
+	'local $callback_name$<const> = sample_tracks[$sample_track_index$]["apply"]\n',
+	{ callback_name = emit_sample_callback_name }
+)
+
+templates.sample_base_capture = lua_source_printer.compile_template(
+	'local $base_name$<const> = sample_tracks[$sample_track_index$]["base"]\n',
+	{ base_name = emit_sample_base_name }
+)
+
+templates.sample_wave_capture = lua_source_printer.compile_template([[
+	local $amp_name$<const> = sample_tracks[$sample_track_index$]["amp"]
+	local $phase_name$<const> = sample_tracks[$sample_track_index$]["phase"]
+	local $period_inv_name$<const> = sample_tracks[$sample_track_index$]["period_inv"]
+]], {
+	amp_name = emit_sample_amp_name,
+	phase_name = emit_sample_phase_name,
+	period_inv_name = emit_sample_period_inv_name,
+})
+
+templates.sample_ease_capture = lua_source_printer.compile_template(
+	'local $ease_name$<const> = sample_tracks[$sample_track_index$]["ease"]\n',
+	{ ease_name = emit_sample_ease_name }
 )
 
 templates.params_local = lua_source_printer.compile_template(
-	'local params = entry["params"]\n'
+	'local params<const> = entry["params"]\n'
 )
 
 templates.frame_steps = lua_source_printer.compile_template(
@@ -641,23 +786,77 @@ templates.scalar_channels = lua_source_printer.compile_template(
 	'scalar_runner(entry, evaluation)\n'
 )
 
-templates.primary_sample = lua_source_printer.compile_template(
-	'primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)\n'
+templates.primary_sample_binding_local = lua_source_printer.compile_template(
+	'local primary_binding<const> = entry["primary_binding"]\n'
 )
 
-templates.sample_groups = lua_source_printer.compile_template(
-	'evaluate_sample_groups(entry, sample_program, params, evaluation, time_seconds)\n'
+templates.secondary_sample_binding_local = lua_source_printer.compile_template(
+	'local bindings<const> = entry["bindings"]\n'
+)
+
+templates.sample_callback = lua_source_printer.compile_template(
+	'$callback_name$($target$, params, evaluation, time_seconds)\n',
+	{
+		callback_name = emit_sample_callback_name,
+		target = emit_sample_target,
+	}
+)
+
+templates.sample_pingpong = lua_source_printer.compile_template(
+	'wave_value = pingpong01((time_seconds * $period_inv_name$) + $phase_name$)\n',
+	{
+		period_inv_name = emit_sample_period_inv_name,
+		phase_name = emit_sample_phase_name,
+	}
+)
+
+templates.sample_sin = lua_source_printer.compile_template(
+	'wave_value = (sin(((time_seconds * $period_inv_name$) + $phase_name$) * tau) + 1) * 0.5\n',
+	{
+		period_inv_name = emit_sample_period_inv_name,
+		phase_name = emit_sample_phase_name,
+	}
+)
+
+templates.sample_ease = lua_source_printer.compile_template(
+	'wave_value = $ease_name$(wave_value)\n',
+	{ ease_name = emit_sample_ease_name }
+)
+
+templates.sample_wave = lua_source_printer.compile_template([[
+	$wave$
+	$ease$
+	$target_path$ = $base$ + ((wave_value - 0.5) * 2 * $amp_name$)
+]], {
+	wave = emit_sample_wave,
+	ease = emit_sample_ease,
+	target_path = emit_sample_target_path,
+	base = emit_sample_base,
+	amp_name = emit_sample_amp_name,
+})
+
+templates.sample_wave_local = lua_source_printer.compile_template(
+	'local wave_value\n'
 )
 
 templates.sample = lua_source_printer.compile_template([[
 	if evaluation["sample"] then
-		local time_seconds = evaluation["time_ms"] * 0.001
-		$body$
+		$params_local$
+		$binding_locals$
+		local time_seconds<const> = evaluation["time_ms"] * 0.001
+		$wave_local$
+		$tracks$
 	end
-]], { body = emit_sample_body })
+]], {
+	params_local = emit_sample_params_local,
+	binding_locals = emit_sample_binding_locals,
+	wave_local = emit_sample_wave_local,
+	tracks = emit_sample_tracks,
+})
 
 templates.value_runner = lua_source_printer.compile_template([[
 	$dependency_captures$
+	$sample_track_captures$
 	return function(tracks)
 		$track_captures$
 		return function(entry, evaluation)
@@ -670,6 +869,7 @@ templates.value_runner = lua_source_printer.compile_template([[
 	end
 ]], {
 	dependency_captures = emit_dependency_captures,
+	sample_track_captures = emit_sample_track_captures,
 	track_captures = emit_track_captures,
 	params_local = emit_params_local,
 	frame_steps = emit_frame_steps,
@@ -683,17 +883,48 @@ function track_evaluator.compile_values(program)
 	local has_time_steps<const> = program.has_time_steps
 	local scalar_program<const> = program.scalar_program
 	local has_scalar_channels<const> = scalar_program.track_count > 0
-	local primary_sample_runner<const> = program.primary_sample_runner
-	local has_sample_groups<const> = program.sample_group_count > 0
-	local has_sample_tracks<const> = primary_sample_runner ~= nil or has_sample_groups
+	local sample_tracks<const> = program.sample_tracks
+	local has_sample_tracks<const> = #sample_tracks > 0
+	local has_primary_sample_binding = false
+	local has_secondary_sample_binding = false
+	local has_pingpong_tracks = false
+	local has_sin_tracks = false
+	local has_wave_tracks = false
+	local has_sample_params = false
+	for index = 1, #sample_tracks do
+		local track<const> = sample_tracks[index]
+		if track.binding_index == 1 then
+			has_primary_sample_binding = true
+		else
+			has_secondary_sample_binding = true
+		end
+		if track.kind == 'wave' then
+			has_wave_tracks = true
+			if track.base_param ~= nil then
+				has_sample_params = true
+			end
+			if track.wave == 'pingpong' then
+				has_pingpong_tracks = true
+			else
+				has_sin_tracks = true
+			end
+		else
+			has_sample_params = true
+		end
+	end
 	local printer<const> = lua_source_printer.new()
 	printer:emit(templates.value_runner, {
 		has_frame_steps = has_frame_steps,
 		has_time_steps = has_time_steps,
 		has_scalar_channels = has_scalar_channels,
-		has_sample_groups = has_sample_groups,
 		has_sample_tracks = has_sample_tracks,
-		primary_sample_runner = primary_sample_runner,
+		has_primary_sample_binding = has_primary_sample_binding,
+		has_secondary_sample_binding = has_secondary_sample_binding,
+		has_wave_tracks = has_wave_tracks,
+		has_sample_params = has_sample_params,
+		has_pingpong_tracks = has_pingpong_tracks,
+		has_sin_tracks = has_sin_tracks,
+		sample_tracks = sample_tracks,
 	})
 	return load(
 		printer:finish(),
@@ -703,8 +934,10 @@ function track_evaluator.compile_values(program)
 			evaluate_frame_steps = evaluate_frame_steps,
 			evaluate_time_steps = evaluate_time_steps,
 			scalar_runner_factory = scalar_program.runner_factory,
-			primary_sample_runner = primary_sample_runner,
-			evaluate_sample_groups = evaluate_sample_groups,
+			sample_tracks = sample_tracks,
+			pingpong01 = pingpong01,
+			sin = sin,
+			tau = tau,
 		}
 	)()
 end
