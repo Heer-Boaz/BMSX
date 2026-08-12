@@ -90,6 +90,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_call = ${OpCode.CALL},`,
 	`\top_closure = ${OpCode.CLOSURE},`,
 	`\top_getup = ${OpCode.GETUP},`,
+	`\top_setup = ${OpCode.SETUP},`,
 	`\top_ret = ${OpCode.RET},`,
 	`\top_geti = ${OpCode.GETI},`,
 	`\top_seti = ${OpCode.SETI},`,

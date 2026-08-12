@@ -7,33 +7,6 @@ local fail<const> = function(chunk_name, message, node)
 		.. tostring(node.line) .. ':' .. tostring(node.column))
 end
 
-local returned_function<const> = function(chunk, chunk_name)
-	local statements<const> = chunk.body.statements
-	if #statements ~= 1 or statements[1].kind ~= syntax.return_statement then
-		fail(chunk_name, 'chunk must contain exactly one returned function', chunk)
-	end
-	local expressions<const> = statements[1].expressions
-	if #expressions ~= 1 or expressions[1].kind ~= syntax.function_expression then
-		fail(chunk_name, 'chunk must contain exactly one returned function', statements[1])
-	end
-	return expressions[1]
-end
-
-local bind_parameters<const> = function(state, function_expression)
-	local parameters<const> = function_expression.parameters
-	for index = 1, #parameters do
-		local parameter<const> = parameters[index]
-		if state.parameter_register_by_name[parameter.name] ~= nil then
-			fail(
-				state.chunk_name,
-				"duplicate function parameter '" .. parameter.name .. "'",
-				parameter
-			)
-		end
-		state.parameter_register_by_name[parameter.name] = index - 1
-	end
-end
-
 local literal_value<const> = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.number_literal_expression
@@ -51,22 +24,18 @@ local literal_value<const> = function(state, expression)
 			return operand.value
 		end
 	end
-	fail(
-		state.chunk_name,
-		'unsupported literal expression',
-		expression
-	)
+	fail(state.chunk_name, 'unsupported literal expression', expression)
 end
 
 local bind_value
 local bind_path
 local bind_statement
 local bind_block
+local bind_function
 
 local begin_scope<const> = function(state)
 	local scope<const> = {
 		previous = state.scope,
-		local_base = state.active_local_count,
 		bindings = {},
 	}
 	state.scope = scope
@@ -79,52 +48,112 @@ local end_scope<const> = function(state, scope)
 		local binding<const> = bindings[index]
 		state.local_binding_by_name[binding.name] = binding.previous
 	end
-	state.active_local_count = scope.local_base
 	state.scope = scope.previous
 end
 
 local reserve_local_slot<const> = function(state)
-	local slot<const> = state.active_local_count
-	local active_local_count<const> = slot + 1
-	state.active_local_count = active_local_count
-	if active_local_count > state.max_local_count then
-		state.max_local_count = active_local_count
-	end
+	local slot<const> = state.local_count
+	state.local_count = slot + 1
 	return slot
 end
 
-local bind_local_identifier<const> = function(state, identifier)
-	local slot<const> = reserve_local_slot(state)
-	identifier.local_slot = slot
+local bind_local_identifier<const> = function(state, identifier, is_const)
 	local name<const> = identifier.name
 	local binding<const> = {
 		name = name,
-		slot = slot,
+		function_state = state,
+		kind = 'local',
+		slot = reserve_local_slot(state),
+		is_const = is_const,
 		previous = state.local_binding_by_name[name],
 	}
 	state.local_binding_by_name[name] = binding
 	local bindings<const> = state.scope.bindings
 	bindings[#bindings + 1] = binding
+	identifier.binding = binding
+end
+
+local bind_parameters<const> = function(state)
+	local parameters<const> = state.function_expression.parameters
+	for index = 1, #parameters do
+		local parameter<const> = parameters[index]
+		local name<const> = parameter.name
+		if state.parameter_binding_by_name[name] ~= nil then
+			fail(state.chunk_name, "duplicate function parameter '" .. name .. "'", parameter)
+		end
+		local binding<const> = {
+			name = name,
+			function_state = state,
+			kind = 'parameter',
+			register = index - 1,
+			is_const = false,
+		}
+		state.parameter_binding_by_name[name] = binding
+		parameter.binding = binding
+	end
+end
+
+local add_upvalue<const> = function(state, binding, in_stack, index)
+	local upvalue = state.upvalue_by_binding[binding]
+	if upvalue ~= nil then
+		return upvalue
+	end
+	local upvalues<const> = state.upvalues
+	upvalue = {
+		binding = binding,
+		in_stack = in_stack,
+		index = index,
+		upvalue_index = #upvalues,
+	}
+	upvalues[#upvalues + 1] = upvalue
+	state.upvalue_by_binding[binding] = upvalue
+	return upvalue
+end
+
+local resolve_upvalue
+resolve_upvalue = function(state, name)
+	local parent<const> = state.parent
+	if parent == nil then
+		return nil
+	end
+	local binding<const> = parent.local_binding_by_name[name]
+		or parent.parameter_binding_by_name[name]
+	if binding ~= nil then
+		return add_upvalue(state, binding, true, binding)
+	end
+	local parent_upvalue<const> = resolve_upvalue(parent, name)
+	if parent_upvalue == nil then
+		return nil
+	end
+	return add_upvalue(
+		state,
+		parent_upvalue.binding,
+		false,
+		parent_upvalue.upvalue_index
+	)
 end
 
 local bind_identifier<const> = function(state, expression)
-	local local_binding<const> = state.local_binding_by_name[expression.name]
-	if local_binding ~= nil then
-		expression.local_slot = local_binding.slot
+	local name<const> = expression.name
+	local binding<const> = state.local_binding_by_name[name]
+		or state.parameter_binding_by_name[name]
+	if binding ~= nil then
+		expression.binding = binding
 		return
 	end
-	local register<const> = state.parameter_register_by_name[expression.name]
-	if register ~= nil then
-		expression.parameter_register = register
+	local upvalue<const> = resolve_upvalue(state, name)
+	if upvalue ~= nil then
+		upvalue.is_direct = true
+		expression.upvalue = upvalue
 		return
 	end
 	if state.has_environment then
-		expression.environment_key = expression.name
+		expression.environment_key = name
 		return
 	end
 	fail(
 		state.chunk_name,
-		"unknown local or function parameter '" .. expression.name .. "'",
+		"unknown local or function parameter '" .. name .. "'",
 		expression
 	)
 end
@@ -149,7 +178,7 @@ bind_path = function(state, expression)
 		end
 		return
 	end
-	fail(state.chunk_name, 'paths must start at a function parameter', expression)
+	fail(state.chunk_name, 'paths must start at a visible binding', expression)
 end
 
 bind_value = function(state, expression)
@@ -158,6 +187,12 @@ bind_value = function(state, expression)
 		or kind == syntax.member_expression
 		or kind == syntax.index_expression then
 		bind_path(state, expression)
+		return
+	end
+	if kind == syntax.function_expression then
+		local children<const> = state.children
+		children[#children + 1] = expression
+		bind_function(state, expression)
 		return
 	end
 	if kind == syntax.nil_literal_expression
@@ -190,24 +225,37 @@ bind_value = function(state, expression)
 		end
 		return
 	end
-	expression.constant_value = literal_value(
-		state,
-		expression
-	)
+	expression.constant_value = literal_value(state, expression)
 end
 
 local bind_assignment<const> = function(state, statement)
 	local target<const> = statement.target
 	bind_path(state, target)
+	if target.kind == syntax.identifier_expression then
+		local binding = target.binding
+		if binding == nil and target.upvalue ~= nil then
+			binding = target.upvalue.binding
+		end
+		if binding ~= nil and binding.is_const then
+			fail(state.chunk_name, "cannot assign to const local '" .. target.name .. "'", target)
+		end
+	end
 	bind_value(state, statement.value)
 end
 
 local bind_local_statement<const> = function(state, statement)
 	local initializer<const> = statement.initializer
+	if statement.is_const and initializer == nil then
+		fail(
+			state.chunk_name,
+			"const local '" .. statement.name.name .. "' needs an initializer",
+			statement.name
+		)
+	end
 	if initializer ~= nil then
 		bind_value(state, initializer)
 	end
-	bind_local_identifier(state, statement.name)
+	bind_local_identifier(state, statement.name, statement.is_const)
 end
 
 local bind_return_statement<const> = function(state, statement)
@@ -243,7 +291,7 @@ local bind_numeric_for_statement<const> = function(state, statement)
 		bind_value(state, step_expression)
 	end
 	local scope<const> = begin_scope(state)
-	bind_local_identifier(state, statement.variable)
+	bind_local_identifier(state, statement.variable, false)
 	statement.limit_local_slot = reserve_local_slot(state)
 	statement.step_local_slot = reserve_local_slot(state)
 	state.loop_depth = state.loop_depth + 1
@@ -290,22 +338,53 @@ bind_block = function(state, block)
 	end_scope(state, scope)
 end
 
-function semantic.bind(chunk, chunk_name, has_environment)
-	local function_expression<const> = returned_function(chunk, chunk_name)
+bind_function = function(parent, function_expression)
 	local state<const> = {
-		chunk_name = chunk_name,
-		parameter_register_by_name = {},
+		chunk_name = parent.chunk_name,
+		function_expression = function_expression,
+		parent = parent,
+		children = {},
+		parameter_binding_by_name = {},
 		local_binding_by_name = {},
-		active_local_count = 0,
-		max_local_count = 0,
+		local_count = 0,
+		scope = nil,
+		has_environment = parent.has_environment,
+		loop_depth = 0,
+		upvalues = {},
+		upvalue_by_binding = {},
+	}
+	function_expression.semantic_state = state
+	bind_parameters(state)
+	bind_block(state, function_expression.body)
+	function_expression.local_count = state.local_count
+end
+
+function semantic.bind(chunk, chunk_name, has_environment)
+	local root_function<const> = {
+		kind = syntax.function_expression,
+		parameters = {},
+		body = chunk.body,
+		line = chunk.line,
+		column = chunk.column,
+	}
+	local root_state<const> = {
+		chunk_name = chunk_name,
+		function_expression = root_function,
+		parent = nil,
+		children = {},
+		parameter_binding_by_name = {},
+		local_binding_by_name = {},
+		local_count = 0,
 		scope = nil,
 		has_environment = has_environment,
 		loop_depth = 0,
+		upvalues = {},
+		upvalue_by_binding = {},
 	}
-	bind_parameters(state, function_expression)
-	bind_block(state, function_expression.body)
-	function_expression.local_count = state.max_local_count
-	return function_expression
+	root_function.semantic_state = root_state
+	bind_block(root_state, root_function.body)
+	root_function.local_count = root_state.local_count
+	return root_function
 end
 
 return semantic

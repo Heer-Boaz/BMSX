@@ -354,6 +354,21 @@ local parse_local_statement<const> = function(state)
 	expect(state, token.keyword_local)
 	local name<const>, name_line<const>, name_column<const>
 		= consume_identifier(state)
+	local is_const = false
+	if match(state, token.less) then
+		local attribute<const>, attribute_line<const>, attribute_column<const>
+			= consume_identifier(state)
+		if attribute ~= 'const' then
+			fail(
+				state,
+				"unsupported local attribute '" .. attribute .. "'",
+				attribute_line,
+				attribute_column
+			)
+		end
+		expect(state, token.greater)
+		is_const = true
+	end
 	local initializer
 	if match(state, token.equal) then
 		initializer = parse_expression(state)
@@ -361,6 +376,7 @@ local parse_local_statement<const> = function(state)
 	return {
 		kind = syntax.local_statement,
 		name = identifier_expression(name, name_line, name_column),
+		is_const = is_const,
 		initializer = initializer,
 		line = line,
 		column = column,

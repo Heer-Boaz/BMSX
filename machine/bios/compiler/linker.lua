@@ -12,7 +12,7 @@ function linker.link(program)
 	for index = 1, #protos do
 		local proto<const> = protos[index]
 		upvalue_byte_count = upvalue_byte_count
-			+ #proto.upvalue_registers * isa.upvalue_record_size
+			+ #proto.upvalue_records * isa.upvalue_record_size
 		code_byte_count = code_byte_count
 			+ #proto.instruction_words * isa.instruction_bytes
 	end
@@ -23,7 +23,6 @@ function linker.link(program)
 		- 1
 	) & -isa.instruction_bytes
 	local const_pool<const> = program.const_pool
-	const_pool[program.code_owner_const_index] = const_pool
 	local function_table_address<const> = arena.allocate(
 		code_byte_offset + code_byte_count,
 		const_pool
@@ -41,11 +40,15 @@ function linker.link(program)
 	local code_address = function_table_address + code_byte_offset
 	for index = 1, #protos do
 		local proto<const> = protos[index]
-		local upvalue_registers<const> = proto.upvalue_registers
+		local upvalue_records<const> = proto.upvalue_records
 		local proto_upvalue_address<const> = upvalue_record
-		for upvalue_index = 1, #upvalue_registers do
-			*upvalue_record = isa.upvalue_in_stack_mask
-				| upvalue_registers[upvalue_index]
+		for upvalue_index = 1, #upvalue_records do
+			local record<const> = upvalue_records[upvalue_index]
+			local word = record.index
+			if record.in_stack then
+				word = word | isa.upvalue_in_stack_mask
+			end
+			*upvalue_record = word
 			upvalue_record = upvalue_record + isa.upvalue_record_size
 		end
 		local instruction_words<const> = proto.instruction_words
@@ -58,7 +61,7 @@ function linker.link(program)
 		function_record[isa.function_max_stack_word_index] = proto.max_stack
 		function_record[isa.function_flags_word_index] = 0
 		function_record[isa.function_upvalue_table_address_word_index] = proto_upvalue_address
-		function_record[isa.function_upvalue_count_word_index] = #upvalue_registers
+		function_record[isa.function_upvalue_count_word_index] = #upvalue_records
 		function_record[isa.function_reserved_word_index] = 0
 		bytecode.write_instruction_words(instruction_words, code_address)
 		code_address = code_address + proto_code_byte_count

@@ -286,8 +286,71 @@ end;
 	assert(load_call_value == 20, 'load call statement mismatch')
 	assert(load_environment.published == 26, 'load environment assignment mismatch')
 	assert(loaded_target.escaped == 'line\nquote:" slash:\\ dec:A hex:B skip:done', 'load string escape mismatch')
-	local rejected<const>, load_message<const> = load('return 1', 'bios_base_runtime_assert.reject', 't')
-	assert(rejected == nil and type(load_message) == 'string', 'load syntax failure contract mismatch')
+	local value_chunk<const>, value_error<const> = load(
+		'return 1',
+		'bios_base_runtime_assert.value',
+		't'
+	)
+	assert(value_chunk ~= nil and value_error == nil and value_chunk() == 1, 'load chunk result mismatch')
+	local capture_chunk<const>, capture_error<const> = load([=[
+		local scale<const> = scale
+		local total = 0
+		return function(value)
+			total = total + scale
+			return value * total
+		end
+	]=], 'bios_base_runtime_assert.capture', 't', { scale = 3 })
+	assert(capture_chunk ~= nil and capture_error == nil, 'load capture compilation failed')
+	local captured<const> = capture_chunk()
+	assert(captured(2) == 6 and captured(2) == 12, 'load lexical capture mismatch')
+	local nested_chunk<const>, nested_error<const> = load([=[
+		local value = 1
+		local increment<const> = 2
+		return function()
+			return function()
+				value = value + increment
+				return value
+			end
+		end
+	]=], 'bios_base_runtime_assert.nested_capture', 't')
+	assert(nested_chunk ~= nil and nested_error == nil, 'load nested capture compilation failed')
+	local nested_factory<const> = nested_chunk()
+	local nested<const> = nested_factory()
+	assert(nested() == 3 and nested() == 5, 'load transitive capture mismatch')
+	local const_capture_chunk<const> = load([=[
+		local first<const> = first
+		local second<const> = second
+		return function(value)
+			return first[value] == second
+		end
+	]=], 'bios_base_runtime_assert.const_capture', 't', {
+		first = { [3] = 'matched' },
+		second = 'matched',
+	})
+	local const_capture<const> = const_capture_chunk()
+	assert(const_capture(3), 'load immutable capture mismatch')
+	local local_function_chunk<const> = load([=[
+		local offset<const> = offset
+		local transform<const> = function(value)
+			return value + offset
+		end
+		return function(value)
+			return transform(value)
+		end
+	]=], 'bios_base_runtime_assert.local_function', 't', { offset = 4 })
+	assert(local_function_chunk()(6) == 10, 'load local function capture mismatch')
+	local const_assignment<const> = load(
+		'local value<const> = 1 value = 2 return value',
+		'bios_base_runtime_assert.const',
+		't'
+	)
+	assert(const_assignment == nil, 'load accepted assignment to const local')
+	local missing_const_initializer<const> = load(
+		'local value<const> return value',
+		'bios_base_runtime_assert.const_initializer',
+		't'
+	)
+	assert(missing_const_initializer == nil, 'load accepted const local without initializer')
 	local malformed_number<const> = load(
 		'return function(target) target[1e] = 1 end',
 		'bios_base_runtime_assert.number',
