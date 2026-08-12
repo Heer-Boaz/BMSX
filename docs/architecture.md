@@ -160,10 +160,9 @@ function, it must come from one of the real owners: ROM/header fields consumed a
 boot, link symbols, BIOS Lua, CPU-visible RAM/MMIO, or a documented device
 register. Lua language-runtime behavior and machine firmware services belong in
 BIOS Lua unless they are true CPU primitives. Cart-facing asset, animation,
-font, collection, and gameplay libraries belong in `cartlib` and are linked
-into the cartridge image. Do not preserve manifest or host-native library
-shortcuts by adding wrappers; migrate each observable value to its owner and
-delete the shortcut.
+font, collection, and gameplay libraries are cartridge code. Do not preserve
+manifest or host-native library shortcuts by adding wrappers; migrate each
+observable value to its owner and delete the shortcut.
 
 ## Fixed-point and angle ABI
 
@@ -221,7 +220,7 @@ a slow BLua loop: a proven fundamental operation may be an architected CPU
 instruction or microcode operation with mirrored representation and timing.
 
 Animation easing is not a Lua standard-library facility or general firmware
-service; it lives in `cartlib` with font layout, ROM-directory/metadata
+service; it is cartridge library code, as are font layout, ROM-directory/metadata
 decoding, APU asset decoding, clock helpers, and cart-only device helpers. Those
 modules consume cartridge code and heap rather than system-firmware code and
 heap. BIOS fixed assets use generated link-time system-ROM address constants;
@@ -1168,12 +1167,9 @@ state and restores it against the media inserted at restore time.
 
 Saving an AEM document follows the same physical revision path. Tooling
 validates and encodes the document, installs the rebuilt ROM, reconnects the
-resident execution image, and only then asks guest `cartlib` code to reread the
-cartridge directory and rebuild its event tables. Studio addresses the
-compiler-owned `cartlib/aem` module-root slot through the shared module-slot
-naming contract, reads `reload_from_rom` from that guest table, and invokes the
-guest closure through the suspended-runtime tooling boundary. It does not
-publish a registry getter, AEM hook, or source-aware call API in the cart
+resident execution image, and only then invokes the guest AEM reload entrypoint
+through its compiler-owned module-root slot and the suspended-runtime tooling
+boundary. It does not publish a registry getter, AEM hook, or source-aware call API in the cart
 global registerfile or CPU. The machine and APU never consume an IDE package
 record or host-side AEM override.
 
@@ -1681,9 +1677,8 @@ serializes both registerfiles independently. This permits BIOS and cart code to
 use the natural handler names without renaming, a dispatcher facade, or the
 cart overwriting a supervisor vector.
 
-The shipped handler belongs to firmware/cart code: BIOS and cartlib expose
-`system.irq` / `on_irq` as convenience dispatch over registered masks, and
-bare-metal carts may define `irq(flags)` directly. Dispatch code acknowledges
+The shipped handler belongs to firmware/cart code; bare-metal carts may define
+`irq(flags)` directly. Dispatch code acknowledges
 only the masks it owns. An asynchronous source is unmasked and has exactly one
 vector-handler owner that acknowledges it. A synchronous waiter leaves its
 source masked, polls `IRQ_FLAGS` directly while running, and writes `IRQ_ACK`
@@ -2567,8 +2562,7 @@ DREQ, while the already admitted block continues and `BLOCK_END` starts exactly
 one timed sample-RAM batch. A short final block carries its actual word count.
 GX CPU-to-GP0 command-sync producers must keep each polygon or line packet
 wholly inside one block; longer polylines or unaligned command streams select
-FIFO or forced request mode. Packet alignment is command-list ownership, not a
-hidden repair in `cartlib/dma.lua`.
+FIFO or forced request mode. Packet alignment is command-list ownership, not a hidden DMA repair.
 
 GX-read DREQ is the readback port's ready-to-send line, not a polled GPUSTAT
 copy. Backend completion raises that line and schedules a waiting channel at the
@@ -2682,62 +2676,6 @@ uncompressed raw GP0 uploads.
 
 ### GX GPU/GTE
 
-The cart SDK keeps the hardware surfaces separate. `cartlib/gx/gp0` owns raw
-GP0 opcodes and packet-word encoding, `cartlib/gx/gpu` owns direct GP0 MMIO,
-`cartlib/gx/display` owns GP1/PCRTC presentation programming, and
-`cartlib/gx/gte` exposes only the raw GTE/GTE+ register blocks, opcodes and
-packed-word representation. Camera and projection policy is cart or
-optional-library code. CPU-side RGBA conversion and its complete GP0 upload
-transaction belong to the optional `cartlib/gx/upload` path.
-
-Immediate textured helpers take their blend mode explicitly and emit the
-required page state. No helper retains shadow authority over commands written
-directly or through DMA. Draw targets and clear packets take their raw origin
-and size words explicitly. Display queries decode the live PCRTC words rather
-than returning a Lua-side copy.
-
-`world` owns presentation. It retains the GP0 word buffer and the ordered
-projection of the active space's visual components, and translates that
-projection into one command list when the cart invokes `world:render()`.
-The ROM producer emits only the configured display page, draw page and page
-size in `bmsx/presentation_config`. The world consumes those words once at
-module initialization and selects its one-page or two-page render method there.
-The frame hot path has no framebuffer-mode branch, display-size query,
-allocation or sort unless the world's visual revision changed.
-
-The world render boundary owns its draw page, display page, GPU target and page rotation.
-Two-page submission uses the ordered GPU fence before staging the next display
-origin; one-page submission does not pay that fence. `world:render()` does not wait
-for VBlank. `cartlib/gx/vblank` owns only the retained edge sequence and wait
-operation, while each cart keeps its one- or two-edge pacing visible in the
-entry loop. Custom visuals receive only the command list's primitive
-operations, not framebuffer storage or lifecycle.
-
-The world render path submits painter-ordered 2D work through one retained
-visual-component list per world space. Sprite, surface, tile, text and custom
-visual components share the same effective depth
-`parent.z + offset_z + draw_offset_z`; lower depths submit first and higher
-depths submit last. Activation sequence is the stable equal-z tie-break.
-Add/remove updates that same list and its indices, while one in-place sort
-accounts for runtime depth changes before the render path draws the components
-polymorphically. Cart-authored depth alone establishes occlusion; there are no
-kind-priority stages, subsystem draw escape paths, per-frame display-list
-records or backend-facing visual DTOs.
-Visual offset, draw-offset, sprite flip and scale state is retained as direct
-scalar component fields. The draw, depth-sort and collision paths consume those
-fields directly; component construction and combat transitions do not allocate
-coordinate or scale subtables.
-
-Text layout is retained component state. Text, font, wrap or text-object dimension
-mutation rebuilds wrapped lines, glyph references and widths. Typewriter state
-reveals those retained glyph references by index; neither typing nor steady
-presentation rescans strings. Image IDs resolve to retained texture-region
-sources during asset, component or state construction. Resolution selects the
-direct16 or palette4 packet writer once; presentation consumes that prepared
-source directly without redispatching on texture mode, performing a ROM-directory
-lookup or allocating. Sprite modulation remains one packed GX color word from
-cart producer through command submission.
-
 GX GPU/GTE is the cart graphics ABI and the only cart graphics path
 executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
 the WebGL, GLES2, and software/headless RPU presentation executors are removed.
@@ -2815,16 +2753,10 @@ clear an already-pending `IRQ_GPU`; the synchronous guest waiter acknowledges
 that pending bit through `IRQ_ACK`. This keeps the GPU source latch and the
 system interrupt pending latch as two distinct hardware words.
 
-`cartlib/gx/commandlist.submit_fenced` uses that ordered GP0 IRQ packet as a
-completion fence. It appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the physical
-`IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). The
-two-page world render path invokes that fence before programming
-GP1(05h), rotates its retained page words, and leaves the publication edge to
-the cart's following explicit `vblank.wait()`. The former front page is not
-drawn again until that wait has completed. Missing the current beam edge can
-delay publication by one frame but cannot expose a page still being written.
-Neither cartlib path polls GPUSTAT or drains a host queue; the entire fence is
-guest MMIO against the emulated hardware.
+A guest completion fence appends GP0(1Fh), keeps `IRQ_GPU` masked, polls the
+physical `IRQ_FLAGS` word, and acknowledges both `IRQ_ACK` and GP1(02h). The
+entire fence is guest MMIO against the emulated hardware; it does not poll a
+host queue.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
@@ -3011,35 +2943,22 @@ each cart texture group in a compressed `IMD1` stream, and emits that stream as
 one explicit `texture` resource. Its metadata owns `mode`, `word_width`,
 `height`, `texture_word_count` and `clut_word_count`; its ordinary TOC range owns
 the only physical payload span. Each packed image stores integer texture-local
-coordinates and a stable `gx_texture_resid` reference to that resource. Cartlib
-resolves and caches the texture by resource id, never by coincident physical
-addresses, and passes the resource's raw counts and shape to firmware IMGDEC.
+coordinates and a stable `gx_texture_resid` reference to that resource.
 Palette placement is derived from the native texture extent rather than
 serialized as a second offset. A filename `@atlas=N` suffix is only a producer
 packing-group directive: its numeric value is not serialized into the image ABI
-and is not visible to BIOS, cartlib, GPU or DMA.
+and is not visible to BIOS, GPU or DMA.
 
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
 working sets in `gx_vram_layout`. The producer validates the complete layout.
-It emits framebuffer words only to `bmsx/presentation_config` and emits shared
-texture-placement pools only to the internal `bmsx/texture_bindings` consumer.
-Neither generated module exposes manifest slot names to cart code. An ordinary
-cart chooses when a compressed texture payload is transferred by passing its
-semantic image id to `gx_texture.upload(imgid)`; the texture owner resolves the
-shared texture resource, advances its producer-defined placement pool,
-publishes the new raw binding immediately and programs IMGDEC. It does not wait
-for DMA or IMGDEC completion, so commands may deliberately sample old, partial
-or uninitialized VRAM through that new binding. DMA moves the compressed ROM
-words and IMGDEC emits the GP0 transfer packets. A low-level cart may instead
-call `upload_raw` with explicit destination and CLUT words, and may still
-DMA a deliberately uncompressed native GP0 stream as the direct bypass.
-Ordinary sprite/tile images stay within one hardware texture page; the
-rectangle primitive therefore emits exactly one native packet. Explicit large
-image groups are producer-partitioned into retained page-local records and use
-the cartlib surface component's single linear submission pass. Firmware never
-discovers or splits image pages at draw time. There is no runtime semantic slot
-manager, atlas cache, scene-aware firmware policy, host image decoder or mapped
-RGBA staging aperture.
+The generated presentation and texture-placement records do not expose manifest
+slot names to cart code. DMA moves compressed ROM words and IMGDEC emits the GP0
+transfer packets; a deliberately uncompressed native GP0 stream remains a
+valid direct bypass. Ordinary sprite/tile images stay within one hardware
+texture page. Explicit large image groups are producer-partitioned into
+retained page-local records; firmware never discovers or splits image pages at
+draw time. There is no runtime semantic slot manager, scene-aware firmware
+policy, host image decoder or mapped RGBA staging aperture.
 
 #### Accelerated backend execution
 
@@ -3401,8 +3320,8 @@ host-number validation, table construction, or allocation.
 AEM resources keep their author-facing filter names and parameters until ROM
 production. `toolchain/ts/rompack/aem_filter.ts` designs the section, rounds and
 saturates each coefficient to signed Q14, and writes the four raw hardware
-words into the packed event map. Cartlib consumes those words directly; it does
-not carry filter-design or coefficient-encoding code in the cartridge runtime.
+words into the packed event map. Cartridge code consumes those words directly; it does not carry filter-design
+or coefficient-encoding code in the cartridge runtime.
 The AEM tooling rejects non-positive Q and frequencies outside the open
 interval from zero to the APU Nyquist frequency; no runtime clamp repairs
 invalid authored data. This split follows the production pattern of separating
@@ -3429,17 +3348,6 @@ executes through the GEO controller, writes packed result records, and exposes
 faults through GEO status/fault registers. Geometry math helpers are allowed only
 under the GEO device boundary; cart-visible proof must use RAM/MMIO/status, not a
 private direct helper call.
-
-Cartlib submits both direct and full-pass overlap commands through the GEO
-doorbell and waits on the device DONE/ERROR interrupt with `halt_until_irq`.
-The cart IRQ dispatcher acknowledges the hardware line and latches the GEO
-completion bits for the suspended collision call; collision code does not read
-or acknowledge the global IRQ register itself. `overlap2dsystem` owns two
-alternating pair-history maps, a retained pool for their row tables, retained
-GEO result/contact records, and one synchronous overlap-event record. A stable
-collider high-water mark therefore performs no per-frame row or event-table
-allocation. `overlap.begin`, `overlap.stay`, and `overlap.end` handlers must
-consume the transient retained record during dispatch rather than storing it.
 
 GEO active-job latch records live in `machine/devices/geometry/job` on both
 runtimes. GEO save-state record shapes live in
@@ -3500,27 +3408,10 @@ raw ICU source-port contract—snapshot input, supervisor line and vibration
 output—is mirrored machine semantics. Host repeat timing never flows back
 through `Runtime` or a machine input interface.
 
-Gameplay/cart input semantics live in `cartlib/input/input.lua` and
-`cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
-owns the explicitly configured players, mapping contexts, retained action and
-button state, MMIO sampling plans, consume state, guarded/repeat evaluation,
-cached action-expression programs, and per-player expression bindings from
-compiled action indices directly to retained action records. Expression
-admission parses once, then uses firmware `load` to compile a short-circuiting
-evaluator with node kinds, modifiers, comparisons, edge masks, helper modes and
-literal windows removed from the update path. The evaluator fetches only states
-reached by boolean short circuiting and allocates no AST traversal or scratch
-state. Input-to-action-effect programs use the same admission boundary: authored
-mode, press/hold/release/custom and effect-slot shapes compile to one retained
-evaluator, while the input system only traverses its dense active component
-view. This follows Unity Input System's split between
-[binding resolution](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputBindingResolver.cs)
-and its retained dense [action execution state](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Runtime/Actions/InputActionState.cs),
-implemented with BMSX's firmware compiler rather than a host-owned evaluator.
-Normal carts use this Lua engine layer.
-Bare-metal carts may intentionally read the raw keyboard/pointer/pad MMIO words
-directly and must not route through cartlib for ICU access. BIOS code may use raw
-ICU reads for boot UI, but it must not grow a gameplay PlayerInput framework.
+Normal gameplay carts may build retained input semantics on top of the raw
+snapshot. Bare-metal carts may intentionally read the raw keyboard, pointer and
+pad words directly. BIOS code may use raw ICU reads for boot UI, but it must not
+grow a gameplay input framework.
 
 `sys_inp_ctrl` writes enter the control port. The control port latches the raw
 command word through the registerfile, then arms the VBlank sample latch or
@@ -3557,294 +3448,7 @@ machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
 source modules as a linker context. Normal Lua facilities are installed as
 ordinary globals before cartridge initialization; explicitly callable BIOS
 services use the fixed public vector described above. Cart-side hardware and
-gameplay libraries are compiled and linked into the cartridge from `cartlib`.
-
-`cartlib` owns the cart-side SDK. Its focused GX GPU, display, GTE,
-upload and DMA modules program or produce data for the same guest-visible
-registers and command ports that bare carts can program directly; they are
-packaged into the cartridge ROM rather than exported by BIOS. Derived
-game-facing geometry such as thick-line construction also belongs to
-`cartlib/gx`. The retired TypeScript-era camera/projection ports are not part of
-that SDK: carts either program the GTE/GTE+ path or link a camera model they
-actually own.
-
-Cart code imports the focused owner it uses; `cartlib` has no prelude or
-all-purpose system facade and does not inject SDK aliases into the guest global
-registerfile. The Lua compiler owns the exact literal-`require` dependency graph
-and reachable-module traversal; ROM authoring only maps canonical module paths
-to source files and supplies a module when that graph reaches it.
-The `cartlib` source root is therefore a resolver namespace, not a module
-manifest: an unreferenced generic capability adds no cartridge code and does
-not require a feature index. Screen-boundary components, including the optional
-prohibit-leaving-screen policy, remain reusable SDK modules without being
-forced into an existing cart. IDE object hints follow the same live API:
-`prefab.define` declares a class and `world:spawn` produces an object, while the
-generic value returned by `registry:get` is not classified as a world object.
-`cartlib/irq` owns cart IRQ handlers and the raw IRQ acknowledge write.
-`cartlib/world/prefab` owns prefab definitions. `world` owns construction and
-the complete live spawn transition. A definition names its concrete object
-base directly; prefab code does not know string kinds for
-sprites, text, state machines, behaviour trees, or action effects. It prepares
-the instance metatable once when the definition is registered rather than
-allocating one per spawn. Its component list is one ordered list of direct
-constructors. Parameterized component factories bind FSM, behaviour-tree, or
-effect ids into those constructors before spawning; their component owner
-resolves the current registered definition when it constructs the runtime.
-Prefab does not interpret parallel feature lists. There is no string component
-registry, universal component module, prebuilt-instance branch, or
-compatibility lookup. A component constructor may provide only its semantic
-`id_local`; world assigns its numeric Registry id when the component is first
-published.
-`world:spawn()` obtains generated numeric object and component ids directly from
-Registry's shared monotonic counter,
-constructs the complete object and its components while unpublished, and
-publishes their identities and indexes only after construction. The world-object
-base does not import a global world to allocate its own identity. The world
-component base owns only attachment state, activation
-reconciliation, event unbinding, IDs, and enabled state. Rendering, text,
-timeline, collision, boundary, and input-effect components live at their
-focused owners and are linked only when a cart selects them. Timelines are an
-explicit component capability rather than an allocation on every world object,
-and callers operate on that retained component directly.
-
-Timeline authoring, compilation, transport and evaluation are separate owners.
-`timeline/program` admits a cart definition into an immutable program;
-`timeline/timeline` retains only mutable transport state and reusable evaluation
-records; `timeline_component` owns resolved object bindings and active
-instances. The compiler caches by authored-definition identity, so entities
-that use the same static definition share one immutable program; timeline ids
-belong to component entries and instances rather than contaminating that shared
-program. A parameterized frame builder is the explicit exception: its built
-frame program belongs to the playing instance. Binding names and playback-mode
-names are resolved once to dense slots and numeric modes. Authored track kinds
-are likewise dispatched only while compiling: the update path consumes
-specialized arrays and runners and never branches on a track-kind, binding-id,
-or playback-mode string.
-
-The evaluation order is fixed. Persistent tags are reconciled first.
-Destination values, including step-interpolated state, and frame data are
-applied second; one-shot event keys traverse the played range third; the scoped
-frame observer runs last. A normal advance traverses event keys. A seek samples
-the destination and reconstructs persistent state without replaying crossed
-one-shot events. The transport and dispatcher reuse their evaluation and
-payload records, and the steady update path allocates no tables. `set_frame` is
-position-only and does not masquerade as an evaluated seek. Transport owns the
-stopped state; dispatch emits every retained boundary evaluation and never
-infers lifecycle from a program's authored playback mode.
-
-Track names describe authored roles rather than evaluator algorithms. A
-`value` track selects interpolation separately; the current `step`
-interpolation retains the last key at the sampled position. `event` is a
-one-shot range track, `tag` is persistent interval state, `sample` is the
-explicit cart callback escape hatch, and `wave` is a compiled procedural
-sample. Additional interpolation modes extend `value`; they do not become
-parallel public track kinds.
-
-`linear` and `cubic` value interpolation are numeric scalar channels, not
-reflection over Lua values. Their focused channel owner sorts frame- or
-millisecond-domain keys and compiles distinct linear and cubic track arrays, so
-the update path never dispatches on an interpolation name. Linear segments
-retain their value delta and reciprocal span. Cubic keys author explicit
-`leave_tangent` and `arrive_tangent` slopes in value per frame or millisecond;
-admission uses firmware `load` to compile one shared scalar runner for the
-immutable track definition, then converts each segment to normalized Hermite
-coefficients for the admitted frame data. Parameterized frame builds therefore
-rebuild their length-dependent key data while reusing the compiled runner.
-The runner contains only the admitted frame/time and linear/cubic lanes, bakes
-binding slots and key counts into its code, specializes one- and two-key
-channels, and emits direct stores for static property paths. Explicit apply
-functions remain the callback escape hatch. Evaluation clamps to the outer
-keys and binary-searches larger immutable channels without a per-track domain,
-interpolation, binding, or setter dispatch. It allocates no runtime key,
-segment, result, or callback table. Generic step channels remain distinct
-because their values need not be numeric. Vector, quaternion, path and pose channels must retain their
-domain representation and interpolation rules instead of adding dynamic type
-classification to the scalar channel. This follows Unreal MovieScene's sorted
-[channel data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/Channels/FMovieSceneChannelData)
-and explicit
-[arrive/leave tangent data](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneTangentData),
-and its channel-specific
-[evaluation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EvaluateChannel),
-and Godot's specialized numeric, vector and quaternion interpolation paths in
-[`Animation`](https://github.com/godotengine/godot/blob/master/scene/resources/animation.cpp).
-
-Event and value keys, and both tag boundaries, may address an exact frame (or
-normalized frame position) or timeline-local `time_ms`. Admission partitions
-those domains into sorted immutable programs: frame buckets retain the cheap
-sprite-animation path, while time keys use binary range lookup and are sampled
-by the same evaluator. A track-only continuous program has no fabricated frame
-payload. Endpoint keys still evaluate on a terminal transport range even when
-there is no new frame sample. `seek_time` and `scrub_time` sample persistent
-destination state; only normal play traverses one-shot time keys.
-
-Future camera, path, animation, audio, media and nested-sequence support must
-extend this same program and evaluation pipeline rather than add per-feature ECS
-systems or a second sequencer facade. Their domain owners remain distinct: an
-animation owner retains poses, slots and blending; an audio owner retains voices
-and seek offsets; camera/path owners retain their models; GX image and source
-rectangle state remains render-owned. Timeline tracks bind and schedule those
-owners. An explicit apply callback may still drive raw source coordinates or
-other cart-owned values, so retaining image identity by default does not remove
-low-level author control.
-
-Each retained transport evaluation carries both its directed frame range and
-its directed timeline-local millisecond range, plus one numeric update method:
-play, jump, or scrub. Play traverses one-shot keys; jump and scrub reconstruct
-the sampled destination. The range is timeline position, not accumulated wall
-time, and replaces parallel reason strings, jumped flags and repeated tick
-deltas.
-
-A nested sequence is authored in the parent definition's `subsequences` array.
-Each clip has an authored `id`, `start_time_ms`, `duration_ms`, a child
-`sequence`, and optional `clip_in_ms`, `time_scale`, `playback_mode`, `params`,
-and binding-name remaps. Admission compiles that into a shared child-program
-reference, a dense parent-binding index map, a linear parent-to-child transform,
-a numeric once/loop/ping-pong warp, and clip references sorted by both interval
-boundaries. The clip selects its warp explicitly; the child program's autonomous
-root transport mode is not reused implicitly. A parent entry retains the child
-entries and its dense active-clip set. Normal play therefore visits only
-retained active clips and boundaries crossed by the current range; jump and
-scrub take the deliberately colder destination-query path. Candidate storage
-and child evaluation records are retained and reused.
-
-The child is evaluated recursively in the same pass; it does not call back
-through `timeline_component`, allocate another ECS system, or retain editor
-objects. A newly entered clip reconstructs persistent child state at its source
-position, samples the destination, and traverses only one-shot keys inside the
-mapped clip range. A play range that crosses an entire clip still evaluates its
-endpoint. Loop wraps and ping-pong turns split play into monotonic retained child
-ranges, including multiple boundaries crossed by one parent update. Jump and
-scrub map directly to one destination evaluation: they neither walk intermediate
-warp boundaries nor emit their end notifications or one-shot keys. Child binding
-names map to equal parent binding names unless the clip explicitly remaps them.
-Seekable audio and media tracks consume the same local range and method. This
-follows Unreal MovieScene's explicit
-[play/jump/scrub method](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/EUpdatePositionMethod)
-and [nested time transforms](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneSequenceTransform),
-including its explicit [loop time warp](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/MovieScene/FMovieSceneTimeWarping),
-Godot's distinct
-[sampled, discrete and seek paths](https://github.com/godotengine/godot/blob/master/scene/animation/animation_mixer.cpp),
-and Unity Timeline's
-[compiled interval evaluation](https://github.com/needle-mirror/com.unity.timeline/blob/master/Runtime/TimelinePlayable.cs).
-Editor tooling may author and scrub the same program, but editor state is not
-part of the cart runtime.
-
-The event-emitter module exports its one persistent Registry-owned dispatcher
-directly. Per-owner event ports retain emitter identity but do not create a
-second dispatcher or expose a class-plus-`instance` facade. Cart events are
-synchronous direct-value dispatch. `event_port:emit` passes the
-event name, emitter and exact payload value to listeners without constructing
-an event envelope or payload metatable; `nil`, `false` and table identity are
-preserved. FSM event callbacks receive the payload as their third argument,
-followed by the emitter and event name; frame-update callbacks receive only
-their target and state. Hot producers retain depth-indexed payload records only
-where their own operation can re-enter; progression likewise owns
-reusable per-depth fired-rule state and grows it only at a newly observed
-nesting high-water mark. No event queue, fixed recursion bound, compatibility
-wrapper or dispatch-time record allocation obscures the synchronous ordering.
-
-State machines and behaviour trees are opt-in world components. Their systems
-iterate retained views of the corresponding dense active-component
-buckets; a stateless
-object therefore owns no controller, blackboard, tree-id map, or empty runtime
-tables. A state-machine component may retain multiple named machines. Each
-behaviour-tree component owns one blackboard while its immutable root node is
-constructed once by cart code and shared by every prefab instance. Node results
-are numeric values resolved from `behaviourtree.result` once by cart modules;
-tree evaluation does not route status strings through its per-node hot path.
-Control-node policies and condition modifiers select their concrete node
-implementation when the immutable tree is constructed; child evaluation does
-not repeatedly compare policy strings, and composite conditions short-circuit
-at the first decisive child. The base
-world object exposes no FSM or behaviour-tree forwarding facade. Carts compose
-non-object orchestration from their own components and systems rather than
-through a parallel cartlib subsystem lifecycle.
-
-Carts remain the extension owner: a cart may derive a component directly from
-`cartlib/component/basecomponent`; its concrete module table is already the
-instance metatable and therefore its class identity. A cart selects its own
-system class in `world_module`; systems bind that same component table and
-retain the views that implement their capability.
-There are no component type-name strings or central built-in component-type table.
-During configuration a system binds retained component views to `world`;
-changing the active space redirects those views at
-the structural barrier. Systems therefore read their retained dense arrays
-directly instead of reaching through `world.active_space` or looking up a
-component key every frame. Cartlib does not prewarm a hardcoded list of built-in
-component kinds, and neither extension path requires modifying a cartlib
-registry.
-
-The central Registry is the only cart-wide identity and generic key index. It
-owns the direct id map and retained dense key buckets for published world
-objects, components and persistent cart services. Component classes and object
-tags are ordinary Registry keys; Registry does not branch on entry kind.
-`cartlib/world/prefab` separately owns prefab definitions, while each
-space materializes only the active definition views requested by configured
-systems. Registry's module exports its single owner directly, not a constructible
-class plus `instance` facade, and `world` has no shadow identity index or
-forwarding query API. Dynamic identity and generic-key queries address Registry
-directly; systems and other long-lived gameplay owners retain direct object or
-active-view references instead of querying per frame.
-
-Registry lifecycle is not a savegame classification boundary. Machine save-state
-captures the complete guest runtime graph, including Registry tables and the Lua
-heap. The host/frontend owns save slots, storage and transport of that machine
-snapshot. Cartlib has no separate game-save contract, object-graph serializer or
-`registry_persistent` classification.
-
-`world` owns lifecycle and the fixed map of spaces; each `space` object owns its
-own dense active-object, requested definition, component and visual storage
-plus the indices required to mutate those arrays. `world` selects spaces and
-coordinates barriers but does not reach into their backing tables. Component storage is
-materialized only for component classes selected by configured systems; visuals
-retain their separate render-facing dense list. Spawn assigns identity before
-construction but admits it to Registry, space and system views only after the
-object and its attached components are complete.
-
-Sprite collision association is explicit: a collider owns the selected
-image/flip raw GEO shape reference, while the sprite only holds render state.
-Carts program raw collider layer and mask words; there is no named profile
-registry. Font definition owns the retained GX glyph image; text
-components never lazily mutate shared font descriptors. Screen-boundary
-components receive explicit flat world bounds and do not query the current GX
-display mode during construction.
-
-The cartridge entry remains the hardware composition root. It registers only
-the device IRQ handlers it actually uses and configures `world` once with a
-cart-owned `world_module`. That plain module declares the fixed space topology
-and selects concrete system classes from their domain modules; it contains no
-factory descriptors or cart-supplied numeric priorities. The internal
-`system_manager` instantiates those classes once, sorts their instances once
-and retains flat arrays for the non-empty
-input, action-effects, gameplay, physics and animation groups. `world:update()`
-delegates to that owner; `world` only commits structural mutations at each group
-boundary. Spawn, despawn, space moves, activation, tag changes, component
-attachment and enabled-state changes alter retained membership only at that
-boundary. Their direct semantic values may change earlier; systems continue to
-iterate the stable group snapshot without per-item pending-state checks.
-`world:clear()` retains the topology, component views and composed system
-manager.
-
-The input system samples retained `input` state before gameplay systems
-run and arms the ICU's next-VBlank sample latch after consuming the current
-snapshot. Cart code neither updates `input` separately nor programs the ICU
-latch. Carts using action effects select both their input-evaluation and
-cooldown-time systems in `world_module`.
-The entry loop still owns every explicit `vblank.wait()` and therefore keeps
-gameplay/display pacing visible.
-
-AEM binds its event map when its owner module loads; carts bind its APU handler,
-while carts that submit GEO work bind the collision handler. Each system owns
-its tick group, internal order and retained runtime state. There is no
-application facade, system-name registry,
-reference-spec duplication, dependency graph, universal built-in schedule or
-import-time system registration.
-
-BIOS and cart libraries may hide register programming behind helpers, but those
-helpers must write/read the same RAM/MMIO words the cart could use directly.
-Gameplay/cart files own intent values only. They must not define GX GPU/APU/GEO/ICU
-ABI encoders, fixed-point helpers, register maps, packet layouts, or hardware
-fallbacks locally.
+gameplay libraries are compiled and linked into the cartridge image.
 
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.

@@ -9,6 +9,10 @@ local registry<const> = {
 
 local empty_entries<const> = {}
 
+-- Registry is the cart-wide identity and generic key index. World lifecycle,
+-- prefab definitions and active-space membership remain with their own owners;
+-- every indexed key uses this same dense representation.
+
 local add_index<const> = function(self, entry, key)
 	local bucket = self._entries_by_key[key]
 	if bucket == nil then

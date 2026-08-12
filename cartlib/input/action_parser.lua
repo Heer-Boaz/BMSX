@@ -1,5 +1,7 @@
 -- cartlib/input/action_parser.lua
--- Cached action-expression compiler for cart-owned PlayerInput.
+-- Cached action-expression compiler for cart-owned PlayerInput. Authored
+-- syntax is parsed once; firmware load() produces the short-circuit evaluator
+-- consumed directly by retained action bindings.
 
 local action_parser<const> = {}
 

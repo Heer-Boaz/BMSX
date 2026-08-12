@@ -14,6 +14,11 @@ for pool_index = 1, #placement_pools do
 	}
 end
 
+-- Semantic texture identity survives until residency admission. Admission
+-- publishes the selected raw placement before programming IMGDEC; rendering
+-- may therefore observe old, partial or uninitialized VRAM while transfer is
+-- still in flight.
+
 function gx_texture.resolve(texture_id)
 	local texture<const> = texture_by_id[texture_id]
 	if texture then

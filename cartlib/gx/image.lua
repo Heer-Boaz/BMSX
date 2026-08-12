@@ -10,6 +10,10 @@ local fixed_direct16_texture<const> = {
 	y = 0,
 }
 
+-- Image resolution selects a texture-mode-specific packet writer once.
+-- Ordinary image draws never redispatch on mode or scan page tiles; explicitly
+-- producer-split large surfaces are handled by surfacecomponent instead.
+
 local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, blend_mode)
 	local texture<const> = source._texture
 	draw:direct16_rect(

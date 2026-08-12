@@ -3,6 +3,10 @@ local clock<const> = require('cartlib/clock')
 local systemmanager<const> = {}
 systemmanager.__index = systemmanager
 
+-- Configuration instantiates and sorts concrete system classes once. Update
+-- walks the resulting flat group ranges and opens one structural barrier per
+-- group; there is no runtime system-name dispatch or per-frame schedule build.
+
 local system_priority_less<const> = function(a, b)
 	if a.group ~= b.group then
 		return a.group < b.group

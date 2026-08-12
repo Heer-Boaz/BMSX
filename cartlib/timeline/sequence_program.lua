@@ -11,6 +11,9 @@ sequence_program.empty = {
 	duration_ms = 0,
 }
 
+-- Child programs, binding slots and parent-time transforms are resolved during
+-- admission. Runtime traversal consumes only these dense clip records.
+
 local compare_start<const> = function(left, right)
 	if left.start_time_ms == right.start_time_ms then
 		return left.order < right.order

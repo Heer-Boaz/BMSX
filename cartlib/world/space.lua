@@ -4,6 +4,10 @@ local dense_set<const> = require('cartlib/util/dense_set')
 local space<const> = {}
 space.__index = space
 
+-- A space materializes only the retained definition and component views that
+-- configured systems request. Adding a view hydrates it once; steady updates
+-- iterate its dense items directly.
+
 function space.new(id)
 	return setmetatable({
 		id = id,

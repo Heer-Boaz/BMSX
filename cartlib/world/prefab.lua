@@ -6,6 +6,9 @@ local prefab<const> = {}
 local empty_values<const> = {}
 local empty_components<const> = {}
 
+-- Prefab definitions retain concrete classes and ordered component
+-- constructors. World owns identity, construction and publication.
+
 function prefab.define(definition)
 	local prototype<const> = definition.base or worldobject
 	local class<const> = definition.class

@@ -8,6 +8,8 @@ local evaluation_environment<const> = {
 	emit_events = timeline_track_evaluator.emit_events,
 }
 
+-- Each immutable timeline program compiles exactly the phases it owns. The
+-- returned evaluator contains no feature-presence checks on the update path.
 function evaluation_program.compile(program)
 	local prepared_tracks<const> = program.prepared_tracks
 	local has_values<const> = prepared_tracks.value_track_count > 0
