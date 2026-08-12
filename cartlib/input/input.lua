@@ -223,18 +223,18 @@ end
 
 -- Record a digital edge on `state` and remember it so the flag is cleared next
 -- frame. Called only when a tracked bit actually flipped.
-local apply_digital_edge<const> = function(player, state, pressed_now)
+local apply_digital_edge<const> = function(player, state, pressed_now, frame)
 	if pressed_now then
 		state.just_pressed = true
 		state.just_released = false
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = *frame_serial
-		state.last_press_frame = *frame_serial
+		state.press_start_frame = frame
+		state.last_press_frame = frame
 	else
 		state.just_pressed = false
 		state.just_released = true
-		state.last_release_frame = *frame_serial
+		state.last_release_frame = frame
 	end
 	state.consumed = false
 	state.pressed = pressed_now
@@ -246,7 +246,7 @@ end
 -- Analog/pointer inputs: read their value(s) every frame. Hybrid buttons
 -- (trigger/stick) already had pressed/edges set by the digital pass and only
 -- need the value here; pure value inputs derive pressed from the value/delta.
-local sample_value_button<const> = function(player, state)
+local sample_value_button<const> = function(player, state, frame)
 	if state.value_addr ~= 0 then
 		local value<const>: *word = state.value_addr
 		state.value_q16 = *value
@@ -281,27 +281,27 @@ local sample_value_button<const> = function(player, state)
 	if just_pressed then
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = *frame_serial
-		state.last_press_frame = *frame_serial
+		state.press_start_frame = frame
+		state.last_press_frame = frame
 		state.consumed = false
 	elseif not pressed then
 		state.consumed = false
 	end
 	if just_released then
-		state.last_release_frame = *frame_serial
+		state.last_release_frame = frame
 	end
 	state.pressed = pressed
 end
 
-local sample_new_button_state<const> = function(player, state)
+local sample_new_button_state<const> = function(player, state, frame)
 	if state.level_addr ~= 0 then
 		local level<const>: *word = state.level_addr
 		local pressed<const> = (*level & state.level_mask) ~= 0
 		if pressed ~= state.pressed then
-			apply_digital_edge(player, state, pressed)
+			apply_digital_edge(player, state, pressed, frame)
 		end
 	end
-	sample_value_button(player, state)
+	sample_value_button(player, state, frame)
 end
 
 -- Slot a freshly-resolved button into the per-source sampling structures: a
@@ -326,8 +326,9 @@ local register_button_sampling<const> = function(player, source_index, state)
 		local vlist<const> = player.value_list[source_index]
 		vlist[#vlist + 1] = state
 	end
-	if player.sample_frame == *frame_serial then
-		sample_new_button_state(player, state)
+	local frame<const> = *frame_serial
+	if player.sample_frame == frame then
+		sample_new_button_state(player, state, frame)
 	end
 end
 
@@ -410,11 +411,12 @@ end
 
 local clear_action_evaluation_state<const> = function(player)
 	player.eval_generation = player.eval_generation + 1
+	local frame<const> = *frame_serial
 	local action_states<const> = player.action_state_list
 	for i = 1, player.action_state_count do
 		local state<const> = action_states[i]
 		state.guard_last_press_id = -1
-		state.guard_last_accepted_frame = *frame_serial - guard_window_frames - 1
+		state.guard_last_accepted_frame = frame - guard_window_frames - 1
 		state.guard_last_result = false
 		state.repeat_active = false
 		state.repeat_count = 0
@@ -496,10 +498,7 @@ local new_player<const> = function(index)
 	return player
 end
 
-local sample_player<const> = function(player)
-	if player.sample_frame == *frame_serial then
-		return
-	end
+local sample_player<const> = function(player, frame)
 	-- 1. Clear last frame's digital edges (only the buttons that changed).
 	local edges<const> = player.edge_buttons
 	local edge_count<const> = player.edge_count
@@ -522,7 +521,7 @@ local sample_player<const> = function(player)
 					local state<const> = states[s]
 					local pressed_now<const> = (cur & state.level_mask) ~= 0
 					if pressed_now ~= state.pressed then
-						apply_digital_edge(player, state, pressed_now)
+						apply_digital_edge(player, state, pressed_now, frame)
 					end
 				end
 				group.prev = cur
@@ -534,21 +533,21 @@ local sample_player<const> = function(player)
 	for source_index = source_keyboard, source_pointer do
 		local vlist<const> = player.value_list[source_index]
 		for v = 1, #vlist do
-			sample_value_button(player, vlist[v])
+			sample_value_button(player, vlist[v], frame)
 		end
 	end
-	player.sample_frame = *frame_serial
+	player.sample_frame = frame
 end
 
 -- Windows resolve at read time: a binding contributes its frames-since-press /
 -- frames-since-release delta (-1 while pressed / on the release edge), and
 -- was* becomes a `delta < window` compare on the cached minimums.
-local merge_binding<const> = function(agg, state)
-	local press_delta = *frame_serial - state.last_press_frame
+local merge_binding<const> = function(agg, state, frame)
+	local press_delta = frame - state.last_press_frame
 	if state.pressed then
 		press_delta = -1
 	end
-	local release_delta = *frame_serial - state.last_release_frame
+	local release_delta = frame - state.last_release_frame
 	if state.just_released then
 		release_delta = -1
 	end
@@ -566,7 +565,7 @@ local merge_binding<const> = function(agg, state)
 		agg.min_release_delta = release_delta
 	end
 	if state.pressed then
-		local press_time<const> = *frame_serial - state.press_start_frame
+		local press_time<const> = frame - state.press_start_frame
 		if not agg.has_press_time or press_time < agg.press_time then
 			agg.press_time = press_time
 			agg.has_press_time = true
@@ -644,32 +643,32 @@ local fold_source<const> = function(state, agg)
 	end
 end
 
-local evaluate_guard<const> = function(state)
+local evaluate_guard<const> = function(state, frame)
 	if not state.just_pressed then
 		return false
 	end
 	if state.guard_last_press_id == state.press_id then
 		return state.guard_last_result
 	end
-	local accepted<const> = (*frame_serial - state.guard_last_accepted_frame) > guard_window_frames
+	local accepted<const> = (frame - state.guard_last_accepted_frame) > guard_window_frames
 	if accepted then
-		state.guard_last_accepted_frame = *frame_serial
+		state.guard_last_accepted_frame = frame
 	end
 	state.guard_last_press_id = state.press_id
 	state.guard_last_result = accepted
 	return accepted
 end
 
-local evaluate_repeat<const> = function(state)
-	if state.repeat_last_frame == *frame_serial then
+local evaluate_repeat<const> = function(state, frame)
+	if state.repeat_last_frame == frame then
 		return state.repeat_last_result, state.repeat_count
 	end
 	local result = false
 	if state.just_pressed then
 		state.repeat_active = true
 		state.repeat_count = 0
-		state.repeat_press_start_frame = *frame_serial
-		state.repeat_last_repeat_frame = *frame_serial
+		state.repeat_press_start_frame = frame
+		state.repeat_last_repeat_frame = frame
 	elseif not state.pressed then
 		state.repeat_active = false
 		state.repeat_count = 0
@@ -679,17 +678,17 @@ local evaluate_repeat<const> = function(state)
 		if not state.repeat_active then
 			state.repeat_active = true
 			state.repeat_count = 0
-			state.repeat_press_start_frame = *frame_serial
-			state.repeat_last_repeat_frame = *frame_serial
+			state.repeat_press_start_frame = frame
+			state.repeat_last_repeat_frame = frame
 		end
 		local next_frame<const> = state.repeat_count == 0 and (state.repeat_press_start_frame + initial_repeat_delay_frames) or (state.repeat_last_repeat_frame + repeat_interval_frames)
-		if *frame_serial >= next_frame then
+		if frame >= next_frame then
 			state.repeat_count = state.repeat_count + 1
 			state.repeat_last_repeat_frame = next_frame
 			result = true
 		end
 	end
-	state.repeat_last_frame = *frame_serial
+	state.repeat_last_frame = frame
 	state.repeat_last_result = result
 	return result, state.repeat_count
 end
@@ -703,9 +702,10 @@ function input.add_player(index)
 end
 
 function input.advance_frame()
-	*frame_serial = *frame_serial + 1
+	local frame<const> = *frame_serial + 1
+	*frame_serial = frame
 	for index = 1, player_count do
-		sample_player(player_list[index])
+		sample_player(player_list[index], frame)
 	end
 end
 
@@ -733,6 +733,7 @@ end
 -- Full evaluation runs once per action per frame (per eval generation); later
 -- reads this frame reuse the retained result and numeric edge deltas.
 local refresh_action_state<const> = function(player, state)
+	local frame<const> = player.sample_frame
 	state.pressed = false
 	state.just_pressed = false
 	state.just_released = false
@@ -755,23 +756,23 @@ local refresh_action_state<const> = function(player, state)
 		if count > 0 then
 			reset_aggregation(agg)
 			for i = 1, count do
-				merge_binding(agg, list[i])
+				merge_binding(agg, list[i], frame)
 			end
 			fold_source(state, agg)
 		end
 	end
-	state.guarded_just_pressed = evaluate_guard(state)
-	local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state)
+	state.guarded_just_pressed = evaluate_guard(state, frame)
+	local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state, frame)
 	state.repeat_pressed = repeat_pressed
 	state.repeat_count = repeat_count
-	state.eval_frame = *frame_serial
+	state.eval_frame = frame
 	state.eval_gen = player.eval_generation
 end
 
 local evaluate_action_state<const> = function(states, action_key)
 	local state<const> = states[action_key]
 	local player<const> = state.player
-	if state.eval_frame ~= *frame_serial or state.eval_gen ~= player.eval_generation then
+	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
 		refresh_action_state(player, state)
 	end
 	return state
