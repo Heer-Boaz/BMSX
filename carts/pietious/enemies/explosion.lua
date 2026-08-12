@@ -69,11 +69,9 @@ local define_enemy_explosion_fsm<const> = function()
 					frames = explosion_frames,
 					frame_duration = enemy_explosion_frame_duration,
 					playback_mode = 'once',
+					apply = enemy_explosion.sync_explosion_sprite,
 				},
 				autoplay = false,
-				on_frame = function(self, _state, event)
-					self:sync_explosion_sprite(event.frame_value)
-				end,
 				on_end = function(self)
 					self:spawn_loot()
 					self:mark_for_disposal()

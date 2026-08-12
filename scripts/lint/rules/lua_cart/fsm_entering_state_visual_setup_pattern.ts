@@ -73,7 +73,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 				issues,
 				ruleName,
 				gfxCall,
-				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline already drives gfx in on_frame. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,
+				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline definition already drives gfx through apply. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,
 			);
 		}
 	});

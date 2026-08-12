@@ -573,13 +573,13 @@ local define_stage_fsm<const> = function()
 					self:reset_runtime()
 					return '/running'
 				end,
-				},
-				running = {
-					update = function(self)
-						self:update_runtime()
-					end,
-					timelines = {
-						[ids_stage_star_blink_timeline] = {
+			},
+			running = {
+				update = function(self)
+					self:update_runtime()
+				end,
+				timelines = {
+					[ids_stage_star_blink_timeline] = {
 						def = {
 							frames = {
 								{ blink_turn = 'yellow', yellow_blink = true, blue_blink = false },
@@ -589,6 +589,18 @@ local define_stage_fsm<const> = function()
 							},
 							frame_duration = stage_star_blink_frame_duration,
 							playback_mode = 'loop',
+							apply = true,
+							tracks = {
+								{
+									kind = 'event',
+									keys = {
+										{ frame = 0, event = 'star_blink_toggle', direction = 'forward' },
+										{ frame = 1, event = 'star_blink_toggle', direction = 'forward' },
+										{ frame = 2, event = 'star_blink_toggle', direction = 'forward' },
+										{ frame = 3, event = 'star_blink_toggle', direction = 'forward' },
+									},
+								},
+							},
 						},
 						autoplay = true,
 						stop_on_exit = true,
@@ -596,18 +608,11 @@ local define_stage_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_frame = function(self, _state, event)
-							self.events:emit('star_blink_toggle', {
-								turn = event.frame_value.blink_turn,
-								yellow_blink = event.frame_value.yellow_blink,
-								blue_blink = event.frame_value.blue_blink,
-							})
-						end,
 					},
 				},
-				},
 			},
-		})
+		},
+	})
 end
 
 local register_stage_definition<const> = function()

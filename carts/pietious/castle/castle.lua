@@ -12,7 +12,6 @@ local castle<const> = {}
 
 local world1_stairs_open_row<const> = '#............................-=#'
 local halo_destination_room_number<const> = 1
-local director_seal_frame_event<const> = 'timeline.frame.director.seal'
 local castle_tags<const> = {
 	seal_active = 'c.seal.active',
 	seal_sequence = 'c.seal.sequence',
@@ -791,12 +790,6 @@ local define_castle_fsm<const> = function()
 				emitter = 'd',
 				go = function(self)
 					self:finish_seal_dissolution()
-				end,
-			},
-			[director_seal_frame_event] = {
-				emitter = 'd',
-				go = function(self, _state, event)
-					self:apply_seal_timeline_frame(event.frame_value + 1)
 				end,
 			},
 			['world_entrance.opening_2'] = {

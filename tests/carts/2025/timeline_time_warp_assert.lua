@@ -123,18 +123,11 @@ timelines:on_attach()
 
 local loop_end_count = 0
 local loop_end_mode
-local loop_frame_count = 0
 owner.events:on({
 	event = 'timeline.end.loop_parent/child',
 	handler = function(_event, _emitter, payload)
 		loop_end_count = loop_end_count + 1
 		loop_end_mode = payload.mode
-	end,
-})
-owner.events:on({
-	event = 'timeline.frame.loop_parent/child',
-	handler = function()
-		loop_frame_count = loop_frame_count + 1
 	end,
 })
 timelines:define('loop_parent', {
@@ -152,27 +145,20 @@ timelines:define('loop_parent', {
 	},
 })
 timelines:play('loop_parent', { bindings = { camera = camera } })
-assert(zero_count == 1 and camera.value == 10 and loop_frame_count == 1)
+assert(zero_count == 1 and camera.value == 10)
 timelines:tick_active(225)
 assert(zero_count == 3 and nested_forward_count == 2)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
 assert(loop_end_count == 2 and loop_end_mode == timeline_module.playback_mode.loop)
 timelines:tick_active(25)
 assert(nested_forward_count == 3 and camera.value == 20 and owner.tags.child_active == nil)
-assert(loop_end_count == 3 and loop_frame_count == 5)
+assert(loop_end_count == 3)
 
 local seek_end_count = 0
-local seek_frame_count = 0
 owner.events:on({
 	event = 'timeline.end.seek_parent/child',
 	handler = function()
 		seek_end_count = seek_end_count + 1
-	end,
-})
-owner.events:on({
-	event = 'timeline.frame.seek_parent/child',
-	handler = function()
-		seek_frame_count = seek_frame_count + 1
 	end,
 })
 timelines:define('seek_parent', {
@@ -194,13 +180,13 @@ local nested_before_seek<const> = nested_forward_count
 timelines:play('seek_parent', { bindings = { camera = camera } })
 timelines:seek_time('seek_parent', 225)
 assert(zero_count == zero_before_seek + 1 and nested_forward_count == nested_before_seek)
-assert(seek_end_count == 0 and seek_frame_count == 2)
+assert(seek_end_count == 0)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
 timelines:scrub_time('seek_parent', 125)
 assert(zero_count == zero_before_seek + 1 and nested_forward_count == nested_before_seek)
-assert(seek_end_count == 0 and seek_frame_count == 3 and camera.value == 10)
+assert(seek_end_count == 0 and camera.value == 10)
 timelines:seek_time('seek_parent', 250)
-assert(seek_end_count == 0 and seek_frame_count == 4 and owner.tags.child_active == nil)
+assert(seek_end_count == 0 and owner.tags.child_active == nil)
 timelines:stop('seek_parent')
 
 local backward_before_reverse<const> = backward_count

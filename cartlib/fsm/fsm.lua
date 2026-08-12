@@ -57,26 +57,26 @@
 --      state_a = { timelines = { [id] = { autoplay = true, stop_on_exit = true } } }
 --      state_b = { timelines = { [id] = { autoplay = true, stop_on_exit = true, on_end = '/other' } } }
 --
--- 4. on_end AND on_frame CALLBACKS IN TIMELINE CONFIG.
---    Declare timeline end/frame callbacks directly inside the state's timeline
---    config using on_end / on_frame.  Do NOT register them manually under
---    'on' using the internal 'timeline.end.<id>' / 'timeline.frame.<id>' keys
---    — those are implementation details.  The runtime maps on_end/on_frame to
---    the correct 'on' keys automatically.
+-- 4. TIMELINE OUTPUTS AND COMPLETION.
+--    Sampled output belongs to the timeline definition itself: use `apply` for
+--    a frame value or value/sample tracks for bound properties. This runs in
+--    the compiled evaluation program without routing every sample through the
+--    event emitter and FSM. Use explicit event tracks only for announcements.
+--    Declare state transitions on completion as `on_end` in the state timeline
+--    binding; the scoped end event remains an internal FSM binding detail.
 --
 --    WRONG — manual internal event key:
 --      on = { ['timeline.end.my_id'] = function(self) return '/next' end }
 --    RIGHT — on_end directly in the timeline binding:
 --      timelines = { [my_id] = { ..., on_end = '/next' } }
 --      timelines = { [my_id] = { ..., on_end = function(self) ... end } }
---      timelines = { [my_id] = { ..., on_frame = function(self, _s, e) ... end } }
 --
 -- 5. FORBIDDEN LEGACY FIELDS.
---    The following field names are rejected at runtime (and caught by the
---    Lua linter) and must never appear in FSM state definitions:
---      'tick'   — use 'update'  (the FSM calls update(), not tick())
---    Using these names silently does nothing on older runtimes and errors on
---    current ones.  Keep state definitions clean.
+--    The cart builder rejects obsolete FSM fields rather than carrying a
+--    compatibility path into runtime definitions:
+--      'on_frame'     — use timeline apply/value/sample output
+--      'tick'         — use update
+--      'process_input' and 'run_checks' — use input handlers/transitions
 --
 -- RUNTIME MECHANICS — how the FSM runtime works under the hood.
 --
@@ -367,13 +367,6 @@ function statedefinition.new(id, def, root, parent)
 					error('state "' .. tostring(self.def_id) .. '": "on_end" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
 				end
 				self.on[key] = tl_def.on_end
-			end
-			if tl_def.on_frame ~= nil then
-				local key<const> = 'timeline.frame.' .. tl_id
-				if self.on[key] ~= nil then
-					error('state "' .. tostring(self.def_id) .. '": "on_frame" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
-				end
-				self.on[key] = tl_def.on_frame
 			end
 		end
 	end

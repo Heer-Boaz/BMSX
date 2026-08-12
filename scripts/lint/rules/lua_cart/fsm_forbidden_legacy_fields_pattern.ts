@@ -14,11 +14,14 @@ export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issu
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
 		if (key && FORBIDDEN_FSM_LEGACY_FIELDS.has(key)) {
+			const replacement = key === 'on_frame'
+				? 'Use timeline definition "apply" or a value/sample track.'
+				: 'Use state "update" and "input_event_handlers" only.';
 			pushIssue(
 				issues,
 				fsmForbiddenLegacyFieldsPatternRule.name,
 				field.value,
-				`FSM field "${key}" is forbidden. Use state "update" and "input_event_handlers" only.`,
+				`FSM field "${key}" is forbidden. ${replacement}`,
 			);
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {

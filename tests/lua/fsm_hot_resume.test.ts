@@ -6,6 +6,7 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
@@ -14,6 +15,17 @@ const SYSTEM_MODULE_FILES = [
 	['table', 'machine/bios/table.lua'],
 	['string/base', 'machine/bios/string/base.lua'],
 	['string/pattern', 'machine/bios/string/pattern.lua'],
+	['compiler/api', 'machine/bios/compiler/api.lua'],
+	['compiler/arena', 'machine/bios/compiler/arena.lua'],
+	['compiler/bytecode', 'machine/bios/compiler/bytecode.lua'],
+	['compiler/compiler', 'machine/bios/compiler/compiler.lua'],
+	['compiler/lexer', 'machine/bios/compiler/lexer.lua'],
+	['compiler/linker', 'machine/bios/compiler/linker.lua'],
+	['compiler/load', 'machine/bios/compiler/load.lua'],
+	['compiler/parser', 'machine/bios/compiler/parser.lua'],
+	['compiler/semantic', 'machine/bios/compiler/semantic.lua'],
+	['compiler/syntax', 'machine/bios/compiler/syntax.lua'],
+	['compiler/token', 'machine/bios/compiler/token.lua'],
 ] as const;
 
 const CART_MODULE_FILES = [
@@ -24,10 +36,14 @@ const CART_MODULE_FILES = [
 	['cartlib/component/basecomponent', 'cartlib/component/basecomponent.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/easing', 'cartlib/easing.lua'],
+	['cartlib/timeline/playback', 'cartlib/timeline/playback.lua'],
+	['cartlib/timeline/apply', 'cartlib/timeline/apply.lua'],
 	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
+	['cartlib/timeline/evaluation_program', 'cartlib/timeline/evaluation_program.lua'],
+	['cartlib/timeline/frame_program', 'cartlib/timeline/frame_program.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/time_transform', 'cartlib/timeline/time_transform.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
@@ -47,6 +63,10 @@ const CART_MODULE_FILES = [
 
 const SYSTEM_STUB_MODULES = [
 	{
+		path: 'bmsx/blua32',
+		source: BLUA32_FIRMWARE_MODULE_SOURCE,
+	},
+	{
 		path: 'tty/console',
 		source: 'return { write = function() end, end_line = function() end }',
 	},
@@ -60,13 +80,6 @@ const CART_STUB_MODULES = [
 			is_active = function() return false end,
 		}`,
 	},
-	{
-		path: 'cartlib/timeline/apply',
-		source: `return {
-			compile_frames = function() error('unexpected compiled-frame timeline') end,
-			compile_setter = function() error('unexpected property track') end,
-		}`,
-	},
 ] as const;
 
 const SYSTEM_ENTRY_SOURCE = `
@@ -74,6 +87,7 @@ require('base')
 table = require('table')
 string = require('string/base')
 string.find = require('string/pattern').find
+load = require('compiler/api').load
 math = { sin = function(value) return value end, pi = 3.141592653589793 }
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
@@ -229,9 +243,6 @@ assert(timeline_before.head == timeline_head_before and timeline_before.position
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)
 assert(state_machines._state_paths == nil)
-assert(#events.listeners.activate == 0)
-assert(#events.listeners.deactivate == 1)
-assert(#events.listeners.bonus == 1)
 local bound_after<const> = state_machines:bind_state_path('/active')
 assert(bound_after ~= bound_before)
 

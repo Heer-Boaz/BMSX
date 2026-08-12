@@ -44,11 +44,15 @@ export function stateTimelinesDriveSelfGfx(stateExpression: Expression): boolean
 		if (timelineField.value.kind !== SyntaxKind.TableConstructorExpression) {
 			continue;
 		}
-		const onFrameField = findTableFieldByKey(timelineField.value, 'on_frame');
-		if (!onFrameField || onFrameField.value.kind !== SyntaxKind.FunctionExpression) {
+		const definitionField = findTableFieldByKey(timelineField.value, 'def');
+		if (!definitionField || definitionField.value.kind !== SyntaxKind.TableConstructorExpression) {
 			continue;
 		}
-		if (findCallExpressionInStatements(onFrameField.value.body.body, isSelfGfxCallExpression)) {
+		const applyField = findTableFieldByKey(definitionField.value, 'apply');
+		if (!applyField || applyField.value.kind !== SyntaxKind.FunctionExpression) {
+			continue;
+		}
+		if (findCallExpressionInStatements(applyField.value.body.body, isSelfGfxCallExpression)) {
 			return true;
 		}
 	}

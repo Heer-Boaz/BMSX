@@ -109,6 +109,7 @@ local create_world<const> = function(director_boot_mode)
 	local director<const> = world:spawn('director', {
 		id = 'd',
 		boot_mode = director_boot_mode,
+		castle = castle,
 		ui = ui,
 		pos = { z = draw_z_director_effect },
 	})

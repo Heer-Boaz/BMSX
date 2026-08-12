@@ -126,6 +126,10 @@ local build_title_start_frames<const> = function()
 	return timeline.build_frame_sequence(frames)
 end
 
+local apply_title_start_frame<const> = function(self, frame)
+	self:set_imgid(frame.sprite_id)
+end
+
 function title_screen:ctor()
 	self.collider:set_enabled(false)
 	self:set_imgid('title_screen')
@@ -197,6 +201,7 @@ local define_title_screen_fsm<const> = function()
 						def = {
 							frames = build_title_start_frames(),
 							playback_mode = 'once',
+							apply = apply_title_start_frame,
 						},
 						autoplay = true,
 						stop_on_exit = true,
@@ -204,9 +209,6 @@ local define_title_screen_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_frame = function(self)
-							self:set_imgid(self.timelines:get(start_timeline_id):value().sprite_id)
-						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')
 							return '/hidden'

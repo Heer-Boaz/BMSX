@@ -1383,7 +1383,7 @@ function combat.define_fsm()
 	--                       on runtime values (e.g. self.combat_monster_base_x).
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_end  — transition or action when the timeline finishes.
-	--   on_frame  — action fired on every timeline frame update.
+	--   apply      — compiled sampled output owned by the timeline definition.
 	fsmlibrary.register(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {

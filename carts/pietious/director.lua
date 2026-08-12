@@ -25,10 +25,11 @@
 --    canonical event, so entering_state callbacks are one-liners.
 --
 -- 3. NO DISGUISED METHOD CALLS.
---    The director never calls methods on other objects directly and never emits
---    "command" events that are thinly disguised method calls targeting a single
---    object.  If a subsystem needs to act on a mode change, it subscribes to
---    the mode broadcast in its own bind().
+--    Mode changes are announcements, never command events aimed at one object.
+--    Timeline sample output is different: a sequence owns explicit output
+--    bindings and writes them directly during evaluation. The seal sequence
+--    therefore receives castle as a construction-time binding instead of
+--    broadcasting one synthetic event for every sampled frame.
 -- 4. FSM STATE SUB-VARIANTS INSTEAD OF CROSS-STATE FLAGS.
 --    When two states differ only by a boolean context value (e.g. after_death
 --    in daemon_appearance), two distinct FSM states exist and the decision
@@ -255,17 +256,25 @@ end
 --   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
 --   'player.world_emerge'          → player (begins emergence animation)
 local define_director_fsm<const> = function()
-	-- Shared timeline callbacks for both daemon appearance variants.
-	-- Two FSM states (daemon_appearance / daemon_appearance_post_death) share
-	-- the same cloud-spawning on_frame and completion on_end.  Defining them
-	-- as local functions here avoids duplication without creating cross-state
-	-- flags — the two states navigate from different decision points but run
-	-- identical timeline behaviour.
-	local on_daemon_frame<const> = function(self, _state, event)
-		local frame_value<const> = event.frame_value
+	-- Both daemon states bind the same retained sequence. Sampled cloud output
+	-- belongs to that sequence; only completion remains state-specific.
+	local apply_daemon_frame<const> = function(self, frame_value)
 		local intro_state<const> = (frame_value // 2) + 97
 		if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
 			self:spawn_daemon_cloud()
+		end
+	end
+	local apply_seal_frame<const> = function(self, frame_value)
+		local intro_state<const> = frame_value + 1
+		self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
+		if self.seal_flash_on then
+			self:add_tag('d.seal.flash')
+		else
+			self:remove_tag('d.seal.flash')
+		end
+		self.castle:apply_seal_timeline_frame(intro_state)
+		if intro_state == 32 then
+			self.events:emit('seal_flash_done')
 		end
 	end
 	local on_daemon_end<const> = function(self)
@@ -277,8 +286,8 @@ local define_director_fsm<const> = function()
 	fsmlibrary.register('director', {
 		-- daemon_timeline_id is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
-		-- (autoplay = false = registration only).  Each state configures behaviour
-		-- via on_frame (cloud spawning) and on_end (completion + transition).
+		-- (autoplay = false = registration only). Sample output is compiled into
+		-- the shared definition; each state owns only completion behaviour.
 		timelines = {
 			[banner_pre_delay_timeline_id] = {
 				def = {
@@ -343,6 +352,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(126),
 					playback_mode = 'once',
+					apply = apply_daemon_frame,
 					tracks = {
 						{
 							kind = 'tag',
@@ -765,6 +775,7 @@ local define_director_fsm<const> = function()
 							def = {
 								frames = timeline.range(95),
 								playback_mode = 'once',
+								apply = apply_seal_frame,
 								tracks = {
 									{
 										kind = 'tag',
@@ -788,18 +799,6 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_frame = function(self, _state, event)
-							local intro_state<const> = event.frame_value + 1
-							self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
-							if self.seal_flash_on then
-								self:add_tag('d.seal.flash')
-							else
-								self:remove_tag('d.seal.flash')
-							end
-							if intro_state == 32 then
-								self.events:emit('seal_flash_done')
-							end
-						end,
 						on_end = function(self)
 							self.seal_flash_on = false
 							self:remove_tag('d.seal.flash')
@@ -817,14 +816,13 @@ local define_director_fsm<const> = function()
 					end,
 				},
 			-- Timeline def is at FSM root (shared with daemon_appearance_post_death).
-			-- Cloud spawning and completion are handled by timeline on_frame/on_end.
+			-- The definition owns cloud samples; each state owns its completion.
 			daemon_appearance = {
 				timelines = {
 					[daemon_timeline_id] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
-						on_frame = on_daemon_frame,
 						on_end = on_daemon_end,
 					},
 				},
@@ -840,7 +838,6 @@ local define_director_fsm<const> = function()
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
-						on_frame = on_daemon_frame,
 						on_end = on_daemon_end,
 					},
 				},

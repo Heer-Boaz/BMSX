@@ -57,14 +57,15 @@ local define_director_fsm<const> = function()
 		on = {
 			['star_blink_toggle'] = {
 				emitter = ids_stage_instance,
-				go = function(self, _state, event)
+				go = function(self)
+					local stage<const> = self.stage
 					self:emit_event(
 						'star_blink_toggle',
 						string.format(
 							'turn=%s|yellow_blink=%d|blue_blink=%d',
-							event.turn,
-							bool01(event.yellow_blink),
-							bool01(event.blue_blink)
+							stage.blink_turn,
+							bool01(stage.yellow_blink),
+							bool01(stage.blue_blink)
 						)
 					)
 				end,
@@ -106,14 +107,14 @@ local define_director_fsm<const> = function()
 					self:emit_event('director_boot')
 					return '/running'
 				end,
-				},
-				running = {
-					update = function(self)
-						self:update_runtime()
-					end,
-				},
 			},
-		})
+			running = {
+				update = function(self)
+					self:update_runtime()
+				end,
+			},
+		},
+	})
 end
 
 local register_director_definition<const> = function()

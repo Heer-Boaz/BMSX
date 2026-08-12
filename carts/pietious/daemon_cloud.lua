@@ -46,12 +46,10 @@ local define_daemon_cloud_fsm<const> = function()
 								{ value = 'daemon_smoke_large', hold = 16 },
 							}),
 							playback_mode = 'once',
+							apply = spriteobject.set_imgid,
 						},
 						autoplay = false,
 						stop_on_exit = true,
-						on_frame = function(self)
-							self:set_imgid(self.timelines:get(anim_timeline_id):value())
-						end,
 						on_end = function(self)
 							self.visible = false
 							self.collider:set_enabled(false)

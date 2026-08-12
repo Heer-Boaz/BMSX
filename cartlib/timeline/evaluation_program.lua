@@ -19,7 +19,7 @@ function evaluation_program.compile(program)
 	local has_frame_appliers<const> = program.apply_frames
 	local has_subsequences<const> = program.subsequences.clip_count > 0
 	local parts<const> = {
-		'return function(entry, owner, evaluation, payload)\n',
+		'return function(entry, owner, evaluation)\n',
 	}
 	if has_values or has_apply_function or has_frame_appliers then
 		parts[#parts + 1] = 'local program = entry["instance"]["program"]\n'
@@ -33,10 +33,10 @@ function evaluation_program.compile(program)
 	if has_apply_function or has_frame_appliers then
 		parts[#parts + 1] = 'if evaluation["sample"] then\n'
 		if has_apply_function then
-			parts[#parts + 1] = 'program["apply_function"](entry["primary_binding"], payload["frame_value"], entry["params"], evaluation)\n'
+			parts[#parts + 1] = 'program["apply_function"](entry["primary_binding"], evaluation["value"], entry["params"], evaluation)\n'
 		end
 		if has_frame_appliers then
-			parts[#parts + 1] = 'program["frame_appliers"][payload["frame_index"] + 1](entry["primary_binding"], payload["frame_value"])\n'
+			parts[#parts + 1] = 'program["frame_appliers"][evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])\n'
 		end
 		parts[#parts + 1] = 'end\n'
 	end

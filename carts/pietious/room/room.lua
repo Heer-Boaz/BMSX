@@ -1119,11 +1119,9 @@ local define_room_fsm<const> = function()
 									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
 									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
 									playback_mode = 'loop',
+									apply = room_object.sync_water_surface_frame,
 								},
 								autoplay = true,
-								on_frame = function(self)
-									self:sync_water_surface_frame(self.timelines:get(water_surface_timeline_id):value())
-								end,
 							},
 						},
 					},

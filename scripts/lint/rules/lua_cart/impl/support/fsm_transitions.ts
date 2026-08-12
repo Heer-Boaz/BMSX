@@ -66,6 +66,7 @@ export const FORBIDDEN_FSM_LEGACY_FIELDS = new Set<string>([
 	'tick',
 	'process_input',
 	'run_checks',
+	'on_frame',
 ]);
 
 export function lintFsmForbiddenLegacyFieldsPattern(
