@@ -1573,7 +1573,7 @@ function state:update()
 		local bindings<const> = self.input_bindings
 		local kinds<const> = definition.input_transition_kinds
 		for i = 1, definition.input_handler_count do
-			if input.is_active(bindings[i]) then
+			if bindings[i]() then
 				local handled<const> = self:execute_transition(kinds[i], transitions[i])
 				if handled and stop_after_match then
 					break

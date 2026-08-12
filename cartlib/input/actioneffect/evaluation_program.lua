@@ -79,7 +79,7 @@ local compile_effects<const> = function(bindings, source)
 	local program<const> = {
 		effects = {},
 		operands = {},
-		environment = { input_is_active = input.is_active },
+		environment = {},
 		uses_effect_triggers = false,
 		queued_event_capacity = 0,
 		queued_command_capacity = 0,
@@ -314,7 +314,6 @@ end
 
 local emit_dependency_captures<const> = function(printer, values)
 	printer:emit(templates.bindings_capture, values)
-	printer:emit(templates.input_is_active_capture, values)
 	if #values.effect_program.operands > 0 then
 		printer:emit(templates.operands_capture, values)
 	end
@@ -419,7 +418,7 @@ templates.arm_latch = lua_source_printer.compile_template('latch[$binding_index$
 templates.clear_latch = lua_source_printer.compile_template('latch[$binding_index$] = false\n')
 
 templates.press = lua_source_printer.compile_template([[
-	press = input_is_active(binding["press"])
+	press = binding["press"]()
 	if press then
 		$matched$
 		$effects$
@@ -432,7 +431,7 @@ templates.press = lua_source_printer.compile_template([[
 })
 
 templates.hold = lua_source_printer.compile_template([[
-	hold = input_is_active(binding["hold"])
+	hold = binding["hold"]()
 	if hold then
 		$matched$
 		$effects$
@@ -445,7 +444,7 @@ templates.hold = lua_source_printer.compile_template([[
 })
 
 templates.release = lua_source_printer.compile_template([[
-	release = input_is_active(binding["release"])
+	release = binding["release"]()
 	if release and armed then
 		$matched$
 		$effects$
@@ -457,7 +456,7 @@ templates.release = lua_source_printer.compile_template([[
 })
 
 templates.custom_sample = lua_source_printer.compile_template(
-	'custom_matches[$custom_index$] = input_is_active(binding["custom"][$custom_index$]["input"])\n'
+	'custom_matches[$custom_index$] = binding["custom"][$custom_index$]["input"]()\n'
 )
 
 templates.custom_match = lua_source_printer.compile_template([[
@@ -548,10 +547,6 @@ templates.custom_local = lua_source_printer.compile_template('local custom_match
 templates.bindings_capture = lua_source_printer.compile_template(
 	'local bindings<const> = action_bindings\n'
 )
-templates.input_is_active_capture = lua_source_printer.compile_template(
-	'local input_is_active<const> = input_is_active\n'
-)
-
 templates.operands_capture = lua_source_printer.compile_template(
 	'local operands<const> = effect_operands\n'
 )

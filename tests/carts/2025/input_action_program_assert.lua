@@ -31,8 +31,17 @@ local state_at<const> = function(states, index)
 	return states[index]
 end
 
+local ignore_input_sample<const> = function()
+end
+
 local evaluate<const> = function(source, states, window)
-	return action_parser.compile(source).evaluate(state_at, states, window)
+	return action_parser.compile(source).evaluation_factory(
+		ignore_input_sample,
+		false,
+		state_at,
+		states,
+		window
+	)()
 end
 
 function __bmsx_host_test.setup()
@@ -47,7 +56,13 @@ function __bmsx_host_test.setup()
 		reads[index] = reads[index] + 1
 		return states[index]
 	end
-	assert(program.evaluate(count_state, { pressed, idle }, 4))
+	assert(program.evaluation_factory(
+		ignore_input_sample,
+		false,
+		count_state,
+		{ pressed, idle },
+		4
+	)())
 	assert(reads[1] == 1 and reads[2] == 0)
 
 	assert(evaluate('a[p] || b[p] && c[p]', { pressed, idle, idle }, 4))

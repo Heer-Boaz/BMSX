@@ -779,23 +779,24 @@ end
 
 function input.bind(player_index, pattern)
 	local player<const> = players[player_index]
-	local binding = player.expression_bindings[pattern]
-	if not binding then
+	local evaluate = player.expression_bindings[pattern]
+	if not evaluate then
 		local program<const> = action_parser.compile(pattern)
 		local action_names<const> = program.action_names
 		local states<const> = {}
 		for i = 1, #action_names do
 			states[i] = compile_action_state(player, action_names[i])
 		end
-		binding = { player = player, states = states, evaluator = program.evaluate }
-		player.expression_bindings[pattern] = binding
+		evaluate = program.evaluation_factory(
+			sample_player,
+			player,
+			evaluate_action_state,
+			states,
+			buffer_frame_retention
+		)
+		player.expression_bindings[pattern] = evaluate
 	end
-	return binding
-end
-
-function input.is_active(binding)
-	sample_player(binding.player)
-	return binding.evaluator(evaluate_action_state, binding.states, buffer_frame_retention)
+	return evaluate
 end
 
 function input.is_action_pressed(player_index, action)

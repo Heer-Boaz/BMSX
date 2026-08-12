@@ -1,7 +1,7 @@
 -- cartlib/input/action_parser.lua
 -- Cached action-expression compiler for cart-owned PlayerInput. Authored
--- syntax is parsed once; firmware load() produces the short-circuit evaluator
--- consumed directly by retained action bindings.
+-- syntax is parsed once; firmware load() produces a factory that binds one
+-- player's resolved states into the short-circuit evaluator used at runtime.
 
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
@@ -1124,12 +1124,20 @@ templates.edge_locals = lua_source_printer.compile_template([[
 ]])
 
 templates.program = lua_source_printer.compile_template([[
-	return function(get_state, context, win)
-		local result
-		$state_local$
-		$edge_locals$
-		$body$
-		return result
+	return function(source_sample_player, source_player, source_get_state, source_states, source_win)
+		local sample_player<const> = source_sample_player
+		local player<const> = source_player
+		local get_state<const> = source_get_state
+		local context<const> = source_states
+		local win<const> = source_win
+		return function()
+			sample_player(player)
+			local result
+			$state_local$
+			$edge_locals$
+			$body$
+			return result
+		end
 	end
 ]], {
 	state_local = emit_state_local,
@@ -1160,7 +1168,7 @@ function action_parser.compile(src)
 	printer:emit(templates.program, { ast = ast, analysis = analysis })
 	local program<const> = {
 		action_names = self.action_names,
-		evaluate = load(printer:finish(), '[input.action]', 't')(),
+		evaluation_factory = load(printer:finish(), '[input.action]', 't')(),
 	}
 	cache[src] = program
 	return program
