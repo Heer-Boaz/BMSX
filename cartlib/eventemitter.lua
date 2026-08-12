@@ -88,7 +88,7 @@ eventport.__index = eventport
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
-local compact_listeners<const> = function(list)
+local compact_listeners<const> = function(self, list)
 	local write_index = 1
 	local count<const> = #list
 	for read_index = 1, count do
@@ -103,6 +103,9 @@ local compact_listeners<const> = function(list)
 		list[index] = nil
 	end
 	list._removals_pending = nil
+	if write_index == 1 then
+		self.listeners[list._event_name] = nil
+	end
 end
 
 local append_listener<const> = function(self, list, entry)
@@ -154,6 +157,9 @@ local remove_listener<const> = function(self, entry)
 		for moved_index = index, #list do
 			list[moved_index].list_index = moved_index
 		end
+		if #list == 0 then
+			self.listeners[list._event_name] = nil
+		end
 		return
 	end
 	list[index] = false
@@ -168,7 +174,7 @@ end
 local commit_listener_removals<const> = function(self)
 	local pending<const> = self._pending_listener_lists
 	for index = 1, self._pending_listener_count do
-		compact_listeners(pending[index])
+		compact_listeners(self, pending[index])
 		pending[index] = nil
 	end
 	self._pending_listener_count = 0
@@ -202,7 +208,7 @@ function eventemitter:on(spec, default_subscriber, default_emitter)
 	local name<const> = spec.event
 	local list = self.listeners[name]
 	if not list then
-		list = {}
+		list = { _event_name = name }
 		self.listeners[name] = list
 	end
 	local subscriber = spec.subscriber
