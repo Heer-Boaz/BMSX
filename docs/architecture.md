@@ -3750,7 +3750,11 @@ tables. A state-machine component may retain multiple named machines. Each
 behaviour-tree component owns one blackboard while its immutable root node is
 constructed once by cart code and shared by every prefab instance. Node results
 are numeric values resolved from `behaviourtree.result` once by cart modules;
-tree evaluation does not route status strings through its per-node hot path. The base
+tree evaluation does not route status strings through its per-node hot path.
+Control-node policies and condition modifiers select their concrete node
+implementation when the immutable tree is constructed; child evaluation does
+not repeatedly compare policy strings, and composite conditions short-circuit
+at the first decisive child. The base
 world object exposes no FSM or behaviour-tree forwarding facade. Carts compose
 non-object orchestration from their own components and systems rather than
 through a parallel cartlib subsystem lifecycle.

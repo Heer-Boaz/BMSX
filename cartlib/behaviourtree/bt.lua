@@ -12,7 +12,7 @@ btnode.__index = btnode
 function btnode.new(id, priority)
 	local self<const> = setmetatable({}, btnode)
 	self.id = id
-	self.priority = priority
+	self.priority = priority or 0
 	return self
 end
 
@@ -36,7 +36,7 @@ setmetatable(sequencenode, { __index = btnode })
 
 function sequencenode.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), sequencenode)
-	self.children = children or {}
+	self.children = children
 	return self
 end
 
@@ -56,7 +56,7 @@ setmetatable(selectornode, { __index = btnode })
 
 function selectornode.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), selectornode)
-	self.children = children or {}
+	self.children = children
 	return self
 end
 
@@ -74,31 +74,48 @@ local parallelnode<const> = {}
 parallelnode.__index = parallelnode
 setmetatable(parallelnode, { __index = btnode })
 
+local parallelonenode<const> = {}
+parallelonenode.__index = parallelonenode
+setmetatable(parallelonenode, { __index = btnode })
+
+local parallel_class_by_policy<const> = {
+	['ALL'] = parallelnode,
+	['ONE'] = parallelonenode,
+}
+
 function parallelnode.new(id, children, success_policy, priority)
-	local self<const> = setmetatable(btnode.new(id, priority), parallelnode)
-	self.children = children or {}
-	self.success_policy = success_policy or 'ALL'
+	local node_class<const> = parallel_class_by_policy[success_policy or 'ALL']
+	local self<const> = setmetatable(btnode.new(id, priority), node_class)
+	self.children = children
 	return self
 end
 
 function parallelnode:tick(target, blackboard)
 	local any_running
-	local success_count = 0
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status == result_running then
-			any_running = true
-		elseif status == result_success then
-			success_count = success_count + 1
-			if self.success_policy == 'ONE' then
-				return result_success
+		if status ~= result_success then
+			if status == result_running then
+				any_running = true
+			else
+				return status
 			end
-		elseif status == result_failure and self.success_policy == 'ALL' then
-			return result_failure
 		end
 	end
-	if self.success_policy == 'ALL' and success_count == #self.children then
-		return result_success
+	return any_running and result_running or result_success
+end
+
+function parallelonenode:tick(target, blackboard)
+	local any_running
+	for i = 1, #self.children do
+		local status<const> = self.children[i]:tick(target, blackboard)
+		if status ~= result_failure then
+			if status == result_running then
+				any_running = true
+			else
+				return status
+			end
+		end
 	end
 	return any_running and result_running or result_failure
 end
@@ -123,43 +140,68 @@ local conditionnode<const> = {}
 conditionnode.__index = conditionnode
 setmetatable(conditionnode, { __index = parametrizedbtnode })
 
+local negatedconditionnode<const> = {}
+negatedconditionnode.__index = negatedconditionnode
+setmetatable(negatedconditionnode, { __index = parametrizedbtnode })
+
+local condition_class_by_modifier<const> = {
+	['NONE'] = conditionnode,
+	['NOT'] = negatedconditionnode,
+}
+
 function conditionnode.new(id, condition_fn, modifier, priority, parameters)
-	local self<const> = setmetatable(parametrizedbtnode.new(id, priority, parameters), conditionnode)
+	local self<const> = setmetatable(
+		parametrizedbtnode.new(id, priority, parameters),
+		condition_class_by_modifier[modifier or 'NONE'])
 	self.condition = condition_fn
-	self.modifier = modifier
 	return self
 end
 
 function conditionnode:tick(target, blackboard)
-	local result = self.condition(target, blackboard, self.parameters)
-	if self.modifier == 'NOT' then
-		result = not result
-	end
-	return result and result_success or result_failure
+	return self.condition(target, blackboard, self.parameters) and result_success or result_failure
+end
+
+function negatedconditionnode:tick(target, blackboard)
+	return self.condition(target, blackboard, self.parameters) and result_failure or result_success
 end
 
 local compositeconditionnode<const> = {}
 compositeconditionnode.__index = compositeconditionnode
 setmetatable(compositeconditionnode, { __index = parametrizedbtnode })
 
+local compositeorconditionnode<const> = {}
+compositeorconditionnode.__index = compositeorconditionnode
+setmetatable(compositeorconditionnode, { __index = parametrizedbtnode })
+
+local composite_condition_class_by_modifier<const> = {
+	['AND'] = compositeconditionnode,
+	['OR'] = compositeorconditionnode,
+}
+
 function compositeconditionnode.new(id, conditions, modifier, priority, parameters)
-	local self<const> = setmetatable(parametrizedbtnode.new(id, priority, parameters), compositeconditionnode)
-	self.conditions = conditions or {}
-	self.modifier = modifier or 'AND'
+	local self<const> = setmetatable(
+		parametrizedbtnode.new(id, priority, parameters),
+		composite_condition_class_by_modifier[modifier or 'AND'])
+	self.conditions = conditions
 	return self
 end
 
 function compositeconditionnode:tick(target, blackboard)
-	local combined = (self.modifier == 'AND')
 	for i = 1, #self.conditions do
-		local result<const> = self.conditions[i](target, blackboard, self.parameters)
-		if self.modifier == 'AND' then
-			combined = combined and result
-		else
-			combined = combined or result
+		if not self.conditions[i](target, blackboard, self.parameters) then
+			return result_failure
 		end
 	end
-	return combined and result_success or result_failure
+	return result_success
+end
+
+function compositeorconditionnode:tick(target, blackboard)
+	for i = 1, #self.conditions do
+		if self.conditions[i](target, blackboard, self.parameters) then
+			return result_success
+		end
+	end
+	return result_failure
 end
 
 local randomselectornode<const> = {}
@@ -168,7 +210,7 @@ setmetatable(randomselectornode, { __index = btnode })
 
 function randomselectornode.new(id, children, property_name, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), randomselectornode)
-	self.children = children or {}
+	self.children = children
 	self.current_child_property_name = property_name
 	return self
 end
@@ -215,12 +257,12 @@ priorityselectornode.__index = priorityselectornode
 setmetatable(priorityselectornode, { __index = btnode })
 
 local sort_by_priority_desc<const> = function(a, b)
-	return (a.priority or 0) > (b.priority or 0)
+	return a.priority > b.priority
 end
 
 function priorityselectornode.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), priorityselectornode)
-	self.children = children or {}
+	self.children = children
 	if #self.children > 1 then
 		table.sort(self.children, sort_by_priority_desc)
 	end
@@ -278,7 +320,7 @@ setmetatable(compositeactionnode, { __index = parametrizedbtnode })
 
 function compositeactionnode.new(id, actions, priority, parameters)
 	local self<const> = setmetatable(parametrizedbtnode.new(id, priority, parameters), compositeactionnode)
-	self.actions = actions or {}
+	self.actions = actions
 	return self
 end
 
