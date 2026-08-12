@@ -28,93 +28,155 @@ local any_matches<const> = function(list, value)
 	return list_contains(list, value)
 end
 
+local append_operand<const> = function(parts, value)
+	local operands<const> = parts.operands
+	local index<const> = #operands + 1
+	operands[index] = value
+	parts[#parts + 1] = 'operands['
+	parts[#parts + 1] = index
+	parts[#parts + 1] = ']'
+end
+
+local append_any<const> = function(parts, entries)
+	if entries == nil then
+		return
+	end
+	for key, list in pairs(entries) do
+		parts.uses_any = true
+		parts[#parts + 1] = ' and any_matches('
+		append_operand(parts, list)
+		parts[#parts + 1] = ', payload['
+		append_operand(parts, key)
+		parts[#parts + 1] = '])'
+	end
+end
+
+local append_matcher
+append_matcher = function(parts, matcher)
+	if not matcher then
+		parts[#parts + 1] = 'true'
+		return
+	end
+
+	local equals<const> = matcher.equals
+	local any_of<const> = matcher.any_of
+	local in_values<const> = matcher['in']
+	local required_tags<const> = matcher.has_tag
+	local reads_payload_fields<const> = (equals ~= nil and next(equals) ~= nil)
+		or (any_of ~= nil and next(any_of) ~= nil)
+		or (in_values ~= nil and next(in_values) ~= nil)
+		or (required_tags ~= nil and #required_tags > 0)
+	local term_count = 0
+	if reads_payload_fields then
+		parts.uses_payload_type = true
+		parts[#parts + 1] = '(value_type(payload) == "table"'
+		if equals ~= nil then
+			for key, value in pairs(equals) do
+				parts[#parts + 1] = ' and payload['
+				append_operand(parts, key)
+				parts[#parts + 1] = '] == '
+				append_operand(parts, value)
+			end
+		end
+		append_any(parts, any_of)
+		append_any(parts, in_values)
+		if required_tags ~= nil and #required_tags > 0 then
+			parts.uses_list_contains = true
+			parts[#parts + 1] = ' and payload["tags"]'
+			for index = 1, #required_tags do
+				parts[#parts + 1] = ' and list_contains(payload["tags"], '
+				append_operand(parts, required_tags[index])
+				parts[#parts + 1] = ')'
+			end
+		end
+		parts[#parts + 1] = ')'
+		term_count = 1
+	end
+
+	local and_matchers<const> = matcher['and']
+	if and_matchers ~= nil then
+		for index = 1, #and_matchers do
+			if term_count > 0 then
+				parts[#parts + 1] = ' and '
+			end
+			parts[#parts + 1] = '('
+			append_matcher(parts, and_matchers[index])
+			parts[#parts + 1] = ')'
+			term_count = term_count + 1
+		end
+	end
+
+	local not_matcher<const> = matcher['not']
+	if not_matcher then
+		if term_count > 0 then
+			parts[#parts + 1] = ' and '
+		end
+		parts[#parts + 1] = 'not ('
+		append_matcher(parts, not_matcher)
+		parts[#parts + 1] = ')'
+		term_count = term_count + 1
+	end
+
+	local or_matchers<const> = matcher['or']
+	if or_matchers ~= nil and #or_matchers > 0 then
+		if term_count > 0 then
+			parts[#parts + 1] = ' and '
+		end
+		parts[#parts + 1] = '('
+		for index = 1, #or_matchers do
+			if index > 1 then
+				parts[#parts + 1] = ' or '
+			end
+			parts[#parts + 1] = '('
+			append_matcher(parts, or_matchers[index])
+			parts[#parts + 1] = ')'
+		end
+		parts[#parts + 1] = ')'
+		term_count = term_count + 1
+	end
+
+	if term_count == 0 then
+		parts[#parts + 1] = 'true'
+	end
+end
+
+-- Matcher definitions are admission data. Compile each definition into one
+-- short-circuit firmware closure so event dispatch never walks its structure or
+-- calls a tree of predicate closures.
 function eventmatcher.compile(matcher)
 	if not matcher then
 		return always_matches
 	end
 
-	local equals<const> = matcher.equals
-	local equals_entries<const> = {}
-	if equals then
-		for key, value in pairs(equals) do
-			equals_entries[#equals_entries + 1] = key
-			equals_entries[#equals_entries + 1] = value
-		end
+	local parts<const> = {
+		'return function(payload)\n',
+		'',
+		'',
+		'',
+		'',
+		'return ',
+	}
+	parts.operands = {}
+	append_matcher(parts, matcher)
+	parts[#parts + 1] = '\nend'
+	local environment<const> = {}
+	if #parts.operands > 0 then
+		parts[2] = 'local operands = operands\n'
+		environment.operands = parts.operands
 	end
-	local any_of_entries<const> = {}
-	if matcher.any_of then
-		for key, list in pairs(matcher.any_of) do
-			any_of_entries[#any_of_entries + 1] = key
-			any_of_entries[#any_of_entries + 1] = list
-		end
+	if parts.uses_payload_type then
+		parts[3] = 'local value_type = value_type\n'
+		environment.value_type = type
 	end
-	if matcher['in'] then
-		for key, list in pairs(matcher['in']) do
-			any_of_entries[#any_of_entries + 1] = key
-			any_of_entries[#any_of_entries + 1] = list
-		end
+	if parts.uses_any then
+		parts[4] = 'local any_matches = any_matches\n'
+		environment.any_matches = any_matches
 	end
-	local required_tags<const> = matcher.has_tag
-	local reads_payload_fields<const> = #equals_entries > 0
-		or #any_of_entries > 0
-		or (required_tags ~= nil and #required_tags > 0)
-	local and_predicates<const> = {}
-	if matcher['and'] then
-		for i = 1, #matcher['and'] do
-			and_predicates[i] = eventmatcher.compile(matcher['and'][i])
-		end
+	if parts.uses_list_contains then
+		parts[5] = 'local list_contains = list_contains\n'
+		environment.list_contains = list_contains
 	end
-	local or_predicates<const> = {}
-	if matcher['or'] then
-		for i = 1, #matcher['or'] do
-			or_predicates[i] = eventmatcher.compile(matcher['or'][i])
-		end
-	end
-	local not_predicate<const> = matcher['not'] and eventmatcher.compile(matcher['not'])
-
-	return function(payload)
-		if reads_payload_fields and type(payload) ~= 'table' then
-			return false
-		end
-		for i = 1, #equals_entries, 2 do
-			if payload[equals_entries[i]] ~= equals_entries[i + 1] then
-				return false
-			end
-		end
-		for i = 1, #any_of_entries, 2 do
-			if not any_matches(any_of_entries[i + 1], payload[any_of_entries[i]]) then
-				return false
-			end
-		end
-		if required_tags and #required_tags > 0 then
-			local tags<const> = payload.tags
-			if not tags then
-				return false
-			end
-			for i = 1, #required_tags do
-				if not list_contains(tags, required_tags[i]) then
-					return false
-				end
-			end
-		end
-		for i = 1, #and_predicates do
-			if not and_predicates[i](payload) then
-				return false
-			end
-		end
-		if not_predicate and not_predicate(payload) then
-			return false
-		end
-		if #or_predicates > 0 then
-			for i = 1, #or_predicates do
-				if or_predicates[i](payload) then
-					return true
-				end
-			end
-			return false
-		end
-		return true
-	end
+	return load(table.concat(parts), '[eventmatcher]', 't', environment)()
 end
 
 return eventmatcher
