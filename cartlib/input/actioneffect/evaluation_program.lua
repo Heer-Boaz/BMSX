@@ -37,7 +37,7 @@ local append_mode_condition<const> = function(parts, modes)
 	end
 end
 
-local append_binding_body<const> = function(parts, program, binding, binding_index)
+local append_binding_body<const> = function(parts, binding, binding_index, record_match)
 	local has_release<const> = binding.release ~= nil
 	if has_release then
 		parts[#parts + 1] = 'armed = latch['
@@ -46,7 +46,7 @@ local append_binding_body<const> = function(parts, program, binding, binding_ind
 	end
 	if binding.press ~= nil then
 		parts[#parts + 1] = 'press = input_is_active(binding["press"])\nif press then\n'
-		if program.stop_after_match then
+		if record_match then
 			parts[#parts + 1] = 'matched = true\n'
 		end
 		if binding.press_effect ~= nil then
@@ -61,7 +61,7 @@ local append_binding_body<const> = function(parts, program, binding, binding_ind
 	end
 	if binding.hold ~= nil then
 		parts[#parts + 1] = 'hold = input_is_active(binding["hold"])\nif hold then\n'
-		if program.stop_after_match then
+		if record_match then
 			parts[#parts + 1] = 'matched = true\n'
 		end
 		if binding.hold_effect ~= nil then
@@ -76,7 +76,7 @@ local append_binding_body<const> = function(parts, program, binding, binding_ind
 	end
 	if has_release then
 		parts[#parts + 1] = 'release = input_is_active(binding["release"])\nif release and armed then\n'
-		if program.stop_after_match then
+		if record_match then
 			parts[#parts + 1] = 'matched = true\n'
 		end
 		if binding.release_effect ~= nil then
@@ -98,7 +98,7 @@ local append_binding_body<const> = function(parts, program, binding, binding_ind
 		parts[#parts + 1] = 'if custom_matches['
 		parts[#parts + 1] = custom_index
 		parts[#parts + 1] = '] then\n'
-		if program.stop_after_match then
+		if record_match then
 			parts[#parts + 1] = 'matched = true\n'
 		end
 		local entry<const> = custom[custom_index]
@@ -111,7 +111,7 @@ local append_binding_body<const> = function(parts, program, binding, binding_ind
 	end
 end
 
-local append_binding<const> = function(parts, program, binding, binding_index)
+local append_binding<const> = function(parts, binding, binding_index, record_match)
 	parts[#parts + 1] = 'binding = bindings['
 	parts[#parts + 1] = binding_index
 	parts[#parts + 1] = ']\n'
@@ -121,7 +121,7 @@ local append_binding<const> = function(parts, program, binding, binding_index)
 		append_mode_condition(parts, modes)
 		parts[#parts + 1] = ' then\n'
 	end
-	append_binding_body(parts, program, binding, binding_index)
+	append_binding_body(parts, binding, binding_index, record_match)
 	if modes ~= nil then
 		if binding.release ~= nil then
 			parts[#parts + 1] = 'else\nlatch['
@@ -172,14 +172,27 @@ function evaluation_program.compile(program)
 	if program.queued_command_capacity > 0 then
 		parts[#parts + 1] = 'local commands = component["queued_commands"]\n'
 	end
+	if program.stop_after_match and #bindings > 1 then
+		parts[#parts + 1] = 'local matched\nwhile true do\n'
+	end
 	for binding_index = 1, #bindings do
 		local binding<const> = bindings[binding_index]
-		if program.stop_after_match and binding_index > 1 then
-			parts[#parts + 1] = 'if matched then return end\n'
-			append_binding(parts, program, binding, binding_index)
-		else
-			append_binding(parts, program, binding, binding_index)
+		local record_match<const> = program.stop_after_match and binding_index < #bindings
+		append_binding(parts, binding, binding_index, record_match)
+		if record_match then
+			parts[#parts + 1] = 'if matched then\n'
+			for later_index = binding_index + 1, #bindings do
+				if bindings[later_index].release ~= nil then
+					parts[#parts + 1] = 'latch['
+					parts[#parts + 1] = later_index
+					parts[#parts + 1] = '] = false\n'
+				end
+			end
+			parts[#parts + 1] = 'break\nend\n'
 		end
+	end
+	if program.stop_after_match and #bindings > 1 then
+		parts[#parts + 1] = 'break\nend\n'
 	end
 	if program.queued_command_capacity > 0 then
 		parts[#parts + 1] = 'for index = 1, component["queued_command_count"] do\n'
