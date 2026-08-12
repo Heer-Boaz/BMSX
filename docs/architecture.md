@@ -16,8 +16,8 @@ the cart runtime as a fantasy-console service API.
 Cart-observable facts are hardware facts: CPU-visible words, RAM/ROM bytes,
 MMIO registers, registerfiles, FIFOs, IRQ lines, status/fault latches, device
 memory, command packets, fixed-point formats, opcodes, and timing edges. A cart
-may use BIOS or cart-library helpers, but those helpers must ultimately program
-the same machine-visible bytes and registers the cart could use directly.
+may use guest helpers, but those helpers must ultimately program the same
+machine-visible bytes and registers the cart could use directly.
 
 ### BSX end state and PSX foundation
 
@@ -142,9 +142,9 @@ Lua globals. This includes:
 - ROM/BLua32-image/header constants and memory-map addresses.
 
 The owning TS/C++ machine files define those constants for the emulator. The
-hardware documentation lists cart-visible values. Cart, BIOS, or cart-library
-source defines the constants it uses. The emulator runtime must not make a
-value observable merely by seeding a friendly global name.
+hardware documentation lists cart-visible values. Guest source defines the
+constants it uses. The emulator runtime must not make a value observable merely
+by seeding a friendly global name.
 
 Runtime-injected host Lua globals are not a cart API. System boot asks the CPU
 to seed temporary hidden `__bmsx_*` primitive values into its system global
@@ -159,10 +159,9 @@ not the live hardware-control surface. If guest code can observe a value or
 function, it must come from one of the real owners: ROM/header fields consumed at
 boot, link symbols, BIOS Lua, CPU-visible RAM/MMIO, or a documented device
 register. Lua language-runtime behavior and machine firmware services belong in
-BIOS Lua unless they are true CPU primitives. Cart-facing asset, animation,
-font, collection, and gameplay libraries are cartridge code. Do not preserve
-manifest or host-native library shortcuts by adding wrappers; migrate each
-observable value to its owner and delete the shortcut.
+BIOS Lua unless they are true CPU primitives. Do not preserve manifest or
+host-native library shortcuts by adding wrappers; migrate each observable value
+to its owner and delete the shortcut.
 
 ## Fixed-point and angle ABI
 
@@ -219,25 +218,16 @@ firmware-owned also does not require every useful primitive to be expressed as
 a slow BLua loop: a proven fundamental operation may be an architected CPU
 instruction or microcode operation with mirrored representation and timing.
 
-Animation easing is not a Lua standard-library facility or general firmware
-service; it is cartridge library code, as are font layout, ROM-directory/metadata
-decoding, APU asset decoding, clock helpers, and cart-only device helpers. Those
-modules consume cartridge code and heap rather than system-firmware code and
-heap. BIOS fixed assets use generated link-time system-ROM address constants;
-BIOS does not build a runtime TOC object graph for them.
-
 `load` is a BIOS-owned guest service. Its compiler, arena, lexer and BLua32
 emitter live under `machine/bios/compiler` and execute as firmware Lua. The
 current compiler accepts one returned function with lexical locals, path reads
 and writes, call expressions and statements, length, arithmetic and comparison
 expressions, short-circuit `and`/`or`, block-scoped `if`/`elseif`/`else`,
-numeric `for`, and nested `while` loops with lexically bound `break`. Timeline
-and input admission generate specialized Lua functions against that surface;
-they do not duplicate the Lua parser, semantic binder or BLua32 emitter. The firmware
-compiler emits ordinary function records, upvalue records and instruction
-words into system `.bss`; the CPU has no source parser, compiler callback,
-runtime-image installer or `load` branch. `loadstring` is not currently
-published.
+numeric `for`, and nested `while` loops with lexically bound `break`. The
+firmware compiler emits ordinary function records, upvalue records and
+instruction words into system `.bss`; the CPU has no source parser, compiler
+callback, runtime-image installer or `load` branch. `loadstring` is not
+currently published.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
@@ -254,8 +244,7 @@ JavaScript `Date`, or libc local-time behavior. VM primitives required by the
 dynamic Lua object-world remain CPU intrinsics, but their cart-visible API
 surface is installed by BIOS Lua and is not precedent for implementing guest
 libraries through removed host-native callbacks. The firmware implementations
-of `math.*` and the other Lua basics remain part of the machine; animation
-`easing` remains a cart library.
+of `math.*` and the other Lua basics remain part of the machine.
 
 ## Hard boundary
 
@@ -1268,12 +1257,6 @@ words, and `LOADKR` loads the referenced interned string without constructing a
 table or string at the field access. String fields are not writable words and
 are not valid in `.data` or `.bss`. A static array's `#` is its resolved type
 dimension, not runtime length metadata.
-Cart library numeric latches that model machine words over time use section
-storage too: AEM keeps request/source/slot words and per-slot active
-source/priority arrays in `.bss`, while Lua tables remain only for actual
-event records and plays retained behind an active slot. Immediate plays and
-queue-policy plays that can start immediately write the APU command without a
-transient play record.
 Scalar section symbols are pointers to one typed cell: firmware and cart code
 read/write them with `*symbol`. Indexing is for actual arrays and structs, not
 for pretending a scalar word is a one-element array.
@@ -3447,8 +3430,8 @@ There is no parallel `firmware`, `system`, `stdlib`, language-name wrapper, or
 machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
 source modules as a linker context. Normal Lua facilities are installed as
 ordinary globals before cartridge initialization; explicitly callable BIOS
-services use the fixed public vector described above. Cart-side hardware and
-gameplay libraries are compiled and linked into the cartridge image.
+services use the fixed public vector described above. Cartridge modules are
+compiled and linked into the cartridge image.
 
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.

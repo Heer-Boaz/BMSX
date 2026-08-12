@@ -569,7 +569,27 @@ function track_evaluator.compile_values(program)
 end
 
 function track_evaluator.init_entry(entry)
-	local tag_count<const> = entry.instance.program.tracks.tags.tag_count
+	local tracks<const> = entry.instance.program.tracks
+	local scalar_channels<const> = tracks.scalar_channels
+	local cached_segment_count<const> = scalar_channels.cached_segment_count
+	if cached_segment_count == 0 then
+		entry.cached_scalar_segments = nil
+	else
+		local segments = entry.cached_scalar_segments
+		if segments == nil then
+			segments = {}
+			entry.cached_scalar_segments = segments
+		end
+		local initial_cached_segments<const> = scalar_channels.initial_cached_segments
+		for index = 1, cached_segment_count do
+			segments[index] = initial_cached_segments[index]
+		end
+		for index = cached_segment_count + 1, #segments do
+			segments[index] = nil
+		end
+	end
+
+	local tag_count<const> = tracks.tags.tag_count
 	if tag_count == 0 then
 		return
 	end

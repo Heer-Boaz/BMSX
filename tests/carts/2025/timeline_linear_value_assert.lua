@@ -49,6 +49,8 @@ timelines:seek_time('time_linear', 75)
 assert(target.value == 10 and target.method == timeline_module.update_method.jump)
 timelines:scrub_time('time_linear', 100)
 assert(target.value == 0 and target.method == timeline_module.update_method.scrub)
+timelines:seek_time('time_linear', 25)
+assert(target.value == 10 and target.method == timeline_module.update_method.jump)
 timelines:stop('time_linear')
 
 local frame_target<const> = { nested = { value = -1, other = -1, constant = -1 } }
@@ -106,7 +108,8 @@ timelines:define('built_frame_linear', {
 			path = { 'value' },
 			keys = {
 				{ u = 0, value = 0 },
-				{ u = 1, value = 80 },
+				{ u = 0.5, value = 80 },
+				{ u = 1, value = 0 },
 			},
 		},
 	},
@@ -115,15 +118,19 @@ timelines:play('built_frame_linear', {
 	target = built_target,
 	params = { frame_count = 5 },
 })
-timelines:tick_active(40)
+timelines:tick_active(20)
 assert(built_target.value == 40)
+timelines:tick_active(20)
+assert(built_target.value == 80)
 timelines:stop('built_frame_linear')
 timelines:play('built_frame_linear', {
 	target = built_target,
 	params = { frame_count = 9 },
 })
-timelines:tick_active(40)
+timelines:tick_active(20)
 assert(built_target.value == 20)
+timelines:tick_active(20)
+assert(built_target.value == 40)
 timelines:stop('built_frame_linear')
 
 local pingpong_target<const> = { value = -1 }

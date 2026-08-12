@@ -20,6 +20,10 @@ local route_slot<const> = {
 	ui = slot_ui,
 }
 
+-- Request, source, slot and per-slot active-priority latches are raw words in
+-- cart RAM. Tables retain authored event programs and only those prepared plays
+-- that are actually queued behind an active slot; an admitted play that can
+-- start now writes the APU command without constructing a transient play record.
 local events
 bss music_request_seq: word
 bss current_music_source_addr: word

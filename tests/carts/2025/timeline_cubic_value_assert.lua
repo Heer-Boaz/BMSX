@@ -69,6 +69,7 @@ timelines:define('frame_cubic', {
 			path = { 'nested', 'value' },
 			keys = {
 				{ frame = 0, value = 0, leave_tangent = 0 },
+				{ frame = 2, value = 20, arrive_tangent = 0, leave_tangent = 0 },
 				{ frame = 4, value = 40, arrive_tangent = 0 },
 			},
 		},
@@ -77,11 +78,11 @@ timelines:define('frame_cubic', {
 timelines:play('frame_cubic', { target = frame_target })
 assert_close(frame_target.nested.value, 0)
 timelines:tick_active(20)
-assert_close(frame_target.nested.value, 6.25)
+assert_close(frame_target.nested.value, 10)
 timelines:seek('frame_cubic', 3)
-assert_close(frame_target.nested.value, 33.75)
+assert_close(frame_target.nested.value, 30)
 timelines:seek('frame_cubic', 1)
-assert_close(frame_target.nested.value, 6.25)
+assert_close(frame_target.nested.value, 10)
 timelines:stop('frame_cubic')
 
 local pingpong_target<const> = { value = -1 }
