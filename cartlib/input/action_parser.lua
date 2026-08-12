@@ -3,6 +3,8 @@
 -- syntax is parsed once; firmware load() produces the short-circuit evaluator
 -- consumed directly by retained action bindings.
 
+local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
+
 local action_parser<const> = {}
 
 local tk_sym<const> = 1
@@ -607,234 +609,533 @@ local edge_function_spec_by_kind<const> = {
 	[function_kind_all_wr] = { all = true, edge_bit = edge_wr, delta_field = 'min_release_delta' },
 }
 
-local append_modifier_condition<const> = function(parts, spec)
-	if spec.neg then
-		parts[#parts + 1] = 'not ('
-	end
+local templates<const> = {}
+local emit_evaluation
+local emit_edge_collection
+
+local emit_target<const> = function(printer, values)
+	printer:print_raw(values.target)
+end
+
+local emit_state_field<const> = function(printer, values)
+	printer:print_index(values.state_field)
+end
+
+local emit_modifier_base<const> = function(printer, values)
+	local spec<const> = values.spec
 	local kind<const> = spec.kind
 	local state_field<const> = modifier_state_field_by_kind[kind]
 	if state_field ~= nil then
-		parts[#parts + 1] = 'state["'
-		parts[#parts + 1] = state_field
-		parts[#parts + 1] = '"]'
+		values.state_field = state_field
+		printer:emit(templates.state_condition, values)
 	elseif kind == mod_kind_r then
-		parts[#parts + 1] = 'not state["pressed"]'
+		printer:emit(templates.released_condition, values)
 	elseif kind == mod_kind_h then
-		parts[#parts + 1] = 'state["press_time"] >= 1'
+		printer:emit(templates.held_condition, values)
 	elseif kind == mod_kind_wp then
-		parts[#parts + 1] = 'state["min_press_delta"] < '
-		parts[#parts + 1] = spec.window
+		values.state_field = 'min_press_delta'
+		values.bound = spec.window
+		printer:emit(templates.window_condition, values)
 	elseif kind == mod_kind_wr then
-		parts[#parts + 1] = 'state["min_release_delta"] < '
-		parts[#parts + 1] = spec.window
+		values.state_field = 'min_release_delta'
+		values.bound = spec.window
+		printer:emit(templates.window_condition, values)
 	elseif kind == mod_kind_t then
-		parts[#parts + 1] = 'state["press_time"]'
-		parts[#parts + 1] = comparison_operator_source_by_kind[spec.op]
-		parts[#parts + 1] = spec.value
+		values.state_field = 'press_time'
+		values.operator = comparison_operator_source_by_kind[spec.op]
+		values.bound = spec.value
+		printer:emit(templates.comparison_condition, values)
 	else
-		parts[#parts + 1] = 'state["repeat_count"]'
-		parts[#parts + 1] = comparison_operator_source_by_kind[spec.op]
-		parts[#parts + 1] = spec.value
-	end
-	if spec.neg then
-		parts[#parts + 1] = ')'
+		values.state_field = 'repeat_count'
+		values.operator = comparison_operator_source_by_kind[spec.op]
+		values.bound = spec.value
+		printer:emit(templates.comparison_condition, values)
 	end
 end
 
-local append_action_condition<const> = function(parts, node, bare_requires_pressed)
-	local first = true
+local emit_modifier_condition<const> = function(printer, values)
+	if values.spec.neg then
+		printer:emit(templates.negated_condition, values)
+	else
+		emit_modifier_base(printer, values)
+	end
+end
+
+local emit_action_condition<const> = function(printer, values)
+	local node<const> = values.node
 	local specs<const> = node.mod_specs
-	if #specs == 0 and bare_requires_pressed then
-		parts[#parts + 1] = 'state["pressed"]'
-		first = false
+	local has_condition = false
+	if #specs == 0 and values.bare_requires_pressed then
+		printer:emit(templates.pressed_condition, values)
+		has_condition = true
 	end
 	for index = 1, #specs do
-		if not first then
-			parts[#parts + 1] = ' and '
+		if has_condition then
+			printer:emit(templates.condition_and, values)
 		end
-		append_modifier_condition(parts, specs[index])
-		first = false
+		values.spec = specs[index]
+		emit_modifier_condition(printer, values)
+		has_condition = true
 	end
 	if not node.has_consume_mod then
-		if not first then
-			parts[#parts + 1] = ' and '
+		if has_condition then
+			printer:emit(templates.condition_and, values)
 		end
-		parts[#parts + 1] = 'not state["consumed"]'
+		printer:emit(templates.not_consumed_condition, values)
 	end
 end
 
-local append_action_evaluation<const> = function(parts, node, target, bare_requires_pressed)
-	parts.uses_state = true
-	parts[#parts + 1] = 'state = get_state(context, '
-	parts[#parts + 1] = node.action_index
-	parts[#parts + 1] = ')\n'
-	parts[#parts + 1] = target
-	parts[#parts + 1] = ' = '
-	append_action_condition(parts, node, bare_requires_pressed)
-	parts[#parts + 1] = '\n'
+local emit_action_evaluation<const> = function(printer, node, target, bare_requires_pressed)
+	printer:emit(templates.action_evaluation, {
+		node = node,
+		target = target,
+		bare_requires_pressed = bare_requires_pressed,
+		action_index = node.action_index,
+	})
 end
 
-local append_evaluation
-local append_edge_collection
-
-local append_edge_match<const> = function(parts, edge_spec, window)
-	parts[#parts + 1] = 'edge_any = state["'
+local emit_edge_match<const> = function(printer, values)
+	local edge_spec<const> = values.edge_spec
 	local state_field<const> = edge_spec.state_field
 	if state_field ~= nil then
-		parts[#parts + 1] = state_field
-		parts[#parts + 1] = '"]\n'
+		values.state_field = state_field
+		printer:emit(templates.edge_state_match, values)
 	else
-		parts[#parts + 1] = edge_spec.delta_field
-		parts[#parts + 1] = '"] < '
-		parts[#parts + 1] = window
-		parts[#parts + 1] = '\n'
+		values.state_field = edge_spec.delta_field
+		printer:emit(templates.edge_window_match, values)
 	end
-	parts[#parts + 1] = 'edge_all = edge_any\n'
 end
 
-append_edge_collection = function(parts, node, window, edge_spec)
-	parts.uses_edge = true
-	local kind<const> = node.kind
-	if kind == node_kind_action then
-		append_action_evaluation(parts, node, 'edge_ok', false)
-		parts[#parts + 1] = 'edge_eligible = 0\nedge_any = false\nedge_all = true\n'
-		if (node.edge_mask & edge_spec.edge_bit) ~= 0 then
-			parts[#parts + 1] = 'if edge_ok then\nedge_eligible = 1\n'
-			append_edge_match(parts, edge_spec, window)
-			parts[#parts + 1] = 'end\n'
-		end
-		return
-	end
-	if kind == node_kind_not then
-		append_evaluation(parts, node.left, 'edge_ok', window)
-		parts[#parts + 1] = 'edge_ok = not edge_ok\nedge_eligible = 0\nedge_any = false\nedge_all = true\n'
-		return
-	end
-	if kind == node_kind_and then
-		append_edge_collection(parts, node.left, window, edge_spec)
-		parts[#parts + 1] = 'if edge_ok then\nlocal left_eligible = edge_eligible\nlocal left_any = edge_any\nlocal left_all = edge_all\n'
-		append_edge_collection(parts, node.right, window, edge_spec)
-		parts[#parts + 1] = 'if edge_ok then\nedge_eligible = left_eligible + edge_eligible\nedge_any = left_any or edge_any\nedge_all = left_all and edge_all\nend\nend\n'
-		return
-	end
-	if kind == node_kind_or then
-		append_edge_collection(parts, node.left, window, edge_spec)
-		parts[#parts + 1] = 'if not edge_ok then\n'
-		append_edge_collection(parts, node.right, window, edge_spec)
-		parts[#parts + 1] = 'end\n'
-		return
-	end
-	local args<const> = node.args
-	if node.function_kind == function_kind_all then
-		if #args == 0 then
-			parts[#parts + 1] = 'edge_ok = true\nedge_eligible = 0\nedge_any = false\nedge_all = true\n'
-			return
-		end
-		append_edge_collection(parts, args[1], window, edge_spec)
-		for index = 2, #args do
-			parts[#parts + 1] = 'if edge_ok then\nlocal left_eligible = edge_eligible\nlocal left_any = edge_any\nlocal left_all = edge_all\n'
-			append_edge_collection(parts, args[index], window, edge_spec)
-			parts[#parts + 1] = 'if edge_ok then\nedge_eligible = left_eligible + edge_eligible\nedge_any = left_any or edge_any\nedge_all = left_all and edge_all\nend\nend\n'
-		end
-		return
-	end
-	if node.function_kind == function_kind_any then
-		if #args == 0 then
-			parts[#parts + 1] = 'edge_ok = false\nedge_eligible = 0\nedge_any = false\nedge_all = true\n'
-			return
-		end
-		append_edge_collection(parts, args[1], window, edge_spec)
-		for index = 2, #args do
-			parts[#parts + 1] = 'if not edge_ok then\n'
-			append_edge_collection(parts, args[index], window, edge_spec)
-			parts[#parts + 1] = 'end\n'
-		end
-		return
-	end
-	append_evaluation(parts, node, 'edge_ok', window)
-	parts[#parts + 1] = 'edge_eligible = 0\nedge_any = false\nedge_all = true\n'
+local emit_edge_action_evaluation<const> = function(printer, values)
+	emit_action_evaluation(printer, values.node, 'edge_ok', false)
 end
 
-append_evaluation = function(parts, node, target, window)
-	local kind<const> = node.kind
-	if kind == node_kind_action then
-		append_action_evaluation(parts, node, target, true)
-		return
+local emit_edge_eligibility<const> = function(printer, values)
+	if (values.node.edge_mask & values.edge_spec.edge_bit) ~= 0 then
+		printer:emit(templates.edge_eligibility, values)
 	end
-	if kind == node_kind_not then
-		append_evaluation(parts, node.left, target, window)
-		parts[#parts + 1] = target
-		parts[#parts + 1] = ' = not '
-		parts[#parts + 1] = target
-		parts[#parts + 1] = '\n'
-		return
-	end
-	if kind == node_kind_and then
-		append_evaluation(parts, node.left, target, window)
-		parts[#parts + 1] = 'if '
-		parts[#parts + 1] = target
-		parts[#parts + 1] = ' then\n'
-		append_evaluation(parts, node.right, target, window)
-		parts[#parts + 1] = 'end\n'
-		return
-	end
-	if kind == node_kind_or then
-		append_evaluation(parts, node.left, target, window)
-		parts[#parts + 1] = 'if not '
-		parts[#parts + 1] = target
-		parts[#parts + 1] = ' then\n'
-		append_evaluation(parts, node.right, target, window)
-		parts[#parts + 1] = 'end\n'
-		return
-	end
+end
+
+local emit_left_edge_collection<const> = function(printer, values)
+	emit_edge_collection(printer, values.node.left, values.window, values.edge_spec)
+end
+
+local emit_right_edge_collection<const> = function(printer, values)
+	emit_edge_collection(printer, values.node.right, values.window, values.edge_spec)
+end
+
+local emit_left_evaluation<const> = function(printer, values)
+	emit_evaluation(printer, values.node.left, values.target, values.window)
+end
+
+local emit_right_evaluation<const> = function(printer, values)
+	emit_evaluation(printer, values.node.right, values.target, values.window)
+end
+
+local emit_argument_edge_collection<const> = function(printer, values)
+	emit_edge_collection(printer, values.argument, values.window, values.edge_spec)
+end
+
+local emit_argument_evaluation<const> = function(printer, values)
+	emit_evaluation(printer, values.argument, values.target, values.window)
+end
+
+local emit_edge_function_collection<const> = function(printer, values)
+	local node<const> = values.node
 	local args<const> = node.args
 	local function_kind<const> = node.function_kind
-	local function_window<const> = node.window or window
+	if function_kind == function_kind_all then
+		if #args == 0 then
+			printer:emit(templates.edge_empty_all, values)
+			return
+		end
+		values.argument = args[1]
+		emit_argument_edge_collection(printer, values)
+		for index = 2, #args do
+			values.argument = args[index]
+			printer:emit(templates.edge_all_continuation, values)
+		end
+		return
+	end
+	if function_kind == function_kind_any then
+		if #args == 0 then
+			printer:emit(templates.edge_empty_any, values)
+			return
+		end
+		values.argument = args[1]
+		emit_argument_edge_collection(printer, values)
+		for index = 2, #args do
+			values.argument = args[index]
+			printer:emit(templates.edge_any_continuation, values)
+		end
+		return
+	end
+	emit_evaluation(printer, node, 'edge_ok', values.window)
+	printer:emit(templates.edge_reset_collection, values)
+end
+
+emit_edge_collection = function(printer, node, window, edge_spec)
+	local values<const> = {
+		node = node,
+		window = window,
+		edge_spec = edge_spec,
+	}
+	local kind<const> = node.kind
+	if kind == node_kind_action then
+		printer:emit(templates.edge_action, values)
+	elseif kind == node_kind_not then
+		printer:emit(templates.edge_not, values)
+	elseif kind == node_kind_and then
+		printer:emit(templates.edge_and, values)
+	elseif kind == node_kind_or then
+		printer:emit(templates.edge_or, values)
+	else
+		emit_edge_function_collection(printer, values)
+	end
+end
+
+local emit_function_evaluation<const> = function(printer, values)
+	local node<const> = values.node
+	local args<const> = node.args
+	local function_kind<const> = node.function_kind
+	values.window = node.window or values.window
 	if function_kind == function_kind_all or function_kind == function_kind_any then
 		local match_all<const> = function_kind == function_kind_all
 		if #args == 0 then
-			parts[#parts + 1] = target
-			parts[#parts + 1] = match_all and ' = true\n' or ' = false\n'
+			printer:emit(match_all and templates.empty_all or templates.empty_any, values)
 			return
 		end
-		append_evaluation(parts, args[1], target, function_window)
+		values.argument = args[1]
+		emit_argument_evaluation(printer, values)
+		local continuation<const> = match_all and templates.all_continuation or templates.any_continuation
 		for index = 2, #args do
-			parts[#parts + 1] = match_all and 'if ' or 'if not '
-			parts[#parts + 1] = target
-			parts[#parts + 1] = ' then\n'
-			append_evaluation(parts, args[index], target, function_window)
-			parts[#parts + 1] = 'end\n'
+			values.argument = args[index]
+			printer:emit(continuation, values)
 		end
 		return
 	end
 	local edge_spec<const> = edge_function_spec_by_kind[function_kind]
-	parts.uses_edge = true
 	if #args == 0 then
-		parts[#parts + 1] = target
-		parts[#parts + 1] = edge_spec.all and ' = true\n' or ' = false\n'
+		printer:emit(edge_spec.all and templates.empty_all or templates.empty_any, values)
 		return
 	end
-	append_edge_collection(parts, args[1], function_window, edge_spec)
-	parts[#parts + 1] = target
-	if edge_spec.all then
-		parts[#parts + 1] = ' = edge_ok and edge_eligible > 0 and edge_all\n'
-	else
-		parts[#parts + 1] = ' = edge_ok and edge_any\n'
-	end
+	values.edge_spec = edge_spec
+	values.argument = args[1]
+	emit_argument_edge_collection(printer, values)
+	printer:emit(edge_spec.all and templates.edge_all_result or templates.edge_any_result, values)
+	local continuation<const> = edge_spec.all
+		and templates.edge_all_result_continuation
+		or templates.edge_any_result_continuation
 	for index = 2, #args do
-		parts[#parts + 1] = edge_spec.all and 'if ' or 'if not '
-		parts[#parts + 1] = target
-		parts[#parts + 1] = ' then\n'
-		append_edge_collection(parts, args[index], function_window, edge_spec)
-		parts[#parts + 1] = target
-		if edge_spec.all then
-			parts[#parts + 1] = ' = edge_ok and edge_eligible > 0 and edge_all\n'
-		else
-			parts[#parts + 1] = ' = edge_ok and edge_any\n'
-		end
-		parts[#parts + 1] = 'end\n'
+		values.argument = args[index]
+		printer:emit(continuation, values)
 	end
 end
+
+emit_evaluation = function(printer, node, target, window)
+	local kind<const> = node.kind
+	if kind == node_kind_action then
+		emit_action_evaluation(printer, node, target, true)
+		return
+	end
+	local values<const> = {
+		node = node,
+		target = target,
+		window = window,
+	}
+	if kind == node_kind_not then
+		printer:emit(templates.not_evaluation, values)
+	elseif kind == node_kind_and then
+		printer:emit(templates.and_evaluation, values)
+	elseif kind == node_kind_or then
+		printer:emit(templates.or_evaluation, values)
+	else
+		emit_function_evaluation(printer, values)
+	end
+end
+
+local analyze_evaluation<const> = function(node, analysis)
+	local kind<const> = node.kind
+	if kind == node_kind_action then
+		analysis.uses_state = true
+		return
+	end
+	if kind == node_kind_not then
+		analyze_evaluation(node.left, analysis)
+		return
+	end
+	if kind == node_kind_and or kind == node_kind_or then
+		analyze_evaluation(node.left, analysis)
+		analyze_evaluation(node.right, analysis)
+		return
+	end
+	if node.function_kind ~= function_kind_all and node.function_kind ~= function_kind_any then
+		analysis.uses_edge = true
+	end
+	local args<const> = node.args
+	for index = 1, #args do
+		analyze_evaluation(args[index], analysis)
+	end
+end
+
+local emit_state_local<const> = function(printer, values)
+	if values.analysis.uses_state then
+		printer:emit(templates.state_local, values)
+	end
+end
+
+local emit_edge_locals<const> = function(printer, values)
+	if values.analysis.uses_edge then
+		printer:emit(templates.edge_locals, values)
+	end
+end
+
+local emit_program_body<const> = function(printer, values)
+	emit_evaluation(printer, values.ast, 'result', 'win')
+end
+
+templates.state_condition = lua_source_printer.compile_template(
+	'state$state_field$',
+	{ state_field = emit_state_field }
+)
+
+templates.released_condition = lua_source_printer.compile_template('not state["pressed"]')
+templates.held_condition = lua_source_printer.compile_template('state["press_time"] >= 1')
+
+templates.window_condition = lua_source_printer.compile_template(
+	'state$state_field$ < $bound$',
+	{ state_field = emit_state_field }
+)
+
+templates.comparison_condition = lua_source_printer.compile_template(
+	'state$state_field$$operator$$bound$',
+	{ state_field = emit_state_field }
+)
+
+templates.negated_condition = lua_source_printer.compile_template(
+	'not ($condition$)',
+	{ condition = emit_modifier_base }
+)
+
+templates.pressed_condition = lua_source_printer.compile_template('state["pressed"]')
+templates.not_consumed_condition = lua_source_printer.compile_template('not state["consumed"]')
+templates.condition_and = lua_source_printer.compile_template(' and ')
+
+templates.action_evaluation = lua_source_printer.compile_template([[
+	state = get_state(context, $action_index$)
+	$target$ = $condition$
+]], {
+	target = emit_target,
+	condition = emit_action_condition,
+})
+
+templates.edge_state_match = lua_source_printer.compile_template([[
+	edge_any = state$state_field$
+	edge_all = edge_any
+]], { state_field = emit_state_field })
+
+templates.edge_window_match = lua_source_printer.compile_template([[
+	edge_any = state$state_field$ < $window$
+	edge_all = edge_any
+]], { state_field = emit_state_field })
+
+templates.edge_eligibility = lua_source_printer.compile_template([[
+	if edge_ok then
+		edge_eligible = 1
+		$match$
+	end
+]], { match = emit_edge_match })
+
+templates.edge_action = lua_source_printer.compile_template([[
+	$evaluation$
+	edge_eligible = 0
+	edge_any = false
+	edge_all = true
+	$eligibility$
+]], {
+	evaluation = emit_edge_action_evaluation,
+	eligibility = emit_edge_eligibility,
+})
+
+templates.edge_not = lua_source_printer.compile_template([[
+	$evaluation$
+	edge_ok = not edge_ok
+	edge_eligible = 0
+	edge_any = false
+	edge_all = true
+]], { evaluation = emit_left_evaluation })
+
+templates.edge_and = lua_source_printer.compile_template([[
+	$left$
+	if edge_ok then
+		local left_eligible = edge_eligible
+		local left_any = edge_any
+		local left_all = edge_all
+		$right$
+		if edge_ok then
+			edge_eligible = left_eligible + edge_eligible
+			edge_any = left_any or edge_any
+			edge_all = left_all and edge_all
+		end
+	end
+]], {
+	left = emit_left_edge_collection,
+	right = emit_right_edge_collection,
+})
+
+templates.edge_or = lua_source_printer.compile_template([[
+	$left$
+	if not edge_ok then
+		$right$
+	end
+]], {
+	left = emit_left_edge_collection,
+	right = emit_right_edge_collection,
+})
+
+templates.edge_empty_all = lua_source_printer.compile_template([[
+	edge_ok = true
+	edge_eligible = 0
+	edge_any = false
+	edge_all = true
+]])
+
+templates.edge_empty_any = lua_source_printer.compile_template([[
+	edge_ok = false
+	edge_eligible = 0
+	edge_any = false
+	edge_all = true
+]])
+
+templates.edge_all_continuation = lua_source_printer.compile_template([[
+	if edge_ok then
+		local left_eligible = edge_eligible
+		local left_any = edge_any
+		local left_all = edge_all
+		$argument$
+		if edge_ok then
+			edge_eligible = left_eligible + edge_eligible
+			edge_any = left_any or edge_any
+			edge_all = left_all and edge_all
+		end
+	end
+]], { argument = emit_argument_edge_collection })
+
+templates.edge_any_continuation = lua_source_printer.compile_template([[
+	if not edge_ok then
+		$argument$
+	end
+]], { argument = emit_argument_edge_collection })
+
+templates.edge_reset_collection = lua_source_printer.compile_template([[
+	edge_eligible = 0
+	edge_any = false
+	edge_all = true
+]])
+
+templates.not_evaluation = lua_source_printer.compile_template([[
+	$evaluation$
+	$target$ = not $target$
+]], {
+	evaluation = emit_left_evaluation,
+	target = emit_target,
+})
+
+templates.and_evaluation = lua_source_printer.compile_template([[
+	$left$
+	if $target$ then
+		$right$
+	end
+]], {
+	left = emit_left_evaluation,
+	target = emit_target,
+	right = emit_right_evaluation,
+})
+
+templates.or_evaluation = lua_source_printer.compile_template([[
+	$left$
+	if not $target$ then
+		$right$
+	end
+]], {
+	left = emit_left_evaluation,
+	target = emit_target,
+	right = emit_right_evaluation,
+})
+
+templates.empty_all = lua_source_printer.compile_template('$target$ = true\n', { target = emit_target })
+templates.empty_any = lua_source_printer.compile_template('$target$ = false\n', { target = emit_target })
+
+templates.all_continuation = lua_source_printer.compile_template([[
+	if $target$ then
+		$argument$
+	end
+]], {
+	target = emit_target,
+	argument = emit_argument_evaluation,
+})
+
+templates.any_continuation = lua_source_printer.compile_template([[
+	if not $target$ then
+		$argument$
+	end
+]], {
+	target = emit_target,
+	argument = emit_argument_evaluation,
+})
+
+templates.edge_all_result = lua_source_printer.compile_template(
+	'$target$ = edge_ok and edge_eligible > 0 and edge_all\n',
+	{ target = emit_target }
+)
+
+templates.edge_any_result = lua_source_printer.compile_template(
+	'$target$ = edge_ok and edge_any\n',
+	{ target = emit_target }
+)
+
+templates.edge_all_result_continuation = lua_source_printer.compile_template([[
+	if $target$ then
+		$argument$
+		$target$ = edge_ok and edge_eligible > 0 and edge_all
+	end
+]], {
+	target = emit_target,
+	argument = emit_argument_edge_collection,
+})
+
+templates.edge_any_result_continuation = lua_source_printer.compile_template([[
+	if not $target$ then
+		$argument$
+		$target$ = edge_ok and edge_any
+	end
+]], {
+	target = emit_target,
+	argument = emit_argument_edge_collection,
+})
+
+templates.state_local = lua_source_printer.compile_template('local state\n')
+
+templates.edge_locals = lua_source_printer.compile_template([[
+	local edge_ok
+	local edge_eligible
+	local edge_any
+	local edge_all
+]])
+
+templates.program = lua_source_printer.compile_template([[
+	return function(get_state, context, win)
+		local result
+		$state_local$
+		$edge_locals$
+		$body$
+		return result
+	end
+]], {
+	state_local = emit_state_local,
+	edge_locals = emit_edge_locals,
+	body = emit_program_body,
+})
 
 function action_parser.compile(src)
 	local cached<const> = cache[src]
@@ -853,25 +1154,13 @@ function action_parser.compile(src)
 		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
-	local body<const> = {}
-	append_evaluation(body, ast, 'result', 'win')
-	local parts<const> = {
-		'return function(get_state, context, win)\n',
-		'local result\n',
-	}
-	if body.uses_state then
-		parts[#parts + 1] = 'local state\n'
-	end
-	if body.uses_edge then
-		parts[#parts + 1] = 'local edge_ok\nlocal edge_eligible\nlocal edge_any\nlocal edge_all\n'
-	end
-	for index = 1, #body do
-		parts[#parts + 1] = body[index]
-	end
-	parts[#parts + 1] = 'return result\nend'
+	local analysis<const> = { uses_state = false, uses_edge = false }
+	analyze_evaluation(ast, analysis)
+	local printer<const> = lua_source_printer.new()
+	printer:emit(templates.program, { ast = ast, analysis = analysis })
 	local program<const> = {
 		action_names = self.action_names,
-		evaluate = load(table.concat(parts), '[input.action]', 't')(),
+		evaluate = load(printer:finish(), '[input.action]', 't')(),
 	}
 	cache[src] = program
 	return program
