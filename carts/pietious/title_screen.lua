@@ -209,7 +209,7 @@ local define_title_screen_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = function(self)
+						on_finished = function(self)
 							self.events:emit('title_screen_done')
 							return '/hidden'
 						end,

@@ -69,6 +69,9 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			program = program,
 			binding_indices = binding_indices,
 			params = definition.params,
+			on_loop = definition.on_loop,
+			on_turn = definition.on_turn,
+			on_finished = definition.on_finished,
 		}
 		clips[index] = clip
 		clips_by_start[index] = clip

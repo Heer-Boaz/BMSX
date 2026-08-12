@@ -1,16 +1,39 @@
 local clamp<const> = require('cartlib/util/clamp')
-local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
 local play_update_method<const> = timeline_playback.update_method.play
+local playback_boundary<const> = timeline_playback.boundary
+local boundary_loop<const> = playback_boundary.loop
+local boundary_turn<const> = playback_boundary.turn
 
 -- Nested clips retain child runtime entries, resolved binding slots and active
 -- interval state under their parent entry. They never become ECS systems or
 -- independently ticking timeline-component entries.
 local sequence_evaluator<const> = {}
+
+local notify_loop<const> = function(clip, target, evaluation)
+	if evaluation.boundary == boundary_loop then
+		clip.on_loop(target, evaluation)
+	end
+end
+
+local notify_turn<const> = function(clip, target, evaluation)
+	if evaluation.boundary == boundary_turn then
+		clip.on_turn(target, evaluation)
+	end
+end
+
+local notify_loop_or_turn<const> = function(clip, target, evaluation)
+	local boundary<const> = evaluation.boundary
+	if boundary == boundary_loop then
+		clip.on_loop(target, evaluation)
+	elseif boundary == boundary_turn then
+		clip.on_turn(target, evaluation)
+	end
+end
 
 local first_start_after<const> = function(clips, count, time_ms)
 	local low = 1
@@ -146,12 +169,21 @@ function sequence_evaluator.init_entry(entry)
 		local child_entry<const> = {
 			instance = timeline.new(entry.instance.id .. '/' .. clip.id, child_program),
 		}
+		if clip.on_loop ~= nil then
+			if clip.on_turn ~= nil then
+				child_entry.notify_boundary = notify_loop_or_turn
+			else
+				child_entry.notify_boundary = notify_loop
+			end
+		elseif clip.on_turn ~= nil then
+			child_entry.notify_boundary = notify_turn
+		end
 		if child_program.binding_count > 1 then
 			child_entry.bindings = {}
 		end
 		state.entries[clip_index] = child_entry
 		bind_child(entry, child_entry, clip)
-		timeline_dispatch.init_entry(child_entry)
+		timeline_track_evaluator.init_entry(child_entry)
 		sequence_evaluator.init_entry(child_entry)
 	end
 end
@@ -173,7 +205,7 @@ function sequence_evaluator.bind_entry(entry, owner)
 			end
 			child_entry.instance:rebind_program(timeline_frame_program.build(clip.program, child_entry.params))
 			child_entry.instance:rewind()
-			timeline_dispatch.init_entry(child_entry)
+			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
 		else
 			sequence_evaluator.bind_entry(child_entry, owner)
@@ -240,12 +272,32 @@ local process_clip<const> = function(
 		initial,
 		method == play_update_method and not destination_active
 	)
-	timeline_dispatch.process_instance_evaluations(child_entry, owner)
+	local child_instance<const> = child_entry.instance
+	local evaluate<const> = child_instance.program.evaluate
+	for index = 1, child_instance.evaluation_count do
+		evaluate(child_entry, owner, child_instance.evaluations[index])
+	end
+	if method == play_update_method then
+		local notify_boundary<const> = child_entry.notify_boundary
+		if notify_boundary ~= nil then
+			local evaluations<const> = child_entry.instance.evaluations
+			for index = 1, child_entry.instance.evaluation_count do
+				local evaluation<const> = evaluations[index]
+				notify_boundary(clip, child_entry.primary_binding, evaluation)
+			end
+		end
+	end
 	if destination_active then
 		activate_clip(state, clip_index)
 	else
 		clear_child(child_entry, owner)
 		remove_active_clip(state, clip_index)
+		if method == play_update_method then
+			local on_finished<const> = clip.on_finished
+			if on_finished ~= nil then
+				on_finished(child_entry.primary_binding, child_entry.instance)
+			end
+		end
 	end
 end
 

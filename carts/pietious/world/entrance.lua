@@ -83,7 +83,7 @@ local define_world_entrance_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = function(self)
+						on_finished = function(self)
 							self:finish_opening()
 							return '/open'
 						end,

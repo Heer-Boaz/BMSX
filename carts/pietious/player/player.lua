@@ -2932,7 +2932,7 @@ local define_player_fsm<const> = function()
 						rewind = true,
 						snap_to_start = true,
 					},
-					on_end = function(self)
+					on_finished = function(self)
 						local castle<const> = self.castle
 						self.to_enter_cut = 0
 						self.director.events:emit('shrine_exit_done', castle:create_room_enter_payload(false))

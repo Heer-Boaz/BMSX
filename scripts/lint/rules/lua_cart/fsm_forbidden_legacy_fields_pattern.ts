@@ -14,9 +14,12 @@ export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issu
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
 		if (key && FORBIDDEN_FSM_LEGACY_FIELDS.has(key)) {
-			const replacement = key === 'on_frame'
-				? 'Use timeline definition "apply" or a value/sample track.'
-				: 'Use state "update" and "input_event_handlers" only.';
+			let replacement = 'Use state "update" and "input_event_handlers" only.';
+			if (key === 'on_frame') {
+				replacement = 'Use timeline definition "apply" or a value/sample track.';
+			} else if (key === 'on_end') {
+				replacement = 'Use timeline binding "on_finished" for terminal completion.';
+			}
 			pushIssue(
 				issues,
 				fsmForbiddenLegacyFieldsPatternRule.name,

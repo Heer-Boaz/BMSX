@@ -6,6 +6,11 @@ playback.mode = {
 	loop = 1,
 	pingpong = 2,
 }
+playback.boundary = {
+	none = 0,
+	loop = 1,
+	turn = 2,
+}
 playback.update_method = {
 	play = 0,
 	jump = 1,

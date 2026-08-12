@@ -141,8 +141,20 @@ function transition.register_states(states)
 		return '/run_node'
 	end
 
+	local finish_transition_timeline<const> = function(self, state)
+		state:transition_to_next_state_if_provided(finish_transition(self))
+	end
+
+	local finish_transition_fade_in_timeline<const> = function(self, state)
+		state:transition_to_next_state_if_provided(finish_transition_fade_in(self))
+	end
+
+	local finish_fade_timeline<const> = function(self, state)
+		state:transition_to_next_state_if_provided(finish_fade(self))
+	end
+
 	states.transition = {
-		entering_state = function(self)
+		entering_state = function(self, state)
 			local node<const> = story[self.node_id]
 			self.text_main:clear_text()
 			self.text_choice:clear_text()
@@ -280,7 +292,7 @@ function transition.register_states(states)
 				rewind = true,
 				snap_to_start = false,
 				bindings = { background = background.surface_component },
-			})
+			}, finish_transition_timeline, state)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -288,13 +300,6 @@ function transition.register_states(states)
 				pattern = 'b[jp]',
 				go = function(self)
 					self.timelines:seek_to_end(overgang_timeline_id)
-					return finish_transition(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. overgang_timeline_id] = {
-				go = function(self)
 					return finish_transition(self)
 				end,
 			},
@@ -311,7 +316,7 @@ function transition.register_states(states)
 	}
 
 	states.transition_fade_in = {
-		entering_state = function(self)
+		entering_state = function(self, state)
 			self.text_transition:clear_text()
 			local background<const> = show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)
@@ -324,7 +329,12 @@ function transition.register_states(states)
 				target = background,
 				apply = true,
 			})
-			self.timelines:play(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
+			self.timelines:play(
+				overgang_post_fade_in_timeline_id,
+				{ rewind = true, snap_to_start = true },
+				finish_transition_fade_in_timeline,
+				state
+			)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -332,13 +342,6 @@ function transition.register_states(states)
 				pattern = 'b[jp]',
 				go = function(self)
 					self.timelines:seek_to_end(overgang_post_fade_in_timeline_id)
-					return finish_transition_fade_in(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
-				go = function(self)
 					return finish_transition_fade_in(self)
 				end,
 			},
@@ -351,7 +354,7 @@ function transition.register_states(states)
 	}
 
 	states.fade = {
-		entering_state = function(self)
+		entering_state = function(self, state)
 			local node<const> = story[self.node_id]
 			clear_texts(self.texts)
 			reset_text_colors(self)
@@ -415,7 +418,7 @@ function transition.register_states(states)
 				rewind = true,
 				snap_to_start = true,
 				bindings = { background = background.surface_component },
-			})
+			}, finish_fade_timeline, state)
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -423,13 +426,6 @@ function transition.register_states(states)
 				pattern = 'b[jp]',
 				go = function(self)
 					self.timelines:seek_to_end(fade_timeline_id)
-					return finish_fade(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. fade_timeline_id] = {
-				go = function(self)
 					return finish_fade(self)
 				end,
 			},

@@ -121,15 +121,8 @@ local camera<const> = { value = 0 }
 local timelines<const> = timelinecomponent.new({ parent = owner })
 timelines:on_attach()
 
-local loop_end_count = 0
-local loop_end_mode
-owner.events:on({
-	event = 'timeline.end.loop_parent/child',
-	handler = function(_event, _emitter, payload)
-		loop_end_count = loop_end_count + 1
-		loop_end_mode = payload.mode
-	end,
-})
+local loop_count = 0
+local loop_finished_count = 0
 timelines:define('loop_parent', {
 	continuous = true,
 	duration_ms = 250,
@@ -140,6 +133,13 @@ timelines:define('loop_parent', {
 			start_time_ms = 0,
 			duration_ms = 250,
 			playback_mode = 'loop',
+			on_loop = function(_target, evaluation)
+				assert(evaluation.boundary == timeline_module.playback_boundary.loop)
+				loop_count = loop_count + 1
+			end,
+			on_finished = function()
+				loop_finished_count = loop_finished_count + 1
+			end,
 			sequence = child,
 		},
 	},
@@ -149,18 +149,37 @@ assert(zero_count == 1 and camera.value == 10)
 timelines:tick_active(225)
 assert(zero_count == 3 and nested_forward_count == 2)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
-assert(loop_end_count == 2 and loop_end_mode == timeline_module.playback_mode.loop)
+assert(loop_count == 2 and loop_finished_count == 0)
 timelines:tick_active(25)
 assert(nested_forward_count == 3 and camera.value == 20 and owner.tags.child_active == nil)
-assert(loop_end_count == 3)
+assert(loop_count == 2 and loop_finished_count == 1)
 
-local seek_end_count = 0
-owner.events:on({
-	event = 'timeline.end.seek_parent/child',
-	handler = function()
-		seek_end_count = seek_end_count + 1
-	end,
+local crossed_finished_count = 0
+timelines:define('crossed_finish_parent', {
+	continuous = true,
+	duration_ms = 100,
+	subsequences = {
+		{
+			id = 'child',
+			start_time_ms = 20,
+			duration_ms = 20,
+			sequence = nested,
+			on_finished = function()
+				crossed_finished_count = crossed_finished_count + 1
+			end,
+		},
+	},
 })
+timelines:play('crossed_finish_parent')
+timelines:tick_active(50)
+assert(crossed_finished_count == 1)
+timelines:seek_time('crossed_finish_parent', 0)
+timelines:seek_time('crossed_finish_parent', 50)
+assert(crossed_finished_count == 1)
+timelines:stop('crossed_finish_parent')
+
+local seek_loop_count = 0
+local seek_finished_count = 0
 timelines:define('seek_parent', {
 	continuous = true,
 	duration_ms = 250,
@@ -171,6 +190,12 @@ timelines:define('seek_parent', {
 			start_time_ms = 0,
 			duration_ms = 250,
 			playback_mode = 'loop',
+			on_loop = function()
+				seek_loop_count = seek_loop_count + 1
+			end,
+			on_finished = function()
+				seek_finished_count = seek_finished_count + 1
+			end,
 			sequence = child,
 		},
 	},
@@ -180,13 +205,13 @@ local nested_before_seek<const> = nested_forward_count
 timelines:play('seek_parent', { bindings = { camera = camera } })
 timelines:seek_time('seek_parent', 225)
 assert(zero_count == zero_before_seek + 1 and nested_forward_count == nested_before_seek)
-assert(seek_end_count == 0)
+assert(seek_loop_count == 0 and seek_finished_count == 0)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
 timelines:scrub_time('seek_parent', 125)
 assert(zero_count == zero_before_seek + 1 and nested_forward_count == nested_before_seek)
-assert(seek_end_count == 0 and camera.value == 10)
+assert(seek_loop_count == 0 and seek_finished_count == 0 and camera.value == 10)
 timelines:seek_time('seek_parent', 250)
-assert(seek_end_count == 0 and owner.tags.child_active == nil)
+assert(seek_loop_count == 0 and seek_finished_count == 0 and owner.tags.child_active == nil)
 timelines:stop('seek_parent')
 
 local backward_before_reverse<const> = backward_count
@@ -220,15 +245,8 @@ local zero_before_pingpong<const> = zero_count
 local backward_before_pingpong<const> = backward_count
 local nested_forward_before_pingpong<const> = nested_forward_count
 local nested_backward_before_pingpong<const> = nested_backward_count
-local pingpong_end_count = 0
-local pingpong_end_mode
-owner.events:on({
-	event = 'timeline.end.pingpong_parent/child',
-	handler = function(_event, _emitter, payload)
-		pingpong_end_count = pingpong_end_count + 1
-		pingpong_end_mode = payload.mode
-	end,
-})
+local pingpong_turn_count = 0
+local pingpong_finished_count = 0
 timelines:define('pingpong_parent', {
 	continuous = true,
 	duration_ms = 250,
@@ -239,6 +257,13 @@ timelines:define('pingpong_parent', {
 			start_time_ms = 0,
 			duration_ms = 250,
 			playback_mode = 'pingpong',
+			on_turn = function(_target, evaluation)
+				assert(evaluation.boundary == timeline_module.playback_boundary.turn)
+				pingpong_turn_count = pingpong_turn_count + 1
+			end,
+			on_finished = function()
+				pingpong_finished_count = pingpong_finished_count + 1
+			end,
 			sequence = child,
 		},
 	},
@@ -250,10 +275,11 @@ assert(backward_count == backward_before_pingpong + 1)
 assert(nested_forward_count == nested_forward_before_pingpong + 1)
 assert(nested_backward_count == nested_backward_before_pingpong + 1)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
-assert(pingpong_end_count == 2 and pingpong_end_mode == timeline_module.playback_mode.pingpong)
+assert(pingpong_turn_count == 2 and pingpong_finished_count == 0)
 timelines:tick_active(25)
 assert(nested_forward_count == nested_forward_before_pingpong + 2)
-assert(camera.value == 20 and owner.tags.child_active == nil and pingpong_end_count == 3)
+assert(camera.value == 20 and owner.tags.child_active == nil)
+assert(pingpong_turn_count == 2 and pingpong_finished_count == 1)
 
 local frame_last_count = 0
 local frame_backward_count = 0

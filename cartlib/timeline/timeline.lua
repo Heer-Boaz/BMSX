@@ -9,6 +9,10 @@ local playback_mode<const> = timeline_playback.mode
 local playback_once<const> = playback_mode.once
 local playback_loop<const> = playback_mode.loop
 local playback_pingpong<const> = playback_mode.pingpong
+local playback_boundary<const> = timeline_playback.boundary
+local boundary_none<const> = playback_boundary.none
+local boundary_loop<const> = playback_boundary.loop
+local boundary_turn<const> = playback_boundary.turn
 local play_update_method<const> = update_method.play
 local jump_update_method<const> = update_method.jump
 local scrub_update_method<const> = update_method.scrub
@@ -31,7 +35,7 @@ local write_evaluation<const> = function(
 	mode,
 	direction,
 	sample,
-	ended,
+	boundary,
 	wrapped,
 	initial
 )
@@ -49,7 +53,7 @@ local write_evaluation<const> = function(
 	evaluation.playback_mode = mode
 	evaluation.direction = direction
 	evaluation.sample = sample
-	evaluation.ended = ended
+	evaluation.boundary = boundary
 	evaluation.wrapped = wrapped
 	evaluation.initial = initial
 	if sample then
@@ -165,7 +169,7 @@ local update_continuous<const> = function(self, delta_time)
 			program.playback_mode,
 			self.direction,
 			true,
-			false,
+			boundary_none,
 			false,
 			false
 		)
@@ -190,7 +194,7 @@ local update_continuous<const> = function(self, delta_time)
 			mode,
 			1,
 			true,
-			ended,
+			boundary_none,
 			false,
 			false
 		)
@@ -209,7 +213,7 @@ local update_continuous<const> = function(self, delta_time)
 				play_update_method,
 				mode,
 				1,
-				true,
+				boundary_loop,
 				true,
 				true,
 				false
@@ -229,7 +233,7 @@ local update_continuous<const> = function(self, delta_time)
 				mode,
 				1,
 				true,
-				false,
+				boundary_none,
 				false,
 				false
 			)
@@ -250,16 +254,16 @@ local update_continuous<const> = function(self, delta_time)
 			distance_ms = previous_time_ms
 		end
 		local time_ms
-		local ended
+		local boundary
 		if remaining >= distance_ms then
 			time_ms = boundary_ms
 			remaining = remaining - distance_ms
-			ended = true
+			boundary = boundary_turn
 			self.direction = -direction
 		else
 			time_ms = previous_time_ms + remaining * direction
 			remaining = 0
-			ended = false
+			boundary = boundary_none
 		end
 		write_evaluation(
 			self,
@@ -271,7 +275,7 @@ local update_continuous<const> = function(self, delta_time)
 			mode,
 			direction,
 			true,
-			ended,
+			boundary,
 			false,
 			false
 		)
@@ -341,7 +345,7 @@ local move_to<const> = function(self, frame, method)
 		program.playback_mode,
 		direction,
 		true,
-		false,
+		boundary_none,
 		false,
 		false
 	)
@@ -407,7 +411,7 @@ local move_time<const> = function(self, requested_time_ms, method)
 		program.playback_mode,
 		direction,
 		true,
-		false,
+		boundary_none,
 		false,
 		false
 	)
@@ -436,7 +440,7 @@ local write_external_time_range<const> = function(
 	mode,
 	direction,
 	initial,
-	ended,
+	boundary,
 	wrapped
 )
 	local program<const> = self.program
@@ -482,7 +486,7 @@ local write_external_time_range<const> = function(
 		mode,
 		direction,
 		sample,
-		ended,
+		boundary,
 		wrapped,
 		initial
 	)
@@ -491,7 +495,7 @@ end
 
 -- Evaluates a compiled clip transform. Linear, loop and ping-pong mappings all
 -- emit into the same retained evaluation batch.
-function timeline:evaluate_clip_range(clip, previous_parent_time_ms, parent_time_ms, method, initial, ended)
+function timeline:evaluate_clip_range(clip, previous_parent_time_ms, parent_time_ms, method, initial, finished)
 	clear_evaluations(self)
 	timeline_time_transform.evaluate(
 		clip,
@@ -500,11 +504,10 @@ function timeline:evaluate_clip_range(clip, previous_parent_time_ms, parent_time
 		method,
 		method == play_update_method,
 		initial,
-		ended,
 		self,
 		write_external_time_range
 	)
-	self.ended = ended
+	self.ended = finished
 	return self
 end
 
@@ -526,7 +529,7 @@ function timeline:snap_to_start()
 		self.program.playback_mode,
 		1,
 		true,
-		false,
+		boundary_none,
 		false,
 		false
 	)
@@ -552,21 +555,25 @@ function timeline:advance_internal(preserve_elapsed)
 	local traversal_direction<const> = program.playback_mode == playback_pingpong and self.direction or 1
 	local current_frame = previous_frame + (previous_frame == timelinestart_index and 1 or traversal_direction)
 	local sample = true
-	local ended = false
+	local at_boundary = false
+	local boundary = boundary_none
 	local wrapped = false
 	local last_index<const> = program.length - 1
 	if current_frame < 0 then
 		current_frame = 0
 		self.direction = 1
-		ended = true
+		at_boundary = true
+		boundary = boundary_turn
 	elseif current_frame > last_index then
-		ended = true
+		at_boundary = true
 		if program.playback_mode == playback_loop then
 			current_frame = 0
+			boundary = boundary_loop
 			wrapped = true
 			self.direction = 1
 		elseif program.playback_mode == playback_pingpong then
 			current_frame = last_index
+			boundary = boundary_turn
 			if last_index > 0 then
 				self.direction = -1
 			end
@@ -578,13 +585,13 @@ function timeline:advance_internal(preserve_elapsed)
 			self.direction = 1
 		end
 	end
-	if previous_frame == current_frame and not ended then
+	if previous_frame == current_frame and not at_boundary then
 		return nil
 	end
 	local time_ms
 	if previous_frame == timelinestart_index or wrapped then
 		time_ms = 0
-	elseif ended and program.playback_mode ~= playback_pingpong then
+	elseif at_boundary and program.playback_mode ~= playback_pingpong then
 		time_ms = program.duration_ms
 	elseif current_frame == previous_frame then
 		time_ms = previous_time_ms
@@ -606,7 +613,7 @@ function timeline:advance_internal(preserve_elapsed)
 		program.playback_mode,
 		traversal_direction,
 		sample,
-		ended,
+		boundary,
 		wrapped,
 		false
 	)
@@ -617,6 +624,7 @@ return {
 	timelinestart_index = timelinestart_index,
 	update_method = update_method,
 	playback_mode = playback_mode,
+	playback_boundary = playback_boundary,
 	timeline = timeline,
 	range = range,
 	build_frame_sequence = build_frame_sequence,

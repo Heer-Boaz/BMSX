@@ -2,7 +2,6 @@ local basecomponent<const> = require('cartlib/component/basecomponent')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
-local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
@@ -62,13 +61,25 @@ local resolve_timeline_bindings<const> = function(entry, program, primary_bindin
 end
 
 local process_evaluations<const> = function(self, entry)
-	local stopped<const> = timeline_dispatch.process_instance_evaluations(
-		entry,
-		self.parent
-	)
+	local instance<const> = entry.instance
+	local owner<const> = self.parent
+	local evaluate<const> = instance.program.evaluate
+	for index = 1, instance.evaluation_count do
+		evaluate(entry, owner, instance.evaluations[index])
+	end
+	local stopped<const> = instance.ended
 	if stopped then
-		clear_entry_state(entry, self.parent)
-		deactivate_timeline_entry(self, entry.instance.id)
+		clear_entry_state(entry, owner)
+		deactivate_timeline_entry(self, instance.id)
+		local on_finished = entry.play_on_finished
+		local finished_context = entry.play_finished_context
+		if on_finished == nil then
+			on_finished = entry.bound_on_finished
+			finished_context = entry.bound_finished_context
+		end
+		if on_finished ~= nil then
+			on_finished(owner, finished_context, instance)
+		end
 	end
 	return stopped
 end
@@ -107,7 +118,7 @@ function timeline_component:define(id, definition)
 			params = program.default_params,
 		}
 		self._entries_by_id[id] = entry
-		timeline_dispatch.init_entry(entry)
+		timeline_track_evaluator.init_entry(entry)
 		timeline_sequence_evaluator.init_entry(entry)
 		return
 	end
@@ -142,7 +153,7 @@ function timeline_component:define(id, definition)
 		entry.bindings = nil
 		entry.params = program.default_params
 	end
-	timeline_dispatch.init_entry(entry)
+	timeline_track_evaluator.init_entry(entry)
 	timeline_sequence_evaluator.init_entry(entry)
 	if active then
 		timeline_sequence_evaluator.bind_entry(entry, self.parent)
@@ -217,7 +228,20 @@ function timeline_component:advance(id)
 	return entry.instance
 end
 
-function timeline_component:play(id, opts)
+-- A state binding outlives an individual play() call so manually started
+-- timelines with runtime targets keep the completion owner of the active state.
+-- State exit clears the binding even when playback itself is allowed to continue.
+function timeline_component:bind_finished(id, on_finished, finished_context)
+	local entry<const> = self._entries_by_id[id]
+	entry.bound_on_finished = on_finished
+	entry.bound_finished_context = finished_context
+end
+
+-- Completion is a retained playback binding, not an event-emitter message.
+-- It runs only after the terminal sample has been evaluated and the entry has
+-- left the active set. Loop wraps and ping-pong turns are transport boundaries,
+-- not playback completion.
+function timeline_component:play(id, opts, on_finished, finished_context)
 	local entry<const> = self._entries_by_id[id]
 	local instance<const> = entry.instance
 	local owner<const> = self.parent
@@ -250,6 +274,8 @@ function timeline_component:play(id, opts)
 		end
 	end
 	entry.params = params
+	entry.play_on_finished = on_finished
+	entry.play_finished_context = finished_context
 	resolve_timeline_bindings(entry, program, target, bindings)
 	if rewind or program.frame_builder ~= nil then
 		clear_entry_state(entry, owner)
@@ -257,7 +283,7 @@ function timeline_component:play(id, opts)
 	if program.frame_builder ~= nil then
 		instance:build(params)
 		program = instance.program
-		timeline_dispatch.init_entry(entry)
+		timeline_track_evaluator.init_entry(entry)
 		timeline_sequence_evaluator.init_entry(entry)
 	end
 	timeline_sequence_evaluator.bind_entry(entry, owner)

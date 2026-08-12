@@ -72,7 +72,7 @@ local define_enemy_explosion_fsm<const> = function()
 					apply = enemy_explosion.sync_explosion_sprite,
 				},
 				autoplay = false,
-				on_end = function(self)
+				on_finished = function(self)
 					self:spawn_loot()
 					self:mark_for_disposal()
 				end,

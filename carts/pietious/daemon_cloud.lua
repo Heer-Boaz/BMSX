@@ -50,7 +50,7 @@ local define_daemon_cloud_fsm<const> = function()
 						},
 						autoplay = false,
 						stop_on_exit = true,
-						on_end = function(self)
+						on_finished = function(self)
 							self.visible = false
 							self.collider:set_enabled(false)
 						end,

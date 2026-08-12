@@ -382,7 +382,7 @@ function combat.define_fsm()
 			[combat_fade_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = '/combat_init'
+				on_finished = '/combat_init'
 			},
 		},
 		entering_state = function(self)
@@ -418,7 +418,7 @@ function combat.define_fsm()
 			[combat_fade_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = '/combat_done'
+				on_finished = '/combat_done'
 			},
 		},
 		entering_state = function(self)
@@ -515,7 +515,7 @@ function combat.define_fsm()
 				[combat_intro_timeline_id] = {
 					autoplay = false,
 					stop_on_exit = true,
-					on_end = '/combat_round',
+					on_finished = '/combat_round',
 				},
 			},
 		entering_state = function(self)
@@ -688,7 +688,7 @@ function combat.define_fsm()
 			[combat_hit_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_hit(self)
 					end,
@@ -741,7 +741,7 @@ function combat.define_fsm()
 			[combat_dodge_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_dodge(self)
 					end,
@@ -783,7 +783,7 @@ function combat.define_fsm()
 			[combat_exchange_hit_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_exchange(self)
 					end,
@@ -885,7 +885,7 @@ function combat.define_fsm()
 			[combat_exchange_miss_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_exchange(self)
 					end,
@@ -1073,7 +1073,7 @@ function combat.define_fsm()
 			[combat_all_out_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = '/combat_focus',
+				on_finished = '/combat_focus',
 			},
 		},
 		entering_state = function(self)
@@ -1252,7 +1252,7 @@ function combat.define_fsm()
 			[combat_results_fade_in_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_results_fade_in(self)
 					end,
@@ -1306,7 +1306,7 @@ function combat.define_fsm()
 			[combat_results_fade_out_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_results_fade_out(self)
 					end,
@@ -1341,7 +1341,7 @@ function combat.define_fsm()
 			[combat_exit_fade_in_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
-				on_end = {
+				on_finished = {
 					go = function(self)
 						return finish_combat_exit_fade_in(self)
 					end,
@@ -1382,7 +1382,7 @@ function combat.define_fsm()
 	--                       entering_state. Required when `target` or `params` depend
 	--                       on runtime values (e.g. self.combat_monster_base_x).
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
-	--   on_end  — transition or action when the timeline finishes.
+	--   on_finished  — transition or action when the timeline finishes.
 	--   apply      — compiled sampled output owned by the timeline definition.
 	fsmlibrary.register(combat_director_fsm_id, {
 		initial = 'boot',

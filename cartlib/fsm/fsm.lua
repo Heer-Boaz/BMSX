@@ -47,7 +47,7 @@
 --    Timeline shared by multiple states: declare once in the root-level
 --    `timelines` block of the FSM (before `states`) with `autoplay = false`
 --    (registration only).  Each state adds only the behaviour config
---    (autoplay, stop_on_exit, on_end, …) without repeating `def`.
+--    (autoplay, stop_on_exit, on_finished, …) without repeating `def`.
 --
 --    WRONG — duplicate def copied into every state that uses the timeline:
 --      state_a = { timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = true } } }
@@ -55,21 +55,21 @@
 --    RIGHT — def at FSM root once, behaviour-only config in each state:
 --      (root) timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = false } }
 --      state_a = { timelines = { [id] = { autoplay = true, stop_on_exit = true } } }
---      state_b = { timelines = { [id] = { autoplay = true, stop_on_exit = true, on_end = '/other' } } }
+--      state_b = { timelines = { [id] = { autoplay = true, stop_on_exit = true, on_finished = '/other' } } }
 --
 -- 4. TIMELINE OUTPUTS AND COMPLETION.
 --    Sampled output belongs to the timeline definition itself: use `apply` for
 --    a frame value or value/sample tracks for bound properties. This runs in
 --    the compiled evaluation program without routing every sample through the
 --    event emitter and FSM. Use explicit event tracks only for announcements.
---    Declare state transitions on completion as `on_end` in the state timeline
---    binding; the scoped end event remains an internal FSM binding detail.
+--    Declare state transitions on terminal completion as `on_finished` in the
+--    state timeline binding. The timeline component invokes that retained
+--    binding after its final evaluation and removal from the active set.
 --
---    WRONG — manual internal event key:
---      on = { ['timeline.end.my_id'] = function(self) return '/next' end }
---    RIGHT — on_end directly in the timeline binding:
---      timelines = { [my_id] = { ..., on_end = '/next' } }
---      timelines = { [my_id] = { ..., on_end = function(self) ... end } }
+--    The event-emitter is not part of this transport path. Bind completion
+--    directly to the state timeline:
+--      timelines = { [my_id] = { ..., on_finished = '/next' } }
+--      timelines = { [my_id] = { ..., on_finished = function(self) ... end } }
 --
 -- 5. FORBIDDEN LEGACY FIELDS.
 --    The cart builder rejects obsolete FSM fields rather than carrying a
@@ -343,6 +343,24 @@ local validate_transition_spec_map<const> = function(def_id, field_name, map)
 	end
 end
 
+local compile_timeline_definitions<const> = function(definitions)
+	if definitions == nil then
+		return nil
+	end
+	local compiled<const> = {}
+	for id, definition in pairs(definitions) do
+		compiled[id] = {
+			id = definition.id,
+			def = definition.def,
+			autoplay = definition.autoplay,
+			stop_on_exit = definition.stop_on_exit,
+			play_options = definition.play_options,
+			on_finished = definition.on_finished,
+		}
+	end
+	return compiled
+end
+
 function statedefinition.new(id, def, root, parent)
 	local self<const> = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -357,17 +375,6 @@ function statedefinition.new(id, def, root, parent)
 	if def and def.on then
 		for k, v in pairs(def.on) do
 			self.on[k] = v
-		end
-	end
-	if def and def.timelines then
-		for tl_id, tl_def in pairs(def.timelines) do
-			if tl_def.on_end ~= nil then
-				local key<const> = 'timeline.end.' .. tl_id
-				if self.on[key] ~= nil then
-					error('state "' .. tostring(self.def_id) .. '": "on_end" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
-				end
-				self.on[key] = tl_def.on_end
-			end
 		end
 	end
 	if def and def.tick ~= nil then
@@ -413,7 +420,7 @@ function statedefinition.new(id, def, root, parent)
 	self.input_transition_kinds = nil
 	self.input_transitions = nil
 	self.event_list = def and def.event_list
-	self.timelines = def and def.timelines
+	self.timelines = compile_timeline_definitions(def and def.timelines)
 	local transition_guards<const> = def and def.transition_guards
 	self.can_enter = transition_guards and transition_guards.can_enter
 	self.can_exit = transition_guards and transition_guards.can_exit
@@ -588,12 +595,18 @@ local build_timeline_bindings<const> = function(owner, definitions)
 		if definition then
 			owner.timelines:define(id, definition)
 		end
-		bindings[#bindings + 1] = {
+		local binding<const> = {
 			id = id,
 			autoplay = config.autoplay == nil or config.autoplay,
 			stop_on_exit = config.stop_on_exit == nil or config.stop_on_exit,
 			play_options = config.play_options,
+			finished_kind = config.finished_kind,
+			finished_transition = config.finished_transition,
 		}
+		if binding.finished_kind ~= nil then
+			binding.on_finished = state.finish_timeline
+		end
+		bindings[#bindings + 1] = binding
 	end
 	return bindings
 end
@@ -633,6 +646,12 @@ function state.new(definition, target, parent)
 	-- reloading states[self.current_id] from the state map on every recursive step.
 	self.current_state = nil
 	self.timeline_bindings = build_timeline_bindings(target, definition.timelines)
+	local timeline_bindings<const> = self.timeline_bindings
+	if timeline_bindings ~= nil then
+		for i = 1, #timeline_bindings do
+			timeline_bindings[i].state = self
+		end
+	end
 	if self.root == self then
 		-- The machine root owns whole compiled transition requests. Queuing a
 		-- path plan rather than individual state ids keeps hierarchical paths
@@ -664,9 +683,30 @@ end
 
 local rebind_definition_tree
 rebind_definition_tree = function(self, definition)
+	local active<const> = self:is_active()
+	if active then
+		local previous_bindings<const> = self.timeline_bindings
+		if previous_bindings ~= nil then
+			for i = 1, #previous_bindings do
+				self.target.timelines:bind_finished(previous_bindings[i].id, nil, nil)
+			end
+		end
+	end
 	self.definition = definition
 	self.def_id = definition.def_id
 	self.timeline_bindings = build_timeline_bindings(self.target, definition.timelines)
+	local timeline_bindings<const> = self.timeline_bindings
+	if timeline_bindings ~= nil then
+		for i = 1, #timeline_bindings do
+			timeline_bindings[i].state = self
+		end
+		if active then
+			for i = 1, #timeline_bindings do
+				local binding<const> = timeline_bindings[i]
+				self.target.timelines:bind_finished(binding.id, binding.on_finished, binding)
+			end
+		end
+	end
 	self.tag_list = definition.tags
 	self.tag_lookup = build_state_tag_lookup(definition.tags)
 	self.input_bindings = build_input_bindings(self.target, definition)
@@ -739,10 +779,18 @@ function state:activate_timelines()
 	end
 	for i = 1, #bindings do
 		local binding<const> = bindings[i]
+		self.target.timelines:bind_finished(binding.id, binding.on_finished, binding)
 		if binding.autoplay then
 			self.target.timelines:play(binding.id, binding.play_options)
 		end
 	end
+end
+
+function state.finish_timeline(_target, binding)
+	local self<const> = binding.state
+	self:enter_critical_section()
+	self:execute_transition(binding.finished_kind, binding.finished_transition)
+	self:leave_critical_section()
 end
 
 function state:deactivate_timelines()
@@ -755,6 +803,7 @@ function state:deactivate_timelines()
 		if binding.stop_on_exit then
 			self.target.timelines:stop(binding.id)
 		end
+		self.target.timelines:bind_finished(binding.id, nil, nil)
 	end
 end
 
@@ -1180,6 +1229,15 @@ compile_definition_transitions = function(definition)
 	for _, handler in pairs(definition.on) do
 		handler.kind, handler.transition = compile_transition(definition, handler.source)
 		handler.source = nil
+	end
+	local timelines<const> = definition.timelines
+	if timelines ~= nil then
+		for _, config in pairs(timelines) do
+			local on_finished<const> = config.on_finished
+			if on_finished ~= nil then
+				config.finished_kind, config.finished_transition = compile_transition(definition, on_finished)
+			end
+		end
 	end
 	local input_handlers<const> = definition.input_event_handlers
 	local input_count<const> = definition.input_handler_count

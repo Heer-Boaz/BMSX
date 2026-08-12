@@ -6,6 +6,10 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local time_transform<const> = {}
 local playback_loop<const> = timeline_playback.mode.loop
 local playback_pingpong<const> = timeline_playback.mode.pingpong
+local boundary<const> = timeline_playback.boundary
+local boundary_none<const> = boundary.none
+local boundary_loop<const> = boundary.loop
+local boundary_turn<const> = boundary.turn
 
 local child_time_at<const> = function(clip, parent_time_ms)
 	return parent_time_ms * clip.time_scale + clip.time_offset_ms
@@ -62,7 +66,6 @@ local evaluate_loop_forward<const> = function(
 	time_ms,
 	method,
 	initial,
-	ended,
 	target,
 	write_range
 )
@@ -79,7 +82,7 @@ local evaluate_loop_forward<const> = function(
 			clip.playback_mode,
 			1,
 			initial,
-			true,
+			boundary_loop,
 			true
 		)
 		initial = false
@@ -96,7 +99,7 @@ local evaluate_loop_forward<const> = function(
 			clip.playback_mode,
 			1,
 			initial,
-			ended,
+			boundary_none,
 			false
 		)
 	end
@@ -108,7 +111,6 @@ local evaluate_loop_backward<const> = function(
 	time_ms,
 	method,
 	initial,
-	ended,
 	target,
 	write_range
 )
@@ -125,7 +127,7 @@ local evaluate_loop_backward<const> = function(
 			clip.playback_mode,
 			-1,
 			initial,
-			true,
+			boundary_loop,
 			true
 		)
 		initial = false
@@ -142,7 +144,7 @@ local evaluate_loop_backward<const> = function(
 			clip.playback_mode,
 			-1,
 			initial,
-			ended,
+			boundary_none,
 			false
 		)
 	end
@@ -154,7 +156,6 @@ local evaluate_pingpong_forward<const> = function(
 	time_ms,
 	method,
 	initial,
-	ended,
 	target,
 	write_range
 )
@@ -177,7 +178,7 @@ local evaluate_pingpong_forward<const> = function(
 			clip.playback_mode,
 			direction,
 			initial,
-			true,
+			boundary_turn,
 			false
 		)
 		initial = false
@@ -200,7 +201,7 @@ local evaluate_pingpong_forward<const> = function(
 			clip.playback_mode,
 			direction,
 			initial,
-			ended,
+			boundary_none,
 			false
 		)
 	end
@@ -212,7 +213,6 @@ local evaluate_pingpong_backward<const> = function(
 	time_ms,
 	method,
 	initial,
-	ended,
 	target,
 	write_range
 )
@@ -241,7 +241,7 @@ local evaluate_pingpong_backward<const> = function(
 			clip.playback_mode,
 			direction,
 			initial,
-			true,
+			boundary_turn,
 			false
 		)
 		initial = false
@@ -264,7 +264,7 @@ local evaluate_pingpong_backward<const> = function(
 			clip.playback_mode,
 			direction,
 			initial,
-			ended,
+			boundary_none,
 			false
 		)
 	end
@@ -277,7 +277,6 @@ function time_transform.evaluate(
 	method,
 	traverse,
 	initial,
-	ended,
 	target,
 	write_range
 )
@@ -295,24 +294,24 @@ function time_transform.evaluate(
 			mode,
 			direction_between(previous_local_ms, local_time_ms, 0),
 			initial,
-			ended,
+			boundary_none,
 			false
 		)
 		return
 	end
 	if mode == playback_loop then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_loop_forward(clip, previous_time_ms, time_ms, method, initial, ended, target, write_range)
+			evaluate_loop_forward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
 		else
-			evaluate_loop_backward(clip, previous_time_ms, time_ms, method, initial, ended, target, write_range)
+			evaluate_loop_backward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
 		end
 		return
 	end
 	if mode == playback_pingpong then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, method, initial, ended, target, write_range)
+			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
 		else
-			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, method, initial, ended, target, write_range)
+			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
 		end
 		return
 	end
@@ -324,7 +323,7 @@ function time_transform.evaluate(
 		clip.playback_mode,
 		direction_between(previous_time_ms, time_ms, clip.direction),
 		initial,
-		ended,
+		boundary_none,
 		false
 	)
 end

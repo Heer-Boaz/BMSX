@@ -47,12 +47,10 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/time_transform', 'cartlib/timeline/time_transform.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
-	['cartlib/timeline/dispatch', 'cartlib/timeline/dispatch.lua'],
 	['cartlib/timeline/sequence_evaluator', 'cartlib/timeline/sequence_evaluator.lua'],
 	['cartlib/timeline/timeline_component', 'cartlib/timeline/timeline_component.lua'],
 	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
-	['cartlib/util/scratch_record_batch', 'cartlib/util/scratch_record_batch.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsmcomponent', 'cartlib/fsm/fsmcomponent.lua'],
@@ -149,6 +147,9 @@ fsm_library.register('hot_machine', {
 					autoplay = true,
 					stop_on_exit = true,
 					play_options = { params = { offset = 0 } },
+					on_finished = function(self)
+						self.timeline_finished = (self.timeline_finished or 0) + 1
+					end,
 				},
 			},
 			update = function(self)
@@ -213,6 +214,9 @@ fsm_library.register('hot_machine', {
 					autoplay = true,
 					stop_on_exit = true,
 					play_options = { params = { offset = 100 } },
+					on_finished = function(self)
+						self.timeline_finished = (self.timeline_finished or 0) + 10
+					end,
 				},
 			},
 			update = function(self)
@@ -242,6 +246,8 @@ assert(timelines._active_entries[1] == timeline_entry_before)
 assert(timeline_before.head == timeline_head_before and timeline_before.position_ms == timeline_position_before)
 timelines:tick_active(1)
 assert(target.timeline_value == 1012)
+timelines:tick_active(1)
+assert(target.timeline_finished == 10)
 assert(state_machines._state_paths == nil)
 local bound_after<const> = state_machines:bind_state_path('/active')
 assert(bound_after ~= bound_before)

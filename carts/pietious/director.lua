@@ -277,7 +277,7 @@ local define_director_fsm<const> = function()
 			self.events:emit('seal_flash_done')
 		end
 	end
-	local on_daemon_end<const> = function(self)
+	local on_daemon_finished<const> = function(self)
 		self:despawn_daemon_clouds()
 		self.events:emit('daemon_appearance_done')
 		return '/room'
@@ -451,7 +451,7 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = '/room',
+						on_finished = '/room',
 					},
 				},
 				entering_state = director.begin_black_wait,
@@ -465,7 +465,7 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = '/room',
+						on_finished = '/room',
 					},
 				},
 				entering_state = function(self)
@@ -554,7 +554,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = '/banner_transition/world_showing',
+								on_finished = '/banner_transition/world_showing',
 							},
 						},
 					},
@@ -572,7 +572,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = director.finish_world_banner_transition,
+								on_finished = director.finish_world_banner_transition,
 							},
 						},
 						tags = { 'd.bt' },
@@ -586,7 +586,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = '/banner_transition/castle_showing',
+								on_finished = '/banner_transition/castle_showing',
 							},
 						},
 					},
@@ -604,7 +604,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = director.finish_castle_banner_transition,
+								on_finished = director.finish_castle_banner_transition,
 							},
 						},
 						tags = { 'd.bt' },
@@ -623,7 +623,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = director.finish_castle_emerge_banner_transition,
+								on_finished = director.finish_castle_emerge_banner_transition,
 							},
 						},
 						tags = { 'd.bt' },
@@ -646,7 +646,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = '/item_screen/active',
+								on_finished = '/item_screen/active',
 							},
 						},
 						entering_state = director.begin_black_wait,
@@ -712,7 +712,7 @@ local define_director_fsm<const> = function()
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = '/room',
+								on_finished = '/room',
 							},
 						},
 						entering_state = director.begin_black_wait,
@@ -732,7 +732,7 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = '/room_switch_wait',
+						on_finished = '/room_switch_wait',
 					},
 				},
 					entering_state = function(self)
@@ -753,7 +753,7 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = director.finish_castle_halo_banner_transition,
+						on_finished = director.finish_castle_halo_banner_transition,
 					},
 				},
 				tags = { 'd.bt' },
@@ -764,7 +764,7 @@ local define_director_fsm<const> = function()
 				--     unfreeze (they entered /freeze on 'seal_dissolution').
 				--   frames 31–94: dissolve window (tagged d.seal.dissolve).
 				--   frames 63–94: smoke window (tagged d.seal.smoke).
-				--   on_end: emits 'seal_dissolution_done' → transitions to daemon_appearance.
+				--   on_finished: emits 'seal_dissolution_done' → transitions to daemon_appearance.
 				--
 				-- On entering_state: emits 'seal_dissolution' which is both the
 				-- mode broadcast for renderers and the freeze trigger for player +
@@ -799,7 +799,7 @@ local define_director_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = function(self)
+						on_finished = function(self)
 							self.seal_flash_on = false
 							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
@@ -823,7 +823,7 @@ local define_director_fsm<const> = function()
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
-						on_end = on_daemon_end,
+						on_finished = on_daemon_finished,
 					},
 				},
 				entering_state = function(self)
@@ -838,7 +838,7 @@ local define_director_fsm<const> = function()
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
-						on_end = on_daemon_end,
+						on_finished = on_daemon_finished,
 					},
 				},
 				entering_state = function(self)
@@ -857,7 +857,7 @@ local define_director_fsm<const> = function()
 								},
 								autoplay = true,
 								stop_on_exit = true,
-								on_end = '/lithograph/viewing',
+								on_finished = '/lithograph/viewing',
 							},
 						},
 					},
@@ -875,7 +875,7 @@ local define_director_fsm<const> = function()
 								},
 								autoplay = true,
 								stop_on_exit = true,
-								on_end = '/room',
+								on_finished = '/room',
 							},
 						},
 					},
@@ -902,7 +902,7 @@ local define_director_fsm<const> = function()
 								rewind = true,
 								snap_to_start = true,
 							},
-							on_end = function(self)
+							on_finished = function(self)
 								self.events:emit('title_wait_done')
 								return '/room'
 							end,
