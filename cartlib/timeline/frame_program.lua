@@ -49,6 +49,7 @@ function frame_program.compile(program, frame_source)
 	else
 		compiled.frame_appliers = nil
 	end
+	compiled.evaluate = compiled.evaluation_factory(compiled)
 	return compiled
 end
 

@@ -523,12 +523,15 @@ local evaluate_sample_groups<const> = function(entry, tracks, params, evaluation
 	end
 end
 
-local emit_tracks_local<const> = function(printer, values)
-	if values.has_frame_steps
-	or values.has_time_steps
-	or values.has_scalar_channels
-	or values.has_sample_groups then
-		printer:emit(templates.tracks_local, values)
+local emit_track_captures<const> = function(printer, values)
+	if values.has_frame_steps or values.has_time_steps then
+		printer:emit(templates.steps_capture, values)
+	end
+	if values.has_scalar_channels then
+		printer:emit(templates.scalar_channels_capture, values)
+	end
+	if values.has_sample_groups then
+		printer:emit(templates.sample_program_capture, values)
 	end
 end
 
@@ -587,8 +590,16 @@ local emit_sample<const> = function(printer, values)
 	end
 end
 
-templates.tracks_local = lua_source_printer.compile_template(
-	'local tracks = entry["instance"]["program"]["tracks"]\n'
+templates.steps_capture = lua_source_printer.compile_template(
+	'local steps<const> = tracks["steps"]\n'
+)
+
+templates.scalar_channels_capture = lua_source_printer.compile_template(
+	'local scalar_channels<const> = tracks["scalar_channels"]\n'
+)
+
+templates.sample_program_capture = lua_source_printer.compile_template(
+	'local sample_program<const> = tracks\n'
 )
 
 templates.evaluate_frame_steps_capture = lua_source_printer.compile_template(
@@ -616,15 +627,15 @@ templates.params_local = lua_source_printer.compile_template(
 )
 
 templates.frame_steps = lua_source_printer.compile_template(
-	'evaluate_frame_steps(entry, tracks["steps"], params, evaluation)\n'
+	'evaluate_frame_steps(entry, steps, params, evaluation)\n'
 )
 
 templates.time_steps = lua_source_printer.compile_template(
-	'evaluate_time_steps(entry, tracks["steps"], params, evaluation)\n'
+	'evaluate_time_steps(entry, steps, params, evaluation)\n'
 )
 
 templates.scalar_channels = lua_source_printer.compile_template(
-	'scalar_runner(tracks["scalar_channels"], entry, evaluation)\n'
+	'scalar_runner(scalar_channels, entry, evaluation)\n'
 )
 
 templates.primary_sample = lua_source_printer.compile_template(
@@ -632,7 +643,7 @@ templates.primary_sample = lua_source_printer.compile_template(
 )
 
 templates.sample_groups = lua_source_printer.compile_template(
-	'evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)\n'
+	'evaluate_sample_groups(entry, sample_program, params, evaluation, time_seconds)\n'
 )
 
 templates.sample = lua_source_printer.compile_template([[
@@ -644,17 +655,19 @@ templates.sample = lua_source_printer.compile_template([[
 
 templates.value_runner = lua_source_printer.compile_template([[
 	$dependency_captures$
-	return function(entry, evaluation)
-		$tracks_local$
-		$params_local$
-		$frame_steps$
-		$time_steps$
-		$scalar_channels$
-		$sample$
+	return function(tracks)
+		$track_captures$
+		return function(entry, evaluation)
+			$params_local$
+			$frame_steps$
+			$time_steps$
+			$scalar_channels$
+			$sample$
+		end
 	end
 ]], {
 	dependency_captures = emit_dependency_captures,
-	tracks_local = emit_tracks_local,
+	track_captures = emit_track_captures,
 	params_local = emit_params_local,
 	frame_steps = emit_frame_steps,
 	time_steps = emit_time_steps,

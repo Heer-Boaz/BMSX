@@ -44,7 +44,7 @@ local empty_prepared<const> = {
 	sample_group_count = 0,
 	sample_track_count = 0,
 	value_track_count = 0,
-	value_runner = nil,
+	value_runner_factory = nil,
 	has_frame_steps = false,
 	has_time_steps = false,
 	event_defs = empty_defs,
@@ -249,7 +249,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.has_time_steps = has_time_steps
 	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
 	if prepared.value_track_count > 0 then
-		prepared.value_runner = timeline_track_evaluator.compile_values(prepared)
+		prepared.value_runner_factory = timeline_track_evaluator.compile_values(prepared)
 	end
 	return prepared
 end
@@ -505,12 +505,15 @@ function track_program.compile(prepared, length)
 		sample_groups = prepared.sample_groups,
 		sample_group_count = prepared.sample_group_count,
 		value_track_count = prepared.value_track_count,
-		value_runner = prepared.value_runner,
+		value_runner = nil,
 		events = compile_events(prepared.event_defs, length),
 		tags = compile_tags(prepared.tag_defs, length),
 		steps = compile_steps(prepared.step_defs, length),
 		scalar_channels = scalar_channels,
 	}
+	if prepared.value_track_count > 0 then
+		tracks.value_runner = prepared.value_runner_factory(tracks)
+	end
 	return tracks
 end
 

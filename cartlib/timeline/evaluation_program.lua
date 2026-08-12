@@ -22,9 +22,15 @@ local emit_dependency_captures<const> = function(printer, values)
 	end
 end
 
-local emit_program_local<const> = function(printer, values)
-	if values.has_values or values.has_apply_function or values.has_frame_appliers then
-		printer:emit(templates.program_local, values)
+local emit_program_captures<const> = function(printer, values)
+	if values.has_values then
+		printer:emit(templates.value_runner_capture, values)
+	end
+	if values.has_apply_function then
+		printer:emit(templates.apply_function_capture, values)
+	end
+	if values.has_frame_appliers then
+		printer:emit(templates.frame_appliers_capture, values)
 	end
 end
 
@@ -70,8 +76,16 @@ local emit_events<const> = function(printer, values)
 	end
 end
 
-templates.program_local = lua_source_printer.compile_template(
-	'local program = entry["instance"]["program"]\n'
+templates.value_runner_capture = lua_source_printer.compile_template(
+	'local value_runner<const> = program["tracks"]["value_runner"]\n'
+)
+
+templates.apply_function_capture = lua_source_printer.compile_template(
+	'local apply_function<const> = program["apply_function"]\n'
+)
+
+templates.frame_appliers_capture = lua_source_printer.compile_template(
+	'local frame_appliers<const> = program["frame_appliers"]\n'
 )
 
 templates.evaluate_tags_capture = lua_source_printer.compile_template(
@@ -91,15 +105,15 @@ templates.tags = lua_source_printer.compile_template(
 )
 
 templates.values = lua_source_printer.compile_template(
-	'program["tracks"]["value_runner"](entry, evaluation)\n'
+	'value_runner(entry, evaluation)\n'
 )
 
 templates.apply_function = lua_source_printer.compile_template(
-	'program["apply_function"](entry["primary_binding"], evaluation["value"], entry["params"], evaluation)\n'
+	'apply_function(entry["primary_binding"], evaluation["value"], entry["params"], evaluation)\n'
 )
 
 templates.frame_appliers = lua_source_printer.compile_template(
-	'program["frame_appliers"][evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])\n'
+	'frame_appliers[evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])\n'
 )
 
 templates.sample = lua_source_printer.compile_template([[
@@ -122,17 +136,19 @@ templates.events = lua_source_printer.compile_template(
 
 templates.evaluator = lua_source_printer.compile_template([[
 	$dependency_captures$
-	return function(entry, owner, evaluation)
-		$program_local$
-		$tags$
-		$values$
-		$sample$
-		$subsequences$
-		$events$
+	return function(program)
+		$program_captures$
+		return function(entry, owner, evaluation)
+			$tags$
+			$values$
+			$sample$
+			$subsequences$
+			$events$
+		end
 	end
 ]], {
 	dependency_captures = emit_dependency_captures,
-	program_local = emit_program_local,
+	program_captures = emit_program_captures,
 	tags = emit_tags,
 	values = emit_values,
 	sample = emit_sample,
@@ -140,8 +156,9 @@ templates.evaluator = lua_source_printer.compile_template([[
 	events = emit_events,
 })
 
--- Each immutable timeline program compiles exactly the phases it owns. The
--- returned evaluator contains no feature-presence checks on the update path.
+-- Each timeline shape compiles exactly the phases it owns. The returned
+-- factory binds the finalized frame program once, so evaluation retains its
+-- immutable track and apply programs without resolving them through an entry.
 function evaluation_program.compile(program)
 	local prepared_tracks<const> = program.prepared_tracks
 	local printer<const> = lua_source_printer.new()
