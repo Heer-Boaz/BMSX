@@ -249,6 +249,7 @@ local sort_candidates<const> = function(state)
 end
 
 local process_clip<const> = function(
+	sequence,
 	entry,
 	owner,
 	clip_index,
@@ -256,7 +257,6 @@ local process_clip<const> = function(
 	time_ms,
 	method
 )
-	local sequence<const> = entry.instance.program.subsequences
 	local clip<const> = sequence.clips[clip_index]
 	local state<const> = entry.sequence_state
 	local child_entry<const> = state.entries[clip_index]
@@ -301,8 +301,7 @@ local process_clip<const> = function(
 	end
 end
 
-local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time_ms, initial)
-	local sequence<const> = entry.instance.program.subsequences
+local evaluate_play_range<const> = function(sequence, entry, owner, previous_time_ms, time_ms, initial)
 	local state<const> = entry.sequence_state
 	local direction = 0
 	if time_ms > previous_time_ms then
@@ -340,6 +339,7 @@ local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time
 	sort_candidates(state)
 	for index = 1, state.candidate_count do
 		process_clip(
+			sequence,
 			entry,
 			owner,
 			state.candidates[index],
@@ -350,13 +350,13 @@ local evaluate_play_range<const> = function(entry, owner, previous_time_ms, time
 	end
 end
 
-local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, method)
-	local sequence<const> = entry.instance.program.subsequences
+local evaluate_at<const> = function(sequence, entry, owner, previous_time_ms, time_ms, method)
 	local state<const> = entry.sequence_state
 	for clip_index = 1, sequence.clip_count do
 		local clip<const> = sequence.clips[clip_index]
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
 			process_clip(
+				sequence,
 				entry,
 				owner,
 				clip_index,
@@ -371,54 +371,62 @@ local evaluate_at<const> = function(entry, owner, previous_time_ms, time_ms, met
 	end
 end
 
-function sequence_evaluator.evaluate(entry, owner, evaluation)
-	if evaluation.method ~= play_update_method then
-		evaluate_at(
+function sequence_evaluator.bind(program)
+	local sequence<const> = program.subsequences
+	local duration_ms<const> = program.duration_ms
+	return function(entry, owner, evaluation)
+		if evaluation.method ~= play_update_method then
+			evaluate_at(
+				sequence,
+				entry,
+				owner,
+				evaluation.previous_time_ms,
+				evaluation.time_ms,
+				evaluation.method
+			)
+			return
+		end
+		if evaluation.wrapped then
+			if evaluation.direction > 0 then
+				evaluate_play_range(
+					sequence,
+					entry,
+					owner,
+					evaluation.previous_time_ms,
+					duration_ms,
+					evaluation.initial
+				)
+				clear_active_clips(entry, owner)
+				evaluate_play_range(sequence, entry, owner, 0, evaluation.time_ms, true)
+			else
+				evaluate_play_range(
+					sequence,
+					entry,
+					owner,
+					evaluation.previous_time_ms,
+					0,
+					evaluation.initial
+				)
+				clear_active_clips(entry, owner)
+				evaluate_play_range(sequence, entry, owner, duration_ms, evaluation.time_ms, true)
+			end
+			return
+		end
+		evaluate_play_range(
+			sequence,
 			entry,
 			owner,
 			evaluation.previous_time_ms,
 			evaluation.time_ms,
-			evaluation.method
+			evaluation.initial or evaluation.previous_frame < 0
 		)
-		return
 	end
-	if evaluation.wrapped then
-		local duration_ms<const> = entry.instance.program.duration_ms
-		if evaluation.direction > 0 then
-			evaluate_play_range(
-				entry,
-				owner,
-				evaluation.previous_time_ms,
-				duration_ms,
-				evaluation.initial
-			)
-			clear_active_clips(entry, owner)
-			evaluate_play_range(entry, owner, 0, evaluation.time_ms, true)
-		else
-			evaluate_play_range(
-				entry,
-				owner,
-				evaluation.previous_time_ms,
-				0,
-				evaluation.initial
-			)
-			clear_active_clips(entry, owner)
-			evaluate_play_range(entry, owner, duration_ms, evaluation.time_ms, true)
-		end
-		return
-	end
-	evaluate_play_range(
-		entry,
-		owner,
-		evaluation.previous_time_ms,
-		evaluation.time_ms,
-		evaluation.initial or evaluation.previous_frame < 0
-	)
 end
 
 function sequence_evaluator.sync_entry(entry, owner, time_ms)
-	if entry.instance.program.subsequences.clip_count > 0 then
-		evaluate_at(entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
+	local sequence<const> = entry.instance.program.subsequences
+	if sequence.clip_count > 0 then
+		evaluate_at(sequence, entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
 	end
 end
 
