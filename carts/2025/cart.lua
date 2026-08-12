@@ -4,7 +4,6 @@ local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
 local aem<const> = require('cartlib/aem')
-local eventemitter<const> = require('cartlib/eventemitter')
 local fsmcomponent<const> = require('cartlib/fsm/fsmcomponent')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
@@ -59,7 +58,6 @@ local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
 }
-local world_events<const> = eventemitter.events_of('world')
 
 local director_def_id<const> = 'p3.director'
 local story_director_fsm_id<const> = 'p3.director.fsm'
@@ -152,7 +150,7 @@ local build_director_fsm<const> = function()
 			entering_state = function(self)
 				local node<const> = story[self.node_id]
 				local just_finished_combat<const> = self.just_finished_combat
-				world_events:emit('story.node.enter', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
+				self.events:emit('story.node.enter', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
 				self.just_finished_combat = false
 				if node.kind == 'transition' then
 					return '/transition'
@@ -174,7 +172,7 @@ local build_director_fsm<const> = function()
 				end
 				if node.kind == 'combat' then
 					self.combat_director:start_combat(self.node_id, self.skip_combat_fade_in)
-					world_events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
+					self.events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
 					self.skip_combat_fade_in = false
 					return '/combat_wait'
 				end

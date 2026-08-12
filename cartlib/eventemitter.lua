@@ -57,8 +57,8 @@
 --      end }
 --
 -- 4. EMITTER FILTER.
---    The `emitter` field in on() filters by emitter id or object
---    reference.  Always supply it when the event name is not globally unique
+--    The `emitter` field in on() filters by emitter id. Always supply it when
+--    the event name is not globally unique
 --    (e.g. short names such as 'ready', 'done', 'update') to avoid reacting
 --    to unrelated emitters of the same event name.
 --
@@ -76,7 +76,8 @@
 
 local eventemitter<const> = {
 	id = 'eventemitter',
-	listeners = {},
+	_global_listeners = {},
+	_scoped_listeners = {},
 	_subscriptions_by_subscriber = {},
 	_dispatch_depth = 0,
 	_pending_listener_lists = {},
@@ -87,6 +88,22 @@ local eventport<const> = {}
 eventport.__index = eventport
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
+
+local retire_listener_list<const> = function(self, list)
+	local event_name<const> = list._event_name
+	local emitter_id<const> = list._emitter_id
+	if emitter_id == nil then
+		self._global_listeners[event_name] = nil
+		return
+	end
+	local scopes<const> = list._scopes
+	scopes[emitter_id] = nil
+	local scope_count<const> = scopes._scope_count - 1
+	scopes._scope_count = scope_count
+	if scope_count == 0 then
+		self._scoped_listeners[event_name] = nil
+	end
+end
 
 local compact_listeners<const> = function(self, list)
 	local write_index = 1
@@ -104,7 +121,7 @@ local compact_listeners<const> = function(self, list)
 	end
 	list._removals_pending = nil
 	if write_index == 1 then
-		self.listeners[list._event_name] = nil
+		retire_listener_list(self, list)
 	end
 end
 
@@ -158,7 +175,7 @@ local remove_listener<const> = function(self, entry)
 			list[moved_index].list_index = moved_index
 		end
 		if #list == 0 then
-			self.listeners[list._event_name] = nil
+			retire_listener_list(self, list)
 		end
 		return
 	end
@@ -202,15 +219,10 @@ end
 --                                    and payload as direct Lua values.
 --   subscriber          (object)  — strongly recommended; used by
 --                                    remove_subscriber() for cleanup.
---   emitter             (id|object) — filter; only fire for this emitter.
+--   emitter             (id)      — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
 function eventemitter:on(spec, default_subscriber, default_emitter)
 	local name<const> = spec.event
-	local list = self.listeners[name]
-	if not list then
-		list = { _event_name = name }
-		self.listeners[name] = list
-	end
 	local subscriber = spec.subscriber
 	if subscriber == nil then
 		subscriber = default_subscriber
@@ -219,10 +231,35 @@ function eventemitter:on(spec, default_subscriber, default_emitter)
 	if emitter == nil then
 		emitter = default_emitter
 	end
+	local list
+	if emitter == nil then
+		local listeners<const> = self._global_listeners
+		list = listeners[name]
+		if list == nil then
+			list = { _event_name = name }
+			listeners[name] = list
+		end
+	else
+		local listeners<const> = self._scoped_listeners
+		local scopes = listeners[name]
+		if scopes == nil then
+			scopes = { _scope_count = 0 }
+			listeners[name] = scopes
+		end
+		list = scopes[emitter]
+		if list == nil then
+			list = {
+				_event_name = name,
+				_emitter_id = emitter,
+				_scopes = scopes,
+			}
+			scopes[emitter] = list
+			scopes._scope_count = scopes._scope_count + 1
+		end
+	end
 	append_listener(self, list, {
 		handler = spec.handler,
 		subscriber = subscriber,
-		emitter = emitter,
 	})
 end
 
@@ -230,13 +267,21 @@ end
 -- by exact handler reference + emitter.  Prefer remove_subscriber() for bulk
 -- cleanup of all subscriptions owned by a subscriber.
 function eventemitter:off(event_name, handler, emitter)
-	local list<const> = self.listeners[event_name]
+	local list
+	if emitter == nil then
+		list = self._global_listeners[event_name]
+	else
+		local scopes<const> = self._scoped_listeners[event_name]
+		if scopes ~= nil then
+			list = scopes[emitter]
+		end
+	end
 	if not list then
 		return
 	end
 	for i = #list, 1, -1 do
 		local entry<const> = list[i]
-		if entry and entry.handler == handler and entry.emitter == emitter then
+		if entry and entry.handler == handler then
 			remove_listener(self, entry)
 		end
 	end
@@ -247,19 +292,25 @@ end
 -- Removal during dispatch takes effect before the listener's next call;
 -- listeners added during dispatch start with the next emission.
 function eventemitter:emit(event_type, emitter, payload, emitter_id)
-	local list<const> = self.listeners[event_type]
-	if list == nil then
+	local scopes<const> = self._scoped_listeners[event_type]
+	local scoped_list<const> = scopes and scopes[emitter_id]
+	local global_list<const> = self._global_listeners[event_type]
+	if scoped_list == nil and global_list == nil then
 		return
 	end
-	local listener_count<const> = #list
+	local scoped_count<const> = scoped_list and #scoped_list or 0
+	local global_count<const> = global_list and #global_list or 0
 	self._dispatch_depth = self._dispatch_depth + 1
-	for i = 1, listener_count do
-		local entry<const> = list[i]
+	for i = 1, scoped_count do
+		local entry<const> = scoped_list[i]
 		if entry then
-			local filter<const> = entry.emitter
-			if filter == nil or filter == emitter or filter == emitter_id then
-				entry.handler(event_type, emitter, payload, emitter_id)
-			end
+			entry.handler(event_type, emitter, payload, emitter_id)
+		end
+	end
+	for i = 1, global_count do
+		local entry<const> = global_list[i]
+		if entry then
+			entry.handler(event_type, emitter, payload, emitter_id)
 		end
 	end
 	local dispatch_depth<const> = self._dispatch_depth - 1
