@@ -4,21 +4,21 @@ local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local evaluation_program<const> = {}
 local evaluation_environment<const> = {
-	evaluate_tags = timeline_track_evaluator.evaluate_tags,
+	bind_tags = timeline_track_evaluator.bind_tags,
 	evaluate_sequences = timeline_sequence_evaluator.evaluate,
-	emit_events = timeline_track_evaluator.emit_events,
+	bind_events = timeline_track_evaluator.bind_events,
 }
 local templates<const> = {}
 
 local emit_dependency_captures<const> = function(printer, values)
 	if values.has_tags then
-		printer:emit(templates.evaluate_tags_capture, values)
+		printer:emit(templates.bind_tags_capture, values)
 	end
 	if values.has_subsequences then
 		printer:emit(templates.evaluate_sequences_capture, values)
 	end
 	if values.has_events then
-		printer:emit(templates.emit_events_capture, values)
+		printer:emit(templates.bind_events_capture, values)
 	end
 end
 
@@ -31,6 +31,12 @@ local emit_program_captures<const> = function(printer, values)
 	end
 	if values.has_frame_appliers then
 		printer:emit(templates.frame_appliers_capture, values)
+	end
+	if values.has_tags then
+		printer:emit(templates.evaluate_tags_binding, values)
+	end
+	if values.has_events then
+		printer:emit(templates.emit_events_binding, values)
 	end
 end
 
@@ -88,16 +94,24 @@ templates.frame_appliers_capture = lua_source_printer.compile_template(
 	'local frame_appliers<const> = program["frame_appliers"]\n'
 )
 
-templates.evaluate_tags_capture = lua_source_printer.compile_template(
-	'local evaluate_tags<const> = evaluate_tags\n'
+templates.bind_tags_capture = lua_source_printer.compile_template(
+	'local bind_tags<const> = bind_tags\n'
 )
 
 templates.evaluate_sequences_capture = lua_source_printer.compile_template(
 	'local evaluate_sequences<const> = evaluate_sequences\n'
 )
 
-templates.emit_events_capture = lua_source_printer.compile_template(
-	'local emit_events<const> = emit_events\n'
+templates.bind_events_capture = lua_source_printer.compile_template(
+	'local bind_events<const> = bind_events\n'
+)
+
+templates.evaluate_tags_binding = lua_source_printer.compile_template(
+	'local evaluate_tags<const> = bind_tags(program)\n'
+)
+
+templates.emit_events_binding = lua_source_printer.compile_template(
+	'local emit_events<const> = bind_events(program)\n'
 )
 
 templates.tags = lua_source_printer.compile_template(
@@ -131,7 +145,7 @@ templates.subsequences = lua_source_printer.compile_template(
 )
 
 templates.events = lua_source_printer.compile_template(
-	'emit_events(entry, owner, evaluation)\n'
+	'emit_events(owner, evaluation)\n'
 )
 
 templates.evaluator = lua_source_printer.compile_template([[

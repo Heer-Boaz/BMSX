@@ -155,56 +155,59 @@ local emit_time_event_range<const> = function(events, owner, previous, current, 
 	end
 end
 
-function track_evaluator.emit_events(entry, owner, evaluation)
-	if evaluation.method ~= play_update_method then
-		return
-	end
-	local program<const> = entry.instance.program
+function track_evaluator.bind_events(program)
 	local events<const> = program.tracks.events
-	local previous<const> = evaluation.previous_frame
-	local current<const> = evaluation.frame
-	if evaluation.wrapped then
-		if evaluation.direction > 0 then
-			emit_event_range(events, owner, previous, program.length - 1, 1, evaluation.initial)
-			emit_event_range(events, owner, 0, current, 1, true)
-		else
-			emit_event_range(events, owner, previous, 0, -1, evaluation.initial)
-			emit_event_range(events, owner, program.length - 1, current, -1, true)
+	local last_frame<const> = program.length - 1
+	local duration_ms<const> = program.duration_ms
+	return function(owner, evaluation)
+		if evaluation.method ~= play_update_method then
+			return
 		end
-	elseif evaluation.initial then
-		emit_event_range(events, owner, previous, current, evaluation.direction, true)
-	elseif previous ~= current then
-		if evaluation.direction > 0 and current == previous + 1 then
-			emit_event_bucket(events, owner, current, 1)
-		elseif evaluation.direction < 0 and current == previous - 1 then
-			emit_event_bucket(events, owner, current, -1)
-		else
-			emit_event_range(events, owner, previous, current, evaluation.direction, false)
+		local previous<const> = evaluation.previous_frame
+		local current<const> = evaluation.frame
+		if evaluation.wrapped then
+			if evaluation.direction > 0 then
+				emit_event_range(events, owner, previous, last_frame, 1, evaluation.initial)
+				emit_event_range(events, owner, 0, current, 1, true)
+			else
+				emit_event_range(events, owner, previous, 0, -1, evaluation.initial)
+				emit_event_range(events, owner, last_frame, current, -1, true)
+			end
+		elseif evaluation.initial then
+			emit_event_range(events, owner, previous, current, evaluation.direction, true)
+		elseif previous ~= current then
+			if evaluation.direction > 0 and current == previous + 1 then
+				emit_event_bucket(events, owner, current, 1)
+			elseif evaluation.direction < 0 and current == previous - 1 then
+				emit_event_bucket(events, owner, current, -1)
+			else
+				emit_event_range(events, owner, previous, current, evaluation.direction, false)
+			end
 		end
-	end
-	if events.time_count == 0 then
-		return
-	end
-	local previous_time_ms<const> = evaluation.previous_time_ms
-	local time_ms<const> = evaluation.time_ms
-	if evaluation.wrapped then
-		if evaluation.direction > 0 then
-			emit_time_event_range(events, owner, previous_time_ms, program.duration_ms, 1, evaluation.initial)
-			emit_time_event_range(events, owner, 0, time_ms, 1, true)
-		else
-			emit_time_event_range(events, owner, previous_time_ms, 0, -1, evaluation.initial)
-			emit_time_event_range(events, owner, program.duration_ms, time_ms, -1, true)
+		if events.time_count == 0 then
+			return
 		end
-	elseif evaluation.initial then
-		emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, true)
-	elseif previous < 0 then
-		emit_time_event_range(events, owner, previous_time_ms, time_ms, 1, true)
-	else
-		emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, false)
+		local previous_time_ms<const> = evaluation.previous_time_ms
+		local time_ms<const> = evaluation.time_ms
+		if evaluation.wrapped then
+			if evaluation.direction > 0 then
+				emit_time_event_range(events, owner, previous_time_ms, duration_ms, 1, evaluation.initial)
+				emit_time_event_range(events, owner, 0, time_ms, 1, true)
+			else
+				emit_time_event_range(events, owner, previous_time_ms, 0, -1, evaluation.initial)
+				emit_time_event_range(events, owner, duration_ms, time_ms, -1, true)
+			end
+		elseif evaluation.initial then
+			emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, true)
+		elseif previous < 0 then
+			emit_time_event_range(events, owner, previous_time_ms, time_ms, 1, true)
+		else
+			emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, false)
+		end
 	end
 end
 
-local apply_tag_boundary<const> = function(entry, owner, boundary, direction)
+local apply_tag_boundary<const> = function(tags, entry, owner, boundary, direction)
 	local state<const> = entry.track_state
 	local interval<const> = boundary.interval
 	local tag_index<const> = interval.tag_index
@@ -213,7 +216,7 @@ local apply_tag_boundary<const> = function(entry, owner, boundary, direction)
 	local delta<const> = boundary.delta * direction
 	local current_count<const> = previous_count + delta
 	counts[tag_index] = current_count
-	local tag<const> = entry.instance.program.tracks.tags.tags[tag_index]
+	local tag<const> = tags.tags[tag_index]
 	if previous_count == 0 and current_count > 0 then
 		owner:add_tag(tag)
 	elseif previous_count > 0 and current_count == 0 then
@@ -226,23 +229,24 @@ local apply_tag_boundary<const> = function(entry, owner, boundary, direction)
 	end
 end
 
-local apply_tag_bucket<const> = function(entry, owner, frame, direction)
-	local bucket<const> = entry.instance.program.tracks.tags.boundaries_by_frame[frame]
+local apply_tag_bucket<const> = function(tags, entry, owner, frame, direction)
+	local bucket<const> = tags.boundaries_by_frame[frame]
 	if bucket == nil then
 		return
 	end
 	if direction > 0 then
 		for index = 1, #bucket do
-			apply_tag_boundary(entry, owner, bucket[index], direction)
+			apply_tag_boundary(tags, entry, owner, bucket[index], direction)
 		end
 	else
 		for index = #bucket, 1, -1 do
-			apply_tag_boundary(entry, owner, bucket[index], direction)
+			apply_tag_boundary(tags, entry, owner, bucket[index], direction)
 		end
 	end
 end
 
 local apply_tag_range<const> = function(
+	tags,
 	entry,
 	owner,
 	previous,
@@ -251,7 +255,6 @@ local apply_tag_range<const> = function(
 	include_previous,
 	include_current
 )
-	local tags<const> = entry.instance.program.tracks.tags
 	local boundaries<const> = tags.boundaries
 	local count<const> = tags.boundary_count
 	if direction > 0 then
@@ -268,7 +271,7 @@ local apply_tag_range<const> = function(
 			finish = first_frame_at(boundaries, count, current) - 1
 		end
 		for index = first, finish do
-			apply_tag_boundary(entry, owner, boundaries[index], direction)
+			apply_tag_boundary(tags, entry, owner, boundaries[index], direction)
 		end
 	else
 		local first
@@ -284,12 +287,13 @@ local apply_tag_range<const> = function(
 			finish = first_frame_after(boundaries, count, current)
 		end
 		for index = first, finish, -1 do
-			apply_tag_boundary(entry, owner, boundaries[index], direction)
+			apply_tag_boundary(tags, entry, owner, boundaries[index], direction)
 		end
 	end
 end
 
 local apply_time_tag_range<const> = function(
+	tags,
 	entry,
 	owner,
 	previous,
@@ -298,7 +302,6 @@ local apply_time_tag_range<const> = function(
 	include_previous,
 	include_current
 )
-	local tags<const> = entry.instance.program.tracks.tags
 	local boundaries<const> = tags.time_boundaries
 	local count<const> = tags.time_boundary_count
 	if direction > 0 then
@@ -315,7 +318,7 @@ local apply_time_tag_range<const> = function(
 			finish = first_time_at(boundaries, count, current) - 1
 		end
 		for index = first, finish do
-			apply_tag_boundary(entry, owner, boundaries[index], direction)
+			apply_tag_boundary(tags, entry, owner, boundaries[index], direction)
 		end
 	elseif direction < 0 then
 		local first
@@ -331,13 +334,12 @@ local apply_time_tag_range<const> = function(
 			finish = first_time_after(boundaries, count, current)
 		end
 		for index = first, finish, -1 do
-			apply_tag_boundary(entry, owner, boundaries[index], direction)
+			apply_tag_boundary(tags, entry, owner, boundaries[index], direction)
 		end
 	end
 end
 
-function track_evaluator.sync_tags(entry, owner, frame, time_ms)
-	local tags<const> = entry.instance.program.tracks.tags
+local sync_tags<const> = function(tags, entry, owner, frame, time_ms)
 	if tags.tag_count == 0 then
 		return
 	end
@@ -373,59 +375,66 @@ function track_evaluator.sync_tags(entry, owner, frame, time_ms)
 	end
 end
 
-function track_evaluator.evaluate_tags(entry, owner, evaluation)
-	local program<const> = entry.instance.program
-	if evaluation.method ~= play_update_method then
-		track_evaluator.sync_tags(entry, owner, evaluation.frame, evaluation.time_ms)
-		return
-	end
-	local previous<const> = evaluation.previous_frame
-	local current<const> = evaluation.frame
-	if evaluation.initial then
-		track_evaluator.sync_tags(entry, owner, previous, evaluation.previous_time_ms)
-	end
-	if previous ~= current or evaluation.wrapped then
+function track_evaluator.sync_tags(entry, owner, frame, time_ms)
+	sync_tags(entry.instance.program.tracks.tags, entry, owner, frame, time_ms)
+end
+
+function track_evaluator.bind_tags(program)
+	local tags<const> = program.tracks.tags
+	local last_frame<const> = program.length - 1
+	local duration_ms<const> = program.duration_ms
+	return function(entry, owner, evaluation)
+		if evaluation.method ~= play_update_method then
+			sync_tags(tags, entry, owner, evaluation.frame, evaluation.time_ms)
+			return
+		end
+		local previous<const> = evaluation.previous_frame
+		local current<const> = evaluation.frame
+		if evaluation.initial then
+			sync_tags(tags, entry, owner, previous, evaluation.previous_time_ms)
+		end
+		if previous ~= current or evaluation.wrapped then
+			if evaluation.wrapped then
+				if evaluation.direction > 0 then
+					apply_tag_range(tags, entry, owner, previous, last_frame, 1, false, true)
+					apply_tag_range(tags, entry, owner, 0, current, 1, true, true)
+				else
+					apply_tag_range(tags, entry, owner, previous, 0, -1, true, true)
+					apply_tag_range(tags, entry, owner, last_frame, current, -1, false, false)
+				end
+			elseif evaluation.direction > 0 and current == previous + 1 then
+				apply_tag_bucket(tags, entry, owner, current, 1)
+			elseif evaluation.direction < 0 and current == previous - 1 then
+				apply_tag_bucket(tags, entry, owner, previous, -1)
+			else
+				if evaluation.direction > 0 then
+					apply_tag_range(tags, entry, owner, previous, current, 1, false, true)
+				else
+					apply_tag_range(tags, entry, owner, previous, current, -1, true, false)
+				end
+			end
+		end
+		if tags.time_boundary_count == 0 then
+			return
+		end
+		local previous_time_ms<const> = evaluation.previous_time_ms
+		local time_ms<const> = evaluation.time_ms
 		if evaluation.wrapped then
 			if evaluation.direction > 0 then
-				apply_tag_range(entry, owner, previous, program.length - 1, 1, false, true)
-				apply_tag_range(entry, owner, 0, current, 1, true, true)
+				apply_time_tag_range(tags, entry, owner, previous_time_ms, duration_ms, 1, false, true)
+				apply_time_tag_range(tags, entry, owner, 0, time_ms, 1, true, true)
 			else
-				apply_tag_range(entry, owner, previous, 0, -1, true, true)
-				local last_frame<const> = program.length - 1
-				apply_tag_range(entry, owner, last_frame, current, -1, false, false)
+				apply_time_tag_range(tags, entry, owner, previous_time_ms, 0, -1, true, true)
+				apply_time_tag_range(tags, entry, owner, duration_ms, time_ms, -1, false, false)
 			end
-		elseif evaluation.direction > 0 and current == previous + 1 then
-			apply_tag_bucket(entry, owner, current, 1)
-		elseif evaluation.direction < 0 and current == previous - 1 then
-			apply_tag_bucket(entry, owner, previous, -1)
+		elseif previous < 0 then
+			apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, 1, true, true)
 		else
 			if evaluation.direction > 0 then
-				apply_tag_range(entry, owner, previous, current, 1, false, true)
-			else
-				apply_tag_range(entry, owner, previous, current, -1, true, false)
+				apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, 1, false, true)
+			elseif evaluation.direction < 0 then
+				apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, -1, true, false)
 			end
-		end
-	end
-	if program.tracks.tags.time_boundary_count == 0 then
-		return
-	end
-	local previous_time_ms<const> = evaluation.previous_time_ms
-	local time_ms<const> = evaluation.time_ms
-	if evaluation.wrapped then
-		if evaluation.direction > 0 then
-			apply_time_tag_range(entry, owner, previous_time_ms, program.duration_ms, 1, false, true)
-			apply_time_tag_range(entry, owner, 0, time_ms, 1, true, true)
-		else
-			apply_time_tag_range(entry, owner, previous_time_ms, 0, -1, true, true)
-			apply_time_tag_range(entry, owner, program.duration_ms, time_ms, -1, false, false)
-		end
-	elseif previous < 0 then
-		apply_time_tag_range(entry, owner, previous_time_ms, time_ms, 1, true, true)
-	else
-		if evaluation.direction > 0 then
-			apply_time_tag_range(entry, owner, previous_time_ms, time_ms, 1, false, true)
-		elseif evaluation.direction < 0 then
-			apply_time_tag_range(entry, owner, previous_time_ms, time_ms, -1, true, false)
 		end
 	end
 end
