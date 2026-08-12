@@ -1,9 +1,10 @@
--- Numeric curve channels own their compiled segment representation and hot
--- evaluator. Channels with more than two keys retain one current segment per
--- active timeline entry; each shared key carries an exclusive segment end,
--- so evaluation only searches again when traversal leaves that range. Generic
--- step values remain track-program data because they may carry non-numeric
--- cart values.
+-- Numeric curve channels own their compiled segment representation. Their
+-- shape-specific runner factory is prepared once; length-dependent channels
+-- are bound once when a definitive frame program is compiled. Channels with
+-- more than two keys retain one current segment per active timeline entry;
+-- each shared key carries an exclusive segment end, so evaluation only
+-- searches again when traversal leaves that range. Generic step values remain
+-- track-program data because they may carry non-numeric cart values.
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local scalar_channel<const> = {}
@@ -16,7 +17,7 @@ scalar_channel.empty_program = {
 	linear_time_tracks = {},
 	cubic_tracks = {},
 	cubic_time_tracks = {},
-	runner = nil,
+	runner_factory = nil,
 }
 
 scalar_channel.empty = {
@@ -27,7 +28,6 @@ scalar_channel.empty = {
 	linear_time_tracks = {},
 	cubic_tracks = {},
 	cubic_time_tracks = {},
-	runner = nil,
 }
 
 local emit_track_list_index<const> = function(printer, values)
@@ -344,11 +344,14 @@ templates.time_lane = lua_source_printer.compile_template([[
 	tracks = emit_time_tracks,
 })
 
-templates.runner = lua_source_printer.compile_template([[
-	return function(channels, entry, evaluation)
-		$locals$
-		$frame_lane$
-		$time_lane$
+templates.runner_factory = lua_source_printer.compile_template([[
+	return function(source_channels)
+		local channels<const> = source_channels
+		return function(entry, evaluation)
+			$locals$
+			$frame_lane$
+			$time_lane$
+		end
 	end
 ]], {
 	locals = emit_locals,
@@ -386,7 +389,7 @@ local analyze_tracks<const> = function(analysis, tracks, time_domain)
 	end
 end
 
-local compile_runner<const> = function(channels)
+local compile_runner_factory<const> = function(channels)
 	local linear_tracks<const> = channels.linear_tracks
 	local linear_time_tracks<const> = channels.linear_time_tracks
 	local cubic_tracks<const> = channels.cubic_tracks
@@ -406,7 +409,7 @@ local compile_runner<const> = function(channels)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
 	local printer<const> = lua_source_printer.new()
-	printer:emit(templates.runner, {
+	printer:emit(templates.runner_factory, {
 		analysis = analysis,
 		channels = channels,
 		has_cubic_tracks = #cubic_tracks > 0 or #cubic_time_tracks > 0,
@@ -476,7 +479,7 @@ function scalar_channel.prepare(definitions)
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
 	}
-	program.runner, program.cached_segment_count = compile_runner(program)
+	program.runner_factory, program.cached_segment_count = compile_runner_factory(program)
 	return program
 end
 
@@ -571,7 +574,6 @@ function scalar_channel.compile(program, length)
 		linear_time_tracks = linear_time_tracks,
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
-		runner = program.runner,
 	}
 	finalize_tracks(linear_tracks)
 	finalize_tracks(linear_time_tracks)

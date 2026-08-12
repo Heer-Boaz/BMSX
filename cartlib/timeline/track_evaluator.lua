@@ -543,7 +543,7 @@ local emit_dependency_captures<const> = function(printer, values)
 		printer:emit(templates.evaluate_time_steps_capture, values)
 	end
 	if values.has_scalar_channels then
-		printer:emit(templates.scalar_runner_capture, values)
+		printer:emit(templates.scalar_runner_factory_capture, values)
 	end
 	if values.primary_sample_runner ~= nil then
 		printer:emit(templates.primary_sample_runner_capture, values)
@@ -594,9 +594,10 @@ templates.steps_capture = lua_source_printer.compile_template(
 	'local steps<const> = tracks["steps"]\n'
 )
 
-templates.scalar_channels_capture = lua_source_printer.compile_template(
-	'local scalar_channels<const> = tracks["scalar_channels"]\n'
-)
+templates.scalar_channels_capture = lua_source_printer.compile_template([[
+	local scalar_channels<const> = tracks["scalar_channels"]
+	local scalar_runner<const> = scalar_runner_factory(scalar_channels)
+]])
 
 templates.sample_program_capture = lua_source_printer.compile_template(
 	'local sample_program<const> = tracks\n'
@@ -610,8 +611,8 @@ templates.evaluate_time_steps_capture = lua_source_printer.compile_template(
 	'local evaluate_time_steps<const> = evaluate_time_steps\n'
 )
 
-templates.scalar_runner_capture = lua_source_printer.compile_template(
-	'local scalar_runner<const> = scalar_runner\n'
+templates.scalar_runner_factory_capture = lua_source_printer.compile_template(
+	'local scalar_runner_factory<const> = scalar_runner_factory\n'
 )
 
 templates.primary_sample_runner_capture = lua_source_printer.compile_template(
@@ -635,7 +636,7 @@ templates.time_steps = lua_source_printer.compile_template(
 )
 
 templates.scalar_channels = lua_source_printer.compile_template(
-	'scalar_runner(scalar_channels, entry, evaluation)\n'
+	'scalar_runner(entry, evaluation)\n'
 )
 
 templates.primary_sample = lua_source_printer.compile_template(
@@ -699,7 +700,7 @@ function track_evaluator.compile_values(program)
 		{
 			evaluate_frame_steps = evaluate_frame_steps,
 			evaluate_time_steps = evaluate_time_steps,
-			scalar_runner = scalar_program.runner,
+			scalar_runner_factory = scalar_program.runner_factory,
 			primary_sample_runner = primary_sample_runner,
 			evaluate_sample_groups = evaluate_sample_groups,
 		}
