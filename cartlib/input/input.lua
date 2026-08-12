@@ -95,9 +95,6 @@ local players<const> = {}
 local player_list<const> = {}
 local player_count = 0
 bss frame_serial: word
-local create_action_state
-local compile_action_state
-local sample_new_button_state
 
 local new_button_state<const> = function()
 	return {
@@ -224,6 +221,89 @@ local context_less<const> = function(a, b)
 	return a.order < b.order
 end
 
+-- Record a digital edge on `state` and remember it so the flag is cleared next
+-- frame. Called only when a tracked bit actually flipped.
+local apply_digital_edge<const> = function(player, state, pressed_now)
+	if pressed_now then
+		state.just_pressed = true
+		state.just_released = false
+		state.press_id = player.next_press_id
+		player.next_press_id = player.next_press_id + 1
+		state.press_start_frame = *frame_serial
+		state.last_press_frame = *frame_serial
+	else
+		state.just_pressed = false
+		state.just_released = true
+		state.last_release_frame = *frame_serial
+	end
+	state.consumed = false
+	state.pressed = pressed_now
+	local n<const> = player.edge_count + 1
+	player.edge_count = n
+	player.edge_buttons[n] = state
+end
+
+-- Analog/pointer inputs: read their value(s) every frame. Hybrid buttons
+-- (trigger/stick) already had pressed/edges set by the digital pass and only
+-- need the value here; pure value inputs derive pressed from the value/delta.
+local sample_value_button<const> = function(player, state)
+	if state.value_addr ~= 0 then
+		local value<const>: *word = state.value_addr
+		state.value_q16 = *value
+	end
+	if state.value_x_addr ~= 0 then
+		local value_x<const>: *word = state.value_x_addr
+		local value_y<const>: *word = state.value_y_addr
+		state.value_x_q16 = *value_x
+		state.value_y_q16 = *value_y
+	end
+	if state.is_pointer_delta then
+		local x<const> = *pointer_position_x_q16
+		local y<const> = *pointer_position_y_q16
+		state.value_x_q16 = x - state.prev_x_q16
+		state.value_y_q16 = y - state.prev_y_q16
+		state.prev_x_q16 = x
+		state.prev_y_q16 = y
+	end
+	if state.level_mask ~= 0 then
+		return
+	end
+	local pressed = false
+	if state.pressed_from_value then
+		pressed = state.value_q16 ~= 0
+	elseif state.is_pointer_delta then
+		pressed = state.value_x_q16 ~= 0 or state.value_y_q16 ~= 0
+	end
+	local just_pressed<const> = pressed and not state.pressed
+	local just_released<const> = (not pressed) and state.pressed
+	state.just_pressed = just_pressed
+	state.just_released = just_released
+	if just_pressed then
+		state.press_id = player.next_press_id
+		player.next_press_id = player.next_press_id + 1
+		state.press_start_frame = *frame_serial
+		state.last_press_frame = *frame_serial
+		state.consumed = false
+	elseif not pressed then
+		state.consumed = false
+	end
+	if just_released then
+		state.last_release_frame = *frame_serial
+	end
+	state.pressed = pressed
+end
+
+local sample_new_button_state<const> = function(player, state)
+	if state.level_addr ~= 0 then
+		local level<const>: *word = state.level_addr
+		local pressed<const> = (*level & state.level_mask) ~= 0
+		if pressed ~= state.pressed then
+			apply_digital_edge(player, state, pressed)
+		end
+	end
+	sample_value_button(player, state)
+end
+
 -- Slot a freshly-resolved button into the per-source sampling structures: a
 -- digital bit joins (or creates) the group for its level word; any value-bearing
 -- aspect (trigger/stick/pointer) joins the value list. `dirty` forces the group's
@@ -264,6 +344,62 @@ local track_button<const> = function(player, source_index, button)
 	return state
 end
 
+local source_mapping<const> = function(ctx, source_index)
+	if source_index == source_keyboard then return ctx.keyboard end
+	if source_index == source_gamepad then return ctx.gamepad end
+	return ctx.pointer
+end
+
+local seen_binding<const> = function(player, button)
+	if player.binding_seen[button] == player.binding_generation then
+		return true
+	end
+	player.binding_seen[button] = player.binding_generation
+	return false
+end
+
+-- Resolve the deduped button-state list an action aggregates from, for one
+-- source. The highest-priority, latest context defining the action wins; its
+-- bindings aggregate together. Context changes rebuild the retained list.
+local build_resolved_source<const> = function(player, action, source_index, list)
+	for i = #list, 1, -1 do
+		list[i] = nil
+	end
+	player.binding_generation = player.binding_generation + 1
+	local contexts<const> = player.contexts
+	for i = #contexts, 1, -1 do
+		local ctx<const> = contexts[i]
+		if ctx.enabled then
+			local bindings<const> = source_mapping(ctx, source_index)[action]
+			if bindings then
+				for j = 1, #bindings do
+					local button<const> = binding_id(bindings[j])
+					if not seen_binding(player, button) then
+						list[#list + 1] = track_button(player, source_index, button)
+					end
+				end
+				return
+			end
+		end
+	end
+end
+
+local rebuild_action_bindings<const> = function(player, state)
+	local resolved<const> = state.resolved
+	for source_index = source_keyboard, source_pointer do
+		build_resolved_source(player, state.action, source_index, resolved[source_index])
+	end
+end
+
+local create_action_state<const> = function(player, action)
+	local state<const> = new_action_state(player, action)
+	player.actions[action] = state
+	local index<const> = player.action_state_count + 1
+	player.action_state_count = index
+	player.action_state_list[index] = state
+	return state
+end
+
 local declare_mapping_actions<const> = function(player, mapping)
 	for action in pairs(mapping) do
 		if not player.actions[action] then
@@ -271,8 +407,6 @@ local declare_mapping_actions<const> = function(player, mapping)
 		end
 	end
 end
-
-local rebuild_action_bindings
 
 local clear_action_evaluation_state<const> = function(player)
 	player.eval_generation = player.eval_generation + 1
@@ -362,89 +496,6 @@ local new_player<const> = function(index)
 	return player
 end
 
--- Record a digital edge on `state` and remember it so the flag is cleared next
--- frame. Called only when a tracked bit actually flipped.
-local apply_digital_edge<const> = function(player, state, pressed_now)
-	if pressed_now then
-		state.just_pressed = true
-		state.just_released = false
-		state.press_id = player.next_press_id
-		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = *frame_serial
-		state.last_press_frame = *frame_serial
-	else
-		state.just_pressed = false
-		state.just_released = true
-		state.last_release_frame = *frame_serial
-	end
-	state.consumed = false
-	state.pressed = pressed_now
-	local n<const> = player.edge_count + 1
-	player.edge_count = n
-	player.edge_buttons[n] = state
-end
-
--- Analog/pointer inputs: read their value(s) every frame. Hybrid buttons
--- (trigger/stick) already had pressed/edges set by the digital pass and only
--- need the value here; pure value inputs derive pressed from the value/delta.
-local sample_value_button<const> = function(player, state)
-	if state.value_addr ~= 0 then
-		local value<const>: *word = state.value_addr
-		state.value_q16 = *value
-	end
-	if state.value_x_addr ~= 0 then
-		local value_x<const>: *word = state.value_x_addr
-		local value_y<const>: *word = state.value_y_addr
-		state.value_x_q16 = *value_x
-		state.value_y_q16 = *value_y
-	end
-	if state.is_pointer_delta then
-		local x<const> = *pointer_position_x_q16
-		local y<const> = *pointer_position_y_q16
-		state.value_x_q16 = x - state.prev_x_q16
-		state.value_y_q16 = y - state.prev_y_q16
-		state.prev_x_q16 = x
-		state.prev_y_q16 = y
-	end
-	if state.level_mask ~= 0 then
-		return
-	end
-	local pressed = false
-	if state.pressed_from_value then
-		pressed = state.value_q16 ~= 0
-	elseif state.is_pointer_delta then
-		pressed = state.value_x_q16 ~= 0 or state.value_y_q16 ~= 0
-	end
-	local just_pressed<const> = pressed and not state.pressed
-	local just_released<const> = (not pressed) and state.pressed
-	state.just_pressed = just_pressed
-	state.just_released = just_released
-	if just_pressed then
-		state.press_id = player.next_press_id
-		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = *frame_serial
-		state.last_press_frame = *frame_serial
-		state.consumed = false
-	elseif not pressed then
-		state.consumed = false
-	end
-	if just_released then
-		state.last_release_frame = *frame_serial
-	end
-	state.pressed = pressed
-end
-
-sample_new_button_state = function(player, state)
-	if state.level_addr ~= 0 then
-		local level<const>: *word = state.level_addr
-		local pressed<const> = (*level & state.level_mask) ~= 0
-		if pressed ~= state.pressed then
-			apply_digital_edge(player, state, pressed)
-		end
-	end
-	sample_value_button(player, state)
-end
-
 local sample_player<const> = function(player)
 	if player.sample_frame == *frame_serial then
 		return
@@ -487,20 +538,6 @@ local sample_player<const> = function(player)
 		end
 	end
 	player.sample_frame = *frame_serial
-end
-
-local source_mapping<const> = function(ctx, source_index)
-	if source_index == source_keyboard then return ctx.keyboard end
-	if source_index == source_gamepad then return ctx.gamepad end
-	return ctx.pointer
-end
-
-local seen_binding<const> = function(player, button)
-	if player.binding_seen[button] == player.binding_generation then
-		return true
-	end
-	player.binding_seen[button] = player.binding_generation
-	return false
 end
 
 -- Windows resolve at read time: a binding contributes its frames-since-press /
@@ -565,49 +602,7 @@ local reset_aggregation<const> = function(agg)
 	agg.value_y_q16 = 0
 end
 
--- Resolve the deduped button-state list an action aggregates from, for one
--- source. The highest-priority, latest context defining the action wins; its
--- bindings aggregate together. Context changes rebuild the retained list.
-local build_resolved_source<const> = function(player, action, source_index, list)
-	for i = #list, 1, -1 do
-		list[i] = nil
-	end
-	player.binding_generation = player.binding_generation + 1
-	local contexts<const> = player.contexts
-	for i = #contexts, 1, -1 do
-		local ctx<const> = contexts[i]
-		if ctx.enabled then
-			local bindings<const> = source_mapping(ctx, source_index)[action]
-			if bindings then
-				for j = 1, #bindings do
-					local button<const> = binding_id(bindings[j])
-					if not seen_binding(player, button) then
-						list[#list + 1] = track_button(player, source_index, button)
-					end
-				end
-				return
-			end
-		end
-	end
-end
-
-rebuild_action_bindings = function(player, state)
-	local resolved<const> = state.resolved
-	for source_index = source_keyboard, source_pointer do
-		build_resolved_source(player, state.action, source_index, resolved[source_index])
-	end
-end
-
-create_action_state = function(player, action)
-	local state<const> = new_action_state(player, action)
-	player.actions[action] = state
-	local index<const> = player.action_state_count + 1
-	player.action_state_count = index
-	player.action_state_list[index] = state
-	return state
-end
-
-compile_action_state = function(player, action)
+local compile_action_state<const> = function(player, action)
 	local state = player.actions[action]
 	if state then
 		return state
