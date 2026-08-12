@@ -202,6 +202,13 @@ function timeline_component:advance_to(id, frame)
 	return entry.instance
 end
 
+function timeline_component:advance_time_to(id, time_ms)
+	local entry<const> = self._entries_by_id[id]
+	entry.instance:advance_time_to(time_ms)
+	process_evaluations(self, entry)
+	return entry.instance
+end
+
 function timeline_component:advance(id)
 	local entry<const> = self._entries_by_id[id]
 	if entry.instance:advance() ~= nil then

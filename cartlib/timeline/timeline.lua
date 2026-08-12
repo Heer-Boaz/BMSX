@@ -414,6 +414,12 @@ local move_time<const> = function(self, requested_time_ms, method)
 	return self
 end
 
+-- Explicit play traversal: crossed one-shot time keys are emitted. seek_time()
+-- and scrub_time() below only reconstruct the destination state.
+function timeline:advance_time_to(time_ms)
+	return move_time(self, time_ms, play_update_method)
+end
+
 function timeline:seek_time(time_ms)
 	return move_time(self, time_ms, jump_update_method)
 end

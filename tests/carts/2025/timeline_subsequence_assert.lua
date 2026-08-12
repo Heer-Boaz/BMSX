@@ -128,8 +128,13 @@ assert(camera.value == 20 and owner.tags.child_active == nil and event_count == 
 timelines:stop('parent')
 camera.value = 0
 timelines:play('parent', { bindings = { camera = camera } })
+timelines:advance_time_to('parent', 75)
+assert(camera.value == 10 and owner.tags.child_active == true and owner.nested_value == 7 and event_count == 2)
+timelines:stop('parent')
+camera.value = 0
+timelines:play('parent', { bindings = { camera = camera } })
 timelines:tick_active(200)
-assert(camera.value == 20 and owner.tags.child_active == nil and owner.nested_value == 7 and event_count == 2)
+assert(camera.value == 20 and owner.tags.child_active == nil and owner.nested_value == 7 and event_count == 3)
 timelines:stop('parent')
 timelines:define('reverse_parent', {
 	continuous = true,
