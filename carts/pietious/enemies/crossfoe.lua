@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -49,7 +50,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	wait_ticks = wait_ticks - 1
 	if wait_ticks > 0 then
 		node.cross_wait_ticks = wait_ticks
-		return 'RUNNING'
+		return bt_running
 	end
 
 	node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
@@ -62,7 +63,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
 	self.castle.events:emit('cross')
-	return 'RUNNING'
+	return bt_running
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
@@ -85,7 +86,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
 		node.cross_turn_ticks = enemy_cross_turn_steps
 		self.castle.events:emit('crossland')
-		return 'RUNNING'
+		return bt_running
 	end
 
 	self.x = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
@@ -94,7 +95,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
 		node.cross_turn_ticks = turn_ticks
-		return 'RUNNING'
+		return bt_running
 	end
 
 	turn_ticks = enemy_cross_turn_steps
@@ -113,7 +114,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	end
 	apply_spin_visual(self)
 	node.cross_turn_ticks = turn_ticks
-	return 'RUNNING'
+	return bt_running
 end
 
 function crossfoe.bt_tick(self, blackboard)

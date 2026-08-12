@@ -2,6 +2,9 @@
 -- component instance; per-object node state lives on the component blackboard.
 
 local behaviourtree<const> = {}
+local result_running<const> = 1
+local result_success<const> = 2
+local result_failure<const> = 3
 
 local btnode<const> = {}
 btnode.__index = btnode
@@ -40,11 +43,11 @@ end
 function sequencenode:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= 'SUCCESS' then
+		if status ~= result_success then
 			return status
 		end
 	end
-	return 'SUCCESS'
+	return result_success
 end
 
 local selectornode<const> = {}
@@ -60,11 +63,11 @@ end
 function selectornode:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= 'FAILURE' then
+		if status ~= result_failure then
 			return status
 		end
 	end
-	return 'FAILURE'
+	return result_failure
 end
 
 local parallelnode<const> = {}
@@ -83,21 +86,21 @@ function parallelnode:tick(target, blackboard)
 	local success_count = 0
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status == 'RUNNING' then
+		if status == result_running then
 			any_running = true
-		elseif status == 'SUCCESS' then
+		elseif status == result_success then
 			success_count = success_count + 1
 			if self.success_policy == 'ONE' then
-				return 'SUCCESS'
+				return result_success
 			end
-		elseif status == 'FAILURE' and self.success_policy == 'ALL' then
-			return 'FAILURE'
+		elseif status == result_failure and self.success_policy == 'ALL' then
+			return result_failure
 		end
 	end
 	if self.success_policy == 'ALL' and success_count == #self.children then
-		return 'SUCCESS'
+		return result_success
 	end
-	return any_running and 'RUNNING' or 'FAILURE'
+	return any_running and result_running or result_failure
 end
 
 local decoratornode<const> = {}
@@ -132,7 +135,7 @@ function conditionnode:tick(target, blackboard)
 	if self.modifier == 'NOT' then
 		result = not result
 	end
-	return result and 'SUCCESS' or 'FAILURE'
+	return result and result_success or result_failure
 end
 
 local compositeconditionnode<const> = {}
@@ -156,7 +159,7 @@ function compositeconditionnode:tick(target, blackboard)
 			combined = combined or result
 		end
 	end
-	return combined and 'SUCCESS' or 'FAILURE'
+	return combined and result_success or result_failure
 end
 
 local randomselectornode<const> = {}
@@ -177,7 +180,7 @@ function randomselectornode:tick(target, blackboard)
 		blackboard.node_data[self.current_child_property_name] = idx
 	end
 	local status<const> = self.children[idx]:tick(target, blackboard)
-	if status ~= 'RUNNING' then
+	if status ~= result_running then
 		blackboard.node_data[self.current_child_property_name] = nil
 	end
 	return status
@@ -199,12 +202,12 @@ function limitnode:tick(target, blackboard)
 	local count<const> = blackboard.node_data[self.count_property_name] or 0
 	if count < self.limit then
 		local status<const> = self.child:tick(target, blackboard)
-		if status ~= 'RUNNING' then
+		if status ~= result_running then
 			blackboard.node_data[self.count_property_name] = count + 1
 		end
 		return status
 	end
-	return 'FAILURE'
+	return result_failure
 end
 
 local priorityselectornode<const> = {}
@@ -227,11 +230,11 @@ end
 function priorityselectornode:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= 'FAILURE' then
+		if status ~= result_failure then
 			return status
 		end
 	end
-	return 'FAILURE'
+	return result_failure
 end
 
 local waitnode<const> = {}
@@ -249,10 +252,10 @@ function waitnode:tick(_target, blackboard)
 	local elapsed<const> = blackboard.node_data[self.wait_property_name] or 0
 	if elapsed < self.wait_time then
 		blackboard.node_data[self.wait_property_name] = elapsed + 1
-		return 'RUNNING'
+		return result_running
 	end
 	blackboard.node_data[self.wait_property_name] = nil
-	return 'SUCCESS'
+	return result_success
 end
 
 local actionnode<const> = {}
@@ -283,16 +286,21 @@ function compositeactionnode:tick(target, blackboard)
 	local outcome
 	for i = 1, #self.actions do
 		local status<const> = self.actions[i]:tick(target, blackboard)
-		if status == 'FAILURE' then
+		if status == result_failure then
 			return status
 		end
-		if status == 'RUNNING' then
+		if status == result_running then
 			outcome = status
 		end
 	end
-	return outcome or 'SUCCESS'
+	return outcome or result_success
 end
 
+behaviourtree.result = {
+	running = result_running,
+	success = result_success,
+	failure = result_failure,
+}
 behaviourtree.bt_node = btnode
 behaviourtree.sequence_node = sequencenode
 behaviourtree.selector_node = selectornode

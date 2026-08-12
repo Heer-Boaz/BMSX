@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -67,7 +68,7 @@ local start_flying<const> = function(self, blackboard)
 	blackboard.node_data.mijter_takeoff_ticks = math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
 	blackboard.node_data.mijter_turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 	self.events:emit('takeoff')
-	return 'RUNNING'
+	return bt_running
 end
 
 function mijterfoe:ctor()
@@ -126,7 +127,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	local entry_lock<const> = blackboard.node_data.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
 	if entry_lock > 0 then
 		blackboard.node_data.mijter_entry_lock_ticks = entry_lock - 1
-		return 'RUNNING'
+		return bt_running
 	end
 	blackboard.node_data.mijter_entry_lock_ticks = 0
 
@@ -139,7 +140,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	takeoff_ticks = takeoff_ticks - 1
 	if takeoff_ticks > 0 then
 		blackboard.node_data.mijter_takeoff_ticks = takeoff_ticks
-		return 'RUNNING'
+		return bt_running
 	end
 	return start_flying(self, blackboard)
 end
@@ -168,7 +169,7 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 	self:change_sprite_on_direction()
 	self.x = self.x + (enemy_mijter_speed_px * self.horizontal_dir_mod)
 	self.y = self.y + (enemy_mijter_speed_px * self.vertical_dir_mod)
-	return 'RUNNING'
+	return bt_running
 end
 
 function mijterfoe.bt_tick(self, blackboard)

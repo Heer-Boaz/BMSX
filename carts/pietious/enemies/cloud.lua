@@ -4,6 +4,7 @@ local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -122,7 +123,7 @@ function cloud.bt_tick(self, blackboard)
 		vlok_ticks = enemy_cloud_spawn_vlok_steps
 	end
 	node.cloud_vlok_ticks = vlok_ticks
-	return 'RUNNING'
+	return bt_running
 end
 
 function cloud.choose_drop_type(_self)

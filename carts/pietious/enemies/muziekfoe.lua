@@ -4,6 +4,7 @@ local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -87,7 +88,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		noot_ticks = enemy_muziek_spawn_noot_steps
 	end
 	node.muziek_noot_ticks = noot_ticks
-	return 'RUNNING'
+	return bt_running
 end
 
 function muziekfoe.choose_drop_type(_self)

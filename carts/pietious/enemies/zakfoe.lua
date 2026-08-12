@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -25,7 +26,7 @@ function zakfoe.bt_tick(self, blackboard)
 		prepare_ticks = prepare_ticks - 1
 		if prepare_ticks > 0 then
 			node.zak_prepare_ticks = prepare_ticks
-			return 'RUNNING'
+			return bt_running
 		end
 		node.zak_prepare_ticks = nil
 		self.current_vertical_speed = enemy_zak_vertical_speed_start
@@ -34,7 +35,7 @@ function zakfoe.bt_tick(self, blackboard)
 		node.zak_jump_ticks = enemy_zak_jump_steps
 		self:set_imgid('zakfoe_jump')
 		self.sprite_component.flip_h = self.direction == 'left'
-		return 'RUNNING'
+		return bt_running
 	end
 
 	if self.zak_state == 'jump' then
@@ -66,7 +67,7 @@ function zakfoe.bt_tick(self, blackboard)
 		jump_ticks = jump_ticks - 1
 		if jump_ticks > 0 then
 			node.zak_jump_ticks = jump_ticks
-			return 'RUNNING'
+			return bt_running
 		end
 		node.zak_jump_ticks = nil
 		self.y = self.zak_ground_y
@@ -74,21 +75,21 @@ function zakfoe.bt_tick(self, blackboard)
 		self:set_imgid('zakfoe_recover')
 		self.sprite_component.flip_h = self.direction == 'left'
 		node.zak_recovery_ticks = enemy_zak_recovery_steps
-		return 'RUNNING'
+		return bt_running
 	end
 
 	local recovery_ticks = node.zak_recovery_ticks or enemy_zak_recovery_steps
 	recovery_ticks = recovery_ticks - 1
 	if recovery_ticks > 0 then
 		node.zak_recovery_ticks = recovery_ticks
-		return 'RUNNING'
+		return bt_running
 	end
 	node.zak_recovery_ticks = nil
 	self.zak_state = 'prepare'
 	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 	node.zak_prepare_ticks = enemy_zak_prepare_jump_steps
-	return 'RUNNING'
+	return bt_running
 end
 
 function zakfoe.choose_drop_type(_self)

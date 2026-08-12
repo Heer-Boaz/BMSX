@@ -3,6 +3,7 @@ local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -23,14 +24,14 @@ function boekfoe.bt_tick(self, blackboard)
 		closed_ticks = closed_ticks - 1
 		if closed_ticks > 0 then
 			node.boek_state_ticks = closed_ticks
-			return 'RUNNING'
+			return bt_running
 		end
 		self.boek_state = 'open'
 		self:set_imgid('boekfoe_open')
 		self.sprite_component.flip_h = self.direction == 'left'
 		node.boek_state_ticks = enemy_boek_wait_close_steps
 		node.boek_spawn_ticks = enemy_boek_spawn_paper_steps
-		return 'RUNNING'
+		return bt_running
 	end
 
 	local open_ticks = node.boek_state_ticks or enemy_boek_wait_close_steps
@@ -67,12 +68,12 @@ function boekfoe.bt_tick(self, blackboard)
 		self.sprite_component.flip_h = self.direction == 'left'
 		node.boek_state_ticks = enemy_boek_wait_open_steps
 		node.boek_spawn_ticks = nil
-		return 'RUNNING'
+		return bt_running
 	end
 
 	node.boek_state_ticks = open_ticks
 	node.boek_spawn_ticks = spawn_ticks
-	return 'RUNNING'
+	return bt_running
 end
 
 function boekfoe.choose_drop_type(_self)

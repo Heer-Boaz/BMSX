@@ -3,6 +3,7 @@ local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -26,25 +27,25 @@ function stafffoe.bt_tick(self, blackboard)
 		wait_ticks = wait_ticks - 1
 		if wait_ticks > 0 then
 			node.staff_wait_ticks = wait_ticks
-			return 'RUNNING'
+			return bt_running
 		end
 		self.staff_state = 'spawning'
 		self.staff_spawn_count = 0
 		node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
-		return 'RUNNING'
+		return bt_running
 	end
 
 	if self.staff_spawn_count >= enemy_staff_spawn_burst_count then
 		self.staff_state = 'default'
 		node.staff_wait_ticks = enemy_staff_wait_before_spawn_state_steps
-		return 'RUNNING'
+		return bt_running
 	end
 
 	local spawn_wait = node.staff_wait_ticks or enemy_staff_wait_before_spawn_steps
 	spawn_wait = spawn_wait - 1
 	if spawn_wait > 0 then
 		node.staff_wait_ticks = spawn_wait
-		return 'RUNNING'
+		return bt_running
 	end
 
 	local player<const> = self.player
@@ -75,7 +76,7 @@ function stafffoe.bt_tick(self, blackboard)
 	self.castle.events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
-	return 'RUNNING'
+	return bt_running
 end
 
 function stafffoe.choose_drop_type(_self)

@@ -3,6 +3,7 @@ local spriteobject<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -20,7 +21,7 @@ function vlokspawner.bt_tick(self, blackboard)
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
 		blackboard.node_data.vlok_spawn_ticks = spawn_ticks
-		return 'RUNNING'
+		return bt_running
 	end
 
 	local room<const> = self.room
@@ -42,7 +43,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		},
 	})
 	blackboard.node_data.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
-	return 'RUNNING'
+	return bt_running
 end
 
 function vlokspawner.choose_drop_type(_self)

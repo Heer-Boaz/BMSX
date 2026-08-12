@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -16,7 +17,7 @@ end
 
 function vlokfoe.bt_tick(self, _blackboard)
 	velocity.move_with_velocity(self)
-	return 'RUNNING'
+	return bt_running
 end
 
 function vlokfoe.choose_drop_type(_self)

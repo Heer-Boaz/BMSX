@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local spriteobject<const> = require('cartlib/sprite')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree/bt')
+local bt_running<const> = behaviourtree.result.running
 local behaviourtreelibrary<const> = require('cartlib/behaviourtree/library')
 local btcomponent<const> = require('cartlib/behaviourtree/btcomponent')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -50,7 +51,7 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 		end
 	end
 
-	return 'RUNNING'
+	return bt_running
 end
 
 function marspeinenaardappel.choose_drop_type(_self)
