@@ -121,23 +121,20 @@ function actioneffectcomponent:has_effect(id)
 	return self.effects[id] ~= nil
 end
 
-function actioneffectcomponent:trigger(id, payload, ...)
+function actioneffectcomponent:try_trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
-	if not effect then
-		return 'failed'
-	end
 	if self.time_ms < effect.cooldown_until then
-		return 'on_cooldown'
+		return false
 	end
 	local definition<const> = effect.definition
 	local owner<const> = self.parent
 	if not tags_allow(owner, definition.required_tags, definition.blocked_tags)
 		or not states_allow(owner, effect.required_states, effect.blocked_states) then
-		return 'blocked'
+		return false
 	end
 	local gate<const> = definition.can_trigger
 	if gate and not gate(owner, payload, ...) then
-		return 'blocked'
+		return false
 	end
 	local event_type = definition.event
 	local event_payload = payload
@@ -158,7 +155,7 @@ function actioneffectcomponent:trigger(id, payload, ...)
 	if cooldown and cooldown > 0 then
 		effect.cooldown_until = self.time_ms + cooldown
 	end
-	return 'ok'
+	return true
 end
 
 function actioneffectcomponent:cooldown_remaining(id)

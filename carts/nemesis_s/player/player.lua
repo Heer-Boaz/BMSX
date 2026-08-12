@@ -679,7 +679,7 @@ function player:update_runtime()
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
-		self.actioneffects:trigger(player_actioneffects.effect_ids.fire_salvo)
+		self.actioneffects:try_trigger(player_actioneffects.effect_ids.fire_salvo)
 	end
 	self:update_weapons()
 	self:emit_metric()

@@ -3161,8 +3161,7 @@ local define_player_fsm<const> = function()
 			['player.halo_trigger'] = {
 				emitter = 'd',
 				go = function(self)
-					local result<const> = self.actioneffects:trigger('halo')
-					if result ~= 'ok' then
+					if not self.actioneffects:try_trigger('halo') then
 						self.events:emit('halo_trigger_cancelled')
 					end
 				end,
