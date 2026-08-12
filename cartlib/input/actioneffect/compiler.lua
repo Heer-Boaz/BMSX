@@ -3,84 +3,20 @@ local evaluation_program<const> = require('cartlib/input/actioneffect/evaluation
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}
-local compile_effect_list
 
-local compile_effect<const> = function(player_index, effect, slot)
-	local trigger<const> = effect['effect.trigger']
-	if trigger ~= nil then
-		local id
-		local payload
-		if type(trigger) == 'string' then
-			id = trigger
-		else
-			id = trigger.id
-			payload = trigger.payload
-		end
-		return function(component)
-			component.parent.actioneffects:try_trigger(id, payload)
-		end, true, 0, 0
+local append_effects<const> = function(target, source)
+	if source == nil then
+		return nil
 	end
-	local consume<const> = effect['input.consume']
-	if consume ~= nil then
-		return function()
-			input.consume(player_index, consume)
-		end, false, 0, 0
+	local commands<const> = source.commands or source
+	if commands[1] == nil then
+		target[#target + 1] = commands
+		return #target
 	end
-	local gameplay<const> = effect['emit.gameplay']
-	if gameplay ~= nil then
-		local event_type<const> = gameplay.event
-		local event_payload<const> = gameplay.payload
-		return function(component)
-			local count<const> = component.queued_event_count + 1
-			component.queued_event_count = count
-			component.queued_event_types[count] = event_type
-			component.queued_event_payloads[count] = event_payload
-		end, false, 1, 0
+	for index = 1, #commands do
+		target[#target + 1] = commands[index]
 	end
-	local command<const> = effect['dispatch.command']
-	if command ~= nil then
-		return function(component)
-			local count<const> = component.queued_command_count + 1
-			component.queued_command_count = count
-			component.queued_commands[count] = command
-		end, false, 0, 1
-	end
-	if effect.commands ~= nil then
-		return compile_effect_list(player_index, effect.commands, slot)
-	end
-	error('unknown input effect in slot "' .. slot .. '".')
-end
-
-compile_effect_list = function(player_index, spec, slot)
-	if spec == nil then
-		return nil, false, 0, 0
-	end
-	if spec[1] == nil then
-		return compile_effect(player_index, spec, slot)
-	end
-	local count<const> = #spec
-	if count == 1 then
-		return compile_effect(player_index, spec[1], slot)
-	end
-	local executors<const> = {}
-	local uses_effect_triggers
-	local queued_event_capacity = 0
-	local queued_command_capacity = 0
-	for i = 1, count do
-		local executor<const>, uses_trigger<const>, event_count<const>, command_count<const>
-			= compile_effect(player_index, spec[i], slot)
-		executors[i] = executor
-		if uses_trigger then
-			uses_effect_triggers = true
-		end
-		queued_event_capacity = queued_event_capacity + event_count
-		queued_command_capacity = queued_command_capacity + command_count
-	end
-	return function(component)
-		for i = 1, count do
-			executors[i](component)
-		end
-	end, uses_effect_triggers, queued_event_capacity, queued_command_capacity
+	return #target
 end
 
 local compile_mode<const> = function(owner, entry)
@@ -108,9 +44,9 @@ local compile_modes<const> = function(owner, binding)
 	return modes
 end
 
-local compile_binding<const> = function(owner, player_index, binding, source_index)
+local compile_binding<const> = function(owner, player_index, binding, source_index, effects)
 	local on<const> = binding.on
-	local effects<const> = binding.go
+	local binding_effects<const> = binding.go
 	local priority = binding.priority
 	if priority == nil then
 		priority = 0
@@ -127,36 +63,27 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 	if on.release ~= nil then
 		release = input.bind(player_index, on.release)
 	end
-	local uses_effect_triggers
-	local queued_event_capacity = 0
-	local queued_command_capacity = 0
 	local custom = no_custom_bindings
 	local custom_source<const> = on.custom
 	if custom_source ~= nil and #custom_source > 0 then
 		custom = {}
 		for i = 1, #custom_source do
 			local entry<const> = custom_source[i]
-			local effect<const>, uses_trigger<const>, event_count<const>, command_count<const>
-				= compile_effect_list(player_index, effects[entry.name], entry.name)
+			local effect_start<const> = #effects + 1
 			custom[i] = {
 				input = input.bind(player_index, entry.pattern),
-				effect = effect,
+				effect_start = effect_start,
+				effect_end = append_effects(effects, binding_effects[entry.name]),
+				slot = entry.name,
 			}
-			if uses_trigger then
-				uses_effect_triggers = true
-			end
-			queued_event_capacity = queued_event_capacity + event_count
-			queued_command_capacity = queued_command_capacity + command_count
 		end
 	end
-	local press_effect<const>, press_uses_trigger<const>, press_events<const>, press_commands<const>
-		= compile_effect_list(player_index, effects.press, 'press')
-	local hold_effect<const>, hold_uses_trigger<const>, hold_events<const>, hold_commands<const>
-		= compile_effect_list(player_index, effects.hold, 'hold')
-	local release_effect<const>, release_uses_trigger<const>, release_events<const>, release_commands<const>
-		= compile_effect_list(player_index, effects.release, 'release')
-	queued_event_capacity = queued_event_capacity + press_events + hold_events + release_events
-	queued_command_capacity = queued_command_capacity + press_commands + hold_commands + release_commands
+	local press_effect_start<const> = #effects + 1
+	local press_effect_end<const> = append_effects(effects, binding_effects.press)
+	local hold_effect_start<const> = #effects + 1
+	local hold_effect_end<const> = append_effects(effects, binding_effects.hold)
+	local release_effect_start<const> = #effects + 1
+	local release_effect_end<const> = append_effects(effects, binding_effects.release)
 	return {
 		order = source_index,
 		priority = priority,
@@ -164,12 +91,14 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 		press = press,
 		hold = hold,
 		release = release,
-		press_effect = press_effect,
-		hold_effect = hold_effect,
-		release_effect = release_effect,
+		press_effect_start = press_effect_start,
+		press_effect_end = press_effect_end,
+		hold_effect_start = hold_effect_start,
+		hold_effect_end = hold_effect_end,
+		release_effect_start = release_effect_start,
+		release_effect_end = release_effect_end,
 		custom = custom,
-	}, uses_effect_triggers or press_uses_trigger or hold_uses_trigger or release_uses_trigger,
-		queued_event_capacity, queued_command_capacity
+	}
 end
 
 local binding_precedes<const> = function(left, right)
@@ -183,16 +112,13 @@ function compiler.compile_program(owner, program)
 	local player_index<const> = owner.player_index
 	local source<const> = program.bindings
 	local bindings<const> = {}
+	local effects<const> = {}
 	local max_custom_count = 0
 	local release_binding_count = 0
 	local has_press
 	local has_hold
-	local uses_effect_triggers
-	local queued_event_capacity = 0
-	local queued_command_capacity = 0
 	for i = 1, #source do
-		local binding<const>, uses_trigger<const>, event_count<const>, command_count<const>
-			= compile_binding(owner, player_index, source[i], i)
+		local binding<const> = compile_binding(owner, player_index, source[i], i, effects)
 		bindings[i] = binding
 		if binding.press ~= nil then
 			has_press = true
@@ -207,11 +133,6 @@ function compiler.compile_program(owner, program)
 		if custom_count > max_custom_count then
 			max_custom_count = custom_count
 		end
-		if uses_trigger then
-			uses_effect_triggers = true
-		end
-		queued_event_capacity = queued_event_capacity + event_count
-		queued_command_capacity = queued_command_capacity + command_count
 	end
 	table.sort(bindings, binding_precedes)
 	local compiled<const> = {
@@ -221,13 +142,28 @@ function compiler.compile_program(owner, program)
 		has_hold = has_hold,
 		release_binding_count = release_binding_count,
 		max_custom_count = max_custom_count,
-		queued_event_capacity = queued_event_capacity,
-		queued_command_capacity = queued_command_capacity,
 	}
-	compiled.evaluate = evaluation_program.compile(compiled)
+	local evaluate<const>, uses_effect_triggers<const>, queued_event_capacity<const>, queued_command_capacity<const>
+		= evaluation_program.compile(compiled, effects, player_index)
+	compiled.evaluate = evaluate
+	compiled.queued_event_capacity = queued_event_capacity
+	compiled.queued_command_capacity = queued_command_capacity
 	for i = 1, #bindings do
-		bindings[i].order = nil
-		bindings[i].priority = nil
+		local binding<const> = bindings[i]
+		binding.order = nil
+		binding.priority = nil
+		binding.press_effect_start = nil
+		binding.press_effect_end = nil
+		binding.hold_effect_start = nil
+		binding.hold_effect_end = nil
+		binding.release_effect_start = nil
+		binding.release_effect_end = nil
+		local custom<const> = binding.custom
+		for custom_index = 1, #custom do
+			custom[custom_index].effect_start = nil
+			custom[custom_index].effect_end = nil
+			custom[custom_index].slot = nil
+		end
 	end
 	return compiled, uses_effect_triggers
 end
