@@ -312,9 +312,17 @@ local emit_input_locals<const> = function(printer, values)
 	end
 end
 
-local emit_operands_local<const> = function(printer, values)
+local emit_dependency_captures<const> = function(printer, values)
+	printer:emit(templates.input_is_active_capture, values)
 	if #values.effect_program.operands > 0 then
-		printer:emit(templates.operands_local, values)
+		printer:emit(templates.operands_capture, values)
+	end
+	local environment<const> = values.effect_program.environment
+	if environment.try_trigger ~= nil then
+		printer:emit(templates.try_trigger_capture, values)
+	end
+	if environment.input_consume ~= nil then
+		printer:emit(templates.input_consume_capture, values)
 	end
 end
 
@@ -536,7 +544,21 @@ templates.press_local = lua_source_printer.compile_template('local press\n')
 templates.hold_local = lua_source_printer.compile_template('local hold\n')
 templates.release_local = lua_source_printer.compile_template('local release\n')
 templates.custom_local = lua_source_printer.compile_template('local custom_matches = component["custom_matches"]\n')
-templates.operands_local = lua_source_printer.compile_template('local operands = effect_operands\n')
+templates.input_is_active_capture = lua_source_printer.compile_template(
+	'local input_is_active<const> = input_is_active\n'
+)
+
+templates.operands_capture = lua_source_printer.compile_template(
+	'local operands<const> = effect_operands\n'
+)
+
+templates.try_trigger_capture = lua_source_printer.compile_template(
+	'local try_trigger<const> = try_trigger\n'
+)
+
+templates.input_consume_capture = lua_source_printer.compile_template(
+	'local input_consume<const> = input_consume\n'
+)
 
 templates.command_locals = lua_source_printer.compile_template([[
 	local commands = component["queued_commands"]
@@ -587,12 +609,12 @@ templates.event_flush = lua_source_printer.compile_template([[
 ]])
 
 templates.program = lua_source_printer.compile_template([[
+	$dependency_captures$
 	return function(component, frame)
 		local program = component["program"]
 		local bindings = program["bindings"]
 		local owner = component["parent"]
 		local binding
-		$operands_local$
 		$command_locals$
 		$event_locals$
 		$release_state$
@@ -602,7 +624,7 @@ templates.program = lua_source_printer.compile_template([[
 		$event_flush$
 	end
 ]], {
-	operands_local = emit_operands_local,
+	dependency_captures = emit_dependency_captures,
 	command_locals = emit_command_locals,
 	event_locals = emit_event_locals,
 	release_state = emit_release_state,

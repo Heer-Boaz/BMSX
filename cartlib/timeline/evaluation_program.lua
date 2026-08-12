@@ -10,6 +10,18 @@ local evaluation_environment<const> = {
 }
 local templates<const> = {}
 
+local emit_dependency_captures<const> = function(printer, values)
+	if values.has_tags then
+		printer:emit(templates.evaluate_tags_capture, values)
+	end
+	if values.has_subsequences then
+		printer:emit(templates.evaluate_sequences_capture, values)
+	end
+	if values.has_events then
+		printer:emit(templates.emit_events_capture, values)
+	end
+end
+
 local emit_program_local<const> = function(printer, values)
 	if values.has_values or values.has_apply_function or values.has_frame_appliers then
 		printer:emit(templates.program_local, values)
@@ -62,6 +74,18 @@ templates.program_local = lua_source_printer.compile_template(
 	'local program = entry["instance"]["program"]\n'
 )
 
+templates.evaluate_tags_capture = lua_source_printer.compile_template(
+	'local evaluate_tags<const> = evaluate_tags\n'
+)
+
+templates.evaluate_sequences_capture = lua_source_printer.compile_template(
+	'local evaluate_sequences<const> = evaluate_sequences\n'
+)
+
+templates.emit_events_capture = lua_source_printer.compile_template(
+	'local emit_events<const> = emit_events\n'
+)
+
 templates.tags = lua_source_printer.compile_template(
 	'evaluate_tags(entry, owner, evaluation)\n'
 )
@@ -97,6 +121,7 @@ templates.events = lua_source_printer.compile_template(
 )
 
 templates.evaluator = lua_source_printer.compile_template([[
+	$dependency_captures$
 	return function(entry, owner, evaluation)
 		$program_local$
 		$tags$
@@ -106,6 +131,7 @@ templates.evaluator = lua_source_printer.compile_template([[
 		$events$
 	end
 ]], {
+	dependency_captures = emit_dependency_captures,
 	program_local = emit_program_local,
 	tags = emit_tags,
 	values = emit_values,

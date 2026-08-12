@@ -532,6 +532,23 @@ local emit_tracks_local<const> = function(printer, values)
 	end
 end
 
+local emit_dependency_captures<const> = function(printer, values)
+	if values.has_frame_steps then
+		printer:emit(templates.evaluate_frame_steps_capture, values)
+	end
+	if values.has_time_steps then
+		printer:emit(templates.evaluate_time_steps_capture, values)
+	end
+	if values.has_scalar_channels then
+		printer:emit(templates.scalar_runner_capture, values)
+	end
+	if values.primary_sample_runner ~= nil then
+		printer:emit(templates.primary_sample_runner_capture, values)
+	elseif values.has_sample_groups then
+		printer:emit(templates.evaluate_sample_groups_capture, values)
+	end
+end
+
 local emit_params_local<const> = function(printer, values)
 	if values.has_frame_steps or values.has_time_steps or values.has_sample_tracks then
 		printer:emit(templates.params_local, values)
@@ -574,6 +591,26 @@ templates.tracks_local = lua_source_printer.compile_template(
 	'local tracks = entry["instance"]["program"]["tracks"]\n'
 )
 
+templates.evaluate_frame_steps_capture = lua_source_printer.compile_template(
+	'local evaluate_frame_steps<const> = evaluate_frame_steps\n'
+)
+
+templates.evaluate_time_steps_capture = lua_source_printer.compile_template(
+	'local evaluate_time_steps<const> = evaluate_time_steps\n'
+)
+
+templates.scalar_runner_capture = lua_source_printer.compile_template(
+	'local scalar_runner<const> = scalar_runner\n'
+)
+
+templates.primary_sample_runner_capture = lua_source_printer.compile_template(
+	'local primary_sample_runner<const> = primary_sample_runner\n'
+)
+
+templates.evaluate_sample_groups_capture = lua_source_printer.compile_template(
+	'local evaluate_sample_groups<const> = evaluate_sample_groups\n'
+)
+
 templates.params_local = lua_source_printer.compile_template(
 	'local params = entry["params"]\n'
 )
@@ -606,6 +643,7 @@ templates.sample = lua_source_printer.compile_template([[
 ]], { body = emit_sample_body })
 
 templates.value_runner = lua_source_printer.compile_template([[
+	$dependency_captures$
 	return function(entry, evaluation)
 		$tracks_local$
 		$params_local$
@@ -615,6 +653,7 @@ templates.value_runner = lua_source_printer.compile_template([[
 		$sample$
 	end
 ]], {
+	dependency_captures = emit_dependency_captures,
 	tracks_local = emit_tracks_local,
 	params_local = emit_params_local,
 	frame_steps = emit_frame_steps,
