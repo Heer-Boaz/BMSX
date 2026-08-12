@@ -8,8 +8,7 @@ import {
 	GX_SYSTEM_VRAM_X,
 	GX_SYSTEM_VRAM_Y,
 } from './system_texture';
-import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/spec/gx/gp0';
-import { packLowHigh16 } from '../../machine/ts/machine/common/word';
+import { GX_GPU_CLUT_4BIT_WORDS, gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT, textureGroupResourceName } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';
@@ -198,8 +197,8 @@ export function buildTextureBindingsModuleSource(layout: GxVramLayout): string {
 			for (let slotIndex = 0; slotIndex < group.slots.length; slotIndex += 1) {
 				const slot = layout.slots[group.slots[slotIndex]];
 				words.push(
-					packLowHigh16(slot.texture.x, slot.texture.y),
-					slot.clut ? packLowHigh16(slot.clut.x, slot.clut.y) : 0,
+					gxGpuPair16(slot.texture.x, slot.texture.y),
+					slot.clut ? gxGpuPair16(slot.clut.x, slot.clut.y) : 0,
 				);
 			}
 			pool = {
@@ -243,9 +242,9 @@ export function buildPresentationConfigModuleSource(layout: GxVramLayout): strin
 		'module<const>',
 		'',
 		'return {',
-		`\tdisplay_page = ${packLowHigh16(displayPage.x, displayPage.y)},`,
-		`\tdraw_page = ${packLowHigh16(drawPage.x, drawPage.y)},`,
-		`\tpage_size = ${packLowHigh16(displayPage.width, displayPage.height)},`,
+		`\tdisplay_page = ${gxGpuPair16(displayPage.x, displayPage.y)},`,
+		`\tdraw_page = ${gxGpuPair16(drawPage.x, drawPage.y)},`,
+		`\tpage_size = ${gxGpuPair16(displayPage.width, displayPage.height)},`,
 		'}',
 		'',
 	].join('\n');

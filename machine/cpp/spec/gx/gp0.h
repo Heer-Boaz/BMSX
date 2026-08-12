@@ -61,6 +61,10 @@ constexpr u32 GX_GPU_TRANSFER_MAX_HEIGHT = 512u;
 constexpr size_t GX_GPU_TRANSFER_MAX_PIXEL_COUNT = static_cast<size_t>(GX_GPU_TRANSFER_MAX_WIDTH) * static_cast<size_t>(GX_GPU_TRANSFER_MAX_HEIGHT);
 constexpr size_t GX_GPU_TRANSFER_MAX_BYTE_COUNT = GX_GPU_TRANSFER_MAX_PIXEL_COUNT * 2u;
 
+inline u32 gxGpuPair16(u32 low, u32 high) {
+	return (low & 0xffffu) | ((high & 0xffffu) << 16u);
+}
+
 inline i32 gxGpuSigned11(u32 value) {
 	const i32 raw = static_cast<i32>(value & 0x7ffu);
 	return (raw & 0x400) != 0 ? raw - 0x800 : raw;

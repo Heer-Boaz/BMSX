@@ -187,8 +187,7 @@
 		"machine/ts/render/host_overlay/atlas.ts",
 		"machine/ts/render/shared/submissions.ts",
 		"machine/ts/render/shared/solid_pixels.ts",
-		"machine/ts/common/fixed_point.ts",
-		"machine/ts/machine/common/word.ts"
+		"machine/ts/common/fixed_point.ts"
 	],
 	"must_have_cpp": [
 		"machine/ts/common/vector.ts",
@@ -390,13 +389,6 @@
 				"machine/cpp/common/hash.cpp"
 			],
 			"reason": "common_hash_contract"
-		},
-		{
-			"ts": "machine/ts/machine/common/word.ts",
-			"cpp": [
-				"machine/cpp/machine/common/word.h"
-			],
-			"reason": "common_word_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/audio/active_slots.ts",

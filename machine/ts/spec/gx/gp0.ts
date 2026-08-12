@@ -59,6 +59,10 @@ export const GX_GPU_TRANSFER_MAX_HEIGHT = 512;
 export const GX_GPU_TRANSFER_MAX_PIXEL_COUNT = GX_GPU_TRANSFER_MAX_WIDTH * GX_GPU_TRANSFER_MAX_HEIGHT;
 export const GX_GPU_TRANSFER_MAX_BYTE_COUNT = GX_GPU_TRANSFER_MAX_PIXEL_COUNT * 2;
 
+export function gxGpuPair16(low: number, high: number): number {
+	return ((low & 0xffff) | ((high & 0xffff) << 16)) >>> 0;
+}
+
 export function gxGpuSigned11(value: number): number {
 	const raw = value & 0x7ff;
 	return (raw & 0x400) !== 0 ? raw - 0x800 : raw;
