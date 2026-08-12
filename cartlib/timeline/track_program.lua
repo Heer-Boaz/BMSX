@@ -8,12 +8,16 @@ local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluato
 local track_program<const> = {}
 local empty_defs<const> = {}
 local empty_groups<const> = {}
-local empty_events<const> = {
+local empty_event_lane<const> = {
 	by_frame = {},
 	keys = {},
 	count = 0,
 	time_keys = {},
 	time_count = 0,
+}
+local empty_events<const> = {
+	forward = empty_event_lane,
+	backward = empty_event_lane,
 }
 local empty_tags<const> = {
 	intervals = {},
@@ -254,13 +258,16 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	return prepared
 end
 
+-- Event direction is cooked into separate traversal lanes. A `both` key shares
+-- one immutable record between the two lane indexes; runtime never scans or
+-- branches over keys that cannot fire for the current traversal direction.
 local compile_events<const> = function(event_defs, length)
 	if #event_defs == 0 then
 		return empty_events
 	end
-	local by_frame<const> = {}
+	local forward<const> = { by_frame = {}, keys = {}, time_keys = {} }
+	local backward<const> = { by_frame = {}, keys = {}, time_keys = {} }
 	local keys<const> = {}
-	local time_keys<const> = {}
 	local order = 0
 	for track_index = 1, #event_defs do
 		local defs<const> = event_defs[track_index].keys
@@ -270,39 +277,58 @@ local compile_events<const> = function(event_defs, length)
 			local key<const> = {
 				event = key_def.event,
 				payload = key_def.payload,
-				forward = event_forward_directions[key_def.direction],
-				backward = event_backward_directions[key_def.direction],
 				order = order,
 			}
+			keys[#keys + 1] = key
+			local admits_forward<const> = event_forward_directions[key_def.direction]
+			local admits_backward<const> = event_backward_directions[key_def.direction]
 			if key_def.time_ms ~= nil then
 				key.time_ms = key_def.time_ms
-				time_keys[#time_keys + 1] = key
+				if admits_forward then
+					forward.time_keys[#forward.time_keys + 1] = key
+				end
+				if admits_backward then
+					backward.time_keys[#backward.time_keys + 1] = key
+				end
 			else
 				key.frame = frame_at(key_def, length)
-				keys[#keys + 1] = key
-				local bucket = by_frame[key.frame]
-				if bucket == nil then
-					bucket = {}
-					by_frame[key.frame] = bucket
+				if admits_forward then
+					local forward_keys<const> = forward.keys
+					forward_keys[#forward_keys + 1] = key
+					local bucket = forward.by_frame[key.frame]
+					if bucket == nil then
+						bucket = {}
+						forward.by_frame[key.frame] = bucket
+					end
+					bucket[#bucket + 1] = key
 				end
-				bucket[#bucket + 1] = key
+				if admits_backward then
+					local backward_keys<const> = backward.keys
+					backward_keys[#backward_keys + 1] = key
+					local bucket = backward.by_frame[key.frame]
+					if bucket == nil then
+						bucket = {}
+						backward.by_frame[key.frame] = bucket
+					end
+					bucket[#bucket + 1] = key
+				end
 			end
 		end
 	end
-	table.sort(keys, compare_key)
-	table.sort(time_keys, compare_time_key)
+	table.sort(forward.keys, compare_key)
+	table.sort(backward.keys, compare_key)
+	table.sort(forward.time_keys, compare_time_key)
+	table.sort(backward.time_keys, compare_time_key)
 	for index = 1, #keys do
 		keys[index].order = nil
 	end
-	for index = 1, #time_keys do
-		time_keys[index].order = nil
-	end
+	forward.count = #forward.keys
+	forward.time_count = #forward.time_keys
+	backward.count = #backward.keys
+	backward.time_count = #backward.time_keys
 	return {
-		by_frame = by_frame,
-		keys = keys,
-		count = #keys,
-		time_keys = time_keys,
-		time_count = #time_keys,
+		forward = forward,
+		backward = backward,
 	}
 end
 

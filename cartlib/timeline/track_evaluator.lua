@@ -65,31 +65,27 @@ local first_time_at<const> = function(records, count, time_ms)
 	return low
 end
 
-local emit_event_bucket<const> = function(events, owner, frame, direction)
-	local bucket<const> = events.by_frame[frame]
+local emit_event_bucket<const> = function(lane, owner, frame, direction)
+	local bucket<const> = lane.by_frame[frame]
 	if bucket == nil then
 		return
 	end
 	if direction > 0 then
 		for index = 1, #bucket do
 			local key<const> = bucket[index]
-			if key.forward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	else
 		for index = #bucket, 1, -1 do
 			local key<const> = bucket[index]
-			if key.backward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	end
 end
 
-local emit_event_range<const> = function(events, owner, previous, current, direction, include_previous)
-	local keys<const> = events.keys
-	local count<const> = events.count
+local emit_event_range<const> = function(lane, owner, previous, current, direction, include_previous)
+	local keys<const> = lane.keys
+	local count<const> = lane.count
 	if direction > 0 then
 		local first
 		if include_previous then
@@ -100,9 +96,7 @@ local emit_event_range<const> = function(events, owner, previous, current, direc
 		local finish<const> = first_frame_after(keys, count, current) - 1
 		for index = first, finish do
 			local key<const> = keys[index]
-			if key.forward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	else
 		local first
@@ -114,16 +108,14 @@ local emit_event_range<const> = function(events, owner, previous, current, direc
 		local finish<const> = first_frame_at(keys, count, current)
 		for index = first, finish, -1 do
 			local key<const> = keys[index]
-			if key.backward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	end
 end
 
-local emit_time_event_range<const> = function(events, owner, previous, current, direction, include_previous)
-	local keys<const> = events.time_keys
-	local count<const> = events.time_count
+local emit_time_event_range<const> = function(lane, owner, previous, current, direction, include_previous)
+	local keys<const> = lane.time_keys
+	local count<const> = lane.time_count
 	if direction > 0 then
 		local first
 		if include_previous then
@@ -134,9 +126,7 @@ local emit_time_event_range<const> = function(events, owner, previous, current, 
 		local finish<const> = first_time_after(keys, count, current) - 1
 		for index = first, finish do
 			local key<const> = keys[index]
-			if key.forward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	elseif direction < 0 then
 		local first
@@ -148,9 +138,7 @@ local emit_time_event_range<const> = function(events, owner, previous, current, 
 		local finish<const> = first_time_at(keys, count, current)
 		for index = first, finish, -1 do
 			local key<const> = keys[index]
-			if key.backward then
-				owner.events:emit(key.event, key.payload)
-			end
+			owner.events:emit(key.event, key.payload)
 		end
 	end
 end
@@ -163,46 +151,51 @@ function track_evaluator.bind_events(program)
 		if evaluation.method ~= play_update_method then
 			return
 		end
+		local direction<const> = evaluation.direction
+		local lane = events.backward
+		if direction > 0 then
+			lane = events.forward
+		end
 		local previous<const> = evaluation.previous_frame
 		local current<const> = evaluation.frame
 		if evaluation.wrapped then
-			if evaluation.direction > 0 then
-				emit_event_range(events, owner, previous, last_frame, 1, evaluation.initial)
-				emit_event_range(events, owner, 0, current, 1, true)
+			if direction > 0 then
+				emit_event_range(lane, owner, previous, last_frame, 1, evaluation.initial)
+				emit_event_range(lane, owner, 0, current, 1, true)
 			else
-				emit_event_range(events, owner, previous, 0, -1, evaluation.initial)
-				emit_event_range(events, owner, last_frame, current, -1, true)
+				emit_event_range(lane, owner, previous, 0, -1, evaluation.initial)
+				emit_event_range(lane, owner, last_frame, current, -1, true)
 			end
 		elseif evaluation.initial then
-			emit_event_range(events, owner, previous, current, evaluation.direction, true)
+			emit_event_range(lane, owner, previous, current, direction, true)
 		elseif previous ~= current then
-			if evaluation.direction > 0 and current == previous + 1 then
-				emit_event_bucket(events, owner, current, 1)
-			elseif evaluation.direction < 0 and current == previous - 1 then
-				emit_event_bucket(events, owner, current, -1)
+			if direction > 0 and current == previous + 1 then
+				emit_event_bucket(lane, owner, current, 1)
+			elseif direction < 0 and current == previous - 1 then
+				emit_event_bucket(lane, owner, current, -1)
 			else
-				emit_event_range(events, owner, previous, current, evaluation.direction, false)
+				emit_event_range(lane, owner, previous, current, direction, false)
 			end
 		end
-		if events.time_count == 0 then
+		if lane.time_count == 0 then
 			return
 		end
 		local previous_time_ms<const> = evaluation.previous_time_ms
 		local time_ms<const> = evaluation.time_ms
 		if evaluation.wrapped then
-			if evaluation.direction > 0 then
-				emit_time_event_range(events, owner, previous_time_ms, duration_ms, 1, evaluation.initial)
-				emit_time_event_range(events, owner, 0, time_ms, 1, true)
+			if direction > 0 then
+				emit_time_event_range(lane, owner, previous_time_ms, duration_ms, 1, evaluation.initial)
+				emit_time_event_range(lane, owner, 0, time_ms, 1, true)
 			else
-				emit_time_event_range(events, owner, previous_time_ms, 0, -1, evaluation.initial)
-				emit_time_event_range(events, owner, duration_ms, time_ms, -1, true)
+				emit_time_event_range(lane, owner, previous_time_ms, 0, -1, evaluation.initial)
+				emit_time_event_range(lane, owner, duration_ms, time_ms, -1, true)
 			end
 		elseif evaluation.initial then
-			emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, true)
+			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, true)
 		elseif previous < 0 then
-			emit_time_event_range(events, owner, previous_time_ms, time_ms, 1, true)
+			emit_time_event_range(events.forward, owner, previous_time_ms, time_ms, 1, true)
 		else
-			emit_time_event_range(events, owner, previous_time_ms, time_ms, evaluation.direction, false)
+			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, false)
 		end
 	end
 end
