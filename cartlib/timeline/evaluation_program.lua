@@ -1,5 +1,6 @@
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
+local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
 
 local evaluation_program<const> = {}
 local evaluation_environment<const> = {
@@ -18,37 +19,36 @@ function evaluation_program.compile(program)
 	local has_apply_function<const> = program.apply_function ~= nil
 	local has_frame_appliers<const> = program.apply_frames
 	local has_subsequences<const> = program.subsequences.clip_count > 0
-	local parts<const> = {
-		'return function(entry, owner, evaluation)\n',
-	}
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(entry, owner, evaluation)')
 	if has_values or has_apply_function or has_frame_appliers then
-		parts[#parts + 1] = 'local program = entry["instance"]["program"]\n'
+		writer:line('local program = entry["instance"]["program"]')
 	end
 	if has_tags then
-		parts[#parts + 1] = 'evaluate_tags(entry, owner, evaluation)\n'
+		writer:line('evaluate_tags(entry, owner, evaluation)')
 	end
 	if has_values then
-		parts[#parts + 1] = 'program["tracks"]["value_runner"](entry, evaluation)\n'
+		writer:line('program["tracks"]["value_runner"](entry, evaluation)')
 	end
 	if has_apply_function or has_frame_appliers then
-		parts[#parts + 1] = 'if evaluation["sample"] then\n'
+		writer:begin_block('if evaluation["sample"] then')
 		if has_apply_function then
-			parts[#parts + 1] = 'program["apply_function"](entry["primary_binding"], evaluation["value"], entry["params"], evaluation)\n'
+			writer:line('program["apply_function"](entry["primary_binding"], evaluation["value"], entry["params"], evaluation)')
 		end
 		if has_frame_appliers then
-			parts[#parts + 1] = 'program["frame_appliers"][evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])\n'
+			writer:line('program["frame_appliers"][evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])')
 		end
-		parts[#parts + 1] = 'end\n'
+		writer:end_block()
 	end
 	if has_subsequences then
-		parts[#parts + 1] = 'evaluate_sequences(entry, owner, evaluation)\n'
+		writer:line('evaluate_sequences(entry, owner, evaluation)')
 	end
 	if has_events then
-		parts[#parts + 1] = 'emit_events(entry, owner, evaluation)\n'
+		writer:line('emit_events(entry, owner, evaluation)')
 	end
-	parts[#parts + 1] = 'end'
+	writer:end_block()
 	return load(
-		table.concat(parts),
+		writer:finish(),
 		'[timeline.evaluation_program]',
 		't',
 		evaluation_environment

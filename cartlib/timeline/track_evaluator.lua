@@ -3,6 +3,8 @@
 -- track kind or binding name is inspected on the update path.
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
+local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
+
 local track_evaluator<const> = {}
 local play_update_method<const> = timeline_playback.update_method.play
 
@@ -528,34 +530,36 @@ function track_evaluator.compile_values(program)
 	local primary_sample_runner<const> = program.primary_sample_runner
 	local has_sample_groups<const> = program.sample_group_count > 0
 	local has_sample_tracks<const> = primary_sample_runner ~= nil or has_sample_groups
-	local parts<const> = { 'return function(entry, evaluation)\n' }
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(entry, evaluation)')
 	if has_frame_steps or has_time_steps or has_scalar_channels or has_sample_groups then
-		parts[#parts + 1] = 'local tracks = entry["instance"]["program"]["tracks"]\n'
+		writer:line('local tracks = entry["instance"]["program"]["tracks"]')
 	end
 	if has_frame_steps or has_time_steps or has_sample_tracks then
-		parts[#parts + 1] = 'local params = entry["params"]\n'
+		writer:line('local params = entry["params"]')
 	end
 	if has_frame_steps then
-		parts[#parts + 1] = 'evaluate_frame_steps(entry, tracks["steps"], params, evaluation)\n'
+		writer:line('evaluate_frame_steps(entry, tracks["steps"], params, evaluation)')
 	end
 	if has_time_steps then
-		parts[#parts + 1] = 'evaluate_time_steps(entry, tracks["steps"], params, evaluation)\n'
+		writer:line('evaluate_time_steps(entry, tracks["steps"], params, evaluation)')
 	end
 	if has_scalar_channels then
-		parts[#parts + 1] = 'scalar_runner(tracks["scalar_channels"], entry, evaluation)\n'
+		writer:line('scalar_runner(tracks["scalar_channels"], entry, evaluation)')
 	end
 	if has_sample_tracks then
-		parts[#parts + 1] = 'if evaluation["sample"] then\nlocal time_seconds = evaluation["time_ms"] * 0.001\n'
+		writer:begin_block('if evaluation["sample"] then')
+		writer:line('local time_seconds = evaluation["time_ms"] * 0.001')
 		if primary_sample_runner ~= nil then
-			parts[#parts + 1] = 'primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)\n'
+			writer:line('primary_sample_runner(entry["primary_binding"], params, evaluation, time_seconds)')
 		else
-			parts[#parts + 1] = 'evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)\n'
+			writer:line('evaluate_sample_groups(entry, tracks, params, evaluation, time_seconds)')
 		end
-		parts[#parts + 1] = 'end\n'
+		writer:end_block()
 	end
-	parts[#parts + 1] = 'end'
+	writer:end_block()
 	return load(
-		table.concat(parts),
+		writer:finish(),
 		'[timeline.track_values]',
 		't',
 		{

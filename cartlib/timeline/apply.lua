@@ -1,38 +1,30 @@
 local timeline_apply<const> = {}
-local format<const> = string.format
-
-local append_path<const> = function(parts, root, path)
-	parts[#parts + 1] = root
-	for index = 1, #path do
-		local key<const> = path[index]
-		parts[#parts + 1] = '['
-		parts[#parts + 1] = type(key) == 'number' and key or format('%q', key)
-		parts[#parts + 1] = ']'
-	end
-end
+local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
 
 local append_frame_assignments
-append_frame_assignments = function(parts, node, path)
+append_frame_assignments = function(writer, node, path)
 	for key, value in pairs(node) do
 		local path_index<const> = #path + 1
 		path[path_index] = key
 		if type(value) == 'table' then
-			append_frame_assignments(parts, value, path)
+			append_frame_assignments(writer, value, path)
 		else
-			append_path(parts, 'target', path)
-			parts[#parts + 1] = ' = '
-			append_path(parts, 'frame', path)
-			parts[#parts + 1] = '\n'
+			writer:start_line('target')
+			writer:write_path(path)
+			writer:write(' = frame')
+			writer:write_path(path)
+			writer:end_line('')
 		end
 		path[path_index] = nil
 	end
 end
 
 local compile_frame_apply<const> = function(frame, shape_cache)
-	local parts<const> = { 'return function(target, frame)\n' }
-	append_frame_assignments(parts, frame, {})
-	parts[#parts + 1] = 'end'
-	local source<const> = table.concat(parts)
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(target, frame)')
+	append_frame_assignments(writer, frame, {})
+	writer:end_block()
+	local source<const> = writer:finish()
 	local apply_frame = shape_cache[source]
 	if apply_frame == nil then
 		apply_frame = load(source, '[timeline.apply.frame]', 't')()
@@ -58,10 +50,13 @@ function timeline_apply.compile_frames(frames)
 end
 
 function timeline_apply.compile_setter(path)
-	local parts<const> = { 'return function(target, value)\n' }
-	append_path(parts, 'target', path)
-	parts[#parts + 1] = ' = value\nend'
-	return load(table.concat(parts), '[timeline.apply.setter]', 't')()
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(target, value)')
+	writer:start_line('target')
+	writer:write_path(path)
+	writer:end_line(' = value')
+	writer:end_block()
+	return load(writer:finish(), '[timeline.apply.setter]', 't')()
 end
 
 -- Step bindings are fixed by the compiled sequence program. Resolve that
@@ -78,14 +73,19 @@ function timeline_apply.compile_step_apply(path, apply, binding_index)
 		end
 	end
 
-	local parts<const> = { 'return function(entry, value)\n' }
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(entry, value)')
+	writer:start_line('entry')
 	if binding_index == 1 then
-		append_path(parts, 'entry["primary_binding"]', path)
+		writer:write_index('primary_binding')
 	else
-		append_path(parts, 'entry["bindings"][' .. tostring(binding_index) .. ']', path)
+		writer:write_index('bindings')
+		writer:write_index(binding_index)
 	end
-	parts[#parts + 1] = ' = value\nend'
-	return load(table.concat(parts), '[timeline.apply.step]', 't')()
+	writer:write_path(path)
+	writer:end_line(' = value')
+	writer:end_block()
+	return load(writer:finish(), '[timeline.apply.step]', 't')()
 end
 
 return timeline_apply

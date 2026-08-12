@@ -4,8 +4,9 @@
 -- so evaluation only searches again when traversal leaves that range. Generic
 -- step values remain track-program data because they may carry non-numeric
 -- cart values.
+local lua_source_writer<const> = require('cartlib/codegen/lua_source_writer')
+
 local scalar_channel<const> = {}
-local format<const> = string.format
 
 scalar_channel.empty_program = {
 	track_count = 0,
@@ -28,92 +29,107 @@ scalar_channel.empty = {
 	runner = nil,
 }
 
-local append_path<const> = function(parts, root, path)
-	parts[#parts + 1] = root
-	for index = 1, #path do
-		local key<const> = path[index]
-		parts[#parts + 1] = '['
-		parts[#parts + 1] = type(key) == 'number' and key or format('%q', key)
-		parts[#parts + 1] = ']'
-	end
-end
-
 local append_scalar_track<const> = function(
-	parts,
+	writer,
 	track_list_name,
 	track_index,
 	track,
 	position_key,
 	cubic
 )
-	local track_expression<const> = 'channels['
-		.. format('%q', track_list_name)
-		.. '][' .. tostring(track_index) .. ']'
 	if track.apply ~= nil then
-		parts[#parts + 1] = 'track = '
-		parts[#parts + 1] = track_expression
-		parts[#parts + 1] = '\nkeys = track["keys"]\n'
+		writer:start_line('track = channels')
+		writer:write_index(track_list_name)
+		writer:write_index(track_index)
+		writer:end_line('')
+		writer:line('keys = track["keys"]')
 	else
-		parts[#parts + 1] = 'keys = '
-		parts[#parts + 1] = track_expression
-		parts[#parts + 1] = '["keys"]\n'
+		writer:start_line('keys = channels')
+		writer:write_index(track_list_name)
+		writer:write_index(track_index)
+		writer:end_line('["keys"]')
 	end
 	local key_count<const> = #track.keys
 	if key_count == 1 then
-		parts[#parts + 1] = 'value = keys[1]["value"]\n'
+		writer:line('value = keys[1]["value"]')
 	else
-		parts[#parts + 1] = 'first_key = keys[1]\nif position <= first_key['
-		parts[#parts + 1] = format('%q', position_key)
-		parts[#parts + 1] = '] then\nvalue = first_key["value"]\nelse\nlast_key = keys['
-		parts[#parts + 1] = key_count
-		parts[#parts + 1] = ']\nif position >= last_key['
-		parts[#parts + 1] = format('%q', position_key)
-		parts[#parts + 1] = '] then\nvalue = last_key["value"]\nelse\n'
+		writer:line('first_key = keys[1]')
+		writer:start_line('if position <= first_key')
+		writer:write_index(position_key)
+		writer:finish_block_header(' then')
+		writer:line('value = first_key["value"]')
+		writer:next_block('else')
+		writer:start_line('last_key = keys[')
+		writer:write(key_count)
+		writer:end_line(']')
+		writer:start_line('if position >= last_key')
+		writer:write_index(position_key)
+		writer:finish_block_header(' then')
+		writer:line('value = last_key["value"]')
+		writer:next_block('else')
 		if key_count == 2 then
-			parts[#parts + 1] = 'key = first_key\n'
+			writer:line('key = first_key')
 		else
 			local cached_segment_index<const> = track.cached_segment_index
-			parts[#parts + 1] = 'key = cached_segments['
-			parts[#parts + 1] = cached_segment_index
-			parts[#parts + 1] = ']\nif position < key['
-			parts[#parts + 1] = format('%q', position_key)
-			parts[#parts + 1] = '] or position >= key["segment_end"] then\nlow = 1\nhigh = '
-			parts[#parts + 1] = key_count + 1
-			parts[#parts + 1] = '\nwhile low < high do\nmiddle = (low + high) // 2\nif keys[middle]['
-			parts[#parts + 1] = format('%q', position_key)
-			parts[#parts + 1] = '] <= position then\nlow = middle + 1\nelse\nhigh = middle\nend\nend\nkey = keys[low - 1]\ncached_segments['
-			parts[#parts + 1] = cached_segment_index
-			parts[#parts + 1] = '] = key\nend\n'
+			writer:start_line('key = cached_segments[')
+			writer:write(cached_segment_index)
+			writer:end_line(']')
+			writer:start_line('if position < key')
+			writer:write_index(position_key)
+			writer:finish_block_header(' or position >= key["segment_end"] then')
+			writer:line('low = 1')
+			writer:start_line('high = ')
+			writer:end_line(key_count + 1)
+			writer:begin_block('while low < high do')
+			writer:line('middle = (low + high) // 2')
+			writer:start_line('if keys[middle]')
+			writer:write_index(position_key)
+			writer:finish_block_header(' <= position then')
+			writer:line('low = middle + 1')
+			writer:next_block('else')
+			writer:line('high = middle')
+			writer:end_block()
+			writer:end_block()
+			writer:line('key = keys[low - 1]')
+			writer:start_line('cached_segments[')
+			writer:write(cached_segment_index)
+			writer:end_line('] = key')
+			writer:end_block()
 		end
 		if cubic then
-			parts[#parts + 1] = 'u = (position - key['
-			parts[#parts + 1] = format('%q', position_key)
-			parts[#parts + 1] = ']) * key["span_inv"]\nvalue = ((key["cubic3"] * u + key["cubic2"]) * u + key["cubic1"]) * u + key["value"]\n'
+			writer:start_line('u = (position - key')
+			writer:write_index(position_key)
+			writer:end_line(') * key["span_inv"]')
+			writer:line('value = ((key["cubic3"] * u + key["cubic2"]) * u + key["cubic1"]) * u + key["value"]')
 		else
-			parts[#parts + 1] = 'value = key["value"] + key["value_delta"] * ((position - key['
-			parts[#parts + 1] = format('%q', position_key)
-			parts[#parts + 1] = ']) * key["span_inv"])\n'
+			writer:start_line('value = key["value"] + key["value_delta"] * ((position - key')
+			writer:write_index(position_key)
+			writer:end_line(') * key["span_inv"])')
 		end
-		parts[#parts + 1] = 'end\nend\n'
-	end
-	local binding_expression
-	if track.binding_index == 1 then
-		binding_expression = 'primary_binding'
-	else
-		binding_expression = 'bindings[' .. tostring(track.binding_index) .. ']'
+		writer:end_block()
+		writer:end_block()
 	end
 	if track.apply ~= nil then
-		parts[#parts + 1] = 'track["apply"]('
-		parts[#parts + 1] = binding_expression
-		parts[#parts + 1] = ', value, params, evaluation)\n'
+		writer:start_line('track["apply"](')
 	else
-		append_path(parts, binding_expression, track.path)
-		parts[#parts + 1] = ' = value\n'
+		writer:start_line('')
+	end
+	if track.binding_index == 1 then
+		writer:write('primary_binding')
+	else
+		writer:write('bindings')
+		writer:write_index(track.binding_index)
+	end
+	if track.apply ~= nil then
+		writer:end_line(', value, params, evaluation)')
+	else
+		writer:write_path(track.path)
+		writer:end_line(' = value')
 	end
 end
 
 local append_scalar_lane<const> = function(
-	parts,
+	writer,
 	track_list_name,
 	tracks,
 	position_key,
@@ -121,7 +137,7 @@ local append_scalar_lane<const> = function(
 )
 	for track_index = 1, #tracks do
 		append_scalar_track(
-			parts,
+			writer,
 			track_list_name,
 			track_index,
 			tracks[track_index],
@@ -180,49 +196,55 @@ local compile_runner<const> = function(channels)
 	analyze_tracks(analysis, linear_time_tracks, true)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
-	local parts<const> = {
-		'return function(channels, entry, evaluation)\n',
-		'local track\nlocal keys\nlocal value\n',
-	}
+	local writer<const> = lua_source_writer.new()
+	writer:begin_block('return function(channels, entry, evaluation)')
+	writer:line('local track')
+	writer:line('local keys')
+	writer:line('local value')
 	if analysis.has_primary_binding then
-		parts[#parts + 1] = 'local primary_binding = entry["primary_binding"]\n'
+		writer:line('local primary_binding = entry["primary_binding"]')
 	end
 	if analysis.has_secondary_binding then
-		parts[#parts + 1] = 'local bindings = entry["bindings"]\n'
+		writer:line('local bindings = entry["bindings"]')
 	end
 	if analysis.has_callback then
-		parts[#parts + 1] = 'local params = entry["params"]\n'
+		writer:line('local params = entry["params"]')
 	end
 	if analysis.cached_segment_count > 0 then
-		parts[#parts + 1] = 'local cached_segments = entry["cached_scalar_segments"]\n'
+		writer:line('local cached_segments = entry["cached_scalar_segments"]')
 	end
 	if analysis.max_key_count > 1 then
-		parts[#parts + 1] = 'local position\nlocal first_key\nlocal last_key\nlocal key\n'
+		writer:line('local position')
+		writer:line('local first_key')
+		writer:line('local last_key')
+		writer:line('local key')
 	end
 	if analysis.max_key_count > 2 then
-		parts[#parts + 1] = 'local low\nlocal high\nlocal middle\n'
+		writer:line('local low')
+		writer:line('local high')
+		writer:line('local middle')
 	end
 	if #cubic_tracks > 0 or #cubic_time_tracks > 0 then
-		parts[#parts + 1] = 'local u\n'
+		writer:line('local u')
 	end
 	if #linear_tracks > 0 or #cubic_tracks > 0 then
-		parts[#parts + 1] = 'if evaluation["sample"] then\n'
+		writer:begin_block('if evaluation["sample"] then')
 		if analysis.frame_max_key_count > 1 then
-			parts[#parts + 1] = 'position = evaluation["frame"]\n'
+			writer:line('position = evaluation["frame"]')
 		end
-		append_scalar_lane(parts, 'linear_tracks', linear_tracks, 'frame', false)
-		append_scalar_lane(parts, 'cubic_tracks', cubic_tracks, 'frame', true)
-		parts[#parts + 1] = 'end\n'
+		append_scalar_lane(writer, 'linear_tracks', linear_tracks, 'frame', false)
+		append_scalar_lane(writer, 'cubic_tracks', cubic_tracks, 'frame', true)
+		writer:end_block()
 	end
 	if #linear_time_tracks > 0 or #cubic_time_tracks > 0 then
 		if analysis.time_max_key_count > 1 then
-			parts[#parts + 1] = 'position = evaluation["time_ms"]\n'
+			writer:line('position = evaluation["time_ms"]')
 		end
-		append_scalar_lane(parts, 'linear_time_tracks', linear_time_tracks, 'time_ms', false)
-		append_scalar_lane(parts, 'cubic_time_tracks', cubic_time_tracks, 'time_ms', true)
+		append_scalar_lane(writer, 'linear_time_tracks', linear_time_tracks, 'time_ms', false)
+		append_scalar_lane(writer, 'cubic_time_tracks', cubic_time_tracks, 'time_ms', true)
 	end
-	parts[#parts + 1] = 'end'
-	return load(table.concat(parts), '[timeline.scalar_channel]', 't')(), analysis.cached_segment_count
+	writer:end_block()
+	return load(writer:finish(), '[timeline.scalar_channel]', 't')(), analysis.cached_segment_count
 end
 
 local finalize_tracks<const> = function(tracks)
