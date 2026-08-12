@@ -77,7 +77,6 @@
 local eventemitter<const> = {
 	id = 'eventemitter',
 	listeners = {},
-	any_listeners = {},
 	_subscriptions_by_subscriber = {},
 	_dispatch_depth = 0,
 	_pending_listener_lists = {},
@@ -237,38 +236,24 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
-function eventemitter:on_any(handler, subscriber)
-	append_listener(self, self.any_listeners, {
-		handler = handler,
-		subscriber = subscriber,
-	})
-end
-
 -- eventemitter:emit(): synchronously dispatch direct event values. emitter_id
 -- is retained by the owning event port for filtering and downstream FSMs.
 -- Removal during dispatch takes effect before the listener's next call;
 -- listeners added during dispatch start with the next emission.
 function eventemitter:emit(event_type, emitter, payload, emitter_id)
 	local list<const> = self.listeners[event_type]
-	local listener_count<const> = list and #list or 0
-	local any_listeners<const> = self.any_listeners
-	local any_listener_count<const> = #any_listeners
-	self._dispatch_depth = self._dispatch_depth + 1
-	if list then
-		for i = 1, listener_count do
-			local entry<const> = list[i]
-			if entry then
-				local filter<const> = entry.emitter
-				if filter == nil or filter == emitter or filter == emitter_id then
-					entry.handler(event_type, emitter, payload, emitter_id)
-				end
-			end
-		end
+	if list == nil then
+		return
 	end
-	for i = 1, any_listener_count do
-		local entry<const> = any_listeners[i]
+	local listener_count<const> = #list
+	self._dispatch_depth = self._dispatch_depth + 1
+	for i = 1, listener_count do
+		local entry<const> = list[i]
 		if entry then
-			entry.handler(event_type, emitter, payload, emitter_id)
+			local filter<const> = entry.emitter
+			if filter == nil or filter == emitter or filter == emitter_id then
+				entry.handler(event_type, emitter, payload, emitter_id)
+			end
 		end
 	end
 	local dispatch_depth<const> = self._dispatch_depth - 1

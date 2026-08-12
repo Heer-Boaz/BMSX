@@ -717,7 +717,13 @@ reset_audio_state()
 local rebind<const> = function()
 	eventemitter:remove_subscriber(handle_event)
 	events = merge_events(romdir.aem_event_maps())
-	eventemitter:on_any(handle_event, handle_event)
+	for event_name in pairs(events) do
+		eventemitter:on({
+			event = event_name,
+			handler = handle_event,
+			subscriber = handle_event,
+		})
+	end
 end
 
 local reload_from_rom<const> = function()
