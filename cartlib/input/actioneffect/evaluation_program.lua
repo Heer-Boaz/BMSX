@@ -313,6 +313,7 @@ local emit_input_locals<const> = function(printer, values)
 end
 
 local emit_dependency_captures<const> = function(printer, values)
+	printer:emit(templates.bindings_capture, values)
 	printer:emit(templates.input_is_active_capture, values)
 	if #values.effect_program.operands > 0 then
 		printer:emit(templates.operands_capture, values)
@@ -544,6 +545,9 @@ templates.press_local = lua_source_printer.compile_template('local press\n')
 templates.hold_local = lua_source_printer.compile_template('local hold\n')
 templates.release_local = lua_source_printer.compile_template('local release\n')
 templates.custom_local = lua_source_printer.compile_template('local custom_matches = component["custom_matches"]\n')
+templates.bindings_capture = lua_source_printer.compile_template(
+	'local bindings<const> = action_bindings\n'
+)
 templates.input_is_active_capture = lua_source_printer.compile_template(
 	'local input_is_active<const> = input_is_active\n'
 )
@@ -611,8 +615,6 @@ templates.event_flush = lua_source_printer.compile_template([[
 templates.program = lua_source_printer.compile_template([[
 	$dependency_captures$
 	return function(component, frame)
-		local program = component["program"]
-		local bindings = program["bindings"]
 		local owner = component["parent"]
 		local binding
 		$command_locals$
@@ -645,6 +647,7 @@ function evaluation_program.compile(program, effects, player_index)
 	local printer<const> = lua_source_printer.new()
 	printer:emit(templates.program, values)
 	local environment<const> = effect_program.environment
+	environment.action_bindings = program.bindings
 	if #effect_program.operands > 0 then
 		environment.effect_operands = effect_program.operands
 	end
