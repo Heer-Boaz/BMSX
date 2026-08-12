@@ -1124,14 +1124,11 @@ templates.edge_locals = lua_source_printer.compile_template([[
 ]])
 
 templates.program = lua_source_printer.compile_template([[
-	return function(source_sample_player, source_player, source_get_state, source_states, source_win)
-		local sample_player<const> = source_sample_player
-		local player<const> = source_player
+	return function(source_get_state, source_states, source_win)
 		local get_state<const> = source_get_state
 		local context<const> = source_states
 		local win<const> = source_win
 		return function()
-			sample_player(player)
 			local result
 			$state_local$
 			$edge_locals$

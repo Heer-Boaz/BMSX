@@ -788,8 +788,6 @@ function input.bind(player_index, pattern)
 			states[i] = compile_action_state(player, action_names[i])
 		end
 		evaluate = program.evaluation_factory(
-			sample_player,
-			player,
 			evaluate_action_state,
 			states,
 			buffer_frame_retention
@@ -801,34 +799,29 @@ end
 
 function input.is_action_pressed(player_index, action)
 	local player<const> = players[player_index]
-	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
 	return state.pressed and not state.consumed
 end
 
 function input.is_action_just_pressed(player_index, action)
 	local player<const> = players[player_index]
-	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
 	return state.just_pressed and not state.consumed
 end
 
 function input.is_action_just_released(player_index, action)
 	local player<const> = players[player_index]
-	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
 	return state.just_released and not state.consumed
 end
 
 function input.get_action_value(player_index, action)
 	local player<const> = players[player_index]
-	sample_player(player)
 	return evaluate_action_state(player.actions, action).value_q16
 end
 
 function input.get_vector(player_index, action)
 	local player<const> = players[player_index]
-	sample_player(player)
 	local state<const> = evaluate_action_state(player.actions, action)
 	return state.value_x_q16, state.value_y_q16
 end
@@ -848,7 +841,6 @@ end
 
 function input.consume(player_index, actions)
 	local player<const> = players[player_index]
-	sample_player(player)
 	player.eval_generation = player.eval_generation + 1
 	if type(actions) == 'table' then
 		for i = 1, #actions do

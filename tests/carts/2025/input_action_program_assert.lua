@@ -31,13 +31,8 @@ local state_at<const> = function(states, index)
 	return states[index]
 end
 
-local ignore_input_sample<const> = function()
-end
-
 local evaluate<const> = function(source, states, window)
 	return action_parser.compile(source).evaluation_factory(
-		ignore_input_sample,
-		false,
 		state_at,
 		states,
 		window
@@ -57,8 +52,6 @@ function __bmsx_host_test.setup()
 		return states[index]
 	end
 	assert(program.evaluation_factory(
-		ignore_input_sample,
-		false,
 		count_state,
 		{ pressed, idle },
 		4
