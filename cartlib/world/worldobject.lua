@@ -109,10 +109,22 @@ function worldobject:set_space(space_id)
 	return self.world:set_object_space(self, space_id)
 end
 
--- add_component(comp): attach a component to this object.
--- Returns the component for chaining.  Components are updated by ECS systems,
--- as the object lacks its own update() method.
+-- add_component(comp): requests one component attachment. During a system
+-- group the object's component storage, lifecycle hooks, Registry identity and
+-- active system views all commit together at the group barrier.
 function worldobject:add_component(comp)
+	comp.parent = self
+	if self._worldobject_index ~= nil then
+		return self.world:attach_component(comp)
+	end
+	self:_attach_component(comp)
+	if self.active then
+		comp:on_activate()
+	end
+	return comp
+end
+
+function worldobject:_attach_component(comp)
 	local component_class<const> = getmetatable(comp)
 	local classes<const> = componentclass.chain(component_class)
 	local components_by_class<const> = self._components_by_class
@@ -127,7 +139,6 @@ function worldobject:add_component(comp)
 			end
 		end
 	end
-	comp.parent = self
 	comp._attached = true
 	local components<const> = self._components
 	local component_index<const> = #components + 1
@@ -147,14 +158,6 @@ function worldobject:add_component(comp)
 		end
 	end
 	comp:on_attach()
-	if self._worldobject_index ~= nil then
-		self.world:attach_component(comp)
-	end
-	if self.active then
-		comp:on_activate()
-	end
-
-	return comp
 end
 
 function worldobject:get_component(component_class)
@@ -167,11 +170,11 @@ function worldobject:remove_component(comp)
 	if self._worldobject_index ~= nil then
 		self.world:detach_component(comp)
 	else
-		self:_commit_component_detach(comp)
+		self:_detach_component(comp)
 	end
 end
 
-function worldobject:_commit_component_detach(comp)
+function worldobject:_detach_component(comp)
 	local component_class<const> = getmetatable(comp)
 	local classes<const> = componentclass.chain(component_class)
 	local components_by_class<const> = self._components_by_class
@@ -294,7 +297,6 @@ end
 -- without removing it from the world. Component state and event subscriptions
 -- are preserved. Disposal commits remove the same membership directly before
 -- the object's despawn callback runs.
--- Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
 	if self._worldobject_index ~= nil then
@@ -331,7 +333,7 @@ function worldobject:_dispose()
 	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		component._attached = false
-		self:_commit_component_detach(component)
+		self:_detach_component(component)
 	end
 	self:unbind()
 end

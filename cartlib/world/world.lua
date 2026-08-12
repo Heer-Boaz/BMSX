@@ -354,7 +354,7 @@ end
 function worldclass:_reconcile_active_component(comp)
 	local parent<const> = comp.parent
 	local target_space = nil
-	if comp._attached and not comp._attach_pending and comp.enabled and parent._worldobject_index ~= nil and parent.active then
+	if comp._attached and comp.enabled and parent._worldobject_index ~= nil and parent.active then
 		target_space = parent._space
 	end
 	local active_space<const> = comp._active_space
@@ -386,7 +386,8 @@ function worldclass:reconcile_component(comp)
 end
 
 function worldclass:_commit_component_attach(comp)
-	comp._attach_pending = nil
+	local parent<const> = comp.parent
+	parent:_attach_component(comp)
 	if comp.id == nil then
 		comp.id = registry:next_id()
 	end
@@ -396,33 +397,34 @@ function worldclass:_commit_component_attach(comp)
 		registry:index(comp, classes[class_index])
 	end
 	self:_reconcile_active_component(comp)
-end
-
-function worldclass:_cancel_component_attach(comp)
 	comp._attach_pending = nil
-	comp.parent:_commit_component_detach(comp)
+	if parent.active then
+		comp:on_activate()
+	end
 end
 
 function worldclass:attach_component(comp)
+	comp._attach_pending = true
 	if not self._mutation_barrier_open then
 		self:_commit_component_attach(comp)
-		return
+		return comp
 	end
-	comp._attach_pending = true
 	local index<const> = self._pending_component_attach_count + 1
 	self._pending_component_attach_count = index
 	self._pending_component_attaches[index] = comp
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_attach
+	return comp
 end
 
 function worldclass:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
-	comp.parent:_commit_component_detach(comp)
+	comp.parent:_detach_component(comp)
 	registry:deregister(comp)
 end
 
 function worldclass:detach_component(comp)
 	if comp._attach_pending then
+		comp._attach_pending = nil
 		return
 	end
 	if not self._mutation_barrier_open then
@@ -441,10 +443,8 @@ function worldclass:_flush_component_attaches()
 	while index <= self._pending_component_attach_count do
 		local comp<const> = pending[index]
 		pending[index] = nil
-		if comp._attached then
+		if comp._attach_pending then
 			self:_commit_component_attach(comp)
-		else
-			self:_cancel_component_attach(comp)
 		end
 		index = index + 1
 	end
@@ -669,10 +669,6 @@ function worldclass:_flush_structural_mutations()
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
 			self:_flush_admissions()
 		end
-		if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
-			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_attach
-			self:_flush_component_attaches()
-		end
 		if (self._pending_mutation_mask & mutation_object) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_object
 			self:_flush_objects()
@@ -688,6 +684,10 @@ function worldclass:_flush_structural_mutations()
 		if (self._pending_mutation_mask & mutation_component_detach) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_detach
 			self:_flush_component_detaches()
+		end
+		if (self._pending_mutation_mask & mutation_component_attach) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_attach
+			self:_flush_component_attaches()
 		end
 		if (self._pending_mutation_mask & mutation_active_space) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_active_space
@@ -766,21 +766,6 @@ function worldclass:_render_double_page()
 	gx_gpu.draw_target(self._draw_page, self._page_size)
 end
 
-function worldclass:_recompute_visual_sequence()
-	local sequence = 0
-	local objects<const> = self._objects
-	for object_index = 1, #objects do
-		local components<const> = objects[object_index]._components
-		for component_index = 1, #components do
-			local component<const> = components[component_index]
-			if component.is_visual and component._active_space ~= nil and component._visual_sequence > sequence then
-				sequence = component._visual_sequence
-			end
-		end
-	end
-	self._visual_sequence = sequence
-end
-
 function worldclass:_commit_clear()
 	self._visual_sequence = 0
 	local objects<const> = self._objects
@@ -788,7 +773,6 @@ function worldclass:_commit_clear()
 		self:mark_for_disposal(objects[#objects])
 	end
 	self._system_manager:reset()
-	self:_recompute_visual_sequence()
 	self:set_space(self._initial_space_id)
 end
 

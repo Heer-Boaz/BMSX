@@ -18,7 +18,7 @@ function basecomponent:set_enabled(enabled)
 	end
 	self.enabled = enabled
 	local parent<const> = self.parent
-	if self._attached and not self._attach_pending and parent._worldobject_index ~= nil and parent.active then
+	if self._attached and parent._worldobject_index ~= nil and parent.active then
 		parent.world:reconcile_component(self)
 	end
 	return self
