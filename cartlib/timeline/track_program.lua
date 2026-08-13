@@ -488,6 +488,7 @@ local compile_steps<const> = function(step_defs, length)
 			for key_index = 1, #keys do
 				local key<const> = keys[key_index]
 				key.apply = step_def.apply
+				key.previous_key = keys[key_index - 1]
 				time_keys[#time_keys + 1] = key
 			end
 		else

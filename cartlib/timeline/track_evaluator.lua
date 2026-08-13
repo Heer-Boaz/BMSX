@@ -472,8 +472,9 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 	entry.next_time_step_index = first_time_after(steps.time_keys, steps.time_key_count, time_ms)
 end
 
--- Positioning reconstructs every track and places this cursor. Monotone play
--- then consumes the immutable merged key stream without searching it again.
+-- Positioning and loop discontinuities reconstruct every track and place this
+-- cursor. Monotone play consumes the immutable merged key stream in either
+-- direction without searching individual tracks again.
 local advance_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
 	local keys<const> = steps.time_keys
 	local count<const> = steps.time_key_count
@@ -484,6 +485,23 @@ local advance_time_step_tracks<const> = function(entry, steps, time_ms, params, 
 		index = index + 1
 	end
 	entry.next_time_step_index = index
+end
+
+local retreat_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
+	local keys<const> = steps.time_keys
+	local index = entry.next_time_step_index - 1
+	while index > 0 do
+		local key<const> = keys[index]
+		if key.time_ms <= time_ms then
+			break
+		end
+		local previous_key<const> = key.previous_key
+		if previous_key ~= nil then
+			previous_key.apply(entry, previous_key.value, params, evaluation)
+		end
+		index = index - 1
+	end
+	entry.next_time_step_index = index + 1
 end
 
 local evaluate_play_frame_steps<const> = function(
@@ -528,11 +546,12 @@ local evaluate_play_time_steps<const> = function(
 )
 	if flags & initial_flag ~= 0
 	or flags & wrapped_flag ~= 0
-	or previous_frame < 0
-	or time_ms <= previous_time_ms then
+	or previous_frame < 0 then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
-	else
+	elseif time_ms > previous_time_ms then
 		advance_time_step_tracks(entry, steps, time_ms, params, evaluation)
+	elseif time_ms < previous_time_ms then
+		retreat_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	end
 end
 
