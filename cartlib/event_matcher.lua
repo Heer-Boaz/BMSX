@@ -2,7 +2,7 @@
 -- short-circuit firmware closure so event dispatch never walks its structure or
 -- calls a tree of predicate closures.
 local event_matcher_source<const> = require('cartlib/event_matcher_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
+local compile_syntax<const> = lua_compiler.compile_syntax
 
 local event_matcher<const> = {}
 
@@ -47,10 +47,9 @@ function event_matcher.compile(matcher)
 	if source_plan.uses_list_contains then
 		environment.list_contains = list_contains
 	end
-	return load(
-		lua_syntax_printer.print(syntax_tree),
+	return compile_syntax(
+		syntax_tree,
 		'[event_matcher]',
-		't',
 		environment
 	)()
 end

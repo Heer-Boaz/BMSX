@@ -1,22 +1,20 @@
-local lua_syntax<const> = require('cartlib/codegen/lua_syntax')
+local syntax_factory<const> = lua_compiler.syntax_factory
 
 local event_matcher_source<const> = {}
-local binary_operator<const> = lua_syntax.binary_operator
-local unary_operator<const> = lua_syntax.unary_operator
-local identifier<const> = lua_syntax.identifier
-local numeric_literal<const> = lua_syntax.numeric_literal
-local string_literal<const> = lua_syntax.string_literal
-local boolean_literal<const> = lua_syntax.boolean_literal
-local member_expression<const> = lua_syntax.member_expression
-local index_expression<const> = lua_syntax.index_expression
-local call_expression<const> = lua_syntax.call_expression
-local binary_expression<const> = lua_syntax.binary_expression
-local unary_expression<const> = lua_syntax.unary_expression
-local function_expression<const> = lua_syntax.function_expression
-local local_declaration_statement<const> = lua_syntax.local_declaration_statement
-local return_statement<const> = lua_syntax.return_statement
-
-local payload<const> = identifier('payload')
+local syntax<const> = syntax_factory.syntax
+local block<const> = syntax_factory.block
+local identifier<const> = syntax_factory.identifier
+local numeric_literal<const> = syntax_factory.number_literal
+local string_literal<const> = syntax_factory.string_literal
+local boolean_literal<const> = syntax_factory.boolean_literal
+local member_expression<const> = syntax_factory.member_expression
+local index_expression<const> = syntax_factory.index_expression
+local call_expression<const> = syntax_factory.call_expression
+local binary_expression<const> = syntax_factory.binary_expression
+local unary_expression<const> = syntax_factory.unary_expression
+local function_expression<const> = syntax_factory.function_expression
+local local_statement<const> = syntax_factory.local_statement
+local return_statement<const> = syntax_factory.return_statement
 
 local add_operand<const> = function(state, operand)
 	local operands<const> = state.operands
@@ -29,7 +27,7 @@ local append_condition<const> = function(expression, condition)
 	if expression == nil then
 		return condition
 	end
-	return binary_expression(binary_operator.logical_and, expression, condition)
+	return binary_expression(syntax.binary_and, expression, condition)
 end
 
 local build_any_entries<const> = function(state, expression, entries)
@@ -42,7 +40,7 @@ local build_any_entries<const> = function(state, expression, entries)
 			expression,
 			call_expression(identifier('any_matches'), {
 				add_operand(state, list),
-				index_expression(payload, add_operand(state, key)),
+				index_expression(identifier('payload'), add_operand(state, key)),
 			})
 		)
 	end
@@ -57,8 +55,8 @@ local build_payload_match<const> = function(state, matcher)
 			expression = append_condition(
 				expression,
 				binary_expression(
-					binary_operator.equal,
-					index_expression(payload, add_operand(state, key)),
+					syntax.binary_equal,
+					index_expression(identifier('payload'), add_operand(state, key)),
 					add_operand(state, value)
 				)
 			)
@@ -69,13 +67,15 @@ local build_payload_match<const> = function(state, matcher)
 	local required_tags<const> = matcher.has_tag
 	if required_tags ~= nil and #required_tags > 0 then
 		state.uses_list_contains = true
-		local tags<const> = member_expression(payload, 'tags')
-		expression = append_condition(expression, tags)
+		expression = append_condition(
+			expression,
+			member_expression(identifier('payload'), 'tags')
+		)
 		for index = 1, #required_tags do
 			expression = append_condition(
 				expression,
 				call_expression(identifier('list_contains'), {
-					tags,
+					member_expression(identifier('payload'), 'tags'),
 					add_operand(state, required_tags[index]),
 				})
 			)
@@ -86,10 +86,10 @@ local build_payload_match<const> = function(state, matcher)
 	end
 	state.uses_payload_fields = true
 	return binary_expression(
-		binary_operator.logical_and,
+		syntax.binary_and,
 		binary_expression(
-			binary_operator.equal,
-			call_expression(identifier('value_type'), { payload }),
+			syntax.binary_equal,
+			call_expression(identifier('value_type'), { identifier('payload') }),
 			string_literal('table')
 		),
 		expression
@@ -112,7 +112,7 @@ build_matcher = function(state, matcher)
 	if not_matcher then
 		expression = append_condition(
 			expression,
-			unary_expression(unary_operator.logical_not, build_matcher(state, not_matcher))
+			unary_expression(syntax.unary_not, build_matcher(state, not_matcher))
 		)
 	end
 	local or_matchers<const> = matcher['or']
@@ -120,7 +120,7 @@ build_matcher = function(state, matcher)
 		local or_expression = build_matcher(state, or_matchers[1])
 		for index = 2, #or_matchers do
 			or_expression = binary_expression(
-				binary_operator.logical_or,
+				syntax.binary_or,
 				or_expression,
 				build_matcher(state, or_matchers[index])
 			)
@@ -143,37 +143,38 @@ function event_matcher_source.build(matcher)
 	local matcher_expression<const> = build_matcher(state, matcher)
 	local statements<const> = {}
 	if state.uses_payload_fields then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'operands' },
-			{ identifier('operands') },
+		statements[#statements + 1] = local_statement(
+			identifier('operands'),
+			identifier('operands'),
 			true
 		)
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'value_type' },
-			{ identifier('value_type') },
+		statements[#statements + 1] = local_statement(
+			identifier('value_type'),
+			identifier('value_type'),
 			true
 		)
 	end
 	if state.uses_any_matches then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'any_matches' },
-			{ identifier('any_matches') },
+		statements[#statements + 1] = local_statement(
+			identifier('any_matches'),
+			identifier('any_matches'),
 			true
 		)
 	end
 	if state.uses_list_contains then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'list_contains' },
-			{ identifier('list_contains') },
+		statements[#statements + 1] = local_statement(
+			identifier('list_contains'),
+			identifier('list_contains'),
 			true
 		)
 	end
 	statements[#statements + 1] = return_statement({
-		function_expression({ 'payload' }, {
-			return_statement({ matcher_expression }),
-		}),
+		function_expression(
+			{ identifier('payload') },
+			block({ return_statement({ matcher_expression }) })
+		),
 	})
-	return lua_syntax.chunk(statements), state
+	return syntax_factory.chunk(block(statements)), state
 end
 
 return event_matcher_source
