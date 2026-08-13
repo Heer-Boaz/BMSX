@@ -252,8 +252,12 @@ local evaluate_pingpong_forward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	-- Both endpoints share the immutable linear transform coefficients, so a
+	-- range decodes them once rather than once per endpoint.
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
+	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
+	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
 	local cursor_ms = previous_time_ms
 	local segment<const> = cursor_ms // duration_ms
 	local segment_start_ms<const> = segment * duration_ms
@@ -326,8 +330,10 @@ local evaluate_pingpong_backward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
+	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
+	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
 	local cursor_ms = previous_time_ms
 	local segment = cursor_ms // duration_ms
 	local segment_start_ms = segment * duration_ms
@@ -479,10 +485,12 @@ local evaluate_play_once<const> = function(
 	initial
 )
 	local clip<const> = target.clip
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
 	local previous_time_ms<const>, time_ms<const> = bound_once_range(
 		target,
-		child_time_at(clip, previous_parent_time_ms),
-		child_time_at(clip, parent_time_ms)
+		previous_parent_time_ms * time_scale + time_offset_ms,
+		parent_time_ms * time_scale + time_offset_ms
 	)
 	target.write_time_range(
 		target,
