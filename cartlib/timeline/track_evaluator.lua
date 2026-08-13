@@ -366,7 +366,7 @@ local sync_tags<const> = function(tags, entry, owner, frame, time_ms)
 end
 
 function track_evaluator.sync_tags(entry, owner, frame, time_ms)
-	sync_tags(entry.instance.program.tracks.tags, entry, owner, frame, time_ms)
+	sync_tags(entry.program.tracks.tags, entry, owner, frame, time_ms)
 end
 
 function track_evaluator.bind_position_tags(program)
@@ -552,9 +552,9 @@ function track_evaluator.compile_values(program)
 end
 
 function track_evaluator.init_entry(entry)
-	local tracks<const> = entry.instance.program.tracks
+	local tracks<const> = entry.program.tracks
 	local steps<const> = tracks.steps
-	position_time_step_cursor(entry, steps, entry.instance.position_ms)
+	position_time_step_cursor(entry, steps, entry.position_ms)
 	local scalar_channels<const> = tracks.scalar_channels
 	local cached_segment_count<const> = scalar_channels.cached_segment_count
 	if cached_segment_count == 0 then
@@ -590,7 +590,7 @@ function track_evaluator.init_entry(entry)
 end
 
 function track_evaluator.clear_tags(entry, owner)
-	local tags<const> = entry.instance.program.tracks.tags
+	local tags<const> = entry.program.tracks.tags
 	if tags.tag_count == 0 then
 		return
 	end

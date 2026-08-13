@@ -30,10 +30,6 @@ local target_member<const> = function(name)
 	return member_expression(identifier('target'), name)
 end
 
-local instance_member<const> = function(name)
-	return member_expression(identifier('instance'), name)
-end
-
 local clip_member<const> = function(name)
 	return member_expression(identifier('clip'), name)
 end
@@ -246,7 +242,7 @@ local emit_loop_position<const> = function(statements, values)
 	emit_cyclic_captures(statements, values)
 	emit_transport_captures(statements, values)
 	statements[#statements + 1] = assignment_statement(
-		instance_member('wrapped'),
+		target_member('wrapped'),
 		boolean_literal(false)
 	)
 	statements[#statements + 1] = local_statement(
@@ -308,13 +304,13 @@ local emit_loop_play<const> = function(statements, values)
 	emit_cyclic_captures(statements, values)
 	emit_transport_captures(statements, values)
 	statements[#statements + 1] = assignment_statement(
-		instance_member('wrapped'),
+		target_member('wrapped'),
 		boolean_literal(false)
 	)
 	if values.active then
 		statements[#statements + 1] = local_statement(
 			identifier('previous_time_ms'),
-			instance_member('position_ms'),
+			target_member('position_ms'),
 			false
 		)
 	else
@@ -331,7 +327,7 @@ local emit_loop_play<const> = function(statements, values)
 				),
 			})),
 			else_clause(block({
-				assignment_statement(identifier('previous_time_ms'), instance_member('position_ms')),
+				assignment_statement(identifier('previous_time_ms'), target_member('position_ms')),
 			})),
 		})
 	end
@@ -369,7 +365,7 @@ local emit_loop_play<const> = function(statements, values)
 				identifier('distance_ms')
 			)
 		),
-		assignment_statement(instance_member('wrapped'), boolean_literal(true)),
+		assignment_statement(target_member('wrapped'), boolean_literal(true)),
 	}
 	local boundary_time
 	if values.direction > 0 then

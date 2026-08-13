@@ -108,7 +108,7 @@ local bind_child<const> = function(parent_entry, child_entry, clip)
 	else
 		child_entry.primary_binding = nil
 	end
-	local child_program<const> = child_entry.instance.program
+	local child_program<const> = child_entry.program
 	if child_program.binding_count == 1 then
 		return
 	end
@@ -141,7 +141,7 @@ local clear_active_clips<const> = function(entry, owner)
 end
 
 function sequence_evaluator.init_entry(entry)
-	local sequence<const> = entry.instance.program.subsequences
+	local sequence<const> = entry.program.subsequences
 	if sequence.clip_count == 0 then
 		entry.sequence_state = nil
 		return
@@ -164,12 +164,8 @@ function sequence_evaluator.init_entry(entry)
 	for clip_index = 1, sequence.clip_count do
 		local clip<const> = sequence.clips[clip_index]
 		local child_program<const> = clip.program
-		local child_entry<const> = {
-			instance = timeline.new(entry.instance.id .. '/' .. clip.id, child_program),
-			clip = clip,
-			duration_ms = child_program.duration_ms,
-			play_evaluator = child_program.evaluate_play,
-		}
+		local child_entry<const> = timeline.new(entry.id .. '/' .. clip.id, child_program)
+		child_entry.clip = clip
 		if child_program.has_evaluation_callbacks or clip.on_loop ~= nil or clip.on_turn ~= nil then
 			child_entry.evaluation_context = {}
 		end
@@ -184,7 +180,7 @@ function sequence_evaluator.init_entry(entry)
 end
 
 function sequence_evaluator.bind_entry(entry, owner)
-	local sequence<const> = entry.instance.program.subsequences
+	local sequence<const> = entry.program.subsequences
 	if sequence.clip_count == 0 then
 		return
 	end
@@ -198,11 +194,8 @@ function sequence_evaluator.bind_entry(entry, owner)
 				clear_child(child_entry, owner)
 				remove_active_clip(state, child_entry)
 			end
-			local child_program<const> = timeline_frame_program.build(clip.program, child_entry.params)
-			child_entry.instance:rebind_program(child_program)
-			child_entry.duration_ms = child_program.duration_ms
-			child_entry.play_evaluator = child_program.evaluate_play
-			child_entry.instance:rewind()
+			child_entry:rebind_program(timeline_frame_program.build(clip.program, child_entry.params))
+			child_entry:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
 		else
@@ -305,10 +298,9 @@ local process_position_clip<const> = function(
 	if initial then
 		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
 	end
-	local instance<const> = child_entry.instance
-	local evaluate = instance.program.evaluate_scrub
+	local evaluate = child_entry.program.evaluate_scrub
 	if method == jump_update_method then
-		evaluate = instance.program.evaluate_jump
+		evaluate = child_entry.program.evaluate_jump
 	end
 	clip.position_transform(
 		child_entry,
@@ -318,7 +310,7 @@ local process_position_clip<const> = function(
 		evaluate,
 		initial
 	)
-	instance.ended = false
+	child_entry.ended = false
 	if destination_active then
 		if initial then
 			activate_clip(state, child_entry)
@@ -434,7 +426,6 @@ local evaluate_play_range<const> = function(
 				destination_time_ms = end_time_ms
 				destination_active = false
 			end
-			local child_timeline<const> = child_entry.instance
 			if clip_initial then
 				child_entry.play_transform(
 					child_entry,
@@ -453,16 +444,16 @@ local evaluate_play_range<const> = function(
 			end
 			if destination_active then
 				if clip_initial then
-					child_timeline.ended = false
+					child_entry.ended = false
 					activate_clip(state, child_entry)
 				end
 			else
-				child_timeline.ended = true
+				child_entry.ended = true
 				clear_child(child_entry, owner)
 				remove_active_clip(state, child_entry)
 				local on_finished<const> = clip.on_finished
 				if on_finished ~= nil then
-					on_finished(child_entry.primary_binding, child_timeline)
+					on_finished(child_entry.primary_binding, child_entry)
 				end
 			end
 		end
@@ -485,7 +476,6 @@ local evaluate_play_range<const> = function(
 				destination_time_ms = start_time_ms
 				destination_active = false
 			end
-			local child_timeline<const> = child_entry.instance
 			if clip_initial then
 				child_entry.play_transform(
 					child_entry,
@@ -504,16 +494,16 @@ local evaluate_play_range<const> = function(
 			end
 			if destination_active then
 				if clip_initial then
-					child_timeline.ended = false
+					child_entry.ended = false
 					activate_clip(state, child_entry)
 				end
 			else
-				child_timeline.ended = true
+				child_entry.ended = true
 				clear_child(child_entry, owner)
 				remove_active_clip(state, child_entry)
 				local on_finished<const> = clip.on_finished
 				if on_finished ~= nil then
-					on_finished(child_entry.primary_binding, child_timeline)
+					on_finished(child_entry.primary_binding, child_entry)
 				end
 			end
 		end
@@ -522,7 +512,6 @@ local evaluate_play_range<const> = function(
 			local child_entry<const> = candidate_entries[candidate_index]
 			local clip<const> = child_entry.clip
 			local clip_initial<const> = child_entry.active_index == nil
-			local child_timeline<const> = child_entry.instance
 			if clip_initial then
 				child_entry.play_transform(
 					child_entry,
@@ -540,7 +529,7 @@ local evaluate_play_range<const> = function(
 				)
 			end
 			if clip_initial then
-				child_timeline.ended = false
+				child_entry.ended = false
 				activate_clip(state, child_entry)
 			end
 		end
@@ -673,7 +662,7 @@ function sequence_evaluator.bind_position(program, method)
 end
 
 function sequence_evaluator.sync_entry(entry, owner, time_ms)
-	local sequence<const> = entry.instance.program.subsequences
+	local sequence<const> = entry.program.subsequences
 	if sequence.clip_count > 0 then
 		evaluate_position(sequence, entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
 	end

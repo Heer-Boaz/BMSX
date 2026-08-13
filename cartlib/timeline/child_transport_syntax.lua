@@ -21,24 +21,15 @@ local target_member<const> = function(name)
 	return member_expression(identifier('target'), name)
 end
 
-local instance_member<const> = function(name)
-	return member_expression(identifier('instance'), name)
-end
-
 local program_member<const> = function(name)
 	return member_expression(identifier('program'), name)
 end
 
 function child_transport_syntax.emit_captures(statements, values)
-	statements[#statements + 1] = local_statement(
-		identifier('instance'),
-		target_member('instance'),
-		true
-	)
 	if not values.position then
 		statements[#statements + 1] = local_statement(
 			identifier('evaluate'),
-			target_member('play_evaluator'),
+			target_member('evaluate_play'),
 			true
 		)
 	end
@@ -46,7 +37,7 @@ function child_transport_syntax.emit_captures(statements, values)
 	or (values.has_boundary_callback and not values.has_evaluation_callbacks) then
 		statements[#statements + 1] = local_statement(
 			identifier('program'),
-			instance_member('program'),
+			target_member('program'),
 			true
 		)
 	end
@@ -146,7 +137,7 @@ local emit_continuous_range<const> = function(
 		)
 		statements[#statements + 1] = if_statement({
 			if_clause(identifier('initial'), block({
-				assignment_statement(instance_member('head'), numeric_literal(0)),
+				assignment_statement(target_member('head'), numeric_literal(0)),
 				assignment_statement(
 					identifier('flags'),
 					numeric_literal(range_flags | values.sample_flag | values.initial_flag)
@@ -155,11 +146,11 @@ local emit_continuous_range<const> = function(
 		})
 	end
 	statements[#statements + 1] = assignment_statement(
-		instance_member('position_ms'),
+		target_member('position_ms'),
 		identifier(time_name)
 	)
 	statements[#statements + 1] = assignment_statement(
-		instance_member('direction'),
+		target_member('direction'),
 		direction_expression(direction, dynamic_direction)
 	)
 	statements[#statements + 1] = call_statement(call_expression(identifier('evaluate'), {
@@ -197,7 +188,7 @@ local emit_frame_range<const> = function(
 )
 	statements[#statements + 1] = local_statement(
 		identifier('previous_frame'),
-		instance_member('head'),
+		target_member('head'),
 		values.active
 	)
 	if not values.active then
@@ -248,9 +239,9 @@ local emit_frame_range<const> = function(
 			block({ assignment_statement(identifier('frame'), identifier('last_frame')) })
 		),
 	})
-	statements[#statements + 1] = assignment_statement(instance_member('head'), identifier('frame'))
+	statements[#statements + 1] = assignment_statement(target_member('head'), identifier('frame'))
 	statements[#statements + 1] = assignment_statement(
-		instance_member('frame_elapsed'),
+		target_member('frame_elapsed'),
 		binary_expression(
 			syntax.binary_subtract,
 			identifier(time_name),
@@ -262,11 +253,11 @@ local emit_frame_range<const> = function(
 		)
 	)
 	statements[#statements + 1] = assignment_statement(
-		instance_member('position_ms'),
+		target_member('position_ms'),
 		identifier(time_name)
 	)
 	statements[#statements + 1] = assignment_statement(
-		instance_member('direction'),
+		target_member('direction'),
 		direction_expression(direction, dynamic_direction)
 	)
 	statements[#statements + 1] = local_statement(

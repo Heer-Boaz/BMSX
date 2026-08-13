@@ -5,8 +5,9 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_program<const> = require('cartlib/timeline/sequence_program')
 local timeline_track_program<const> = require('cartlib/timeline/track_program')
 
--- A definition is admitted into immutable evaluation data. Timeline instances
--- retain only transport state and atomically replace this program on rebind.
+-- A definition is admitted into immutable evaluation data. Each timeline owns
+-- one mutable playback record with its resolved bindings and evaluator state,
+-- and atomically replaces this program on rebind.
 local timeline_program<const> = {}
 local playback_mode_by_name<const> = timeline_playback.mode
 local empty_defs<const> = {}

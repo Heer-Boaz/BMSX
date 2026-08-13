@@ -22,6 +22,8 @@ local sample_range_flags<const> = sample_flag | boundary_none
 local initial_sample_range_flags<const> = sample_range_flags | initial_flag
 local loop_boundary_flags<const> = wrapped_flag | boundary_loop
 
+-- A timeline is the single mutable playback record scheduled by a component or
+-- parent sequence. Its immutable program remains shareable across playbacks.
 local timeline<const> = {}
 timeline.__index = timeline
 
@@ -68,7 +70,7 @@ local range<const> = function(frame_count)
 	}
 end
 
-local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
+local advance_internal<const> = function(self, owner, preserve_elapsed)
 	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
@@ -136,7 +138,7 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 		flags = flags | initial_flag
 	end
 	self.evaluate_play(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		current_frame,
@@ -148,7 +150,7 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 	return self.ended
 end
 
-local update_continuous_unbounded<const> = function(self, entry, owner, delta_time)
+local update_continuous_unbounded<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local frame = previous_frame
@@ -163,7 +165,7 @@ local update_continuous_unbounded<const> = function(self, entry, owner, delta_ti
 	local time_ms<const> = previous_time_ms + delta_time * direction
 	self.position_ms = time_ms
 	self.evaluate_play(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		frame,
@@ -174,7 +176,7 @@ local update_continuous_unbounded<const> = function(self, entry, owner, delta_ti
 	)
 end
 
-local update_continuous_once<const> = function(self, entry, owner, delta_time)
+local update_continuous_once<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local frame = previous_frame
@@ -194,7 +196,7 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 	end
 	self.position_ms = time_ms
 	self.evaluate_play(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		frame,
@@ -206,7 +208,7 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 	return ended
 end
 
-local update_continuous_loop<const> = function(self, entry, owner, delta_time)
+local update_continuous_loop<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local previous_frame = self.head
 	local frame = previous_frame
@@ -224,7 +226,7 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 	while previous_time_ms + remaining >= duration_ms do
 		remaining = remaining - (duration_ms - previous_time_ms)
 		evaluate_play(
-			entry,
+			self,
 			owner,
 			previous_frame,
 			frame,
@@ -242,7 +244,7 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 	if remaining > 0 or not evaluated then
 		local time_ms<const> = previous_time_ms + remaining
 		evaluate_play(
-			entry,
+			self,
 			owner,
 			previous_frame,
 			frame,
@@ -256,7 +258,7 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 	self.position_ms = previous_time_ms
 end
 
-local update_continuous_pingpong<const> = function(self, entry, owner, delta_time)
+local update_continuous_pingpong<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local previous_frame = self.head
 	local frame = previous_frame
@@ -294,7 +296,7 @@ local update_continuous_pingpong<const> = function(self, entry, owner, delta_tim
 			boundary = boundary_none
 		end
 		evaluate_play(
-			entry,
+			self,
 			owner,
 			previous_frame,
 			frame,
@@ -310,19 +312,19 @@ local update_continuous_pingpong<const> = function(self, entry, owner, delta_tim
 	self.position_ms = previous_time_ms
 end
 
-local update_immediate_frames<const> = function(self, entry, owner)
+local update_immediate_frames<const> = function(self, owner)
 	self.wrapped = false
-	return advance_internal(self, entry, owner, false)
+	return advance_internal(self, owner, false)
 end
 
-local update_timed_frames<const> = function(self, entry, owner, delta_time)
+local update_timed_frames<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local frame_elapsed = self.frame_elapsed + delta_time
 	local frame_duration<const> = self.program.frame_duration
 	local evaluated = false
 	while frame_elapsed >= frame_duration do
 		frame_elapsed = frame_elapsed - frame_duration
-		advance_internal(self, entry, owner, true)
+		advance_internal(self, owner, true)
 		evaluated = true
 		if self.ended then
 			break
@@ -393,12 +395,12 @@ function timeline:rewind()
 	self.wrapped = false
 end
 
-function timeline:advance(entry, owner)
+function timeline:advance(owner)
 	self.wrapped = false
-	return advance_internal(self, entry, owner, false)
+	return advance_internal(self, owner, false)
 end
 
-local move_to<const> = function(self, entry, owner, frame, evaluate)
+local move_to<const> = function(self, owner, frame, evaluate)
 	self.wrapped = false
 	local program<const> = self.program
 	local previous_frame<const> = self.head
@@ -420,7 +422,7 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 	self.position_ms = time_ms
 	self.ended = false
 	evaluate(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		current_frame,
@@ -432,17 +434,17 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 	return self
 end
 
-function timeline:advance_to(entry, owner, frame)
-	return move_to(self, entry, owner, frame, self.evaluate_play)
+function timeline:advance_to(owner, frame)
+	return move_to(self, owner, frame, self.evaluate_play)
 end
 
 -- A seek reconstructs destination state. Event tracks remain play-only unless
 -- they explicitly opt into swept seek dispatch with `fire_on_seek`.
-function timeline:seek(entry, owner, frame)
-	return move_to(self, entry, owner, frame, self.program.evaluate_jump)
+function timeline:seek(owner, frame)
+	return move_to(self, owner, frame, self.program.evaluate_jump)
 end
 
-local move_time<const> = function(self, entry, owner, requested_time_ms, evaluate)
+local move_time<const> = function(self, owner, requested_time_ms, evaluate)
 	self.wrapped = false
 	local program<const> = self.program
 	local previous_frame<const> = self.head
@@ -485,7 +487,7 @@ local move_time<const> = function(self, entry, owner, requested_time_ms, evaluat
 	self.position_ms = time_ms
 	self.ended = false
 	evaluate(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		frame,
@@ -500,19 +502,19 @@ end
 -- Explicit play traversal emits every crossed one-shot key. seek_time() and
 -- scrub_time() reconstruct destination state and emit only tracks which opted
 -- into their respective positioning method.
-function timeline:advance_time_to(entry, owner, time_ms)
-	return move_time(self, entry, owner, time_ms, self.evaluate_play)
+function timeline:advance_time_to(owner, time_ms)
+	return move_time(self, owner, time_ms, self.evaluate_play)
 end
 
-function timeline:seek_time(entry, owner, time_ms)
-	return move_time(self, entry, owner, time_ms, self.program.evaluate_jump)
+function timeline:seek_time(owner, time_ms)
+	return move_time(self, owner, time_ms, self.program.evaluate_jump)
 end
 
-function timeline:scrub_time(entry, owner, time_ms)
-	return move_time(self, entry, owner, time_ms, self.program.evaluate_scrub)
+function timeline:scrub_time(owner, time_ms)
+	return move_time(self, owner, time_ms, self.program.evaluate_scrub)
 end
 
-function timeline:snap_to_start(entry, owner)
+function timeline:snap_to_start(owner)
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
@@ -525,7 +527,7 @@ function timeline:snap_to_start(entry, owner)
 	self.position_ms = 0
 	self.ended = false
 	self.evaluate_play(
-		entry,
+		self,
 		owner,
 		previous_frame,
 		0,
