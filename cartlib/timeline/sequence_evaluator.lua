@@ -398,8 +398,55 @@ local evaluate_play_range<const> = function(
 	local state<const> = entry.sequence_state
 	local forward<const> = direction > 0
 	local backward<const> = direction < 0
+	-- Retained boundary cursors prove when the published candidate snapshot is
+	-- still exact, so stable playback never opens a new candidate generation.
+	if not initial and state.candidate_snapshot_current then
+		local clip_count<const> = sequence.clip_count
+		if forward then
+			local next_start_index<const> = state.next_start_index
+			local next_end_index<const> = state.next_end_index
+			if (next_start_index > clip_count
+			or sequence.clips_by_start[next_start_index].start_time_ms > time_ms)
+			and (next_end_index > clip_count
+			or sequence.clips_by_end[next_end_index].end_time_ms > time_ms) then
+				local candidate_entries<const> = state.candidate_entries
+				for candidate_index = 1, state.candidate_count do
+					local child_entry<const> = candidate_entries[candidate_index]
+					child_entry.instance.wrapped = false
+					child_entry.clip.play_forward_transform(
+						child_entry,
+						owner,
+						previous_time_ms,
+						time_ms,
+						false
+					)
+				end
+				return
+			end
+		elseif backward then
+			local previous_end_index<const> = state.next_end_index - 1
+			local previous_start_index<const> = state.next_start_index - 1
+			if (previous_end_index == 0
+			or sequence.clips_by_end[previous_end_index].end_time_ms <= time_ms)
+			and (previous_start_index == 0
+			or sequence.clips_by_start[previous_start_index].start_time_ms <= time_ms) then
+				local candidate_entries<const> = state.candidate_entries
+				for candidate_index = 1, state.candidate_count do
+					local child_entry<const> = candidate_entries[candidate_index]
+					child_entry.instance.wrapped = false
+					child_entry.clip.play_backward_transform(
+						child_entry,
+						owner,
+						previous_time_ms,
+						time_ms,
+						false
+					)
+				end
+				return
+			end
+		end
+	end
 	local sorted_candidate_count<const> = begin_candidates(state)
-	local crossed_boundary = false
 	if initial then
 		position_boundary_cursors(state, sequence, previous_time_ms)
 		for clip_index = 1, sequence.clip_count do
@@ -414,7 +461,6 @@ local evaluate_play_range<const> = function(
 		local clips<const> = sequence.clips_by_start
 		local index = state.next_start_index
 		while index <= clip_count and clips[index].start_time_ms <= time_ms do
-			crossed_boundary = true
 			add_candidate(state, state.entries[clips[index].order])
 			index = index + 1
 		end
@@ -422,7 +468,6 @@ local evaluate_play_range<const> = function(
 		local clips_by_end<const> = sequence.clips_by_end
 		index = state.next_end_index
 		while index <= clip_count and clips_by_end[index].end_time_ms <= time_ms do
-			crossed_boundary = true
 			index = index + 1
 		end
 		state.next_end_index = index
@@ -431,49 +476,15 @@ local evaluate_play_range<const> = function(
 		local clips<const> = sequence.clips_by_end
 		local index = state.next_end_index - 1
 		while index > 0 and clips[index].end_time_ms > time_ms do
-			crossed_boundary = true
 			add_candidate(state, state.entries[clips[index].order])
 			index = index - 1
 		end
 		state.next_end_index = index + 1
 		index = state.next_start_index - 1
 		while index > 0 and clips_by_start[index].start_time_ms > time_ms do
-			crossed_boundary = true
 			index = index - 1
 		end
 		state.next_start_index = index + 1
-	end
-	if not initial and not crossed_boundary then
-		local candidate_entries<const> = state.candidate_entries
-		local candidate_count<const> = state.candidate_count
-		if forward then
-			for candidate_index = 1, candidate_count do
-				local child_entry<const> = candidate_entries[candidate_index]
-				child_entry.instance.wrapped = false
-				child_entry.clip.play_forward_transform(
-					child_entry,
-					owner,
-					previous_time_ms,
-					time_ms,
-					false
-				)
-			end
-			return
-		end
-		if backward then
-			for candidate_index = 1, candidate_count do
-				local child_entry<const> = candidate_entries[candidate_index]
-				child_entry.instance.wrapped = false
-				child_entry.clip.play_backward_transform(
-					child_entry,
-					owner,
-					previous_time_ms,
-					time_ms,
-					false
-				)
-			end
-			return
-		end
 	end
 	if state.candidate_count > sorted_candidate_count then
 		sort_candidates(state, sorted_candidate_count)
