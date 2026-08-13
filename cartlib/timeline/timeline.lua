@@ -614,8 +614,7 @@ function timeline:evaluate_clip_play_range(
 	previous_parent_time_ms,
 	parent_time_ms,
 	parent_direction,
-	initial,
-	finished
+	initial
 )
 	self.wrapped = false
 	local play_transform = clip.play_forward_transform
@@ -631,7 +630,6 @@ function timeline:evaluate_clip_play_range(
 		owner,
 		write_external_time_range
 	)
-	self.ended = finished
 	return self
 end
 

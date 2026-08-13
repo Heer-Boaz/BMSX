@@ -282,7 +282,9 @@ end
 
 -- Candidate admission guarantees that a play range intersects the clip. Its
 -- monotonic direction therefore determines the only interval edge it can
--- cross; positioning remains the owner of arbitrary destination clamping.
+-- cross; positioning remains the owner of arbitrary destination clamping. The
+-- parent sequence also owns child completion, so `ended` changes only when the
+-- clip enters or leaves its active interval.
 local process_play_clip<const> = function(
 	state,
 	owner,
@@ -324,14 +326,15 @@ local process_play_clip<const> = function(
 		source_time_ms,
 		destination_time_ms,
 		direction,
-		initial,
-		not destination_active
+		initial
 	)
 	if destination_active then
 		if initial then
+			child_timeline.ended = false
 			activate_clip(state, clip_index, child_entry)
 		end
 	else
+		child_timeline.ended = true
 		clear_child(child_entry, owner)
 		remove_active_clip(state, clip_index, child_entry)
 		local on_finished<const> = clip.on_finished
