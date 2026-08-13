@@ -65,34 +65,36 @@ local first_end_after<const> = function(clips, count, time_ms)
 	return low
 end
 
-local activate_clip<const> = function(state, clip_index)
-	if state.active_index_by_clip[clip_index] ~= nil then
+local activate_clip<const> = function(state, clip_index, child_entry)
+	if child_entry.active_index ~= nil then
 		return
 	end
 	local active_count<const> = state.active_count + 1
 	state.active_count = active_count
 	local active_index = active_count
+	local entries<const> = state.entries
 	while active_index > 1 and state.active_clips[active_index - 1] > clip_index do
 		local moved_clip_index<const> = state.active_clips[active_index - 1]
 		state.active_clips[active_index] = moved_clip_index
-		state.active_index_by_clip[moved_clip_index] = active_index
+		entries[moved_clip_index].active_index = active_index
 		active_index = active_index - 1
 	end
 	state.active_clips[active_index] = clip_index
-	state.active_index_by_clip[clip_index] = active_index
+	child_entry.active_index = active_index
 end
 
-local remove_active_clip<const> = function(state, clip_index)
-	local active_index<const> = state.active_index_by_clip[clip_index]
+local remove_active_clip<const> = function(state, clip_index, child_entry)
+	local active_index<const> = child_entry.active_index
 	if active_index == nil then
 		return
 	end
 	local active_count<const> = state.active_count
-	state.active_index_by_clip[clip_index] = nil
+	child_entry.active_index = nil
+	local entries<const> = state.entries
 	for index = active_index + 1, active_count do
 		local moved_clip_index<const> = state.active_clips[index]
 		state.active_clips[index - 1] = moved_clip_index
-		state.active_index_by_clip[moved_clip_index] = index - 1
+		entries[moved_clip_index].active_index = index - 1
 	end
 	state.active_clips[active_count] = nil
 	state.active_count = active_count - 1
@@ -143,8 +145,9 @@ local clear_active_clips<const> = function(entry, owner)
 	local state<const> = entry.sequence_state
 	while state.active_count > 0 do
 		local clip_index<const> = state.active_clips[state.active_count]
-		clear_child(state.entries[clip_index], owner)
-		remove_active_clip(state, clip_index)
+		local child_entry<const> = state.entries[clip_index]
+		clear_child(child_entry, owner)
+		remove_active_clip(state, clip_index, child_entry)
 	end
 end
 
@@ -157,7 +160,6 @@ function sequence_evaluator.init_entry(entry)
 	local state<const> = {
 		entries = {},
 		active_clips = {},
-		active_index_by_clip = {},
 		active_count = 0,
 		candidates = {},
 		candidate_marks = {},
@@ -206,9 +208,9 @@ function sequence_evaluator.bind_entry(entry, owner)
 		local child_entry<const> = state.entries[clip_index]
 		bind_child(entry, child_entry, clip)
 		if clip.program.frame_builder ~= nil then
-			if state.active_index_by_clip[clip_index] ~= nil then
+			if child_entry.active_index ~= nil then
 				clear_child(child_entry, owner)
-				remove_active_clip(state, clip_index)
+				remove_active_clip(state, clip_index, child_entry)
 			end
 			child_entry.instance:rebind_program(timeline_frame_program.build(clip.program, child_entry.params))
 			child_entry.instance:rewind()
@@ -280,7 +282,7 @@ local process_play_clip<const> = function(
 )
 	local clip<const> = sequence.clips[clip_index]
 	local child_entry<const> = state.entries[clip_index]
-	local initial<const> = state.active_index_by_clip[clip_index] == nil
+	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
 	local end_time_ms<const> = clip.end_time_ms
 	local destination_active<const> = time_ms >= start_time_ms and time_ms < end_time_ms
@@ -303,10 +305,10 @@ local process_play_clip<const> = function(
 		not destination_active
 	)
 	if destination_active then
-		activate_clip(state, clip_index)
+		activate_clip(state, clip_index, child_entry)
 	else
 		clear_child(child_entry, owner)
-		remove_active_clip(state, clip_index)
+		remove_active_clip(state, clip_index, child_entry)
 		local on_finished<const> = clip.on_finished
 		if on_finished ~= nil then
 			on_finished(child_entry.primary_binding, child_timeline)
@@ -325,7 +327,7 @@ local process_position_clip<const> = function(
 )
 	local clip<const> = sequence.clips[clip_index]
 	local child_entry<const> = state.entries[clip_index]
-	local initial<const> = state.active_index_by_clip[clip_index] == nil
+	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
 	local end_time_ms<const> = clip.end_time_ms
 	local destination_active<const> = time_ms >= start_time_ms and time_ms < end_time_ms
@@ -343,10 +345,10 @@ local process_position_clip<const> = function(
 		initial
 	)
 	if destination_active then
-		activate_clip(state, clip_index)
+		activate_clip(state, clip_index, child_entry)
 	else
 		clear_child(child_entry, owner)
-		remove_active_clip(state, clip_index)
+		remove_active_clip(state, clip_index, child_entry)
 	end
 end
 
@@ -459,8 +461,9 @@ local evaluate_position<const> = function(
 				method
 			)
 		else
-			clear_child(state.entries[clip_index], owner)
-			remove_active_clip(state, clip_index)
+			local child_entry<const> = state.entries[clip_index]
+			clear_child(child_entry, owner)
+			remove_active_clip(state, clip_index, child_entry)
 		end
 	end
 end
