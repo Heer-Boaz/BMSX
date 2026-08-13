@@ -30,6 +30,8 @@ const SYSTEM_MODULE_FILES = [
 
 const CART_MODULE_FILES = [
 	['cartlib/codegen/lua_source_printer', 'cartlib/codegen/lua_source_printer.lua'],
+	['cartlib/codegen/lua_syntax', 'cartlib/codegen/lua_syntax.lua'],
+	['cartlib/codegen/lua_syntax_printer', 'cartlib/codegen/lua_syntax_printer.lua'],
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/component/component_class', 'cartlib/component/component_class.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],
@@ -44,6 +46,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
 	['cartlib/timeline/evaluation_context', 'cartlib/timeline/evaluation_context.lua'],
+	['cartlib/timeline/evaluation_program_source', 'cartlib/timeline/evaluation_program_source.lua'],
 	['cartlib/timeline/evaluation_program', 'cartlib/timeline/evaluation_program.lua'],
 	['cartlib/timeline/frame_program', 'cartlib/timeline/frame_program.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
