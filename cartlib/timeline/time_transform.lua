@@ -127,6 +127,7 @@ local evaluate_loop_forward<const> = function(
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms + duration_ms
 	while boundary_ms <= time_ms do
+		target.instance.wrapped = true
 		write_range(
 			target,
 			owner,
@@ -135,8 +136,7 @@ local evaluate_loop_forward<const> = function(
 			evaluate,
 			1,
 			initial,
-			boundary_loop,
-			true
+			loop_boundary_flags
 		)
 		local on_loop<const> = clip.on_loop
 		if on_loop ~= nil then
@@ -164,8 +164,7 @@ local evaluate_loop_forward<const> = function(
 			evaluate,
 			1,
 			initial,
-			boundary_none,
-			false
+			boundary_none
 		)
 	end
 end
@@ -187,6 +186,7 @@ local evaluate_loop_backward<const> = function(
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms
 	while time_ms < boundary_ms do
+		target.instance.wrapped = true
 		write_range(
 			target,
 			owner,
@@ -195,8 +195,7 @@ local evaluate_loop_backward<const> = function(
 			evaluate,
 			-1,
 			initial,
-			boundary_loop,
-			true
+			loop_boundary_flags
 		)
 		local on_loop<const> = clip.on_loop
 		if on_loop ~= nil then
@@ -224,8 +223,7 @@ local evaluate_loop_backward<const> = function(
 			evaluate,
 			-1,
 			initial,
-			boundary_none,
-			false
+			boundary_none
 		)
 	end
 end
@@ -270,8 +268,7 @@ local evaluate_pingpong_forward<const> = function(
 			evaluate,
 			direction,
 			initial,
-			boundary_turn,
-			false
+			boundary_turn
 		)
 		local on_turn<const> = clip.on_turn
 		if on_turn ~= nil then
@@ -300,8 +297,7 @@ local evaluate_pingpong_forward<const> = function(
 			evaluate,
 			direction,
 			initial,
-			boundary_none,
-			false
+			boundary_none
 		)
 	end
 end
@@ -351,8 +347,7 @@ local evaluate_pingpong_backward<const> = function(
 			evaluate,
 			direction,
 			initial,
-			boundary_turn,
-			false
+			boundary_turn
 		)
 		local on_turn<const> = clip.on_turn
 		if on_turn ~= nil then
@@ -381,8 +376,7 @@ local evaluate_pingpong_backward<const> = function(
 			evaluate,
 			direction,
 			initial,
-			boundary_none,
-			false
+			boundary_none
 		)
 	end
 end
@@ -409,8 +403,7 @@ local evaluate_position_once<const> = function(
 		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
-		boundary_none,
-		false
+		boundary_none
 	)
 end
 
@@ -434,8 +427,7 @@ local evaluate_position_loop<const> = function(
 		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
-		boundary_none,
-		false
+		boundary_none
 	)
 end
 
@@ -462,8 +454,7 @@ local evaluate_position_pingpong<const> = function(
 		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
-		boundary_none,
-		false
+		boundary_none
 	)
 end
 
@@ -488,8 +479,7 @@ local evaluate_play_once<const> = function(
 		target.play_evaluator,
 		direction_between(previous_time_ms, time_ms, clip.direction),
 		initial,
-		boundary_none,
-		false
+		boundary_none
 	)
 end
 

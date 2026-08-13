@@ -23,21 +23,16 @@ local write_continuous_child_time_range<const> = function(
 	evaluate,
 	direction,
 	initial,
-	boundary,
-	wrapped
+	range_flags
 )
 	local instance<const> = entry.instance
-	local flags = boundary | sample_flag
+	local flags = range_flags | sample_flag
 	if initial then
 		instance.head = 0
 		flags = flags | initial_flag
 	end
 	instance.position_ms = time_ms
 	instance.direction = direction
-	if wrapped then
-		flags = flags | wrapped_flag
-		instance.wrapped = true
-	end
 	evaluate(
 		entry,
 		owner,
@@ -58,8 +53,7 @@ local write_frame_child_time_range<const> = function(
 	evaluate,
 	direction,
 	initial,
-	boundary,
-	wrapped
+	range_flags
 )
 	local instance<const> = entry.instance
 	local program<const> = instance.program
@@ -77,13 +71,9 @@ local write_frame_child_time_range<const> = function(
 	instance.frame_elapsed = time_ms - frame * frame_duration
 	instance.position_ms = time_ms
 	instance.direction = direction
-	local flags = boundary
+	local flags = range_flags
 	if initial or frame ~= previous_frame then
 		flags = flags | sample_flag
-	end
-	if wrapped then
-		flags = flags | wrapped_flag
-		instance.wrapped = true
 	end
 	if initial then
 		flags = flags | initial_flag
