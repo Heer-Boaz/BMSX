@@ -1,6 +1,7 @@
 -- Admission-only lowering from cooked track capabilities to canonical firmware
 -- syntax. Runtime evaluation contains only the selected traversal phases.
 local syntax_factory<const> = lua_compiler.syntax_factory
+local step_track_syntax<const> = require('cartlib/timeline/step_track_syntax')
 
 local track_evaluator_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
@@ -26,6 +27,7 @@ local sample_name<const> = function(prefix, index)
 end
 
 local emit_dependency_captures<const> = function(statements, values)
+	step_track_syntax.emit_dependency_captures(statements, values)
 	if values.has_sample_tracks then
 		statements[#statements + 1] = local_statement(
 			identifier('sample_tracks'),
@@ -250,7 +252,7 @@ local emit_sample<const> = function(statements, values)
 	})
 end
 
-local emit_value_runner<const> = function(statements, values)
+local emit_value_runner<const> = function(statements, values, position)
 	if values.has_frame_steps or values.has_time_steps then
 		statements[#statements + 1] = local_statement(
 			identifier('params'),
@@ -258,34 +260,10 @@ local emit_value_runner<const> = function(statements, values)
 			true
 		)
 	end
-	if values.has_frame_steps then
-		statements[#statements + 1] = call_statement(call_expression(
-			identifier('evaluate_frame_steps'),
-			{
-				identifier('entry'),
-				identifier('steps'),
-				identifier('params'),
-				identifier('previous_frame'),
-				identifier('frame'),
-				identifier('direction'),
-				identifier('flags'),
-				identifier('evaluation'),
-			}
-		))
-	end
-	if values.has_time_steps then
-		statements[#statements + 1] = call_statement(call_expression(
-			identifier('evaluate_time_steps'),
-			{
-				identifier('entry'),
-				identifier('steps'),
-				identifier('params'),
-				identifier('previous_time_ms'),
-				identifier('time_ms'),
-				identifier('flags'),
-				identifier('evaluation'),
-			}
-		))
+	if position then
+		step_track_syntax.emit_position(statements, values)
+	else
+		step_track_syntax.emit_play(statements, values)
 	end
 	if values.has_scalar_channels then
 		statements[#statements + 1] = call_statement(call_expression(identifier('scalar_runner'), {
@@ -311,9 +289,10 @@ function track_evaluator_syntax.build(values)
 			true
 		)
 	end
-	local runner_body<const> = {}
-	emit_value_runner(runner_body, values)
-	factory_body[#factory_body + 1] = return_statement({
+	local play_body<const> = {}
+	emit_value_runner(play_body, values, false)
+	factory_body[#factory_body + 1] = local_statement(
+		identifier('play_runner'),
 		function_expression(
 			{
 				identifier('entry'),
@@ -325,15 +304,41 @@ function track_evaluator_syntax.build(values)
 				identifier('flags'),
 				identifier('evaluation'),
 			},
-			block(runner_body)
+			block(play_body)
 		),
-	})
+		true
+	)
+	if values.has_frame_steps or values.has_time_steps then
+		local position_body<const> = {}
+		emit_value_runner(position_body, values, true)
+		factory_body[#factory_body + 1] = local_statement(
+			identifier('position_runner'),
+			function_expression(
+				{
+					identifier('entry'),
+					identifier('previous_frame'),
+					identifier('frame'),
+					identifier('previous_time_ms'),
+					identifier('time_ms'),
+					identifier('direction'),
+					identifier('flags'),
+					identifier('evaluation'),
+				},
+				block(position_body)
+			),
+			true
+		)
+		factory_body[#factory_body + 1] = return_statement({
+			identifier('play_runner'),
+			identifier('position_runner'),
+		})
+	else
+		factory_body[#factory_body + 1] = return_statement({ identifier('play_runner') })
+	end
 	statements[#statements + 1] = return_statement({
 		function_expression(
 			{
 				identifier('tracks'),
-				identifier('evaluate_frame_steps'),
-				identifier('evaluate_time_steps'),
 				identifier('scalar_runner'),
 			},
 			block(factory_body)

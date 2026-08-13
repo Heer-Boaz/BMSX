@@ -480,120 +480,6 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 	position_time_step_cursor(entry, steps, time_ms)
 end
 
-local apply_time_boundary_state<const> = function(entry, state, params, evaluation)
-	local keys<const> = state.keys
-	for index = 1, state.key_count do
-		local key<const> = keys[index]
-		key.apply(entry, key.value, params, evaluation)
-	end
-	entry.previous_time_step_key = state.previous_time_key
-	entry.next_time_step_key = state.next_time_key
-end
-
--- Positioning and loop discontinuities reconstruct every track and place this
--- cursor. Monotone play consumes the immutable merged key stream in either
--- direction without searching individual tracks again. Empty ranges leave the
--- retained cursor untouched.
-local advance_time_step_tracks<const> = function(entry, time_ms, params, evaluation)
-	local key = entry.next_time_step_key
-	if key == nil or key.time_ms > time_ms then
-		return
-	end
-	local previous_key
-	while key ~= nil and key.time_ms <= time_ms do
-		key.apply(entry, key.value, params, evaluation)
-		previous_key = key
-		key = key.next_time_key
-	end
-	entry.previous_time_step_key = previous_key
-	entry.next_time_step_key = key
-end
-
-local retreat_time_step_tracks<const> = function(entry, time_ms, params, evaluation)
-	local key = entry.previous_time_step_key
-	if key == nil or key.time_ms <= time_ms then
-		return
-	end
-	local next_key
-	while key ~= nil and key.time_ms > time_ms do
-		local previous_key<const> = key.previous_key
-		if previous_key ~= nil then
-			previous_key.apply(entry, previous_key.value, params, evaluation)
-		end
-		next_key = key
-		key = key.previous_time_key
-	end
-	entry.previous_time_step_key = key
-	entry.next_time_step_key = next_key
-end
-
-local evaluate_play_frame_steps<const> = function(
-	entry,
-	steps,
-	params,
-	previous,
-	current,
-	direction,
-	flags,
-	evaluation
-)
-	if flags & sample_flag ~= 0 then
-		if flags & reset_step_flags ~= 0
-		or current > previous + 1
-			or current < previous - 1 then
-			sample_step_tracks(entry, steps, current, params, evaluation)
-		elseif direction > 0 then
-			apply_step_bucket(entry, steps.by_frame[current], params, evaluation)
-		elseif direction < 0 then
-			apply_step_bucket(entry, steps.reverse_by_frame[previous], params, evaluation)
-		end
-	end
-end
-
-local evaluate_position_frame_steps<const> = function(entry, steps, params, _previous, frame, _direction, flags, evaluation)
-	if flags & sample_flag ~= 0 then
-		sample_step_tracks(entry, steps, frame, params, evaluation)
-	end
-end
-
-local evaluate_play_time_steps<const> = function(
-	entry,
-	steps,
-	params,
-	previous_time_ms,
-	time_ms,
-	flags,
-	evaluation
-)
-	if flags & reset_step_flags ~= 0 then
-		if flags & wrapped_flag ~= 0 then
-			local state = steps.end_time_step_state
-			if time_ms == 0 then
-				state = steps.start_time_step_state
-			end
-			apply_time_boundary_state(entry, state, params, evaluation)
-		else
-			sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
-		end
-	elseif time_ms > previous_time_ms then
-		advance_time_step_tracks(entry, time_ms, params, evaluation)
-	elseif time_ms < previous_time_ms then
-		retreat_time_step_tracks(entry, time_ms, params, evaluation)
-	end
-end
-
-local evaluate_position_time_steps<const> = function(
-	entry,
-	steps,
-	params,
-	_previous_time_ms,
-	time_ms,
-	_flags,
-	evaluation
-)
-	sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
-end
-
 function track_evaluator.compile_values(program)
 	local has_frame_steps<const> = program.has_frame_steps
 	local has_time_steps<const> = program.has_time_steps
@@ -641,10 +527,15 @@ function track_evaluator.compile_values(program)
 			has_pingpong_tracks = has_pingpong_tracks,
 			has_sin_tracks = has_sin_tracks,
 			sample_flag = sample_flag,
+			wrapped_flag = wrapped_flag,
+			reset_step_flags = reset_step_flags,
 			sample_tracks = sample_tracks,
 		}),
 		'[timeline.track_values]',
 		{
+			apply_step_bucket = apply_step_bucket,
+			sample_step_tracks = sample_step_tracks,
+			sample_time_step_tracks = sample_time_step_tracks,
 			sample_tracks = sample_tracks,
 			pingpong01 = pingpong01,
 			sin = sin,
@@ -656,21 +547,7 @@ function track_evaluator.compile_values(program)
 		if has_scalar_channels then
 			scalar_runner = scalar_program.runner_factory(tracks.scalar_channels)
 		end
-		local play_runner<const> = factory(
-			tracks,
-			evaluate_play_frame_steps,
-			evaluate_play_time_steps,
-			scalar_runner
-		)
-		if not has_frame_steps and not has_time_steps then
-			return play_runner
-		end
-		return play_runner, factory(
-			tracks,
-			evaluate_position_frame_steps,
-			evaluate_position_time_steps,
-			scalar_runner
-		)
+		return factory(tracks, scalar_runner)
 	end
 end
 
