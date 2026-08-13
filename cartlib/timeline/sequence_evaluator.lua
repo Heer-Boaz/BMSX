@@ -268,6 +268,8 @@ local sort_candidates<const> = function(state, sorted_count)
 	end
 end
 
+-- Active entries retain a source time inside their clip interval. Only a new
+-- entry or a destination which leaves that interval needs boundary clamping.
 local process_play_clip<const> = function(
 	sequence,
 	entry,
@@ -280,9 +282,15 @@ local process_play_clip<const> = function(
 	local state<const> = entry.sequence_state
 	local child_entry<const> = state.entries[clip_index]
 	local initial<const> = state.active_index_by_clip[clip_index] == nil
-	local source_time_ms<const> = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
-	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
+	local source_time_ms = previous_time_ms
+	if initial then
+		source_time_ms = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
+	end
+	local destination_time_ms = time_ms
+	if not destination_active then
+		destination_time_ms = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
+	end
 	child_entry.instance:evaluate_clip_play_range(
 		child_entry,
 		owner,
@@ -317,15 +325,17 @@ local process_position_clip<const> = function(
 	local state<const> = entry.sequence_state
 	local child_entry<const> = state.entries[clip_index]
 	local initial<const> = state.active_index_by_clip[clip_index] == nil
-	local source_time_ms<const> = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
-	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
+	local source_time_ms = previous_time_ms
+	if initial then
+		source_time_ms = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
+	end
 	child_entry.instance:evaluate_clip_at(
 		child_entry,
 		owner,
 		clip,
 		source_time_ms,
-		destination_time_ms,
+		time_ms,
 		method,
 		initial
 	)
