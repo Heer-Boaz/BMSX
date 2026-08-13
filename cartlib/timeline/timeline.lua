@@ -135,7 +135,7 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 	if initial then
 		flags = flags | initial_flag
 	end
-	program.evaluate_play(
+	self.evaluate_play(
 		entry,
 		owner,
 		previous_frame,
@@ -162,7 +162,7 @@ local update_continuous_unbounded<const> = function(self, entry, owner, delta_ti
 	local direction<const> = self.direction
 	local time_ms<const> = previous_time_ms + delta_time * direction
 	self.position_ms = time_ms
-	self.program.evaluate_play(
+	self.evaluate_play(
 		entry,
 		owner,
 		previous_frame,
@@ -185,7 +185,7 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 		flags = initial_sample_range_flags
 	end
 	local previous_time_ms<const> = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
+	local duration_ms<const> = self.duration_ms
 	local time_ms = previous_time_ms + delta_time
 	local ended<const> = time_ms >= duration_ms
 	if ended then
@@ -193,7 +193,7 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 		self.ended = true
 	end
 	self.position_ms = time_ms
-	self.program.evaluate_play(
+	self.evaluate_play(
 		entry,
 		owner,
 		previous_frame,
@@ -217,8 +217,8 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 		flags = initial_sample_range_flags
 	end
 	local previous_time_ms = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
-	local evaluate_play<const> = self.program.evaluate_play
+	local duration_ms<const> = self.duration_ms
+	local evaluate_play<const> = self.evaluate_play
 	local remaining = delta_time
 	local evaluated = false
 	while previous_time_ms + remaining >= duration_ms do
@@ -267,8 +267,8 @@ local update_continuous_pingpong<const> = function(self, entry, owner, delta_tim
 		flags = initial_sample_range_flags
 	end
 	local previous_time_ms = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
-	local evaluate_play<const> = self.program.evaluate_play
+	local duration_ms<const> = self.duration_ms
+	local evaluate_play<const> = self.evaluate_play
 	local remaining = delta_time
 	while remaining > 0 do
 		local direction<const> = self.direction
@@ -356,6 +356,8 @@ function timeline.new(id, program)
 	local self<const> = setmetatable({}, timeline)
 	self.id = id
 	self.program = program
+	self.evaluate_play = program.evaluate_play
+	self.duration_ms = program.duration_ms
 	self.update = select_updater(program)
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
@@ -368,6 +370,8 @@ end
 
 function timeline:rebind_program(program)
 	self.program = program
+	self.evaluate_play = program.evaluate_play
+	self.duration_ms = program.duration_ms
 	self.update = select_updater(program)
 end
 
@@ -429,7 +433,7 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 end
 
 function timeline:advance_to(entry, owner, frame)
-	return move_to(self, entry, owner, frame, self.program.evaluate_play)
+	return move_to(self, entry, owner, frame, self.evaluate_play)
 end
 
 -- A seek reconstructs destination state. Event tracks remain play-only unless
@@ -497,7 +501,7 @@ end
 -- scrub_time() reconstruct destination state and emit only tracks which opted
 -- into their respective positioning method.
 function timeline:advance_time_to(entry, owner, time_ms)
-	return move_time(self, entry, owner, time_ms, self.program.evaluate_play)
+	return move_time(self, entry, owner, time_ms, self.evaluate_play)
 end
 
 function timeline:seek_time(entry, owner, time_ms)
@@ -520,7 +524,7 @@ function timeline:snap_to_start(entry, owner)
 	self.frame_elapsed = 0
 	self.position_ms = 0
 	self.ended = false
-	self.program.evaluate_play(
+	self.evaluate_play(
 		entry,
 		owner,
 		previous_frame,
