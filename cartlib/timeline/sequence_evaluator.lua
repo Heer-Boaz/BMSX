@@ -224,11 +224,13 @@ local bind_play_direction<const> = function(state, clip_count, backward)
 		for index = 1, clip_count do
 			local child_entry<const> = entries[index]
 			child_entry.play_transform = child_entry.clip.play_backward_transform
+			child_entry.active_play_transform = child_entry.clip.active_play_backward_transform
 		end
 	else
 		for index = 1, clip_count do
 			local child_entry<const> = entries[index]
 			child_entry.play_transform = child_entry.clip.play_forward_transform
+			child_entry.active_play_transform = child_entry.clip.active_play_forward_transform
 		end
 	end
 	state.play_backward = backward
@@ -346,12 +348,11 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.play_transform(
+					child_entry.active_play_transform(
 						child_entry,
 						owner,
 						previous_time_ms,
-						time_ms,
-						false
+						time_ms
 					)
 				end
 				return
@@ -363,12 +364,11 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.play_transform(
+					child_entry.active_play_transform(
 						child_entry,
 						owner,
 						previous_time_ms,
-						time_ms,
-						false
+						time_ms
 					)
 				end
 				return
@@ -440,13 +440,22 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			child_entry.play_transform(
-				child_entry,
-				owner,
-				source_time_ms,
-				destination_time_ms,
-				clip_initial
-			)
+			if clip_initial then
+				child_entry.play_transform(
+					child_entry,
+					owner,
+					source_time_ms,
+					destination_time_ms,
+					true
+				)
+			else
+				child_entry.active_play_transform(
+					child_entry,
+					owner,
+					source_time_ms,
+					destination_time_ms
+				)
+			end
 			if destination_active then
 				if clip_initial then
 					child_timeline.ended = false
@@ -482,13 +491,22 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			child_entry.play_transform(
-				child_entry,
-				owner,
-				source_time_ms,
-				destination_time_ms,
-				clip_initial
-			)
+			if clip_initial then
+				child_entry.play_transform(
+					child_entry,
+					owner,
+					source_time_ms,
+					destination_time_ms,
+					true
+				)
+			else
+				child_entry.active_play_transform(
+					child_entry,
+					owner,
+					source_time_ms,
+					destination_time_ms
+				)
+			end
 			if destination_active then
 				if clip_initial then
 					child_timeline.ended = false
@@ -510,13 +528,22 @@ local evaluate_play_range<const> = function(
 			local clip<const> = child_entry.clip
 			local clip_initial<const> = child_entry.active_index == nil
 			local child_timeline<const> = child_entry.instance
-			child_entry.play_transform(
-				child_entry,
-				owner,
-				previous_time_ms,
-				time_ms,
-				clip_initial
-			)
+			if clip_initial then
+				child_entry.play_transform(
+					child_entry,
+					owner,
+					previous_time_ms,
+					time_ms,
+					true
+				)
+			else
+				child_entry.active_play_transform(
+					child_entry,
+					owner,
+					previous_time_ms,
+					time_ms
+				)
+			end
 			if clip_initial then
 				child_timeline.ended = false
 				activate_clip(state, child_entry)

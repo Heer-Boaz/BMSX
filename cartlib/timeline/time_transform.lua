@@ -32,6 +32,7 @@ local shape_loop<const> = 0x040
 local shape_pingpong<const> = 0x080
 local shape_boundary_callback<const> = 0x100
 local shape_evaluation_callbacks<const> = 0x200
+local shape_active<const> = 0x400
 local compile_syntax<const> = lua_compiler.compile_syntax
 local compile_environment<const> = {
 	write_evaluation_context = timeline_evaluation_context.write,
@@ -45,7 +46,8 @@ local transform_shape<const> = function(
 	affine,
 	direction,
 	has_boundary_callback,
-	has_evaluation_callbacks
+	has_evaluation_callbacks,
+	active
 )
 	local shape = 0
 	if continuous then
@@ -75,6 +77,9 @@ local transform_shape<const> = function(
 			shape = shape | shape_evaluation_callbacks
 		end
 	end
+	if active then
+		shape = shape | shape_active
+	end
 	return shape
 end
 
@@ -85,7 +90,8 @@ local compile_transform<const> = function(
 	affine,
 	direction,
 	has_boundary_callback,
-	has_evaluation_callbacks
+	has_evaluation_callbacks,
+	active
 )
 	local shape<const> = transform_shape(
 		playback_mode,
@@ -94,7 +100,8 @@ local compile_transform<const> = function(
 		affine,
 		direction,
 		has_boundary_callback,
-		has_evaluation_callbacks
+		has_evaluation_callbacks,
+		active
 	)
 	local transform<const> = transform_by_shape[shape]
 	if transform ~= nil then
@@ -108,6 +115,7 @@ local compile_transform<const> = function(
 		direction = direction,
 		has_boundary_callback = has_boundary_callback,
 		has_evaluation_callbacks = has_evaluation_callbacks,
+		active = active,
 		sample_flag = sample_flag,
 		initial_flag = initial_flag,
 		play_method = play_update_method,
@@ -149,8 +157,9 @@ local classify_affine<const> = function(time_scale, time_offset_ms)
 end
 
 -- Playback direction, affine mapping, bounds, child timing and callback
--- capabilities are authored facts. Compile them into direct transforms once;
--- runtime instances retain only transport state and the selected dispatch.
+-- capabilities are authored facts. Active clips also have an established child
+-- cursor, so their transform omits admission branches entirely. Runtime
+-- instances retain only transport state and the selected dispatch.
 function time_transform.compile(
 	playback_mode,
 	time_scale,
@@ -197,7 +206,8 @@ function time_transform.compile(
 		affine,
 		forward_direction,
 		has_boundary_callback,
-		has_evaluation_callbacks
+		has_evaluation_callbacks,
+		false
 	), compile_transform(
 		playback_mode,
 		continuous,
@@ -205,13 +215,33 @@ function time_transform.compile(
 		affine,
 		backward_direction,
 		has_boundary_callback,
-		has_evaluation_callbacks
+		has_evaluation_callbacks,
+		false
+	), compile_transform(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		forward_direction,
+		has_boundary_callback,
+		has_evaluation_callbacks,
+		true
+	), compile_transform(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		backward_direction,
+		has_boundary_callback,
+		has_evaluation_callbacks,
+		true
 	), compile_transform(
 		playback_mode,
 		continuous,
 		bounded,
 		affine,
 		0,
+		false,
 		false,
 		false
 	)

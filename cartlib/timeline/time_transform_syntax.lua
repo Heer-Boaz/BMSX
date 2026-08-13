@@ -198,7 +198,7 @@ end
 
 local emit_transport_captures<const> = child_transport_syntax.emit_captures
 local emit_child_range<const> = child_transport_syntax.emit_range
-local transform_parameters<const> = function(position)
+local transform_parameters<const> = function(position, active)
 	local parameters<const> = {
 		identifier('target'),
 		identifier('owner'),
@@ -208,14 +208,16 @@ local transform_parameters<const> = function(position)
 	if position then
 		parameters[#parameters + 1] = identifier('evaluate')
 	end
-	parameters[#parameters + 1] = identifier('initial')
+	if not active then
+		parameters[#parameters + 1] = identifier('initial')
+	end
 	return parameters
 end
 
-local transform_chunk<const> = function(statements, position)
+local transform_chunk<const> = function(statements, position, active)
 	return syntax_factory.chunk(block({
 		return_statement({
-			function_expression(transform_parameters(position), block(statements)),
+			function_expression(transform_parameters(position, active), block(statements)),
 		}),
 	}))
 end
@@ -237,7 +239,7 @@ function time_transform_syntax.build_once(values)
 		values.direction == 0,
 		values.boundary_none
 	)
-	return transform_chunk(statements, values.direction == 0)
+	return transform_chunk(statements, values.direction == 0, values.active)
 end
 
 local emit_loop_position<const> = function(statements, values)
@@ -309,22 +311,30 @@ local emit_loop_play<const> = function(statements, values)
 		instance_member('wrapped'),
 		boolean_literal(false)
 	)
-	statements[#statements + 1] = local_statement(identifier('previous_time_ms'), nil, false)
-	statements[#statements + 1] = if_statement({
-		if_clause(identifier('initial'), block({
-			assignment_statement(
-				identifier('previous_time_ms'),
-				binary_expression(
-					syntax.binary_modulus,
-					mapped_time_expression('previous_parent_time_ms', values.affine),
-					identifier('duration_ms')
-				)
-			),
-		})),
-		else_clause(block({
-			assignment_statement(identifier('previous_time_ms'), instance_member('position_ms')),
-		})),
-	})
+	if values.active then
+		statements[#statements + 1] = local_statement(
+			identifier('previous_time_ms'),
+			instance_member('position_ms'),
+			false
+		)
+	else
+		statements[#statements + 1] = local_statement(identifier('previous_time_ms'), nil, false)
+		statements[#statements + 1] = if_statement({
+			if_clause(identifier('initial'), block({
+				assignment_statement(
+					identifier('previous_time_ms'),
+					binary_expression(
+						syntax.binary_modulus,
+						mapped_time_expression('previous_parent_time_ms', values.affine),
+						identifier('duration_ms')
+					)
+				),
+			})),
+			else_clause(block({
+				assignment_statement(identifier('previous_time_ms'), instance_member('position_ms')),
+			})),
+		})
+	end
 	statements[#statements + 1] = local_statement(
 		identifier('remaining_ms'),
 		loop_delta_expression(values),
@@ -381,7 +391,9 @@ local emit_loop_play<const> = function(statements, values)
 		false,
 		values.loop_boundary_flags
 	)
-	loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+	if not values.active then
+		loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+	end
 	loop_body[#loop_body + 1] = assignment_statement(identifier('evaluated'), boolean_literal(true))
 	loop_body[#loop_body + 1] = assignment_statement(
 		identifier('previous_time_ms'),
@@ -447,7 +459,7 @@ function time_transform_syntax.build_loop(values)
 	else
 		emit_loop_play(statements, values)
 	end
-	return transform_chunk(statements, values.direction == 0)
+	return transform_chunk(statements, values.direction == 0, values.active)
 end
 
 local emit_pingpong_time<const> = function(statements, values, parent_time_name, phase_name, time_name)
@@ -666,7 +678,9 @@ local emit_pingpong_play<const> = function(statements, values)
 		true,
 		values.boundary_turn
 	)
-	loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+	if not values.active then
+		loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+	end
 	loop_body[#loop_body + 1] = assignment_statement(identifier('cursor_ms'), identifier('boundary_ms'))
 	loop_body[#loop_body + 1] = assignment_statement(identifier('previous_local_ms'), identifier('local_time_ms'))
 	loop_body[#loop_body + 1] = assignment_statement(
@@ -756,7 +770,7 @@ function time_transform_syntax.build_pingpong(values)
 	else
 		emit_pingpong_play(statements, values)
 	end
-	return transform_chunk(statements, values.direction == 0)
+	return transform_chunk(statements, values.direction == 0, values.active)
 end
 
 return time_transform_syntax

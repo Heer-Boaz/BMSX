@@ -132,20 +132,28 @@ local emit_continuous_range<const> = function(
 	dynamic_direction,
 	range_flags
 )
-	statements[#statements + 1] = local_statement(
-		identifier('flags'),
-		numeric_literal(range_flags | values.sample_flag),
-		false
-	)
-	statements[#statements + 1] = if_statement({
-		if_clause(identifier('initial'), block({
-			assignment_statement(instance_member('head'), numeric_literal(0)),
-			assignment_statement(
-				identifier('flags'),
-				numeric_literal(range_flags | values.sample_flag | values.initial_flag)
-			),
-		})),
-	})
+	if values.active then
+		statements[#statements + 1] = local_statement(
+			identifier('flags'),
+			numeric_literal(range_flags | values.sample_flag),
+			true
+		)
+	else
+		statements[#statements + 1] = local_statement(
+			identifier('flags'),
+			numeric_literal(range_flags | values.sample_flag),
+			false
+		)
+		statements[#statements + 1] = if_statement({
+			if_clause(identifier('initial'), block({
+				assignment_statement(instance_member('head'), numeric_literal(0)),
+				assignment_statement(
+					identifier('flags'),
+					numeric_literal(range_flags | values.sample_flag | values.initial_flag)
+				),
+			})),
+		})
+	end
 	statements[#statements + 1] = assignment_statement(
 		instance_member('position_ms'),
 		identifier(time_name)
@@ -190,35 +198,37 @@ local emit_frame_range<const> = function(
 	statements[#statements + 1] = local_statement(
 		identifier('previous_frame'),
 		instance_member('head'),
-		false
+		values.active
 	)
-	statements[#statements + 1] = if_statement({
-		if_clause(identifier('initial'), block({
-			assignment_statement(
-				identifier('previous_frame'),
-				binary_expression(
-					syntax.binary_floor_divide,
-					identifier(previous_time_name),
-					identifier('frame_duration')
-				)
-			),
-			if_statement({
-				if_clause(
+	if not values.active then
+		statements[#statements + 1] = if_statement({
+			if_clause(identifier('initial'), block({
+				assignment_statement(
+					identifier('previous_frame'),
 					binary_expression(
-						syntax.binary_greater,
-						identifier('previous_frame'),
-						identifier('last_frame')
-					),
-					block({
-						assignment_statement(
+						syntax.binary_floor_divide,
+						identifier(previous_time_name),
+						identifier('frame_duration')
+					)
+				),
+				if_statement({
+					if_clause(
+						binary_expression(
+							syntax.binary_greater,
 							identifier('previous_frame'),
 							identifier('last_frame')
 						),
-					})
-				),
-			}),
-		})),
-	})
+						block({
+							assignment_statement(
+								identifier('previous_frame'),
+								identifier('last_frame')
+							),
+						})
+					),
+				}),
+			})),
+		})
+	end
 	statements[#statements + 1] = local_statement(
 		identifier('frame'),
 		binary_expression(
@@ -264,33 +274,33 @@ local emit_frame_range<const> = function(
 		numeric_literal(range_flags),
 		false
 	)
+	local frame_changed<const> = binary_expression(
+		syntax.binary_not_equal,
+		identifier('frame'),
+		identifier('previous_frame')
+	)
+	local sample = frame_changed
+	if not values.active then
+		sample = binary_expression(syntax.binary_or, identifier('initial'), frame_changed)
+	end
 	statements[#statements + 1] = if_statement({
-		if_clause(
-			binary_expression(
-				syntax.binary_or,
-				identifier('initial'),
-				binary_expression(
-					syntax.binary_not_equal,
-					identifier('frame'),
-					identifier('previous_frame')
-				)
-			),
-			block({
-				assignment_statement(
-					identifier('flags'),
-					numeric_literal(range_flags | values.sample_flag)
-				),
-			})
-		),
-	})
-	statements[#statements + 1] = if_statement({
-		if_clause(identifier('initial'), block({
+		if_clause(sample, block({
 			assignment_statement(
 				identifier('flags'),
-				numeric_literal(range_flags | values.sample_flag | values.initial_flag)
+				numeric_literal(range_flags | values.sample_flag)
 			),
 		})),
 	})
+	if not values.active then
+		statements[#statements + 1] = if_statement({
+			if_clause(identifier('initial'), block({
+				assignment_statement(
+					identifier('flags'),
+					numeric_literal(range_flags | values.sample_flag | values.initial_flag)
+				),
+			})),
+		})
+	end
 	statements[#statements + 1] = call_statement(call_expression(identifier('evaluate'), {
 		identifier('target'),
 		identifier('owner'),
