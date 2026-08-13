@@ -446,66 +446,114 @@ local evaluate_play_range<const> = function(
 		sort_candidates(state, sorted_candidate_count)
 	end
 	-- Candidate admission guarantees that this range intersects each clip. Its
-	-- monotonic direction therefore determines the only interval edge it can
-	-- cross. Child completion changes only at interval admission and removal.
+	-- monotonic direction determines the only interval edge it can cross. Keep
+	-- that direction outside the candidate loop, as the boundary indexes above
+	-- already do.
 	local candidate_entries<const> = state.candidate_entries
-	for candidate_index = 1, state.candidate_count do
-		local child_entry<const> = candidate_entries[candidate_index]
-		local clip<const> = child_entry.clip
-		local clip_initial<const> = child_entry.active_index == nil
-		local source_time_ms = previous_time_ms
-		local destination_time_ms = time_ms
-		local destination_active = true
-		if forward then
+	local candidate_count<const> = state.candidate_count
+	if forward then
+		for candidate_index = 1, candidate_count do
+			local child_entry<const> = candidate_entries[candidate_index]
+			local clip<const> = child_entry.clip
+			local clip_initial<const> = child_entry.active_index == nil
+			local source_time_ms = previous_time_ms
 			if clip_initial then
 				local start_time_ms<const> = clip.start_time_ms
 				if source_time_ms < start_time_ms then
 					source_time_ms = start_time_ms
 				end
 			end
+			local destination_time_ms = time_ms
+			local destination_active = true
 			local end_time_ms<const> = clip.end_time_ms
 			if destination_time_ms >= end_time_ms then
 				destination_time_ms = end_time_ms
 				destination_active = false
 			end
-		elseif backward then
+			local child_timeline<const> = child_entry.instance
+			child_timeline.wrapped = false
+			clip.play_forward_transform(
+				child_entry,
+				owner,
+				source_time_ms,
+				destination_time_ms,
+				clip_initial
+			)
+			if destination_active then
+				if clip_initial then
+					child_timeline.ended = false
+					activate_clip(state, child_entry)
+				end
+			else
+				child_timeline.ended = true
+				clear_child(child_entry, owner)
+				remove_active_clip(state, child_entry)
+				local on_finished<const> = clip.on_finished
+				if on_finished ~= nil then
+					on_finished(child_entry.primary_binding, child_timeline)
+				end
+			end
+		end
+	elseif backward then
+		for candidate_index = 1, candidate_count do
+			local child_entry<const> = candidate_entries[candidate_index]
+			local clip<const> = child_entry.clip
+			local clip_initial<const> = child_entry.active_index == nil
+			local source_time_ms = previous_time_ms
 			if clip_initial then
 				local end_time_ms<const> = clip.end_time_ms
 				if source_time_ms > end_time_ms then
 					source_time_ms = end_time_ms
 				end
 			end
+			local destination_time_ms = time_ms
+			local destination_active = true
 			local start_time_ms<const> = clip.start_time_ms
 			if destination_time_ms < start_time_ms then
 				destination_time_ms = start_time_ms
 				destination_active = false
 			end
+			local child_timeline<const> = child_entry.instance
+			child_timeline.wrapped = false
+			clip.play_backward_transform(
+				child_entry,
+				owner,
+				source_time_ms,
+				destination_time_ms,
+				clip_initial
+			)
+			if destination_active then
+				if clip_initial then
+					child_timeline.ended = false
+					activate_clip(state, child_entry)
+				end
+			else
+				child_timeline.ended = true
+				clear_child(child_entry, owner)
+				remove_active_clip(state, child_entry)
+				local on_finished<const> = clip.on_finished
+				if on_finished ~= nil then
+					on_finished(child_entry.primary_binding, child_timeline)
+				end
+			end
 		end
-		local child_timeline<const> = child_entry.instance
-		child_timeline.wrapped = false
-		local play_transform = clip.play_forward_transform
-		if direction < 0 then
-			play_transform = clip.play_backward_transform
-		end
-		play_transform(
-			child_entry,
-			owner,
-			source_time_ms,
-			destination_time_ms,
-			clip_initial
-		)
-		if destination_active then
+	else
+		for candidate_index = 1, candidate_count do
+			local child_entry<const> = candidate_entries[candidate_index]
+			local clip<const> = child_entry.clip
+			local clip_initial<const> = child_entry.active_index == nil
+			local child_timeline<const> = child_entry.instance
+			child_timeline.wrapped = false
+			clip.play_forward_transform(
+				child_entry,
+				owner,
+				previous_time_ms,
+				time_ms,
+				clip_initial
+			)
 			if clip_initial then
 				child_timeline.ended = false
 				activate_clip(state, child_entry)
-			end
-		else
-			child_timeline.ended = true
-			clear_child(child_entry, owner)
-			remove_active_clip(state, child_entry)
-			local on_finished<const> = clip.on_finished
-			if on_finished ~= nil then
-				on_finished(child_entry.primary_binding, child_timeline)
 			end
 		end
 	end
