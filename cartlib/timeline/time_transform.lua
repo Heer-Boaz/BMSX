@@ -477,7 +477,7 @@ local evaluate_position_pingpong<const> = function(
 	)
 end
 
-local evaluate_play_once<const> = function(
+local evaluate_play_once_forward<const> = function(
 	target,
 	owner,
 	previous_parent_time_ms,
@@ -498,13 +498,40 @@ local evaluate_play_once<const> = function(
 		previous_time_ms,
 		time_ms,
 		target.play_evaluator,
-		direction_between(previous_time_ms, time_ms, clip.direction),
+		1,
 		initial,
 		boundary_none
 	)
 end
 
-local evaluate_play_once_in_range<const> = function(
+local evaluate_play_once_backward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local clip<const> = target.clip
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
+	local previous_time_ms<const>, time_ms<const> = bound_once_range(
+		target,
+		previous_parent_time_ms * time_scale + time_offset_ms,
+		parent_time_ms * time_scale + time_offset_ms
+	)
+	target.write_time_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		target.play_evaluator,
+		-1,
+		initial,
+		boundary_none
+	)
+end
+
+local evaluate_play_once_in_range_forward<const> = function(
 	target,
 	owner,
 	previous_parent_time_ms,
@@ -522,7 +549,31 @@ local evaluate_play_once_in_range<const> = function(
 		previous_time_ms,
 		time_ms,
 		target.play_evaluator,
-		direction_between(previous_time_ms, time_ms, clip.direction),
+		1,
+		initial,
+		boundary_none
+	)
+end
+
+local evaluate_play_once_in_range_backward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local clip<const> = target.clip
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
+	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
+	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
+	target.write_time_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		target.play_evaluator,
+		-1,
 		initial,
 		boundary_none
 	)
@@ -567,9 +618,27 @@ function time_transform.compile(
 	and clip_in_ms <= child_duration_ms
 	and child_end_time_ms >= 0
 	and child_end_time_ms <= child_duration_ms)) then
-		return evaluate_play_once_in_range, evaluate_play_once_in_range, evaluate_position_once
+		if time_scale < 0 then
+			return evaluate_play_once_in_range_backward,
+				evaluate_play_once_in_range_forward,
+				evaluate_position_once
+		end
+		if time_scale == 0 then
+			return evaluate_play_once_in_range_forward,
+				evaluate_play_once_in_range_forward,
+				evaluate_position_once
+		end
+		return evaluate_play_once_in_range_forward,
+			evaluate_play_once_in_range_backward,
+			evaluate_position_once
 	end
-	return evaluate_play_once, evaluate_play_once, evaluate_position_once
+	if time_scale < 0 then
+		return evaluate_play_once_backward, evaluate_play_once_forward, evaluate_position_once
+	end
+	if time_scale == 0 then
+		return evaluate_play_once_forward, evaluate_play_once_forward, evaluate_position_once
+	end
+	return evaluate_play_once_forward, evaluate_play_once_backward, evaluate_position_once
 end
 
 return time_transform
