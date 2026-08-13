@@ -1,347 +1,331 @@
-local lua_syntax<const> = require('cartlib/codegen/lua_syntax')
+local syntax_factory<const> = lua_compiler.syntax_factory
 
 local scalar_channel_source<const> = {}
-local binary_operator<const> = lua_syntax.binary_operator
-local identifier<const> = lua_syntax.identifier
-local numeric_literal<const> = lua_syntax.numeric_literal
-local member_expression<const> = lua_syntax.member_expression
-local index_expression<const> = lua_syntax.index_expression
-local index_path<const> = lua_syntax.index_path
-local call_expression<const> = lua_syntax.call_expression
-local binary_expression<const> = lua_syntax.binary_expression
-local function_expression<const> = lua_syntax.function_expression
-local assignment_statement<const> = lua_syntax.assignment_statement
-local local_declaration_statement<const> = lua_syntax.local_declaration_statement
-local call_statement<const> = lua_syntax.call_statement
-local if_statement<const> = lua_syntax.if_statement
-local while_statement<const> = lua_syntax.while_statement
-local return_statement<const> = lua_syntax.return_statement
-
-local expression<const> = {
-	channels = identifier('channels'),
-	entry = identifier('entry'),
-	evaluation = identifier('evaluation'),
-	first_key = identifier('first_key'),
-	flags = identifier('flags'),
-	frame = identifier('frame'),
-	high = identifier('high'),
-	key = identifier('key'),
-	keys = identifier('keys'),
-	last_key = identifier('last_key'),
-	low = identifier('low'),
-	middle = identifier('middle'),
-	params = identifier('params'),
-	position = identifier('position'),
-	primary_binding = identifier('primary_binding'),
-	time_ms = identifier('time_ms'),
-	track = identifier('track'),
-	u = identifier('u'),
-	value = identifier('value'),
-}
+local syntax<const> = syntax_factory.syntax
+local block<const> = syntax_factory.block
+local identifier<const> = syntax_factory.identifier
+local numeric_literal<const> = syntax_factory.number_literal
+local member_expression<const> = syntax_factory.member_expression
+local index_expression<const> = syntax_factory.index_expression
+local index_path<const> = syntax_factory.index_path
+local call_expression<const> = syntax_factory.call_expression
+local binary_expression<const> = syntax_factory.binary_expression
+local function_expression<const> = syntax_factory.function_expression
+local assignment_statement<const> = syntax_factory.assignment_statement
+local local_statement<const> = syntax_factory.local_statement
+local call_statement<const> = syntax_factory.call_statement
+local if_clause<const> = syntax_factory.if_clause
+local else_clause<const> = syntax_factory.else_clause
+local if_statement<const> = syntax_factory.if_statement
+local while_statement<const> = syntax_factory.while_statement
+local return_statement<const> = syntax_factory.return_statement
 
 local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
-	statements[#statements + 1] = local_declaration_statement({ 'keys' }, {}, false)
-	statements[#statements + 1] = local_declaration_statement({ 'value' }, {}, false)
+	statements[#statements + 1] = local_statement(identifier('keys'), nil, false)
+	statements[#statements + 1] = local_statement(identifier('value'), nil, false)
 	if analysis.has_callback then
-		statements[#statements + 1] = local_declaration_statement({ 'track' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'params' },
-			{ member_expression(expression.entry, 'params') },
+		statements[#statements + 1] = local_statement(identifier('track'), nil, false)
+		statements[#statements + 1] = local_statement(
+			identifier('params'),
+			member_expression(identifier('entry'), 'params'),
 			false
 		)
 	end
 	if analysis.has_primary_binding then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'primary_binding' },
-			{ member_expression(expression.entry, 'primary_binding') },
+		statements[#statements + 1] = local_statement(
+			identifier('primary_binding'),
+			member_expression(identifier('entry'), 'primary_binding'),
 			false
 		)
 	end
 	if analysis.has_secondary_binding then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'bindings' },
-			{ member_expression(expression.entry, 'bindings') },
+		statements[#statements + 1] = local_statement(
+			identifier('bindings'),
+			member_expression(identifier('entry'), 'bindings'),
 			false
 		)
 	end
 	if analysis.cached_segment_count > 0 then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'cached_segments' },
-			{ member_expression(expression.entry, 'cached_scalar_segments') },
+		statements[#statements + 1] = local_statement(
+			identifier('cached_segments'),
+			member_expression(identifier('entry'), 'cached_scalar_segments'),
 			false
 		)
 	end
 	if analysis.max_key_count > 1 then
-		statements[#statements + 1] = local_declaration_statement({ 'position' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement({ 'first_key' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement({ 'last_key' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement({ 'key' }, {}, false)
+		statements[#statements + 1] = local_statement(identifier('position'), nil, false)
+		statements[#statements + 1] = local_statement(identifier('first_key'), nil, false)
+		statements[#statements + 1] = local_statement(identifier('last_key'), nil, false)
+		statements[#statements + 1] = local_statement(identifier('key'), nil, false)
 	end
 	if analysis.max_key_count > 2 then
-		statements[#statements + 1] = local_declaration_statement({ 'low' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement({ 'high' }, {}, false)
-		statements[#statements + 1] = local_declaration_statement({ 'middle' }, {}, false)
+		statements[#statements + 1] = local_statement(identifier('low'), nil, false)
+		statements[#statements + 1] = local_statement(identifier('high'), nil, false)
+		statements[#statements + 1] = local_statement(identifier('middle'), nil, false)
 	end
 	if has_cubic_tracks then
-		statements[#statements + 1] = local_declaration_statement({ 'u' }, {}, false)
+		statements[#statements + 1] = local_statement(identifier('u'), nil, false)
 	end
 end
 
 local emit_segment_search<const> = function(statements, track, position_key, key_count)
 	if key_count == 2 then
 		statements[#statements + 1] = assignment_statement(
-			{ expression.key },
-			{ expression.first_key }
+			identifier('key'),
+			identifier('first_key')
 		)
 		return
 	end
-	local cached_segment<const> = index_expression(
-		identifier('cached_segments'),
-		numeric_literal(track.cached_segment_index)
-	)
 	statements[#statements + 1] = assignment_statement(
-		{ expression.key },
-		{ cached_segment }
+		identifier('key'),
+		index_expression(
+			identifier('cached_segments'),
+			numeric_literal(track.cached_segment_index)
+		)
 	)
 	local search_body<const> = {
-		assignment_statement({ expression.low }, { numeric_literal(1) }),
-		assignment_statement({ expression.high }, { numeric_literal(key_count + 1) }),
+		assignment_statement(identifier('low'), numeric_literal(1)),
+		assignment_statement(identifier('high'), numeric_literal(key_count + 1)),
 		while_statement(
-			binary_expression(binary_operator.less_than, expression.low, expression.high),
-			{
+			binary_expression(syntax.binary_less, identifier('low'), identifier('high')),
+			block({
 				assignment_statement(
-					{ expression.middle },
-					{
+					identifier('middle'),
+					binary_expression(
+						syntax.binary_floor_divide,
 						binary_expression(
-							binary_operator.floor_divide,
-							binary_expression(binary_operator.add, expression.low, expression.high),
-							numeric_literal(2)
+							syntax.binary_add,
+							identifier('low'),
+							identifier('high')
 						),
-					}
+						numeric_literal(2)
+					)
 				),
 				if_statement({
-					{
+					if_clause(
 						binary_expression(
-							binary_operator.less_equal,
+							syntax.binary_less_equal,
 							member_expression(
-								index_expression(expression.keys, expression.middle),
+								index_expression(identifier('keys'), identifier('middle')),
 								position_key
 							),
-							expression.position
+							identifier('position')
 						),
-						{
+						block({
 							assignment_statement(
-								{ expression.low },
-								{
-									binary_expression(
-										binary_operator.add,
-										expression.middle,
-										numeric_literal(1)
-									),
-								}
+								identifier('low'),
+								binary_expression(
+									syntax.binary_add,
+									identifier('middle'),
+									numeric_literal(1)
+								)
 							),
-						},
-					},
-					{
-						nil,
-						{ assignment_statement({ expression.high }, { expression.middle }) },
-					},
+						})
+					),
+					else_clause(block({
+						assignment_statement(identifier('high'), identifier('middle')),
+					})),
 				}),
-			}
+			})
 		),
 		assignment_statement(
-			{ expression.key },
-			{
-				index_expression(
-					expression.keys,
-					binary_expression(binary_operator.subtract, expression.low, numeric_literal(1))
-				),
-			}
+			identifier('key'),
+			index_expression(
+				identifier('keys'),
+				binary_expression(
+					syntax.binary_subtract,
+					identifier('low'),
+					numeric_literal(1)
+				)
+			)
 		),
-		assignment_statement({ cached_segment }, { expression.key }),
+		assignment_statement(
+			index_expression(
+				identifier('cached_segments'),
+				numeric_literal(track.cached_segment_index)
+			),
+			identifier('key')
+		),
 	}
 	statements[#statements + 1] = if_statement({
-		{
+		if_clause(
 			binary_expression(
-				binary_operator.logical_or,
+				syntax.binary_or,
 				binary_expression(
-					binary_operator.less_than,
-					expression.position,
-					member_expression(expression.key, position_key)
+					syntax.binary_less,
+					identifier('position'),
+					member_expression(identifier('key'), position_key)
 				),
 				binary_expression(
-					binary_operator.greater_equal,
-					expression.position,
-					member_expression(expression.key, 'segment_end')
+					syntax.binary_greater_equal,
+					identifier('position'),
+					member_expression(identifier('key'), 'segment_end')
 				)
 			),
-			search_body,
-		},
+			block(search_body)
+		),
 	})
 end
 
 local emit_interpolation<const> = function(statements, position_key, cubic)
 	local position_delta<const> = binary_expression(
-		binary_operator.subtract,
-		expression.position,
-		member_expression(expression.key, position_key)
+		syntax.binary_subtract,
+		identifier('position'),
+		member_expression(identifier('key'), position_key)
 	)
 	if cubic then
 		statements[#statements + 1] = assignment_statement(
-			{ expression.u },
-			{
-				binary_expression(
-					binary_operator.multiply,
-					position_delta,
-					member_expression(expression.key, 'span_inv')
-				),
-			}
+			identifier('u'),
+			binary_expression(
+				syntax.binary_multiply,
+				position_delta,
+				member_expression(identifier('key'), 'span_inv')
+			)
 		)
 		statements[#statements + 1] = assignment_statement(
-			{ expression.value },
-			{
+			identifier('value'),
+			binary_expression(
+				syntax.binary_add,
 				binary_expression(
-					binary_operator.add,
+					syntax.binary_multiply,
 					binary_expression(
-						binary_operator.multiply,
+						syntax.binary_add,
 						binary_expression(
-							binary_operator.add,
+							syntax.binary_multiply,
 							binary_expression(
-								binary_operator.multiply,
+								syntax.binary_add,
 								binary_expression(
-									binary_operator.add,
-									binary_expression(
-										binary_operator.multiply,
-										member_expression(expression.key, 'cubic3'),
-										expression.u
-									),
-									member_expression(expression.key, 'cubic2')
+									syntax.binary_multiply,
+									member_expression(identifier('key'), 'cubic3'),
+									identifier('u')
 								),
-								expression.u
+								member_expression(identifier('key'), 'cubic2')
 							),
-							member_expression(expression.key, 'cubic1')
+							identifier('u')
 						),
-						expression.u
+						member_expression(identifier('key'), 'cubic1')
 					),
-					member_expression(expression.key, 'value')
+					identifier('u')
 				),
-			}
+				member_expression(identifier('key'), 'value')
+			)
 		)
 		return
 	end
 	statements[#statements + 1] = assignment_statement(
-		{ expression.value },
-		{
+		identifier('value'),
+		binary_expression(
+			syntax.binary_add,
+			member_expression(identifier('key'), 'value'),
 			binary_expression(
-				binary_operator.add,
-				member_expression(expression.key, 'value'),
+				syntax.binary_multiply,
+				member_expression(identifier('key'), 'value_delta'),
 				binary_expression(
-					binary_operator.multiply,
-					member_expression(expression.key, 'value_delta'),
-					binary_expression(
-						binary_operator.multiply,
-						position_delta,
-						member_expression(expression.key, 'span_inv')
-					)
+					syntax.binary_multiply,
+					position_delta,
+					member_expression(identifier('key'), 'span_inv')
 				)
-			),
-		}
+			)
+		)
 	)
 end
 
 local emit_track_sample<const> = function(statements, track, position_key, cubic)
-	local keys<const> = expression.keys
 	local key_count<const> = #track.keys
 	if key_count == 1 then
 		statements[#statements + 1] = assignment_statement(
-			{ expression.value },
-			{ member_expression(index_expression(keys, numeric_literal(1)), 'value') }
+			identifier('value'),
+			member_expression(
+				index_expression(identifier('keys'), numeric_literal(1)),
+				'value'
+			)
 		)
 		return
 	end
 	statements[#statements + 1] = assignment_statement(
-		{ expression.first_key },
-		{ index_expression(keys, numeric_literal(1)) }
+		identifier('first_key'),
+		index_expression(identifier('keys'), numeric_literal(1))
 	)
 	local final_segment<const> = {}
 	emit_segment_search(final_segment, track, position_key, key_count)
 	emit_interpolation(final_segment, position_key, cubic)
 	statements[#statements + 1] = if_statement({
-		{
+		if_clause(
 			binary_expression(
-				binary_operator.less_equal,
-				expression.position,
-				member_expression(expression.first_key, position_key)
+				syntax.binary_less_equal,
+				identifier('position'),
+				member_expression(identifier('first_key'), position_key)
 			),
-			{
+			block({
 				assignment_statement(
-					{ expression.value },
-					{ member_expression(expression.first_key, 'value') }
+					identifier('value'),
+					member_expression(identifier('first_key'), 'value')
 				),
-			},
-		},
-		{
-			nil,
-			{
-				assignment_statement(
-					{ expression.last_key },
-					{ index_expression(keys, numeric_literal(key_count)) }
-				),
-				if_statement({
-					{
-						binary_expression(
-							binary_operator.greater_equal,
-							expression.position,
-							member_expression(expression.last_key, position_key)
+			})
+		),
+		else_clause(block({
+			assignment_statement(
+				identifier('last_key'),
+				index_expression(identifier('keys'), numeric_literal(key_count))
+			),
+			if_statement({
+				if_clause(
+					binary_expression(
+						syntax.binary_greater_equal,
+						identifier('position'),
+						member_expression(identifier('last_key'), position_key)
+					),
+					block({
+						assignment_statement(
+							identifier('value'),
+							member_expression(identifier('last_key'), 'value')
 						),
-						{
-							assignment_statement(
-								{ expression.value },
-								{ member_expression(expression.last_key, 'value') }
-							),
-						},
-					},
-					{ nil, final_segment },
-				}),
-			},
-		},
+					})
+				),
+				else_clause(block(final_segment)),
+			}),
+		})),
 	})
 end
 
 local emit_track<const> = function(statements, track_list_name, track_index, track, position_key, cubic)
 	local source_track<const> = index_expression(
-		member_expression(expression.channels, track_list_name),
+		member_expression(identifier('channels'), track_list_name),
 		numeric_literal(track_index)
 	)
 	if track.apply ~= nil then
+		statements[#statements + 1] = assignment_statement(identifier('track'), source_track)
 		statements[#statements + 1] = assignment_statement(
-			{ expression.track },
-			{ source_track }
-		)
-		statements[#statements + 1] = assignment_statement(
-			{ expression.keys },
-			{ member_expression(expression.track, 'keys') }
+			identifier('keys'),
+			member_expression(identifier('track'), 'keys')
 		)
 	else
 		statements[#statements + 1] = assignment_statement(
-			{ expression.keys },
-			{ member_expression(source_track, 'keys') }
+			identifier('keys'),
+			member_expression(source_track, 'keys')
 		)
 	end
 	emit_track_sample(statements, track, position_key, cubic)
-	local binding = expression.primary_binding
-	if track.binding_index ~= 1 then
+	local binding
+	if track.binding_index == 1 then
+		binding = identifier('primary_binding')
+	else
 		binding = index_expression(identifier('bindings'), numeric_literal(track.binding_index))
 	end
 	if track.apply ~= nil then
 		statements[#statements + 1] = call_statement(call_expression(
-			member_expression(expression.track, 'apply'),
-			{ binding, expression.value, expression.params, expression.evaluation }
+			member_expression(identifier('track'), 'apply'),
+			{
+				binding,
+				identifier('value'),
+				identifier('params'),
+				identifier('evaluation'),
+			}
 		))
 	else
 		statements[#statements + 1] = assignment_statement(
-			{ index_path(binding, track.path) },
-			{ expression.value }
+			index_path(binding, track.path),
+			identifier('value')
 		)
 	end
 end
@@ -358,23 +342,23 @@ local emit_frame_lane<const> = function(statements, channels, analysis, sample_f
 	end
 	local body<const> = {}
 	if analysis.frame_max_key_count > 1 then
-		body[#body + 1] = assignment_statement({ expression.position }, { expression.frame })
+		body[#body + 1] = assignment_statement(identifier('position'), identifier('frame'))
 	end
 	emit_tracks(body, 'linear_tracks', channels.linear_tracks, 'frame', false)
 	emit_tracks(body, 'cubic_tracks', channels.cubic_tracks, 'frame', true)
 	statements[#statements + 1] = if_statement({
-		{
+		if_clause(
 			binary_expression(
-				binary_operator.not_equal,
+				syntax.binary_not_equal,
 				binary_expression(
-					binary_operator.bitwise_and,
-					expression.flags,
+					syntax.binary_bitwise_and,
+					identifier('flags'),
 					numeric_literal(sample_flag)
 				),
 				numeric_literal(0)
 			),
-			body,
-		},
+			block(body)
+		),
 	})
 end
 
@@ -384,8 +368,8 @@ local emit_time_lane<const> = function(statements, channels, analysis)
 	end
 	if analysis.time_max_key_count > 1 then
 		statements[#statements + 1] = assignment_statement(
-			{ expression.position },
-			{ expression.time_ms }
+			identifier('position'),
+			identifier('time_ms')
 		)
 	end
 	emit_tracks(statements, 'linear_time_tracks', channels.linear_time_tracks, 'time_ms', false)
@@ -401,23 +385,32 @@ function scalar_channel_source.build(channels, analysis, sample_flag)
 	)
 	emit_frame_lane(evaluator_body, channels, analysis, sample_flag)
 	emit_time_lane(evaluator_body, channels, analysis)
-	return lua_syntax.chunk({
+	return syntax_factory.chunk(block({
 		return_statement({
-			function_expression({ 'source_channels' }, {
-				local_declaration_statement(
-					{ 'channels' },
-					{ identifier('source_channels') },
-					true
-				),
-				return_statement({
-					function_expression(
-						{ 'entry', 'frame', 'time_ms', 'flags', 'evaluation' },
-						evaluator_body
+			function_expression(
+				{ identifier('source_channels') },
+				block({
+					local_statement(
+						identifier('channels'),
+						identifier('source_channels'),
+						true
 					),
-				}),
-			}),
+					return_statement({
+						function_expression(
+							{
+								identifier('entry'),
+								identifier('frame'),
+								identifier('time_ms'),
+								identifier('flags'),
+								identifier('evaluation'),
+							},
+							block(evaluator_body)
+						),
+					}),
+				})
+			),
 		}),
-	})
+	}))
 end
 
 return scalar_channel_source

@@ -6,10 +6,10 @@
 -- searches again when traversal leaves that range. Generic step values remain
 -- track-program data because they may carry non-numeric cart values.
 local scalar_channel_source<const> = require('cartlib/timeline/scalar_channel_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local scalar_channel<const> = {}
+local compile_syntax<const> = lua_compiler.compile_syntax
 local sample_flag<const> = timeline_playback.evaluation_flag.sample
 
 scalar_channel.empty_program = {
@@ -81,10 +81,9 @@ local compile_runner_factory<const> = function(channels)
 	analyze_tracks(analysis, linear_time_tracks, true)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
-	return load(
-		lua_syntax_printer.print(scalar_channel_source.build(channels, analysis, sample_flag)),
-		'[timeline.scalar_channel]',
-		't'
+	return compile_syntax(
+		scalar_channel_source.build(channels, analysis, sample_flag),
+		'[timeline.scalar_channel]'
 	)(), analysis.cached_segment_count
 end
 
