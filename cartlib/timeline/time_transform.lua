@@ -139,15 +139,15 @@ local bound_once_range<const> = function(target, previous_time_ms, time_ms)
 end
 
 local evaluate_loop_forward<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
 	target,
 	owner,
-	evaluate,
-	write_range
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
 )
+	local clip<const> = target.clip
+	local evaluate<const> = target.play_evaluator
+	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
@@ -199,15 +199,15 @@ local evaluate_loop_forward<const> = function(
 end
 
 local evaluate_loop_backward<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
 	target,
 	owner,
-	evaluate,
-	write_range
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
 )
+	local clip<const> = target.clip
+	local evaluate<const> = target.play_evaluator
+	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
@@ -259,15 +259,15 @@ local evaluate_loop_backward<const> = function(
 end
 
 local evaluate_pingpong_forward<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
 	target,
 	owner,
-	evaluate,
-	write_range
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
 )
+	local clip<const> = target.clip
+	local evaluate<const> = target.play_evaluator
+	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
@@ -335,15 +335,15 @@ local evaluate_pingpong_forward<const> = function(
 end
 
 local evaluate_pingpong_backward<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
 	target,
 	owner,
-	evaluate,
-	write_range
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
 )
+	local clip<const> = target.clip
+	local evaluate<const> = target.play_evaluator
+	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
@@ -417,21 +417,20 @@ local evaluate_pingpong_backward<const> = function(
 end
 
 local evaluate_position_once<const> = function(
-	clip,
+	target,
+	owner,
 	previous_parent_time_ms,
 	parent_time_ms,
 	evaluate,
-	initial,
-	target,
-	owner,
-	write_range
+	initial
 )
+	local clip<const> = target.clip
 	local previous_time_ms<const>, time_ms<const> = bound_once_range(
 		target,
 		child_time_at(clip, previous_parent_time_ms),
 		child_time_at(clip, parent_time_ms)
 	)
-	write_range(
+	target.write_time_range(
 		target,
 		owner,
 		previous_time_ms,
@@ -445,19 +444,18 @@ local evaluate_position_once<const> = function(
 end
 
 local evaluate_position_loop<const> = function(
-	clip,
+	target,
+	owner,
 	previous_parent_time_ms,
 	parent_time_ms,
 	evaluate,
-	initial,
-	target,
-	owner,
-	write_range
+	initial
 )
+	local clip<const> = target.clip
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms) % duration_ms
 	local time_ms<const> = child_time_at(clip, parent_time_ms) % duration_ms
-	write_range(
+	target.write_time_range(
 		target,
 		owner,
 		previous_time_ms,
@@ -471,22 +469,21 @@ local evaluate_position_loop<const> = function(
 end
 
 local evaluate_position_pingpong<const> = function(
-	clip,
+	target,
+	owner,
 	previous_parent_time_ms,
 	parent_time_ms,
 	evaluate,
-	initial,
-	target,
-	owner,
-	write_range
+	initial
 )
+	local clip<const> = target.clip
 	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = pingpong_time(
 		child_time_at(clip, previous_parent_time_ms),
 		duration_ms
 	)
 	local time_ms<const> = pingpong_time(child_time_at(clip, parent_time_ms), duration_ms)
-	write_range(
+	target.write_time_range(
 		target,
 		owner,
 		previous_time_ms,
@@ -500,26 +497,24 @@ local evaluate_position_pingpong<const> = function(
 end
 
 local evaluate_play_once<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
 	target,
 	owner,
-	evaluate,
-	write_range
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
 )
+	local clip<const> = target.clip
 	local previous_time_ms<const>, time_ms<const> = bound_once_range(
 		target,
 		child_time_at(clip, previous_parent_time_ms),
 		child_time_at(clip, parent_time_ms)
 	)
-	write_range(
+	target.write_time_range(
 		target,
 		owner,
 		previous_time_ms,
 		time_ms,
-		evaluate,
+		target.play_evaluator,
 		direction_between(previous_time_ms, time_ms, clip.direction),
 		initial,
 		boundary_none,

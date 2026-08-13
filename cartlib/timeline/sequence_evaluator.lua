@@ -249,6 +249,7 @@ function sequence_evaluator.init_entry(entry)
 			instance = timeline.new(entry.instance.id .. '/' .. clip.id, child_program),
 			clip = clip,
 			duration_ms = child_program.duration_ms,
+			play_evaluator = child_program.evaluate_play,
 		}
 		if child_program.continuous then
 			child_entry.write_time_range = write_continuous_child_time_range
@@ -286,6 +287,7 @@ function sequence_evaluator.bind_entry(entry, owner)
 			local child_program<const> = timeline_frame_program.build(clip.program, child_entry.params)
 			child_entry.instance:rebind_program(child_program)
 			child_entry.duration_ms = child_program.duration_ms
+			child_entry.play_evaluator = child_program.evaluate_play
 			if child_program.continuous then
 				child_entry.write_time_range = write_continuous_child_time_range
 			else
@@ -370,14 +372,12 @@ local process_position_clip<const> = function(
 		evaluate = instance.program.evaluate_jump
 	end
 	clip.position_transform(
-		clip,
+		child_entry,
+		owner,
 		source_time_ms,
 		time_ms,
 		evaluate,
-		initial,
-		child_entry,
-		owner,
-		child_entry.write_time_range
+		initial
 	)
 	instance.ended = false
 	if destination_active then
@@ -488,14 +488,11 @@ local evaluate_play_range<const> = function(
 			play_transform = clip.play_backward_transform
 		end
 		play_transform(
-			clip,
-			source_time_ms,
-			destination_time_ms,
-			clip_initial,
 			child_entry,
 			owner,
-			child_timeline.program.evaluate_play,
-			child_entry.write_time_range
+			source_time_ms,
+			destination_time_ms,
+			clip_initial
 		)
 		if destination_active then
 			if clip_initial then
