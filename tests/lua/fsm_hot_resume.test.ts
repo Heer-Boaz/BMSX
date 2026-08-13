@@ -46,6 +46,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
+	['cartlib/timeline/track_evaluator_source', 'cartlib/timeline/track_evaluator_source.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
 	['cartlib/timeline/evaluation_context', 'cartlib/timeline/evaluation_context.lua'],
 	['cartlib/timeline/evaluation_program_source', 'cartlib/timeline/evaluation_program_source.lua'],
