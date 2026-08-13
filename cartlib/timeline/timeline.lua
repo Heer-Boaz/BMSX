@@ -500,11 +500,6 @@ local write_external_time_range<const> = function(
 )
 	local self<const> = entry.instance
 	local program<const> = self.program
-	local duration_ms<const> = program.duration_ms
-	if duration_ms ~= nil then
-		previous_time_ms = clamp(previous_time_ms, 0, duration_ms)
-		time_ms = clamp(time_ms, 0, duration_ms)
-	end
 	local previous_frame
 	local frame
 	local continuous<const> = program.continuous

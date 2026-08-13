@@ -49,6 +49,24 @@ local direction_between<const> = function(previous_time_ms, time_ms, default_dir
 	return default_direction
 end
 
+local bound_once_range<const> = function(target, previous_time_ms, time_ms)
+	local duration_ms<const> = target.instance.program.duration_ms
+	if duration_ms == nil then
+		return previous_time_ms, time_ms
+	end
+	if previous_time_ms < 0 then
+		previous_time_ms = 0
+	elseif previous_time_ms > duration_ms then
+		previous_time_ms = duration_ms
+	end
+	if time_ms < 0 then
+		time_ms = 0
+	elseif time_ms > duration_ms then
+		time_ms = duration_ms
+	end
+	return previous_time_ms, time_ms
+end
+
 local evaluate_loop_forward<const> = function(
 	clip,
 	previous_time_ms,
@@ -269,8 +287,11 @@ local evaluate_position_once<const> = function(
 	owner,
 	write_range
 )
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	local previous_time_ms<const>, time_ms<const> = bound_once_range(
+		target,
+		child_time_at(clip, previous_parent_time_ms),
+		child_time_at(clip, parent_time_ms)
+	)
 	write_range(
 		target,
 		owner,
@@ -348,8 +369,11 @@ local evaluate_play_once<const> = function(
 	owner,
 	write_range
 )
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	local previous_time_ms<const>, time_ms<const> = bound_once_range(
+		target,
+		child_time_at(clip, previous_parent_time_ms),
+		child_time_at(clip, parent_time_ms)
+	)
 	write_range(
 		target,
 		owner,
