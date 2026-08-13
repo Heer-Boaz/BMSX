@@ -142,6 +142,7 @@ end
 -- Clip processing owns the inactive-to-active transition; this insertion path
 -- therefore never rechecks state already represented by `initial`.
 local activate_clip<const> = function(state, child_entry)
+	state.candidate_snapshot_current = false
 	local active_count<const> = state.active_count + 1
 	state.active_count = active_count
 	local active_index = active_count
@@ -162,6 +163,7 @@ local remove_active_clip<const> = function(state, child_entry)
 	if active_index == nil then
 		return
 	end
+	state.candidate_snapshot_current = false
 	local active_count<const> = state.active_count
 	child_entry.active_index = nil
 	local active_entries<const> = state.active_entries
@@ -237,6 +239,7 @@ function sequence_evaluator.init_entry(entry)
 		candidate_entries = {},
 		candidate_generation = 0,
 		candidate_count = 0,
+		candidate_snapshot_current = false,
 		position_tree_stack = {},
 		next_start_index = 1,
 		next_end_index = 1,
@@ -314,23 +317,28 @@ local add_candidate<const> = function(state, child_entry)
 		return
 	end
 	child_entry.candidate_generation = generation
+	state.candidate_snapshot_current = false
 	local count<const> = state.candidate_count + 1
 	state.candidate_count = count
 	state.candidate_entries[count] = child_entry
 end
 
--- active_entries is retained in authored clip order. Copy that ordered prefix
--- directly; only clips appended by the evaluated range need insertion sorting.
+-- Candidate iteration retains a snapshot because callbacks may mutate the live
+-- active set. Stable active sets reuse it; admission and removal invalidate it.
 local begin_candidates<const> = function(state)
 	local generation<const> = state.candidate_generation + 1
 	state.candidate_generation = generation
 	local count<const> = state.active_count
 	state.candidate_count = count
+	if state.candidate_snapshot_current then
+		return count
+	end
 	local active_entries<const> = state.active_entries
 	local candidate_entries<const> = state.candidate_entries
 	for index = 1, count do
 		candidate_entries[index] = active_entries[index]
 	end
+	state.candidate_snapshot_current = true
 	return count
 end
 
