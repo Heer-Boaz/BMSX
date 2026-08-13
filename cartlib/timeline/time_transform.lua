@@ -622,6 +622,46 @@ local evaluate_play_once_in_range_identity_backward<const> = function(
 	)
 end
 
+local evaluate_play_once_in_range_translation_forward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local time_offset_ms<const> = target.clip.time_offset_ms
+	target.write_time_range(
+		target,
+		owner,
+		previous_parent_time_ms + time_offset_ms,
+		parent_time_ms + time_offset_ms,
+		target.play_evaluator,
+		1,
+		initial,
+		boundary_none
+	)
+end
+
+local evaluate_play_once_in_range_translation_backward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local time_offset_ms<const> = target.clip.time_offset_ms
+	target.write_time_range(
+		target,
+		owner,
+		previous_parent_time_ms + time_offset_ms,
+		parent_time_ms + time_offset_ms,
+		target.play_evaluator,
+		-1,
+		initial,
+		boundary_none
+	)
+end
+
 -- Playback mode is authored configuration, not runtime transport state. Clip
 -- admission resolves it and time-scale direction into direct parent-forward
 -- and parent-backward datapaths retained by the compiled clip.
@@ -662,9 +702,14 @@ function time_transform.compile(
 	and clip_in_ms <= child_duration_ms
 	and child_end_time_ms >= 0
 	and child_end_time_ms <= child_duration_ms)) then
-		if time_scale == 1 and time_offset_ms == 0 then
-			return evaluate_play_once_in_range_identity_forward,
-				evaluate_play_once_in_range_identity_backward,
+		if time_scale == 1 then
+			if time_offset_ms == 0 then
+				return evaluate_play_once_in_range_identity_forward,
+					evaluate_play_once_in_range_identity_backward,
+					evaluate_position_once
+			end
+			return evaluate_play_once_in_range_translation_forward,
+				evaluate_play_once_in_range_translation_backward,
 				evaluate_position_once
 		end
 		if time_scale < 0 then
