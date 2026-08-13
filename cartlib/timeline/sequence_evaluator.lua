@@ -173,6 +173,7 @@ function sequence_evaluator.init_entry(entry)
 		local child_entry<const> = {
 			instance = timeline.new(entry.instance.id .. '/' .. clip.id, child_program),
 			clip = clip,
+			duration_ms = child_program.duration_ms,
 		}
 		if clip.on_loop ~= nil then
 			if clip.on_turn ~= nil then
@@ -211,7 +212,9 @@ function sequence_evaluator.bind_entry(entry, owner)
 				clear_child(child_entry, owner)
 				remove_active_clip(state, clip_index, child_entry)
 			end
-			child_entry.instance:rebind_program(timeline_frame_program.build(clip.program, child_entry.params))
+			local child_program<const> = timeline_frame_program.build(clip.program, child_entry.params)
+			child_entry.instance:rebind_program(child_program)
+			child_entry.duration_ms = child_program.duration_ms
 			child_entry.instance:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)

@@ -50,7 +50,7 @@ local direction_between<const> = function(previous_time_ms, time_ms, default_dir
 end
 
 local bound_once_range<const> = function(target, previous_time_ms, time_ms)
-	local duration_ms<const> = target.instance.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	if duration_ms == nil then
 		return previous_time_ms, time_ms
 	end
@@ -76,7 +76,7 @@ local evaluate_loop_forward<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms + duration_ms
@@ -121,7 +121,7 @@ local evaluate_loop_backward<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms
@@ -166,7 +166,7 @@ local evaluate_pingpong_forward<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = pingpong_time(cursor_ms, duration_ms)
 	local boundary_ms = (cursor_ms // duration_ms + 1) * duration_ms
@@ -223,7 +223,7 @@ local evaluate_pingpong_backward<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = pingpong_time(cursor_ms, duration_ms)
 	local remainder_ms<const> = cursor_ms % duration_ms
@@ -315,7 +315,7 @@ local evaluate_position_loop<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms) % duration_ms
 	local time_ms<const> = child_time_at(clip, parent_time_ms) % duration_ms
 	write_range(
@@ -341,7 +341,7 @@ local evaluate_position_pingpong<const> = function(
 	owner,
 	write_range
 )
-	local duration_ms<const> = clip.program.duration_ms
+	local duration_ms<const> = target.duration_ms
 	local previous_time_ms<const> = pingpong_time(
 		child_time_at(clip, previous_parent_time_ms),
 		duration_ms
