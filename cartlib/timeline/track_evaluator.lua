@@ -469,16 +469,21 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 			key.apply(entry, key.value, params, evaluation)
 		end
 	end
+	entry.next_time_step_index = first_time_after(steps.time_keys, steps.time_key_count, time_ms)
 end
 
-local apply_time_step_range<const> = function(entry, steps, previous_time_ms, time_ms, params, evaluation)
+-- Positioning reconstructs every track and places this cursor. Monotone play
+-- then consumes the immutable merged key stream without searching it again.
+local advance_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
 	local keys<const> = steps.time_keys
-	local first<const> = first_time_after(keys, steps.time_key_count, previous_time_ms)
-	local finish<const> = first_time_after(keys, steps.time_key_count, time_ms) - 1
-	for index = first, finish do
+	local count<const> = steps.time_key_count
+	local index = entry.next_time_step_index
+	while index <= count and keys[index].time_ms <= time_ms do
 		local key<const> = keys[index]
 		key.apply(entry, key.value, params, evaluation)
+		index = index + 1
 	end
+	entry.next_time_step_index = index
 end
 
 local evaluate_play_frame_steps<const> = function(
@@ -522,12 +527,12 @@ local evaluate_play_time_steps<const> = function(
 	evaluation
 )
 	if flags & initial_flag ~= 0
-		or flags & wrapped_flag ~= 0
-		or previous_frame < 0
-		or time_ms <= previous_time_ms then
+	or flags & wrapped_flag ~= 0
+	or previous_frame < 0
+	or time_ms <= previous_time_ms then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	else
-		apply_time_step_range(entry, steps, previous_time_ms, time_ms, params, evaluation)
+		advance_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	end
 end
 
@@ -626,6 +631,16 @@ end
 
 function track_evaluator.init_entry(entry)
 	local tracks<const> = entry.instance.program.tracks
+	local steps<const> = tracks.steps
+	if steps.time_key_count == 0 then
+		entry.next_time_step_index = nil
+	else
+		entry.next_time_step_index = first_time_after(
+			steps.time_keys,
+			steps.time_key_count,
+			entry.instance.position_ms
+		)
+	end
 	local scalar_channels<const> = tracks.scalar_channels
 	local cached_segment_count<const> = scalar_channels.cached_segment_count
 	if cached_segment_count == 0 then
