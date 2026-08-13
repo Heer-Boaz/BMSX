@@ -145,6 +145,7 @@ local evaluate_loop_forward<const> = function(
 	initial,
 	target,
 	owner,
+	evaluate,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
@@ -159,7 +160,7 @@ local evaluate_loop_forward<const> = function(
 			owner,
 			previous_local_ms,
 			0,
-			play_update_method,
+			evaluate,
 			1,
 			initial,
 			boundary_loop,
@@ -188,7 +189,7 @@ local evaluate_loop_forward<const> = function(
 			owner,
 			previous_local_ms,
 			time_ms % duration_ms,
-			play_update_method,
+			evaluate,
 			1,
 			initial,
 			boundary_none,
@@ -204,6 +205,7 @@ local evaluate_loop_backward<const> = function(
 	initial,
 	target,
 	owner,
+	evaluate,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
@@ -218,7 +220,7 @@ local evaluate_loop_backward<const> = function(
 			owner,
 			previous_local_ms,
 			duration_ms,
-			play_update_method,
+			evaluate,
 			-1,
 			initial,
 			boundary_loop,
@@ -247,7 +249,7 @@ local evaluate_loop_backward<const> = function(
 			owner,
 			previous_local_ms,
 			time_ms % duration_ms,
-			play_update_method,
+			evaluate,
 			-1,
 			initial,
 			boundary_none,
@@ -263,6 +265,7 @@ local evaluate_pingpong_forward<const> = function(
 	initial,
 	target,
 	owner,
+	evaluate,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
@@ -285,7 +288,7 @@ local evaluate_pingpong_forward<const> = function(
 			owner,
 			previous_local_ms,
 			local_time_ms,
-			play_update_method,
+			evaluate,
 			direction,
 			initial,
 			boundary_turn,
@@ -322,7 +325,7 @@ local evaluate_pingpong_forward<const> = function(
 			owner,
 			previous_local_ms,
 			local_time_ms,
-			play_update_method,
+			evaluate,
 			direction,
 			initial,
 			boundary_none,
@@ -338,6 +341,7 @@ local evaluate_pingpong_backward<const> = function(
 	initial,
 	target,
 	owner,
+	evaluate,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
@@ -366,7 +370,7 @@ local evaluate_pingpong_backward<const> = function(
 			owner,
 			previous_local_ms,
 			local_time_ms,
-			play_update_method,
+			evaluate,
 			direction,
 			initial,
 			boundary_turn,
@@ -403,7 +407,7 @@ local evaluate_pingpong_backward<const> = function(
 			owner,
 			previous_local_ms,
 			local_time_ms,
-			play_update_method,
+			evaluate,
 			direction,
 			initial,
 			boundary_none,
@@ -416,7 +420,7 @@ local evaluate_position_once<const> = function(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
-	method,
+	evaluate,
 	initial,
 	target,
 	owner,
@@ -432,7 +436,7 @@ local evaluate_position_once<const> = function(
 		owner,
 		previous_time_ms,
 		time_ms,
-		method,
+		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
 		boundary_none,
@@ -444,7 +448,7 @@ local evaluate_position_loop<const> = function(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
-	method,
+	evaluate,
 	initial,
 	target,
 	owner,
@@ -458,7 +462,7 @@ local evaluate_position_loop<const> = function(
 		owner,
 		previous_time_ms,
 		time_ms,
-		method,
+		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
 		boundary_none,
@@ -470,7 +474,7 @@ local evaluate_position_pingpong<const> = function(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
-	method,
+	evaluate,
 	initial,
 	target,
 	owner,
@@ -487,7 +491,7 @@ local evaluate_position_pingpong<const> = function(
 		owner,
 		previous_time_ms,
 		time_ms,
-		method,
+		evaluate,
 		direction_between(previous_time_ms, time_ms, 0),
 		initial,
 		boundary_none,
@@ -502,6 +506,7 @@ local evaluate_play_once<const> = function(
 	initial,
 	target,
 	owner,
+	evaluate,
 	write_range
 )
 	local previous_time_ms<const>, time_ms<const> = bound_once_range(
@@ -514,7 +519,7 @@ local evaluate_play_once<const> = function(
 		owner,
 		previous_time_ms,
 		time_ms,
-		play_update_method,
+		evaluate,
 		direction_between(previous_time_ms, time_ms, clip.direction),
 		initial,
 		boundary_none,

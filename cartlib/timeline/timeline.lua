@@ -516,7 +516,7 @@ local write_external_time_range<const> = function(
 	owner,
 	previous_time_ms,
 	time_ms,
-	method,
+	evaluate,
 	direction,
 	initial,
 	boundary,
@@ -565,14 +565,6 @@ local write_external_time_range<const> = function(
 	if initial then
 		flags = flags | initial_flag
 	end
-	local evaluate
-	if method == play_update_method then
-		evaluate = program.evaluate_play
-	elseif method == jump_update_method then
-		evaluate = program.evaluate_jump
-	else
-		evaluate = program.evaluate_scrub
-	end
 	evaluate(
 		entry,
 		owner,
@@ -608,6 +600,7 @@ function timeline:evaluate_clip_play_range(
 		initial,
 		entry,
 		owner,
+		self.program.evaluate_play,
 		write_external_time_range
 	)
 	return self
@@ -615,11 +608,19 @@ end
 
 function timeline:evaluate_clip_at(entry, owner, clip, previous_parent_time_ms, parent_time_ms, method, initial)
 	self.wrapped = false
+	local evaluate
+	if method == play_update_method then
+		evaluate = self.program.evaluate_play
+	elseif method == jump_update_method then
+		evaluate = self.program.evaluate_jump
+	else
+		evaluate = self.program.evaluate_scrub
+	end
 	clip.position_transform(
 		clip,
 		previous_parent_time_ms,
 		parent_time_ms,
-		method,
+		evaluate,
 		initial,
 		entry,
 		owner,
