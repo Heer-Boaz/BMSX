@@ -237,6 +237,7 @@ function sequence_evaluator.init_entry(entry)
 		candidate_snapshot_current = false,
 		position_tree_stack = {},
 		next_boundary_index = 1,
+		play_backward = nil,
 	}
 	entry.sequence_state = state
 	for clip_index = 1, sequence.clip_count do
@@ -300,6 +301,25 @@ function sequence_evaluator.clear_entry(entry, owner)
 	if entry.sequence_state ~= nil then
 		clear_active_clips(entry, owner)
 	end
+end
+
+-- Parent direction changes are transport boundaries. Retain the selected clip
+-- datapath on each child entry there, rather than resolving it through the
+-- immutable clip record for every active child on every tick.
+local bind_play_direction<const> = function(state, clip_count, backward)
+	local entries<const> = state.entries
+	if backward then
+		for index = 1, clip_count do
+			local child_entry<const> = entries[index]
+			child_entry.play_transform = child_entry.clip.play_backward_transform
+		end
+	else
+		for index = 1, clip_count do
+			local child_entry<const> = entries[index]
+			child_entry.play_transform = child_entry.clip.play_forward_transform
+		end
+	end
+	state.play_backward = backward
 end
 
 local add_candidate<const> = function(state, child_entry)
@@ -400,6 +420,9 @@ local evaluate_play_range<const> = function(
 	local state<const> = entry.sequence_state
 	local forward<const> = direction > 0
 	local backward<const> = direction < 0
+	if state.play_backward ~= backward then
+		bind_play_direction(state, sequence.clip_count, backward)
+	end
 	-- Retained boundary cursors prove when the published candidate snapshot is
 	-- still exact, so stable playback never opens a new candidate generation.
 	if not initial and state.candidate_snapshot_current then
@@ -411,7 +434,7 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.clip.play_forward_transform(
+					child_entry.play_transform(
 						child_entry,
 						owner,
 						previous_time_ms,
@@ -428,7 +451,7 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.clip.play_backward_transform(
+					child_entry.play_transform(
 						child_entry,
 						owner,
 						previous_time_ms,
@@ -505,7 +528,7 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			clip.play_forward_transform(
+			child_entry.play_transform(
 				child_entry,
 				owner,
 				source_time_ms,
@@ -547,7 +570,7 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			clip.play_backward_transform(
+			child_entry.play_transform(
 				child_entry,
 				owner,
 				source_time_ms,
@@ -575,7 +598,7 @@ local evaluate_play_range<const> = function(
 			local clip<const> = child_entry.clip
 			local clip_initial<const> = child_entry.active_index == nil
 			local child_timeline<const> = child_entry.instance
-			clip.play_forward_transform(
+			child_entry.play_transform(
 				child_entry,
 				owner,
 				previous_time_ms,
