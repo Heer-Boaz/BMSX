@@ -270,28 +270,41 @@ local sort_candidates<const> = function(state, sorted_count)
 	end
 end
 
--- Active entries retain a source time inside their clip interval. Only a new
--- entry or a destination which leaves that interval needs boundary clamping.
+-- Candidate admission guarantees that a play range intersects the clip. Its
+-- monotonic direction therefore determines the only interval edge it can
+-- cross; positioning remains the owner of arbitrary destination clamping.
 local process_play_clip<const> = function(
 	state,
 	owner,
 	clip_index,
 	previous_time_ms,
-	time_ms
+	time_ms,
+	direction
 )
 	local child_entry<const> = state.entries[clip_index]
 	local clip<const> = child_entry.clip
 	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
 	local end_time_ms<const> = clip.end_time_ms
-	local destination_active<const> = time_ms >= start_time_ms and time_ms < end_time_ms
 	local source_time_ms = previous_time_ms
-	if initial then
-		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
-	end
 	local destination_time_ms = time_ms
-	if not destination_active then
-		destination_time_ms = clamp(time_ms, start_time_ms, end_time_ms)
+	local destination_active = true
+	if direction > 0 then
+		if initial and source_time_ms < start_time_ms then
+			source_time_ms = start_time_ms
+		end
+		if destination_time_ms >= end_time_ms then
+			destination_time_ms = end_time_ms
+			destination_active = false
+		end
+	elseif direction < 0 then
+		if initial and source_time_ms > end_time_ms then
+			source_time_ms = end_time_ms
+		end
+		if destination_time_ms < start_time_ms then
+			destination_time_ms = start_time_ms
+			destination_active = false
+		end
 	end
 	local child_timeline<const> = child_entry.instance
 	child_timeline:evaluate_clip_play_range(
@@ -391,7 +404,8 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 			owner,
 			state.candidates[index],
 			previous_time_ms,
-			time_ms
+			time_ms,
+			direction
 		)
 	end
 end
