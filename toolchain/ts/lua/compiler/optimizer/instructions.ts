@@ -202,9 +202,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 };
 
 export const isPureInstruction = (instruction: Instruction): boolean => {
-	if (instruction.symbolicReloc !== undefined) {
-		return false;
-	}
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:

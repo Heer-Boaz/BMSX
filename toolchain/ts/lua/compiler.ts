@@ -494,8 +494,10 @@ class ProgramBuilder {
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
-	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
+	public readonly protoInstructionSets: InstructionSet[] = [];
 	public readonly protoIds: string[] = [];
+	// These facts only guide same-program optimization; neither enters Proto nor the linked image.
+	private readonly protoReturnsOneValue: boolean[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
 	private readonly biosFunctionImportIndexBySymbol = new Map<string, number>();
 	private readonly structDeclarationMap = new Map<string, LuaStructDeclarationStatement>();
@@ -514,7 +516,7 @@ class ProgramBuilder {
 	private dataBytes = new Uint8Array(0);
 	private rodataByteCount = 0;
 	private rodataBytes = new Uint8Array(0);
-	private readonly assignedProtoIds: Set<string> = new Set();
+	private readonly protoIndexById = new Map<string, number>();
 	private readonly moduleProtoEntries: ProgramModuleProto[] = [];
 	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
 	private readonly moduleExportEntries: ProgramModuleExport[] = [];
@@ -801,13 +803,13 @@ class ProgramBuilder {
 		localSlots: ReadonlyArray<LocalSlotDebug>,
 		upvalueNames: ReadonlyArray<string>,
 		protoId: string,
-		instructionSet: InstructionSet | null,
+		instructionSet: InstructionSet,
 	): number {
-		if (this.assignedProtoIds.has(protoId)) {
+		if (this.protoIndexById.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
-		this.assignedProtoIds.add(protoId);
 		const index = this.protos.length;
+		this.protoIndexById.set(protoId, index);
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
@@ -819,6 +821,15 @@ class ProgramBuilder {
 		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
+		let returnsOneValue = true;
+		for (let instructionIndex = 0; instructionIndex < instructionSet.instructions.length; instructionIndex += 1) {
+			const instruction = instructionSet.instructions[instructionIndex];
+			if (instruction.op === OpCode.RET && instruction.b !== 1) {
+				returnsOneValue = false;
+				break;
+			}
+		}
+		this.protoReturnsOneValue.push(returnsOneValue);
 		return index;
 	}
 
@@ -946,12 +957,8 @@ class ProgramBuilder {
 		return this.protoUpvalueNames[protoIndex];
 	}
 
-	public getProtoInstructionSet(protoIndex: number): InstructionSet {
-		const instructionSet = this.protoInstructionSets[protoIndex];
-		if (!instructionSet) {
-			throw new Error(`[ProgramBuilder] Missing instruction set for proto index ${protoIndex}.`);
-		}
-		return instructionSet;
+	public protoReturnsOne(protoIndex: number): boolean {
+		return this.protoReturnsOneValue[protoIndex];
 	}
 
 	// Record that a module export slot is backed by an exported static-closure
@@ -959,6 +966,15 @@ class ProgramBuilder {
 	// the proto (a link-time symbol) instead of a runtime global-slot load.
 	public recordExportProto(slotName: string, protoId: string): void {
 		this.exportProtoIdBySlot[slotName] = protoId;
+	}
+
+	public exportProtoIndex(path: string, exportPathKey: string): number | undefined {
+		const entrySlot = this.moduleExportEntrySlotByKey.get(programModuleExportKey(path, exportPathKey));
+		if (entrySlot === undefined) {
+			return;
+		}
+		const protoId = this.exportProtoIdBySlot[this.moduleExportEntries[entrySlot - 1].slotName];
+		return this.protoIndexById.get(protoId);
 	}
 
 	public recordBiosFunctionImport(path: string, exportPathKey: string, importIndex: number): void {
@@ -2726,6 +2742,29 @@ class FunctionBuilder {
 			path: this.moduleCompileInfo.path,
 			exportPathKey,
 		};
+	}
+
+	private resolveCallProtoIndex(expression: LuaCallExpression): number | null {
+		if (expression.methodName !== null) {
+			return null;
+		}
+		if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+			const binding = this.resolveReferenceConstClosureBinding(
+				getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression),
+			);
+			if (binding !== null) {
+				return binding.constClosureProtoIndex;
+			}
+		}
+		const target = this.resolveModuleExportCallTarget(expression.callee)
+			?? this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
+		if (target !== undefined && target.kind === 'export_proto') {
+			const protoIndex = this.program.exportProtoIndex(target.path, target.exportPathKey);
+			if (protoIndex !== undefined) {
+				return protoIndex;
+			}
+		}
+		return null;
 	}
 
 	private failCompileTimeModuleRootRuntimeUse(modulePath: string): never {
@@ -5457,16 +5496,13 @@ class FunctionBuilder {
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
 		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
 		const ownStaticFunctionExportTarget = methodName ? undefined : this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
-		const constClosureBinding = !methodName && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
-			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
-			: null;
 		if (constModuleValueCallee) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
 		}
 		if (this.staticCallTargetScope && moduleCallTarget === undefined && ownStaticFunctionExportTarget === undefined) {
 			throw new Error(`Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
 		}
-		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
+		const callProtoIndex = this.resolveCallProtoIndex(expression);
 		const argCount = expression.arguments.length;
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
 		const hasVarArg = lastArg !== null && this.isMultiReturnExpression(lastArg);
@@ -5573,7 +5609,14 @@ class FunctionBuilder {
 	private isMultiReturnExpression(expression: LuaExpression): boolean {
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
-		return !this.resolveRequireModuleBinding(expression);
+		if (this.resolveRequireModuleBinding(expression)) return false;
+		if (this.program.optLevel >= 2) {
+			const protoIndex = this.resolveCallProtoIndex(expression);
+			if (protoIndex !== null && this.program.protoReturnsOne(protoIndex)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private emitDefaultReturn(): void {
@@ -6038,7 +6081,7 @@ export function compileLuaChunkToProgram(
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
 					throw new Error(`Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
 				}
-				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex), programBuilder.constPool);
+				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.protoInstructionSets[protoIndex], programBuilder.constPool);
 				programBuilder.markStaticClosureProto(protoIndex);
 				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
 					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);

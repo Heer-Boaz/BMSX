@@ -142,6 +142,18 @@ test('explicit const-module functions call sibling exports through link symbols'
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [6]);
 });
 
+test('O3 inlines a known single-result static call target without retaining its closure relocation', () => {
+	const moduleSource = `return function(value)
+	return value + 1
+end`;
+	const result = compileWithModule('return require("increment")(6)', 'increment', moduleSource, [], 3);
+
+	assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto'), false);
+	assert.doesNotMatch(result.disasm, /\bCALL\b|\bCLOSURE\b/);
+	const cpu = runCompiledTestSystem(result.compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+});
+
 test('cartlib easing calls through its live runtime table', () => {
 	const moduleSource = readFileSync('cartlib/easing.lua', 'utf8');
 	const compiled = compileWithModule(

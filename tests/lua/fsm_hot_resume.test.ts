@@ -29,6 +29,7 @@ const SYSTEM_MODULE_FILES = [
 ] as const;
 
 const CART_MODULE_FILES = [
+	['cartlib/codegen/lua_source_printer', 'cartlib/codegen/lua_source_printer.lua'],
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/component/component_class', 'cartlib/component/component_class.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],

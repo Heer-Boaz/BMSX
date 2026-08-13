@@ -70,6 +70,43 @@ return value
 	);
 });
 
+test('O3 fixes known single-result tail calls before recursive inlining', () => {
+	const source = `
+local leaf<const> = function(value)
+	return value + 1
+end
+local wrapper<const> = function(value)
+	return leaf(value)
+end
+local run<const> = function(value)
+	return wrapper(value)
+end
+return run(6)
+`;
+	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
+
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7]);
+	assert.doesNotMatch(disassembleEntry(optimized), /\bCALL\b/);
+});
+
+test('O3 preserves genuine multi-result tail calls', () => {
+	const source = `
+local pair<const> = function()
+	return 3, 4
+end
+local forward<const> = function()
+	return pair()
+end
+return forward()
+`;
+	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
+
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [3, 4]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [3, 4]);
+	assert.match(disassembleEntry(optimized), /\bCALL\b/);
+});
+
 test('inlining does not overwrite a caller register live above the CALL results', () => {
 	const calleeInstructions: Instruction[] = [
 		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
