@@ -1,5 +1,4 @@
 local clamp<const> = require('cartlib/util/clamp')
-local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
@@ -584,25 +583,6 @@ local write_external_time_range<const> = function(
 		direction,
 		flags
 	)
-	local notify_boundary<const> = entry.notify_boundary
-	if notify_boundary ~= nil then
-		local context<const> = entry.evaluation_context
-		if not program.has_evaluation_callbacks then
-			timeline_evaluation_context.write(
-				context,
-				program,
-				method,
-				previous_frame,
-				frame,
-				previous_time_ms,
-				time_ms,
-				direction,
-				flags
-			)
-		end
-		notify_boundary(entry.clip, entry.primary_binding, context)
-	end
-	return self
 end
 
 -- Play traversal emits every monotonic range produced by loop and ping-pong

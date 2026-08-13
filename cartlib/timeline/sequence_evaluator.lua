@@ -4,9 +4,6 @@ local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
-local playback_boundary<const> = timeline_playback.boundary
-local boundary_loop<const> = playback_boundary.loop
-local boundary_turn<const> = playback_boundary.turn
 local evaluation_flag<const> = timeline_playback.evaluation_flag
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
@@ -15,27 +12,6 @@ local initial_flag<const> = evaluation_flag.initial
 -- interval state under their parent entry. They never become ECS systems or
 -- independently ticking timeline-component entries.
 local sequence_evaluator<const> = {}
-
-local notify_loop<const> = function(clip, target, evaluation)
-	if evaluation.boundary == boundary_loop then
-		clip.on_loop(target, evaluation)
-	end
-end
-
-local notify_turn<const> = function(clip, target, evaluation)
-	if evaluation.boundary == boundary_turn then
-		clip.on_turn(target, evaluation)
-	end
-end
-
-local notify_loop_or_turn<const> = function(clip, target, evaluation)
-	local boundary<const> = evaluation.boundary
-	if boundary == boundary_loop then
-		clip.on_loop(target, evaluation)
-	elseif boundary == boundary_turn then
-		clip.on_turn(target, evaluation)
-	end
-end
 
 local first_start_after<const> = function(clips, count, time_ms)
 	local low = 1
@@ -185,16 +161,7 @@ function sequence_evaluator.init_entry(entry)
 			clip = clip,
 			duration_ms = child_program.duration_ms,
 		}
-		if clip.on_loop ~= nil then
-			if clip.on_turn ~= nil then
-				child_entry.notify_boundary = notify_loop_or_turn
-			else
-				child_entry.notify_boundary = notify_loop
-			end
-		elseif clip.on_turn ~= nil then
-			child_entry.notify_boundary = notify_turn
-		end
-		if child_program.has_evaluation_callbacks or child_entry.notify_boundary ~= nil then
+		if child_program.has_evaluation_callbacks or clip.on_loop ~= nil or clip.on_turn ~= nil then
 			child_entry.evaluation_context = {}
 		end
 		if child_program.binding_count > 1 then

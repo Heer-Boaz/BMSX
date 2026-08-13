@@ -1,3 +1,4 @@
+local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 -- A clip transform is a linear parent-to-child mapping followed by an optional
@@ -11,6 +12,62 @@ local boundary<const> = timeline_playback.boundary
 local boundary_none<const> = boundary.none
 local boundary_loop<const> = boundary.loop
 local boundary_turn<const> = boundary.turn
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local sample_flag<const> = evaluation_flag.sample
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
+local loop_boundary_flags<const> = boundary_loop | wrapped_flag
+
+-- Time transforms own loop and turn boundaries. Authored boundary callbacks
+-- are therefore dispatched here, after the exact monotonic child range which
+-- crossed the boundary has been evaluated.
+local notify_boundary<const> = function(
+	callback,
+	target,
+	previous_time_ms,
+	time_ms,
+	direction,
+	initial,
+	boundary_flags
+)
+	local instance<const> = target.instance
+	local program<const> = instance.program
+	local context<const> = target.evaluation_context
+	if not program.has_evaluation_callbacks then
+		local previous_frame = 0
+		local frame = 0
+		local sample = true
+		if not program.continuous then
+			local frame_duration<const> = program.frame_duration
+			local last_frame<const> = program.length - 1
+			previous_frame = (previous_time_ms / frame_duration) // 1
+			if previous_frame > last_frame then
+				previous_frame = last_frame
+			end
+			frame = instance.head
+			sample = initial or frame ~= previous_frame
+		end
+		local flags = boundary_flags
+		if sample then
+			flags = flags | sample_flag
+		end
+		if initial then
+			flags = flags | initial_flag
+		end
+		timeline_evaluation_context.write(
+			context,
+			program,
+			play_update_method,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			direction,
+			flags
+		)
+	end
+	callback(target.primary_binding, context)
+end
 
 local child_time_at<const> = function(clip, parent_time_ms)
 	return parent_time_ms * clip.time_scale + clip.time_offset_ms
@@ -108,6 +165,18 @@ local evaluate_loop_forward<const> = function(
 			boundary_loop,
 			true
 		)
+		local on_loop<const> = clip.on_loop
+		if on_loop ~= nil then
+			notify_boundary(
+				on_loop,
+				target,
+				previous_local_ms,
+				0,
+				1,
+				initial,
+				loop_boundary_flags
+			)
+		end
 		initial = false
 		cursor_ms = boundary_ms
 		previous_local_ms = 0
@@ -155,6 +224,18 @@ local evaluate_loop_backward<const> = function(
 			boundary_loop,
 			true
 		)
+		local on_loop<const> = clip.on_loop
+		if on_loop ~= nil then
+			notify_boundary(
+				on_loop,
+				target,
+				previous_local_ms,
+				duration_ms,
+				-1,
+				initial,
+				loop_boundary_flags
+			)
+		end
 		initial = false
 		cursor_ms = boundary_ms
 		previous_local_ms = duration_ms
@@ -210,6 +291,18 @@ local evaluate_pingpong_forward<const> = function(
 			boundary_turn,
 			false
 		)
+		local on_turn<const> = clip.on_turn
+		if on_turn ~= nil then
+			notify_boundary(
+				on_turn,
+				target,
+				previous_local_ms,
+				local_time_ms,
+				direction,
+				initial,
+				boundary_turn
+			)
+		end
 		initial = false
 		cursor_ms = boundary_ms
 		previous_local_ms = local_time_ms
@@ -279,6 +372,18 @@ local evaluate_pingpong_backward<const> = function(
 			boundary_turn,
 			false
 		)
+		local on_turn<const> = clip.on_turn
+		if on_turn ~= nil then
+			notify_boundary(
+				on_turn,
+				target,
+				previous_local_ms,
+				local_time_ms,
+				direction,
+				initial,
+				boundary_turn
+			)
+		end
 		initial = false
 		cursor_ms = boundary_ms
 		previous_local_ms = local_time_ms
