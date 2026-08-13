@@ -475,11 +475,15 @@ end
 
 -- Positioning and loop discontinuities reconstruct every track and place this
 -- cursor. Monotone play consumes the immutable merged key stream in either
--- direction without searching individual tracks again.
+-- direction without searching individual tracks again. Empty ranges leave the
+-- retained cursor untouched.
 local advance_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
 	local keys<const> = steps.time_keys
 	local count<const> = steps.time_key_count
 	local index = entry.next_time_step_index
+	if index > count or keys[index].time_ms > time_ms then
+		return
+	end
 	while index <= count and keys[index].time_ms <= time_ms do
 		local key<const> = keys[index]
 		key.apply(entry, key.value, params, evaluation)
@@ -491,6 +495,9 @@ end
 local retreat_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
 	local keys<const> = steps.time_keys
 	local index = entry.next_time_step_index - 1
+	if index == 0 or keys[index].time_ms <= time_ms then
+		return
+	end
 	while index > 0 do
 		local key<const> = keys[index]
 		if key.time_ms <= time_ms then
