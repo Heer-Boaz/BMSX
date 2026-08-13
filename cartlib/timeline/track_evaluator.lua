@@ -3,10 +3,10 @@
 -- track kind or binding name is inspected on the update path.
 local easing<const> = require('cartlib/easing')
 local track_evaluator_source<const> = require('cartlib/timeline/track_evaluator_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local track_evaluator<const> = {}
+local compile_syntax<const> = lua_compiler.compile_syntax
 local pingpong01<const> = easing.pingpong01
 local sin<const> = math.sin
 local tau<const> = math.pi * 2
@@ -578,8 +578,8 @@ function track_evaluator.compile_values(program)
 			has_sample_params = true
 		end
 	end
-	local factory<const> = load(
-		lua_syntax_printer.print(track_evaluator_source.build({
+	local factory<const> = compile_syntax(
+		track_evaluator_source.build({
 			has_frame_steps = has_frame_steps,
 			has_time_steps = has_time_steps,
 			has_scalar_channels = has_scalar_channels,
@@ -592,9 +592,8 @@ function track_evaluator.compile_values(program)
 			has_sin_tracks = has_sin_tracks,
 			sample_flag = sample_flag,
 			sample_tracks = sample_tracks,
-		})),
+		}),
 		'[timeline.track_values]',
-		't',
 		{
 			sample_tracks = sample_tracks,
 			pingpong01 = pingpong01,
