@@ -630,10 +630,15 @@ function action_parser.compile(src)
 		error('[cartlib/input/action_parser] Unexpected token "' .. self.token_value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
+	local program_syntax<const>, action_requirement_masks<const> = action_program_syntax.build(
+		ast,
+		#self.action_names
+	)
 	local program<const> = {
 		action_names = self.action_names,
+		action_requirement_masks = action_requirement_masks,
 		evaluation_factory = compile_syntax(
-			action_program_syntax.build(ast),
+			program_syntax,
 			'[input.action]'
 		)(),
 	}

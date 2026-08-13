@@ -4,6 +4,7 @@
 -- Edge detection (just_pressed/just_released) is derived here from latched levels.
 
 local action_parser<const> = require('cartlib/input/action_parser')
+local action_syntax<const> = require('cartlib/input/action_syntax')
 local keys<const> = require('cartlib/input/keys')
 
 local input<const> = {}
@@ -37,6 +38,9 @@ local repeat_interval_frames<const> = 4
 local guard_window_frames<const> = 2
 -- Sentinel for "no press/release seen": larger than any reachable frame delta.
 local huge_delta<const> = 0x7fffffff
+local evaluation_requirement<const> = action_syntax.evaluation_requirement
+local requirement_guard<const> = evaluation_requirement.guard
+local requirement_repeat_state<const> = evaluation_requirement.repeat_state
 
 local default_keyboard<const> = {
 	a = { 'KeyX' },
@@ -193,13 +197,13 @@ local new_action_state<const> = function(player, action)
 		-- Cached frame deltas; was* derives from these per window.
 		min_press_delta = huge_delta,
 		min_release_delta = huge_delta,
+		evaluation_requirement_mask = 0,
 		eval_frame = -1,
 		eval_gen = -1,
 		guard_last_press_id = -1,
 		guard_last_accepted_frame = -guard_window_frames - 1,
 		guard_last_result = false,
 		repeat_active = false,
-		repeat_count = 0,
 		repeat_press_start_frame = -1,
 		repeat_last_frame = -1,
 		repeat_last_result = false,
@@ -761,10 +765,15 @@ local refresh_action_state<const> = function(player, state)
 			fold_source(state, agg)
 		end
 	end
-	state.guarded_just_pressed = evaluate_guard(state, frame)
-	local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state, frame)
-	state.repeat_pressed = repeat_pressed
-	state.repeat_count = repeat_count
+	local requirement_mask<const> = state.evaluation_requirement_mask
+	if requirement_mask & requirement_guard ~= 0 then
+		state.guarded_just_pressed = evaluate_guard(state, frame)
+	end
+	if requirement_mask & requirement_repeat_state ~= 0 then
+		local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state, frame)
+		state.repeat_pressed = repeat_pressed
+		state.repeat_count = repeat_count
+	end
 	state.eval_frame = frame
 	state.eval_gen = player.eval_generation
 end
@@ -784,9 +793,16 @@ function input.bind(player_index, pattern)
 	if not evaluate then
 		local program<const> = action_parser.compile(pattern)
 		local action_names<const> = program.action_names
+		local action_requirement_masks<const> = program.action_requirement_masks
 		local states<const> = {}
 		for i = 1, #action_names do
-			states[i] = compile_action_state(player, action_names[i])
+			local state<const> = compile_action_state(player, action_names[i])
+			local requirement_mask<const> = state.evaluation_requirement_mask | action_requirement_masks[i]
+			if requirement_mask ~= state.evaluation_requirement_mask then
+				state.evaluation_requirement_mask = requirement_mask
+				state.eval_frame = -1
+			end
+			states[i] = state
 		end
 		evaluate = program.evaluation_factory(
 			evaluate_action_state,

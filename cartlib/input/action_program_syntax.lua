@@ -9,6 +9,9 @@ local node_kind<const> = action_syntax.node_kind
 local function_kind<const> = action_syntax.function_kind
 local compare_operator<const> = action_syntax.compare_operator
 local edge<const> = action_syntax.edge
+local evaluation_requirement<const> = action_syntax.evaluation_requirement
+local requirement_guard<const> = evaluation_requirement.guard
+local requirement_repeat_state<const> = evaluation_requirement.repeat_state
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -70,21 +73,25 @@ local edge_function_spec<const> = {
 		all = false,
 		edge_bit = edge.guarded_just_pressed,
 		state_field = 'guarded_just_pressed',
+		requirement = requirement_guard,
 	},
 	[function_kind.all_guarded_just_pressed] = {
 		all = true,
 		edge_bit = edge.guarded_just_pressed,
 		state_field = 'guarded_just_pressed',
+		requirement = requirement_guard,
 	},
 	[function_kind.any_repeat_pressed] = {
 		all = false,
 		edge_bit = edge.repeat_pressed,
 		state_field = 'repeat_pressed',
+		requirement = requirement_repeat_state,
 	},
 	[function_kind.all_repeat_pressed] = {
 		all = true,
 		edge_bit = edge.repeat_pressed,
 		state_field = 'repeat_pressed',
+		requirement = requirement_repeat_state,
 	},
 	[function_kind.any_within_press] = {
 		all = false,
@@ -107,6 +114,18 @@ local edge_function_spec<const> = {
 		delta_field = 'min_release_delta',
 	},
 }
+
+local modifier_requirement<const> = {
+	[modifier_kind.guarded_just_pressed] = requirement_guard,
+	[modifier_kind.repeat_pressed] = requirement_repeat_state,
+	[modifier_kind.repeat_count] = requirement_repeat_state,
+}
+
+local add_action_requirement<const> = function(state, action_index, requirement)
+	if requirement ~= nil then
+		state.action_requirement_masks[action_index] = state.action_requirement_masks[action_index] | requirement
+	end
+end
 
 local window_expression<const> = function(window)
 	if window == nil then
@@ -192,6 +211,10 @@ end
 
 local emit_action<const> = function(statements, state, node, target_name, bare_requires_pressed)
 	state.uses_state = true
+	local specs<const> = node.mod_specs
+	for index = 1, #specs do
+		add_action_requirement(state, node.action_index, modifier_requirement[specs[index].kind])
+	end
 	statements[#statements + 1] = assignment_statement(
 		identifier('state'),
 		call_expression(identifier('get_state'), {
@@ -348,6 +371,7 @@ emit_edge_collection = function(statements, state, node, window, edge_spec)
 		emit_action(statements, state, node, 'edge_ok', false)
 		emit_edge_reset(statements)
 		if node.edge_mask & edge_spec.edge_bit ~= 0 then
+			add_action_requirement(state, node.action_index, edge_spec.requirement)
 			local body<const> = {
 				assignment_statement(
 					identifier('edge_eligible'),
@@ -499,8 +523,16 @@ emit_evaluation = function(statements, state, node, target_name, window)
 	end
 end
 
-function action_program_syntax.build(ast)
-	local state<const> = { uses_state = false, uses_edge = false }
+function action_program_syntax.build(ast, action_count)
+	local action_requirement_masks<const> = {}
+	for action_index = 1, action_count do
+		action_requirement_masks[action_index] = 0
+	end
+	local state<const> = {
+		uses_state = false,
+		uses_edge = false,
+		action_requirement_masks = action_requirement_masks,
+	}
 	local evaluation_body<const> = {}
 	emit_evaluation(evaluation_body, state, ast, 'result', nil)
 	local evaluator_body<const> = {
@@ -519,7 +551,7 @@ function action_program_syntax.build(ast)
 		evaluator_body[#evaluator_body + 1] = evaluation_body[index]
 	end
 	evaluator_body[#evaluator_body + 1] = return_statement({ identifier('result') })
-	return syntax_factory.chunk(block({
+	local chunk<const> = syntax_factory.chunk(block({
 		return_statement({
 			function_expression(
 				{
@@ -548,6 +580,7 @@ function action_program_syntax.build(ast)
 			),
 		}),
 	}))
+	return chunk, action_requirement_masks
 end
 
 return action_program_syntax

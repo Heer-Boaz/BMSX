@@ -60,4 +60,9 @@ action_syntax.edge = {
 	repeat_pressed = 0x20,
 }
 
+action_syntax.evaluation_requirement = {
+	guard = 0x01,
+	repeat_state = 0x02,
+}
+
 return action_syntax
