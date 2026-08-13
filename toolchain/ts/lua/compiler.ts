@@ -2116,6 +2116,7 @@ class FunctionBuilder {
 			instrStartIndex,
 			this.localDebugSlots,
 			this.maxStack,
+			(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
 		);
 	}
 

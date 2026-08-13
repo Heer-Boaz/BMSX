@@ -1,5 +1,6 @@
 import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import { buildBasicBlocks, buildBlockGraph, type Block } from '../control_flow';
+import type { UpvalueDesc } from '../program';
 import type { Instruction } from './index';
 import { isRegisterOperand } from './instructions';
 
@@ -7,6 +8,8 @@ const RK_B = 1;
 const RK_C = 2;
 
 type RegisterVisitor<T> = (state: T, register: number) => void;
+
+export type ClosureUpvalueResolver = (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 
 function visitRegister<T>(state: T, visitor: RegisterVisitor<T>, register: number): void {
 	if (register >= 0) {
@@ -20,9 +23,33 @@ function visitRegisterRange<T>(state: T, visitor: RegisterVisitor<T>, base: numb
 	}
 }
 
+export function visitInstructionOpenUpvalueRegisters<T>(
+	instruction: Instruction,
+	maxRegister: number,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
+	state: T,
+	visitor: RegisterVisitor<T>,
+): void {
+	if (instruction.op !== OpCode.CLOSURE) {
+		return;
+	}
+	if (instruction.closureAddressRegister) {
+		visitRegisterRange(state, visitor, 0, maxRegister + 1);
+		return;
+	}
+	const upvalues = resolveClosureUpvalues(instruction.b);
+	for (let index = 0; index < upvalues.length; index += 1) {
+		const upvalue = upvalues[index];
+		if (upvalue.inStack) {
+			visitRegister(state, visitor, upvalue.index);
+		}
+	}
+}
+
 function visitInstructionUses<T>(
 	instruction: Instruction,
 	maxRegister: number,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
 	state: T,
 	visitor: RegisterVisitor<T>,
 ): void {
@@ -108,9 +135,13 @@ function visitInstructionUses<T>(
 			visitRegisterRange(state, visitor, instruction.b, instruction.c);
 			break;
 		case OpCode.CLOSURE:
-			if (instruction.closureAddressRegister) {
-				visitRegisterRange(state, visitor, 0, maxRegister + 1);
-			}
+			visitInstructionOpenUpvalueRegisters(
+				instruction,
+				maxRegister,
+				resolveClosureUpvalues,
+				state,
+				visitor,
+			);
 			break;
 		case OpCode.LOAD_MEM:
 			visitRegister(state, visitor, instruction.b);
@@ -211,9 +242,13 @@ function appendRegister(registers: number[], register: number): void {
 	registers.push(register);
 }
 
-export function collectInstructionUses(instruction: Instruction, maxRegister: number): number[] {
+export function collectInstructionUses(
+	instruction: Instruction,
+	maxRegister: number,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
+): number[] {
 	const uses: number[] = [];
-	visitInstructionUses(instruction, maxRegister, uses, appendRegister);
+	visitInstructionUses(instruction, maxRegister, resolveClosureUpvalues, uses, appendRegister);
 	return uses;
 }
 
@@ -251,6 +286,7 @@ export function computeBlockLiveOut(
 	blocks: Block[],
 	successors: number[][],
 	maxRegister: number,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
 ): Uint8Array[] {
 	if (blocks.length === 0) {
 		return [];
@@ -273,7 +309,13 @@ export function computeBlockLiveOut(
 		blockState.use = blockUse[blockIndex];
 		blockState.def = blockDef[blockIndex];
 		for (let index = block.start; index < block.end; index += 1) {
-			visitInstructionUses(instructions[index], maxRegister, blockState, markBlockUse);
+			visitInstructionUses(
+				instructions[index],
+				maxRegister,
+				resolveClosureUpvalues,
+				blockState,
+				markBlockUse,
+			);
 			visitInstructionDefs(instructions[index], maxRegister, blockState, markBlockDef);
 		}
 	}
@@ -315,53 +357,86 @@ export function computeBlockLiveOut(
 	return liveOut;
 }
 
-export function computeInstructionLiveInAt(
+export function computeBlockOpenUpvaluesIn(
 	instructions: Instruction[],
+	blocks: Block[],
+	predecessors: number[][],
 	maxRegister: number,
-	instructionIndices: ReadonlyArray<number>,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
 ): Uint8Array[] {
-	if (instructionIndices.length === 0) {
+	if (blocks.length === 0) {
 		return [];
 	}
-	const blocks = buildBasicBlocks(instructions);
-	const { successors } = buildBlockGraph(instructions, blocks);
-	const blockLiveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
-	const liveIn: Uint8Array[] = new Array(instructionIndices.length);
-	let candidateStart = 0;
+	const registerCount = maxRegister + 1;
+	const blockOpens: Uint8Array[] = new Array(blocks.length);
+	const openIn: Uint8Array[] = new Array(blocks.length);
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const opens = new Uint8Array(registerCount);
+		blockOpens[blockIndex] = opens;
+		openIn[blockIndex] = new Uint8Array(registerCount);
 		const block = blocks[blockIndex];
-		let candidateEnd = candidateStart;
-		while (candidateEnd < instructionIndices.length && instructionIndices[candidateEnd] < block.end) {
-			candidateEnd += 1;
+		for (let index = block.start; index < block.end; index += 1) {
+			visitInstructionOpenUpvalueRegisters(
+				instructions[index],
+				maxRegister,
+				resolveClosureUpvalues,
+				opens,
+				markLiveRegister,
+			);
 		}
-		let candidateIndex = candidateEnd - 1;
-		const live = blockLiveOut[blockIndex].slice();
-		for (let index = block.end - 1; index >= block.start; index -= 1) {
-			const instruction = instructions[index];
-			visitInstructionDefs(instruction, maxRegister, live, clearLiveRegister);
-			visitInstructionUses(instruction, maxRegister, live, markLiveRegister);
-			if (candidateIndex >= candidateStart && instructionIndices[candidateIndex] === index) {
-				liveIn[candidateIndex] = live.slice();
-				candidateIndex -= 1;
+	}
+
+	const nextIn = new Uint8Array(registerCount);
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+			nextIn.fill(0);
+			const previousBlocks = predecessors[blockIndex];
+			for (let predecessorIndex = 0; predecessorIndex < previousBlocks.length; predecessorIndex += 1) {
+				const predecessor = previousBlocks[predecessorIndex];
+				const predecessorIn = openIn[predecessor];
+				const predecessorOpens = blockOpens[predecessor];
+				for (let register = 0; register < registerCount; register += 1) {
+					if (predecessorIn[register] !== 0 || predecessorOpens[register] !== 0) {
+						nextIn[register] = 1;
+					}
+				}
+			}
+			const inSet = openIn[blockIndex];
+			for (let register = 0; register < registerCount; register += 1) {
+				const next = nextIn[register];
+				if (inSet[register] !== next) {
+					inSet[register] = next;
+					changed = true;
+				}
 			}
 		}
-		candidateStart = candidateEnd;
 	}
-	return liveIn;
+	return openIn;
 }
 
-export function computeInstructionLiveOutAt(
+export function computeInstructionLivenessAt(
 	instructions: Instruction[],
 	maxRegister: number,
 	instructionIndices: ReadonlyArray<number>,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
+	position: 'in' | 'out',
 ): Uint8Array[] {
 	if (instructionIndices.length === 0) {
 		return [];
 	}
 	const blocks = buildBasicBlocks(instructions);
 	const { successors } = buildBlockGraph(instructions, blocks);
-	const blockLiveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
-	const liveOut: Uint8Array[] = new Array(instructionIndices.length);
+	const blockLiveOut = computeBlockLiveOut(
+		instructions,
+		blocks,
+		successors,
+		maxRegister,
+		resolveClosureUpvalues,
+	);
+	const result: Uint8Array[] = new Array(instructionIndices.length);
+	const captureBeforeTransfer = position === 'out';
 	let candidateStart = 0;
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
 		const block = blocks[blockIndex];
@@ -372,15 +447,27 @@ export function computeInstructionLiveOutAt(
 		let candidateIndex = candidateEnd - 1;
 		const live = blockLiveOut[blockIndex].slice();
 		for (let index = block.end - 1; index >= block.start; index -= 1) {
-			if (candidateIndex >= candidateStart && instructionIndices[candidateIndex] === index) {
-				liveOut[candidateIndex] = live.slice();
-				candidateIndex -= 1;
+			const capture = candidateIndex >= candidateStart && instructionIndices[candidateIndex] === index;
+			if (capture && captureBeforeTransfer) {
+				result[candidateIndex] = live.slice();
 			}
 			const instruction = instructions[index];
 			visitInstructionDefs(instruction, maxRegister, live, clearLiveRegister);
-			visitInstructionUses(instruction, maxRegister, live, markLiveRegister);
+			visitInstructionUses(
+				instruction,
+				maxRegister,
+				resolveClosureUpvalues,
+				live,
+				markLiveRegister,
+			);
+			if (capture) {
+				if (!captureBeforeTransfer) {
+					result[candidateIndex] = live.slice();
+				}
+				candidateIndex -= 1;
+			}
 		}
 		candidateStart = candidateEnd;
 	}
-	return liveOut;
+	return result;
 }

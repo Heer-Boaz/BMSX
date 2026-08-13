@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type { CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	optimizeInstructions,
@@ -15,6 +16,11 @@ import {
 import { compileLuaSource, runCompiledLua } from './cpu_test_harness';
 
 const INLINE_TEST_PATH = 'function_inlining.lua';
+const INLINE_TEST_RANGE: SourceRange = {
+	path: INLINE_TEST_PATH,
+	start: { line: 1, column: 1 },
+	end: { line: 1, column: 2 },
+};
 
 function disassembleEntry(compiled: CompiledSystemProgram): string {
 	const image = linkTestSystemBlua32(compiled);
@@ -137,7 +143,7 @@ test('inlining does not overwrite a caller register live above the CALL results'
 	};
 	const optimized = optimizeInstructions(
 		callerInstructions,
-		callerInstructions.map(() => null),
+		callerInstructions.map((_instruction, index) => index === 2 ? INLINE_TEST_RANGE : null),
 		3,
 		context,
 	);
@@ -175,12 +181,49 @@ test('inlining does not overwrite a register retained by an open closure', () =>
 	};
 	const optimized = optimizeInstructions(
 		callerInstructions,
-		callerInstructions.map(() => null),
+		callerInstructions.map((_instruction, index) => index === 3 ? INLINE_TEST_RANGE : null),
 		3,
 		context,
 	);
 
 	assert.ok(optimized.instructions.some(instruction => instruction.op === OpCode.CALL));
+});
+
+test('inlining can reuse a future capture slot before its closure is opened', () => {
+	const calleeInstructions: Instruction[] = [
+		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+	];
+	const callerInstructions: Instruction[] = [
+		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
+		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+	];
+	const context: OptimizationContext = {
+		currentFunctionId: 'caller',
+		constPool: [],
+		constIndex: () => 0,
+		getClosureUpvalues: protoIndex => protoIndex === 1 ? [{ inStack: true, index: 3 }] : [],
+		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
+		getProtoInstructionSet: protoIndex => protoIndex === 0 ? {
+			instructions: calleeInstructions,
+			ranges: calleeInstructions.map(() => null),
+		} : null,
+		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
+		getProtoLocalSlots: () => [],
+		relocatedConstIndices: new Set<number>(),
+		closureWrittenRegisters: new Set<number>(),
+	};
+	const optimized = optimizeInstructions(
+		callerInstructions,
+		callerInstructions.map((_instruction, index) => index === 1 ? INLINE_TEST_RANGE : null),
+		3,
+		context,
+	);
+
+	assert.equal(optimized.instructions.some(instruction => instruction.op === OpCode.CALL), false);
 });
 
 test('inlined calls evaluate extra arguments once and fill missing parameters with nil', () => {
@@ -254,9 +297,9 @@ local identity<const> = function(value)
 end
 local retained = 20
 local outer<const> = function()
-	identity(2)
+	local value<const> = identity(2)
 	return function()
-		return retained
+		return retained + value
 	end
 end
 local nested<const> = outer()
@@ -268,8 +311,8 @@ return nested()
 	const nestedProtoIndex = compiled.metadata.protoIds.findIndex(id => id.startsWith(`${outerProtoId}/anon:`));
 	const nestedParentCapture = compiled.program.protos[nestedProtoIndex].upvalueDescs.find(desc => !desc.inStack)!;
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [20]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [20]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [22]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [22]);
 	assert.deepEqual(compiled.metadata.upvalueNamesByProto[outerProtoIndex], ['retained']);
 	assert.equal(compiled.program.protos[outerProtoIndex].upvalueDescs.length, 1);
 	assert.equal(nestedParentCapture.index, 0);

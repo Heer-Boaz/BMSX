@@ -11,7 +11,8 @@ import type { Instruction } from './optimizer';
 import {
 	collectInstructionDefs,
 	collectInstructionUses,
-	computeInstructionLiveInAt,
+	computeInstructionLivenessAt,
+	type ClosureUpvalueResolver,
 } from './optimizer/liveness';
 
 function collectNamedLiveRegisters(
@@ -75,6 +76,7 @@ export function buildProgramResumePoints(
 	instructionWordOffsets: number[],
 	localSlots: ReadonlyArray<LocalSlotDebug>,
 	maxStack: number,
+	resolveClosureUpvalues: ClosureUpvalueResolver,
 ): ProgramResumePoint[] {
 	const emittedRanges = new Set<SourceRange>();
 	const candidateIndices: number[] = [];
@@ -94,7 +96,13 @@ export function buildProgramResumePoints(
 	}
 
 	const maxRegister = maxStack - 1;
-	const liveByCandidate = computeInstructionLiveInAt(instructions, maxRegister, candidateIndices);
+	const liveByCandidate = computeInstructionLivenessAt(
+		instructions,
+		maxRegister,
+		candidateIndices,
+		resolveClosureUpvalues,
+		'in',
+	);
 	const named = new Uint8Array(maxStack);
 	const points: ProgramResumePoint[] = [];
 	for (let candidateIndex = 0; candidateIndex < candidateIndices.length; candidateIndex += 1) {
@@ -117,7 +125,7 @@ export function buildProgramResumePoints(
 			range,
 			op: instruction.op,
 			liveRegisters,
-			uses: collectInstructionUses(instruction, maxRegister),
+			uses: collectInstructionUses(instruction, maxRegister, resolveClosureUpvalues),
 			defs: collectInstructionDefs(instruction, maxRegister),
 			inlineCallSites,
 		});

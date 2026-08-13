@@ -70,6 +70,25 @@ return before, sequence
 	}
 });
 
+test('optimized loop writes remain visible to a closure opened on an earlier iteration', () => {
+	const source = `
+local value = 0
+local read
+for index = 1, 2 do
+	value = index
+	if index == 1 then
+		read = function()
+			return value
+		end
+	end
+end
+return read()
+`;
+	for (const optLevel of [0, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [2]);
+	}
+});
+
 test('handles tables, method calls, and boolean logic', () => {
 	const result = runCompiledLua(`
 local tracker = { total = 10 }

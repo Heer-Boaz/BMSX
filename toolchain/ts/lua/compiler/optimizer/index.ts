@@ -16,15 +16,14 @@ import {
 	cloneInstruction,
 	computeMaxRegister,
 	duplicateStatementRange,
-	isPureInstruction,
 } from './instructions';
 import { applyGlobalOptimizations } from './ssa';
 import {
-	collectInstructionDefs,
-	collectInstructionUses,
-	computeBlockLiveOut,
-	computeInstructionLiveOutAt,
+	computeBlockOpenUpvaluesIn,
+	computeInstructionLivenessAt,
+	visitInstructionOpenUpvalueRegisters,
 } from './liveness';
+import { eliminateDeadStores } from './dead_stores';
 import {
 	ConstValueKind,
 	constValueForOptimization,
@@ -88,6 +87,10 @@ type InstructionRegisterOperand = 'a' | 'b' | 'c';
 
 const RK_B = 1;
 const RK_C = 2;
+
+const markOpenUpvalueRegister = (openUpvalues: Uint8Array, register: number): void => {
+	openUpvalues[register] = 1;
+};
 
 const getConstForOperand = (
 	operand: number,
@@ -357,40 +360,6 @@ const intersectConstMaps = (maps: Map<number, ConstValue>[]): Map<number, ConstV
 		}
 	}
 	return result;
-};
-
-const markCapturedClosureRegisters = (
-	captured: Uint8Array,
-	instructions: readonly Instruction[],
-	context: OptimizationContext,
-	registerCount: number,
-): void => {
-	for (let reg = 0; reg < registerCount; reg += 1) {
-		if (context.closureWrittenRegisters.has(reg)) {
-			captured[reg] = 1;
-		}
-	}
-	for (let i = 0; i < instructions.length; i += 1) {
-		const instruction = instructions[i];
-		if (instruction.op !== OpCode.CLOSURE) {
-			continue;
-		}
-		if (instruction.closureAddressRegister) {
-			captured.fill(1);
-			continue;
-		}
-		const upvalues = context.getClosureUpvalues(instruction.b);
-		for (let u = 0; u < upvalues.length; u += 1) {
-			const desc = upvalues[u];
-			if (!desc.inStack) {
-				continue;
-			}
-			if (desc.index >= registerCount) {
-				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
-			}
-			captured[desc.index] = 1;
-		}
-	}
 };
 
 const computeBlockConstantIn = (
@@ -1094,77 +1063,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	return set;
 };
 
-const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
-	const { instructions, ranges } = set;
-	const count = instructions.length;
-	if (count === 0) {
-		return set;
-	}
-	const maxRegister = computeMaxRegister(instructions);
-	const blocks = buildBasicBlocks(instructions);
-	const registerCount = maxRegister + 1;
-	const { successors } = buildBlockGraph(instructions, blocks);
-	const pinned = new Array<boolean>(count).fill(false);
-	for (let i = 0; i + 1 < count; i += 1) {
-		if (isSkipInstruction(instructions[i])) {
-			pinned[i + 1] = true;
-		}
-	}
-	const captured = new Uint8Array(registerCount);
-	markCapturedClosureRegisters(captured, instructions, context, registerCount);
-	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
-
-	const keep = new Array<boolean>(count).fill(true);
-	let removed = 0;
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		const block = blocks[blockIndex];
-		const live = liveOut[blockIndex].slice();
-		for (let i = block.end - 1; i >= block.start; i -= 1) {
-			const instruction = instructions[i];
-			const defs = collectInstructionDefs(instruction, maxRegister);
-			let hasLive = false;
-			for (let d = 0; d < defs.length; d += 1) {
-				const reg = defs[d];
-				if (reg < registerCount && live[reg] !== 0) {
-					hasLive = true;
-					break;
-				}
-			}
-			let hasCaptured = false;
-			for (let d = 0; d < defs.length; d += 1) {
-				const reg = defs[d];
-				if (reg < registerCount && captured[reg] !== 0) {
-					hasCaptured = true;
-					break;
-				}
-			}
-			if (!pinned[i] && defs.length > 0 && isPureInstruction(instruction) && !hasLive && !hasCaptured) {
-				keep[i] = false;
-				removed += 1;
-				continue;
-			}
-			for (let d = 0; d < defs.length; d += 1) {
-				const reg = defs[d];
-				if (reg < registerCount) {
-					live[reg] = 0;
-				}
-			}
-			const uses = collectInstructionUses(instruction, maxRegister);
-			for (let u = 0; u < uses.length; u += 1) {
-				const reg = uses[u];
-				if (reg < registerCount) {
-					live[reg] = 1;
-				}
-			}
-		}
-	}
-
-	if (removed === 0) {
-		return set;
-	}
-	return remapInstructions(instructions, ranges, keep, true);
-};
-
 const reorderSegments = (set: InstructionSet): InstructionSet => {
 	const { instructions, ranges } = set;
 	const count = instructions.length;
@@ -1511,7 +1409,7 @@ const computeClosureInForInlining = (
 	blocks: Block[];
 	inMaps: Array<Map<number, number>>;
 	callLiveOut: Map<number, Uint8Array>;
-	capturedRegisters: Uint8Array;
+	openUpvaluesIn: Uint8Array[];
 	loopDepth: Uint16Array;
 } => {
 	const blocks = buildBasicBlocks(instructions);
@@ -1527,13 +1425,20 @@ const computeClosureInForInlining = (
 		}
 	}
 	const maxRegister = computeMaxRegister(instructions);
-	const callLiveOutSets = computeInstructionLiveOutAt(
+	const callLiveOutSets = computeInstructionLivenessAt(
 		instructions,
 		maxRegister,
 		callIndices,
+		context.getClosureUpvalues,
+		'out',
 	);
-	const capturedRegisters = new Uint8Array(maxRegister + 1);
-	markCapturedClosureRegisters(capturedRegisters, instructions, context, maxRegister + 1);
+	const openUpvaluesIn = computeBlockOpenUpvaluesIn(
+		instructions,
+		blocks,
+		predecessors,
+		maxRegister,
+		context.getClosureUpvalues,
+	);
 	const callLiveOut = new Map<number, Uint8Array>();
 	for (let index = 0; index < callIndices.length; index += 1) {
 		callLiveOut.set(callIndices[index], callLiveOutSets[index]);
@@ -1577,7 +1482,7 @@ const computeClosureInForInlining = (
 		blocks,
 		inMaps,
 		callLiveOut,
-		capturedRegisters,
+		openUpvaluesIn,
 		loopDepth: computeInlineLoopDepth(instructions),
 	};
 };
@@ -1586,14 +1491,14 @@ const inlineFrameFitsCaller = (
 	call: Instruction,
 	callee: InlineCallee,
 	liveOut: Uint8Array,
-	capturedRegisters: Uint8Array,
+	openUpvalues: Uint8Array,
 ): boolean => {
 	const frameEnd = call.a + callee.meta.maxStack;
 	if (frameEnd > MAX_EXT_REGISTER_A + 1) {
 		return false;
 	}
 	for (let register = call.a + call.c; register < frameEnd && register < liveOut.length; register += 1) {
-		if (liveOut[register] !== 0 || capturedRegisters[register] !== 0) {
+		if (liveOut[register] !== 0 || openUpvalues[register] !== 0) {
 			return false;
 		}
 	}
@@ -2076,6 +1981,7 @@ const inlineFunctionCalls = (
 		for (let blockIndex = 0; blockIndex < analysis.blocks.length; blockIndex += 1) {
 			const block = analysis.blocks[blockIndex];
 			const closures = new Map(analysis.inMaps[blockIndex]);
+			const openUpvalues = analysis.openUpvaluesIn[blockIndex].slice();
 			for (let index = block.start; index < block.end; index += 1) {
 				const instruction = instructions[index];
 				if (instruction.op === OpCode.CALL && instruction.b > 0 && instruction.c > 0) {
@@ -2098,7 +2004,7 @@ const inlineFunctionCalls = (
 								instruction,
 								callee,
 								analysis.callLiveOut.get(index)!,
-								analysis.capturedRegisters,
+								openUpvalues,
 							)) {
 							const expansion = buildInlineExpansion(instruction, callRange, callee);
 							if (expansion) {
@@ -2116,6 +2022,13 @@ const inlineFunctionCalls = (
 						}
 					}
 				}
+				visitInstructionOpenUpvalueRegisters(
+					instruction,
+					openUpvalues.length - 1,
+					context.getClosureUpvalues,
+					openUpvalues,
+					markOpenUpvalueRegister,
+				);
 				applyClosureTransferForInlining(closures, instruction, context.closureWrittenRegisters);
 			}
 			if (inlined) {

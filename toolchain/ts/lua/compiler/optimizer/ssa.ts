@@ -3,15 +3,15 @@
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, remapInstructions, type Block } from '../control_flow';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, type Block } from '../control_flow';
 import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import {
 	cloneDuplicatedInstruction,
 	computeMaxRegister,
-	isPureInstruction,
 } from './instructions';
 import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
+import { eliminateDeadStores } from './dead_stores';
 import {
 	ConstValueKind,
 	constValueForOptimization,
@@ -1259,7 +1259,14 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 	}
 	const { predecessors, successors } = buildBlockGraph(instructions, blocks);
 	const { idom } = computeDominators(blocks, predecessors, successors);
-	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
+	const resolveClosureUpvalues = context.getClosureUpvalues;
+	const liveOut = computeBlockLiveOut(
+		instructions,
+		blocks,
+		successors,
+		maxRegister,
+		resolveClosureUpvalues,
+	);
 	const pinnedTargets = new Set<number>();
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
@@ -1373,7 +1380,11 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 				for (let d = 0; d < defs.length; d += 1) {
 					defCount[defs[d]] += 1;
 				}
-				const uses = collectInstructionUses(instruction, maxRegister);
+				const uses = collectInstructionUses(
+					instruction,
+					maxRegister,
+					resolveClosureUpvalues,
+				);
 				for (let u = 0; u < uses.length; u += 1) {
 					useBlocksByReg[uses[u]].add(blockIndex);
 				}
@@ -1448,7 +1459,11 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 				if (loopLiveOut.has(dest)) {
 					continue;
 				}
-				const uses = collectInstructionUses(instruction, maxRegister);
+				const uses = collectInstructionUses(
+					instruction,
+					maxRegister,
+					resolveClosureUpvalues,
+				);
 				let invariant = true;
 				for (let u = 0; u < uses.length; u += 1) {
 					if (context.closureWrittenRegisters.has(uses[u]) || defCount[uses[u]] > 0) {
@@ -1782,95 +1797,6 @@ const applyLoopOptimizations = (set: InstructionSet, context: OptimizationContex
 	let current = unrollNumericForLoops(set, context);
 	current = applyLoopInvariantCodeMotion(current, context);
 	return current;
-};
-
-const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
-	const { instructions, ranges } = set;
-	const count = instructions.length;
-	if (count === 0) {
-		return set;
-	}
-	const maxRegister = computeMaxRegister(instructions);
-	const registerCount = maxRegister + 1;
-	const blocks = buildBasicBlocks(instructions);
-	const { successors } = buildBlockGraph(instructions, blocks);
-	const captured = new Uint8Array(registerCount);
-	for (let reg = 0; reg < registerCount; reg += 1) {
-		if (context.closureWrittenRegisters.has(reg)) {
-			captured[reg] = 1;
-		}
-	}
-	for (let i = 0; i < count; i += 1) {
-		const instruction = instructions[i];
-		if (instruction.op !== OpCode.CLOSURE) {
-			continue;
-		}
-		if (instruction.closureAddressRegister) {
-			captured.fill(1);
-			continue;
-		}
-		const upvalues = context.getClosureUpvalues(instruction.b);
-		for (let u = 0; u < upvalues.length; u += 1) {
-			const desc = upvalues[u];
-			if (!desc.inStack) {
-				continue;
-			}
-			if (desc.index >= registerCount) {
-				throw new Error(`[ProgramOptimizerSSA] Closure upvalue register out of range: r${desc.index}.`);
-			}
-			captured[desc.index] = 1;
-		}
-	}
-	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
-
-	const keep = new Array<boolean>(count).fill(true);
-	const pinned = new Uint8Array(count);
-	for (let i = 0; i + 1 < count; i += 1) {
-		if (isSkipInstruction(instructions[i])) {
-			pinned[i + 1] = 1;
-		}
-	}
-	let removed = 0;
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		const block = blocks[blockIndex];
-		const live = liveOut[blockIndex].slice();
-		for (let i = block.end - 1; i >= block.start; i -= 1) {
-			const instruction = instructions[i];
-			const defs = collectInstructionDefs(instruction, maxRegister);
-			let hasLive = false;
-			for (let d = 0; d < defs.length; d += 1) {
-				if (live[defs[d]] !== 0) {
-					hasLive = true;
-					break;
-				}
-			}
-			let hasCaptured = false;
-			for (let d = 0; d < defs.length; d += 1) {
-				const reg = defs[d];
-				if (captured[reg] !== 0) {
-					hasCaptured = true;
-					break;
-				}
-			}
-			if (pinned[i] === 0 && defs.length > 0 && isPureInstruction(instruction) && !hasLive && !hasCaptured) {
-				keep[i] = false;
-				removed += 1;
-				continue;
-			}
-			for (let d = 0; d < defs.length; d += 1) {
-				live[defs[d]] = 0;
-			}
-			const uses = collectInstructionUses(instruction, maxRegister);
-			for (let u = 0; u < uses.length; u += 1) {
-				live[uses[u]] = 1;
-			}
-		}
-	}
-
-	if (removed === 0) {
-		return set;
-	}
-	return remapInstructions(instructions, ranges, keep, true);
 };
 
 export const applyGlobalOptimizations = (
@@ -2399,7 +2325,7 @@ export const applyGlobalOptimizations = (
 	if (enableLoopOptimizations) {
 		current = applyLoopOptimizations(current, context);
 	}
-	current = eliminateDeadStoresGlobal(current, context);
+	current = eliminateDeadStores(current, context);
 	return current;
 };
 // end normalized-body-acceptable
