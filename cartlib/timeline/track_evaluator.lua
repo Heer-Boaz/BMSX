@@ -1,13 +1,10 @@
 -- Runtime track evaluation is split into persistent, sampled, and one-shot
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
-local timeline_playback<const> = require('cartlib/timeline/playback')
-
 local easing<const> = require('cartlib/easing')
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
 
 local track_evaluator<const> = {}
-local play_update_method<const> = timeline_playback.update_method.play
 local templates<const> = {}
 local pingpong01<const> = easing.pingpong01
 local sin<const> = math.sin
@@ -147,14 +144,11 @@ local emit_time_event_range<const> = function(lane, owner, previous, current, di
 	end
 end
 
-function track_evaluator.bind_events(program)
-	local events<const> = program.tracks.events
+function track_evaluator.bind_events(program, method)
+	local events<const> = program.tracks.events[method + 1]
 	local last_frame<const> = program.length - 1
 	local duration_ms<const> = program.duration_ms
 	return function(owner, evaluation)
-		if evaluation.method ~= play_update_method then
-			return
-		end
 		local direction<const> = evaluation.direction
 		local lane = events.backward
 		if direction > 0 then
@@ -376,15 +370,18 @@ function track_evaluator.sync_tags(entry, owner, frame, time_ms)
 	sync_tags(entry.instance.program.tracks.tags, entry, owner, frame, time_ms)
 end
 
-function track_evaluator.bind_tags(program)
+function track_evaluator.bind_position_tags(program)
+	local tags<const> = program.tracks.tags
+	return function(entry, owner, evaluation)
+		sync_tags(tags, entry, owner, evaluation.frame, evaluation.time_ms)
+	end
+end
+
+function track_evaluator.bind_play_tags(program)
 	local tags<const> = program.tracks.tags
 	local last_frame<const> = program.length - 1
 	local duration_ms<const> = program.duration_ms
 	return function(entry, owner, evaluation)
-		if evaluation.method ~= play_update_method then
-			sync_tags(tags, entry, owner, evaluation.frame, evaluation.time_ms)
-			return
-		end
 		local previous<const> = evaluation.previous_frame
 		local current<const> = evaluation.frame
 		if evaluation.initial then
@@ -488,12 +485,11 @@ local apply_time_step_range<const> = function(entry, steps, previous_time_ms, ti
 	end
 end
 
-local evaluate_frame_steps<const> = function(entry, steps, params, evaluation)
+local evaluate_play_frame_steps<const> = function(entry, steps, params, evaluation)
 	if evaluation.sample then
 		local previous<const> = evaluation.previous_frame
 		local current<const> = evaluation.frame
 		if evaluation.initial
-		or evaluation.method ~= play_update_method
 			or evaluation.wrapped
 			or current > previous + 1
 			or current < previous - 1 then
@@ -506,11 +502,16 @@ local evaluate_frame_steps<const> = function(entry, steps, params, evaluation)
 	end
 end
 
-local evaluate_time_steps<const> = function(entry, steps, params, evaluation)
+local evaluate_position_frame_steps<const> = function(entry, steps, params, evaluation)
+	if evaluation.sample then
+		sample_step_tracks(entry, steps, evaluation.frame, params, evaluation)
+	end
+end
+
+local evaluate_play_time_steps<const> = function(entry, steps, params, evaluation)
 	local previous_time_ms<const> = evaluation.previous_time_ms
 	local time_ms<const> = evaluation.time_ms
 	if evaluation.initial
-	or evaluation.method ~= play_update_method
 		or evaluation.wrapped
 		or evaluation.previous_frame < 0
 		or time_ms <= previous_time_ms then
@@ -520,25 +521,17 @@ local evaluate_time_steps<const> = function(entry, steps, params, evaluation)
 	end
 end
 
+local evaluate_position_time_steps<const> = function(entry, steps, params, evaluation)
+	sample_time_step_tracks(entry, steps, evaluation.time_ms, params, evaluation)
+end
+
 local emit_track_captures<const> = function(printer, values)
 	if values.has_frame_steps or values.has_time_steps then
 		printer:emit(templates.steps_capture, values)
 	end
-	if values.has_scalar_channels then
-		printer:emit(templates.scalar_channels_capture, values)
-	end
 end
 
 local emit_dependency_captures<const> = function(printer, values)
-	if values.has_frame_steps then
-		printer:emit(templates.evaluate_frame_steps_capture, values)
-	end
-	if values.has_time_steps then
-		printer:emit(templates.evaluate_time_steps_capture, values)
-	end
-	if values.has_scalar_channels then
-		printer:emit(templates.scalar_runner_factory_capture, values)
-	end
 	if values.has_sample_tracks then
 		printer:emit(templates.sample_tracks_capture, values)
 	end
@@ -715,23 +708,6 @@ templates.steps_capture = lua_source_printer.compile_template(
 	'local steps<const> = tracks["steps"]\n'
 )
 
-templates.scalar_channels_capture = lua_source_printer.compile_template([[
-	local scalar_channels<const> = tracks["scalar_channels"]
-	local scalar_runner<const> = scalar_runner_factory(scalar_channels)
-]])
-
-templates.evaluate_frame_steps_capture = lua_source_printer.compile_template(
-	'local evaluate_frame_steps<const> = evaluate_frame_steps\n'
-)
-
-templates.evaluate_time_steps_capture = lua_source_printer.compile_template(
-	'local evaluate_time_steps<const> = evaluate_time_steps\n'
-)
-
-templates.scalar_runner_factory_capture = lua_source_printer.compile_template(
-	'local scalar_runner_factory<const> = scalar_runner_factory\n'
-)
-
 templates.sample_tracks_capture = lua_source_printer.compile_template(
 	'local sample_tracks<const> = sample_tracks\n'
 )
@@ -857,7 +833,7 @@ templates.sample = lua_source_printer.compile_template([[
 templates.value_runner = lua_source_printer.compile_template([[
 	$dependency_captures$
 	$sample_track_captures$
-	return function(tracks)
+	return function(tracks, evaluate_frame_steps, evaluate_time_steps, scalar_runner)
 		$track_captures$
 		return function(entry, evaluation)
 			$params_local$
@@ -926,20 +902,38 @@ function track_evaluator.compile_values(program)
 		has_sin_tracks = has_sin_tracks,
 		sample_tracks = sample_tracks,
 	})
-	return load(
+	local factory<const> = load(
 		printer:finish(),
 		'[timeline.track_values]',
 		't',
 		{
-			evaluate_frame_steps = evaluate_frame_steps,
-			evaluate_time_steps = evaluate_time_steps,
-			scalar_runner_factory = scalar_program.runner_factory,
 			sample_tracks = sample_tracks,
 			pingpong01 = pingpong01,
 			sin = sin,
 			tau = tau,
 		}
 	)()
+	return function(tracks)
+		local scalar_runner
+		if has_scalar_channels then
+			scalar_runner = scalar_program.runner_factory(tracks.scalar_channels)
+		end
+		local play_runner<const> = factory(
+			tracks,
+			evaluate_play_frame_steps,
+			evaluate_play_time_steps,
+			scalar_runner
+		)
+		if not has_frame_steps and not has_time_steps then
+			return play_runner
+		end
+		return play_runner, factory(
+			tracks,
+			evaluate_position_frame_steps,
+			evaluate_position_time_steps,
+			scalar_runner
+		)
+	end
 end
 
 function track_evaluator.init_entry(entry)

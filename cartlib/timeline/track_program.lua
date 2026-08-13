@@ -1,4 +1,5 @@
 local timeline_apply<const> = require('cartlib/timeline/apply')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 
@@ -13,9 +14,14 @@ local empty_event_lane<const> = {
 	time_keys = {},
 	time_count = 0,
 }
-local empty_events<const> = {
+local empty_directional_events<const> = {
 	forward = empty_event_lane,
 	backward = empty_event_lane,
+}
+local empty_events<const> = {
+	empty_directional_events,
+	empty_directional_events,
+	empty_directional_events,
 }
 local empty_tags<const> = {
 	intervals = {},
@@ -47,6 +53,8 @@ local empty_prepared<const> = {
 	value_runner_factory = nil,
 	has_frame_steps = false,
 	has_time_steps = false,
+	has_seek_events = false,
+	has_scrub_events = false,
 	event_defs = empty_defs,
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
@@ -54,7 +62,8 @@ local empty_prepared<const> = {
 }
 track_program.empty = {
 	value_track_count = 0,
-	value_runner = nil,
+	play_value_runner = nil,
+	position_value_runner = nil,
 	events = empty_events,
 	tags = empty_tags,
 	steps = empty_steps,
@@ -62,6 +71,10 @@ track_program.empty = {
 }
 local event_forward_directions<const> = { forward = true, both = true }
 local event_backward_directions<const> = { backward = true, both = true }
+local update_method<const> = timeline_playback.update_method
+local play_event_index<const> = update_method.play + 1
+local seek_event_index<const> = update_method.jump + 1
+local scrub_event_index<const> = update_method.scrub + 1
 
 local compare_key<const> = function(left, right)
 	if left.frame == right.frame then
@@ -147,6 +160,8 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local scalar_defs<const> = {}
 	local has_frame_steps = false
 	local has_time_steps = false
+	local has_seek_events = false
+	local has_scrub_events = false
 	local prepared<const> = {
 		event_defs = event_defs,
 		tag_defs = tag_defs,
@@ -157,6 +172,12 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		local kind<const> = track.kind
 		if kind == 'event' then
 			event_defs[#event_defs + 1] = track
+			if track.fire_on_seek then
+				has_seek_events = true
+			end
+			if track.fire_on_scrub then
+				has_scrub_events = true
+			end
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
 		elseif kind == 'value' then
@@ -193,6 +214,8 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
 	prepared.has_time_steps = has_time_steps
+	prepared.has_seek_events = has_seek_events
+	prepared.has_scrub_events = has_scrub_events
 	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
 	if prepared.value_track_count > 0 then
 		prepared.value_runner_factory = timeline_track_evaluator.compile_values(prepared)
@@ -200,19 +223,76 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	return prepared
 end
 
--- Event direction is cooked into separate traversal lanes. A `both` key shares
--- one immutable record between the two lane indexes; runtime never scans or
--- branches over keys that cannot fire for the current traversal direction.
-local compile_events<const> = function(event_defs, length)
+-- Event direction and update policy are cooked into separate traversal lanes.
+-- Play always admits authored events; `fire_on_seek` and `fire_on_scrub` opt a
+-- track into swept one-shot dispatch while positioning. A `both` key shares one
+-- immutable record between lane indexes, so runtime never filters authored keys.
+local new_directional_events<const> = function()
+	return {
+		forward = { by_frame = {}, keys = {}, time_keys = {} },
+		backward = { by_frame = {}, keys = {}, time_keys = {} },
+	}
+end
+
+local add_event_key<const> = function(events, key, admits_forward, admits_backward)
+	if key.time_ms ~= nil then
+		if admits_forward then
+			events.forward.time_keys[#events.forward.time_keys + 1] = key
+		end
+		if admits_backward then
+			events.backward.time_keys[#events.backward.time_keys + 1] = key
+		end
+		return
+	end
+	if admits_forward then
+		local lane<const> = events.forward
+		lane.keys[#lane.keys + 1] = key
+		local bucket = lane.by_frame[key.frame]
+		if bucket == nil then
+			bucket = {}
+			lane.by_frame[key.frame] = bucket
+		end
+		bucket[#bucket + 1] = key
+	end
+	if admits_backward then
+		local lane<const> = events.backward
+		lane.keys[#lane.keys + 1] = key
+		local bucket = lane.by_frame[key.frame]
+		if bucket == nil then
+			bucket = {}
+			lane.by_frame[key.frame] = bucket
+		end
+		bucket[#bucket + 1] = key
+	end
+end
+
+local finalize_directional_events<const> = function(events)
+	local forward<const> = events.forward
+	local backward<const> = events.backward
+	table.sort(forward.keys, compare_key)
+	table.sort(backward.keys, compare_key)
+	table.sort(forward.time_keys, compare_time_key)
+	table.sort(backward.time_keys, compare_time_key)
+	forward.count = #forward.keys
+	forward.time_count = #forward.time_keys
+	backward.count = #backward.keys
+	backward.time_count = #backward.time_keys
+end
+
+local compile_events<const> = function(prepared, length)
+	local event_defs<const> = prepared.event_defs
 	if #event_defs == 0 then
 		return empty_events
 	end
-	local forward<const> = { by_frame = {}, keys = {}, time_keys = {} }
-	local backward<const> = { by_frame = {}, keys = {}, time_keys = {} }
-	local keys<const> = {}
+	local events<const> = {
+		new_directional_events(),
+		prepared.has_seek_events and new_directional_events() or empty_directional_events,
+		prepared.has_scrub_events and new_directional_events() or empty_directional_events,
+	}
 	local order = 0
 	for track_index = 1, #event_defs do
-		local defs<const> = event_defs[track_index].keys
+		local track<const> = event_defs[track_index]
+		local defs<const> = track.keys
 		for key_index = 1, #defs do
 			local key_def<const> = defs[key_index]
 			order = order + 1
@@ -221,57 +301,39 @@ local compile_events<const> = function(event_defs, length)
 				payload = key_def.payload,
 				order = order,
 			}
-			keys[#keys + 1] = key
 			local admits_forward<const> = event_forward_directions[key_def.direction]
 			local admits_backward<const> = event_backward_directions[key_def.direction]
 			if key_def.time_ms ~= nil then
 				key.time_ms = key_def.time_ms
-				if admits_forward then
-					forward.time_keys[#forward.time_keys + 1] = key
-				end
-				if admits_backward then
-					backward.time_keys[#backward.time_keys + 1] = key
-				end
 			else
 				key.frame = frame_at(key_def, length)
-				if admits_forward then
-					local forward_keys<const> = forward.keys
-					forward_keys[#forward_keys + 1] = key
-					local bucket = forward.by_frame[key.frame]
-					if bucket == nil then
-						bucket = {}
-						forward.by_frame[key.frame] = bucket
-					end
-					bucket[#bucket + 1] = key
-				end
-				if admits_backward then
-					local backward_keys<const> = backward.keys
-					backward_keys[#backward_keys + 1] = key
-					local bucket = backward.by_frame[key.frame]
-					if bucket == nil then
-						bucket = {}
-						backward.by_frame[key.frame] = bucket
-					end
-					bucket[#bucket + 1] = key
-				end
+			end
+			add_event_key(events[play_event_index], key, admits_forward, admits_backward)
+			if track.fire_on_seek then
+				add_event_key(events[seek_event_index], key, admits_forward, admits_backward)
+			end
+			if track.fire_on_scrub then
+				add_event_key(events[scrub_event_index], key, admits_forward, admits_backward)
 			end
 		end
 	end
-	table.sort(forward.keys, compare_key)
-	table.sort(backward.keys, compare_key)
-	table.sort(forward.time_keys, compare_time_key)
-	table.sort(backward.time_keys, compare_time_key)
-	for index = 1, #keys do
-		keys[index].order = nil
+	finalize_directional_events(events[play_event_index])
+	if prepared.has_seek_events then
+		finalize_directional_events(events[seek_event_index])
 	end
-	forward.count = #forward.keys
-	forward.time_count = #forward.time_keys
-	backward.count = #backward.keys
-	backward.time_count = #backward.time_keys
-	return {
-		forward = forward,
-		backward = backward,
-	}
+	if prepared.has_scrub_events then
+		finalize_directional_events(events[scrub_event_index])
+	end
+	local play_events<const> = events[play_event_index]
+	local forward_keys<const> = play_events.forward.keys
+	for index = 1, #forward_keys do
+		forward_keys[index].order = nil
+	end
+	local backward_keys<const> = play_events.backward.keys
+	for index = 1, #backward_keys do
+		backward_keys[index].order = nil
+	end
+	return events
 end
 
 local compile_tags<const> = function(tag_defs, length)
@@ -470,14 +532,15 @@ function track_program.compile(prepared, length)
 	local scalar_channels<const> = scalar_channel.compile(prepared.scalar_program, length)
 	local tracks<const> = {
 		value_track_count = prepared.value_track_count,
-		value_runner = nil,
-		events = compile_events(prepared.event_defs, length),
+		play_value_runner = nil,
+		position_value_runner = nil,
+		events = compile_events(prepared, length),
 		tags = compile_tags(prepared.tag_defs, length),
 		steps = compile_steps(prepared.step_defs, length),
 		scalar_channels = scalar_channels,
 	}
 	if prepared.value_track_count > 0 then
-		tracks.value_runner = prepared.value_runner_factory(tracks)
+		tracks.play_value_runner, tracks.position_value_runner = prepared.value_runner_factory(tracks)
 	end
 	return tracks
 end

@@ -63,9 +63,10 @@ end
 local process_evaluations<const> = function(self, entry)
 	local instance<const> = entry.instance
 	local owner<const> = self.parent
+	local evaluations<const> = instance.evaluations
 	local evaluate<const> = instance.program.evaluate
 	for index = 1, instance.evaluation_count do
-		evaluate(entry, owner, instance.evaluations[index])
+		evaluate(entry, owner, evaluations[index])
 	end
 	local stopped<const> = instance.ended
 	if stopped then

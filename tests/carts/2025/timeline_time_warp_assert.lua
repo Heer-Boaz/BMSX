@@ -486,6 +486,66 @@ timelines:play('initial_reverse_pingpong_origin')
 assert(origin_forward_count == 1)
 timelines:stop('initial_reverse_pingpong_origin')
 
+local play_policy_count = 0
+local seek_policy_count = 0
+local scrub_policy_count = 0
+owner.events:on({
+	event = 'policy.play',
+	handler = function()
+		play_policy_count = play_policy_count + 1
+	end,
+})
+owner.events:on({
+	event = 'policy.seek',
+	handler = function()
+		seek_policy_count = seek_policy_count + 1
+	end,
+})
+owner.events:on({
+	event = 'policy.scrub',
+	handler = function()
+		scrub_policy_count = scrub_policy_count + 1
+	end,
+})
+timelines:define('event_update_policy', {
+	continuous = true,
+	duration_ms = 100,
+	tracks = {
+		{
+			kind = 'event',
+			keys = {
+				{ time_ms = 20, event = 'policy.play', direction = 'both' },
+			},
+		},
+		{
+			kind = 'event',
+			fire_on_seek = true,
+			keys = {
+				{ time_ms = 40, event = 'policy.seek', direction = 'both' },
+			},
+		},
+		{
+			kind = 'event',
+			fire_on_scrub = true,
+			keys = {
+				{ time_ms = 60, event = 'policy.scrub', direction = 'both' },
+			},
+		},
+	},
+})
+timelines:play('event_update_policy')
+timelines:seek_time('event_update_policy', 50)
+assert(play_policy_count == 0 and seek_policy_count == 1 and scrub_policy_count == 0)
+timelines:scrub_time('event_update_policy', 80)
+assert(play_policy_count == 0 and seek_policy_count == 1 and scrub_policy_count == 1)
+timelines:seek_time('event_update_policy', 0)
+assert(play_policy_count == 0 and seek_policy_count == 2 and scrub_policy_count == 1)
+timelines:advance_time_to('event_update_policy', 80)
+assert(play_policy_count == 1 and seek_policy_count == 3 and scrub_policy_count == 2)
+timelines:scrub_time('event_update_policy', 0)
+assert(play_policy_count == 1 and seek_policy_count == 3 and scrub_policy_count == 3)
+timelines:stop('event_update_policy')
+
 	return nil
 end
 

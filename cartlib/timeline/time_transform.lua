@@ -6,6 +6,7 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local time_transform<const> = {}
 local playback_loop<const> = timeline_playback.mode.loop
 local playback_pingpong<const> = timeline_playback.mode.pingpong
+local play_update_method<const> = timeline_playback.update_method.play
 local boundary<const> = timeline_playback.boundary
 local boundary_none<const> = boundary.none
 local boundary_loop<const> = boundary.loop
@@ -64,7 +65,6 @@ local evaluate_loop_forward<const> = function(
 	clip,
 	previous_time_ms,
 	time_ms,
-	method,
 	initial,
 	target,
 	write_range
@@ -78,7 +78,7 @@ local evaluate_loop_forward<const> = function(
 			target,
 			previous_local_ms,
 			0,
-			method,
+			play_update_method,
 			1,
 			initial,
 			boundary_loop,
@@ -94,7 +94,7 @@ local evaluate_loop_forward<const> = function(
 			target,
 			previous_local_ms,
 			time_ms % duration_ms,
-			method,
+			play_update_method,
 			1,
 			initial,
 			boundary_none,
@@ -107,7 +107,6 @@ local evaluate_loop_backward<const> = function(
 	clip,
 	previous_time_ms,
 	time_ms,
-	method,
 	initial,
 	target,
 	write_range
@@ -121,7 +120,7 @@ local evaluate_loop_backward<const> = function(
 			target,
 			previous_local_ms,
 			duration_ms,
-			method,
+			play_update_method,
 			-1,
 			initial,
 			boundary_loop,
@@ -137,7 +136,7 @@ local evaluate_loop_backward<const> = function(
 			target,
 			previous_local_ms,
 			time_ms % duration_ms,
-			method,
+			play_update_method,
 			-1,
 			initial,
 			boundary_none,
@@ -150,7 +149,6 @@ local evaluate_pingpong_forward<const> = function(
 	clip,
 	previous_time_ms,
 	time_ms,
-	method,
 	initial,
 	target,
 	write_range
@@ -170,7 +168,7 @@ local evaluate_pingpong_forward<const> = function(
 			target,
 			previous_local_ms,
 			local_time_ms,
-			method,
+			play_update_method,
 			direction,
 			initial,
 			boundary_turn,
@@ -192,7 +190,7 @@ local evaluate_pingpong_forward<const> = function(
 			target,
 			previous_local_ms,
 			local_time_ms,
-			method,
+			play_update_method,
 			direction,
 			initial,
 			boundary_none,
@@ -205,7 +203,6 @@ local evaluate_pingpong_backward<const> = function(
 	clip,
 	previous_time_ms,
 	time_ms,
-	method,
 	initial,
 	target,
 	write_range
@@ -231,7 +228,7 @@ local evaluate_pingpong_backward<const> = function(
 			target,
 			previous_local_ms,
 			local_time_ms,
-			method,
+			play_update_method,
 			direction,
 			initial,
 			boundary_turn,
@@ -253,7 +250,7 @@ local evaluate_pingpong_backward<const> = function(
 			target,
 			previous_local_ms,
 			local_time_ms,
-			method,
+			play_update_method,
 			direction,
 			initial,
 			boundary_none,
@@ -262,12 +259,35 @@ local evaluate_pingpong_backward<const> = function(
 	end
 end
 
-function time_transform.evaluate(
+function time_transform.evaluate_at(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
 	method,
-	traverse,
+	initial,
+	target,
+	write_range
+)
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	local previous_local_ms<const> = warped_time(clip, previous_time_ms)
+	local local_time_ms<const> = warped_time(clip, time_ms)
+	write_range(
+		target,
+		previous_local_ms,
+		local_time_ms,
+		method,
+		direction_between(previous_local_ms, local_time_ms, 0),
+		initial,
+		boundary_none,
+		false
+	)
+end
+
+function time_transform.evaluate_play(
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
 	initial,
 	target,
 	write_range
@@ -275,34 +295,19 @@ function time_transform.evaluate(
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
 	local mode<const> = clip.playback_mode
-	if not traverse then
-		local previous_local_ms<const> = warped_time(clip, previous_time_ms)
-		local local_time_ms<const> = warped_time(clip, time_ms)
-		write_range(
-			target,
-			previous_local_ms,
-			local_time_ms,
-			method,
-			direction_between(previous_local_ms, local_time_ms, 0),
-			initial,
-			boundary_none,
-			false
-		)
-		return
-	end
 	if mode == playback_loop then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_loop_forward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
+			evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, write_range)
 		else
-			evaluate_loop_backward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
+			evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, write_range)
 		end
 		return
 	end
 	if mode == playback_pingpong then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
+			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, write_range)
 		else
-			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, method, initial, target, write_range)
+			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, write_range)
 		end
 		return
 	end
@@ -310,7 +315,7 @@ function time_transform.evaluate(
 		target,
 		previous_time_ms,
 		time_ms,
-		method,
+		play_update_method,
 		direction_between(previous_time_ms, time_ms, clip.direction),
 		initial,
 		boundary_none,

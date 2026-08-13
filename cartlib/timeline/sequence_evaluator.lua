@@ -4,7 +4,6 @@ local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
-local play_update_method<const> = timeline_playback.update_method.play
 local playback_boundary<const> = timeline_playback.boundary
 local boundary_loop<const> = playback_boundary.loop
 local boundary_turn<const> = playback_boundary.turn
@@ -248,7 +247,54 @@ local sort_candidates<const> = function(state)
 	end
 end
 
-local process_clip<const> = function(
+local process_play_clip<const> = function(
+	sequence,
+	entry,
+	owner,
+	clip_index,
+	previous_time_ms,
+	time_ms
+)
+	local clip<const> = sequence.clips[clip_index]
+	local state<const> = entry.sequence_state
+	local child_entry<const> = state.entries[clip_index]
+	local initial<const> = state.active_index_by_clip[clip_index] == nil
+	local source_time_ms<const> = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
+	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
+	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
+	child_entry.instance:evaluate_clip_play_range(
+		clip,
+		source_time_ms,
+		destination_time_ms,
+		initial,
+		not destination_active
+	)
+	local child_instance<const> = child_entry.instance
+	local evaluate<const> = child_instance.program.evaluate
+	for index = 1, child_instance.evaluation_count do
+		evaluate(child_entry, owner, child_instance.evaluations[index])
+	end
+	local notify_boundary<const> = child_entry.notify_boundary
+	if notify_boundary ~= nil then
+		local evaluations<const> = child_instance.evaluations
+		for index = 1, child_instance.evaluation_count do
+			local evaluation<const> = evaluations[index]
+			notify_boundary(clip, child_entry.primary_binding, evaluation)
+		end
+	end
+	if destination_active then
+		activate_clip(state, clip_index)
+	else
+		clear_child(child_entry, owner)
+		remove_active_clip(state, clip_index)
+		local on_finished<const> = clip.on_finished
+		if on_finished ~= nil then
+			on_finished(child_entry.primary_binding, child_entry.instance)
+		end
+	end
+end
+
+local process_position_clip<const> = function(
 	sequence,
 	entry,
 	owner,
@@ -264,40 +310,23 @@ local process_clip<const> = function(
 	local source_time_ms<const> = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
-	child_entry.instance:evaluate_clip_range(
+	child_entry.instance:evaluate_clip_at(
 		clip,
 		source_time_ms,
 		destination_time_ms,
 		method,
-		initial,
-		method == play_update_method and not destination_active
+		initial
 	)
 	local child_instance<const> = child_entry.instance
 	local evaluate<const> = child_instance.program.evaluate
 	for index = 1, child_instance.evaluation_count do
 		evaluate(child_entry, owner, child_instance.evaluations[index])
 	end
-	if method == play_update_method then
-		local notify_boundary<const> = child_entry.notify_boundary
-		if notify_boundary ~= nil then
-			local evaluations<const> = child_entry.instance.evaluations
-			for index = 1, child_entry.instance.evaluation_count do
-				local evaluation<const> = evaluations[index]
-				notify_boundary(clip, child_entry.primary_binding, evaluation)
-			end
-		end
-	end
 	if destination_active then
 		activate_clip(state, clip_index)
 	else
 		clear_child(child_entry, owner)
 		remove_active_clip(state, clip_index)
-		if method == play_update_method then
-			local on_finished<const> = clip.on_finished
-			if on_finished ~= nil then
-				on_finished(child_entry.primary_binding, child_entry.instance)
-			end
-		end
 	end
 end
 
@@ -338,24 +367,30 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 	end
 	sort_candidates(state)
 	for index = 1, state.candidate_count do
-		process_clip(
+		process_play_clip(
 			sequence,
 			entry,
 			owner,
 			state.candidates[index],
 			previous_time_ms,
-			time_ms,
-			play_update_method
+			time_ms
 		)
 	end
 end
 
-local evaluate_at<const> = function(sequence, entry, owner, previous_time_ms, time_ms, method)
+local evaluate_position<const> = function(
+	sequence,
+	entry,
+	owner,
+	previous_time_ms,
+	time_ms,
+	method
+)
 	local state<const> = entry.sequence_state
 	for clip_index = 1, sequence.clip_count do
 		local clip<const> = sequence.clips[clip_index]
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
-			process_clip(
+			process_position_clip(
 				sequence,
 				entry,
 				owner,
@@ -371,21 +406,10 @@ local evaluate_at<const> = function(sequence, entry, owner, previous_time_ms, ti
 	end
 end
 
-function sequence_evaluator.bind(program)
+function sequence_evaluator.bind_play(program)
 	local sequence<const> = program.subsequences
 	local duration_ms<const> = program.duration_ms
 	return function(entry, owner, evaluation)
-		if evaluation.method ~= play_update_method then
-			evaluate_at(
-				sequence,
-				entry,
-				owner,
-				evaluation.previous_time_ms,
-				evaluation.time_ms,
-				evaluation.method
-			)
-			return
-		end
 		if evaluation.wrapped then
 			if evaluation.direction > 0 then
 				evaluate_play_range(
@@ -423,10 +447,24 @@ function sequence_evaluator.bind(program)
 	end
 end
 
+function sequence_evaluator.bind_position(program)
+	local sequence<const> = program.subsequences
+	return function(entry, owner, evaluation)
+		evaluate_position(
+			sequence,
+			entry,
+			owner,
+			evaluation.previous_time_ms,
+			evaluation.time_ms,
+			evaluation.method
+		)
+	end
+end
+
 function sequence_evaluator.sync_entry(entry, owner, time_ms)
 	local sequence<const> = entry.instance.program.subsequences
 	if sequence.clip_count > 0 then
-		evaluate_at(sequence, entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
+		evaluate_position(sequence, entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
 	end
 end
 

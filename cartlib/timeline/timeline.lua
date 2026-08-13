@@ -348,9 +348,8 @@ function timeline:advance_to(frame)
 	return move_to(self, frame, play_update_method)
 end
 
--- A seek samples the destination and reconstructs persistent tags and
--- step-interpolated values without firing event keys crossed by the jump.
--- advance_to() traverses those one-shot keys.
+-- A seek reconstructs destination state. Event tracks remain play-only unless
+-- they explicitly opt into swept seek dispatch with `fire_on_seek`.
 function timeline:seek(frame)
 	return move_to(self, frame, jump_update_method)
 end
@@ -409,8 +408,9 @@ local move_time<const> = function(self, requested_time_ms, method)
 	return self
 end
 
--- Explicit play traversal: crossed one-shot time keys are emitted. seek_time()
--- and scrub_time() below only reconstruct the destination state.
+-- Explicit play traversal emits every crossed one-shot key. seek_time() and
+-- scrub_time() reconstruct destination state and emit only tracks which opted
+-- into their respective positioning method.
 function timeline:advance_time_to(time_ms)
 	return move_time(self, time_ms, play_update_method)
 end
@@ -482,21 +482,34 @@ local write_external_time_range<const> = function(
 	return self
 end
 
--- Evaluates a compiled clip transform. Linear, loop and ping-pong mappings all
--- emit into the same retained evaluation batch.
-function timeline:evaluate_clip_range(clip, previous_parent_time_ms, parent_time_ms, method, initial, finished)
+-- Play traversal emits every monotonic range produced by loop and ping-pong
+-- warps. Positioning evaluates only the transformed destination range below.
+function timeline:evaluate_clip_play_range(clip, previous_parent_time_ms, parent_time_ms, initial, finished)
 	clear_evaluations(self)
-	timeline_time_transform.evaluate(
+	timeline_time_transform.evaluate_play(
 		clip,
 		previous_parent_time_ms,
 		parent_time_ms,
-		method,
-		method == play_update_method,
 		initial,
 		self,
 		write_external_time_range
 	)
 	self.ended = finished
+	return self
+end
+
+function timeline:evaluate_clip_at(clip, previous_parent_time_ms, parent_time_ms, method, initial)
+	clear_evaluations(self)
+	timeline_time_transform.evaluate_at(
+		clip,
+		previous_parent_time_ms,
+		parent_time_ms,
+		method,
+		initial,
+		self,
+		write_external_time_range
+	)
+	self.ended = false
 	return self
 end
 
