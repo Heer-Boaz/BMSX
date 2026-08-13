@@ -6,39 +6,42 @@
 local action_syntax<const> = require('cartlib/input/action_syntax')
 local action_program_syntax<const> = require('cartlib/input/action_program_syntax')
 local compile_syntax<const> = lua_compiler.compile_syntax
+local string_byte<const> = string.byte
+local string_sub<const> = string.sub
 
 local action_parser<const> = {}
 
-local tk_sym<const> = 1
-local tk_ident<const> = 2
-local tk_func_win<const> = 3
-local tk_func<const> = 4
-local tk_mod<const> = 5
-local tk_cmp<const> = 6
+local tk_ident<const> = 1
+local tk_func_win<const> = 2
+local tk_func<const> = 3
+local tk_mod<const> = 4
+local tk_or<const> = 5
+local tk_and<const> = 6
+local tk_not<const> = 7
+local tk_left_parenthesis<const> = 8
+local tk_right_parenthesis<const> = 9
+local tk_left_bracket<const> = 10
+local tk_right_bracket<const> = 11
+local tk_comma<const> = 12
+local tk_compare<const> = 13
 
 local cache<const> = {}
-local two_char_token_kinds<const> = {
-	['||'] = tk_sym,
-	['&&'] = tk_sym,
-	['<='] = tk_cmp,
-	['>='] = tk_cmp,
-	['=='] = tk_cmp,
-	['!='] = tk_cmp,
+local single_character_token_kind<const> = {
+	[40] = tk_left_parenthesis,
+	[41] = tk_right_parenthesis,
+	[44] = tk_comma,
+	[91] = tk_left_bracket,
+	[93] = tk_right_bracket,
 }
-local symbol_token_kinds<const> = {
-	['|'] = tk_sym,
-	['!'] = tk_sym,
-	['('] = tk_sym,
-	[')'] = tk_sym,
-	['['] = tk_sym,
-	[']'] = tk_sym,
-	[','] = tk_sym,
-	['<'] = tk_cmp,
-	['>'] = tk_cmp,
-}
-local function_prefix_chars<const> = {
-	['&'] = true,
-	['?'] = true,
+local token_text<const> = {
+	[tk_or] = '|',
+	[tk_and] = '&&',
+	[tk_not] = '!',
+	[tk_left_parenthesis] = '(',
+	[tk_right_parenthesis] = ')',
+	[tk_left_bracket] = '[',
+	[tk_right_bracket] = ']',
+	[tk_comma] = ',',
 }
 local modifier_kind<const> = action_syntax.modifier_kind
 local mod_kind_p<const> = modifier_kind.pressed
@@ -133,7 +136,7 @@ end
 -- alternation, so numbers are built from digit bytes instead of match captures.
 
 local skip_spaces<const> = function(mod, i, last)
-	while i <= last and is_space(string.byte(mod, i)) do
+	while i <= last and is_space(string_byte(mod, i)) do
 		i = i + 1
 	end
 	return i
@@ -141,7 +144,7 @@ end
 
 -- Digits only. Returns value, next_index; value is nil when no digit is present.
 local parse_uint<const> = function(mod, i, last)
-	local byte = string.byte(mod, i)
+	local byte = string_byte(mod, i)
 	if i > last or not is_digit(byte) then
 		return nil, i
 	end
@@ -149,7 +152,7 @@ local parse_uint<const> = function(mod, i, last)
 	while i <= last and is_digit(byte) do
 		value = value * 10 + (byte - 48)
 		i = i + 1
-		byte = string.byte(mod, i)
+		byte = string_byte(mod, i)
 	end
 	return value, i
 end
@@ -161,11 +164,11 @@ local parse_decimal<const> = function(mod, i, last)
 		return nil, i
 	end
 	i = next_i
-	if i <= last and string.byte(mod, i) == 46 then -- '.'
+	if i <= last and string_byte(mod, i) == 46 then -- '.'
 		i = i + 1
 		local scale = 0.1
-		while i <= last and is_digit(string.byte(mod, i)) do
-			value = value + (string.byte(mod, i) - 48) * scale
+		while i <= last and is_digit(string_byte(mod, i)) do
+			value = value + (string_byte(mod, i) - 48) * scale
 			scale = scale * 0.1
 			i = i + 1
 		end
@@ -178,9 +181,9 @@ end
 local parse_comparator<const> = function(mod, i, last)
 	i = skip_spaces(mod, i, last)
 	local op = compare_gte
-	local byte<const> = string.byte(mod, i)
+	local byte<const> = string_byte(mod, i)
 	if byte == 60 or byte == 62 then -- '<' '>'
-		if string.byte(mod, i + 1) == 61 then -- '='
+		if string_byte(mod, i + 1) == 61 then -- '='
 			op = byte == 60 and compare_lte or compare_gte
 			i = i + 2
 		else
@@ -188,7 +191,7 @@ local parse_comparator<const> = function(mod, i, last)
 			i = i + 1
 		end
 	elseif byte == 33 or byte == 61 then -- '!' '='
-		if string.byte(mod, i + 1) ~= 61 then
+		if string_byte(mod, i + 1) ~= 61 then
 			return nil, nil
 		end
 		op = byte == 33 and compare_ne or compare_eq
@@ -222,26 +225,26 @@ local braced_mod_kinds<const> = {
 }
 
 local compile_modifier<const> = function(mod)
-	local neg<const> = string.byte(mod, 1) == 33 -- '!'
+	local neg<const> = string_byte(mod, 1) == 33 -- '!'
 	local start<const> = neg and 2 or 1
 	local len<const> = #mod
 	local brace = nil
 	for i = start, len do
-		if string.byte(mod, i) == 123 then -- '{'
+		if string_byte(mod, i) == 123 then -- '{'
 			brace = i
 			break
 		end
 	end
 	if brace == nil then
-		local kind<const> = simple_mod_kinds[neg and string.sub(mod, start) or mod]
+		local kind<const> = simple_mod_kinds[neg and string_sub(mod, start) or mod]
 		if kind then
 			return { kind = kind, neg = neg }
 		end
 		error('[cartlib/input/action_parser] Unknown action modifier "' .. mod .. '".')
 	end
-	local kind<const> = braced_mod_kinds[string.sub(mod, start, brace - 1)]
+	local kind<const> = braced_mod_kinds[string_sub(mod, start, brace - 1)]
 	local body_start<const> = brace + 1
-	local body_last<const> = len - 1 -- the lexer guarantees the trailing '}'
+	local body_last<const> = len - 1 -- the scanner guarantees the trailing '}'
 	if kind == mod_kind_wp or kind == mod_kind_wr then
 		local window<const>, next_i<const> = parse_uint(mod, body_start, body_last)
 		if window ~= nil and next_i > body_last then
@@ -256,109 +259,133 @@ local compile_modifier<const> = function(mod)
 	error('[cartlib/input/action_parser] Unknown action modifier "' .. mod .. '".')
 end
 
-local token<const> = function(kind, value)
-	return { kind = kind, value = value }
-end
-
-local lex<const> = function(src)
-	local out<const> = {}
-	local len<const> = #src
-	local i = 1
-	while i <= len do
-		while i <= len and is_space(string.byte(src, i)) do
-			i = i + 1
-		end
-		if i > len then
-			break
-		end
-
-		local c<const> = string.sub(src, i, i)
-		local two = nil
-		if i < len then
-			two = string.sub(src, i, i + 1)
-		end
-		local two_kind<const> = two and two_char_token_kinds[two]
-		if two_kind then
-			out[#out + 1] = token(two_kind, two)
-			i = i + 2
-		elseif symbol_token_kinds[c] then
-			out[#out + 1] = token(symbol_token_kinds[c], c)
-			i = i + 1
-		elseif function_prefix_chars[c] then
-			local start<const> = i
-			i = i + 1
-			while i <= len and is_alpha(string.byte(src, i)) do
-				i = i + 1
-			end
-			if i <= len and string.sub(src, i, i) == '{' then
-				i = i + 1
-				if i <= len and string.sub(src, i, i) == '}' then
-					error('[cartlib/input/action_parser] Empty function window in "' .. src .. '".')
-				end
-				while i <= len and is_digit(string.byte(src, i)) do
-					i = i + 1
-				end
-				if i <= len and string.sub(src, i, i) == '}' then
-					i = i + 1
-					out[#out + 1] = token(tk_func_win, string.sub(src, start, i - 1))
-				else
-					error('[cartlib/input/action_parser] Unterminated windowed function in "' .. src .. '".')
-				end
-			else
-				out[#out + 1] = token(tk_func, string.sub(src, start, i - 1))
-			end
-		elseif is_alpha(string.byte(src, i)) then
-			local start<const> = i
-			i = i + 1
-			while i <= len and is_alnum(string.byte(src, i)) do
-				i = i + 1
-			end
-			if i <= len and string.sub(src, i, i) == '{' then
-				local depth = 1
-				i = i + 1
-				while i <= len and depth > 0 do
-					local ch<const> = string.sub(src, i, i)
-					if ch == '{' then
-						depth = depth + 1
-					elseif ch == '}' then
-						depth = depth - 1
-					end
-					i = i + 1
-				end
-				if depth ~= 0 then
-					error('[cartlib/input/action_parser] Unterminated modifier in "' .. src .. '".')
-				end
-				out[#out + 1] = token(tk_mod, string.sub(src, start, i - 1))
-			else
-				out[#out + 1] = token(tk_ident, string.sub(src, start, i - 1))
-			end
-		else
-			error('[cartlib/input/action_parser] Unexpected character "' .. c .. '" in "' .. src .. '".')
-		end
+-- The parser retains one scanner token: it never allocates an intermediate
+-- token list or token records, and materializes text only for identifiers and
+-- modifiers retained by the semantic tree. This mirrors the firmware Lua
+-- parser's scanner -> recursive descent boundary.
+local scan_next<const> = function(state)
+	local source<const> = state.source
+	local length<const> = state.source_length
+	local index = state.source_index
+	while index <= length and is_space(string_byte(source, index)) do
+		index = index + 1
 	end
-	return out
+	if index > length then
+		state.source_index = index
+		state.token_kind = nil
+		state.token_value = nil
+		return
+	end
+
+	local code<const> = string_byte(source, index)
+	local next_code<const> = index < length and string_byte(source, index + 1)
+	local kind
+	if code == 124 then -- '|', '||'
+		kind = tk_or
+		if next_code == 124 then
+			index = index + 2
+		else
+			index = index + 1
+		end
+		state.token_value = token_text[kind]
+	elseif code == 38 and next_code == 38 then -- '&&'
+		kind = tk_and
+		index = index + 2
+		state.token_value = token_text[kind]
+	elseif code == 38 or code == 63 then -- '&', '?'
+		local start<const> = index
+		index = index + 1
+		while index <= length and is_alpha(string_byte(source, index)) do
+			index = index + 1
+		end
+		if index <= length and string_byte(source, index) == 123 then -- '{'
+			index = index + 1
+			if index <= length and string_byte(source, index) == 125 then -- '}'
+				error('[cartlib/input/action_parser] Empty function window in "' .. source .. '".')
+			end
+			while index <= length and is_digit(string_byte(source, index)) do
+				index = index + 1
+			end
+			if index > length or string_byte(source, index) ~= 125 then -- '}'
+				error('[cartlib/input/action_parser] Unterminated windowed function in "' .. source .. '".')
+			end
+			index = index + 1
+			kind = tk_func_win
+		else
+			kind = tk_func
+		end
+		state.token_value = string_sub(source, start, index - 1)
+	elseif code == 33 then -- '!', '!='
+		if next_code == 61 then
+			kind = tk_compare
+			state.token_value = '!='
+			index = index + 2
+		else
+			kind = tk_not
+			state.token_value = token_text[kind]
+			index = index + 1
+		end
+	elseif code == 60 or code == 62 then -- '<', '>', '<=', '>='
+		kind = tk_compare
+		local start<const> = index
+		if next_code == 61 then
+			index = index + 2
+		else
+			index = index + 1
+		end
+		state.token_value = string_sub(source, start, index - 1)
+	elseif code == 61 and next_code == 61 then -- '=='
+		kind = tk_compare
+		state.token_value = '=='
+		index = index + 2
+	elseif is_alpha(code) then
+		local start<const> = index
+		index = index + 1
+		while index <= length and is_alnum(string_byte(source, index)) do
+			index = index + 1
+		end
+		if index <= length and string_byte(source, index) == 123 then -- '{'
+			local depth = 1
+			index = index + 1
+			while index <= length and depth > 0 do
+				local nested_code<const> = string_byte(source, index)
+				if nested_code == 123 then -- '{'
+					depth = depth + 1
+				elseif nested_code == 125 then -- '}'
+					depth = depth - 1
+				end
+				index = index + 1
+			end
+			if depth ~= 0 then
+				error('[cartlib/input/action_parser] Unterminated modifier in "' .. source .. '".')
+			end
+			kind = tk_mod
+		else
+			kind = tk_ident
+		end
+		state.token_value = string_sub(source, start, index - 1)
+	else
+		kind = single_character_token_kind[code]
+		if kind == nil then
+			error('[cartlib/input/action_parser] Unexpected character "'
+				.. string_sub(source, index, index) .. '" in "' .. source .. '".')
+		end
+		state.token_value = token_text[kind]
+		index = index + 1
+	end
+	state.source_index = index
+	state.token_kind = kind
 end
 
-local parser_state<const> = {}
-parser_state.__index = parser_state
-
-local current<const> = function(self)
-	return self.tokens[self.index]
-end
-
-local eat<const> = function(self)
-	local value<const> = self.tokens[self.index]
-	self.index = self.index + 1
-	return value
-end
-
-local take<const> = function(self, kind, value)
-	local c<const> = current(self)
-	if not c or c.kind ~= kind or (value and c.value ~= value) then
-		local found<const> = c and c.value or '<eos>'
+local take<const> = function(self, kind)
+	local token_kind<const> = self.token_kind
+	local token_value<const> = self.token_value
+	if token_kind ~= kind then
+		local found<const> = token_value or '<eos>'
 		error('[cartlib/input/action_parser] Unexpected token "' .. found .. '" in "' .. self.source .. '".')
 	end
-	return eat(self)
+	scan_next(self)
+	return token_value
 end
 
 local annotate_action
@@ -370,18 +397,20 @@ end
 
 local parse_modifiers<const> = function(self)
 	local mods<const> = {}
-	take(self, tk_sym, '[')
-	while current(self) and current(self).value ~= ']' do
-		local t<const> = eat(self)
-		if t.value ~= ',' then
-			if t.value == '!' then
-				mods[#mods + 1] = '!' .. take(self, current(self).kind).value
+	take(self, tk_left_bracket)
+	while self.token_kind ~= nil and self.token_kind ~= tk_right_bracket do
+		local kind<const> = self.token_kind
+		local value<const> = self.token_value
+		scan_next(self)
+		if kind ~= tk_comma then
+			if kind == tk_not then
+				mods[#mods + 1] = '!' .. take(self, self.token_kind)
 			else
-				mods[#mods + 1] = t.value
+				mods[#mods + 1] = value
 			end
 		end
 	end
-	take(self, tk_sym, ']')
+	take(self, tk_right_bracket)
 	return mods
 end
 
@@ -413,14 +442,14 @@ local apply_modifiers<const> = function(node, mods)
 end
 
 local parse_action<const> = function(self)
-	local name<const> = take(self, tk_ident).value
+	local name<const> = take(self, tk_ident)
 	local action_index = self.action_name_indices[name]
 	if not action_index then
 		action_index = #self.action_names + 1
 		self.action_name_indices[name] = action_index
 		self.action_names[action_index] = name
 	end
-	local mods<const> = current(self) and current(self).value == '[' and parse_modifiers(self) or {}
+	local mods<const> = self.token_kind == tk_left_bracket and parse_modifiers(self) or {}
 	local node<const> = {
 		kind = node_kind_action,
 		name = name,
@@ -433,30 +462,32 @@ local parse_action<const> = function(self)
 end
 
 local parse_function<const> = function(self)
-	local tok<const> = eat(self)
-	local fname = tok.value
+	local token_kind<const> = self.token_kind
+	local token_value<const> = self.token_value
+	scan_next(self)
+	local fname = token_value
 	local window = nil
-	if tok.kind == tk_func_win then
-		-- The lexer guarantees prefix + alphas + '{' + digits + '}'.
-		local value<const> = tok.value
+	if token_kind == tk_func_win then
+		-- The scanner guarantees prefix + alphas + '{' + digits + '}'.
+		local value<const> = token_value
 		local brace = 2
-		while string.byte(value, brace) ~= 123 do -- '{'
+		while string_byte(value, brace) ~= 123 do -- '{'
 			brace = brace + 1
 		end
-		fname = string.sub(value, 1, brace - 1)
+		fname = string_sub(value, 1, brace - 1)
 		local parsed_window<const> = parse_uint(value, brace + 1, #value - 1)
 		window = parsed_window
 	end
-	take(self, tk_sym, '(')
+	take(self, tk_left_parenthesis)
 	local args<const> = {}
-	if current(self) and current(self).value ~= ')' then
+	if self.token_kind ~= nil and self.token_kind ~= tk_right_parenthesis then
 		args[#args + 1] = parse_expr(self)
-		while current(self) and current(self).value == ',' do
-			eat(self)
+		while self.token_kind == tk_comma do
+			scan_next(self)
 			args[#args + 1] = parse_expr(self)
 		end
 	end
-	take(self, tk_sym, ')')
+	take(self, tk_right_parenthesis)
 	local function_kind<const> = function_kinds[fname]
 	if not function_kind then
 		error('[cartlib/input/action_parser] Unknown function helper "' .. fname .. '" in "' .. self.source .. '".')
@@ -465,44 +496,44 @@ local parse_function<const> = function(self)
 end
 
 local parse_factor<const> = function(self)
-	local c<const> = current(self)
-	if not c then
+	local kind<const> = self.token_kind
+	if kind == nil then
 		error('[cartlib/input/action_parser] Unexpected end of input in "' .. self.source .. '".')
 	end
-	if c.value == '!' then
-		eat(self)
+	if kind == tk_not then
+		scan_next(self)
 		return make_op(node_kind_not, parse_factor(self))
 	end
-	if c.value == '(' then
-		eat(self)
+	if kind == tk_left_parenthesis then
+		scan_next(self)
 		local node<const> = parse_expr(self)
-		take(self, tk_sym, ')')
-		if current(self) and current(self).value == '[' then
+		take(self, tk_right_parenthesis)
+		if self.token_kind == tk_left_bracket then
 			apply_modifiers(node, parse_modifiers(self))
 		end
 		return node
 	end
-	if c.kind == tk_func or c.kind == tk_func_win then
+	if kind == tk_func or kind == tk_func_win then
 		return parse_function(self)
 	end
 	return parse_action(self)
 end
 
-local parse_binary<const> = function(self, operand, op_name, op_a, op_b)
+local parse_binary<const> = function(self, operand, node_kind, token_kind)
 	local node = operand(self)
-	while current(self) and (current(self).value == op_a or current(self).value == op_b) do
-		eat(self)
-		node = make_op(op_name, node, operand(self))
+	while self.token_kind == token_kind do
+		scan_next(self)
+		node = make_op(node_kind, node, operand(self))
 	end
 	return node
 end
 
 local parse_term<const> = function(self)
-	return parse_binary(self, parse_factor, node_kind_and, '&&', false)
+	return parse_binary(self, parse_factor, node_kind_and, tk_and)
 end
 
 parse_expr = function(self)
-	return parse_binary(self, parse_term, node_kind_or, '||', '|')
+	return parse_binary(self, parse_term, node_kind_or, tk_or)
 end
 
 annotate_action = function(node)
@@ -586,16 +617,17 @@ function action_parser.compile(src)
 	if cached then
 		return cached
 	end
-	local self<const> = setmetatable({
-		tokens = lex(src),
-		index = 1,
+	local self<const> = {
 		source = src,
+		source_length = #src,
+		source_index = 1,
 		action_names = {},
 		action_name_indices = {},
-	}, parser_state)
+	}
+	scan_next(self)
 	local ast<const> = parse_expr(self)
-	if current(self) then
-		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')
+	if self.token_kind ~= nil then
+		error('[cartlib/input/action_parser] Unexpected token "' .. self.token_value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
 	local program<const> = {
