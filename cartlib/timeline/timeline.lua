@@ -32,7 +32,6 @@ local write_evaluation<const> = function(
 	previous_time_ms,
 	time_ms,
 	method,
-	mode,
 	direction,
 	sample,
 	boundary,
@@ -50,7 +49,6 @@ local write_evaluation<const> = function(
 	evaluation.previous_time_ms = previous_time_ms
 	evaluation.time_ms = time_ms
 	evaluation.method = method
-	evaluation.playback_mode = mode
 	evaluation.direction = direction
 	evaluation.sample = sample
 	evaluation.boundary = boundary
@@ -166,7 +164,6 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
-			program.playback_mode,
 			self.direction,
 			true,
 			boundary_none,
@@ -191,7 +188,6 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
-			mode,
 			1,
 			true,
 			boundary_none,
@@ -211,7 +207,6 @@ local update_continuous<const> = function(self, delta_time)
 				previous_time_ms,
 				0,
 				play_update_method,
-				mode,
 				1,
 				boundary_loop,
 				true,
@@ -230,7 +225,6 @@ local update_continuous<const> = function(self, delta_time)
 				previous_time_ms,
 				time_ms,
 				play_update_method,
-				mode,
 				1,
 				true,
 				boundary_none,
@@ -272,7 +266,6 @@ local update_continuous<const> = function(self, delta_time)
 			previous_time_ms,
 			time_ms,
 			play_update_method,
-			mode,
 			direction,
 			true,
 			boundary,
@@ -342,7 +335,6 @@ local move_to<const> = function(self, frame, method)
 		previous_time_ms,
 		time_ms,
 		method,
-		program.playback_mode,
 		direction,
 		true,
 		boundary_none,
@@ -408,7 +400,6 @@ local move_time<const> = function(self, requested_time_ms, method)
 		previous_time_ms,
 		time_ms,
 		method,
-		program.playback_mode,
 		direction,
 		true,
 		boundary_none,
@@ -437,7 +428,6 @@ local write_external_time_range<const> = function(
 	previous_time_ms,
 	time_ms,
 	method,
-	mode,
 	direction,
 	initial,
 	boundary,
@@ -483,7 +473,6 @@ local write_external_time_range<const> = function(
 		previous_time_ms,
 		time_ms,
 		method,
-		mode,
 		direction,
 		sample,
 		boundary,
@@ -526,7 +515,6 @@ function timeline:snap_to_start()
 		previous_time_ms,
 		0,
 		play_update_method,
-		self.program.playback_mode,
 		1,
 		true,
 		boundary_none,
@@ -610,7 +598,6 @@ function timeline:advance_internal(preserve_elapsed)
 		previous_time_ms,
 		time_ms,
 		play_update_method,
-		program.playback_mode,
 		traversal_direction,
 		sample,
 		boundary,
