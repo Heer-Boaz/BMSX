@@ -3,6 +3,12 @@
 local syntax_factory<const> = lua_compiler.syntax_factory
 
 local scalar_channel_syntax<const> = {}
+local track_list_names<const> = {
+	'linear_tracks',
+	'cubic_tracks',
+	'linear_time_tracks',
+	'cubic_time_tracks',
+}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -292,7 +298,7 @@ end
 
 local emit_track<const> = function(statements, track_list_name, track_index, track, position_key, cubic)
 	local source_track<const> = index_expression(
-		member_expression(identifier('channels'), track_list_name),
+		identifier(track_list_name),
 		numeric_literal(track_index)
 	)
 	if track.apply ~= nil then
@@ -304,7 +310,7 @@ local emit_track<const> = function(statements, track_list_name, track_index, tra
 	else
 		statements[#statements + 1] = assignment_statement(
 			identifier('keys'),
-			member_expression(source_track, 'keys')
+			source_track
 		)
 	end
 	emit_track_sample(statements, track, position_key, cubic)
@@ -387,29 +393,34 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 	)
 	emit_frame_lane(evaluator_body, channels, analysis, sample_flag)
 	emit_time_lane(evaluator_body, channels, analysis)
+	local factory_body<const> = {}
+	for index = 1, #track_list_names do
+		local track_list_name<const> = track_list_names[index]
+		if #channels[track_list_name] > 0 then
+			factory_body[#factory_body + 1] = local_statement(
+				identifier(track_list_name),
+				member_expression(identifier('source_channels'), track_list_name),
+				true
+			)
+		end
+	end
+	factory_body[#factory_body + 1] = return_statement({
+		function_expression(
+			{
+				identifier('entry'),
+				identifier('frame'),
+				identifier('time_ms'),
+				identifier('flags'),
+				identifier('evaluation'),
+			},
+			block(evaluator_body)
+		),
+	})
 	return syntax_factory.chunk(block({
 		return_statement({
 			function_expression(
 				{ identifier('source_channels') },
-				block({
-					local_statement(
-						identifier('channels'),
-						identifier('source_channels'),
-						true
-					),
-					return_statement({
-						function_expression(
-							{
-								identifier('entry'),
-								identifier('frame'),
-								identifier('time_ms'),
-								identifier('flags'),
-								identifier('evaluation'),
-							},
-							block(evaluator_body)
-						),
-					}),
-				})
+				block(factory_body)
 			),
 		}),
 	}))

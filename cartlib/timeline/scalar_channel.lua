@@ -1,10 +1,13 @@
 -- Numeric curve channels own their compiled segment representation. Their
 -- shape-specific runner factory is prepared once; length-dependent channels
--- are bound once when a definitive frame program is compiled. Channels with
--- more than two keys retain one current segment per active timeline entry;
--- each shared key carries an exclusive segment end, so evaluation only
--- searches again when traversal leaves that range. Generic step values remain
--- track-program data because they may carry non-numeric cart values.
+-- are bound once when a definitive frame program is compiled. Direct property
+-- lanes retain their key arrays directly; callback lanes retain only the key
+-- array and callback. Binding selection and property paths are encoded in the
+-- runner. Channels with more than two keys retain one current segment per
+-- active timeline entry; each shared key carries an exclusive segment end, so
+-- evaluation only searches again when traversal leaves that range. Generic
+-- step values remain track-program data because they may carry non-numeric cart
+-- values.
 local scalar_channel_syntax<const> = require('cartlib/timeline/scalar_channel_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
@@ -85,14 +88,6 @@ local compile_runner_factory<const> = function(channels)
 		scalar_channel_syntax.build(channels, analysis, sample_flag),
 		'[timeline.scalar_channel]'
 	)(), analysis.cached_segment_count
-end
-
-local finalize_tracks<const> = function(tracks)
-	for index = 1, #tracks do
-		local track<const> = tracks[index]
-		track.binding_index = nil
-		track.path = nil
-	end
 end
 
 local compare_frame_key<const> = function(left, right)
@@ -215,12 +210,14 @@ local compile_tracks<const> = function(definitions, length, time_domain, cubic, 
 		if cached_segment_index ~= nil then
 			initial_cached_segments[cached_segment_index] = keys[1]
 		end
-		tracks[track_index] = {
-			binding_index = definition.binding_index,
-			apply = definition.apply,
-			path = definition.path,
-			keys = keys,
-		}
+		if definition.apply == nil then
+			tracks[track_index] = keys
+		else
+			tracks[track_index] = {
+				apply = definition.apply,
+				keys = keys,
+			}
+		end
 	end
 	return tracks
 end
@@ -234,7 +231,7 @@ function scalar_channel.compile(program, length)
 	local linear_time_tracks<const> = compile_tracks(program.linear_time_tracks, length, true, false, initial_cached_segments)
 	local cubic_tracks<const> = compile_tracks(program.cubic_tracks, length, false, true, initial_cached_segments)
 	local cubic_time_tracks<const> = compile_tracks(program.cubic_time_tracks, length, true, true, initial_cached_segments)
-	local channels<const> = {
+	return {
 		track_count = program.track_count,
 		cached_segment_count = program.cached_segment_count,
 		initial_cached_segments = initial_cached_segments,
@@ -243,11 +240,6 @@ function scalar_channel.compile(program, length)
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
 	}
-	finalize_tracks(linear_tracks)
-	finalize_tracks(linear_time_tracks)
-	finalize_tracks(cubic_tracks)
-	finalize_tracks(cubic_time_tracks)
-	return channels
 end
 
 return scalar_channel
