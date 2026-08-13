@@ -462,6 +462,13 @@ local last_time_step_key_at<const> = function(track, time_ms)
 	return keys[index]
 end
 
+local position_time_step_cursor<const> = function(entry, steps, time_ms)
+	local keys<const> = steps.time_keys
+	local index<const> = first_time_after(keys, steps.time_key_count, time_ms)
+	entry.previous_time_step_key = keys[index - 1]
+	entry.next_time_step_key = keys[index]
+end
+
 local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
 	local tracks<const> = steps.time_tracks
 	for index = 1, steps.time_track_count do
@@ -470,46 +477,44 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 			key.apply(entry, key.value, params, evaluation)
 		end
 	end
-	entry.next_time_step_index = first_time_after(steps.time_keys, steps.time_key_count, time_ms)
+	position_time_step_cursor(entry, steps, time_ms)
 end
 
 -- Positioning and loop discontinuities reconstruct every track and place this
 -- cursor. Monotone play consumes the immutable merged key stream in either
 -- direction without searching individual tracks again. Empty ranges leave the
 -- retained cursor untouched.
-local advance_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
-	local keys<const> = steps.time_keys
-	local count<const> = steps.time_key_count
-	local index = entry.next_time_step_index
-	if index > count or keys[index].time_ms > time_ms then
+local advance_time_step_tracks<const> = function(entry, time_ms, params, evaluation)
+	local key = entry.next_time_step_key
+	if key == nil or key.time_ms > time_ms then
 		return
 	end
-	while index <= count and keys[index].time_ms <= time_ms do
-		local key<const> = keys[index]
+	local previous_key
+	while key ~= nil and key.time_ms <= time_ms do
 		key.apply(entry, key.value, params, evaluation)
-		index = index + 1
+		previous_key = key
+		key = key.next_time_key
 	end
-	entry.next_time_step_index = index
+	entry.previous_time_step_key = previous_key
+	entry.next_time_step_key = key
 end
 
-local retreat_time_step_tracks<const> = function(entry, steps, time_ms, params, evaluation)
-	local keys<const> = steps.time_keys
-	local index = entry.next_time_step_index - 1
-	if index == 0 or keys[index].time_ms <= time_ms then
+local retreat_time_step_tracks<const> = function(entry, time_ms, params, evaluation)
+	local key = entry.previous_time_step_key
+	if key == nil or key.time_ms <= time_ms then
 		return
 	end
-	while index > 0 do
-		local key<const> = keys[index]
-		if key.time_ms <= time_ms then
-			break
-		end
+	local next_key
+	while key ~= nil and key.time_ms > time_ms do
 		local previous_key<const> = key.previous_key
 		if previous_key ~= nil then
 			previous_key.apply(entry, previous_key.value, params, evaluation)
 		end
-		index = index - 1
+		next_key = key
+		key = key.previous_time_key
 	end
-	entry.next_time_step_index = index + 1
+	entry.previous_time_step_key = key
+	entry.next_time_step_key = next_key
 end
 
 local evaluate_play_frame_steps<const> = function(
@@ -553,9 +558,9 @@ local evaluate_play_time_steps<const> = function(
 	if flags & reset_step_flags ~= 0 then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	elseif time_ms > previous_time_ms then
-		advance_time_step_tracks(entry, steps, time_ms, params, evaluation)
+		advance_time_step_tracks(entry, time_ms, params, evaluation)
 	elseif time_ms < previous_time_ms then
-		retreat_time_step_tracks(entry, steps, time_ms, params, evaluation)
+		retreat_time_step_tracks(entry, time_ms, params, evaluation)
 	end
 end
 
@@ -654,15 +659,7 @@ end
 function track_evaluator.init_entry(entry)
 	local tracks<const> = entry.instance.program.tracks
 	local steps<const> = tracks.steps
-	if steps.time_key_count == 0 then
-		entry.next_time_step_index = nil
-	else
-		entry.next_time_step_index = first_time_after(
-			steps.time_keys,
-			steps.time_key_count,
-			entry.instance.position_ms
-		)
-	end
+	position_time_step_cursor(entry, steps, entry.instance.position_ms)
 	local scalar_channels<const> = tracks.scalar_channels
 	local cached_segment_count<const> = scalar_channels.cached_segment_count
 	if cached_segment_count == 0 then

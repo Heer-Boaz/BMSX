@@ -514,6 +514,11 @@ local compile_steps<const> = function(step_defs, length)
 		end
 	end
 	table.sort(time_keys, compare_time_key)
+	for index = 1, #time_keys do
+		local key<const> = time_keys[index]
+		key.previous_time_key = time_keys[index - 1]
+		key.next_time_key = time_keys[index + 1]
+	end
 	for index = 1, #tracks do
 		local keys<const> = tracks[index].keys
 		for key_index = 1, #keys do
