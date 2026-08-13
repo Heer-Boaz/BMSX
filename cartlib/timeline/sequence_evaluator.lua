@@ -65,10 +65,9 @@ local first_end_after<const> = function(clips, count, time_ms)
 	return low
 end
 
+-- Clip processing owns the inactive-to-active transition; this insertion path
+-- therefore never rechecks state already represented by `initial`.
 local activate_clip<const> = function(state, clip_index, child_entry)
-	if child_entry.active_index ~= nil then
-		return
-	end
 	local active_count<const> = state.active_count + 1
 	state.active_count = active_count
 	local active_index = active_count
@@ -318,7 +317,9 @@ local process_play_clip<const> = function(
 		not destination_active
 	)
 	if destination_active then
-		activate_clip(state, clip_index, child_entry)
+		if initial then
+			activate_clip(state, clip_index, child_entry)
+		end
 	else
 		clear_child(child_entry, owner)
 		remove_active_clip(state, clip_index, child_entry)
@@ -357,7 +358,9 @@ local process_position_clip<const> = function(
 		initial
 	)
 	if destination_active then
-		activate_clip(state, clip_index, child_entry)
+		if initial then
+			activate_clip(state, clip_index, child_entry)
+		end
 	else
 		clear_child(child_entry, owner)
 		remove_active_clip(state, clip_index, child_entry)
