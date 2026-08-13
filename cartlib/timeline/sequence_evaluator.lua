@@ -280,70 +280,6 @@ local sort_candidates<const> = function(state, sorted_count)
 	end
 end
 
--- Candidate admission guarantees that a play range intersects the clip. Its
--- monotonic direction therefore determines the only interval edge it can
--- cross; positioning remains the owner of arbitrary destination clamping. The
--- parent sequence also owns child completion, so `ended` changes only when the
--- clip enters or leaves its active interval.
-local process_play_clip<const> = function(
-	state,
-	owner,
-	clip_index,
-	previous_time_ms,
-	time_ms,
-	direction
-)
-	local child_entry<const> = state.entries[clip_index]
-	local clip<const> = child_entry.clip
-	local initial<const> = child_entry.active_index == nil
-	local start_time_ms<const> = clip.start_time_ms
-	local end_time_ms<const> = clip.end_time_ms
-	local source_time_ms = previous_time_ms
-	local destination_time_ms = time_ms
-	local destination_active = true
-	if direction > 0 then
-		if initial and source_time_ms < start_time_ms then
-			source_time_ms = start_time_ms
-		end
-		if destination_time_ms >= end_time_ms then
-			destination_time_ms = end_time_ms
-			destination_active = false
-		end
-	elseif direction < 0 then
-		if initial and source_time_ms > end_time_ms then
-			source_time_ms = end_time_ms
-		end
-		if destination_time_ms < start_time_ms then
-			destination_time_ms = start_time_ms
-			destination_active = false
-		end
-	end
-	local child_timeline<const> = child_entry.instance
-	child_timeline:evaluate_clip_play_range(
-		child_entry,
-		owner,
-		clip,
-		source_time_ms,
-		destination_time_ms,
-		direction,
-		initial
-	)
-	if destination_active then
-		if initial then
-			child_timeline.ended = false
-			activate_clip(state, clip_index, child_entry)
-		end
-	else
-		child_timeline.ended = true
-		clear_child(child_entry, owner)
-		remove_active_clip(state, clip_index, child_entry)
-		local on_finished<const> = clip.on_finished
-		if on_finished ~= nil then
-			on_finished(child_entry.primary_binding, child_timeline)
-		end
-	end
-end
-
 local process_position_clip<const> = function(
 	state,
 	owner,
@@ -434,15 +370,60 @@ local evaluate_play_range<const> = function(
 	if state.candidate_count > sorted_candidate_count then
 		sort_candidates(state, sorted_candidate_count)
 	end
-	for index = 1, state.candidate_count do
-		process_play_clip(
-			state,
+	-- Candidate admission guarantees that this range intersects each clip. Its
+	-- monotonic direction therefore determines the only interval edge it can
+	-- cross. Child completion changes only at interval admission and removal.
+	for candidate_index = 1, state.candidate_count do
+		local clip_index<const> = state.candidates[candidate_index]
+		local child_entry<const> = state.entries[clip_index]
+		local clip<const> = child_entry.clip
+		local clip_initial<const> = child_entry.active_index == nil
+		local start_time_ms<const> = clip.start_time_ms
+		local end_time_ms<const> = clip.end_time_ms
+		local source_time_ms = previous_time_ms
+		local destination_time_ms = time_ms
+		local destination_active = true
+		if direction > 0 then
+			if clip_initial and source_time_ms < start_time_ms then
+				source_time_ms = start_time_ms
+			end
+			if destination_time_ms >= end_time_ms then
+				destination_time_ms = end_time_ms
+				destination_active = false
+			end
+		elseif direction < 0 then
+			if clip_initial and source_time_ms > end_time_ms then
+				source_time_ms = end_time_ms
+			end
+			if destination_time_ms < start_time_ms then
+				destination_time_ms = start_time_ms
+				destination_active = false
+			end
+		end
+		local child_timeline<const> = child_entry.instance
+		child_timeline:evaluate_clip_play_range(
+			child_entry,
 			owner,
-			state.candidates[index],
-			previous_time_ms,
-			time_ms,
-			direction
+			clip,
+			source_time_ms,
+			destination_time_ms,
+			direction,
+			clip_initial
 		)
+		if destination_active then
+			if clip_initial then
+				child_timeline.ended = false
+				activate_clip(state, clip_index, child_entry)
+			end
+		else
+			child_timeline.ended = true
+			clear_child(child_entry, owner)
+			remove_active_clip(state, clip_index, child_entry)
+			local on_finished<const> = clip.on_finished
+			if on_finished ~= nil then
+				on_finished(child_entry.primary_binding, child_timeline)
+			end
+		end
 	end
 end
 
