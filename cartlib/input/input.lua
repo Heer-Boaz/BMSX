@@ -4,6 +4,7 @@
 -- Edge detection (just_pressed/just_released) is derived here from latched levels.
 
 local action_parser<const> = require('cartlib/input/action_parser')
+local action_state_program<const> = require('cartlib/input/action_state_program')
 local action_syntax<const> = require('cartlib/input/action_syntax')
 local keys<const> = require('cartlib/input/keys')
 
@@ -37,10 +38,13 @@ local initial_repeat_delay_frames<const> = 15
 local repeat_interval_frames<const> = 4
 local guard_window_frames<const> = 2
 -- Sentinel for "no press/release seen": larger than any reachable frame delta.
-local huge_delta<const> = 0x7fffffff
+local no_edge_delta<const> = action_syntax.no_edge_delta
 local evaluation_requirement<const> = action_syntax.evaluation_requirement
-local requirement_guard<const> = evaluation_requirement.guard
-local requirement_repeat_state<const> = evaluation_requirement.repeat_state
+local requirement_pressed<const> = evaluation_requirement.pressed | evaluation_requirement.consumed
+local requirement_just_pressed<const> = evaluation_requirement.just_pressed | evaluation_requirement.consumed
+local requirement_just_released<const> = evaluation_requirement.just_released | evaluation_requirement.consumed
+local requirement_value_q16<const> = evaluation_requirement.value_q16
+local requirement_vector_q16<const> = evaluation_requirement.vector_q16
 
 local default_keyboard<const> = {
 	a = { 'KeyX' },
@@ -174,11 +178,12 @@ local new_action_state<const> = function(player, action)
 	return {
 		player = player,
 		action = action,
-		resolved_sources = {
+		source_lists = {
 			{ source_index = source_keyboard },
 			{ source_index = source_gamepad },
 			{ source_index = source_pointer },
 		},
+		resolved_sources = {},
 		resolved_source_count = 0,
 		pressed = false,
 		just_pressed = false,
@@ -195,8 +200,8 @@ local new_action_state<const> = function(player, action)
 		value_y_q16 = 0,
 		press_id = 0,
 		-- Cached frame deltas; was* derives from these per window.
-		min_press_delta = huge_delta,
-		min_release_delta = huge_delta,
+		min_press_delta = no_edge_delta,
+		min_release_delta = no_edge_delta,
 		evaluation_requirement_mask = 0,
 		eval_frame = -1,
 		eval_gen = -1,
@@ -389,19 +394,19 @@ local build_resolved_source<const> = function(player, action, source_index, list
 end
 
 local rebuild_action_bindings<const> = function(player, state)
-	local sources<const> = state.resolved_sources
+	local source_lists<const> = state.source_lists
 	for index = source_keyboard, source_pointer do
-		local list<const> = sources[index]
+		local list<const> = source_lists[index]
 		build_resolved_source(player, state.action, list.source_index, list)
 	end
-	-- Keep the retained source lists, but place non-empty lists first so action
-	-- evaluation and consumption never visit absent device sources.
+	-- Publish non-empty source-list references densely so action evaluation and
+	-- consumption never visit absent device sources.
+	local sources<const> = state.resolved_sources
 	local active_count = 0
 	for index = source_keyboard, source_pointer do
-		local list<const> = sources[index]
+		local list<const> = source_lists[index]
 		if #list > 0 then
 			active_count = active_count + 1
-			sources[index] = sources[active_count]
 			sources[active_count] = list
 		end
 	end
@@ -531,22 +536,14 @@ local sample_player<const> = function(player, frame)
 	player.sample_frame = frame
 end
 
-local compile_action_state<const> = function(player, action)
-	local state = player.actions[action]
-	if state then
-		return state
-	end
-	state = create_action_state(player, action)
-	rebuild_action_bindings(player, state)
-	return state
-end
-
 local evaluate_guard<const> = function(state, frame)
 	if not state.just_pressed then
-		return false
+		state.guarded_just_pressed = false
+		return
 	end
 	if state.guard_last_press_id == state.press_id then
-		return state.guard_last_result
+		state.guarded_just_pressed = state.guard_last_result
+		return
 	end
 	local accepted<const> = (frame - state.guard_last_accepted_frame) > guard_window_frames
 	if accepted then
@@ -554,12 +551,13 @@ local evaluate_guard<const> = function(state, frame)
 	end
 	state.guard_last_press_id = state.press_id
 	state.guard_last_result = accepted
-	return accepted
+	state.guarded_just_pressed = accepted
 end
 
 local evaluate_repeat<const> = function(state, frame)
 	if state.repeat_last_frame == frame then
-		return state.repeat_last_result, state.repeat_count
+		state.repeat_pressed = state.repeat_last_result
+		return
 	end
 	local result = false
 	if state.just_pressed then
@@ -588,7 +586,30 @@ local evaluate_repeat<const> = function(state, frame)
 	end
 	state.repeat_last_frame = frame
 	state.repeat_last_result = result
-	return result, state.repeat_count
+	state.repeat_pressed = result
+end
+
+local action_state_environment<const> = {
+	evaluate_guard = evaluate_guard,
+	evaluate_repeat = evaluate_repeat,
+}
+
+local admit_action_state<const> = function(player, action, requirement_mask)
+	local state = player.actions[action]
+	if state == nil then
+		state = create_action_state(player, action)
+		rebuild_action_bindings(player, state)
+	end
+	local combined_requirement_mask<const> = state.evaluation_requirement_mask | requirement_mask
+	if combined_requirement_mask ~= state.evaluation_requirement_mask then
+		state.evaluation_requirement_mask = combined_requirement_mask
+		state.evaluation_runner = action_state_program.compile(
+			combined_requirement_mask,
+			action_state_environment
+		)
+		state.eval_frame = -1
+	end
+	return state
 end
 
 function input.add_player(index)
@@ -628,133 +649,24 @@ function input.clear_context(player_index, id)
 	clear_action_evaluation_state(player)
 end
 
--- Full evaluation runs once per action per frame (per eval generation); later
--- reads this frame reuse the retained result and numeric edge deltas.
-local refresh_action_state<const> = function(player, state)
-	local frame<const> = player.sample_frame
-	local pressed = false
-	local just_pressed = false
-	local just_released = false
-	local all_just_pressed = false
-	local all_just_released = false
-	local consumed = false
-	local has_press_time = false
-	local press_time = 0
-	local press_id = 0
-	local value_q16 = 0
-	local value_x_q16 = 0
-	local value_y_q16 = 0
-	local min_press_delta = huge_delta
-	local min_release_delta = huge_delta
-	local sources<const> = state.resolved_sources
-	for index = 1, state.resolved_source_count do
-		local list<const> = sources[index]
-		local count<const> = #list
-		local source_all_just_pressed = true
-		local source_all_just_released = true
-		local source_value_q16 = 0
-		local source_value_x_q16 = 0
-		local source_value_y_q16 = 0
-		for i = 1, count do
-			local button<const> = list[i]
-			local button_pressed<const> = button.pressed
-			local button_just_pressed<const> = button.just_pressed
-			local button_just_released<const> = button.just_released
-			pressed = pressed or button_pressed
-			just_pressed = just_pressed or button_just_pressed
-			just_released = just_released or button_just_released
-			source_all_just_pressed = source_all_just_pressed and button_just_pressed
-			source_all_just_released = source_all_just_released and button_just_released
-			consumed = consumed or button.consumed
-			local press_delta = frame - button.last_press_frame
-			if button_pressed then
-				press_delta = -1
-			end
-			if press_delta < min_press_delta then
-				min_press_delta = press_delta
-			end
-			local release_delta = frame - button.last_release_frame
-			if button_just_released then
-				release_delta = -1
-			end
-			if release_delta < min_release_delta then
-				min_release_delta = release_delta
-			end
-			if button_pressed then
-				local button_press_time<const> = frame - button.press_start_frame
-				if not has_press_time or button_press_time < press_time then
-					has_press_time = true
-					press_time = button_press_time
-				end
-				if button.press_id > press_id then
-					press_id = button.press_id
-				end
-			end
-			local button_value_q16<const> = button.value_q16
-			if button_value_q16 ~= 0 then
-				source_value_q16 = button_value_q16
-			end
-			local button_value_x_q16<const> = button.value_x_q16
-			local button_value_y_q16<const> = button.value_y_q16
-			if button_value_x_q16 ~= 0 or button_value_y_q16 ~= 0 then
-				source_value_x_q16 = button_value_x_q16
-				source_value_y_q16 = button_value_y_q16
-			end
-		end
-		all_just_pressed = all_just_pressed or source_all_just_pressed
-		all_just_released = all_just_released or source_all_just_released
-		if value_q16 == 0 then
-			value_q16 = source_value_q16
-		end
-		if value_x_q16 == 0 and value_y_q16 == 0 then
-			value_x_q16 = source_value_x_q16
-			value_y_q16 = source_value_y_q16
-		end
-	end
-	state.pressed = pressed
-	state.just_pressed = just_pressed
-	state.just_released = just_released
-	state.all_just_pressed = all_just_pressed
-	state.all_just_released = all_just_released
-	state.consumed = consumed
-	state.press_time = press_time
-	state.press_id = press_id
-	state.value_q16 = value_q16
-	state.value_x_q16 = value_x_q16
-	state.value_y_q16 = value_y_q16
-	state.min_press_delta = min_press_delta
-	state.min_release_delta = min_release_delta
-	local requirement_mask<const> = state.evaluation_requirement_mask
-	if requirement_mask & requirement_guard ~= 0 then
-		state.guarded_just_pressed = evaluate_guard(state, frame)
-	end
-	if requirement_mask & requirement_repeat_state ~= 0 then
-		local repeat_pressed<const>, repeat_count<const> = evaluate_repeat(state, frame)
-		state.repeat_pressed = repeat_pressed
-		state.repeat_count = repeat_count
-	end
-	state.eval_frame = frame
-	state.eval_gen = player.eval_generation
-end
-
 local evaluate_action_state<const> = function(states, action_key)
 	local state<const> = states[action_key]
 	local player<const> = state.player
 	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
-		refresh_action_state(player, state)
+		state.evaluation_runner(state, player.sample_frame, player.eval_generation)
 	end
 	return state
 end
 
 -- Direct action queries admit their retained state on first use. Compiled
 -- expressions already admit every state while input.bind builds their context.
-local evaluate_player_action_state<const> = function(player, action)
+local evaluate_player_action_state<const> = function(player, action, requirement_mask)
 	local state = player.actions[action]
-	if state == nil then
-		state = compile_action_state(player, action)
+	if state == nil or state.evaluation_requirement_mask & requirement_mask ~= requirement_mask then
+		state = admit_action_state(player, action, requirement_mask)
 	end
 	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
-		refresh_action_state(player, state)
+		state.evaluation_runner(state, player.sample_frame, player.eval_generation)
 	end
 	return state
 end
@@ -768,13 +680,7 @@ function input.bind(player_index, pattern)
 		local action_requirement_masks<const> = program.action_requirement_masks
 		local states<const> = {}
 		for i = 1, #action_names do
-			local state<const> = compile_action_state(player, action_names[i])
-			local requirement_mask<const> = state.evaluation_requirement_mask | action_requirement_masks[i]
-			if requirement_mask ~= state.evaluation_requirement_mask then
-				state.evaluation_requirement_mask = requirement_mask
-				state.eval_frame = -1
-			end
-			states[i] = state
+			states[i] = admit_action_state(player, action_names[i], action_requirement_masks[i])
 		end
 		evaluate = program.evaluation_factory(
 			evaluate_action_state,
@@ -788,30 +694,30 @@ end
 
 function input.is_action_pressed(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action)
+	local state<const> = evaluate_player_action_state(player, action, requirement_pressed)
 	return state.pressed and not state.consumed
 end
 
 function input.is_action_just_pressed(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action)
+	local state<const> = evaluate_player_action_state(player, action, requirement_just_pressed)
 	return state.just_pressed and not state.consumed
 end
 
 function input.is_action_just_released(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action)
+	local state<const> = evaluate_player_action_state(player, action, requirement_just_released)
 	return state.just_released and not state.consumed
 end
 
 function input.get_action_value(player_index, action)
 	local player<const> = players[player_index]
-	return evaluate_player_action_state(player, action).value_q16
+	return evaluate_player_action_state(player, action, requirement_value_q16).value_q16
 end
 
 function input.get_vector(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action)
+	local state<const> = evaluate_player_action_state(player, action, requirement_vector_q16)
 	return state.value_x_q16, state.value_y_q16
 end
 
@@ -833,11 +739,11 @@ function input.consume(player_index, actions)
 	player.eval_generation = player.eval_generation + 1
 	if type(actions) == 'table' then
 		for i = 1, #actions do
-			consume_action(compile_action_state(player, actions[i]))
+			consume_action(admit_action_state(player, actions[i], 0))
 		end
 		return
 	end
-	consume_action(compile_action_state(player, actions))
+	consume_action(admit_action_state(player, actions, 0))
 end
 
 return input

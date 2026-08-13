@@ -10,7 +10,16 @@ local function_kind<const> = action_syntax.function_kind
 local compare_operator<const> = action_syntax.compare_operator
 local edge<const> = action_syntax.edge
 local evaluation_requirement<const> = action_syntax.evaluation_requirement
-local requirement_guard<const> = evaluation_requirement.guard
+local requirement_pressed<const> = evaluation_requirement.pressed
+local requirement_just_pressed<const> = evaluation_requirement.just_pressed
+local requirement_just_released<const> = evaluation_requirement.just_released
+local requirement_all_just_pressed<const> = evaluation_requirement.all_just_pressed
+local requirement_all_just_released<const> = evaluation_requirement.all_just_released
+local requirement_consumed<const> = evaluation_requirement.consumed
+local requirement_press_time<const> = evaluation_requirement.press_time
+local requirement_press_delta<const> = evaluation_requirement.press_delta
+local requirement_release_delta<const> = evaluation_requirement.release_delta
+local requirement_guarded_just_pressed<const> = evaluation_requirement.guarded_just_pressed
 local requirement_repeat_state<const> = evaluation_requirement.repeat_state
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
@@ -53,33 +62,37 @@ local edge_function_spec<const> = {
 		all = false,
 		edge_bit = edge.just_pressed,
 		state_field = 'just_pressed',
+		requirement = requirement_just_pressed,
 	},
 	[function_kind.all_just_pressed] = {
 		all = true,
 		edge_bit = edge.just_pressed,
 		state_field = 'just_pressed',
+		requirement = requirement_just_pressed,
 	},
 	[function_kind.any_just_released] = {
 		all = false,
 		edge_bit = edge.just_released,
 		state_field = 'just_released',
+		requirement = requirement_just_released,
 	},
 	[function_kind.all_just_released] = {
 		all = true,
 		edge_bit = edge.just_released,
 		state_field = 'just_released',
+		requirement = requirement_just_released,
 	},
 	[function_kind.any_guarded_just_pressed] = {
 		all = false,
 		edge_bit = edge.guarded_just_pressed,
 		state_field = 'guarded_just_pressed',
-		requirement = requirement_guard,
+		requirement = requirement_guarded_just_pressed,
 	},
 	[function_kind.all_guarded_just_pressed] = {
 		all = true,
 		edge_bit = edge.guarded_just_pressed,
 		state_field = 'guarded_just_pressed',
-		requirement = requirement_guard,
+		requirement = requirement_guarded_just_pressed,
 	},
 	[function_kind.any_repeat_pressed] = {
 		all = false,
@@ -97,27 +110,42 @@ local edge_function_spec<const> = {
 		all = false,
 		edge_bit = edge.within_press,
 		delta_field = 'min_press_delta',
+		requirement = requirement_press_delta,
 	},
 	[function_kind.all_within_press] = {
 		all = true,
 		edge_bit = edge.within_press,
 		delta_field = 'min_press_delta',
+		requirement = requirement_press_delta,
 	},
 	[function_kind.any_within_release] = {
 		all = false,
 		edge_bit = edge.within_release,
 		delta_field = 'min_release_delta',
+		requirement = requirement_release_delta,
 	},
 	[function_kind.all_within_release] = {
 		all = true,
 		edge_bit = edge.within_release,
 		delta_field = 'min_release_delta',
+		requirement = requirement_release_delta,
 	},
 }
 
 local modifier_requirement<const> = {
-	[modifier_kind.guarded_just_pressed] = requirement_guard,
+	[modifier_kind.pressed] = requirement_pressed,
+	[modifier_kind.released] = requirement_pressed,
+	[modifier_kind.just_pressed] = requirement_just_pressed,
+	[modifier_kind.all_just_pressed] = requirement_all_just_pressed,
+	[modifier_kind.just_released] = requirement_just_released,
+	[modifier_kind.all_just_released] = requirement_all_just_released,
+	[modifier_kind.guarded_just_pressed] = requirement_guarded_just_pressed,
 	[modifier_kind.repeat_pressed] = requirement_repeat_state,
+	[modifier_kind.consumed] = requirement_consumed,
+	[modifier_kind.held] = requirement_press_time,
+	[modifier_kind.within_press] = requirement_press_delta,
+	[modifier_kind.within_release] = requirement_release_delta,
+	[modifier_kind.press_time] = requirement_press_time,
 	[modifier_kind.repeat_count] = requirement_repeat_state,
 }
 
@@ -212,8 +240,14 @@ end
 local emit_action<const> = function(statements, state, node, target_name, bare_requires_pressed)
 	state.uses_state = true
 	local specs<const> = node.mod_specs
+	if #specs == 0 and bare_requires_pressed then
+		add_action_requirement(state, node.action_index, requirement_pressed)
+	end
 	for index = 1, #specs do
 		add_action_requirement(state, node.action_index, modifier_requirement[specs[index].kind])
+	end
+	if not node.has_consume_mod then
+		add_action_requirement(state, node.action_index, requirement_consumed)
 	end
 	statements[#statements + 1] = assignment_statement(
 		identifier('state'),

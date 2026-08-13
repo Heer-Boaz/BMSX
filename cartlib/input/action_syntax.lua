@@ -1,5 +1,7 @@
 local action_syntax<const> = {}
 
+action_syntax.no_edge_delta = 0x7fffffff
+
 action_syntax.modifier_kind = {
 	pressed = 1,
 	released = 2,
@@ -61,8 +63,19 @@ action_syntax.edge = {
 }
 
 action_syntax.evaluation_requirement = {
-	guard = 0x01,
-	repeat_state = 0x02,
+	pressed = 0x0001,
+	just_pressed = 0x0002,
+	just_released = 0x0004,
+	all_just_pressed = 0x0008,
+	all_just_released = 0x0010,
+	consumed = 0x0020,
+	press_time = 0x0040,
+	value_q16 = 0x0080,
+	vector_q16 = 0x0100,
+	press_delta = 0x0200,
+	release_delta = 0x0400,
+	guarded_just_pressed = 0x0800,
+	repeat_state = 0x1000,
 }
 
 return action_syntax
