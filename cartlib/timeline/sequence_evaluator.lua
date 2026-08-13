@@ -162,7 +162,6 @@ function sequence_evaluator.init_entry(entry)
 		active_clips = {},
 		active_count = 0,
 		candidates = {},
-		candidate_marks = {},
 		candidate_generation = 0,
 		candidate_count = 0,
 		position_tree_stack = {},
@@ -230,10 +229,11 @@ end
 
 local add_candidate<const> = function(state, clip_index)
 	local generation<const> = state.candidate_generation
-	if state.candidate_marks[clip_index] == generation then
+	local child_entry<const> = state.entries[clip_index]
+	if child_entry.active_index ~= nil or child_entry.candidate_generation == generation then
 		return
 	end
-	state.candidate_marks[clip_index] = generation
+	child_entry.candidate_generation = generation
 	local count<const> = state.candidate_count + 1
 	state.candidate_count = count
 	state.candidates[count] = clip_index
@@ -248,11 +248,8 @@ local begin_candidates<const> = function(state)
 	state.candidate_count = count
 	local active_clips<const> = state.active_clips
 	local candidates<const> = state.candidates
-	local candidate_marks<const> = state.candidate_marks
 	for index = 1, count do
-		local clip_index<const> = active_clips[index]
-		candidates[index] = clip_index
-		candidate_marks[clip_index] = generation
+		candidates[index] = active_clips[index]
 	end
 	return count
 end
