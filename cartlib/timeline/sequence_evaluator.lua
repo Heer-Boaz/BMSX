@@ -59,9 +59,14 @@ local write_frame_child_time_range<const> = function(
 	local program<const> = instance.program
 	local frame_duration<const> = program.frame_duration
 	local last_frame<const> = program.length - 1
-	local previous_frame = (previous_time_ms / frame_duration) // 1
-	if previous_frame > last_frame then
-		previous_frame = last_frame
+	-- An active child committed this frame before its preceding evaluation.
+	-- Admission alone has no retained source frame yet.
+	local previous_frame = instance.head
+	if initial then
+		previous_frame = (previous_time_ms / frame_duration) // 1
+		if previous_frame > last_frame then
+			previous_frame = last_frame
+		end
 	end
 	local frame = (time_ms / frame_duration) // 1
 	if frame > last_frame then
