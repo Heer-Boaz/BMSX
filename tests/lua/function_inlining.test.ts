@@ -247,6 +247,34 @@ return caller()
 	assert.match(callerDisassembly, /\bCALL\b/);
 });
 
+test('O3 compacts captures eliminated by inlining and remaps nested closure captures', () => {
+	const source = `
+local identity<const> = function(value)
+	return value
+end
+local retained = 20
+local outer<const> = function()
+	identity(2)
+	return function()
+		return retained
+	end
+end
+local nested<const> = outer()
+return nested()
+`;
+	const compiled = compileLuaSource(source, INLINE_TEST_PATH, 3);
+	const outerProtoIndex = compiled.metadata.protoIds.findIndex(id => id.endsWith('/local:outer'));
+	const outerProtoId = compiled.metadata.protoIds[outerProtoIndex];
+	const nestedProtoIndex = compiled.metadata.protoIds.findIndex(id => id.startsWith(`${outerProtoId}/anon:`));
+	const nestedParentCapture = compiled.program.protos[nestedProtoIndex].upvalueDescs.find(desc => !desc.inStack)!;
+
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [20]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [20]);
+	assert.deepEqual(compiled.metadata.upvalueNamesByProto[outerProtoIndex], ['retained']);
+	assert.equal(compiled.program.protos[outerProtoIndex].upvalueDescs.length, 1);
+	assert.equal(nestedParentCapture.index, 0);
+});
+
 test('a nested closure write invalidates a mutable local call target', () => {
 	const source = `
 local current = function()

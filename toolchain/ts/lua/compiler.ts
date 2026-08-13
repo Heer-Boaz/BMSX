@@ -61,6 +61,7 @@ import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import { computeMaxRegister } from './compiler/optimizer/instructions';
+import { compactUnusedUpvalues } from './compiler/optimizer/upvalues';
 import {
 	buildModuleCompileContext,
 	type ConstExportValue,
@@ -1858,6 +1859,12 @@ class FunctionBuilder {
 			if (optimized.inlineLocalSlots !== undefined) {
 				this.localDebugSlots.push(...optimized.inlineLocalSlots);
 			}
+			compactUnusedUpvalues(
+				this.code,
+				this.upvalueDescs,
+				this.upvalueNames,
+				(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
+			);
 			this.maxStack = Math.max(this.maxStack, computeMaxRegister(this.code) + 1);
 		}
 		const instructions = this.code;
