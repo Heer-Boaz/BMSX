@@ -482,7 +482,7 @@ end
 function sequence_evaluator.bind_play(program)
 	local sequence<const> = program.subsequences
 	local duration_ms<const> = program.duration_ms
-	return function(entry, owner, previous_frame, previous_time_ms, time_ms, direction, flags)
+	return function(entry, owner, previous_time_ms, time_ms, direction, flags)
 		if flags & wrapped_flag ~= 0 then
 			if direction > 0 then
 				evaluate_play_range(
@@ -515,7 +515,7 @@ function sequence_evaluator.bind_play(program)
 			owner,
 			previous_time_ms,
 			time_ms,
-			flags & initial_flag ~= 0 or previous_frame < 0
+			flags & initial_flag ~= 0
 		)
 	end
 end

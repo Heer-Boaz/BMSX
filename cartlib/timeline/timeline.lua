@@ -17,8 +17,11 @@ local evaluation_flag<const> = timeline_playback.evaluation_flag
 local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
+-- Traversal publishes initial state once at this boundary. Evaluators consume
+-- the bit directly instead of rediscovering it from the frame sentinel.
 local sample_range_flags<const> = sample_flag | boundary_none
-local loop_range_flags<const> = sample_flag | wrapped_flag | boundary_loop
+local initial_sample_range_flags<const> = sample_range_flags | initial_flag
+local loop_boundary_flags<const> = wrapped_flag | boundary_loop
 local play_update_method<const> = update_method.play
 local jump_update_method<const> = update_method.jump
 local scrub_update_method<const> = update_method.scrub
@@ -73,8 +76,9 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
+	local initial<const> = previous_frame == timelinestart_index
 	local traversal_direction<const> = program.playback_mode == playback_pingpong and self.direction or 1
-	local current_frame = previous_frame + (previous_frame == timelinestart_index and 1 or traversal_direction)
+	local current_frame = previous_frame + (initial and 1 or traversal_direction)
 	local sample = true
 	local at_boundary = false
 	local boundary = boundary_none
@@ -110,7 +114,7 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 		return nil
 	end
 	local time_ms
-	if previous_frame == timelinestart_index or wrapped then
+	if initial or wrapped then
 		time_ms = 0
 	elseif at_boundary and program.playback_mode ~= playback_pingpong then
 		time_ms = program.duration_ms
@@ -132,6 +136,9 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 		flags = flags | wrapped_flag
 		self.wrapped = true
 	end
+	if initial then
+		flags = flags | initial_flag
+	end
 	program.evaluate_play(
 		entry,
 		owner,
@@ -149,9 +156,11 @@ local update_continuous_unbounded<const> = function(self, entry, owner, delta_ti
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local frame = previous_frame
+	local flags = sample_range_flags
 	if frame < 0 then
 		frame = 0
 		self.head = frame
+		flags = initial_sample_range_flags
 	end
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
@@ -165,7 +174,7 @@ local update_continuous_unbounded<const> = function(self, entry, owner, delta_ti
 		previous_time_ms,
 		time_ms,
 		direction,
-		sample_range_flags
+		flags
 	)
 end
 
@@ -173,9 +182,11 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local frame = previous_frame
+	local flags = sample_range_flags
 	if frame < 0 then
 		frame = 0
 		self.head = frame
+		flags = initial_sample_range_flags
 	end
 	local previous_time_ms<const> = self.position_ms
 	local duration_ms<const> = self.program.duration_ms
@@ -194,7 +205,7 @@ local update_continuous_once<const> = function(self, entry, owner, delta_time)
 		previous_time_ms,
 		time_ms,
 		1,
-		sample_range_flags
+		flags
 	)
 	return ended
 end
@@ -203,9 +214,11 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 	self.wrapped = false
 	local previous_frame = self.head
 	local frame = previous_frame
+	local flags = sample_range_flags
 	if frame < 0 then
 		frame = 0
 		self.head = frame
+		flags = initial_sample_range_flags
 	end
 	local previous_time_ms = self.position_ms
 	local duration_ms<const> = self.program.duration_ms
@@ -222,12 +235,13 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 			previous_time_ms,
 			0,
 			1,
-			loop_range_flags
+			flags | loop_boundary_flags
 		)
 		self.wrapped = true
 		evaluated = true
 		previous_frame = frame
 		previous_time_ms = 0
+		flags = sample_range_flags
 	end
 	if remaining > 0 or not evaluated then
 		local time_ms<const> = previous_time_ms + remaining
@@ -239,7 +253,7 @@ local update_continuous_loop<const> = function(self, entry, owner, delta_time)
 			previous_time_ms,
 			time_ms,
 			1,
-			sample_range_flags
+			flags
 		)
 		previous_time_ms = time_ms
 	end
@@ -250,9 +264,11 @@ local update_continuous_pingpong<const> = function(self, entry, owner, delta_tim
 	self.wrapped = false
 	local previous_frame = self.head
 	local frame = previous_frame
+	local flags = sample_flag
 	if frame < 0 then
 		frame = 0
 		self.head = frame
+		flags = initial_sample_range_flags
 	end
 	local previous_time_ms = self.position_ms
 	local duration_ms<const> = self.program.duration_ms
@@ -289,10 +305,11 @@ local update_continuous_pingpong<const> = function(self, entry, owner, delta_tim
 			previous_time_ms,
 			time_ms,
 			direction,
-			sample_flag | boundary
+			flags | boundary
 		)
 		previous_frame = frame
 		previous_time_ms = time_ms
+		flags = sample_flag
 	end
 	self.position_ms = previous_time_ms
 end
@@ -394,6 +411,10 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 	end
 	local previous_time_ms<const> = self.position_ms
 	local time_ms<const> = current_frame * program.frame_duration
+	local flags = sample_range_flags
+	if previous_frame == timelinestart_index then
+		flags = initial_sample_range_flags
+	end
 	self.head = current_frame
 	self.frame_elapsed = 0
 	self.position_ms = time_ms
@@ -406,7 +427,7 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 		previous_time_ms,
 		time_ms,
 		direction,
-		sample_range_flags
+		flags
 	)
 	return self
 end
@@ -426,6 +447,10 @@ local move_time<const> = function(self, entry, owner, requested_time_ms, evaluat
 	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
+	local flags = sample_range_flags
+	if previous_frame == timelinestart_index then
+		flags = initial_sample_range_flags
+	end
 	local time_ms
 	if program.duration_ms == nil then
 		if requested_time_ms < 0 then
@@ -467,7 +492,7 @@ local move_time<const> = function(self, entry, owner, requested_time_ms, evaluat
 		previous_time_ms,
 		time_ms,
 		direction,
-		sample_range_flags
+		flags
 	)
 	return self
 end
@@ -630,6 +655,10 @@ function timeline:snap_to_start(entry, owner)
 	self.wrapped = false
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
+	local flags = sample_range_flags
+	if previous_frame == timelinestart_index then
+		flags = initial_sample_range_flags
+	end
 	self.head = 0
 	self.frame_elapsed = 0
 	self.position_ms = 0
@@ -642,7 +671,7 @@ function timeline:snap_to_start(entry, owner)
 		previous_time_ms,
 		0,
 		1,
-		sample_range_flags
+		flags
 	)
 	return self
 end

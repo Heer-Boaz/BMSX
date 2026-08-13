@@ -280,7 +280,6 @@ local emit_value_runner<const> = function(statements, values)
 				identifier('entry'),
 				identifier('steps'),
 				identifier('params'),
-				identifier('previous_frame'),
 				identifier('previous_time_ms'),
 				identifier('time_ms'),
 				identifier('flags'),

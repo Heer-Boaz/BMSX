@@ -313,7 +313,6 @@ local emit_sequences<const> = function(statements, values, evaluator_name, updat
 			{
 				identifier('entry'),
 				identifier('owner'),
-				identifier('previous_frame'),
 				identifier('previous_time_ms'),
 				identifier('time_ms'),
 				identifier('direction'),

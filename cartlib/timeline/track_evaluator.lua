@@ -190,8 +190,6 @@ function track_evaluator.bind_events(program, method)
 			end
 		elseif flags & initial_flag ~= 0 then
 			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, true)
-		elseif previous < 0 then
-			emit_time_event_range(events.forward, owner, previous_time_ms, time_ms, 1, true)
 		else
 			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, false)
 		end
@@ -382,7 +380,9 @@ function track_evaluator.bind_play_tags(program)
 	local last_frame<const> = program.length - 1
 	local duration_ms<const> = program.duration_ms
 	return function(entry, owner, previous, current, previous_time_ms, time_ms, direction, flags)
-		if flags & initial_flag ~= 0 then
+		-- A nested clip enters at a mapped source position and must synchronize
+		-- that source. The root sentinel instead denotes the instant before zero.
+		if flags & initial_flag ~= 0 and previous >= 0 then
 			sync_tags(tags, entry, owner, previous, previous_time_ms)
 		end
 		if previous ~= current or flags & wrapped_flag ~= 0 then
@@ -538,15 +538,13 @@ local evaluate_play_time_steps<const> = function(
 	entry,
 	steps,
 	params,
-	previous_frame,
 	previous_time_ms,
 	time_ms,
 	flags,
 	evaluation
 )
 	if flags & initial_flag ~= 0
-	or flags & wrapped_flag ~= 0
-	or previous_frame < 0 then
+	or flags & wrapped_flag ~= 0 then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	elseif time_ms > previous_time_ms then
 		advance_time_step_tracks(entry, steps, time_ms, params, evaluation)
@@ -559,7 +557,6 @@ local evaluate_position_time_steps<const> = function(
 	entry,
 	steps,
 	params,
-	_previous_frame,
 	_previous_time_ms,
 	time_ms,
 	_flags,
