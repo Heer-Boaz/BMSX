@@ -27,18 +27,16 @@ local write_continuous_child_time_range<const> = function(
 	wrapped
 )
 	local instance<const> = entry.instance
+	local flags = boundary | sample_flag
 	if initial then
 		instance.head = 0
+		flags = flags | initial_flag
 	end
 	instance.position_ms = time_ms
 	instance.direction = direction
-	local flags = boundary | sample_flag
 	if wrapped then
 		flags = flags | wrapped_flag
 		instance.wrapped = true
-	end
-	if initial then
-		flags = flags | initial_flag
 	end
 	evaluate(
 		entry,
