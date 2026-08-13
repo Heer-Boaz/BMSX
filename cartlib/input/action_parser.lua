@@ -4,7 +4,7 @@
 -- player's resolved states into the short-circuit evaluator used at runtime.
 
 local action_syntax<const> = require('cartlib/input/action_syntax')
-local action_program_source<const> = require('cartlib/input/action_program_source')
+local action_program_syntax<const> = require('cartlib/input/action_program_syntax')
 local compile_syntax<const> = lua_compiler.compile_syntax
 
 local action_parser<const> = {}
@@ -601,7 +601,7 @@ function action_parser.compile(src)
 	local program<const> = {
 		action_names = self.action_names,
 		evaluation_factory = compile_syntax(
-			action_program_source.build(ast),
+			action_program_syntax.build(ast),
 			'[input.action]'
 		)(),
 	}

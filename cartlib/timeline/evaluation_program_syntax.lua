@@ -1,6 +1,8 @@
+-- Admission-only lowering from a cooked timeline shape to its method-specific
+-- evaluator. Playback does not branch over absent track families.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local evaluation_program_source<const> = {}
+local evaluation_program_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -382,7 +384,7 @@ local build_evaluator_declaration<const> = function(name, body)
 	)
 end
 
-function evaluation_program_source.build(values)
+function evaluation_program_syntax.build(values)
 	local statements<const> = build_dependency_captures(values)
 	local factory_body<const> = build_program_captures(values)
 	factory_body[#factory_body + 1] = build_evaluator_declaration(
@@ -430,4 +432,4 @@ function evaluation_program_source.build(values)
 	return syntax_factory.chunk(block(statements))
 end
 
-return evaluation_program_source
+return evaluation_program_syntax

@@ -1,6 +1,8 @@
+-- Admission-only lowering from scalar channel shape to canonical firmware
+-- syntax. The generated runner owns the 50 Hz sampling loops.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local scalar_channel_source<const> = {}
+local scalar_channel_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -376,7 +378,7 @@ local emit_time_lane<const> = function(statements, channels, analysis)
 	emit_tracks(statements, 'cubic_time_tracks', channels.cubic_time_tracks, 'time_ms', true)
 end
 
-function scalar_channel_source.build(channels, analysis, sample_flag)
+function scalar_channel_syntax.build(channels, analysis, sample_flag)
 	local evaluator_body<const> = {}
 	emit_locals(
 		evaluator_body,
@@ -413,4 +415,4 @@ function scalar_channel_source.build(channels, analysis, sample_flag)
 	}))
 end
 
-return scalar_channel_source
+return scalar_channel_syntax

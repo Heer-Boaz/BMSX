@@ -1,6 +1,8 @@
+-- Admission-only lowering from resolved action effects to canonical firmware
+-- syntax. Effect dispatch does not inspect authored effect records.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local evaluation_program_source<const> = {}
+local evaluation_program_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -29,7 +31,7 @@ local effect_kind<const> = {
 	gameplay = 3,
 	command = 4,
 }
-evaluation_program_source.effect_kind = effect_kind
+evaluation_program_syntax.effect_kind = effect_kind
 
 local operand_expression<const> = function(index)
 	if index == 0 then
@@ -423,7 +425,7 @@ local emit_event_flush<const> = function(statements)
 	)
 end
 
-function evaluation_program_source.build(program, effect_program, player_index)
+function evaluation_program_syntax.build(program, effect_program, player_index)
 	local values<const> = {
 		program = program,
 		bindings = program.bindings,
@@ -497,4 +499,4 @@ function evaluation_program_source.build(program, effect_program, player_index)
 	return syntax_factory.chunk(block(statements))
 end
 
-return evaluation_program_source
+return evaluation_program_syntax

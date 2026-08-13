@@ -2,7 +2,7 @@ local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
-local evaluation_program_source<const> = require('cartlib/timeline/evaluation_program_source')
+local evaluation_program_syntax<const> = require('cartlib/timeline/evaluation_program_syntax')
 
 local evaluation_program<const> = {}
 local compile_syntax<const> = lua_compiler.compile_syntax
@@ -98,7 +98,7 @@ function evaluation_program.compile(program)
 	if has_scrub_events then
 		scrub_evaluator = 'scrub'
 	end
-	local syntax_tree<const> = evaluation_program_source.build({
+	local syntax_tree<const> = evaluation_program_syntax.build({
 		has_values = has_values,
 		has_position_values = has_position_values,
 		has_tags = has_tags,

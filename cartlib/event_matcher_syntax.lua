@@ -1,6 +1,8 @@
+-- Admission-only lowering from matcher definitions to canonical firmware
+-- syntax. Event dispatch executes only the compiled predicate.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local event_matcher_source<const> = {}
+local event_matcher_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -133,7 +135,7 @@ build_matcher = function(state, matcher)
 	return expression
 end
 
-function event_matcher_source.build(matcher)
+function event_matcher_syntax.build(matcher)
 	local state<const> = {
 		operands = {},
 		uses_payload_fields = false,
@@ -177,4 +179,4 @@ function event_matcher_source.build(matcher)
 	return syntax_factory.chunk(block(statements)), state
 end
 
-return event_matcher_source
+return event_matcher_syntax

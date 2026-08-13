@@ -1,5 +1,5 @@
 local timeline_apply<const> = {}
-local apply_source<const> = require('cartlib/timeline/apply_source')
+local apply_syntax<const> = require('cartlib/timeline/apply_syntax')
 local compile_syntax<const> = lua_compiler.compile_syntax
 
 local nested_shape<const> = {}
@@ -51,7 +51,7 @@ function timeline_apply.compile_frames(frames)
 			apply_frame = shape[complete_shape]
 			if apply_frame == nil then
 				apply_frame = compile_syntax(
-					apply_source.build_frame(frame),
+					apply_syntax.build_frame(frame),
 					'[timeline.apply.frame]'
 				)()
 				shape[complete_shape] = apply_frame
@@ -78,7 +78,7 @@ function timeline_apply.compile_step_apply(path, apply, binding_index)
 	end
 
 	return compile_syntax(
-		apply_source.build_step(path, binding_index),
+		apply_syntax.build_step(path, binding_index),
 		'[timeline.apply.step]'
 	)()
 end

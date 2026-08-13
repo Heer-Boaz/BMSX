@@ -1,6 +1,8 @@
+-- Admission-only lowering for frame-shape and property-path appliers. Timeline
+-- sampling executes only the compiled assignments.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local apply_source<const> = {}
+local apply_syntax<const> = {}
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
 local numeric_literal<const> = syntax_factory.number_literal
@@ -28,7 +30,7 @@ collect_frame_assignments = function(statements, node, path)
 	end
 end
 
-function apply_source.build_frame(frame)
+function apply_syntax.build_frame(frame)
 	local body<const> = {}
 	collect_frame_assignments(body, frame, {})
 	return syntax_factory.chunk(block({
@@ -41,7 +43,7 @@ function apply_source.build_frame(frame)
 	}))
 end
 
-function apply_source.build_step(path, binding_index)
+function apply_syntax.build_step(path, binding_index)
 	local binding = member_expression(identifier('entry'), 'primary_binding')
 	if binding_index ~= 1 then
 		binding = index_expression(
@@ -64,4 +66,4 @@ function apply_source.build_step(path, binding_index)
 	}))
 end
 
-return apply_source
+return apply_syntax

@@ -5,7 +5,7 @@
 -- each shared key carries an exclusive segment end, so evaluation only
 -- searches again when traversal leaves that range. Generic step values remain
 -- track-program data because they may carry non-numeric cart values.
-local scalar_channel_source<const> = require('cartlib/timeline/scalar_channel_source')
+local scalar_channel_syntax<const> = require('cartlib/timeline/scalar_channel_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local scalar_channel<const> = {}
@@ -82,7 +82,7 @@ local compile_runner_factory<const> = function(channels)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
 	return compile_syntax(
-		scalar_channel_source.build(channels, analysis, sample_flag),
+		scalar_channel_syntax.build(channels, analysis, sample_flag),
 		'[timeline.scalar_channel]'
 	)(), analysis.cached_segment_count
 end

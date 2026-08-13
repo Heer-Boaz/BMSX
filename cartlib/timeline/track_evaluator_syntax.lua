@@ -1,6 +1,8 @@
+-- Admission-only lowering from cooked track capabilities to canonical firmware
+-- syntax. Runtime evaluation contains only the selected traversal phases.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local track_evaluator_source<const> = {}
+local track_evaluator_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -298,7 +300,7 @@ local emit_value_runner<const> = function(statements, values)
 	emit_sample(statements, values)
 end
 
-function track_evaluator_source.build(values)
+function track_evaluator_syntax.build(values)
 	local statements<const> = {}
 	emit_dependency_captures(statements, values)
 	emit_sample_track_captures(statements, values.sample_tracks)
@@ -341,4 +343,4 @@ function track_evaluator_source.build(values)
 	return syntax_factory.chunk(block(statements))
 end
 
-return track_evaluator_source
+return track_evaluator_syntax

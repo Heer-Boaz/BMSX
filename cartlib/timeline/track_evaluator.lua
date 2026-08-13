@@ -2,7 +2,7 @@
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
 local easing<const> = require('cartlib/easing')
-local track_evaluator_source<const> = require('cartlib/timeline/track_evaluator_source')
+local track_evaluator_syntax<const> = require('cartlib/timeline/track_evaluator_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local track_evaluator<const> = {}
@@ -579,7 +579,7 @@ function track_evaluator.compile_values(program)
 		end
 	end
 	local factory<const> = compile_syntax(
-		track_evaluator_source.build({
+		track_evaluator_syntax.build({
 			has_frame_steps = has_frame_steps,
 			has_time_steps = has_time_steps,
 			has_scalar_channels = has_scalar_channels,

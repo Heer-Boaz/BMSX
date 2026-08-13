@@ -1,7 +1,9 @@
+-- Admission-only lowering from the action expression tree to canonical
+-- firmware syntax. Per-frame input evaluation executes the compiled closure.
 local action_syntax<const> = require('cartlib/input/action_syntax')
 local syntax_factory<const> = lua_compiler.syntax_factory
 
-local action_program_source<const> = {}
+local action_program_syntax<const> = {}
 local modifier_kind<const> = action_syntax.modifier_kind
 local node_kind<const> = action_syntax.node_kind
 local function_kind<const> = action_syntax.function_kind
@@ -497,7 +499,7 @@ emit_evaluation = function(statements, state, node, target_name, window)
 	end
 end
 
-function action_program_source.build(ast)
+function action_program_syntax.build(ast)
 	local state<const> = { uses_state = false, uses_edge = false }
 	local evaluation_body<const> = {}
 	emit_evaluation(evaluation_body, state, ast, 'result', nil)
@@ -548,4 +550,4 @@ function action_program_source.build(ast)
 	}))
 end
 
-return action_program_source
+return action_program_syntax
