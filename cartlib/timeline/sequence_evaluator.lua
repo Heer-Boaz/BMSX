@@ -15,7 +15,44 @@ local jump_update_method<const> = timeline_playback.update_method.jump
 -- independently ticking timeline-component entries.
 local sequence_evaluator<const> = {}
 
-local write_child_time_range<const> = function(
+local write_continuous_child_time_range<const> = function(
+	entry,
+	owner,
+	previous_time_ms,
+	time_ms,
+	evaluate,
+	direction,
+	initial,
+	boundary,
+	wrapped
+)
+	local instance<const> = entry.instance
+	if initial then
+		instance.head = 0
+	end
+	instance.position_ms = time_ms
+	instance.direction = direction
+	local flags = boundary | sample_flag
+	if wrapped then
+		flags = flags | wrapped_flag
+		instance.wrapped = true
+	end
+	if initial then
+		flags = flags | initial_flag
+	end
+	evaluate(
+		entry,
+		owner,
+		0,
+		0,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+end
+
+local write_frame_child_time_range<const> = function(
 	entry,
 	owner,
 	previous_time_ms,
@@ -28,37 +65,22 @@ local write_child_time_range<const> = function(
 )
 	local instance<const> = entry.instance
 	local program<const> = instance.program
-	local previous_frame
-	local frame
-	local sample
-	-- A continuous child has one fixed frame. Admission publishes that frame;
-	-- subsequent ranges advance only its time-domain state.
-	if program.continuous then
-		previous_frame = 0
-		frame = 0
-		sample = true
-		if initial then
-			instance.head = 0
-		end
-	else
-		local frame_duration<const> = program.frame_duration
-		local last_frame<const> = program.length - 1
-		previous_frame = (previous_time_ms / frame_duration) // 1
-		if previous_frame > last_frame then
-			previous_frame = last_frame
-		end
-		frame = (time_ms / frame_duration) // 1
-		if frame > last_frame then
-			frame = last_frame
-		end
-		sample = initial or frame ~= previous_frame
-		instance.head = frame
-		instance.frame_elapsed = time_ms - frame * frame_duration
+	local frame_duration<const> = program.frame_duration
+	local last_frame<const> = program.length - 1
+	local previous_frame = (previous_time_ms / frame_duration) // 1
+	if previous_frame > last_frame then
+		previous_frame = last_frame
 	end
+	local frame = (time_ms / frame_duration) // 1
+	if frame > last_frame then
+		frame = last_frame
+	end
+	instance.head = frame
+	instance.frame_elapsed = time_ms - frame * frame_duration
 	instance.position_ms = time_ms
 	instance.direction = direction
 	local flags = boundary
-	if sample then
+	if initial or frame ~= previous_frame then
 		flags = flags | sample_flag
 	end
 	if wrapped then
@@ -228,6 +250,11 @@ function sequence_evaluator.init_entry(entry)
 			clip = clip,
 			duration_ms = child_program.duration_ms,
 		}
+		if child_program.continuous then
+			child_entry.write_time_range = write_continuous_child_time_range
+		else
+			child_entry.write_time_range = write_frame_child_time_range
+		end
 		if child_program.has_evaluation_callbacks or clip.on_loop ~= nil or clip.on_turn ~= nil then
 			child_entry.evaluation_context = {}
 		end
@@ -259,6 +286,11 @@ function sequence_evaluator.bind_entry(entry, owner)
 			local child_program<const> = timeline_frame_program.build(clip.program, child_entry.params)
 			child_entry.instance:rebind_program(child_program)
 			child_entry.duration_ms = child_program.duration_ms
+			if child_program.continuous then
+				child_entry.write_time_range = write_continuous_child_time_range
+			else
+				child_entry.write_time_range = write_frame_child_time_range
+			end
 			child_entry.instance:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
@@ -345,7 +377,7 @@ local process_position_clip<const> = function(
 		initial,
 		child_entry,
 		owner,
-		write_child_time_range
+		child_entry.write_time_range
 	)
 	instance.ended = false
 	if destination_active then
@@ -463,7 +495,7 @@ local evaluate_play_range<const> = function(
 			child_entry,
 			owner,
 			child_timeline.program.evaluate_play,
-			write_child_time_range
+			child_entry.write_time_range
 		)
 		if destination_active then
 			if clip_initial then
