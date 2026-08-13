@@ -3,9 +3,9 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local evaluation_program_source<const> = require('cartlib/timeline/evaluation_program_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
 
 local evaluation_program<const> = {}
+local compile_syntax<const> = lua_compiler.compile_syntax
 local update_method<const> = timeline_playback.update_method
 local play_method<const> = update_method.play
 local jump_method<const> = update_method.jump
@@ -116,10 +116,9 @@ function evaluation_program.compile(program)
 		scrub_method = scrub_method,
 		sample_flag = sample_flag,
 	})
-	local compiled_factory<const> = load(
-		lua_syntax_printer.print(syntax_tree),
+	local compiled_factory<const> = compile_syntax(
+		syntax_tree,
 		'[timeline.evaluation_program]',
-		't',
 		evaluation_environment
 	)()
 	evaluation_factory_by_shape[shape] = compiled_factory

@@ -1,267 +1,79 @@
-local lua_syntax<const> = require('cartlib/codegen/lua_syntax')
+local syntax_factory<const> = lua_compiler.syntax_factory
 
 local evaluation_program_source<const> = {}
-local binary_operator<const> = lua_syntax.binary_operator
-local identifier<const> = lua_syntax.identifier
-local numeric_literal<const> = lua_syntax.numeric_literal
-local member_expression<const> = lua_syntax.member_expression
-local call_expression<const> = lua_syntax.call_expression
-local binary_expression<const> = lua_syntax.binary_expression
-local function_expression<const> = lua_syntax.function_expression
-local local_declaration_statement<const> = lua_syntax.local_declaration_statement
-local call_statement<const> = lua_syntax.call_statement
-local if_statement<const> = lua_syntax.if_statement
-local return_statement<const> = lua_syntax.return_statement
+local syntax<const> = syntax_factory.syntax
+local block<const> = syntax_factory.block
+local identifier<const> = syntax_factory.identifier
+local numeric_literal<const> = syntax_factory.number_literal
+local member_expression<const> = syntax_factory.member_expression
+local index_expression<const> = syntax_factory.index_expression
+local call_expression<const> = syntax_factory.call_expression
+local binary_expression<const> = syntax_factory.binary_expression
+local function_expression<const> = syntax_factory.function_expression
+local local_statement<const> = syntax_factory.local_statement
+local call_statement<const> = syntax_factory.call_statement
+local if_clause<const> = syntax_factory.if_clause
+local if_statement<const> = syntax_factory.if_statement
+local return_statement<const> = syntax_factory.return_statement
 
-local entry<const> = identifier('entry')
-local owner<const> = identifier('owner')
-local program<const> = identifier('program')
-local previous_frame<const> = identifier('previous_frame')
-local frame<const> = identifier('frame')
-local previous_time_ms<const> = identifier('previous_time_ms')
-local time_ms<const> = identifier('time_ms')
-local direction<const> = identifier('direction')
-local flags<const> = identifier('flags')
-local evaluation<const> = identifier('evaluation')
-local entry_primary_binding<const> = member_expression(entry, 'primary_binding')
-local source_statement<const> = {}
-local evaluator_parameters<const> = {
-	'entry',
-	'owner',
-	'previous_frame',
-	'frame',
-	'previous_time_ms',
-	'time_ms',
-	'direction',
-	'flags',
-}
-
-local tag_dependency_captures<const> = {
-	local_declaration_statement({ 'bind_play_tags' }, { identifier('bind_play_tags') }, true),
-	local_declaration_statement({ 'bind_position_tags' }, { identifier('bind_position_tags') }, true),
-}
-
-local sequence_dependency_captures<const> = {
-	local_declaration_statement({ 'bind_play_sequences' }, { identifier('bind_play_sequences') }, true),
-	local_declaration_statement({ 'bind_position_sequences' }, { identifier('bind_position_sequences') }, true),
-}
-
-source_statement.event_dependency_capture = local_declaration_statement(
-	{ 'bind_events' },
-	{ identifier('bind_events') },
-	true
-)
-
-source_statement.context_dependency_capture = local_declaration_statement(
-	{ 'write_evaluation_context' },
-	{ identifier('write_evaluation_context') },
-	true
-)
-
-source_statement.frame_value_dependency_capture = local_declaration_statement(
-	{ 'frame_value' },
-	{ identifier('frame_value') },
-	true
-)
-
-source_statement.play_value_runner_capture = local_declaration_statement(
-	{ 'play_value_runner' },
-	{ member_expression(member_expression(program, 'tracks'), 'play_value_runner') },
-	true
-)
-
-source_statement.position_value_runner_capture = local_declaration_statement(
-	{ 'position_value_runner' },
-	{ member_expression(member_expression(program, 'tracks'), 'position_value_runner') },
-	true
-)
-
-source_statement.apply_function_capture = local_declaration_statement(
-	{ 'apply_function' },
-	{ member_expression(program, 'apply_function') },
-	true
-)
-
-source_statement.frame_appliers_capture = local_declaration_statement(
-	{ 'frame_appliers' },
-	{ member_expression(program, 'frame_appliers') },
-	true
-)
-
-local tag_bindings<const> = {
-	local_declaration_statement(
-		{ 'evaluate_play_tags' },
-		{ call_expression(identifier('bind_play_tags'), { program }) },
-		true
-	),
-	local_declaration_statement(
-		{ 'evaluate_position_tags' },
-		{ call_expression(identifier('bind_position_tags'), { program }) },
-		true
-	),
-}
-
-source_statement.play_tags = call_statement(call_expression(identifier('evaluate_play_tags'), {
-	entry,
-	owner,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.position_tags = call_statement(call_expression(identifier('evaluate_position_tags'), {
-	entry,
-	owner,
-	frame,
-	time_ms,
-}))
-
-source_statement.play_values = call_statement(call_expression(identifier('play_value_runner'), {
-	entry,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.play_values_with_context = call_statement(call_expression(identifier('play_value_runner'), {
-	entry,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-	evaluation,
-}))
-
-source_statement.position_values = call_statement(call_expression(identifier('position_value_runner'), {
-	entry,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.position_values_with_context = call_statement(call_expression(identifier('position_value_runner'), {
-	entry,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-	evaluation,
-}))
-
-source_statement.apply_function = call_statement(call_expression(identifier('apply_function'), {
-	entry_primary_binding,
-	member_expression(evaluation, 'value'),
-	member_expression(entry, 'params'),
-	evaluation,
-}))
-
-source_statement.frame_appliers = call_statement(call_expression(
-	lua_syntax.index_expression(
-		identifier('frame_appliers'),
-		binary_expression(binary_operator.add, frame, numeric_literal(1))
-	),
-	{
-		entry_primary_binding,
-		call_expression(identifier('frame_value'), { program, frame }),
+local evaluator_parameters<const> = function()
+	return {
+		identifier('entry'),
+		identifier('owner'),
+		identifier('previous_frame'),
+		identifier('frame'),
+		identifier('previous_time_ms'),
+		identifier('time_ms'),
+		identifier('direction'),
+		identifier('flags'),
 	}
-))
-
-source_statement.frame_appliers_with_context = call_statement(call_expression(
-	lua_syntax.index_expression(
-		identifier('frame_appliers'),
-		binary_expression(binary_operator.add, frame, numeric_literal(1))
-	),
-	{ entry_primary_binding, member_expression(evaluation, 'value') }
-))
-
-source_statement.play_sequences = call_statement(call_expression(identifier('evaluate_play_sequences'), {
-	entry,
-	owner,
-	previous_frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.jump_sequences = call_statement(call_expression(identifier('evaluate_jump_sequences'), {
-	entry,
-	owner,
-	previous_time_ms,
-	time_ms,
-}))
-
-source_statement.scrub_sequences = call_statement(call_expression(identifier('evaluate_scrub_sequences'), {
-	entry,
-	owner,
-	previous_time_ms,
-	time_ms,
-}))
-
-source_statement.play_events = call_statement(call_expression(identifier('emit_play_events'), {
-	owner,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.jump_events = call_statement(call_expression(identifier('emit_jump_events'), {
-	owner,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-source_statement.scrub_events = call_statement(call_expression(identifier('emit_scrub_events'), {
-	owner,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	direction,
-	flags,
-}))
-
-local append_statements<const> = function(target, source)
-	for index = 1, #source do
-		target[#target + 1] = source[index]
-	end
 end
 
 local build_dependency_captures<const> = function(values)
 	local statements<const> = {}
 	if values.has_tags then
-		append_statements(statements, tag_dependency_captures)
+		statements[#statements + 1] = local_statement(
+			identifier('bind_play_tags'),
+			identifier('bind_play_tags'),
+			true
+		)
+		statements[#statements + 1] = local_statement(
+			identifier('bind_position_tags'),
+			identifier('bind_position_tags'),
+			true
+		)
 	end
 	if values.has_subsequences then
-		append_statements(statements, sequence_dependency_captures)
+		statements[#statements + 1] = local_statement(
+			identifier('bind_play_sequences'),
+			identifier('bind_play_sequences'),
+			true
+		)
+		statements[#statements + 1] = local_statement(
+			identifier('bind_position_sequences'),
+			identifier('bind_position_sequences'),
+			true
+		)
 	end
 	if values.has_play_events or values.has_seek_events or values.has_scrub_events then
-		statements[#statements + 1] = source_statement.event_dependency_capture
+		statements[#statements + 1] = local_statement(
+			identifier('bind_events'),
+			identifier('bind_events'),
+			true
+		)
 	end
 	if values.has_evaluation_context then
-		statements[#statements + 1] = source_statement.context_dependency_capture
+		statements[#statements + 1] = local_statement(
+			identifier('write_evaluation_context'),
+			identifier('write_evaluation_context'),
+			true
+		)
 	elseif values.has_frame_appliers then
-		statements[#statements + 1] = source_statement.frame_value_dependency_capture
+		statements[#statements + 1] = local_statement(
+			identifier('frame_value'),
+			identifier('frame_value'),
+			true
+		)
 	end
 	return statements
 end
@@ -269,156 +81,303 @@ end
 local build_program_captures<const> = function(values)
 	local statements<const> = {}
 	if values.has_values then
-		statements[#statements + 1] = source_statement.play_value_runner_capture
+		statements[#statements + 1] = local_statement(
+			identifier('play_value_runner'),
+			member_expression(
+				member_expression(identifier('program'), 'tracks'),
+				'play_value_runner'
+			),
+			true
+		)
 		if values.has_position_values then
-			statements[#statements + 1] = source_statement.position_value_runner_capture
+			statements[#statements + 1] = local_statement(
+				identifier('position_value_runner'),
+				member_expression(
+					member_expression(identifier('program'), 'tracks'),
+					'position_value_runner'
+				),
+				true
+			)
 		end
 	end
 	if values.has_apply_function then
-		statements[#statements + 1] = source_statement.apply_function_capture
+		statements[#statements + 1] = local_statement(
+			identifier('apply_function'),
+			member_expression(identifier('program'), 'apply_function'),
+			true
+		)
 	end
 	if values.has_frame_appliers then
-		statements[#statements + 1] = source_statement.frame_appliers_capture
+		statements[#statements + 1] = local_statement(
+			identifier('frame_appliers'),
+			member_expression(identifier('program'), 'frame_appliers'),
+			true
+		)
 	end
 	if values.has_tags then
-		append_statements(statements, tag_bindings)
+		statements[#statements + 1] = local_statement(
+			identifier('evaluate_play_tags'),
+			call_expression(identifier('bind_play_tags'), { identifier('program') }),
+			true
+		)
+		statements[#statements + 1] = local_statement(
+			identifier('evaluate_position_tags'),
+			call_expression(identifier('bind_position_tags'), { identifier('program') }),
+			true
+		)
 	end
 	if values.has_play_events then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'emit_play_events' },
-			{ call_expression(identifier('bind_events'), { program, numeric_literal(values.play_method) }) },
+		statements[#statements + 1] = local_statement(
+			identifier('emit_play_events'),
+			call_expression(identifier('bind_events'), {
+				identifier('program'),
+				numeric_literal(values.play_method),
+			}),
 			true
 		)
 	end
 	if values.has_seek_events then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'emit_jump_events' },
-			{ call_expression(identifier('bind_events'), { program, numeric_literal(values.jump_method) }) },
+		statements[#statements + 1] = local_statement(
+			identifier('emit_jump_events'),
+			call_expression(identifier('bind_events'), {
+				identifier('program'),
+				numeric_literal(values.jump_method),
+			}),
 			true
 		)
 	end
 	if values.has_scrub_events then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'emit_scrub_events' },
-			{ call_expression(identifier('bind_events'), { program, numeric_literal(values.scrub_method) }) },
+		statements[#statements + 1] = local_statement(
+			identifier('emit_scrub_events'),
+			call_expression(identifier('bind_events'), {
+				identifier('program'),
+				numeric_literal(values.scrub_method),
+			}),
 			true
 		)
 	end
 	if values.has_subsequences then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'evaluate_play_sequences' },
-			{ call_expression(identifier('bind_play_sequences'), { program }) },
+		statements[#statements + 1] = local_statement(
+			identifier('evaluate_play_sequences'),
+			call_expression(identifier('bind_play_sequences'), { identifier('program') }),
 			true
 		)
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'evaluate_jump_sequences' },
-			{
-				call_expression(identifier('bind_position_sequences'), {
-					program,
-					numeric_literal(values.jump_method),
-				}),
-			},
+		statements[#statements + 1] = local_statement(
+			identifier('evaluate_jump_sequences'),
+			call_expression(identifier('bind_position_sequences'), {
+				identifier('program'),
+				numeric_literal(values.jump_method),
+			}),
 			true
 		)
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'evaluate_scrub_sequences' },
-			{
-				call_expression(identifier('bind_position_sequences'), {
-					program,
-					numeric_literal(values.scrub_method),
-				}),
-			},
+		statements[#statements + 1] = local_statement(
+			identifier('evaluate_scrub_sequences'),
+			call_expression(identifier('bind_position_sequences'), {
+				identifier('program'),
+				numeric_literal(values.scrub_method),
+			}),
 			true
 		)
 	end
 	return statements
+end
+
+local emit_evaluation_context<const> = function(statements, update_method)
+	statements[#statements + 1] = local_statement(
+		identifier('evaluation'),
+		call_expression(identifier('write_evaluation_context'), {
+			member_expression(identifier('entry'), 'evaluation_context'),
+			identifier('program'),
+			numeric_literal(update_method),
+			identifier('previous_frame'),
+			identifier('frame'),
+			identifier('previous_time_ms'),
+			identifier('time_ms'),
+			identifier('direction'),
+			identifier('flags'),
+		}),
+		true
+	)
+end
+
+local emit_tags<const> = function(statements, evaluator_name)
+	if evaluator_name == 'play' then
+		statements[#statements + 1] = call_statement(call_expression(
+			identifier('evaluate_play_tags'),
+			{
+				identifier('entry'),
+				identifier('owner'),
+				identifier('previous_frame'),
+				identifier('frame'),
+				identifier('previous_time_ms'),
+				identifier('time_ms'),
+				identifier('direction'),
+				identifier('flags'),
+			}
+		))
+	else
+		statements[#statements + 1] = call_statement(call_expression(
+			identifier('evaluate_position_tags'),
+			{
+				identifier('entry'),
+				identifier('owner'),
+				identifier('frame'),
+				identifier('time_ms'),
+			}
+		))
+	end
+end
+
+local emit_values<const> = function(statements, values, evaluator_name)
+	local runner_name<const> = (evaluator_name == 'play' or not values.has_position_values)
+		and 'play_value_runner'
+		or 'position_value_runner'
+	local arguments<const> = {
+		identifier('entry'),
+		identifier('previous_frame'),
+		identifier('frame'),
+		identifier('previous_time_ms'),
+		identifier('time_ms'),
+		identifier('direction'),
+		identifier('flags'),
+	}
+	if values.has_evaluation_context then
+		arguments[#arguments + 1] = identifier('evaluation')
+	end
+	statements[#statements + 1] = call_statement(call_expression(
+		identifier(runner_name),
+		arguments
+	))
+end
+
+local emit_sample<const> = function(statements, values)
+	local sample_statements<const> = {}
+	if values.has_apply_function then
+		sample_statements[#sample_statements + 1] = call_statement(call_expression(
+			identifier('apply_function'),
+			{
+				member_expression(identifier('entry'), 'primary_binding'),
+				member_expression(identifier('evaluation'), 'value'),
+				member_expression(identifier('entry'), 'params'),
+				identifier('evaluation'),
+			}
+		))
+	end
+	if values.has_frame_appliers then
+		local frame_value
+		if values.has_evaluation_context then
+			frame_value = member_expression(identifier('evaluation'), 'value')
+		else
+			frame_value = call_expression(identifier('frame_value'), {
+				identifier('program'),
+				identifier('frame'),
+			})
+		end
+		sample_statements[#sample_statements + 1] = call_statement(call_expression(
+			index_expression(
+				identifier('frame_appliers'),
+				binary_expression(
+					syntax.binary_add,
+					identifier('frame'),
+					numeric_literal(1)
+				)
+			),
+			{
+				member_expression(identifier('entry'), 'primary_binding'),
+				frame_value,
+			}
+		))
+	end
+	statements[#statements + 1] = if_statement({
+		if_clause(
+			binary_expression(
+				syntax.binary_not_equal,
+				binary_expression(
+					syntax.binary_bitwise_and,
+					identifier('flags'),
+					numeric_literal(values.sample_flag)
+				),
+				numeric_literal(0)
+			),
+			block(sample_statements)
+		),
+	})
+end
+
+local emit_sequences<const> = function(statements, values, evaluator_name, update_method)
+	if evaluator_name == 'play' then
+		statements[#statements + 1] = call_statement(call_expression(
+			identifier('evaluate_play_sequences'),
+			{
+				identifier('entry'),
+				identifier('owner'),
+				identifier('previous_frame'),
+				identifier('previous_time_ms'),
+				identifier('time_ms'),
+				identifier('direction'),
+				identifier('flags'),
+			}
+		))
+		return
+	end
+	local evaluator<const> = update_method == values.jump_method
+		and 'evaluate_jump_sequences'
+		or 'evaluate_scrub_sequences'
+	statements[#statements + 1] = call_statement(call_expression(identifier(evaluator), {
+		identifier('entry'),
+		identifier('owner'),
+		identifier('previous_time_ms'),
+		identifier('time_ms'),
+	}))
+end
+
+local emit_events<const> = function(statements, values, evaluator_name, update_method)
+	local emitter
+	if evaluator_name == 'play' and values.has_play_events then
+		emitter = 'emit_play_events'
+	elseif update_method == values.jump_method and values.has_seek_events then
+		emitter = 'emit_jump_events'
+	elseif update_method == values.scrub_method and values.has_scrub_events then
+		emitter = 'emit_scrub_events'
+	else
+		return
+	end
+	statements[#statements + 1] = call_statement(call_expression(identifier(emitter), {
+		identifier('owner'),
+		identifier('previous_frame'),
+		identifier('frame'),
+		identifier('previous_time_ms'),
+		identifier('time_ms'),
+		identifier('direction'),
+		identifier('flags'),
+	}))
 end
 
 local build_evaluator_body<const> = function(values, evaluator_name, update_method)
 	local statements<const> = {}
 	if values.has_evaluation_context then
-		statements[#statements + 1] = local_declaration_statement(
-			{ 'evaluation' },
-			{
-				call_expression(identifier('write_evaluation_context'), {
-					member_expression(entry, 'evaluation_context'),
-					program,
-					numeric_literal(update_method),
-					previous_frame,
-					frame,
-					previous_time_ms,
-					time_ms,
-					direction,
-					flags,
-				}),
-			},
-			true
-		)
+		emit_evaluation_context(statements, update_method)
 	end
 	if values.has_tags then
-		statements[#statements + 1] = evaluator_name == 'play'
-			and source_statement.play_tags
-			or source_statement.position_tags
+		emit_tags(statements, evaluator_name)
 	end
 	if values.has_values then
-		if evaluator_name == 'play' or not values.has_position_values then
-			statements[#statements + 1] = values.has_evaluation_context
-				and source_statement.play_values_with_context
-				or source_statement.play_values
-		else
-			statements[#statements + 1] = values.has_evaluation_context
-				and source_statement.position_values_with_context
-				or source_statement.position_values
-		end
+		emit_values(statements, values, evaluator_name)
 	end
 	if values.has_apply_function or values.has_frame_appliers then
-		local sample_statements<const> = {}
-		if values.has_apply_function then
-			sample_statements[#sample_statements + 1] = source_statement.apply_function
-		end
-		if values.has_frame_appliers then
-			sample_statements[#sample_statements + 1] = values.has_evaluation_context
-				and source_statement.frame_appliers_with_context
-				or source_statement.frame_appliers
-		end
-		statements[#statements + 1] = if_statement({
-			{
-				binary_expression(
-					binary_operator.not_equal,
-					binary_expression(
-						binary_operator.bitwise_and,
-						flags,
-						numeric_literal(values.sample_flag)
-					),
-					numeric_literal(0)
-				),
-				sample_statements,
-			},
-		})
+		emit_sample(statements, values)
 	end
 	if values.has_subsequences then
-		if evaluator_name == 'play' then
-			statements[#statements + 1] = source_statement.play_sequences
-		elseif update_method == values.jump_method then
-			statements[#statements + 1] = source_statement.jump_sequences
-		else
-			statements[#statements + 1] = source_statement.scrub_sequences
-		end
+		emit_sequences(statements, values, evaluator_name, update_method)
 	end
-	if evaluator_name == 'play' and values.has_play_events then
-		statements[#statements + 1] = source_statement.play_events
-	elseif update_method == values.jump_method and values.has_seek_events then
-		statements[#statements + 1] = source_statement.jump_events
-	elseif update_method == values.scrub_method and values.has_scrub_events then
-		statements[#statements + 1] = source_statement.scrub_events
-	end
+	emit_events(statements, values, evaluator_name, update_method)
 	return statements
 end
 
 local build_evaluator_declaration<const> = function(name, body)
-	return local_declaration_statement(
-		{ name },
-		{ function_expression(evaluator_parameters, body) },
+	return local_statement(
+		identifier(name),
+		function_expression(evaluator_parameters(), block(body)),
 		true
 	)
 end
@@ -431,9 +390,9 @@ function evaluation_program_source.build(values)
 		build_evaluator_body(values, 'play', values.play_method)
 	)
 	if not values.has_evaluation_context and values.jump_evaluator == 'play' then
-		factory_body[#factory_body + 1] = local_declaration_statement(
-			{ 'evaluate_jump' },
-			{ identifier('evaluate_play') },
+		factory_body[#factory_body + 1] = local_statement(
+			identifier('evaluate_jump'),
+			identifier('evaluate_play'),
 			true
 		)
 	else
@@ -443,15 +402,15 @@ function evaluation_program_source.build(values)
 		)
 	end
 	if not values.has_evaluation_context and values.scrub_evaluator == 'play' then
-		factory_body[#factory_body + 1] = local_declaration_statement(
-			{ 'evaluate_scrub' },
-			{ identifier('evaluate_play') },
+		factory_body[#factory_body + 1] = local_statement(
+			identifier('evaluate_scrub'),
+			identifier('evaluate_play'),
 			true
 		)
 	elseif not values.has_evaluation_context and values.scrub_evaluator == values.jump_evaluator then
-		factory_body[#factory_body + 1] = local_declaration_statement(
-			{ 'evaluate_scrub' },
-			{ identifier('evaluate_jump') },
+		factory_body[#factory_body + 1] = local_statement(
+			identifier('evaluate_scrub'),
+			identifier('evaluate_jump'),
 			true
 		)
 	else
@@ -466,9 +425,9 @@ function evaluation_program_source.build(values)
 		identifier('evaluate_scrub'),
 	})
 	statements[#statements + 1] = return_statement({
-		function_expression({ 'program' }, factory_body),
+		function_expression({ identifier('program') }, block(factory_body)),
 	})
-	return lua_syntax.chunk(statements)
+	return syntax_factory.chunk(block(statements))
 end
 
 return evaluation_program_source
