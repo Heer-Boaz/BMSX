@@ -536,6 +536,54 @@ local evaluate_play_once_backward<const> = function(
 	)
 end
 
+local evaluate_play_once_identity_forward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local previous_time_ms<const>, time_ms<const> = bound_once_range(
+		target,
+		previous_parent_time_ms,
+		parent_time_ms
+	)
+	target.write_time_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		target.play_evaluator,
+		1,
+		initial,
+		boundary_none
+	)
+end
+
+local evaluate_play_once_identity_backward<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local previous_time_ms<const>, time_ms<const> = bound_once_range(
+		target,
+		previous_parent_time_ms,
+		parent_time_ms
+	)
+	target.write_time_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		target.play_evaluator,
+		-1,
+		initial,
+		boundary_none
+	)
+end
+
 local evaluate_play_once_in_range_forward<const> = function(
 	target,
 	owner,
@@ -728,6 +776,11 @@ function time_transform.compile(
 	end
 	if time_scale < 0 then
 		return evaluate_play_once_backward, evaluate_play_once_forward, evaluate_position_once
+	end
+	if time_scale == 1 and time_offset_ms == 0 then
+		return evaluate_play_once_identity_forward,
+			evaluate_play_once_identity_backward,
+			evaluate_position_once
 	end
 	if time_scale == 0 then
 		return evaluate_play_once_forward, evaluate_play_once_forward, evaluate_position_once
