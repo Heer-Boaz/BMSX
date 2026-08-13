@@ -203,8 +203,9 @@ local new_action_state<const> = function(player, action)
 		min_press_delta = no_edge_delta,
 		min_release_delta = no_edge_delta,
 		evaluation_requirement_mask = 0,
-		eval_frame = -1,
-		eval_gen = -1,
+		-- Frame sampling, context changes and consumption all advance the
+		-- player's single retained cache serial.
+		evaluation_serial = -1,
 		guard_last_press_id = -1,
 		guard_last_accepted_frame = -guard_window_frames - 1,
 		guard_last_result = false,
@@ -423,7 +424,7 @@ local create_action_state<const> = function(player, action)
 end
 
 local clear_action_evaluation_state<const> = function(player)
-	player.eval_generation = player.eval_generation + 1
+	player.evaluation_serial = player.evaluation_serial + 1
 	local frame<const> = *frame_serial
 	local action_states<const> = player.action_state_list
 	for i = 1, player.action_state_count do
@@ -485,7 +486,7 @@ local new_player<const> = function(index)
 		binding_generation = 0,
 		next_press_id = 1,
 		sample_frame = -1,
-		eval_generation = 0,
+		evaluation_serial = 0,
 		expression_bindings = {},
 	}
 	push_context_record(player, {
@@ -534,6 +535,7 @@ local sample_player<const> = function(player, frame)
 		sample_value_button(player, value_states[v], frame)
 	end
 	player.sample_frame = frame
+	player.evaluation_serial = player.evaluation_serial + 1
 end
 
 local evaluate_guard<const> = function(state, frame)
@@ -607,7 +609,7 @@ local admit_action_state<const> = function(player, action, requirement_mask)
 			combined_requirement_mask,
 			action_state_environment
 		)
-		state.eval_frame = -1
+		state.evaluation_serial = -1
 	end
 	return state
 end
@@ -652,8 +654,9 @@ end
 local evaluate_action_state<const> = function(states, action_key)
 	local state<const> = states[action_key]
 	local player<const> = state.player
-	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
-		state.evaluation_runner(state, player.sample_frame, player.eval_generation)
+	local evaluation_serial<const> = player.evaluation_serial
+	if state.evaluation_serial ~= evaluation_serial then
+		state.evaluation_runner(state, player.sample_frame, evaluation_serial)
 	end
 	return state
 end
@@ -665,8 +668,9 @@ local evaluate_player_action_state<const> = function(player, action, requirement
 	if state == nil or state.evaluation_requirement_mask & requirement_mask ~= requirement_mask then
 		state = admit_action_state(player, action, requirement_mask)
 	end
-	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
-		state.evaluation_runner(state, player.sample_frame, player.eval_generation)
+	local evaluation_serial<const> = player.evaluation_serial
+	if state.evaluation_serial ~= evaluation_serial then
+		state.evaluation_runner(state, player.sample_frame, evaluation_serial)
 	end
 	return state
 end
@@ -736,7 +740,7 @@ end
 
 function input.consume(player_index, actions)
 	local player<const> = players[player_index]
-	player.eval_generation = player.eval_generation + 1
+	player.evaluation_serial = player.evaluation_serial + 1
 	if type(actions) == 'table' then
 		for i = 1, #actions do
 			consume_action(admit_action_state(player, actions[i], 0))

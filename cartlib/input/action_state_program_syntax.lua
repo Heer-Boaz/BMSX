@@ -629,12 +629,8 @@ local emit_state_writes<const> = function(statements, shape)
 		))
 	end
 	statements[#statements + 1] = assignment_statement(
-		member_expression(identifier('state'), 'eval_frame'),
-		identifier('frame')
-	)
-	statements[#statements + 1] = assignment_statement(
-		member_expression(identifier('state'), 'eval_gen'),
-		identifier('eval_gen')
+		member_expression(identifier('state'), 'evaluation_serial'),
+		identifier('evaluation_serial')
 	)
 end
 
@@ -647,7 +643,7 @@ function action_state_program_syntax.build(requirement_mask)
 	return syntax_factory.chunk(block({
 		return_statement({
 			function_expression(
-				{ identifier('state'), identifier('frame'), identifier('eval_gen') },
+				{ identifier('state'), identifier('frame'), identifier('evaluation_serial') },
 				block(body)
 			),
 		}),
