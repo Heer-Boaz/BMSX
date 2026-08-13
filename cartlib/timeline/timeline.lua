@@ -21,9 +21,6 @@ local initial_flag<const> = evaluation_flag.initial
 local sample_range_flags<const> = sample_flag | boundary_none
 local initial_sample_range_flags<const> = sample_range_flags | initial_flag
 local loop_boundary_flags<const> = wrapped_flag | boundary_loop
-local play_update_method<const> = update_method.play
-local jump_update_method<const> = update_method.jump
-local scrub_update_method<const> = update_method.scrub
 
 local timeline<const> = {}
 timeline.__index = timeline
@@ -509,125 +506,6 @@ end
 
 function timeline:scrub_time(entry, owner, time_ms)
 	return move_time(self, entry, owner, time_ms, self.program.evaluate_scrub)
-end
-
-local write_external_time_range<const> = function(
-	entry,
-	owner,
-	previous_time_ms,
-	time_ms,
-	evaluate,
-	direction,
-	initial,
-	boundary,
-	wrapped
-)
-	local self<const> = entry.instance
-	local program<const> = self.program
-	local previous_frame
-	local frame
-	local sample
-	local continuous<const> = program.continuous
-	-- A continuous child has one fixed frame. Admission publishes that frame;
-	-- subsequent external ranges advance time without rewriting discrete state.
-	if continuous then
-		previous_frame = 0
-		frame = 0
-		sample = true
-		if initial then
-			self.head = 0
-		end
-	else
-		local frame_duration<const> = program.frame_duration
-		local last_frame<const> = program.length - 1
-		previous_frame = (previous_time_ms / frame_duration) // 1
-		if previous_frame > last_frame then
-			previous_frame = last_frame
-		end
-		frame = (time_ms / frame_duration) // 1
-		if frame > last_frame then
-			frame = last_frame
-		end
-		sample = initial or frame ~= previous_frame
-		self.head = frame
-		self.frame_elapsed = time_ms - frame * frame_duration
-	end
-	self.position_ms = time_ms
-	self.direction = direction
-	local flags = boundary
-	if sample then
-		flags = flags | sample_flag
-	end
-	if wrapped then
-		flags = flags | wrapped_flag
-		self.wrapped = true
-	end
-	if initial then
-		flags = flags | initial_flag
-	end
-	evaluate(
-		entry,
-		owner,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		direction,
-		flags
-	)
-end
-
--- Play traversal emits every monotonic range produced by loop and ping-pong
--- warps. Positioning evaluates only the transformed destination range below.
-function timeline:evaluate_clip_play_range(
-	entry,
-	owner,
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	parent_direction,
-	initial
-)
-	self.wrapped = false
-	local play_transform = clip.play_forward_transform
-	if parent_direction < 0 then
-		play_transform = clip.play_backward_transform
-	end
-	play_transform(
-		clip,
-		previous_parent_time_ms,
-		parent_time_ms,
-		initial,
-		entry,
-		owner,
-		self.program.evaluate_play,
-		write_external_time_range
-	)
-	return self
-end
-
-function timeline:evaluate_clip_at(entry, owner, clip, previous_parent_time_ms, parent_time_ms, method, initial)
-	self.wrapped = false
-	local evaluate
-	if method == play_update_method then
-		evaluate = self.program.evaluate_play
-	elseif method == jump_update_method then
-		evaluate = self.program.evaluate_jump
-	else
-		evaluate = self.program.evaluate_scrub
-	end
-	clip.position_transform(
-		clip,
-		previous_parent_time_ms,
-		parent_time_ms,
-		evaluate,
-		initial,
-		entry,
-		owner,
-		write_external_time_range
-	)
-	self.ended = false
-	return self
 end
 
 function timeline:snap_to_start(entry, owner)

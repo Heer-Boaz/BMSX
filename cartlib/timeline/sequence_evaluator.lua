@@ -5,13 +5,80 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
 local evaluation_flag<const> = timeline_playback.evaluation_flag
+local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
+local jump_update_method<const> = timeline_playback.update_method.jump
 
 -- Nested clips retain child runtime entries, resolved binding slots and active
 -- interval state under their parent entry. They never become ECS systems or
 -- independently ticking timeline-component entries.
 local sequence_evaluator<const> = {}
+
+local write_child_time_range<const> = function(
+	entry,
+	owner,
+	previous_time_ms,
+	time_ms,
+	evaluate,
+	direction,
+	initial,
+	boundary,
+	wrapped
+)
+	local instance<const> = entry.instance
+	local program<const> = instance.program
+	local previous_frame
+	local frame
+	local sample
+	-- A continuous child has one fixed frame. Admission publishes that frame;
+	-- subsequent ranges advance only its time-domain state.
+	if program.continuous then
+		previous_frame = 0
+		frame = 0
+		sample = true
+		if initial then
+			instance.head = 0
+		end
+	else
+		local frame_duration<const> = program.frame_duration
+		local last_frame<const> = program.length - 1
+		previous_frame = (previous_time_ms / frame_duration) // 1
+		if previous_frame > last_frame then
+			previous_frame = last_frame
+		end
+		frame = (time_ms / frame_duration) // 1
+		if frame > last_frame then
+			frame = last_frame
+		end
+		sample = initial or frame ~= previous_frame
+		instance.head = frame
+		instance.frame_elapsed = time_ms - frame * frame_duration
+	end
+	instance.position_ms = time_ms
+	instance.direction = direction
+	local flags = boundary
+	if sample then
+		flags = flags | sample_flag
+	end
+	if wrapped then
+		flags = flags | wrapped_flag
+		instance.wrapped = true
+	end
+	if initial then
+		flags = flags | initial_flag
+	end
+	evaluate(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+end
 
 local first_start_after<const> = function(clips, count, time_ms)
 	local low = 1
@@ -264,15 +331,23 @@ local process_position_clip<const> = function(
 	if initial then
 		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
 	end
-	child_entry.instance:evaluate_clip_at(
-		child_entry,
-		owner,
+	local instance<const> = child_entry.instance
+	instance.wrapped = false
+	local evaluate = instance.program.evaluate_scrub
+	if method == jump_update_method then
+		evaluate = instance.program.evaluate_jump
+	end
+	clip.position_transform(
 		clip,
 		source_time_ms,
 		time_ms,
-		method,
-		initial
+		evaluate,
+		initial,
+		child_entry,
+		owner,
+		write_child_time_range
 	)
+	instance.ended = false
 	if destination_active then
 		if initial then
 			activate_clip(state, child_entry)
@@ -375,14 +450,20 @@ local evaluate_play_range<const> = function(
 			end
 		end
 		local child_timeline<const> = child_entry.instance
-		child_timeline:evaluate_clip_play_range(
-			child_entry,
-			owner,
+		child_timeline.wrapped = false
+		local play_transform = clip.play_forward_transform
+		if direction < 0 then
+			play_transform = clip.play_backward_transform
+		end
+		play_transform(
 			clip,
 			source_time_ms,
 			destination_time_ms,
-			direction,
-			clip_initial
+			clip_initial,
+			child_entry,
+			owner,
+			child_timeline.program.evaluate_play,
+			write_child_time_range
 		)
 		if destination_active then
 			if clip_initial then
