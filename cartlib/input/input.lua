@@ -417,14 +417,6 @@ local create_action_state<const> = function(player, action)
 	return state
 end
 
-local declare_mapping_actions<const> = function(player, mapping)
-	for action in pairs(mapping) do
-		if not player.actions[action] then
-			create_action_state(player, action)
-		end
-	end
-end
-
 local clear_action_evaluation_state<const> = function(player)
 	player.eval_generation = player.eval_generation + 1
 	local frame<const> = *frame_serial
@@ -454,9 +446,6 @@ local push_context_record<const> = function(player, record)
 	record.order = player.context_order
 	player.contexts[#player.contexts + 1] = record
 	table.sort(player.contexts, context_less)
-	declare_mapping_actions(player, record.keyboard)
-	declare_mapping_actions(player, record.gamepad)
-	declare_mapping_actions(player, record.pointer)
 	clear_action_evaluation_state(player)
 end
 
@@ -757,6 +746,19 @@ local evaluate_action_state<const> = function(states, action_key)
 	return state
 end
 
+-- Direct action queries admit their retained state on first use. Compiled
+-- expressions already admit every state while input.bind builds their context.
+local evaluate_player_action_state<const> = function(player, action)
+	local state = player.actions[action]
+	if state == nil then
+		state = compile_action_state(player, action)
+	end
+	if state.eval_frame ~= player.sample_frame or state.eval_gen ~= player.eval_generation then
+		refresh_action_state(player, state)
+	end
+	return state
+end
+
 function input.bind(player_index, pattern)
 	local player<const> = players[player_index]
 	local evaluate = player.expression_bindings[pattern]
@@ -786,30 +788,30 @@ end
 
 function input.is_action_pressed(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_action_state(player.actions, action)
+	local state<const> = evaluate_player_action_state(player, action)
 	return state.pressed and not state.consumed
 end
 
 function input.is_action_just_pressed(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_action_state(player.actions, action)
+	local state<const> = evaluate_player_action_state(player, action)
 	return state.just_pressed and not state.consumed
 end
 
 function input.is_action_just_released(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_action_state(player.actions, action)
+	local state<const> = evaluate_player_action_state(player, action)
 	return state.just_released and not state.consumed
 end
 
 function input.get_action_value(player_index, action)
 	local player<const> = players[player_index]
-	return evaluate_action_state(player.actions, action).value_q16
+	return evaluate_player_action_state(player, action).value_q16
 end
 
 function input.get_vector(player_index, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_action_state(player.actions, action)
+	local state<const> = evaluate_player_action_state(player, action)
 	return state.value_x_q16, state.value_y_q16
 end
 
@@ -831,11 +833,11 @@ function input.consume(player_index, actions)
 	player.eval_generation = player.eval_generation + 1
 	if type(actions) == 'table' then
 		for i = 1, #actions do
-			consume_action(player.actions[actions[i]])
+			consume_action(compile_action_state(player, actions[i]))
 		end
 		return
 	end
-	consume_action(player.actions[actions])
+	consume_action(compile_action_state(player, actions))
 end
 
 return input
