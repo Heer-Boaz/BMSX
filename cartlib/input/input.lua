@@ -308,10 +308,9 @@ local sample_new_button_state<const> = function(player, state, frame)
 	sample_value_button(player, state, frame)
 end
 
--- Slot a freshly-resolved button into the per-source sampling structures: a
--- digital bit joins (or creates) the group for its level word; any value-bearing
--- aspect (trigger/stick/pointer) joins the value list. `dirty` forces the group's
--- next sample to (re)initialise this button, matching the old first-sample edge.
+-- Address lookup remains source-local while new word groups and value-bearing
+-- states join dense sampling lists. `dirty` makes the next sample initialise a
+-- button added to an existing group.
 local register_button_sampling<const> = function(player, source_index, state)
 	if state.level_addr ~= 0 then
 		local by_addr<const> = player.word_by_addr[source_index]
@@ -319,7 +318,7 @@ local register_button_sampling<const> = function(player, source_index, state)
 		if not group then
 			group = { addr = state.level_addr, prev = 0, dirty = true, states = {} }
 			by_addr[state.level_addr] = group
-			local list<const> = player.word_list[source_index]
+			local list<const> = player.word_groups
 			list[#list + 1] = group
 		end
 		group.dirty = true
@@ -327,7 +326,7 @@ local register_button_sampling<const> = function(player, source_index, state)
 		states[#states + 1] = state
 	end
 	if state.value_addr ~= 0 or state.value_x_addr ~= 0 or state.is_pointer_delta then
-		local vlist<const> = player.value_list[source_index]
+		local vlist<const> = player.value_states
 		vlist[#vlist + 1] = state
 	end
 	local frame<const> = *frame_serial
@@ -471,22 +470,14 @@ local new_player<const> = function(index)
 		},
 		-- Digital buttons grouped by the level word they share, so sampling diffs
 		-- one MMIO word per group instead of iterating every button each frame.
-		word_list = {
-			[source_keyboard] = {},
-			[source_gamepad] = {},
-			[source_pointer] = {},
-		},
+		word_groups = {},
 		word_by_addr = {
 			[source_keyboard] = {},
 			[source_gamepad] = {},
 			[source_pointer] = {},
 		},
 		-- Analog/pointer inputs (a handful) that need a value read every frame.
-		value_list = {
-			[source_keyboard] = {},
-			[source_gamepad] = {},
-			[source_pointer] = {},
-		},
+		value_states = {},
 		-- Buttons whose just_pressed/just_released was set this frame; cleared next
 		-- frame so unchanged buttons cost nothing.
 		edge_buttons = {},
@@ -525,32 +516,28 @@ local sample_player<const> = function(player, frame)
 	end
 	player.edge_count = 0
 	-- 2. Digital pass: diff one MMIO word per group; touch only changed buttons.
-	for source_index = source_keyboard, source_pointer do
-		local word_list<const> = player.word_list[source_index]
-		for w = 1, #word_list do
-			local group<const> = word_list[w]
-			local level<const>: *word = group.addr
-			local cur<const> = *level
-			if cur ~= group.prev or group.dirty then
-				local states<const> = group.states
-				for s = 1, #states do
-					local state<const> = states[s]
-					local pressed_now<const> = (cur & state.level_mask) ~= 0
-					if pressed_now ~= state.pressed then
-						apply_digital_edge(player, state, pressed_now, frame)
-					end
+	local word_groups<const> = player.word_groups
+	for w = 1, #word_groups do
+		local group<const> = word_groups[w]
+		local level<const>: *word = group.addr
+		local cur<const> = *level
+		if cur ~= group.prev or group.dirty then
+			local states<const> = group.states
+			for s = 1, #states do
+				local state<const> = states[s]
+				local pressed_now<const> = (cur & state.level_mask) ~= 0
+				if pressed_now ~= state.pressed then
+					apply_digital_edge(player, state, pressed_now, frame)
 				end
-				group.prev = cur
-				group.dirty = false
 			end
+			group.prev = cur
+			group.dirty = false
 		end
 	end
 	-- 3. Value pass: the few analog/pointer inputs.
-	for source_index = source_keyboard, source_pointer do
-		local vlist<const> = player.value_list[source_index]
-		for v = 1, #vlist do
-			sample_value_button(player, vlist[v], frame)
-		end
+	local value_states<const> = player.value_states
+	for v = 1, #value_states do
+		sample_value_button(player, value_states[v], frame)
 	end
 	player.sample_frame = frame
 end
