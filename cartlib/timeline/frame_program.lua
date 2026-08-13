@@ -43,7 +43,11 @@ function frame_program.compile(program, frame_source)
 	if not compiled.continuous then
 		compiled.duration_ms = compiled.length * compiled.frame_duration
 	end
-	compiled.tracks = timeline_track_program.compile(program.prepared_tracks, compiled.length)
+	compiled.tracks = timeline_track_program.compile(
+		program.prepared_tracks,
+		compiled.length,
+		compiled.duration_ms
+	)
 	if program.apply_frames then
 		compiled.frame_appliers = timeline_apply.compile_frames(compiled.frames)
 	else

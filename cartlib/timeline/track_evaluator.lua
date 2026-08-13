@@ -480,6 +480,16 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 	position_time_step_cursor(entry, steps, time_ms)
 end
 
+local apply_time_boundary_state<const> = function(entry, state, params, evaluation)
+	local keys<const> = state.keys
+	for index = 1, state.key_count do
+		local key<const> = keys[index]
+		key.apply(entry, key.value, params, evaluation)
+	end
+	entry.previous_time_step_key = state.previous_time_key
+	entry.next_time_step_key = state.next_time_key
+end
+
 -- Positioning and loop discontinuities reconstruct every track and place this
 -- cursor. Monotone play consumes the immutable merged key stream in either
 -- direction without searching individual tracks again. Empty ranges leave the
@@ -556,7 +566,15 @@ local evaluate_play_time_steps<const> = function(
 	evaluation
 )
 	if flags & reset_step_flags ~= 0 then
-		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
+		if flags & wrapped_flag ~= 0 then
+			local state = steps.end_time_step_state
+			if time_ms == 0 then
+				state = steps.start_time_step_state
+			end
+			apply_time_boundary_state(entry, state, params, evaluation)
+		else
+			sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
+		end
 	elseif time_ms > previous_time_ms then
 		advance_time_step_tracks(entry, time_ms, params, evaluation)
 	elseif time_ms < previous_time_ms then

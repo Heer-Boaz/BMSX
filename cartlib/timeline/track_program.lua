@@ -449,7 +449,37 @@ local compile_tags<const> = function(tag_defs, length)
 	}
 end
 
-local compile_steps<const> = function(step_defs, length)
+local compile_time_boundary_state<const> = function(time_tracks, time_keys, time_ms)
+	local active_keys<const> = {}
+	for track_index = 1, #time_tracks do
+		local keys<const> = time_tracks[track_index].keys
+		local active_key
+		for key_index = 1, #keys do
+			local key<const> = keys[key_index]
+			if key.time_ms <= time_ms then
+				active_key = key
+			else
+				break
+			end
+		end
+		if active_key ~= nil then
+			active_keys[#active_keys + 1] = active_key
+		end
+	end
+
+	local next_index = 1
+	while next_index <= #time_keys and time_keys[next_index].time_ms <= time_ms do
+		next_index = next_index + 1
+	end
+	return {
+		keys = active_keys,
+		key_count = #active_keys,
+		previous_time_key = time_keys[next_index - 1],
+		next_time_key = time_keys[next_index],
+	}
+end
+
+local compile_steps<const> = function(step_defs, length, duration_ms)
 	if #step_defs == 0 then
 		return empty_steps
 	end
@@ -531,6 +561,14 @@ local compile_steps<const> = function(step_defs, length)
 			keys[key_index].order = nil
 		end
 	end
+	local start_time_step_state
+	local end_time_step_state
+	if #time_tracks > 0 then
+		start_time_step_state = compile_time_boundary_state(time_tracks, time_keys, 0)
+		if duration_ms ~= nil then
+			end_time_step_state = compile_time_boundary_state(time_tracks, time_keys, duration_ms)
+		end
+	end
 	return {
 		by_frame = by_frame,
 		reverse_by_frame = reverse_by_frame,
@@ -540,10 +578,12 @@ local compile_steps<const> = function(step_defs, length)
 		time_key_count = #time_keys,
 		time_tracks = time_tracks,
 		time_track_count = #time_tracks,
+		start_time_step_state = start_time_step_state,
+		end_time_step_state = end_time_step_state,
 	}
 end
 
-function track_program.compile(prepared, length)
+function track_program.compile(prepared, length, duration_ms)
 	if prepared == empty_prepared then
 		return track_program.empty
 	end
@@ -554,7 +594,7 @@ function track_program.compile(prepared, length)
 		position_value_runner = nil,
 		events = compile_events(prepared, length),
 		tags = compile_tags(prepared.tag_defs, length),
-		steps = compile_steps(prepared.step_defs, length),
+		steps = compile_steps(prepared.step_defs, length, duration_ms),
 		scalar_channels = scalar_channels,
 	}
 	if prepared.value_track_count > 0 then
