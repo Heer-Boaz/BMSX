@@ -110,6 +110,9 @@ local bound_once_range<const> = function(target, previous_time_ms, time_ms)
 	return previous_time_ms, time_ms
 end
 
+-- Monotonic loop playback resumes from the child transport position. Initial
+-- admission decodes absolute parent time; positioning remains on the absolute
+-- transforms below.
 local evaluate_loop_forward<const> = function(
 	target,
 	owner,
@@ -121,12 +124,17 @@ local evaluate_loop_forward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	local cursor_ms = previous_time_ms
-	local previous_local_ms = cursor_ms % duration_ms
-	local boundary_ms = cursor_ms - previous_local_ms + duration_ms
-	while boundary_ms <= time_ms do
+	local previous_local_ms
+	if initial then
+		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
+	else
+		previous_local_ms = target.instance.position_ms
+	end
+	local remaining_ms = (parent_time_ms - previous_parent_time_ms) * clip.time_scale
+	local evaluated = false
+	local distance_ms = duration_ms - previous_local_ms
+	while remaining_ms >= distance_ms do
+		remaining_ms = remaining_ms - distance_ms
 		target.instance.wrapped = true
 		write_range(
 			target,
@@ -151,16 +159,16 @@ local evaluate_loop_forward<const> = function(
 			)
 		end
 		initial = false
-		cursor_ms = boundary_ms
+		evaluated = true
 		previous_local_ms = 0
-		boundary_ms = boundary_ms + duration_ms
+		distance_ms = duration_ms
 	end
-	if cursor_ms < time_ms or cursor_ms == previous_time_ms then
+	if remaining_ms > 0 or not evaluated then
 		write_range(
 			target,
 			owner,
 			previous_local_ms,
-			time_ms % duration_ms,
+			previous_local_ms + remaining_ms,
 			evaluate,
 			1,
 			initial,
@@ -180,12 +188,17 @@ local evaluate_loop_backward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	local cursor_ms = previous_time_ms
-	local previous_local_ms = cursor_ms % duration_ms
-	local boundary_ms = cursor_ms - previous_local_ms
-	while time_ms < boundary_ms do
+	local previous_local_ms
+	if initial then
+		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
+	else
+		previous_local_ms = target.instance.position_ms
+	end
+	local remaining_ms = (previous_parent_time_ms - parent_time_ms) * clip.time_scale
+	local evaluated = false
+	local distance_ms = previous_local_ms
+	while remaining_ms > distance_ms do
+		remaining_ms = remaining_ms - distance_ms
 		target.instance.wrapped = true
 		write_range(
 			target,
@@ -210,16 +223,16 @@ local evaluate_loop_backward<const> = function(
 			)
 		end
 		initial = false
-		cursor_ms = boundary_ms
+		evaluated = true
 		previous_local_ms = duration_ms
-		boundary_ms = boundary_ms - duration_ms
+		distance_ms = duration_ms
 	end
-	if cursor_ms > time_ms or cursor_ms == previous_time_ms then
+	if remaining_ms > 0 or not evaluated then
 		write_range(
 			target,
 			owner,
 			previous_local_ms,
-			time_ms % duration_ms,
+			previous_local_ms - remaining_ms,
 			evaluate,
 			-1,
 			initial,
