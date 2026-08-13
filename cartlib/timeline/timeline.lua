@@ -527,13 +527,20 @@ local write_external_time_range<const> = function(
 	local program<const> = self.program
 	local previous_frame
 	local frame
+	local sample
 	local continuous<const> = program.continuous
+	-- A continuous child has one fixed frame. Admission publishes that frame;
+	-- subsequent external ranges advance time without rewriting discrete state.
 	if continuous then
 		previous_frame = self.head
 		if previous_frame < 0 then
 			previous_frame = 0
 		end
 		frame = previous_frame
+		sample = true
+		if initial then
+			self.head = frame
+		end
 	else
 		local frame_duration<const> = program.frame_duration
 		local last_frame<const> = program.length - 1
@@ -545,13 +552,9 @@ local write_external_time_range<const> = function(
 		if frame > last_frame then
 			frame = last_frame
 		end
-	end
-	local sample<const> = continuous or initial or frame ~= previous_frame
-	self.head = frame
-	if continuous then
-		self.frame_elapsed = 0
-	else
-		self.frame_elapsed = time_ms - frame * program.frame_duration
+		sample = initial or frame ~= previous_frame
+		self.head = frame
+		self.frame_elapsed = time_ms - frame * frame_duration
 	end
 	self.position_ms = time_ms
 	self.direction = direction
