@@ -40,6 +40,7 @@ const CART_MODULE_FILES = [
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/easing', 'cartlib/easing.lua'],
 	['cartlib/timeline/playback', 'cartlib/timeline/playback.lua'],
+	['cartlib/timeline/apply_source', 'cartlib/timeline/apply_source.lua'],
 	['cartlib/timeline/apply', 'cartlib/timeline/apply.lua'],
 	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],

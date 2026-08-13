@@ -78,12 +78,30 @@ end
 
 lua_syntax.nil_literal = { kind.nil_literal_expression }
 
+local literal_by_type<const> = {
+	number = lua_syntax.numeric_literal,
+	string = lua_syntax.string_literal,
+	boolean = lua_syntax.boolean_literal,
+}
+
+function lua_syntax.literal(value)
+	return literal_by_type[type(value)](value)
+end
+
 function lua_syntax.member_expression(base, identifier)
 	return { kind.member_expression, base, identifier }
 end
 
 function lua_syntax.index_expression(base, index)
 	return { kind.index_expression, base, index }
+end
+
+function lua_syntax.index_path(base, path)
+	local expression = base
+	for index = 1, #path do
+		expression = { kind.index_expression, expression, lua_syntax.literal(path[index]) }
+	end
+	return expression
 end
 
 function lua_syntax.call_expression(callee, arguments)
