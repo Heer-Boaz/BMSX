@@ -39,7 +39,7 @@ local notify_boundary<const> = function(
 		local sample = true
 		if not program.continuous then
 			local frame_duration<const> = program.frame_duration
-			local last_frame<const> = program.length - 1
+			local last_frame<const> = program.last_frame
 			previous_frame = (previous_time_ms / frame_duration) // 1
 			if previous_frame > last_frame then
 				previous_frame = last_frame

@@ -79,7 +79,7 @@ local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 	local at_boundary = false
 	local boundary = boundary_none
 	local wrapped = false
-	local last_index<const> = program.length - 1
+	local last_index<const> = program.last_frame
 	if current_frame < 0 then
 		current_frame = 0
 		self.direction = 1
@@ -398,7 +398,7 @@ local move_to<const> = function(self, entry, owner, frame, evaluate)
 	self.wrapped = false
 	local program<const> = self.program
 	local previous_frame<const> = self.head
-	local current_frame<const> = clamp(frame, 0, program.length - 1)
+	local current_frame<const> = clamp(frame, 0, program.last_frame)
 	local direction = 0
 	if current_frame > previous_frame then
 		direction = 1
@@ -463,7 +463,7 @@ local move_time<const> = function(self, entry, owner, requested_time_ms, evaluat
 	else
 		frame = (time_ms / program.frame_duration) // 1
 		if frame >= program.length then
-			frame = program.length - 1
+			frame = program.last_frame
 		end
 	end
 	local direction = 0
@@ -536,7 +536,7 @@ end
 -- Position-only access for frame-sequence consumers; no evaluation is emitted.
 function timeline:set_frame(frame)
 	self.wrapped = false
-	self.head = clamp(frame, timelinestart_index, self.program.length - 1)
+	self.head = clamp(frame, timelinestart_index, self.program.last_frame)
 	self.frame_elapsed = 0
 	if self.head < 0 then
 		self.position_ms = 0

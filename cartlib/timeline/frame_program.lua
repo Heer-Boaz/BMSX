@@ -40,6 +40,7 @@ function frame_program.compile(program, frame_source)
 		compiled.length = #compiled.frames
 		compiled.range_source_length = nil
 	end
+	compiled.last_frame = compiled.length - 1
 	if not compiled.continuous then
 		compiled.duration_ms = compiled.length * compiled.frame_duration
 	end

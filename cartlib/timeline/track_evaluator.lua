@@ -152,7 +152,7 @@ end
 
 function track_evaluator.bind_events(program, method)
 	local events<const> = program.tracks.events[method + 1]
-	local last_frame<const> = program.length - 1
+	local last_frame<const> = program.last_frame
 	local duration_ms<const> = program.duration_ms
 	return function(owner, previous, current, previous_time_ms, time_ms, direction, flags)
 		local lane = events.backward
@@ -378,7 +378,7 @@ end
 
 function track_evaluator.bind_play_tags(program)
 	local tags<const> = program.tracks.tags
-	local last_frame<const> = program.length - 1
+	local last_frame<const> = program.last_frame
 	local duration_ms<const> = program.duration_ms
 	return function(entry, owner, previous, current, previous_time_ms, time_ms, direction, flags)
 		-- A nested clip enters at a mapped source position and must synchronize
