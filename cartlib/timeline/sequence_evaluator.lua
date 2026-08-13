@@ -65,6 +65,15 @@ local first_end_after<const> = function(clips, count, time_ms)
 	return low
 end
 
+-- Arbitrary positioning establishes both monotonic traversal cursors. Play
+-- ranges then advance them linearly instead of searching the boundary arrays
+-- again for every parent tick.
+local position_boundary_cursors<const> = function(state, sequence, time_ms)
+	state.next_start_index = first_start_after(sequence.clips_by_start, sequence.clip_count, time_ms)
+	state.next_end_index = first_end_after(sequence.clips_by_end, sequence.clip_count, time_ms)
+	return state.next_start_index
+end
+
 -- Clip processing owns the inactive-to-active transition; this insertion path
 -- therefore never rechecks state already represented by `initial`.
 local activate_clip<const> = function(state, clip_index, child_entry)
@@ -164,6 +173,8 @@ function sequence_evaluator.init_entry(entry)
 		candidate_generation = 0,
 		candidate_count = 0,
 		position_tree_stack = {},
+		next_start_index = 1,
+		next_end_index = 1,
 	}
 	entry.sequence_state = state
 	for clip_index = 1, sequence.clip_count do
@@ -379,6 +390,7 @@ local evaluate_play_range<const> = function(
 	local state<const> = entry.sequence_state
 	local sorted_candidate_count<const> = begin_candidates(state)
 	if initial then
+		position_boundary_cursors(state, sequence, previous_time_ms)
 		for clip_index = 1, sequence.clip_count do
 			local clip<const> = sequence.clips[clip_index]
 			if previous_time_ms >= clip.start_time_ms and previous_time_ms < clip.end_time_ms then
@@ -387,19 +399,34 @@ local evaluate_play_range<const> = function(
 		end
 	end
 	if direction > 0 then
+		local clip_count<const> = sequence.clip_count
 		local clips<const> = sequence.clips_by_start
-		local first<const> = first_start_after(clips, sequence.clip_count, previous_time_ms)
-		local finish<const> = first_start_after(clips, sequence.clip_count, time_ms) - 1
-		for index = first, finish do
+		local index = state.next_start_index
+		while index <= clip_count and clips[index].start_time_ms <= time_ms do
 			add_candidate(state, clips[index].order)
+			index = index + 1
 		end
+		state.next_start_index = index
+		local clips_by_end<const> = sequence.clips_by_end
+		index = state.next_end_index
+		while index <= clip_count and clips_by_end[index].end_time_ms <= time_ms do
+			index = index + 1
+		end
+		state.next_end_index = index
 	elseif direction < 0 then
+		local clips_by_start<const> = sequence.clips_by_start
 		local clips<const> = sequence.clips_by_end
-		local first<const> = first_end_after(clips, sequence.clip_count, time_ms)
-		local finish<const> = first_end_after(clips, sequence.clip_count, previous_time_ms) - 1
-		for index = first, finish do
+		local index = state.next_end_index - 1
+		while index > 0 and clips[index].end_time_ms > time_ms do
 			add_candidate(state, clips[index].order)
+			index = index - 1
 		end
+		state.next_end_index = index + 1
+		index = state.next_start_index - 1
+		while index > 0 and clips_by_start[index].start_time_ms > time_ms do
+			index = index - 1
+		end
+		state.next_start_index = index + 1
 	end
 	if state.candidate_count > sorted_candidate_count then
 		sort_candidates(state, sorted_candidate_count)
@@ -428,7 +455,7 @@ local evaluate_position<const> = function(
 	local sorted_candidate_count<const> = begin_candidates(state)
 
 	local clips_by_start<const> = sequence.clips_by_start
-	local position_clip_count<const> = first_start_after(clips_by_start, sequence.clip_count, time_ms) - 1
+	local position_clip_count<const> = position_boundary_cursors(state, sequence, time_ms) - 1
 	if position_clip_count > 0 then
 		local stack<const> = state.position_tree_stack
 		local stack_count = 3
