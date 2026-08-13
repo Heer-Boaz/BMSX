@@ -1,11 +1,11 @@
 -- cartlib/input/action_parser.lua
 -- Cached action-expression compiler for cart-owned PlayerInput. Authored
--- syntax is parsed once; firmware load() produces a factory that binds one
+-- syntax is parsed once; the firmware compiler produces a factory that binds one
 -- player's resolved states into the short-circuit evaluator used at runtime.
 
 local action_syntax<const> = require('cartlib/input/action_syntax')
 local action_program_source<const> = require('cartlib/input/action_program_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
+local compile_syntax<const> = lua_compiler.compile_syntax
 
 local action_parser<const> = {}
 
@@ -600,10 +600,9 @@ function action_parser.compile(src)
 	enforce_root_modifiers(ast, false)
 	local program<const> = {
 		action_names = self.action_names,
-		evaluation_factory = load(
-			lua_syntax_printer.print(action_program_source.build(ast)),
-			'[input.action]',
-			't'
+		evaluation_factory = compile_syntax(
+			action_program_source.build(ast),
+			'[input.action]'
 		)(),
 	}
 	cache[src] = program

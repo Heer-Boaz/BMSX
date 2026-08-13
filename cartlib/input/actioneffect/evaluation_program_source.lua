@@ -121,7 +121,7 @@ local emit_input<const> = function(statements, values, binding, binding_index, f
 			boolean_literal(true)
 		)
 	end
-	local condition = identifier(result_name)
+	local condition
 	if field == 'release' then
 		condition = binary_expression(
 			syntax.binary_and,
@@ -132,6 +132,8 @@ local emit_input<const> = function(statements, values, binding, binding_index, f
 			index_expression(identifier('latch'), numeric_literal(binding_index)),
 			boolean_literal(false)
 		)
+	else
+		condition = identifier(result_name)
 	end
 	statements[#statements + 1] = if_statement({ if_clause(condition, block(body)) })
 end
