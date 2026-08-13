@@ -313,6 +313,7 @@ local process_play_clip<const> = function(
 		clip,
 		source_time_ms,
 		destination_time_ms,
+		direction,
 		initial,
 		not destination_active
 	)

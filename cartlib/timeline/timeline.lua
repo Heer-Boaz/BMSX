@@ -588,11 +588,16 @@ function timeline:evaluate_clip_play_range(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
+	parent_direction,
 	initial,
 	finished
 )
 	self.wrapped = false
-	clip.play_transform(
+	local play_transform = clip.play_forward_transform
+	if parent_direction < 0 then
+		play_transform = clip.play_backward_transform
+	end
+	play_transform(
 		clip,
 		previous_parent_time_ms,
 		parent_time_ms,

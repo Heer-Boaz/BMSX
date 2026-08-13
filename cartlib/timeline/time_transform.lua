@@ -69,14 +69,16 @@ end
 
 local evaluate_loop_forward<const> = function(
 	clip,
-	previous_time_ms,
-	time_ms,
+	previous_parent_time_ms,
+	parent_time_ms,
 	initial,
 	target,
 	owner,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms + duration_ms
@@ -114,14 +116,16 @@ end
 
 local evaluate_loop_backward<const> = function(
 	clip,
-	previous_time_ms,
-	time_ms,
+	previous_parent_time_ms,
+	parent_time_ms,
 	initial,
 	target,
 	owner,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = cursor_ms % duration_ms
 	local boundary_ms = cursor_ms - previous_local_ms
@@ -159,14 +163,16 @@ end
 
 local evaluate_pingpong_forward<const> = function(
 	clip,
-	previous_time_ms,
-	time_ms,
+	previous_parent_time_ms,
+	parent_time_ms,
 	initial,
 	target,
 	owner,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = pingpong_time(cursor_ms, duration_ms)
 	local boundary_ms = (cursor_ms // duration_ms + 1) * duration_ms
@@ -216,14 +222,16 @@ end
 
 local evaluate_pingpong_backward<const> = function(
 	clip,
-	previous_time_ms,
-	time_ms,
+	previous_parent_time_ms,
+	parent_time_ms,
 	initial,
 	target,
 	owner,
 	write_range
 )
 	local duration_ms<const> = target.duration_ms
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
 	local cursor_ms = previous_time_ms
 	local previous_local_ms = pingpong_time(cursor_ms, duration_ms)
 	local remainder_ms<const> = cursor_ms % duration_ms
@@ -387,52 +395,29 @@ local evaluate_play_once<const> = function(
 	)
 end
 
-local evaluate_play_loop<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
-	target,
-	owner,
-	write_range
-)
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-		evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-	else
-		evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-	end
-end
-
-local evaluate_play_pingpong<const> = function(
-	clip,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial,
-	target,
-	owner,
-	write_range
-)
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
-	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-		evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-	else
-		evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-	end
-end
-
 -- Playback mode is authored configuration, not runtime transport state. Clip
--- admission resolves it into the two datapaths retained by the compiled clip.
-function time_transform.compile(playback_mode)
+-- admission resolves it and time-scale direction into direct parent-forward
+-- and parent-backward datapaths retained by the compiled clip.
+function time_transform.compile(playback_mode, time_scale)
 	if playback_mode == playback_loop then
-		return evaluate_play_loop, evaluate_position_loop
+		if time_scale < 0 then
+			return evaluate_loop_backward, evaluate_loop_forward, evaluate_position_loop
+		end
+		if time_scale == 0 then
+			return evaluate_loop_forward, evaluate_loop_forward, evaluate_position_loop
+		end
+		return evaluate_loop_forward, evaluate_loop_backward, evaluate_position_loop
 	end
 	if playback_mode == playback_pingpong then
-		return evaluate_play_pingpong, evaluate_position_pingpong
+		if time_scale < 0 then
+			return evaluate_pingpong_backward, evaluate_pingpong_forward, evaluate_position_pingpong
+		end
+		if time_scale == 0 then
+			return evaluate_pingpong_forward, evaluate_pingpong_forward, evaluate_position_pingpong
+		end
+		return evaluate_pingpong_forward, evaluate_pingpong_backward, evaluate_position_pingpong
 	end
-	return evaluate_play_once, evaluate_position_once
+	return evaluate_play_once, evaluate_play_once, evaluate_position_once
 end
 
 return time_transform
