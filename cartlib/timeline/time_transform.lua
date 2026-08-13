@@ -504,10 +504,41 @@ local evaluate_play_once<const> = function(
 	)
 end
 
+local evaluate_play_once_in_range<const> = function(
+	target,
+	owner,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial
+)
+	local clip<const> = target.clip
+	local time_scale<const> = clip.time_scale
+	local time_offset_ms<const> = clip.time_offset_ms
+	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
+	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
+	target.write_time_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		target.play_evaluator,
+		direction_between(previous_time_ms, time_ms, clip.direction),
+		initial,
+		boundary_none
+	)
+end
+
 -- Playback mode is authored configuration, not runtime transport state. Clip
 -- admission resolves it and time-scale direction into direct parent-forward
 -- and parent-backward datapaths retained by the compiled clip.
-function time_transform.compile(playback_mode, time_scale)
+function time_transform.compile(
+	playback_mode,
+	time_scale,
+	clip_in_ms,
+	clip_duration_ms,
+	child_duration_ms,
+	child_duration_stable
+)
 	if playback_mode == playback_loop then
 		if time_scale < 0 then
 			return evaluate_loop_backward, evaluate_loop_forward, evaluate_position_loop
@@ -525,6 +556,18 @@ function time_transform.compile(playback_mode, time_scale)
 			return evaluate_pingpong_forward, evaluate_pingpong_forward, evaluate_position_pingpong
 		end
 		return evaluate_pingpong_forward, evaluate_pingpong_backward, evaluate_position_pingpong
+	end
+	-- A static once clip whose complete authored interval maps inside the child
+	-- interval cannot reach a clamp edge during playback. Frame builders retain
+	-- the bounded datapath because binding can replace their child duration.
+	local child_end_time_ms<const> = clip_in_ms + clip_duration_ms * time_scale
+	if child_duration_stable
+	and (child_duration_ms == nil
+	or (clip_in_ms >= 0
+	and clip_in_ms <= child_duration_ms
+	and child_end_time_ms >= 0
+	and child_end_time_ms <= child_duration_ms)) then
+		return evaluate_play_once_in_range, evaluate_play_once_in_range, evaluate_position_once
 	end
 	return evaluate_play_once, evaluate_play_once, evaluate_position_once
 end

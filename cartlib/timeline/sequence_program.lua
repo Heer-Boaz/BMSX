@@ -60,7 +60,14 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 		local time_scale<const> = definition.time_scale or 1
 		local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
 		local play_forward_transform<const>, play_backward_transform<const>, position_transform<const> =
-			timeline_time_transform.compile(playback_mode, time_scale)
+			timeline_time_transform.compile(
+				playback_mode,
+				time_scale,
+				clip_in_ms,
+				definition.duration_ms,
+				program.duration_ms,
+				program.frame_builder == nil
+			)
 		local direction = 1
 		if time_scale < 0 then
 			direction = -1
