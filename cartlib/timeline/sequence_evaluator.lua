@@ -52,35 +52,36 @@ end
 
 -- Clip processing owns the inactive-to-active transition; this insertion path
 -- therefore never rechecks state already represented by `initial`.
-local activate_clip<const> = function(state, clip_index, child_entry)
+local activate_clip<const> = function(state, child_entry)
 	local active_count<const> = state.active_count + 1
 	state.active_count = active_count
 	local active_index = active_count
-	local entries<const> = state.entries
-	while active_index > 1 and state.active_clips[active_index - 1] > clip_index do
-		local moved_clip_index<const> = state.active_clips[active_index - 1]
-		state.active_clips[active_index] = moved_clip_index
-		entries[moved_clip_index].active_index = active_index
+	local active_entries<const> = state.active_entries
+	local order<const> = child_entry.clip.order
+	while active_index > 1 and active_entries[active_index - 1].clip.order > order do
+		local moved_entry<const> = active_entries[active_index - 1]
+		active_entries[active_index] = moved_entry
+		moved_entry.active_index = active_index
 		active_index = active_index - 1
 	end
-	state.active_clips[active_index] = clip_index
+	active_entries[active_index] = child_entry
 	child_entry.active_index = active_index
 end
 
-local remove_active_clip<const> = function(state, clip_index, child_entry)
+local remove_active_clip<const> = function(state, child_entry)
 	local active_index<const> = child_entry.active_index
 	if active_index == nil then
 		return
 	end
 	local active_count<const> = state.active_count
 	child_entry.active_index = nil
-	local entries<const> = state.entries
+	local active_entries<const> = state.active_entries
 	for index = active_index + 1, active_count do
-		local moved_clip_index<const> = state.active_clips[index]
-		state.active_clips[index - 1] = moved_clip_index
-		entries[moved_clip_index].active_index = index - 1
+		local moved_entry<const> = active_entries[index]
+		active_entries[index - 1] = moved_entry
+		moved_entry.active_index = index - 1
 	end
-	state.active_clips[active_count] = nil
+	active_entries[active_count] = nil
 	state.active_count = active_count - 1
 end
 
@@ -128,10 +129,9 @@ end
 local clear_active_clips<const> = function(entry, owner)
 	local state<const> = entry.sequence_state
 	while state.active_count > 0 do
-		local clip_index<const> = state.active_clips[state.active_count]
-		local child_entry<const> = state.entries[clip_index]
+		local child_entry<const> = state.active_entries[state.active_count]
 		clear_child(child_entry, owner)
-		remove_active_clip(state, clip_index, child_entry)
+		remove_active_clip(state, child_entry)
 	end
 end
 
@@ -143,9 +143,9 @@ function sequence_evaluator.init_entry(entry)
 	end
 	local state<const> = {
 		entries = {},
-		active_clips = {},
+		active_entries = {},
 		active_count = 0,
-		candidates = {},
+		candidate_entries = {},
 		candidate_generation = 0,
 		candidate_count = 0,
 		position_tree_stack = {},
@@ -187,7 +187,7 @@ function sequence_evaluator.bind_entry(entry, owner)
 		if clip.program.frame_builder ~= nil then
 			if child_entry.active_index ~= nil then
 				clear_child(child_entry, owner)
-				remove_active_clip(state, clip_index, child_entry)
+				remove_active_clip(state, child_entry)
 			end
 			local child_program<const> = timeline_frame_program.build(clip.program, child_entry.params)
 			child_entry.instance:rebind_program(child_program)
@@ -207,55 +207,54 @@ function sequence_evaluator.clear_entry(entry, owner)
 	end
 end
 
-local add_candidate<const> = function(state, clip_index)
+local add_candidate<const> = function(state, child_entry)
 	local generation<const> = state.candidate_generation
-	local child_entry<const> = state.entries[clip_index]
 	if child_entry.active_index ~= nil or child_entry.candidate_generation == generation then
 		return
 	end
 	child_entry.candidate_generation = generation
 	local count<const> = state.candidate_count + 1
 	state.candidate_count = count
-	state.candidates[count] = clip_index
+	state.candidate_entries[count] = child_entry
 end
 
--- active_clips is retained in authored clip order. Copy that ordered prefix
+-- active_entries is retained in authored clip order. Copy that ordered prefix
 -- directly; only clips appended by the evaluated range need insertion sorting.
 local begin_candidates<const> = function(state)
 	local generation<const> = state.candidate_generation + 1
 	state.candidate_generation = generation
 	local count<const> = state.active_count
 	state.candidate_count = count
-	local active_clips<const> = state.active_clips
-	local candidates<const> = state.candidates
+	local active_entries<const> = state.active_entries
+	local candidate_entries<const> = state.candidate_entries
 	for index = 1, count do
-		candidates[index] = active_clips[index]
+		candidate_entries[index] = active_entries[index]
 	end
 	return count
 end
 
 local sort_candidates<const> = function(state, sorted_count)
-	local candidates<const> = state.candidates
+	local candidate_entries<const> = state.candidate_entries
 	for index = sorted_count + 1, state.candidate_count do
-		local clip_index<const> = candidates[index]
+		local child_entry<const> = candidate_entries[index]
+		local order<const> = child_entry.clip.order
 		local insertion = index - 1
-		while insertion > 0 and candidates[insertion] > clip_index do
-			candidates[insertion + 1] = candidates[insertion]
+		while insertion > 0 and candidate_entries[insertion].clip.order > order do
+			candidate_entries[insertion + 1] = candidate_entries[insertion]
 			insertion = insertion - 1
 		end
-		candidates[insertion + 1] = clip_index
+		candidate_entries[insertion + 1] = child_entry
 	end
 end
 
 local process_position_clip<const> = function(
 	state,
 	owner,
-	clip_index,
+	child_entry,
 	previous_time_ms,
 	time_ms,
 	method
 )
-	local child_entry<const> = state.entries[clip_index]
 	local clip<const> = child_entry.clip
 	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
@@ -276,11 +275,11 @@ local process_position_clip<const> = function(
 	)
 	if destination_active then
 		if initial then
-			activate_clip(state, clip_index, child_entry)
+			activate_clip(state, child_entry)
 		end
 	else
 		clear_child(child_entry, owner)
-		remove_active_clip(state, clip_index, child_entry)
+		remove_active_clip(state, child_entry)
 	end
 end
 
@@ -302,7 +301,7 @@ local evaluate_play_range<const> = function(
 		for clip_index = 1, sequence.clip_count do
 			local clip<const> = sequence.clips[clip_index]
 			if previous_time_ms >= clip.start_time_ms and previous_time_ms < clip.end_time_ms then
-				add_candidate(state, clip_index)
+				add_candidate(state, state.entries[clip_index])
 			end
 		end
 	end
@@ -311,7 +310,7 @@ local evaluate_play_range<const> = function(
 		local clips<const> = sequence.clips_by_start
 		local index = state.next_start_index
 		while index <= clip_count and clips[index].start_time_ms <= time_ms do
-			add_candidate(state, clips[index].order)
+			add_candidate(state, state.entries[clips[index].order])
 			index = index + 1
 		end
 		state.next_start_index = index
@@ -326,7 +325,7 @@ local evaluate_play_range<const> = function(
 		local clips<const> = sequence.clips_by_end
 		local index = state.next_end_index - 1
 		while index > 0 and clips[index].end_time_ms > time_ms do
-			add_candidate(state, clips[index].order)
+			add_candidate(state, state.entries[clips[index].order])
 			index = index - 1
 		end
 		state.next_end_index = index + 1
@@ -342,11 +341,9 @@ local evaluate_play_range<const> = function(
 	-- Candidate admission guarantees that this range intersects each clip. Its
 	-- monotonic direction therefore determines the only interval edge it can
 	-- cross. Child completion changes only at interval admission and removal.
-	local candidates<const> = state.candidates
-	local entries<const> = state.entries
+	local candidate_entries<const> = state.candidate_entries
 	for candidate_index = 1, state.candidate_count do
-		local clip_index<const> = candidates[candidate_index]
-		local child_entry<const> = entries[clip_index]
+		local child_entry<const> = candidate_entries[candidate_index]
 		local clip<const> = child_entry.clip
 		local clip_initial<const> = child_entry.active_index == nil
 		local source_time_ms = previous_time_ms
@@ -390,12 +387,12 @@ local evaluate_play_range<const> = function(
 		if destination_active then
 			if clip_initial then
 				child_timeline.ended = false
-				activate_clip(state, clip_index, child_entry)
+				activate_clip(state, child_entry)
 			end
 		else
 			child_timeline.ended = true
 			clear_child(child_entry, owner)
-			remove_active_clip(state, clip_index, child_entry)
+			remove_active_clip(state, child_entry)
 			local on_finished<const> = clip.on_finished
 			if on_finished ~= nil then
 				on_finished(child_entry.primary_binding, child_timeline)
@@ -431,7 +428,7 @@ local evaluate_position<const> = function(
 			stack_count = stack_count - 3
 			if low <= position_clip_count and max_end_time_ms[node_index] >= time_ms then
 				if low == high then
-					add_candidate(state, clips_by_start[low].order)
+					add_candidate(state, state.entries[clips_by_start[low].order])
 				else
 					local middle<const> = (low + high) // 2
 					local left_node_index<const> = node_index * 2
@@ -453,21 +450,20 @@ local evaluate_position<const> = function(
 		sort_candidates(state, sorted_candidate_count)
 	end
 	for candidate_index = 1, state.candidate_count do
-		local clip_index<const> = state.candidates[candidate_index]
-		local clip<const> = sequence.clips[clip_index]
+		local child_entry<const> = state.candidate_entries[candidate_index]
+		local clip<const> = child_entry.clip
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
 			process_position_clip(
 				state,
 				owner,
-				clip_index,
+				child_entry,
 				previous_time_ms,
 				time_ms,
 				method
 			)
 		else
-			local child_entry<const> = state.entries[clip_index]
 			clear_child(child_entry, owner)
-			remove_active_clip(state, clip_index, child_entry)
+			remove_active_clip(state, child_entry)
 		end
 	end
 end
