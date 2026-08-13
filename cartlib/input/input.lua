@@ -174,11 +174,12 @@ local new_action_state<const> = function(player, action)
 	return {
 		player = player,
 		action = action,
-		resolved = {
-			[source_keyboard] = {},
-			[source_gamepad] = {},
-			[source_pointer] = {},
+		resolved_sources = {
+			{ source_index = source_keyboard },
+			{ source_index = source_gamepad },
+			{ source_index = source_pointer },
 		},
+		resolved_source_count = 0,
 		pressed = false,
 		just_pressed = false,
 		just_released = false,
@@ -389,10 +390,23 @@ local build_resolved_source<const> = function(player, action, source_index, list
 end
 
 local rebuild_action_bindings<const> = function(player, state)
-	local resolved<const> = state.resolved
-	for source_index = source_keyboard, source_pointer do
-		build_resolved_source(player, state.action, source_index, resolved[source_index])
+	local sources<const> = state.resolved_sources
+	for index = source_keyboard, source_pointer do
+		local list<const> = sources[index]
+		build_resolved_source(player, state.action, list.source_index, list)
 	end
+	-- Keep the retained source lists, but place non-empty lists first so action
+	-- evaluation and consumption never visit absent device sources.
+	local active_count = 0
+	for index = source_keyboard, source_pointer do
+		local list<const> = sources[index]
+		if #list > 0 then
+			active_count = active_count + 1
+			sources[index] = sources[active_count]
+			sources[active_count] = list
+		end
+	end
+	state.resolved_source_count = active_count
 end
 
 local create_action_state<const> = function(player, action)
@@ -656,71 +670,69 @@ local refresh_action_state<const> = function(player, state)
 	local value_y_q16 = 0
 	local min_press_delta = huge_delta
 	local min_release_delta = huge_delta
-	local resolved<const> = state.resolved
-	for source_index = source_keyboard, source_pointer do
-		local list<const> = resolved[source_index]
+	local sources<const> = state.resolved_sources
+	for index = 1, state.resolved_source_count do
+		local list<const> = sources[index]
 		local count<const> = #list
-		if count > 0 then
-			local source_all_just_pressed = true
-			local source_all_just_released = true
-			local source_value_q16 = 0
-			local source_value_x_q16 = 0
-			local source_value_y_q16 = 0
-			for i = 1, count do
-				local button<const> = list[i]
-				local button_pressed<const> = button.pressed
-				local button_just_pressed<const> = button.just_pressed
-				local button_just_released<const> = button.just_released
-				pressed = pressed or button_pressed
-				just_pressed = just_pressed or button_just_pressed
-				just_released = just_released or button_just_released
-				source_all_just_pressed = source_all_just_pressed and button_just_pressed
-				source_all_just_released = source_all_just_released and button_just_released
-				consumed = consumed or button.consumed
-				local press_delta = frame - button.last_press_frame
-				if button_pressed then
-					press_delta = -1
+		local source_all_just_pressed = true
+		local source_all_just_released = true
+		local source_value_q16 = 0
+		local source_value_x_q16 = 0
+		local source_value_y_q16 = 0
+		for i = 1, count do
+			local button<const> = list[i]
+			local button_pressed<const> = button.pressed
+			local button_just_pressed<const> = button.just_pressed
+			local button_just_released<const> = button.just_released
+			pressed = pressed or button_pressed
+			just_pressed = just_pressed or button_just_pressed
+			just_released = just_released or button_just_released
+			source_all_just_pressed = source_all_just_pressed and button_just_pressed
+			source_all_just_released = source_all_just_released and button_just_released
+			consumed = consumed or button.consumed
+			local press_delta = frame - button.last_press_frame
+			if button_pressed then
+				press_delta = -1
+			end
+			if press_delta < min_press_delta then
+				min_press_delta = press_delta
+			end
+			local release_delta = frame - button.last_release_frame
+			if button_just_released then
+				release_delta = -1
+			end
+			if release_delta < min_release_delta then
+				min_release_delta = release_delta
+			end
+			if button_pressed then
+				local button_press_time<const> = frame - button.press_start_frame
+				if not has_press_time or button_press_time < press_time then
+					has_press_time = true
+					press_time = button_press_time
 				end
-				if press_delta < min_press_delta then
-					min_press_delta = press_delta
-				end
-				local release_delta = frame - button.last_release_frame
-				if button_just_released then
-					release_delta = -1
-				end
-				if release_delta < min_release_delta then
-					min_release_delta = release_delta
-				end
-				if button_pressed then
-					local button_press_time<const> = frame - button.press_start_frame
-					if not has_press_time or button_press_time < press_time then
-						has_press_time = true
-						press_time = button_press_time
-					end
-					if button.press_id > press_id then
-						press_id = button.press_id
-					end
-				end
-				local button_value_q16<const> = button.value_q16
-				if button_value_q16 ~= 0 then
-					source_value_q16 = button_value_q16
-				end
-				local button_value_x_q16<const> = button.value_x_q16
-				local button_value_y_q16<const> = button.value_y_q16
-				if button_value_x_q16 ~= 0 or button_value_y_q16 ~= 0 then
-					source_value_x_q16 = button_value_x_q16
-					source_value_y_q16 = button_value_y_q16
+				if button.press_id > press_id then
+					press_id = button.press_id
 				end
 			end
-			all_just_pressed = all_just_pressed or source_all_just_pressed
-			all_just_released = all_just_released or source_all_just_released
-			if value_q16 == 0 then
-				value_q16 = source_value_q16
+			local button_value_q16<const> = button.value_q16
+			if button_value_q16 ~= 0 then
+				source_value_q16 = button_value_q16
 			end
-			if value_x_q16 == 0 and value_y_q16 == 0 then
-				value_x_q16 = source_value_x_q16
-				value_y_q16 = source_value_y_q16
+			local button_value_x_q16<const> = button.value_x_q16
+			local button_value_y_q16<const> = button.value_y_q16
+			if button_value_x_q16 ~= 0 or button_value_y_q16 ~= 0 then
+				source_value_x_q16 = button_value_x_q16
+				source_value_y_q16 = button_value_y_q16
 			end
+		end
+		all_just_pressed = all_just_pressed or source_all_just_pressed
+		all_just_released = all_just_released or source_all_just_released
+		if value_q16 == 0 then
+			value_q16 = source_value_q16
+		end
+		if value_x_q16 == 0 and value_y_q16 == 0 then
+			value_x_q16 = source_value_x_q16
+			value_y_q16 = source_value_y_q16
 		end
 	end
 	state.pressed = pressed
@@ -815,9 +827,9 @@ function input.get_vector(player_index, action)
 end
 
 local consume_action<const> = function(state)
-	local resolved<const> = state.resolved
-	for source_index = source_keyboard, source_pointer do
-		local states<const> = resolved[source_index]
+	local sources<const> = state.resolved_sources
+	for index = 1, state.resolved_source_count do
+		local states<const> = sources[index]
 		for i = 1, #states do
 			local button<const> = states[i]
 			if button.pressed then
