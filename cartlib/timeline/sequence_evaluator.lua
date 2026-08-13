@@ -272,26 +272,28 @@ end
 -- entry or a destination which leaves that interval needs boundary clamping.
 local process_play_clip<const> = function(
 	sequence,
-	entry,
+	state,
 	owner,
 	clip_index,
 	previous_time_ms,
 	time_ms
 )
 	local clip<const> = sequence.clips[clip_index]
-	local state<const> = entry.sequence_state
 	local child_entry<const> = state.entries[clip_index]
 	local initial<const> = state.active_index_by_clip[clip_index] == nil
-	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
+	local start_time_ms<const> = clip.start_time_ms
+	local end_time_ms<const> = clip.end_time_ms
+	local destination_active<const> = time_ms >= start_time_ms and time_ms < end_time_ms
 	local source_time_ms = previous_time_ms
 	if initial then
-		source_time_ms = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
+		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
 	end
 	local destination_time_ms = time_ms
 	if not destination_active then
-		destination_time_ms = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
+		destination_time_ms = clamp(time_ms, start_time_ms, end_time_ms)
 	end
-	child_entry.instance:evaluate_clip_play_range(
+	local child_timeline<const> = child_entry.instance
+	child_timeline:evaluate_clip_play_range(
 		child_entry,
 		owner,
 		clip,
@@ -307,14 +309,14 @@ local process_play_clip<const> = function(
 		remove_active_clip(state, clip_index)
 		local on_finished<const> = clip.on_finished
 		if on_finished ~= nil then
-			on_finished(child_entry.primary_binding, child_entry.instance)
+			on_finished(child_entry.primary_binding, child_timeline)
 		end
 	end
 end
 
 local process_position_clip<const> = function(
 	sequence,
-	entry,
+	state,
 	owner,
 	clip_index,
 	previous_time_ms,
@@ -322,13 +324,14 @@ local process_position_clip<const> = function(
 	method
 )
 	local clip<const> = sequence.clips[clip_index]
-	local state<const> = entry.sequence_state
 	local child_entry<const> = state.entries[clip_index]
 	local initial<const> = state.active_index_by_clip[clip_index] == nil
-	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
+	local start_time_ms<const> = clip.start_time_ms
+	local end_time_ms<const> = clip.end_time_ms
+	local destination_active<const> = time_ms >= start_time_ms and time_ms < end_time_ms
 	local source_time_ms = previous_time_ms
 	if initial then
-		source_time_ms = clamp(previous_time_ms, clip.start_time_ms, clip.end_time_ms)
+		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
 	end
 	child_entry.instance:evaluate_clip_at(
 		child_entry,
@@ -385,7 +388,7 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 	for index = 1, state.candidate_count do
 		process_play_clip(
 			sequence,
-			entry,
+			state,
 			owner,
 			state.candidates[index],
 			previous_time_ms,
@@ -448,7 +451,7 @@ local evaluate_position<const> = function(
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
 			process_position_clip(
 				sequence,
-				entry,
+				state,
 				owner,
 				clip_index,
 				previous_time_ms,

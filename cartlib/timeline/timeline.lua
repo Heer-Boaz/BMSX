@@ -507,25 +507,28 @@ local write_external_time_range<const> = function(
 	end
 	local previous_frame
 	local frame
-	if program.continuous then
+	local continuous<const> = program.continuous
+	if continuous then
 		previous_frame = self.head
 		if previous_frame < 0 then
 			previous_frame = 0
 		end
 		frame = previous_frame
 	else
-		previous_frame = (previous_time_ms / program.frame_duration) // 1
-		if previous_frame >= program.length then
-			previous_frame = program.length - 1
+		local frame_duration<const> = program.frame_duration
+		local last_frame<const> = program.length - 1
+		previous_frame = (previous_time_ms / frame_duration) // 1
+		if previous_frame > last_frame then
+			previous_frame = last_frame
 		end
-		frame = (time_ms / program.frame_duration) // 1
-		if frame >= program.length then
-			frame = program.length - 1
+		frame = (time_ms / frame_duration) // 1
+		if frame > last_frame then
+			frame = last_frame
 		end
 	end
-	local sample<const> = program.continuous or initial or frame ~= previous_frame
+	local sample<const> = continuous or initial or frame ~= previous_frame
 	self.head = frame
-	if program.continuous then
+	if continuous then
 		self.frame_elapsed = 0
 	else
 		self.frame_elapsed = time_ms - frame * program.frame_duration
