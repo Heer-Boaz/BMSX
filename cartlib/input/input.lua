@@ -193,7 +193,6 @@ local new_action_state<const> = function(player, action)
 		value_x_q16 = 0,
 		value_y_q16 = 0,
 		press_id = 0,
-		has_press_time = false,
 		-- Cached frame deltas; was* derives from these per window.
 		min_press_delta = huge_delta,
 		min_release_delta = huge_delta,
@@ -488,7 +487,6 @@ local new_player<const> = function(index)
 		next_press_id = 1,
 		sample_frame = -1,
 		eval_generation = 0,
-		aggregation = {},
 		expression_bindings = {},
 	}
 	push_context_record(player, {
@@ -543,68 +541,6 @@ local sample_player<const> = function(player, frame)
 	player.sample_frame = frame
 end
 
--- Windows resolve at read time: a binding contributes its frames-since-press /
--- frames-since-release delta (-1 while pressed / on the release edge), and
--- was* becomes a `delta < window` compare on the cached minimums.
-local merge_binding<const> = function(agg, state, frame)
-	local press_delta = frame - state.last_press_frame
-	if state.pressed then
-		press_delta = -1
-	end
-	local release_delta = frame - state.last_release_frame
-	if state.just_released then
-		release_delta = -1
-	end
-	agg.any_pressed = agg.any_pressed or state.pressed
-	agg.all_pressed = agg.all_pressed and state.pressed
-	agg.any_just_pressed = agg.any_just_pressed or state.just_pressed
-	agg.all_just_pressed = agg.all_just_pressed and state.just_pressed
-	agg.any_just_released = agg.any_just_released or state.just_released
-	agg.all_just_released = agg.all_just_released and state.just_released
-	agg.any_consumed = agg.any_consumed or state.consumed
-	if press_delta < agg.min_press_delta then
-		agg.min_press_delta = press_delta
-	end
-	if release_delta < agg.min_release_delta then
-		agg.min_release_delta = release_delta
-	end
-	if state.pressed then
-		local press_time<const> = frame - state.press_start_frame
-		if not agg.has_press_time or press_time < agg.press_time then
-			agg.press_time = press_time
-			agg.has_press_time = true
-		end
-		if state.press_id >= agg.press_id then
-			agg.press_id = state.press_id
-		end
-	end
-	if state.value_q16 ~= 0 then
-		agg.value_q16 = state.value_q16
-	end
-	if state.value_x_q16 ~= 0 or state.value_y_q16 ~= 0 then
-		agg.value_x_q16 = state.value_x_q16
-		agg.value_y_q16 = state.value_y_q16
-	end
-end
-
-local reset_aggregation<const> = function(agg)
-	agg.any_pressed = false
-	agg.all_pressed = true
-	agg.any_just_pressed = false
-	agg.all_just_pressed = true
-	agg.any_just_released = false
-	agg.all_just_released = true
-	agg.any_consumed = false
-	agg.has_press_time = false
-	agg.press_time = 0
-	agg.press_id = 0
-	agg.min_press_delta = huge_delta
-	agg.min_release_delta = huge_delta
-	agg.value_q16 = 0
-	agg.value_x_q16 = 0
-	agg.value_y_q16 = 0
-end
-
 local compile_action_state<const> = function(player, action)
 	local state = player.actions[action]
 	if state then
@@ -613,38 +549,6 @@ local compile_action_state<const> = function(player, action)
 	state = create_action_state(player, action)
 	rebuild_action_bindings(player, state)
 	return state
-end
-
--- All-source merge: any_* bits OR across sources; all* bits hold when at least
--- one source with bindings satisfies them (matching the per-source OR the old
--- per-source aggregation produced).
-local fold_source<const> = function(state, agg)
-	state.pressed = state.pressed or agg.any_pressed
-	state.just_pressed = state.just_pressed or agg.any_just_pressed
-	state.just_released = state.just_released or agg.any_just_released
-	state.all_just_pressed = state.all_just_pressed or agg.all_just_pressed
-	state.all_just_released = state.all_just_released or agg.all_just_released
-	state.consumed = state.consumed or agg.any_consumed
-	if agg.has_press_time and (not state.has_press_time or agg.press_time < state.press_time) then
-		state.has_press_time = true
-		state.press_time = agg.press_time
-	end
-	if agg.press_id > state.press_id then
-		state.press_id = agg.press_id
-	end
-	if state.value_q16 == 0 then
-		state.value_q16 = agg.value_q16
-	end
-	if state.value_x_q16 == 0 and state.value_y_q16 == 0 then
-		state.value_x_q16 = agg.value_x_q16
-		state.value_y_q16 = agg.value_y_q16
-	end
-	if agg.min_press_delta < state.min_press_delta then
-		state.min_press_delta = agg.min_press_delta
-	end
-	if agg.min_release_delta < state.min_release_delta then
-		state.min_release_delta = agg.min_release_delta
-	end
 end
 
 local evaluate_guard<const> = function(state, frame)
@@ -738,33 +642,100 @@ end
 -- reads this frame reuse the retained result and numeric edge deltas.
 local refresh_action_state<const> = function(player, state)
 	local frame<const> = player.sample_frame
-	state.pressed = false
-	state.just_pressed = false
-	state.just_released = false
-	state.all_just_pressed = false
-	state.all_just_released = false
-	state.consumed = false
-	state.has_press_time = false
-	state.press_time = 0
-	state.press_id = 0
-	state.value_q16 = 0
-	state.value_x_q16 = 0
-	state.value_y_q16 = 0
-	state.min_press_delta = huge_delta
-	state.min_release_delta = huge_delta
-	local agg<const> = player.aggregation
+	local pressed = false
+	local just_pressed = false
+	local just_released = false
+	local all_just_pressed = false
+	local all_just_released = false
+	local consumed = false
+	local has_press_time = false
+	local press_time = 0
+	local press_id = 0
+	local value_q16 = 0
+	local value_x_q16 = 0
+	local value_y_q16 = 0
+	local min_press_delta = huge_delta
+	local min_release_delta = huge_delta
 	local resolved<const> = state.resolved
 	for source_index = source_keyboard, source_pointer do
 		local list<const> = resolved[source_index]
 		local count<const> = #list
 		if count > 0 then
-			reset_aggregation(agg)
+			local source_all_just_pressed = true
+			local source_all_just_released = true
+			local source_value_q16 = 0
+			local source_value_x_q16 = 0
+			local source_value_y_q16 = 0
 			for i = 1, count do
-				merge_binding(agg, list[i], frame)
+				local button<const> = list[i]
+				local button_pressed<const> = button.pressed
+				local button_just_pressed<const> = button.just_pressed
+				local button_just_released<const> = button.just_released
+				pressed = pressed or button_pressed
+				just_pressed = just_pressed or button_just_pressed
+				just_released = just_released or button_just_released
+				source_all_just_pressed = source_all_just_pressed and button_just_pressed
+				source_all_just_released = source_all_just_released and button_just_released
+				consumed = consumed or button.consumed
+				local press_delta = frame - button.last_press_frame
+				if button_pressed then
+					press_delta = -1
+				end
+				if press_delta < min_press_delta then
+					min_press_delta = press_delta
+				end
+				local release_delta = frame - button.last_release_frame
+				if button_just_released then
+					release_delta = -1
+				end
+				if release_delta < min_release_delta then
+					min_release_delta = release_delta
+				end
+				if button_pressed then
+					local button_press_time<const> = frame - button.press_start_frame
+					if not has_press_time or button_press_time < press_time then
+						has_press_time = true
+						press_time = button_press_time
+					end
+					if button.press_id > press_id then
+						press_id = button.press_id
+					end
+				end
+				local button_value_q16<const> = button.value_q16
+				if button_value_q16 ~= 0 then
+					source_value_q16 = button_value_q16
+				end
+				local button_value_x_q16<const> = button.value_x_q16
+				local button_value_y_q16<const> = button.value_y_q16
+				if button_value_x_q16 ~= 0 or button_value_y_q16 ~= 0 then
+					source_value_x_q16 = button_value_x_q16
+					source_value_y_q16 = button_value_y_q16
+				end
 			end
-			fold_source(state, agg)
+			all_just_pressed = all_just_pressed or source_all_just_pressed
+			all_just_released = all_just_released or source_all_just_released
+			if value_q16 == 0 then
+				value_q16 = source_value_q16
+			end
+			if value_x_q16 == 0 and value_y_q16 == 0 then
+				value_x_q16 = source_value_x_q16
+				value_y_q16 = source_value_y_q16
+			end
 		end
 	end
+	state.pressed = pressed
+	state.just_pressed = just_pressed
+	state.just_released = just_released
+	state.all_just_pressed = all_just_pressed
+	state.all_just_released = all_just_released
+	state.consumed = consumed
+	state.press_time = press_time
+	state.press_id = press_id
+	state.value_q16 = value_q16
+	state.value_x_q16 = value_x_q16
+	state.value_y_q16 = value_y_q16
+	state.min_press_delta = min_press_delta
+	state.min_release_delta = min_release_delta
 	local requirement_mask<const> = state.evaluation_requirement_mask
 	if requirement_mask & requirement_guard ~= 0 then
 		state.guarded_just_pressed = evaluate_guard(state, frame)
