@@ -67,6 +67,7 @@ local evaluate_loop_forward<const> = function(
 	time_ms,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local duration_ms<const> = clip.program.duration_ms
@@ -76,6 +77,7 @@ local evaluate_loop_forward<const> = function(
 	while boundary_ms <= time_ms do
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			0,
 			play_update_method,
@@ -92,6 +94,7 @@ local evaluate_loop_forward<const> = function(
 	if cursor_ms < time_ms or cursor_ms == previous_time_ms then
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			time_ms % duration_ms,
 			play_update_method,
@@ -109,6 +112,7 @@ local evaluate_loop_backward<const> = function(
 	time_ms,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local duration_ms<const> = clip.program.duration_ms
@@ -118,6 +122,7 @@ local evaluate_loop_backward<const> = function(
 	while time_ms < boundary_ms do
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			duration_ms,
 			play_update_method,
@@ -134,6 +139,7 @@ local evaluate_loop_backward<const> = function(
 	if cursor_ms > time_ms or cursor_ms == previous_time_ms then
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			time_ms % duration_ms,
 			play_update_method,
@@ -151,6 +157,7 @@ local evaluate_pingpong_forward<const> = function(
 	time_ms,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local duration_ms<const> = clip.program.duration_ms
@@ -166,6 +173,7 @@ local evaluate_pingpong_forward<const> = function(
 		)
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			local_time_ms,
 			play_update_method,
@@ -188,6 +196,7 @@ local evaluate_pingpong_forward<const> = function(
 		)
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			local_time_ms,
 			play_update_method,
@@ -205,6 +214,7 @@ local evaluate_pingpong_backward<const> = function(
 	time_ms,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local duration_ms<const> = clip.program.duration_ms
@@ -226,6 +236,7 @@ local evaluate_pingpong_backward<const> = function(
 		)
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			local_time_ms,
 			play_update_method,
@@ -248,6 +259,7 @@ local evaluate_pingpong_backward<const> = function(
 		)
 		write_range(
 			target,
+			owner,
 			previous_local_ms,
 			local_time_ms,
 			play_update_method,
@@ -266,6 +278,7 @@ function time_transform.evaluate_at(
 	method,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
@@ -274,6 +287,7 @@ function time_transform.evaluate_at(
 	local local_time_ms<const> = warped_time(clip, time_ms)
 	write_range(
 		target,
+		owner,
 		previous_local_ms,
 		local_time_ms,
 		method,
@@ -290,6 +304,7 @@ function time_transform.evaluate_play(
 	parent_time_ms,
 	initial,
 	target,
+	owner,
 	write_range
 )
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
@@ -297,22 +312,23 @@ function time_transform.evaluate_play(
 	local mode<const> = clip.playback_mode
 	if mode == playback_loop then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, write_range)
+			evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
 		else
-			evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, write_range)
+			evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
 		end
 		return
 	end
 	if mode == playback_pingpong then
 		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, write_range)
+			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
 		else
-			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, write_range)
+			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
 		end
 		return
 	end
 	write_range(
 		target,
+		owner,
 		previous_time_ms,
 		time_ms,
 		play_update_method,

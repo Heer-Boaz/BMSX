@@ -6,9 +6,11 @@
 -- searches again when traversal leaves that range. Generic step values remain
 -- track-program data because they may carry non-numeric cart values.
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local scalar_channel<const> = {}
 local templates<const> = {}
+local sample_flag<const> = timeline_playback.evaluation_flag.sample
 
 scalar_channel.empty_program = {
 	track_count = 0,
@@ -317,17 +319,17 @@ templates.scalar_track = lua_source_printer.compile_template([[
 })
 
 templates.frame_position = lua_source_printer.compile_template(
-	'position = evaluation["frame"]\n',
+	'position = frame\n',
 	{}
 )
 
 templates.time_position = lua_source_printer.compile_template(
-	'position = evaluation["time_ms"]\n',
+	'position = time_ms\n',
 	{}
 )
 
 templates.frame_lane = lua_source_printer.compile_template([[
-	if evaluation["sample"] then
+	if flags & $sample_flag$ ~= 0 then
 		$position$
 		$tracks$
 	end
@@ -347,7 +349,7 @@ templates.time_lane = lua_source_printer.compile_template([[
 templates.runner_factory = lua_source_printer.compile_template([[
 	return function(source_channels)
 		local channels<const> = source_channels
-		return function(entry, evaluation)
+		return function(entry, frame, time_ms, flags, evaluation)
 			$locals$
 			$frame_lane$
 			$time_lane$
@@ -412,6 +414,7 @@ local compile_runner_factory<const> = function(channels)
 	printer:emit(templates.runner_factory, {
 		analysis = analysis,
 		channels = channels,
+		sample_flag = sample_flag,
 		has_cubic_tracks = #cubic_tracks > 0 or #cubic_time_tracks > 0,
 		has_frame_tracks = #linear_tracks > 0 or #cubic_tracks > 0,
 		has_time_tracks = #linear_time_tracks > 0 or #cubic_time_tracks > 0,

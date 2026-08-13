@@ -59,30 +59,21 @@ local resolve_timeline_bindings<const> = function(entry, program, primary_bindin
 	end
 end
 
-local process_evaluations<const> = function(self, entry)
+local finish_entry<const> = function(self, entry)
 	local instance<const> = entry.instance
 	local owner<const> = self.parent
-	local evaluations<const> = instance.evaluations
-	local evaluate<const> = instance.program.evaluate
-	for index = 1, instance.evaluation_count do
-		evaluate(entry, owner, evaluations[index])
+	clear_entry_state(entry, owner)
+	entry.playing = false
+	reconcile_timeline_schedule(self, entry)
+	local on_finished = entry.play_on_finished
+	local finished_context = entry.play_finished_context
+	if on_finished == nil then
+		on_finished = entry.bound_on_finished
+		finished_context = entry.bound_finished_context
 	end
-	local stopped<const> = instance.ended
-	if stopped then
-		clear_entry_state(entry, owner)
-		entry.playing = false
-		reconcile_timeline_schedule(self, entry)
-		local on_finished = entry.play_on_finished
-		local finished_context = entry.play_finished_context
-		if on_finished == nil then
-			on_finished = entry.bound_on_finished
-			finished_context = entry.bound_finished_context
-		end
-		if on_finished ~= nil then
-			on_finished(owner, finished_context, instance)
-		end
+	if on_finished ~= nil then
+		on_finished(owner, finished_context, instance)
 	end
-	return stopped
 end
 
 function timeline_component.new(opts)
@@ -118,6 +109,9 @@ function timeline_component:define(id, definition)
 			params = program.default_params,
 			playing = false,
 		}
+		if program.has_evaluation_callbacks then
+			entry.evaluation_context = {}
+		end
 		self._entries_by_id[id] = entry
 		timeline_track_evaluator.init_entry(entry)
 		timeline_sequence_evaluator.init_entry(entry)
@@ -132,6 +126,13 @@ function timeline_component:define(id, definition)
 		program = timeline_frame_program.build(program, entry.params)
 	end
 	entry.instance:rebind_program(program)
+	if program.has_evaluation_callbacks then
+		if entry.evaluation_context == nil then
+			entry.evaluation_context = {}
+		end
+	else
+		entry.evaluation_context = nil
+	end
 	if playing then
 		if program.binding_count > 1 then
 			local previous_bindings<const> = entry.bindings
@@ -182,50 +183,44 @@ end
 
 function timeline_component:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:seek(frame)
-	process_evaluations(self, entry)
+	entry.instance:seek(entry, self.parent, frame)
 	return entry.instance
 end
 
 function timeline_component:seek_time(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:seek_time(time_ms)
-	process_evaluations(self, entry)
+	entry.instance:seek_time(entry, self.parent, time_ms)
 	return entry.instance
 end
 
 function timeline_component:scrub_time(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:scrub_time(time_ms)
-	process_evaluations(self, entry)
+	entry.instance:scrub_time(entry, self.parent, time_ms)
 	return entry.instance
 end
 
 function timeline_component:seek_to_end(id)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:seek_time(entry.instance.program.duration_ms)
-	process_evaluations(self, entry)
+	entry.instance:seek_time(entry, self.parent, entry.instance.program.duration_ms)
 	return entry.instance
 end
 
 function timeline_component:advance_to(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:advance_to(frame)
-	process_evaluations(self, entry)
+	entry.instance:advance_to(entry, self.parent, frame)
 	return entry.instance
 end
 
 function timeline_component:advance_time_to(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry.instance:advance_time_to(time_ms)
-	process_evaluations(self, entry)
+	entry.instance:advance_time_to(entry, self.parent, time_ms)
 	return entry.instance
 end
 
 function timeline_component:advance(id)
 	local entry<const> = self._entries_by_id[id]
-	if entry.instance:advance() ~= nil then
-		process_evaluations(self, entry)
+	if entry.instance:advance(entry, self.parent) then
+		finish_entry(self, entry)
 	end
 	return entry.instance
 end
@@ -293,8 +288,7 @@ function timeline_component:play(id, opts, on_finished, finished_context)
 		instance:rewind()
 	end
 	if snap and (program.length > 0 or program.continuous) then
-		instance:snap_to_start()
-		process_evaluations(self, entry)
+		instance:snap_to_start(entry, owner)
 	end
 	entry.playing = true
 	reconcile_timeline_schedule(self, entry)
@@ -309,13 +303,15 @@ function timeline_component:stop(id)
 end
 
 function timeline_component:tick_active(delta_time)
+	local entries<const> = self._tick_entries
+	local owner<const> = self.parent
+	local count = self._tick_count
 	local index = 1
-	while index <= self._tick_count do
-		local entry<const> = self._tick_entries[index]
-		if entry.instance:update(delta_time) ~= nil then
-			if not process_evaluations(self, entry) then
-				index = index + 1
-			end
+	while index <= count do
+		local entry<const> = entries[index]
+		if entry.instance:update(entry, owner, delta_time) then
+			finish_entry(self, entry)
+			count = self._tick_count
 		else
 			index = index + 1
 		end

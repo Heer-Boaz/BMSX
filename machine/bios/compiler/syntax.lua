@@ -40,6 +40,7 @@ local syntax<const> = {
 	binary_greater_equal = 12,
 	binary_and = 13,
 	binary_or = 14,
+	binary_bitwise_and = 15,
 }
 
 return syntax

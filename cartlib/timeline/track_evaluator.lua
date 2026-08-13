@@ -3,12 +3,17 @@
 -- track kind or binding name is inspected on the update path.
 local easing<const> = require('cartlib/easing')
 local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
+local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local track_evaluator<const> = {}
 local templates<const> = {}
 local pingpong01<const> = easing.pingpong01
 local sin<const> = math.sin
 local tau<const> = math.pi * 2
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local sample_flag<const> = evaluation_flag.sample
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -148,23 +153,20 @@ function track_evaluator.bind_events(program, method)
 	local events<const> = program.tracks.events[method + 1]
 	local last_frame<const> = program.length - 1
 	local duration_ms<const> = program.duration_ms
-	return function(owner, evaluation)
-		local direction<const> = evaluation.direction
+	return function(owner, previous, current, previous_time_ms, time_ms, direction, flags)
 		local lane = events.backward
 		if direction > 0 then
 			lane = events.forward
 		end
-		local previous<const> = evaluation.previous_frame
-		local current<const> = evaluation.frame
-		if evaluation.wrapped then
+		if flags & wrapped_flag ~= 0 then
 			if direction > 0 then
-				emit_event_range(lane, owner, previous, last_frame, 1, evaluation.initial)
+				emit_event_range(lane, owner, previous, last_frame, 1, flags & initial_flag ~= 0)
 				emit_event_range(lane, owner, 0, current, 1, true)
 			else
-				emit_event_range(lane, owner, previous, 0, -1, evaluation.initial)
+				emit_event_range(lane, owner, previous, 0, -1, flags & initial_flag ~= 0)
 				emit_event_range(lane, owner, last_frame, current, -1, true)
 			end
-		elseif evaluation.initial then
+		elseif flags & initial_flag ~= 0 then
 			emit_event_range(lane, owner, previous, current, direction, true)
 		elseif previous ~= current then
 			if direction > 0 and current == previous + 1 then
@@ -178,17 +180,15 @@ function track_evaluator.bind_events(program, method)
 		if lane.time_count == 0 then
 			return
 		end
-		local previous_time_ms<const> = evaluation.previous_time_ms
-		local time_ms<const> = evaluation.time_ms
-		if evaluation.wrapped then
+		if flags & wrapped_flag ~= 0 then
 			if direction > 0 then
-				emit_time_event_range(lane, owner, previous_time_ms, duration_ms, 1, evaluation.initial)
+				emit_time_event_range(lane, owner, previous_time_ms, duration_ms, 1, flags & initial_flag ~= 0)
 				emit_time_event_range(lane, owner, 0, time_ms, 1, true)
 			else
-				emit_time_event_range(lane, owner, previous_time_ms, 0, -1, evaluation.initial)
+				emit_time_event_range(lane, owner, previous_time_ms, 0, -1, flags & initial_flag ~= 0)
 				emit_time_event_range(lane, owner, duration_ms, time_ms, -1, true)
 			end
-		elseif evaluation.initial then
+		elseif flags & initial_flag ~= 0 then
 			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, true)
 		elseif previous < 0 then
 			emit_time_event_range(events.forward, owner, previous_time_ms, time_ms, 1, true)
@@ -372,8 +372,8 @@ end
 
 function track_evaluator.bind_position_tags(program)
 	local tags<const> = program.tracks.tags
-	return function(entry, owner, evaluation)
-		sync_tags(tags, entry, owner, evaluation.frame, evaluation.time_ms)
+	return function(entry, owner, frame, time_ms)
+		sync_tags(tags, entry, owner, frame, time_ms)
 	end
 end
 
@@ -381,27 +381,25 @@ function track_evaluator.bind_play_tags(program)
 	local tags<const> = program.tracks.tags
 	local last_frame<const> = program.length - 1
 	local duration_ms<const> = program.duration_ms
-	return function(entry, owner, evaluation)
-		local previous<const> = evaluation.previous_frame
-		local current<const> = evaluation.frame
-		if evaluation.initial then
-			sync_tags(tags, entry, owner, previous, evaluation.previous_time_ms)
+	return function(entry, owner, previous, current, previous_time_ms, time_ms, direction, flags)
+		if flags & initial_flag ~= 0 then
+			sync_tags(tags, entry, owner, previous, previous_time_ms)
 		end
-		if previous ~= current or evaluation.wrapped then
-			if evaluation.wrapped then
-				if evaluation.direction > 0 then
+		if previous ~= current or flags & wrapped_flag ~= 0 then
+			if flags & wrapped_flag ~= 0 then
+				if direction > 0 then
 					apply_tag_range(tags, entry, owner, previous, last_frame, 1, false, true)
 					apply_tag_range(tags, entry, owner, 0, current, 1, true, true)
 				else
 					apply_tag_range(tags, entry, owner, previous, 0, -1, true, true)
 					apply_tag_range(tags, entry, owner, last_frame, current, -1, false, false)
 				end
-			elseif evaluation.direction > 0 and current == previous + 1 then
+			elseif direction > 0 and current == previous + 1 then
 				apply_tag_bucket(tags, entry, owner, current, 1)
-			elseif evaluation.direction < 0 and current == previous - 1 then
+			elseif direction < 0 and current == previous - 1 then
 				apply_tag_bucket(tags, entry, owner, previous, -1)
 			else
-				if evaluation.direction > 0 then
+				if direction > 0 then
 					apply_tag_range(tags, entry, owner, previous, current, 1, false, true)
 				else
 					apply_tag_range(tags, entry, owner, previous, current, -1, true, false)
@@ -411,10 +409,8 @@ function track_evaluator.bind_play_tags(program)
 		if tags.time_boundary_count == 0 then
 			return
 		end
-		local previous_time_ms<const> = evaluation.previous_time_ms
-		local time_ms<const> = evaluation.time_ms
-		if evaluation.wrapped then
-			if evaluation.direction > 0 then
+		if flags & wrapped_flag ~= 0 then
+			if direction > 0 then
 				apply_time_tag_range(tags, entry, owner, previous_time_ms, duration_ms, 1, false, true)
 				apply_time_tag_range(tags, entry, owner, 0, time_ms, 1, true, true)
 			else
@@ -424,9 +420,9 @@ function track_evaluator.bind_play_tags(program)
 		elseif previous < 0 then
 			apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, 1, true, true)
 		else
-			if evaluation.direction > 0 then
+			if direction > 0 then
 				apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, 1, false, true)
-			elseif evaluation.direction < 0 then
+			elseif direction < 0 then
 				apply_time_tag_range(tags, entry, owner, previous_time_ms, time_ms, -1, true, false)
 			end
 		end
@@ -485,35 +481,49 @@ local apply_time_step_range<const> = function(entry, steps, previous_time_ms, ti
 	end
 end
 
-local evaluate_play_frame_steps<const> = function(entry, steps, params, evaluation)
-	if evaluation.sample then
-		local previous<const> = evaluation.previous_frame
-		local current<const> = evaluation.frame
-		if evaluation.initial
-			or evaluation.wrapped
+local evaluate_play_frame_steps<const> = function(
+	entry,
+	steps,
+	params,
+	previous,
+	current,
+	direction,
+	flags,
+	evaluation
+)
+	if flags & sample_flag ~= 0 then
+		if flags & initial_flag ~= 0
+			or flags & wrapped_flag ~= 0
 			or current > previous + 1
 			or current < previous - 1 then
 			sample_step_tracks(entry, steps, current, params, evaluation)
-		elseif evaluation.direction > 0 then
+		elseif direction > 0 then
 			apply_step_bucket(entry, steps.by_frame[current], params, evaluation)
-		elseif evaluation.direction < 0 then
+		elseif direction < 0 then
 			apply_step_bucket(entry, steps.reverse_by_frame[previous], params, evaluation)
 		end
 	end
 end
 
-local evaluate_position_frame_steps<const> = function(entry, steps, params, evaluation)
-	if evaluation.sample then
-		sample_step_tracks(entry, steps, evaluation.frame, params, evaluation)
+local evaluate_position_frame_steps<const> = function(entry, steps, params, _previous, frame, _direction, flags, evaluation)
+	if flags & sample_flag ~= 0 then
+		sample_step_tracks(entry, steps, frame, params, evaluation)
 	end
 end
 
-local evaluate_play_time_steps<const> = function(entry, steps, params, evaluation)
-	local previous_time_ms<const> = evaluation.previous_time_ms
-	local time_ms<const> = evaluation.time_ms
-	if evaluation.initial
-		or evaluation.wrapped
-		or evaluation.previous_frame < 0
+local evaluate_play_time_steps<const> = function(
+	entry,
+	steps,
+	params,
+	previous_frame,
+	previous_time_ms,
+	time_ms,
+	flags,
+	evaluation
+)
+	if flags & initial_flag ~= 0
+		or flags & wrapped_flag ~= 0
+		or previous_frame < 0
 		or time_ms <= previous_time_ms then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	else
@@ -521,8 +531,17 @@ local evaluate_play_time_steps<const> = function(entry, steps, params, evaluatio
 	end
 end
 
-local evaluate_position_time_steps<const> = function(entry, steps, params, evaluation)
-	sample_time_step_tracks(entry, steps, evaluation.time_ms, params, evaluation)
+local evaluate_position_time_steps<const> = function(
+	entry,
+	steps,
+	params,
+	_previous_frame,
+	_previous_time_ms,
+	time_ms,
+	_flags,
+	evaluation
+)
+	sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 end
 
 local emit_track_captures<const> = function(printer, values)
@@ -751,15 +770,15 @@ templates.params_local = lua_source_printer.compile_template(
 )
 
 templates.frame_steps = lua_source_printer.compile_template(
-	'evaluate_frame_steps(entry, steps, params, evaluation)\n'
+	'evaluate_frame_steps(entry, steps, params, previous_frame, frame, direction, flags, evaluation)\n'
 )
 
 templates.time_steps = lua_source_printer.compile_template(
-	'evaluate_time_steps(entry, steps, params, evaluation)\n'
+	'evaluate_time_steps(entry, steps, params, previous_frame, previous_time_ms, time_ms, flags, evaluation)\n'
 )
 
 templates.scalar_channels = lua_source_printer.compile_template(
-	'scalar_runner(entry, evaluation)\n'
+	'scalar_runner(entry, frame, time_ms, flags, evaluation)\n'
 )
 
 templates.primary_sample_binding_local = lua_source_printer.compile_template(
@@ -816,10 +835,10 @@ templates.sample_wave_local = lua_source_printer.compile_template(
 )
 
 templates.sample = lua_source_printer.compile_template([[
-	if evaluation["sample"] then
+	if flags & $sample_flag$ ~= 0 then
 		$params_local$
 		$binding_locals$
-		local time_seconds<const> = evaluation["time_ms"] * 0.001
+		local time_seconds<const> = time_ms * 0.001
 		$wave_local$
 		$tracks$
 	end
@@ -835,7 +854,16 @@ templates.value_runner = lua_source_printer.compile_template([[
 	$sample_track_captures$
 	return function(tracks, evaluate_frame_steps, evaluate_time_steps, scalar_runner)
 		$track_captures$
-		return function(entry, evaluation)
+		return function(
+			entry,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			direction,
+			flags,
+			evaluation
+		)
 			$params_local$
 			$frame_steps$
 			$time_steps$
@@ -900,6 +928,7 @@ function track_evaluator.compile_values(program)
 		has_sample_params = has_sample_params,
 		has_pingpong_tracks = has_pingpong_tracks,
 		has_sin_tracks = has_sin_tracks,
+		sample_flag = sample_flag,
 		sample_tracks = sample_tracks,
 	})
 	local factory<const> = load(

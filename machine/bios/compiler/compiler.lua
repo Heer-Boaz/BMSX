@@ -14,6 +14,7 @@ local opcode_by_binary_operator<const> = {
 	[syntax.binary_divide] = isa.op_div,
 	[syntax.binary_floor_divide] = isa.op_floor_divide,
 	[syntax.binary_modulus] = isa.op_mod,
+	[syntax.binary_bitwise_and] = isa.op_band,
 }
 
 local opcode_by_comparison_operator<const> = {
@@ -1031,7 +1032,8 @@ end
 local emit_return_statement<const> = function(state, instruction_words, statement)
 	local return_target<const> = reserve_register(state)
 	local expressions<const> = statement.expressions
-	if #expressions == 0 then
+	local expression_count<const> = #expressions
+	if expression_count == 0 then
 		bytecode.emit_abc(
 			instruction_words,
 			isa.op_knil,
@@ -1042,14 +1044,35 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, 1, 0)
 		return
 	end
-	local return_register<const> = emit_value(
-		state,
+	for index = 2, expression_count do
+		reserve_register(state)
+	end
+	for index = 1, expression_count do
+		local target_register<const> = return_target + index - 1
+		local value_register<const> = emit_value(
+			state,
+			instruction_words,
+			expressions[index],
+			target_register,
+			true
+		)
+		if value_register ~= target_register then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_mov,
+				target_register,
+				value_register,
+				0
+			)
+		end
+	end
+	bytecode.emit_abc(
 		instruction_words,
-		expressions[1],
+		isa.op_ret,
 		return_target,
-		true
+		expression_count,
+		0
 	)
-	bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
 end
 
 local emit_statement

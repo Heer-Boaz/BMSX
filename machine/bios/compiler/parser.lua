@@ -61,6 +61,7 @@ local parse_block
 local parse_unary_expression
 local parse_multiplicative_expression
 local parse_additive_expression
+local parse_bitwise_and_expression
 local parse_comparison_expression
 local parse_and_expression
 local parse_or_expression
@@ -106,6 +107,10 @@ local comparison_operator_by_token<const> = {
 	[token.less_equal] = syntax.binary_less_equal,
 	[token.greater] = syntax.binary_greater,
 	[token.greater_equal] = syntax.binary_greater_equal,
+}
+
+local bitwise_and_operator_by_token<const> = {
+	[token.ampersand] = syntax.binary_bitwise_and,
 }
 
 local and_operator_by_token<const> = {
@@ -293,10 +298,18 @@ parse_additive_expression = function(state)
 	)
 end
 
-parse_comparison_expression = function(state)
+parse_bitwise_and_expression = function(state)
 	return parse_left_associative_expression(
 		state,
 		parse_additive_expression,
+		bitwise_and_operator_by_token
+	)
+end
+
+parse_comparison_expression = function(state)
+	return parse_left_associative_expression(
+		state,
+		parse_bitwise_and_expression,
 		comparison_operator_by_token
 	)
 end
@@ -389,7 +402,9 @@ local parse_return_statement<const> = function(state)
 	expect(state, token.keyword_return)
 	local expressions<const> = {}
 	if return_terminators[state.token_kind] == nil then
-		expressions[1] = parse_expression(state)
+		repeat
+			expressions[#expressions + 1] = parse_expression(state)
+		until not match(state, token.comma)
 	end
 	return {
 		kind = syntax.return_statement,

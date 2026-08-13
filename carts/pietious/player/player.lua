@@ -610,12 +610,10 @@ function player:update_hit_invulnerability()
 		return
 	end
 
-	local hit_invulnerability_sequence<const> = self.timelines:get('p.seq.hi')
-	hit_invulnerability_sequence:advance()
+	local hit_invulnerability_sequence<const> = self.timelines:advance('p.seq.hi')
 	self.hit_invulnerability_timer = damage_hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
 
-	local hit_blink_sequence<const> = self.timelines:get('p.seq.hb')
-	hit_blink_sequence:advance()
+	local hit_blink_sequence<const> = self.timelines:advance('p.seq.hb')
 	if hit_blink_sequence.wrapped then
 		self.hit_blink_on = not self.hit_blink_on
 	end
@@ -1769,8 +1767,7 @@ function player:reset_fall_substate_sequence()
 end
 
 function player:advance_fall_substate_sequence()
-	local fall_substate_sequence<const> = self.timelines:get('p.seq.f')
-	fall_substate_sequence:advance()
+	local fall_substate_sequence<const> = self.timelines:advance('p.seq.f')
 	self.fall_substate = fall_substate_sequence:value()
 end
 

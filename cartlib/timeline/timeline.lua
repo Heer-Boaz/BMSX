@@ -1,4 +1,5 @@
 local clamp<const> = require('cartlib/util/clamp')
+local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
@@ -13,56 +14,18 @@ local playback_boundary<const> = timeline_playback.boundary
 local boundary_none<const> = playback_boundary.none
 local boundary_loop<const> = playback_boundary.loop
 local boundary_turn<const> = playback_boundary.turn
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local sample_flag<const> = evaluation_flag.sample
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
+local sample_range_flags<const> = sample_flag | boundary_none
+local loop_range_flags<const> = sample_flag | wrapped_flag | boundary_loop
 local play_update_method<const> = update_method.play
 local jump_update_method<const> = update_method.jump
 local scrub_update_method<const> = update_method.scrub
 
 local timeline<const> = {}
 timeline.__index = timeline
-
-local clear_evaluations<const> = function(self)
-	self.evaluation_count = 0
-	self.wrapped = false
-end
-
-local write_evaluation<const> = function(
-	self,
-	previous_frame,
-	frame,
-	previous_time_ms,
-	time_ms,
-	method,
-	direction,
-	sample,
-	boundary,
-	wrapped,
-	initial
-)
-	local count<const> = self.evaluation_count + 1
-	local evaluation = self.evaluations[count]
-	if evaluation == nil then
-		evaluation = {}
-		self.evaluations[count] = evaluation
-	end
-	evaluation.previous_frame = previous_frame
-	evaluation.frame = frame
-	evaluation.previous_time_ms = previous_time_ms
-	evaluation.time_ms = time_ms
-	evaluation.method = method
-	evaluation.direction = direction
-	evaluation.sample = sample
-	evaluation.boundary = boundary
-	evaluation.wrapped = wrapped
-	evaluation.initial = initial
-	if sample then
-		evaluation.value = timeline_frame_program.value(self.program, frame)
-	end
-	self.evaluation_count = count
-	if wrapped then
-		self.wrapped = true
-	end
-	return evaluation
-end
 
 local build_frame_sequence<const> = function(sequence)
 	local frames<const> = {}
@@ -107,497 +70,7 @@ local range<const> = function(frame_count)
 	}
 end
 
-local update_continuous_unbounded<const> = function(self, delta_time)
-	clear_evaluations(self)
-	local previous_frame<const> = self.head
-	local frame = previous_frame
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-	end
-	local previous_time_ms<const> = self.position_ms
-	local direction<const> = self.direction
-	local time_ms<const> = previous_time_ms + delta_time * direction
-	self.position_ms = time_ms
-	write_evaluation(
-		self,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		play_update_method,
-		direction,
-		true,
-		boundary_none,
-		false,
-		false
-	)
-	return self
-end
-
-local update_continuous_once<const> = function(self, delta_time)
-	clear_evaluations(self)
-	local previous_frame<const> = self.head
-	local frame = previous_frame
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-	end
-	local previous_time_ms<const> = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
-	local time_ms = previous_time_ms + delta_time
-	local ended<const> = time_ms >= duration_ms
-	if ended then
-		time_ms = duration_ms
-		self.ended = true
-	end
-	self.position_ms = time_ms
-	write_evaluation(
-		self,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		play_update_method,
-		1,
-		true,
-		boundary_none,
-		false,
-		false
-	)
-	return self
-end
-
-local update_continuous_loop<const> = function(self, delta_time)
-	clear_evaluations(self)
-	local previous_frame = self.head
-	local frame = previous_frame
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-	end
-	local previous_time_ms = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
-	local remaining = delta_time
-	while previous_time_ms + remaining >= duration_ms do
-		remaining = remaining - (duration_ms - previous_time_ms)
-		write_evaluation(
-			self,
-			previous_frame,
-			frame,
-			previous_time_ms,
-			0,
-			play_update_method,
-			1,
-			true,
-			boundary_loop,
-			true,
-			false
-		)
-		previous_frame = frame
-		previous_time_ms = 0
-	end
-	if remaining > 0 or self.evaluation_count == 0 then
-		local time_ms<const> = previous_time_ms + remaining
-		write_evaluation(
-			self,
-			previous_frame,
-			frame,
-			previous_time_ms,
-			time_ms,
-			play_update_method,
-			1,
-			true,
-			boundary_none,
-			false,
-			false
-		)
-		previous_time_ms = time_ms
-	end
-	self.position_ms = previous_time_ms
-	return self
-end
-
-local update_continuous_pingpong<const> = function(self, delta_time)
-	clear_evaluations(self)
-	local previous_frame = self.head
-	local frame = previous_frame
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-	end
-	local previous_time_ms = self.position_ms
-	local duration_ms<const> = self.program.duration_ms
-	local remaining = delta_time
-	while remaining > 0 do
-		local direction<const> = self.direction
-		local boundary_ms
-		local distance_ms
-		if direction > 0 then
-			boundary_ms = duration_ms
-			distance_ms = duration_ms - previous_time_ms
-		else
-			boundary_ms = 0
-			distance_ms = previous_time_ms
-		end
-		local time_ms
-		local boundary
-		if remaining >= distance_ms then
-			time_ms = boundary_ms
-			remaining = remaining - distance_ms
-			boundary = boundary_turn
-			self.direction = -direction
-		else
-			time_ms = previous_time_ms + remaining * direction
-			remaining = 0
-			boundary = boundary_none
-		end
-		write_evaluation(
-			self,
-			previous_frame,
-			frame,
-			previous_time_ms,
-			time_ms,
-			play_update_method,
-			direction,
-			true,
-			boundary,
-			false,
-			false
-		)
-		previous_frame = frame
-		previous_time_ms = time_ms
-	end
-	self.position_ms = previous_time_ms
-	return self
-end
-
-local update_immediate_frames<const> = function(self)
-	clear_evaluations(self)
-	return self:advance_internal(false)
-end
-
-local update_timed_frames<const> = function(self, delta_time)
-	clear_evaluations(self)
-	local frame_elapsed = self.frame_elapsed + delta_time
-	local frame_duration<const> = self.program.frame_duration
-	while frame_elapsed >= frame_duration do
-		frame_elapsed = frame_elapsed - frame_duration
-		self:advance_internal(true)
-		if self.ended then
-			break
-		end
-	end
-	self.frame_elapsed = frame_elapsed
-	if self.evaluation_count > 0 then
-		return self
-	end
-	return nil
-end
-
-local select_updater<const> = function(program)
-	if not program.continuous then
-		if program.frame_duration <= 0 then
-			return update_immediate_frames
-		end
-		return update_timed_frames
-	end
-	if program.duration_ms == nil then
-		return update_continuous_unbounded
-	end
-	local mode<const> = program.playback_mode
-	if mode == playback_once then
-		return update_continuous_once
-	end
-	if mode == playback_loop then
-		return update_continuous_loop
-	end
-	return update_continuous_pingpong
-end
-
-function timeline.new(id, program)
-	local self<const> = setmetatable({}, timeline)
-	self.id = id
-	self.program = program
-	self.update = select_updater(program)
-	self.head = timelinestart_index
-	self.frame_elapsed = 0
-	self.position_ms = 0
-	self.ended = false
-	self.direction = 1
-	self.wrapped = false
-	self.evaluations = {}
-	self.evaluation_count = 0
-	return self
-end
-
-function timeline:rebind_program(program)
-	self.program = program
-	self.update = select_updater(program)
-end
-
-function timeline:build(params)
-	self:rebind_program(timeline_frame_program.build(self.program, params))
-	self:rewind()
-end
-
-function timeline:value()
-	return timeline_frame_program.value(self.program, self.head)
-end
-
-function timeline:rewind()
-	self.head = timelinestart_index
-	self.frame_elapsed = 0
-	self.position_ms = 0
-	self.ended = false
-	self.direction = 1
-	clear_evaluations(self)
-end
-
-function timeline:advance()
-	clear_evaluations(self)
-	return self:advance_internal(false)
-end
-
-local move_to<const> = function(self, frame, method)
-	clear_evaluations(self)
-	local program<const> = self.program
-	local previous_frame<const> = self.head
-	local current_frame<const> = clamp(frame, 0, program.length - 1)
-	local direction = 0
-	if current_frame > previous_frame then
-		direction = 1
-	elseif current_frame < previous_frame then
-		direction = -1
-	end
-	local previous_time_ms<const> = self.position_ms
-	local time_ms<const> = current_frame * program.frame_duration
-	self.head = current_frame
-	self.frame_elapsed = 0
-	self.position_ms = time_ms
-	self.ended = false
-	write_evaluation(
-		self,
-		previous_frame,
-		current_frame,
-		previous_time_ms,
-		time_ms,
-		method,
-		direction,
-		true,
-		boundary_none,
-		false,
-		false
-	)
-	return self
-end
-
-function timeline:advance_to(frame)
-	return move_to(self, frame, play_update_method)
-end
-
--- A seek reconstructs destination state. Event tracks remain play-only unless
--- they explicitly opt into swept seek dispatch with `fire_on_seek`.
-function timeline:seek(frame)
-	return move_to(self, frame, jump_update_method)
-end
-
-local move_time<const> = function(self, requested_time_ms, method)
-	clear_evaluations(self)
-	local program<const> = self.program
-	local previous_frame<const> = self.head
-	local previous_time_ms<const> = self.position_ms
-	local time_ms
-	if program.duration_ms == nil then
-		if requested_time_ms < 0 then
-			time_ms = 0
-		else
-			time_ms = requested_time_ms
-		end
-	else
-		time_ms = clamp(requested_time_ms, 0, program.duration_ms)
-	end
-	local frame
-	if program.continuous then
-		frame = 0
-	else
-		frame = (time_ms / program.frame_duration) // 1
-		if frame >= program.length then
-			frame = program.length - 1
-		end
-	end
-	local direction = 0
-	if time_ms > previous_time_ms then
-		direction = 1
-	elseif time_ms < previous_time_ms then
-		direction = -1
-	end
-	self.head = frame
-	if program.continuous then
-		self.frame_elapsed = 0
-	else
-		self.frame_elapsed = time_ms - frame * program.frame_duration
-	end
-	self.position_ms = time_ms
-	self.ended = false
-	write_evaluation(
-		self,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		method,
-		direction,
-		true,
-		boundary_none,
-		false,
-		false
-	)
-	return self
-end
-
--- Explicit play traversal emits every crossed one-shot key. seek_time() and
--- scrub_time() reconstruct destination state and emit only tracks which opted
--- into their respective positioning method.
-function timeline:advance_time_to(time_ms)
-	return move_time(self, time_ms, play_update_method)
-end
-
-function timeline:seek_time(time_ms)
-	return move_time(self, time_ms, jump_update_method)
-end
-
-function timeline:scrub_time(time_ms)
-	return move_time(self, time_ms, scrub_update_method)
-end
-
-local write_external_time_range<const> = function(
-	self,
-	previous_time_ms,
-	time_ms,
-	method,
-	direction,
-	initial,
-	boundary,
-	wrapped
-)
-	local program<const> = self.program
-	local duration_ms<const> = program.duration_ms
-	if duration_ms ~= nil then
-		previous_time_ms = clamp(previous_time_ms, 0, duration_ms)
-		time_ms = clamp(time_ms, 0, duration_ms)
-	end
-	local previous_frame
-	local frame
-	if program.continuous then
-		previous_frame = self.head
-		if previous_frame < 0 then
-			previous_frame = 0
-		end
-		frame = previous_frame
-	else
-		previous_frame = (previous_time_ms / program.frame_duration) // 1
-		if previous_frame >= program.length then
-			previous_frame = program.length - 1
-		end
-		frame = (time_ms / program.frame_duration) // 1
-		if frame >= program.length then
-			frame = program.length - 1
-		end
-	end
-	local sample<const> = program.continuous or initial or frame ~= previous_frame
-	self.head = frame
-	if program.continuous then
-		self.frame_elapsed = 0
-	else
-		self.frame_elapsed = time_ms - frame * program.frame_duration
-	end
-	self.position_ms = time_ms
-	self.direction = direction
-	write_evaluation(
-		self,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		method,
-		direction,
-		sample,
-		boundary,
-		wrapped,
-		initial
-	)
-	return self
-end
-
--- Play traversal emits every monotonic range produced by loop and ping-pong
--- warps. Positioning evaluates only the transformed destination range below.
-function timeline:evaluate_clip_play_range(clip, previous_parent_time_ms, parent_time_ms, initial, finished)
-	clear_evaluations(self)
-	timeline_time_transform.evaluate_play(
-		clip,
-		previous_parent_time_ms,
-		parent_time_ms,
-		initial,
-		self,
-		write_external_time_range
-	)
-	self.ended = finished
-	return self
-end
-
-function timeline:evaluate_clip_at(clip, previous_parent_time_ms, parent_time_ms, method, initial)
-	clear_evaluations(self)
-	timeline_time_transform.evaluate_at(
-		clip,
-		previous_parent_time_ms,
-		parent_time_ms,
-		method,
-		initial,
-		self,
-		write_external_time_range
-	)
-	self.ended = false
-	return self
-end
-
-function timeline:snap_to_start()
-	clear_evaluations(self)
-	local previous_frame<const> = self.head
-	local previous_time_ms<const> = self.position_ms
-	self.head = 0
-	self.frame_elapsed = 0
-	self.position_ms = 0
-	self.ended = false
-	write_evaluation(
-		self,
-		previous_frame,
-		0,
-		previous_time_ms,
-		0,
-		play_update_method,
-		1,
-		true,
-		boundary_none,
-		false,
-		false
-	)
-	return self
-end
-
--- Position-only access for frame-sequence consumers; no evaluation is emitted.
-function timeline:set_frame(frame)
-	clear_evaluations(self)
-	self.head = clamp(frame, timelinestart_index, self.program.length - 1)
-	self.frame_elapsed = 0
-	if self.head < 0 then
-		self.position_ms = 0
-	else
-		self.position_ms = self.head * self.program.frame_duration
-	end
-end
-
-function timeline:advance_internal(preserve_elapsed)
+local advance_internal<const> = function(self, entry, owner, preserve_elapsed)
 	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
@@ -652,20 +125,536 @@ function timeline:advance_internal(preserve_elapsed)
 	if not preserve_elapsed then
 		self.frame_elapsed = 0
 	end
-	write_evaluation(
-		self,
+	local flags = boundary
+	if sample then
+		flags = flags | sample_flag
+	end
+	if wrapped then
+		flags = flags | wrapped_flag
+		self.wrapped = true
+	end
+	program.evaluate_play(
+		entry,
+		owner,
 		previous_frame,
 		current_frame,
 		previous_time_ms,
 		time_ms,
-		play_update_method,
 		traversal_direction,
-		sample,
-		boundary,
-		wrapped,
-		false
+		flags
+	)
+	return self.ended
+end
+
+local update_continuous_unbounded<const> = function(self, entry, owner, delta_time)
+	self.wrapped = false
+	local previous_frame<const> = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms<const> = self.position_ms
+	local direction<const> = self.direction
+	local time_ms<const> = previous_time_ms + delta_time * direction
+	self.position_ms = time_ms
+	self.program.evaluate_play(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		sample_range_flags
+	)
+end
+
+local update_continuous_once<const> = function(self, entry, owner, delta_time)
+	self.wrapped = false
+	local previous_frame<const> = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms<const> = self.position_ms
+	local duration_ms<const> = self.program.duration_ms
+	local time_ms = previous_time_ms + delta_time
+	local ended<const> = time_ms >= duration_ms
+	if ended then
+		time_ms = duration_ms
+		self.ended = true
+	end
+	self.position_ms = time_ms
+	self.program.evaluate_play(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		1,
+		sample_range_flags
+	)
+	return ended
+end
+
+local update_continuous_loop<const> = function(self, entry, owner, delta_time)
+	self.wrapped = false
+	local previous_frame = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms = self.position_ms
+	local duration_ms<const> = self.program.duration_ms
+	local evaluate_play<const> = self.program.evaluate_play
+	local remaining = delta_time
+	local evaluated = false
+	while previous_time_ms + remaining >= duration_ms do
+		remaining = remaining - (duration_ms - previous_time_ms)
+		evaluate_play(
+			entry,
+			owner,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			0,
+			1,
+			loop_range_flags
+		)
+		self.wrapped = true
+		evaluated = true
+		previous_frame = frame
+		previous_time_ms = 0
+	end
+	if remaining > 0 or not evaluated then
+		local time_ms<const> = previous_time_ms + remaining
+		evaluate_play(
+			entry,
+			owner,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			1,
+			sample_range_flags
+		)
+		previous_time_ms = time_ms
+	end
+	self.position_ms = previous_time_ms
+end
+
+local update_continuous_pingpong<const> = function(self, entry, owner, delta_time)
+	self.wrapped = false
+	local previous_frame = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms = self.position_ms
+	local duration_ms<const> = self.program.duration_ms
+	local evaluate_play<const> = self.program.evaluate_play
+	local remaining = delta_time
+	while remaining > 0 do
+		local direction<const> = self.direction
+		local boundary_ms
+		local distance_ms
+		if direction > 0 then
+			boundary_ms = duration_ms
+			distance_ms = duration_ms - previous_time_ms
+		else
+			boundary_ms = 0
+			distance_ms = previous_time_ms
+		end
+		local time_ms
+		local boundary
+		if remaining >= distance_ms then
+			time_ms = boundary_ms
+			remaining = remaining - distance_ms
+			boundary = boundary_turn
+			self.direction = -direction
+		else
+			time_ms = previous_time_ms + remaining * direction
+			remaining = 0
+			boundary = boundary_none
+		end
+		evaluate_play(
+			entry,
+			owner,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			direction,
+			sample_flag | boundary
+		)
+		previous_frame = frame
+		previous_time_ms = time_ms
+	end
+	self.position_ms = previous_time_ms
+end
+
+local update_immediate_frames<const> = function(self, entry, owner)
+	self.wrapped = false
+	return advance_internal(self, entry, owner, false)
+end
+
+local update_timed_frames<const> = function(self, entry, owner, delta_time)
+	self.wrapped = false
+	local frame_elapsed = self.frame_elapsed + delta_time
+	local frame_duration<const> = self.program.frame_duration
+	local evaluated = false
+	while frame_elapsed >= frame_duration do
+		frame_elapsed = frame_elapsed - frame_duration
+		advance_internal(self, entry, owner, true)
+		evaluated = true
+		if self.ended then
+			break
+		end
+	end
+	self.frame_elapsed = frame_elapsed
+	return evaluated and self.ended
+end
+
+local select_updater<const> = function(program)
+	if not program.continuous then
+		if program.frame_duration <= 0 then
+			return update_immediate_frames
+		end
+		return update_timed_frames
+	end
+	if program.duration_ms == nil then
+		return update_continuous_unbounded
+	end
+	local mode<const> = program.playback_mode
+	if mode == playback_once then
+		return update_continuous_once
+	end
+	if mode == playback_loop then
+		return update_continuous_loop
+	end
+	return update_continuous_pingpong
+end
+
+function timeline.new(id, program)
+	local self<const> = setmetatable({}, timeline)
+	self.id = id
+	self.program = program
+	self.update = select_updater(program)
+	self.head = timelinestart_index
+	self.frame_elapsed = 0
+	self.position_ms = 0
+	self.ended = false
+	self.direction = 1
+	self.wrapped = false
+	return self
+end
+
+function timeline:rebind_program(program)
+	self.program = program
+	self.update = select_updater(program)
+end
+
+function timeline:build(params)
+	self:rebind_program(timeline_frame_program.build(self.program, params))
+	self:rewind()
+end
+
+function timeline:value()
+	return timeline_frame_program.value(self.program, self.head)
+end
+
+function timeline:rewind()
+	self.head = timelinestart_index
+	self.frame_elapsed = 0
+	self.position_ms = 0
+	self.ended = false
+	self.direction = 1
+	self.wrapped = false
+end
+
+function timeline:advance(entry, owner)
+	self.wrapped = false
+	return advance_internal(self, entry, owner, false)
+end
+
+local move_to<const> = function(self, entry, owner, frame, evaluate)
+	self.wrapped = false
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local current_frame<const> = clamp(frame, 0, program.length - 1)
+	local direction = 0
+	if current_frame > previous_frame then
+		direction = 1
+	elseif current_frame < previous_frame then
+		direction = -1
+	end
+	local previous_time_ms<const> = self.position_ms
+	local time_ms<const> = current_frame * program.frame_duration
+	self.head = current_frame
+	self.frame_elapsed = 0
+	self.position_ms = time_ms
+	self.ended = false
+	evaluate(
+		entry,
+		owner,
+		previous_frame,
+		current_frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		sample_range_flags
 	)
 	return self
+end
+
+function timeline:advance_to(entry, owner, frame)
+	return move_to(self, entry, owner, frame, self.program.evaluate_play)
+end
+
+-- A seek reconstructs destination state. Event tracks remain play-only unless
+-- they explicitly opt into swept seek dispatch with `fire_on_seek`.
+function timeline:seek(entry, owner, frame)
+	return move_to(self, entry, owner, frame, self.program.evaluate_jump)
+end
+
+local move_time<const> = function(self, entry, owner, requested_time_ms, evaluate)
+	self.wrapped = false
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	local time_ms
+	if program.duration_ms == nil then
+		if requested_time_ms < 0 then
+			time_ms = 0
+		else
+			time_ms = requested_time_ms
+		end
+	else
+		time_ms = clamp(requested_time_ms, 0, program.duration_ms)
+	end
+	local frame
+	if program.continuous then
+		frame = 0
+	else
+		frame = (time_ms / program.frame_duration) // 1
+		if frame >= program.length then
+			frame = program.length - 1
+		end
+	end
+	local direction = 0
+	if time_ms > previous_time_ms then
+		direction = 1
+	elseif time_ms < previous_time_ms then
+		direction = -1
+	end
+	self.head = frame
+	if program.continuous then
+		self.frame_elapsed = 0
+	else
+		self.frame_elapsed = time_ms - frame * program.frame_duration
+	end
+	self.position_ms = time_ms
+	self.ended = false
+	evaluate(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		sample_range_flags
+	)
+	return self
+end
+
+-- Explicit play traversal emits every crossed one-shot key. seek_time() and
+-- scrub_time() reconstruct destination state and emit only tracks which opted
+-- into their respective positioning method.
+function timeline:advance_time_to(entry, owner, time_ms)
+	return move_time(self, entry, owner, time_ms, self.program.evaluate_play)
+end
+
+function timeline:seek_time(entry, owner, time_ms)
+	return move_time(self, entry, owner, time_ms, self.program.evaluate_jump)
+end
+
+function timeline:scrub_time(entry, owner, time_ms)
+	return move_time(self, entry, owner, time_ms, self.program.evaluate_scrub)
+end
+
+local write_external_time_range<const> = function(
+	entry,
+	owner,
+	previous_time_ms,
+	time_ms,
+	method,
+	direction,
+	initial,
+	boundary,
+	wrapped
+)
+	local self<const> = entry.instance
+	local program<const> = self.program
+	local duration_ms<const> = program.duration_ms
+	if duration_ms ~= nil then
+		previous_time_ms = clamp(previous_time_ms, 0, duration_ms)
+		time_ms = clamp(time_ms, 0, duration_ms)
+	end
+	local previous_frame
+	local frame
+	if program.continuous then
+		previous_frame = self.head
+		if previous_frame < 0 then
+			previous_frame = 0
+		end
+		frame = previous_frame
+	else
+		previous_frame = (previous_time_ms / program.frame_duration) // 1
+		if previous_frame >= program.length then
+			previous_frame = program.length - 1
+		end
+		frame = (time_ms / program.frame_duration) // 1
+		if frame >= program.length then
+			frame = program.length - 1
+		end
+	end
+	local sample<const> = program.continuous or initial or frame ~= previous_frame
+	self.head = frame
+	if program.continuous then
+		self.frame_elapsed = 0
+	else
+		self.frame_elapsed = time_ms - frame * program.frame_duration
+	end
+	self.position_ms = time_ms
+	self.direction = direction
+	local flags = boundary
+	if sample then
+		flags = flags | sample_flag
+	end
+	if wrapped then
+		flags = flags | wrapped_flag
+		self.wrapped = true
+	end
+	if initial then
+		flags = flags | initial_flag
+	end
+	local evaluate
+	if method == play_update_method then
+		evaluate = program.evaluate_play
+	elseif method == jump_update_method then
+		evaluate = program.evaluate_jump
+	else
+		evaluate = program.evaluate_scrub
+	end
+	evaluate(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+	local notify_boundary<const> = entry.notify_boundary
+	if notify_boundary ~= nil then
+		local context<const> = entry.evaluation_context
+		if not program.has_evaluation_callbacks then
+			timeline_evaluation_context.write(
+				context,
+				program,
+				method,
+				previous_frame,
+				frame,
+				previous_time_ms,
+				time_ms,
+				direction,
+				flags
+			)
+		end
+		notify_boundary(entry.clip, entry.primary_binding, context)
+	end
+	return self
+end
+
+-- Play traversal emits every monotonic range produced by loop and ping-pong
+-- warps. Positioning evaluates only the transformed destination range below.
+function timeline:evaluate_clip_play_range(
+	entry,
+	owner,
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial,
+	finished
+)
+	self.wrapped = false
+	timeline_time_transform.evaluate_play(
+		clip,
+		previous_parent_time_ms,
+		parent_time_ms,
+		initial,
+		entry,
+		owner,
+		write_external_time_range
+	)
+	self.ended = finished
+	return self
+end
+
+function timeline:evaluate_clip_at(entry, owner, clip, previous_parent_time_ms, parent_time_ms, method, initial)
+	self.wrapped = false
+	timeline_time_transform.evaluate_at(
+		clip,
+		previous_parent_time_ms,
+		parent_time_ms,
+		method,
+		initial,
+		entry,
+		owner,
+		write_external_time_range
+	)
+	self.ended = false
+	return self
+end
+
+function timeline:snap_to_start(entry, owner)
+	self.wrapped = false
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	self.head = 0
+	self.frame_elapsed = 0
+	self.position_ms = 0
+	self.ended = false
+	self.program.evaluate_play(
+		entry,
+		owner,
+		previous_frame,
+		0,
+		previous_time_ms,
+		0,
+		1,
+		sample_range_flags
+	)
+	return self
+end
+
+-- Position-only access for frame-sequence consumers; no evaluation is emitted.
+function timeline:set_frame(frame)
+	self.wrapped = false
+	self.head = clamp(frame, timelinestart_index, self.program.length - 1)
+	self.frame_elapsed = 0
+	if self.head < 0 then
+		self.position_ms = 0
+	else
+		self.position_ms = self.head * self.program.frame_duration
+	end
 end
 
 return {

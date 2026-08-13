@@ -1,3 +1,4 @@
+local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
@@ -8,6 +9,7 @@ local update_method<const> = timeline_playback.update_method
 local play_method<const> = update_method.play
 local jump_method<const> = update_method.jump
 local scrub_method<const> = update_method.scrub
+local sample_flag<const> = timeline_playback.evaluation_flag.sample
 local shape_values<const> = 0x001
 local shape_position_values<const> = 0x002
 local shape_tags<const> = 0x004
@@ -17,12 +19,15 @@ local shape_scrub_events<const> = 0x020
 local shape_apply_function<const> = 0x040
 local shape_frame_appliers<const> = 0x080
 local shape_subsequences<const> = 0x100
+local shape_evaluation_context<const> = 0x200
 local evaluation_environment<const> = {
 	bind_events = timeline_track_evaluator.bind_events,
 	bind_play_tags = timeline_track_evaluator.bind_play_tags,
 	bind_position_tags = timeline_track_evaluator.bind_position_tags,
 	bind_play_sequences = timeline_sequence_evaluator.bind_play,
 	bind_position_sequences = timeline_sequence_evaluator.bind_position,
+	frame_value = timeline_evaluation_context.value,
+	write_evaluation_context = timeline_evaluation_context.write,
 }
 local evaluation_factory_by_shape<const> = {}
 local templates<const> = {}
@@ -36,6 +41,11 @@ local emit_dependency_captures<const> = function(printer, values)
 	end
 	if values.has_play_events or values.has_seek_events or values.has_scrub_events then
 		printer:emit(templates.event_dependency_capture, values)
+	end
+	if values.has_evaluation_context then
+		printer:emit(templates.context_dependency_capture, values)
+	elseif values.has_frame_appliers then
+		printer:emit(templates.frame_value_dependency_capture, values)
 	end
 end
 
@@ -71,8 +81,13 @@ local emit_program_captures<const> = function(printer, values)
 		printer:emit(templates.event_binding, values)
 	end
 	if values.has_subsequences then
-		printer:emit(templates.play_sequence_binding, values)
-		printer:emit(templates.position_sequence_binding, values)
+		printer:emit(templates.sequence_bindings, values)
+	end
+end
+
+local emit_context<const> = function(printer, values)
+	if values.has_evaluation_context then
+		printer:emit(templates.context, values)
 	end
 end
 
@@ -92,7 +107,13 @@ local emit_values<const> = function(printer, values)
 		return
 	end
 	if values.evaluator_name == 'play' or not values.has_position_values then
-		printer:emit(templates.play_values, values)
+		if values.has_evaluation_context then
+			printer:emit(templates.play_values_with_context, values)
+		else
+			printer:emit(templates.play_values, values)
+		end
+	elseif values.has_evaluation_context then
+		printer:emit(templates.position_values_with_context, values)
 	else
 		printer:emit(templates.position_values, values)
 	end
@@ -105,7 +126,12 @@ local emit_apply_function<const> = function(printer, values)
 end
 
 local emit_frame_appliers<const> = function(printer, values)
-	if values.has_frame_appliers then
+	if not values.has_frame_appliers then
+		return
+	end
+	if values.has_evaluation_context then
+		printer:emit(templates.frame_appliers_with_context, values)
+	else
 		printer:emit(templates.frame_appliers, values)
 	end
 end
@@ -122,8 +148,10 @@ local emit_subsequences<const> = function(printer, values)
 	end
 	if values.evaluator_name == 'play' then
 		printer:emit(templates.play_sequences, values)
+	elseif values.update_method == jump_method then
+		printer:emit(templates.jump_sequences, values)
 	else
-		printer:emit(templates.position_sequences, values)
+		printer:emit(templates.scrub_sequences, values)
 	end
 end
 
@@ -131,38 +159,51 @@ local emit_events<const> = function(printer, values)
 	local name<const> = values.evaluator_name
 	if name == 'play' and values.has_play_events then
 		printer:emit(templates.play_events, values)
-	elseif name == 'jump' and values.has_seek_events then
+	elseif values.update_method == jump_method and values.has_seek_events then
 		printer:emit(templates.jump_events, values)
-	elseif name == 'scrub' and values.has_scrub_events then
+	elseif values.update_method == scrub_method and values.has_scrub_events then
 		printer:emit(templates.scrub_events, values)
 	end
 end
 
-local emit_body<const> = function(printer, values, name)
-	values.evaluator_name = name
-	printer:emit(templates.body, values)
+local emit_evaluator_body<const> = function(printer, values, evaluator_name, method)
+	values.evaluator_name = evaluator_name
+	values.update_method = method
+	printer:emit(templates.evaluator_body, values)
 end
 
-local emit_play_body<const> = function(printer, values)
-	emit_body(printer, values, 'play')
+local emit_play_evaluator<const> = function(printer, values)
+	emit_evaluator_body(printer, values, 'play', play_method)
 end
 
-local emit_jump_body<const> = function(printer, values)
-	emit_body(printer, values, values.jump_evaluator)
+local emit_jump_evaluator<const> = function(printer, values)
+	emit_evaluator_body(printer, values, values.jump_evaluator, jump_method)
 end
 
-local emit_scrub_body<const> = function(printer, values)
-	emit_body(printer, values, values.scrub_evaluator)
+local emit_scrub_evaluator<const> = function(printer, values)
+	emit_evaluator_body(printer, values, values.scrub_evaluator, scrub_method)
 end
 
-local emit_dispatch<const> = function(printer, values)
-	if values.jump_evaluator == 'play' and values.scrub_evaluator == 'play' then
-		emit_play_body(printer, values)
-	elseif values.jump_evaluator == values.scrub_evaluator then
-		printer:emit(templates.play_position_dispatch, values)
+local emit_jump_declaration<const> = function(printer, values)
+	if not values.has_evaluation_context and values.jump_evaluator == 'play' then
+		printer:emit(templates.jump_alias, values)
 	else
-		printer:emit(templates.method_dispatch, values)
+		printer:emit(templates.jump_function, values)
 	end
+end
+
+local emit_scrub_declaration<const> = function(printer, values)
+	if not values.has_evaluation_context then
+		if values.scrub_evaluator == 'play' then
+			printer:emit(templates.scrub_play_alias, values)
+			return
+		end
+		if values.scrub_evaluator == values.jump_evaluator then
+			printer:emit(templates.scrub_jump_alias, values)
+			return
+		end
+	end
+	printer:emit(templates.scrub_function, values)
 end
 
 templates.tag_dependency_captures = lua_source_printer.compile_template([[
@@ -177,6 +218,14 @@ templates.sequence_dependency_captures = lua_source_printer.compile_template([[
 
 templates.event_dependency_capture = lua_source_printer.compile_template(
 	'local bind_events<const> = bind_events\n'
+)
+
+templates.context_dependency_capture = lua_source_printer.compile_template(
+	'local write_evaluation_context<const> = write_evaluation_context\n'
+)
+
+templates.frame_value_dependency_capture = lua_source_printer.compile_template(
+	'local frame_value<const> = frame_value\n'
 )
 
 templates.play_value_runner_capture = lua_source_printer.compile_template(
@@ -204,28 +253,48 @@ templates.event_binding = lua_source_printer.compile_template(
 	'local emit_$event_name$_events<const> = bind_events(program, $event_method$)\n'
 )
 
-templates.play_sequence_binding = lua_source_printer.compile_template(
-	'local evaluate_play_sequences<const> = bind_play_sequences(program)\n'
-)
+templates.sequence_bindings = lua_source_printer.compile_template([[
+	local evaluate_play_sequences<const> = bind_play_sequences(program)
+	local evaluate_jump_sequences<const> = bind_position_sequences(program, $jump_method$)
+	local evaluate_scrub_sequences<const> = bind_position_sequences(program, $scrub_method$)
+]])
 
-templates.position_sequence_binding = lua_source_printer.compile_template(
-	'local evaluate_position_sequences<const> = bind_position_sequences(program)\n'
-)
+templates.context = lua_source_printer.compile_template([[
+	local evaluation<const> = write_evaluation_context(
+		entry["evaluation_context"],
+		program,
+		$update_method$,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+]])
 
 templates.play_tags = lua_source_printer.compile_template(
-	'evaluate_play_tags(entry, owner, evaluation)\n'
+	'evaluate_play_tags(entry, owner, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
 )
 
 templates.position_tags = lua_source_printer.compile_template(
-	'evaluate_position_tags(entry, owner, evaluation)\n'
+	'evaluate_position_tags(entry, owner, frame, time_ms)\n'
 )
 
 templates.play_values = lua_source_printer.compile_template(
-	'play_value_runner(entry, evaluation)\n'
+	'play_value_runner(entry, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
+)
+
+templates.play_values_with_context = lua_source_printer.compile_template(
+	'play_value_runner(entry, previous_frame, frame, previous_time_ms, time_ms, direction, flags, evaluation)\n'
 )
 
 templates.position_values = lua_source_printer.compile_template(
-	'position_value_runner(entry, evaluation)\n'
+	'position_value_runner(entry, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
+)
+
+templates.position_values_with_context = lua_source_printer.compile_template(
+	'position_value_runner(entry, previous_frame, frame, previous_time_ms, time_ms, direction, flags, evaluation)\n'
 )
 
 templates.apply_function = lua_source_printer.compile_template(
@@ -233,11 +302,15 @@ templates.apply_function = lua_source_printer.compile_template(
 )
 
 templates.frame_appliers = lua_source_printer.compile_template(
-	'frame_appliers[evaluation["frame"] + 1](entry["primary_binding"], evaluation["value"])\n'
+	'frame_appliers[frame + 1](entry["primary_binding"], frame_value(program, frame))\n'
+)
+
+templates.frame_appliers_with_context = lua_source_printer.compile_template(
+	'frame_appliers[frame + 1](entry["primary_binding"], evaluation["value"])\n'
 )
 
 templates.sample = lua_source_printer.compile_template([[
-	if evaluation["sample"] then
+	if flags & $sample_flag$ ~= 0 then
 		$apply_function$
 		$frame_appliers$
 	end
@@ -247,32 +320,38 @@ templates.sample = lua_source_printer.compile_template([[
 })
 
 templates.play_sequences = lua_source_printer.compile_template(
-	'evaluate_play_sequences(entry, owner, evaluation)\n'
+	'evaluate_play_sequences(entry, owner, previous_frame, previous_time_ms, time_ms, direction, flags)\n'
 )
 
-templates.position_sequences = lua_source_printer.compile_template(
-	'evaluate_position_sequences(entry, owner, evaluation)\n'
+templates.jump_sequences = lua_source_printer.compile_template(
+	'evaluate_jump_sequences(entry, owner, previous_time_ms, time_ms)\n'
+)
+
+templates.scrub_sequences = lua_source_printer.compile_template(
+	'evaluate_scrub_sequences(entry, owner, previous_time_ms, time_ms)\n'
 )
 
 templates.play_events = lua_source_printer.compile_template(
-	'emit_play_events(owner, evaluation)\n'
+	'emit_play_events(owner, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
 )
 
 templates.jump_events = lua_source_printer.compile_template(
-	'emit_jump_events(owner, evaluation)\n'
+	'emit_jump_events(owner, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
 )
 
 templates.scrub_events = lua_source_printer.compile_template(
-	'emit_scrub_events(owner, evaluation)\n'
+	'emit_scrub_events(owner, previous_frame, frame, previous_time_ms, time_ms, direction, flags)\n'
 )
 
-templates.body = lua_source_printer.compile_template([[
+templates.evaluator_body = lua_source_printer.compile_template([[
+	$context$
 	$tags$
 	$values$
 	$sample$
 	$subsequences$
 	$events$
 ]], {
+	context = emit_context,
 	tags = emit_tags,
 	values = emit_values,
 	sample = emit_sample,
@@ -280,48 +359,79 @@ templates.body = lua_source_printer.compile_template([[
 	events = emit_events,
 })
 
-templates.play_position_dispatch = lua_source_printer.compile_template([[
-	if evaluation["method"] == $play_method$ then
-		$play_body$
-	else
-		$jump_body$
-	end
-]], {
-	play_body = emit_play_body,
-	jump_body = emit_jump_body,
-})
+templates.jump_alias = lua_source_printer.compile_template(
+	'local evaluate_jump<const> = evaluate_play\n'
+)
 
-templates.method_dispatch = lua_source_printer.compile_template([[
-	if evaluation["method"] == $play_method$ then
-		$play_body$
-	elseif evaluation["method"] == $jump_method$ then
-		$jump_body$
-	else
-		$scrub_body$
+templates.scrub_play_alias = lua_source_printer.compile_template(
+	'local evaluate_scrub<const> = evaluate_play\n'
+)
+
+templates.scrub_jump_alias = lua_source_printer.compile_template(
+	'local evaluate_scrub<const> = evaluate_jump\n'
+)
+
+templates.jump_function = lua_source_printer.compile_template([[
+	local evaluate_jump<const> = function(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+		$jump_evaluator$
 	end
-]], {
-	play_body = emit_play_body,
-	jump_body = emit_jump_body,
-	scrub_body = emit_scrub_body,
-})
+]], { jump_evaluator = emit_jump_evaluator })
+
+templates.scrub_function = lua_source_printer.compile_template([[
+	local evaluate_scrub<const> = function(
+		entry,
+		owner,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+		$scrub_evaluator$
+	end
+]], { scrub_evaluator = emit_scrub_evaluator })
 
 templates.program = lua_source_printer.compile_template([[
 	$dependency_captures$
 	return function(program)
 		$program_captures$
-		return function(entry, owner, evaluation)
-			$dispatch$
+		local evaluate_play<const> = function(
+			entry,
+			owner,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			time_ms,
+			direction,
+			flags
+		)
+			$play_evaluator$
 		end
+		$jump_declaration$
+		$scrub_declaration$
+		return evaluate_play, evaluate_jump, evaluate_scrub
 	end
 ]], {
 	dependency_captures = emit_dependency_captures,
 	program_captures = emit_program_captures,
-	dispatch = emit_dispatch,
+	play_evaluator = emit_play_evaluator,
+	jump_declaration = emit_jump_declaration,
+	scrub_declaration = emit_scrub_declaration,
 })
 
--- Program admission cooks track shape and traversal policy into one evaluator.
--- Programs whose methods differ branch once per retained evaluation; programs
--- with identical play, jump and scrub plans contain no method dispatch at all.
+-- Program admission cooks track shape and traversal policy into method-specific
+-- evaluators. Engine-internal ranges stay in registers; only authored callback
+-- programs materialize the named evaluation table they expose to cart code.
 function evaluation_program.compile(program)
 	local prepared_tracks<const> = program.prepared_tracks
 	local has_values<const> = prepared_tracks.value_track_count > 0
@@ -333,6 +443,7 @@ function evaluation_program.compile(program)
 	local has_apply_function<const> = program.apply_function ~= nil
 	local has_frame_appliers<const> = program.apply_frames
 	local has_subsequences<const> = program.subsequences.clip_count > 0
+	local has_evaluation_context<const> = program.has_evaluation_callbacks
 	local shape = 0
 	if has_values then
 		shape = shape | shape_values
@@ -360,6 +471,9 @@ function evaluation_program.compile(program)
 	end
 	if has_subsequences then
 		shape = shape | shape_subsequences
+	end
+	if has_evaluation_context then
+		shape = shape | shape_evaluation_context
 	end
 	local factory<const> = evaluation_factory_by_shape[shape]
 	if factory ~= nil then
@@ -391,10 +505,12 @@ function evaluation_program.compile(program)
 		has_apply_function = has_apply_function,
 		has_frame_appliers = has_frame_appliers,
 		has_subsequences = has_subsequences,
+		has_evaluation_context = has_evaluation_context,
 		jump_evaluator = jump_evaluator,
 		scrub_evaluator = scrub_evaluator,
-		play_method = play_method,
 		jump_method = jump_method,
+		scrub_method = scrub_method,
+		sample_flag = sample_flag,
 	}
 	local printer<const> = lua_source_printer.new()
 	printer:emit(templates.program, values)

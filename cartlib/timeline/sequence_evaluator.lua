@@ -7,6 +7,9 @@ local timeline<const> = timeline_module.timeline
 local playback_boundary<const> = timeline_playback.boundary
 local boundary_loop<const> = playback_boundary.loop
 local boundary_turn<const> = playback_boundary.turn
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
 
 -- Nested clips retain child runtime entries, resolved binding slots and active
 -- interval state under their parent entry. They never become ECS systems or
@@ -168,6 +171,7 @@ function sequence_evaluator.init_entry(entry)
 		local child_program<const> = clip.program
 		local child_entry<const> = {
 			instance = timeline.new(entry.instance.id .. '/' .. clip.id, child_program),
+			clip = clip,
 		}
 		if clip.on_loop ~= nil then
 			if clip.on_turn ~= nil then
@@ -177,6 +181,9 @@ function sequence_evaluator.init_entry(entry)
 			end
 		elseif clip.on_turn ~= nil then
 			child_entry.notify_boundary = notify_turn
+		end
+		if child_program.has_evaluation_callbacks or child_entry.notify_boundary ~= nil then
+			child_entry.evaluation_context = {}
 		end
 		if child_program.binding_count > 1 then
 			child_entry.bindings = {}
@@ -264,25 +271,14 @@ local process_play_clip<const> = function(
 	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
 	child_entry.instance:evaluate_clip_play_range(
+		child_entry,
+		owner,
 		clip,
 		source_time_ms,
 		destination_time_ms,
 		initial,
 		not destination_active
 	)
-	local child_instance<const> = child_entry.instance
-	local evaluate<const> = child_instance.program.evaluate
-	for index = 1, child_instance.evaluation_count do
-		evaluate(child_entry, owner, child_instance.evaluations[index])
-	end
-	local notify_boundary<const> = child_entry.notify_boundary
-	if notify_boundary ~= nil then
-		local evaluations<const> = child_instance.evaluations
-		for index = 1, child_instance.evaluation_count do
-			local evaluation<const> = evaluations[index]
-			notify_boundary(clip, child_entry.primary_binding, evaluation)
-		end
-	end
 	if destination_active then
 		activate_clip(state, clip_index)
 	else
@@ -312,17 +308,14 @@ local process_position_clip<const> = function(
 	local destination_time_ms<const> = clamp(time_ms, clip.start_time_ms, clip.end_time_ms)
 	local destination_active<const> = time_ms >= clip.start_time_ms and time_ms < clip.end_time_ms
 	child_entry.instance:evaluate_clip_at(
+		child_entry,
+		owner,
 		clip,
 		source_time_ms,
 		destination_time_ms,
 		method,
 		initial
 	)
-	local child_instance<const> = child_entry.instance
-	local evaluate<const> = child_instance.program.evaluate
-	for index = 1, child_instance.evaluation_count do
-		evaluate(child_entry, owner, child_instance.evaluations[index])
-	end
 	if destination_active then
 		activate_clip(state, clip_index)
 	else
@@ -451,30 +444,30 @@ end
 function sequence_evaluator.bind_play(program)
 	local sequence<const> = program.subsequences
 	local duration_ms<const> = program.duration_ms
-	return function(entry, owner, evaluation)
-		if evaluation.wrapped then
-			if evaluation.direction > 0 then
+	return function(entry, owner, previous_frame, previous_time_ms, time_ms, direction, flags)
+		if flags & wrapped_flag ~= 0 then
+			if direction > 0 then
 				evaluate_play_range(
 					sequence,
 					entry,
 					owner,
-					evaluation.previous_time_ms,
+					previous_time_ms,
 					duration_ms,
-					evaluation.initial
+					flags & initial_flag ~= 0
 				)
 				clear_active_clips(entry, owner)
-				evaluate_play_range(sequence, entry, owner, 0, evaluation.time_ms, true)
+				evaluate_play_range(sequence, entry, owner, 0, time_ms, true)
 			else
 				evaluate_play_range(
 					sequence,
 					entry,
 					owner,
-					evaluation.previous_time_ms,
+					previous_time_ms,
 					0,
-					evaluation.initial
+					flags & initial_flag ~= 0
 				)
 				clear_active_clips(entry, owner)
-				evaluate_play_range(sequence, entry, owner, duration_ms, evaluation.time_ms, true)
+				evaluate_play_range(sequence, entry, owner, duration_ms, time_ms, true)
 			end
 			return
 		end
@@ -482,23 +475,23 @@ function sequence_evaluator.bind_play(program)
 			sequence,
 			entry,
 			owner,
-			evaluation.previous_time_ms,
-			evaluation.time_ms,
-			evaluation.initial or evaluation.previous_frame < 0
+			previous_time_ms,
+			time_ms,
+			flags & initial_flag ~= 0 or previous_frame < 0
 		)
 	end
 end
 
-function sequence_evaluator.bind_position(program)
+function sequence_evaluator.bind_position(program, method)
 	local sequence<const> = program.subsequences
-	return function(entry, owner, evaluation)
+	return function(entry, owner, previous_time_ms, time_ms)
 		evaluate_position(
 			sequence,
 			entry,
 			owner,
-			evaluation.previous_time_ms,
-			evaluation.time_ms,
-			evaluation.method
+			previous_time_ms,
+			time_ms,
+			method
 		)
 	end
 end

@@ -66,6 +66,8 @@ function timeline_program.compile(definition)
 		apply_function = definition.apply
 	end
 	local apply_frames<const> = definition.apply ~= nil and apply_function == nil
+	local has_evaluation_callbacks<const> = apply_function ~= nil
+		or prepared_tracks.has_evaluation_callbacks
 	local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
 	local program<const> = {
 		repetitions = definition.repetitions or 1,
@@ -83,6 +85,7 @@ function timeline_program.compile(definition)
 		subsequences = subsequences,
 		apply_frames = apply_frames,
 		apply_function = apply_function,
+		has_evaluation_callbacks = has_evaluation_callbacks,
 		default_binding = definition.target,
 		default_params = definition.params,
 		frames = {},

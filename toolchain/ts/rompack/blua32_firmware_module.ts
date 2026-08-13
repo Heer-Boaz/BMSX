@@ -78,6 +78,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_div = ${OpCode.DIV},`,
 	`\top_mod = ${OpCode.MOD},`,
 	`\top_floor_divide = ${OpCode.FLOORDIV},`,
+	`\top_band = ${OpCode.BAND},`,
 	`\top_unm = ${OpCode.UNM},`,
 	`\top_not = ${OpCode.NOT},`,
 	`\top_len = ${OpCode.LEN},`,

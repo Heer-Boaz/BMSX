@@ -43,6 +43,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
+	['cartlib/timeline/evaluation_context', 'cartlib/timeline/evaluation_context.lua'],
 	['cartlib/timeline/evaluation_program', 'cartlib/timeline/evaluation_program.lua'],
 	['cartlib/timeline/frame_program', 'cartlib/timeline/frame_program.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
@@ -361,7 +362,7 @@ test('cartlib FSM and behaviour-tree instances rebind compiled definitions witho
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const cpu: CPU = createTestBlua32PairCpu(images).cpu;
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		1021,
 		73,

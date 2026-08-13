@@ -55,6 +55,7 @@ local empty_prepared<const> = {
 	has_time_steps = false,
 	has_seek_events = false,
 	has_scrub_events = false,
+	has_evaluation_callbacks = false,
 	event_defs = empty_defs,
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
@@ -162,6 +163,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local has_time_steps = false
 	local has_seek_events = false
 	local has_scrub_events = false
+	local has_evaluation_callbacks = false
 	local prepared<const> = {
 		event_defs = event_defs,
 		tag_defs = tag_defs,
@@ -187,6 +189,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 				binding_index = binding_index_by_id[track.binding]
 			end
 			if interpolation == 'step' then
+				if track.apply ~= nil then
+					has_evaluation_callbacks = true
+				end
 				step_defs[#step_defs + 1] = {
 					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index),
 					keys = track.keys,
@@ -197,6 +202,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 					has_frame_steps = true
 				end
 			else
+				if track.apply ~= nil then
+					has_evaluation_callbacks = true
+				end
 				scalar_defs[#scalar_defs + 1] = {
 					binding_index = binding_index,
 					apply = track.apply,
@@ -206,6 +214,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 				}
 			end
 		else
+			if kind == 'sample' then
+				has_evaluation_callbacks = true
+			end
 			sample_tracks[#sample_tracks + 1] = compile_sample_track(track, binding_index_by_id)
 		end
 	end
@@ -216,6 +227,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.has_time_steps = has_time_steps
 	prepared.has_seek_events = has_seek_events
 	prepared.has_scrub_events = has_scrub_events
+	prepared.has_evaluation_callbacks = has_evaluation_callbacks
 	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
 	if prepared.value_track_count > 0 then
 		prepared.value_runner_factory = timeline_track_evaluator.compile_values(prepared)
