@@ -58,11 +58,13 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 		local end_time_ms<const> = start_time_ms + definition.duration_ms
 		local clip_in_ms<const> = definition.clip_in_ms or 0
 		local time_scale<const> = definition.time_scale or 1
+		local time_offset_ms<const> = clip_in_ms - start_time_ms * time_scale
 		local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
 		local play_forward_transform<const>, play_backward_transform<const>, position_transform<const> =
 			timeline_time_transform.compile(
 				playback_mode,
 				time_scale,
+				time_offset_ms,
 				clip_in_ms,
 				definition.duration_ms,
 				program.duration_ms,
@@ -74,7 +76,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			start_time_ms = start_time_ms,
 			end_time_ms = end_time_ms,
 			time_scale = time_scale,
-			time_offset_ms = clip_in_ms - start_time_ms * time_scale,
+			time_offset_ms = time_offset_ms,
 			play_forward_transform = play_forward_transform,
 			play_backward_transform = play_backward_transform,
 			position_transform = position_transform,
