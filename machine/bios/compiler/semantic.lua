@@ -104,6 +104,8 @@ local add_upvalue<const> = function(state, binding, in_stack, index)
 		in_stack = in_stack,
 		index = index,
 		upvalue_index = #upvalues,
+		direct_use_count = 0,
+		used_in_loop = false,
 	}
 	upvalues[#upvalues + 1] = upvalue
 	state.upvalue_by_binding[binding] = upvalue
@@ -143,7 +145,10 @@ local bind_identifier<const> = function(state, expression)
 	end
 	local upvalue<const> = resolve_upvalue(state, name)
 	if upvalue ~= nil then
-		upvalue.is_direct = true
+		upvalue.direct_use_count = upvalue.direct_use_count + 1
+		if state.loop_depth > 0 then
+			upvalue.used_in_loop = true
+		end
 		expression.upvalue = upvalue
 		return
 	end
@@ -277,8 +282,8 @@ local bind_if_statement<const> = function(state, statement)
 end
 
 local bind_while_statement<const> = function(state, statement)
-	bind_value(state, statement.condition)
 	state.loop_depth = state.loop_depth + 1
+	bind_value(state, statement.condition)
 	bind_block(state, statement.block)
 	state.loop_depth = state.loop_depth - 1
 end

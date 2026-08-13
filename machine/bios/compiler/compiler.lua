@@ -358,6 +358,8 @@ local emit_path
 
 -- Temporary destinations may be reused while their operands are evaluated.
 -- Fixed destinations remain readable until the expression's final write.
+-- A single-use immutable capture loads into that destination directly; reused
+-- or loop-carried captures retain one fixed register for the function call.
 emit_path = function(
 	state,
 	instruction_words,
@@ -367,19 +369,20 @@ emit_path = function(
 )
 	if expression.kind == syntax.identifier_expression then
 		if expression.upvalue ~= nil then
-			local binding<const> = expression.upvalue.binding
-			if not binding.is_const then
+			local upvalue<const> = expression.upvalue
+			if not upvalue.binding.is_const
+			or (upvalue.direct_use_count == 1 and not upvalue.used_in_loop) then
 				bytecode.emit_abc(
 					instruction_words,
 					op_getup,
 					target,
-					expression.upvalue.upvalue_index,
+					upvalue.upvalue_index,
 					0
 				)
 				return target
 			end
 			return state.immutable_upvalue_register_by_index[
-				expression.upvalue.upvalue_index
+				upvalue.upvalue_index
 			]
 		end
 		if expression.environment_key ~= nil then
@@ -843,7 +846,8 @@ emit_value_register = function(state, instruction_words, expression)
 		if upvalue == nil then
 			return identifier_register(state, expression)
 		end
-		if upvalue.binding.is_const then
+		if upvalue.binding.is_const
+		and (upvalue.direct_use_count > 1 or upvalue.used_in_loop) then
 			return state.immutable_upvalue_register_by_index[
 				upvalue.upvalue_index
 			]
@@ -1517,7 +1521,8 @@ local compile_function<const> = function(state)
 	local fixed_register_count = parameter_count
 	for index = 1, #upvalues do
 		local upvalue<const> = upvalues[index]
-		if upvalue.binding.is_const and upvalue.is_direct then
+		if upvalue.binding.is_const
+		and (upvalue.direct_use_count > 1 or upvalue.used_in_loop) then
 			state.immutable_upvalue_register_by_index[
 				upvalue.upvalue_index
 			] = fixed_register_count
@@ -1543,7 +1548,8 @@ local compile_function<const> = function(state)
 	state.loop_stack = {}
 	for index = 1, #upvalues do
 		local upvalue<const> = upvalues[index]
-		if upvalue.binding.is_const and upvalue.is_direct then
+		if upvalue.binding.is_const
+		and (upvalue.direct_use_count > 1 or upvalue.used_in_loop) then
 			local register<const> = state.immutable_upvalue_register_by_index[
 				upvalue.upvalue_index
 			]
@@ -1655,7 +1661,8 @@ local fixed_register_count<const> = function(state)
 	local upvalues<const> = state.function_expression.semantic_state.upvalues
 	for index = 1, #upvalues do
 		local upvalue<const> = upvalues[index]
-		if upvalue.binding.is_const and upvalue.is_direct then
+		if upvalue.binding.is_const
+		and (upvalue.direct_use_count > 1 or upvalue.used_in_loop) then
 			count = count + 1
 		end
 	end

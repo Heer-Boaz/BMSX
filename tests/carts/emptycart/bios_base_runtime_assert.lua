@@ -329,6 +329,17 @@ end;
 	})
 	local const_capture<const> = const_capture_chunk()
 	assert(const_capture(3), 'load immutable capture mismatch')
+	local loop_condition_chunk<const> = load([=[
+		local limit<const> = limit
+		return function()
+			local value = 0
+			while value < limit do
+				value = value + 1
+			end
+			return value
+		end
+	]=], 'bios_base_runtime_assert.loop_condition_capture', 't', { limit = 3 })
+	assert(loop_condition_chunk()() == 3, 'load loop-condition capture mismatch')
 	local local_function_chunk<const> = load([=[
 		local offset<const> = offset
 		local transform<const> = function(value)
