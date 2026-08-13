@@ -281,9 +281,6 @@ end
 
 function timeline:update(delta_time)
 	local program<const> = self.program
-	if not program.auto_tick or self.ended then
-		return nil
-	end
 	clear_evaluations(self)
 	if program.continuous then
 		return update_continuous(self, delta_time)

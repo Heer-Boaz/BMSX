@@ -11,30 +11,29 @@ timeline_component.__index = timeline_component
 timeline_component.unique = true
 setmetatable(timeline_component, { __index = base_component })
 
-local activate_timeline_entry<const> = function(self, entry)
-	local id<const> = entry.instance.id
-	if self._active_index_by_id[id] ~= nil then
+local reconcile_timeline_schedule<const> = function(self, entry)
+	local tick_index<const> = entry.tick_index
+	if entry.playing and entry.instance.program.auto_tick then
+		if tick_index ~= nil then
+			return
+		end
+		local tick_count<const> = self._tick_count + 1
+		self._tick_count = tick_count
+		self._tick_entries[tick_count] = entry
+		entry.tick_index = tick_count
 		return
 	end
-	local count<const> = self._active_count + 1
-	self._active_count = count
-	self._active_entries[count] = entry
-	self._active_index_by_id[id] = count
-end
-
-local deactivate_timeline_entry<const> = function(self, id)
-	local index<const> = self._active_index_by_id[id]
-	if index == nil then
+	if tick_index == nil then
 		return
 	end
-	local last_index<const> = self._active_count
-	local last_entry<const> = self._active_entries[last_index]
-	self._active_entries[last_index] = nil
-	self._active_count = last_index - 1
-	self._active_index_by_id[id] = nil
-	if index < last_index then
-		self._active_entries[index] = last_entry
-		self._active_index_by_id[last_entry.instance.id] = index
+	local tick_count<const> = self._tick_count
+	local last_entry<const> = self._tick_entries[tick_count]
+	self._tick_entries[tick_count] = nil
+	self._tick_count = tick_count - 1
+	entry.tick_index = nil
+	if tick_index < tick_count then
+		self._tick_entries[tick_index] = last_entry
+		last_entry.tick_index = tick_index
 	end
 end
 
@@ -71,7 +70,8 @@ local process_evaluations<const> = function(self, entry)
 	local stopped<const> = instance.ended
 	if stopped then
 		clear_entry_state(entry, owner)
-		deactivate_timeline_entry(self, instance.id)
+		entry.playing = false
+		reconcile_timeline_schedule(self, entry)
 		local on_finished = entry.play_on_finished
 		local finished_context = entry.play_finished_context
 		if on_finished == nil then
@@ -88,9 +88,8 @@ end
 function timeline_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), timeline_component)
 	self._entries_by_id = {}
-	self._active_entries = {}
-	self._active_count = 0
-	self._active_index_by_id = {}
+	self._tick_entries = {}
+	self._tick_count = 0
 	return self
 end
 
@@ -117,6 +116,7 @@ function timeline_component:define(id, definition)
 			instance = instance,
 			primary_binding = primary_binding,
 			params = program.default_params,
+			playing = false,
 		}
 		self._entries_by_id[id] = entry
 		timeline_track_evaluator.init_entry(entry)
@@ -124,15 +124,15 @@ function timeline_component:define(id, definition)
 		return
 	end
 	local previous_program<const> = entry.instance.program
-	local active<const> = self._active_index_by_id[id] ~= nil
-	if active then
+	local playing<const> = entry.playing
+	if playing then
 		clear_entry_state(entry, self.parent)
 	end
-	if active and program.frame_builder ~= nil then
+	if playing and program.frame_builder ~= nil then
 		program = timeline_frame_program.build(program, entry.params)
 	end
 	entry.instance:rebind_program(program)
-	if active then
+	if playing then
 		if program.binding_count > 1 then
 			local previous_bindings<const> = entry.bindings
 			local bindings<const> = {}
@@ -156,7 +156,8 @@ function timeline_component:define(id, definition)
 	end
 	timeline_track_evaluator.init_entry(entry)
 	timeline_sequence_evaluator.init_entry(entry)
-	if active then
+	if playing then
+		reconcile_timeline_schedule(self, entry)
 		timeline_sequence_evaluator.bind_entry(entry, self.parent)
 		if entry.instance.head >= 0 then
 			timeline_track_evaluator.sync_tags(
@@ -295,20 +296,22 @@ function timeline_component:play(id, opts, on_finished, finished_context)
 		instance:snap_to_start()
 		process_evaluations(self, entry)
 	end
-	activate_timeline_entry(self, entry)
+	entry.playing = true
+	reconcile_timeline_schedule(self, entry)
 	return instance
 end
 
 function timeline_component:stop(id)
 	local entry<const> = self._entries_by_id[id]
 	clear_entry_state(entry, self.parent)
-	deactivate_timeline_entry(self, id)
+	entry.playing = false
+	reconcile_timeline_schedule(self, entry)
 end
 
 function timeline_component:tick_active(delta_time)
 	local index = 1
-	while index <= self._active_count do
-		local entry<const> = self._active_entries[index]
+	while index <= self._tick_count do
+		local entry<const> = self._tick_entries[index]
 		if entry.instance:update(delta_time) ~= nil then
 			if not process_evaluations(self, entry) then
 				index = index + 1

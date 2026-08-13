@@ -196,6 +196,33 @@ timelines:seek_time('nested_linear', 125)
 assert(camera.value == 25)
 timelines:stop('nested_linear')
 
+timelines:define('manual_schedule', {
+	frames = timeline_module.range(5),
+	frame_duration = 20,
+	auto_tick = false,
+})
+timelines:play('manual_schedule')
+local manual_schedule<const> = timelines:get('manual_schedule')
+timelines:tick_active(20)
+assert(manual_schedule:value() == 0)
+timelines:advance('manual_schedule')
+assert(manual_schedule:value() == 1)
+timelines:define('manual_schedule', {
+	frames = timeline_module.range(5),
+	frame_duration = 20,
+	auto_tick = true,
+})
+timelines:tick_active(20)
+assert(manual_schedule:value() == 2)
+timelines:define('manual_schedule', {
+	frames = timeline_module.range(5),
+	frame_duration = 20,
+	auto_tick = false,
+})
+timelines:tick_active(20)
+assert(manual_schedule:value() == 2)
+timelines:stop('manual_schedule')
+
 	return nil
 end
 
