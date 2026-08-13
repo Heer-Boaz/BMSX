@@ -1,7 +1,7 @@
 local input<const> = require('cartlib/input/input')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local evaluation_program_source<const> = require('cartlib/input/actioneffect/evaluation_program_source')
-local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
+local compile_syntax<const> = lua_compiler.compile_syntax
 
 local evaluation_program<const> = {}
 local effect_kind<const> = evaluation_program_source.effect_kind
@@ -101,10 +101,9 @@ function evaluation_program.compile(program, effects, player_index)
 	if #effect_program.operands > 0 then
 		environment.effect_operands = effect_program.operands
 	end
-	return load(
-		lua_syntax_printer.print(evaluation_program_source.build(program, effect_program, player_index)),
+	return compile_syntax(
+		evaluation_program_source.build(program, effect_program, player_index),
 		'[input.actioneffect]',
-		't',
 		environment
 	)(), effect_program.uses_effect_triggers,
 		effect_program.queued_event_capacity,
