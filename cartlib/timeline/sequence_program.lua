@@ -7,7 +7,9 @@ local empty_clips<const> = {}
 sequence_program.empty = {
 	clips = empty_clips,
 	clips_by_start = empty_clips,
-	clips_by_end = empty_clips,
+	boundary_times = empty_clips,
+	boundary_clip_indices = empty_clips,
+	boundary_count = 0,
 	position_tree_max_end_time_ms = empty_clips,
 	position_tree_leaf_count = 0,
 	clip_count = 0,
@@ -91,10 +93,34 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 	table.sort(clips_by_start, compare_start)
 	table.sort(clips_by_end, compare_end)
 
+	-- Playback consumes one chronological boundary field. Positive clip indices
+	-- admit a start while moving forward; negative indices admit an end while
+	-- moving backward. The opposite edge still advances the cursor, but does not
+	-- need to re-admit an entry already present in the retained active snapshot.
+	local clip_count<const> = #clips
+	local boundary_count<const> = clip_count * 2
+	local boundary_times<const> = {}
+	local boundary_clip_indices<const> = {}
+	local start_index = 1
+	local end_index = 1
+	for boundary_index = 1, boundary_count do
+		local start_clip<const> = clips_by_start[start_index]
+		local end_clip<const> = clips_by_end[end_index]
+		if end_index > clip_count
+		or (start_index <= clip_count and start_clip.start_time_ms <= end_clip.end_time_ms) then
+			boundary_times[boundary_index] = start_clip.start_time_ms
+			boundary_clip_indices[boundary_index] = start_clip.order
+			start_index = start_index + 1
+		else
+			boundary_times[boundary_index] = end_clip.end_time_ms
+			boundary_clip_indices[boundary_index] = -end_clip.order
+			end_index = end_index + 1
+		end
+	end
+
 	-- Positioning can jump directly to any parent time. A flat max-end tree over
 	-- start-sorted clips finds every overlapping clip without copying active
 	-- sets into each time span. Runtime queries use retained entry scratch.
-	local clip_count<const> = #clips
 	local position_tree_leaf_count = 1
 	while position_tree_leaf_count < clip_count do
 		position_tree_leaf_count = position_tree_leaf_count * 2
@@ -116,7 +142,9 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 	return {
 		clips = clips,
 		clips_by_start = clips_by_start,
-		clips_by_end = clips_by_end,
+		boundary_times = boundary_times,
+		boundary_clip_indices = boundary_clip_indices,
+		boundary_count = boundary_count,
 		position_tree_max_end_time_ms = position_tree_max_end_time_ms,
 		position_tree_leaf_count = position_tree_leaf_count,
 		clip_count = clip_count,
