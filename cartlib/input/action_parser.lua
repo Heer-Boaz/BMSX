@@ -3,7 +3,9 @@
 -- syntax is parsed once; firmware load() produces a factory that binds one
 -- player's resolved states into the short-circuit evaluator used at runtime.
 
-local lua_source_printer<const> = require('cartlib/codegen/lua_source_printer')
+local action_syntax<const> = require('cartlib/input/action_syntax')
+local action_program_source<const> = require('cartlib/input/action_program_source')
+local lua_syntax_printer<const> = require('cartlib/codegen/lua_syntax_printer')
 
 local action_parser<const> = {}
 
@@ -38,41 +40,44 @@ local function_prefix_chars<const> = {
 	['&'] = true,
 	['?'] = true,
 }
-local mod_kind_p<const> = 1
-local mod_kind_r<const> = 2
-local mod_kind_jp<const> = 3
-local mod_kind_all_jp<const> = 4
-local mod_kind_jr<const> = 5
-local mod_kind_all_jr<const> = 6
-local mod_kind_gp<const> = 7
-local mod_kind_rp<const> = 8
-local mod_kind_c<const> = 9
-local mod_kind_h<const> = 10
-local mod_kind_wp<const> = 11
-local mod_kind_wr<const> = 12
-local mod_kind_t<const> = 13
-local mod_kind_rc<const> = 14
+local modifier_kind<const> = action_syntax.modifier_kind
+local mod_kind_p<const> = modifier_kind.pressed
+local mod_kind_r<const> = modifier_kind.released
+local mod_kind_jp<const> = modifier_kind.just_pressed
+local mod_kind_all_jp<const> = modifier_kind.all_just_pressed
+local mod_kind_jr<const> = modifier_kind.just_released
+local mod_kind_all_jr<const> = modifier_kind.all_just_released
+local mod_kind_gp<const> = modifier_kind.guarded_just_pressed
+local mod_kind_rp<const> = modifier_kind.repeat_pressed
+local mod_kind_c<const> = modifier_kind.consumed
+local mod_kind_h<const> = modifier_kind.held
+local mod_kind_wp<const> = modifier_kind.within_press
+local mod_kind_wr<const> = modifier_kind.within_release
+local mod_kind_t<const> = modifier_kind.press_time
+local mod_kind_rc<const> = modifier_kind.repeat_count
 
-local node_kind_action<const> = 1
-local node_kind_not<const> = 2
-local node_kind_and<const> = 3
-local node_kind_or<const> = 4
-local node_kind_function<const> = 5
+local node_kind<const> = action_syntax.node_kind
+local node_kind_action<const> = node_kind.action
+local node_kind_not<const> = node_kind.logical_not
+local node_kind_and<const> = node_kind.logical_and
+local node_kind_or<const> = node_kind.logical_or
+local node_kind_function<const> = node_kind.function_call
 
-local function_kind_all<const> = 1
-local function_kind_any<const> = 2
-local function_kind_any_jp<const> = 3
-local function_kind_all_jp<const> = 4
-local function_kind_any_jr<const> = 5
-local function_kind_all_jr<const> = 6
-local function_kind_any_gp<const> = 7
-local function_kind_all_gp<const> = 8
-local function_kind_any_rp<const> = 9
-local function_kind_all_rp<const> = 10
-local function_kind_any_wp<const> = 11
-local function_kind_all_wp<const> = 12
-local function_kind_any_wr<const> = 13
-local function_kind_all_wr<const> = 14
+local function_kind<const> = action_syntax.function_kind
+local function_kind_all<const> = function_kind.all
+local function_kind_any<const> = function_kind.any
+local function_kind_any_jp<const> = function_kind.any_just_pressed
+local function_kind_all_jp<const> = function_kind.all_just_pressed
+local function_kind_any_jr<const> = function_kind.any_just_released
+local function_kind_all_jr<const> = function_kind.all_just_released
+local function_kind_any_gp<const> = function_kind.any_guarded_just_pressed
+local function_kind_all_gp<const> = function_kind.all_guarded_just_pressed
+local function_kind_any_rp<const> = function_kind.any_repeat_pressed
+local function_kind_all_rp<const> = function_kind.all_repeat_pressed
+local function_kind_any_wp<const> = function_kind.any_within_press
+local function_kind_all_wp<const> = function_kind.all_within_press
+local function_kind_any_wr<const> = function_kind.any_within_release
+local function_kind_all_wr<const> = function_kind.all_within_release
 
 local function_kinds<const> = {
 	['&'] = function_kind_all,
@@ -91,19 +96,21 @@ local function_kinds<const> = {
 	['&wr'] = function_kind_all_wr,
 }
 
-local compare_lt<const> = 1
-local compare_gt<const> = 2
-local compare_lte<const> = 3
-local compare_gte<const> = 4
-local compare_eq<const> = 5
-local compare_ne<const> = 6
+local compare_operator<const> = action_syntax.compare_operator
+local compare_lt<const> = compare_operator.less_than
+local compare_gt<const> = compare_operator.greater_than
+local compare_lte<const> = compare_operator.less_equal
+local compare_gte<const> = compare_operator.greater_equal
+local compare_eq<const> = compare_operator.equal
+local compare_ne<const> = compare_operator.not_equal
 
-local edge_jp<const> = 0x01
-local edge_jr<const> = 0x02
-local edge_wp<const> = 0x04
-local edge_wr<const> = 0x08
-local edge_gp<const> = 0x10
-local edge_rp<const> = 0x20
+local edge<const> = action_syntax.edge
+local edge_jp<const> = edge.just_pressed
+local edge_jr<const> = edge.just_released
+local edge_wp<const> = edge.within_press
+local edge_wr<const> = edge.within_release
+local edge_gp<const> = edge.guarded_just_pressed
+local edge_rp<const> = edge.repeat_pressed
 
 local is_space<const> = function(byte)
 	return byte == 32 or byte == 9 or byte == 10 or byte == 13
@@ -574,574 +581,6 @@ local enforce_root_modifiers<const> = function(node, in_function)
 	end
 end
 
-local comparison_operator_source_by_kind<const> = {
-	[compare_lt] = ' < ',
-	[compare_gt] = ' > ',
-	[compare_lte] = ' <= ',
-	[compare_gte] = ' >= ',
-	[compare_eq] = ' == ',
-	[compare_ne] = ' ~= ',
-}
-
-local modifier_state_field_by_kind<const> = {
-	[mod_kind_p] = 'pressed',
-	[mod_kind_jp] = 'just_pressed',
-	[mod_kind_all_jp] = 'all_just_pressed',
-	[mod_kind_jr] = 'just_released',
-	[mod_kind_all_jr] = 'all_just_released',
-	[mod_kind_gp] = 'guarded_just_pressed',
-	[mod_kind_rp] = 'repeat_pressed',
-	[mod_kind_c] = 'consumed',
-}
-
-local edge_function_spec_by_kind<const> = {
-	[function_kind_any_jp] = { all = false, edge_bit = edge_jp, state_field = 'just_pressed' },
-	[function_kind_all_jp] = { all = true, edge_bit = edge_jp, state_field = 'just_pressed' },
-	[function_kind_any_jr] = { all = false, edge_bit = edge_jr, state_field = 'just_released' },
-	[function_kind_all_jr] = { all = true, edge_bit = edge_jr, state_field = 'just_released' },
-	[function_kind_any_gp] = { all = false, edge_bit = edge_gp, state_field = 'guarded_just_pressed' },
-	[function_kind_all_gp] = { all = true, edge_bit = edge_gp, state_field = 'guarded_just_pressed' },
-	[function_kind_any_rp] = { all = false, edge_bit = edge_rp, state_field = 'repeat_pressed' },
-	[function_kind_all_rp] = { all = true, edge_bit = edge_rp, state_field = 'repeat_pressed' },
-	[function_kind_any_wp] = { all = false, edge_bit = edge_wp, delta_field = 'min_press_delta' },
-	[function_kind_all_wp] = { all = true, edge_bit = edge_wp, delta_field = 'min_press_delta' },
-	[function_kind_any_wr] = { all = false, edge_bit = edge_wr, delta_field = 'min_release_delta' },
-	[function_kind_all_wr] = { all = true, edge_bit = edge_wr, delta_field = 'min_release_delta' },
-}
-
-local templates<const> = {}
-local emit_evaluation
-local emit_edge_collection
-
-local emit_target<const> = function(printer, values)
-	printer:print_raw(values.target)
-end
-
-local emit_state_field<const> = function(printer, values)
-	printer:print_index(values.state_field)
-end
-
-local emit_modifier_base<const> = function(printer, values)
-	local spec<const> = values.spec
-	local kind<const> = spec.kind
-	local state_field<const> = modifier_state_field_by_kind[kind]
-	if state_field ~= nil then
-		values.state_field = state_field
-		printer:emit(templates.state_condition, values)
-	elseif kind == mod_kind_r then
-		printer:emit(templates.released_condition, values)
-	elseif kind == mod_kind_h then
-		printer:emit(templates.held_condition, values)
-	elseif kind == mod_kind_wp then
-		values.state_field = 'min_press_delta'
-		values.bound = spec.window
-		printer:emit(templates.window_condition, values)
-	elseif kind == mod_kind_wr then
-		values.state_field = 'min_release_delta'
-		values.bound = spec.window
-		printer:emit(templates.window_condition, values)
-	elseif kind == mod_kind_t then
-		values.state_field = 'press_time'
-		values.operator = comparison_operator_source_by_kind[spec.op]
-		values.bound = spec.value
-		printer:emit(templates.comparison_condition, values)
-	else
-		values.state_field = 'repeat_count'
-		values.operator = comparison_operator_source_by_kind[spec.op]
-		values.bound = spec.value
-		printer:emit(templates.comparison_condition, values)
-	end
-end
-
-local emit_modifier_condition<const> = function(printer, values)
-	if values.spec.neg then
-		printer:emit(templates.negated_condition, values)
-	else
-		emit_modifier_base(printer, values)
-	end
-end
-
-local emit_action_condition<const> = function(printer, values)
-	local node<const> = values.node
-	local specs<const> = node.mod_specs
-	local has_condition = false
-	if #specs == 0 and values.bare_requires_pressed then
-		printer:emit(templates.pressed_condition, values)
-		has_condition = true
-	end
-	for index = 1, #specs do
-		if has_condition then
-			printer:emit(templates.condition_and, values)
-		end
-		values.spec = specs[index]
-		emit_modifier_condition(printer, values)
-		has_condition = true
-	end
-	if not node.has_consume_mod then
-		if has_condition then
-			printer:emit(templates.condition_and, values)
-		end
-		printer:emit(templates.not_consumed_condition, values)
-	end
-end
-
-local emit_action_evaluation<const> = function(printer, node, target, bare_requires_pressed)
-	printer:emit(templates.action_evaluation, {
-		node = node,
-		target = target,
-		bare_requires_pressed = bare_requires_pressed,
-		action_index = node.action_index,
-	})
-end
-
-local emit_edge_match<const> = function(printer, values)
-	local edge_spec<const> = values.edge_spec
-	local state_field<const> = edge_spec.state_field
-	if state_field ~= nil then
-		values.state_field = state_field
-		printer:emit(templates.edge_state_match, values)
-	else
-		values.state_field = edge_spec.delta_field
-		printer:emit(templates.edge_window_match, values)
-	end
-end
-
-local emit_edge_action_evaluation<const> = function(printer, values)
-	emit_action_evaluation(printer, values.node, 'edge_ok', false)
-end
-
-local emit_edge_eligibility<const> = function(printer, values)
-	if (values.node.edge_mask & values.edge_spec.edge_bit) ~= 0 then
-		printer:emit(templates.edge_eligibility, values)
-	end
-end
-
-local emit_left_edge_collection<const> = function(printer, values)
-	emit_edge_collection(printer, values.node.left, values.window, values.edge_spec)
-end
-
-local emit_right_edge_collection<const> = function(printer, values)
-	emit_edge_collection(printer, values.node.right, values.window, values.edge_spec)
-end
-
-local emit_left_evaluation<const> = function(printer, values)
-	emit_evaluation(printer, values.node.left, values.target, values.window)
-end
-
-local emit_right_evaluation<const> = function(printer, values)
-	emit_evaluation(printer, values.node.right, values.target, values.window)
-end
-
-local emit_argument_edge_collection<const> = function(printer, values)
-	emit_edge_collection(printer, values.argument, values.window, values.edge_spec)
-end
-
-local emit_argument_evaluation<const> = function(printer, values)
-	emit_evaluation(printer, values.argument, values.target, values.window)
-end
-
-local emit_edge_function_collection<const> = function(printer, values)
-	local node<const> = values.node
-	local args<const> = node.args
-	local function_kind<const> = node.function_kind
-	if function_kind == function_kind_all then
-		if #args == 0 then
-			printer:emit(templates.edge_empty_all, values)
-			return
-		end
-		values.argument = args[1]
-		emit_argument_edge_collection(printer, values)
-		for index = 2, #args do
-			values.argument = args[index]
-			printer:emit(templates.edge_all_continuation, values)
-		end
-		return
-	end
-	if function_kind == function_kind_any then
-		if #args == 0 then
-			printer:emit(templates.edge_empty_any, values)
-			return
-		end
-		values.argument = args[1]
-		emit_argument_edge_collection(printer, values)
-		for index = 2, #args do
-			values.argument = args[index]
-			printer:emit(templates.edge_any_continuation, values)
-		end
-		return
-	end
-	emit_evaluation(printer, node, 'edge_ok', values.window)
-	printer:emit(templates.edge_reset_collection, values)
-end
-
-emit_edge_collection = function(printer, node, window, edge_spec)
-	local values<const> = {
-		node = node,
-		window = window,
-		edge_spec = edge_spec,
-	}
-	local kind<const> = node.kind
-	if kind == node_kind_action then
-		printer:emit(templates.edge_action, values)
-	elseif kind == node_kind_not then
-		printer:emit(templates.edge_not, values)
-	elseif kind == node_kind_and then
-		printer:emit(templates.edge_and, values)
-	elseif kind == node_kind_or then
-		printer:emit(templates.edge_or, values)
-	else
-		emit_edge_function_collection(printer, values)
-	end
-end
-
-local emit_function_evaluation<const> = function(printer, values)
-	local node<const> = values.node
-	local args<const> = node.args
-	local function_kind<const> = node.function_kind
-	values.window = node.window or values.window
-	if function_kind == function_kind_all or function_kind == function_kind_any then
-		local match_all<const> = function_kind == function_kind_all
-		if #args == 0 then
-			printer:emit(match_all and templates.empty_all or templates.empty_any, values)
-			return
-		end
-		values.argument = args[1]
-		emit_argument_evaluation(printer, values)
-		local continuation<const> = match_all and templates.all_continuation or templates.any_continuation
-		for index = 2, #args do
-			values.argument = args[index]
-			printer:emit(continuation, values)
-		end
-		return
-	end
-	local edge_spec<const> = edge_function_spec_by_kind[function_kind]
-	if #args == 0 then
-		printer:emit(edge_spec.all and templates.empty_all or templates.empty_any, values)
-		return
-	end
-	values.edge_spec = edge_spec
-	values.argument = args[1]
-	emit_argument_edge_collection(printer, values)
-	printer:emit(edge_spec.all and templates.edge_all_result or templates.edge_any_result, values)
-	local continuation<const> = edge_spec.all
-		and templates.edge_all_result_continuation
-		or templates.edge_any_result_continuation
-	for index = 2, #args do
-		values.argument = args[index]
-		printer:emit(continuation, values)
-	end
-end
-
-emit_evaluation = function(printer, node, target, window)
-	local kind<const> = node.kind
-	if kind == node_kind_action then
-		emit_action_evaluation(printer, node, target, true)
-		return
-	end
-	local values<const> = {
-		node = node,
-		target = target,
-		window = window,
-	}
-	if kind == node_kind_not then
-		printer:emit(templates.not_evaluation, values)
-	elseif kind == node_kind_and then
-		printer:emit(templates.and_evaluation, values)
-	elseif kind == node_kind_or then
-		printer:emit(templates.or_evaluation, values)
-	else
-		emit_function_evaluation(printer, values)
-	end
-end
-
-local analyze_evaluation<const> = function(node, analysis)
-	local kind<const> = node.kind
-	if kind == node_kind_action then
-		analysis.uses_state = true
-		return
-	end
-	if kind == node_kind_not then
-		analyze_evaluation(node.left, analysis)
-		return
-	end
-	if kind == node_kind_and or kind == node_kind_or then
-		analyze_evaluation(node.left, analysis)
-		analyze_evaluation(node.right, analysis)
-		return
-	end
-	if node.function_kind ~= function_kind_all and node.function_kind ~= function_kind_any then
-		analysis.uses_edge = true
-	end
-	local args<const> = node.args
-	for index = 1, #args do
-		analyze_evaluation(args[index], analysis)
-	end
-end
-
-local emit_state_local<const> = function(printer, values)
-	if values.analysis.uses_state then
-		printer:emit(templates.state_local, values)
-	end
-end
-
-local emit_edge_locals<const> = function(printer, values)
-	if values.analysis.uses_edge then
-		printer:emit(templates.edge_locals, values)
-	end
-end
-
-local emit_program_body<const> = function(printer, values)
-	emit_evaluation(printer, values.ast, 'result', 'win')
-end
-
-templates.state_condition = lua_source_printer.compile_template(
-	'state$state_field$',
-	{ state_field = emit_state_field }
-)
-
-templates.released_condition = lua_source_printer.compile_template('not state["pressed"]')
-templates.held_condition = lua_source_printer.compile_template('state["press_time"] >= 1')
-
-templates.window_condition = lua_source_printer.compile_template(
-	'state$state_field$ < $bound$',
-	{ state_field = emit_state_field }
-)
-
-templates.comparison_condition = lua_source_printer.compile_template(
-	'state$state_field$$operator$$bound$',
-	{ state_field = emit_state_field }
-)
-
-templates.negated_condition = lua_source_printer.compile_template(
-	'not ($condition$)',
-	{ condition = emit_modifier_base }
-)
-
-templates.pressed_condition = lua_source_printer.compile_template('state["pressed"]')
-templates.not_consumed_condition = lua_source_printer.compile_template('not state["consumed"]')
-templates.condition_and = lua_source_printer.compile_template(' and ')
-
-templates.action_evaluation = lua_source_printer.compile_template([[
-	state = get_state(context, $action_index$)
-	$target$ = $condition$
-]], {
-	target = emit_target,
-	condition = emit_action_condition,
-})
-
-templates.edge_state_match = lua_source_printer.compile_template([[
-	edge_any = state$state_field$
-	edge_all = edge_any
-]], { state_field = emit_state_field })
-
-templates.edge_window_match = lua_source_printer.compile_template([[
-	edge_any = state$state_field$ < $window$
-	edge_all = edge_any
-]], { state_field = emit_state_field })
-
-templates.edge_eligibility = lua_source_printer.compile_template([[
-	if edge_ok then
-		edge_eligible = 1
-		$match$
-	end
-]], { match = emit_edge_match })
-
-templates.edge_action = lua_source_printer.compile_template([[
-	$evaluation$
-	edge_eligible = 0
-	edge_any = false
-	edge_all = true
-	$eligibility$
-]], {
-	evaluation = emit_edge_action_evaluation,
-	eligibility = emit_edge_eligibility,
-})
-
-templates.edge_not = lua_source_printer.compile_template([[
-	$evaluation$
-	edge_ok = not edge_ok
-	edge_eligible = 0
-	edge_any = false
-	edge_all = true
-]], { evaluation = emit_left_evaluation })
-
-templates.edge_and = lua_source_printer.compile_template([[
-	$left$
-	if edge_ok then
-		local left_eligible = edge_eligible
-		local left_any = edge_any
-		local left_all = edge_all
-		$right$
-		if edge_ok then
-			edge_eligible = left_eligible + edge_eligible
-			edge_any = left_any or edge_any
-			edge_all = left_all and edge_all
-		end
-	end
-]], {
-	left = emit_left_edge_collection,
-	right = emit_right_edge_collection,
-})
-
-templates.edge_or = lua_source_printer.compile_template([[
-	$left$
-	if not edge_ok then
-		$right$
-	end
-]], {
-	left = emit_left_edge_collection,
-	right = emit_right_edge_collection,
-})
-
-templates.edge_empty_all = lua_source_printer.compile_template([[
-	edge_ok = true
-	edge_eligible = 0
-	edge_any = false
-	edge_all = true
-]])
-
-templates.edge_empty_any = lua_source_printer.compile_template([[
-	edge_ok = false
-	edge_eligible = 0
-	edge_any = false
-	edge_all = true
-]])
-
-templates.edge_all_continuation = lua_source_printer.compile_template([[
-	if edge_ok then
-		local left_eligible = edge_eligible
-		local left_any = edge_any
-		local left_all = edge_all
-		$argument$
-		if edge_ok then
-			edge_eligible = left_eligible + edge_eligible
-			edge_any = left_any or edge_any
-			edge_all = left_all and edge_all
-		end
-	end
-]], { argument = emit_argument_edge_collection })
-
-templates.edge_any_continuation = lua_source_printer.compile_template([[
-	if not edge_ok then
-		$argument$
-	end
-]], { argument = emit_argument_edge_collection })
-
-templates.edge_reset_collection = lua_source_printer.compile_template([[
-	edge_eligible = 0
-	edge_any = false
-	edge_all = true
-]])
-
-templates.not_evaluation = lua_source_printer.compile_template([[
-	$evaluation$
-	$target$ = not $target$
-]], {
-	evaluation = emit_left_evaluation,
-	target = emit_target,
-})
-
-templates.and_evaluation = lua_source_printer.compile_template([[
-	$left$
-	if $target$ then
-		$right$
-	end
-]], {
-	left = emit_left_evaluation,
-	target = emit_target,
-	right = emit_right_evaluation,
-})
-
-templates.or_evaluation = lua_source_printer.compile_template([[
-	$left$
-	if not $target$ then
-		$right$
-	end
-]], {
-	left = emit_left_evaluation,
-	target = emit_target,
-	right = emit_right_evaluation,
-})
-
-templates.empty_all = lua_source_printer.compile_template('$target$ = true\n', { target = emit_target })
-templates.empty_any = lua_source_printer.compile_template('$target$ = false\n', { target = emit_target })
-
-templates.all_continuation = lua_source_printer.compile_template([[
-	if $target$ then
-		$argument$
-	end
-]], {
-	target = emit_target,
-	argument = emit_argument_evaluation,
-})
-
-templates.any_continuation = lua_source_printer.compile_template([[
-	if not $target$ then
-		$argument$
-	end
-]], {
-	target = emit_target,
-	argument = emit_argument_evaluation,
-})
-
-templates.edge_all_result = lua_source_printer.compile_template(
-	'$target$ = edge_ok and edge_eligible > 0 and edge_all\n',
-	{ target = emit_target }
-)
-
-templates.edge_any_result = lua_source_printer.compile_template(
-	'$target$ = edge_ok and edge_any\n',
-	{ target = emit_target }
-)
-
-templates.edge_all_result_continuation = lua_source_printer.compile_template([[
-	if $target$ then
-		$argument$
-		$target$ = edge_ok and edge_eligible > 0 and edge_all
-	end
-]], {
-	target = emit_target,
-	argument = emit_argument_edge_collection,
-})
-
-templates.edge_any_result_continuation = lua_source_printer.compile_template([[
-	if not $target$ then
-		$argument$
-		$target$ = edge_ok and edge_any
-	end
-]], {
-	target = emit_target,
-	argument = emit_argument_edge_collection,
-})
-
-templates.state_local = lua_source_printer.compile_template('local state\n')
-
-templates.edge_locals = lua_source_printer.compile_template([[
-	local edge_ok
-	local edge_eligible
-	local edge_any
-	local edge_all
-]])
-
-templates.program = lua_source_printer.compile_template([[
-	return function(source_get_state, source_states, source_win)
-		local get_state<const> = source_get_state
-		local context<const> = source_states
-		local win<const> = source_win
-		return function()
-			local result
-			$state_local$
-			$edge_locals$
-			$body$
-			return result
-		end
-	end
-]], {
-	state_local = emit_state_local,
-	edge_locals = emit_edge_locals,
-	body = emit_program_body,
-})
-
 function action_parser.compile(src)
 	local cached<const> = cache[src]
 	if cached then
@@ -1159,13 +598,13 @@ function action_parser.compile(src)
 		error('[cartlib/input/action_parser] Unexpected token "' .. current(self).value .. '" in "' .. src .. '".')
 	end
 	enforce_root_modifiers(ast, false)
-	local analysis<const> = { uses_state = false, uses_edge = false }
-	analyze_evaluation(ast, analysis)
-	local printer<const> = lua_source_printer.new()
-	printer:emit(templates.program, { ast = ast, analysis = analysis })
 	local program<const> = {
 		action_names = self.action_names,
-		evaluation_factory = load(printer:finish(), '[input.action]', 't')(),
+		evaluation_factory = load(
+			lua_syntax_printer.print(action_program_source.build(ast)),
+			'[input.action]',
+			't'
+		)(),
 	}
 	cache[src] = program
 	return program
