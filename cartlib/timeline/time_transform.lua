@@ -1,5 +1,6 @@
 local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_playback<const> = require('cartlib/timeline/playback')
+local time_transform_syntax<const> = require('cartlib/timeline/time_transform_syntax')
 
 -- A clip transform is a linear parent-to-child mapping followed by an optional
 -- time warp. The evaluator emits monotonic child ranges at every warp boundary
@@ -17,6 +18,57 @@ local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
 local loop_boundary_flags<const> = boundary_loop | wrapped_flag
+local affine_identity<const> = 0
+local affine_translation<const> = 1
+local affine_scaled<const> = 2
+local shape_continuous<const> = 0x01
+local shape_bounded<const> = 0x02
+local shape_translation<const> = 0x04
+local shape_scaled<const> = 0x08
+local shape_backward<const> = 0x10
+local shape_position<const> = 0x20
+local compile_syntax<const> = lua_compiler.compile_syntax
+local once_transform_by_shape<const> = {}
+
+-- Straight-line clips are lowered once per execution shape. This is the same
+-- retained-template boundary used by track evaluators: authored policy selects
+-- a datapath at admission, while the 50 Hz path commits the child directly.
+local compile_once_transform<const> = function(continuous, bounded, affine, direction)
+	local shape = 0
+	if continuous then
+		shape = shape | shape_continuous
+	end
+	if bounded then
+		shape = shape | shape_bounded
+	end
+	if affine == affine_translation then
+		shape = shape | shape_translation
+	elseif affine == affine_scaled then
+		shape = shape | shape_scaled
+	end
+	if direction < 0 then
+		shape = shape | shape_backward
+	elseif direction == 0 then
+		shape = shape | shape_position
+	end
+	local transform<const> = once_transform_by_shape[shape]
+	if transform ~= nil then
+		return transform
+	end
+	local compiled<const> = compile_syntax(
+		time_transform_syntax.build({
+			continuous = continuous,
+			bounded = bounded,
+			affine = affine,
+			direction = direction,
+			sample_flag = sample_flag,
+			initial_flag = initial_flag,
+		}),
+		'[timeline.time_transform]'
+	)()
+	once_transform_by_shape[shape] = compiled
+	return compiled
+end
 
 -- Time transforms own loop and turn boundaries. Authored boundary callbacks
 -- are therefore dispatched here, after the exact monotonic child range which
@@ -90,24 +142,6 @@ local direction_between<const> = function(previous_time_ms, time_ms, default_dir
 		return -1
 	end
 	return default_direction
-end
-
-local bound_once_range<const> = function(target, previous_time_ms, time_ms)
-	local duration_ms<const> = target.duration_ms
-	if duration_ms == nil then
-		return previous_time_ms, time_ms
-	end
-	if previous_time_ms < 0 then
-		previous_time_ms = 0
-	elseif previous_time_ms > duration_ms then
-		previous_time_ms = duration_ms
-	end
-	if time_ms < 0 then
-		time_ms = 0
-	elseif time_ms > duration_ms then
-		time_ms = duration_ms
-	end
-	return previous_time_ms, time_ms
 end
 
 -- Monotonic loop playback resumes from the child transport position. Initial
@@ -404,32 +438,6 @@ local evaluate_pingpong_backward<const> = function(
 	end
 end
 
-local evaluate_position_once<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	evaluate,
-	initial
-)
-	local clip<const> = target.clip
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		child_time_at(clip, previous_parent_time_ms),
-		child_time_at(clip, parent_time_ms)
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		evaluate,
-		direction_between(previous_time_ms, time_ms, 0),
-		initial,
-		boundary_none
-	)
-end
-
 local evaluate_position_loop<const> = function(
 	target,
 	owner,
@@ -482,284 +490,6 @@ local evaluate_position_pingpong<const> = function(
 	)
 end
 
-local evaluate_play_once_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms * time_scale + time_offset_ms,
-		parent_time_ms * time_scale + time_offset_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms * time_scale + time_offset_ms,
-		parent_time_ms * time_scale + time_offset_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_identity_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms,
-		parent_time_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_identity_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms,
-		parent_time_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_translation_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local time_offset_ms<const> = target.clip.time_offset_ms
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms + time_offset_ms,
-		parent_time_ms + time_offset_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_translation_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local time_offset_ms<const> = target.clip.time_offset_ms
-	local previous_time_ms<const>, time_ms<const> = bound_once_range(
-		target,
-		previous_parent_time_ms + time_offset_ms,
-		parent_time_ms + time_offset_ms
-	)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
-	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
-	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_identity_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	target.write_time_range(
-		target,
-		owner,
-		previous_parent_time_ms,
-		parent_time_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_identity_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	target.write_time_range(
-		target,
-		owner,
-		previous_parent_time_ms,
-		parent_time_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_translation_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local time_offset_ms<const> = target.clip.time_offset_ms
-	target.write_time_range(
-		target,
-		owner,
-		previous_parent_time_ms + time_offset_ms,
-		parent_time_ms + time_offset_ms,
-		target.play_evaluator,
-		1,
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_play_once_in_range_translation_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local time_offset_ms<const> = target.clip.time_offset_ms
-	target.write_time_range(
-		target,
-		owner,
-		previous_parent_time_ms + time_offset_ms,
-		parent_time_ms + time_offset_ms,
-		target.play_evaluator,
-		-1,
-		initial,
-		boundary_none
-	)
-end
-
 -- Playback mode is authored configuration, not runtime transport state. Clip
 -- admission resolves it and time-scale direction into direct parent-forward
 -- and parent-backward datapaths retained by the compiled clip.
@@ -770,7 +500,8 @@ function time_transform.compile(
 	clip_in_ms,
 	clip_duration_ms,
 	child_duration_ms,
-	child_duration_stable
+	child_duration_stable,
+	continuous
 )
 	if playback_mode == playback_loop then
 		if time_scale < 0 then
@@ -794,53 +525,33 @@ function time_transform.compile(
 	-- interval cannot reach a clamp edge during playback. Frame builders retain
 	-- the bounded datapath because binding can replace their child duration.
 	local child_end_time_ms<const> = clip_in_ms + clip_duration_ms * time_scale
-	if child_duration_stable
+	local in_range<const> = child_duration_stable
 	and (child_duration_ms == nil
 	or (clip_in_ms >= 0
 	and clip_in_ms <= child_duration_ms
 	and child_end_time_ms >= 0
-	and child_end_time_ms <= child_duration_ms)) then
-		if time_scale == 1 then
-			if time_offset_ms == 0 then
-				return evaluate_play_once_in_range_identity_forward,
-					evaluate_play_once_in_range_identity_backward,
-					evaluate_position_once
-			end
-			return evaluate_play_once_in_range_translation_forward,
-				evaluate_play_once_in_range_translation_backward,
-				evaluate_position_once
-		end
-		if time_scale < 0 then
-			return evaluate_play_once_in_range_backward,
-				evaluate_play_once_in_range_forward,
-				evaluate_position_once
-		end
-		if time_scale == 0 then
-			return evaluate_play_once_in_range_forward,
-				evaluate_play_once_in_range_forward,
-				evaluate_position_once
-		end
-		return evaluate_play_once_in_range_forward,
-			evaluate_play_once_in_range_backward,
-			evaluate_position_once
-	end
-	if time_scale < 0 then
-		return evaluate_play_once_backward, evaluate_play_once_forward, evaluate_position_once
-	end
+	and child_end_time_ms <= child_duration_ms))
+	local affine = affine_scaled
 	if time_scale == 1 then
 		if time_offset_ms == 0 then
-			return evaluate_play_once_identity_forward,
-				evaluate_play_once_identity_backward,
-				evaluate_position_once
+			affine = affine_identity
+		else
+			affine = affine_translation
 		end
-		return evaluate_play_once_translation_forward,
-			evaluate_play_once_translation_backward,
-			evaluate_position_once
+	end
+	local forward_direction = 1
+	local backward_direction = -1
+	if time_scale < 0 then
+		forward_direction = -1
+		backward_direction = 1
 	end
 	if time_scale == 0 then
-		return evaluate_play_once_forward, evaluate_play_once_forward, evaluate_position_once
+		backward_direction = 1
 	end
-	return evaluate_play_once_forward, evaluate_play_once_backward, evaluate_position_once
+	local bounded<const> = not in_range
+	return compile_once_transform(continuous, bounded, affine, forward_direction),
+		compile_once_transform(continuous, bounded, affine, backward_direction),
+		compile_once_transform(continuous, bounded, affine, 0)
 end
 
 return time_transform

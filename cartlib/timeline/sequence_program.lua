@@ -68,7 +68,8 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 				clip_in_ms,
 				definition.duration_ms,
 				program.duration_ms,
-				program.frame_builder == nil
+				program.frame_builder == nil,
+				program.continuous
 			)
 		local clip<const> = {
 			id = definition.id,
@@ -80,6 +81,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			play_forward_transform = play_forward_transform,
 			play_backward_transform = play_backward_transform,
 			position_transform = position_transform,
+			cyclic = playback_mode ~= playback_mode_by_name.once,
 			program = program,
 			binding_indices = binding_indices,
 			params = definition.params,

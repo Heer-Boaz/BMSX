@@ -248,10 +248,12 @@ function sequence_evaluator.init_entry(entry)
 			duration_ms = child_program.duration_ms,
 			play_evaluator = child_program.evaluate_play,
 		}
-		if child_program.continuous then
-			child_entry.write_time_range = write_continuous_child_time_range
-		else
-			child_entry.write_time_range = write_frame_child_time_range
+		if clip.cyclic then
+			if child_program.continuous then
+				child_entry.write_time_range = write_continuous_child_time_range
+			else
+				child_entry.write_time_range = write_frame_child_time_range
+			end
 		end
 		if child_program.has_evaluation_callbacks or clip.on_loop ~= nil or clip.on_turn ~= nil then
 			child_entry.evaluation_context = {}
@@ -285,11 +287,6 @@ function sequence_evaluator.bind_entry(entry, owner)
 			child_entry.instance:rebind_program(child_program)
 			child_entry.duration_ms = child_program.duration_ms
 			child_entry.play_evaluator = child_program.evaluate_play
-			if child_program.continuous then
-				child_entry.write_time_range = write_continuous_child_time_range
-			else
-				child_entry.write_time_range = write_frame_child_time_range
-			end
 			child_entry.instance:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
