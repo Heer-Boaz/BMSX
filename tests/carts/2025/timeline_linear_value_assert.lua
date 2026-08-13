@@ -221,7 +221,31 @@ timelines:define('manual_schedule', {
 })
 timelines:tick_active(20)
 assert(manual_schedule:value() == 2)
+timelines:define('manual_schedule', {
+	frames = timeline_module.range(1),
+	continuous = true,
+	auto_tick = true,
+})
+timelines:tick_active(7)
+assert(manual_schedule.position_ms == 47)
+timelines:define('manual_schedule', {
+	frames = timeline_module.range(5),
+	frame_duration = 10,
+	auto_tick = true,
+})
+timelines:tick_active(10)
+assert(manual_schedule:value() == 3)
 timelines:stop('manual_schedule')
+
+timelines:define('immediate_schedule', {
+	frames = timeline_module.range(3),
+	frame_duration = 0,
+	auto_tick = true,
+})
+timelines:play('immediate_schedule')
+timelines:tick_active(20)
+assert(timelines:get('immediate_schedule'):value() == 1)
+timelines:stop('immediate_schedule')
 
 	return nil
 end

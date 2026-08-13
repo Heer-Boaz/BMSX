@@ -121,6 +121,25 @@ local camera<const> = { value = 0 }
 local timelines<const> = timeline_component.new({ parent = owner })
 timelines:on_attach()
 
+local root_loop_count = 0
+timelines:define('root_loop', {
+	frames = timeline_module.range(1),
+	continuous = true,
+	duration_ms = 100,
+	playback_mode = 'loop',
+	apply = function(_target, _value, _params, evaluation)
+		if evaluation.wrapped then
+			assert(evaluation.boundary == timeline_module.playback_boundary.loop)
+			assert(not evaluation.initial)
+			root_loop_count = root_loop_count + 1
+		end
+	end,
+})
+timelines:play('root_loop')
+timelines:tick_active(125)
+assert(root_loop_count == 1)
+timelines:stop('root_loop')
+
 local loop_count = 0
 local loop_finished_count = 0
 timelines:define('loop_parent', {

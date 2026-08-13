@@ -107,80 +107,98 @@ local range<const> = function(frame_count)
 	}
 end
 
-function timeline.new(id, program)
-	local self<const> = setmetatable({}, timeline)
-	self.id = id
-	self.program = program
-	self.head = timelinestart_index
-	self.frame_elapsed = 0
-	self.position_ms = 0
-	self.ended = false
-	self.direction = 1
-	self.wrapped = false
-	self.evaluations = {}
-	self.evaluation_count = 0
+local update_continuous_unbounded<const> = function(self, delta_time)
+	clear_evaluations(self)
+	local previous_frame<const> = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms<const> = self.position_ms
+	local direction<const> = self.direction
+	local time_ms<const> = previous_time_ms + delta_time * direction
+	self.position_ms = time_ms
+	write_evaluation(
+		self,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		play_update_method,
+		direction,
+		true,
+		boundary_none,
+		false,
+		false
+	)
 	return self
 end
 
-function timeline:rebind_program(program)
-	self.program = program
-end
-
-function timeline:build(params)
-	self.program = timeline_frame_program.build(self.program, params)
-	self:rewind()
-end
-
-function timeline:value()
-	return timeline_frame_program.value(self.program, self.head)
-end
-
-function timeline:rewind()
-	self.head = timelinestart_index
-	self.frame_elapsed = 0
-	self.position_ms = 0
-	self.ended = false
-	self.direction = 1
+local update_continuous_once<const> = function(self, delta_time)
 	clear_evaluations(self)
+	local previous_frame<const> = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms<const> = self.position_ms
+	local duration_ms<const> = self.program.duration_ms
+	local time_ms = previous_time_ms + delta_time
+	local ended<const> = time_ms >= duration_ms
+	if ended then
+		time_ms = duration_ms
+		self.ended = true
+	end
+	self.position_ms = time_ms
+	write_evaluation(
+		self,
+		previous_frame,
+		frame,
+		previous_time_ms,
+		time_ms,
+		play_update_method,
+		1,
+		true,
+		boundary_none,
+		false,
+		false
+	)
+	return self
 end
 
-local update_continuous<const> = function(self, delta_time)
-	local program<const> = self.program
+local update_continuous_loop<const> = function(self, delta_time)
+	clear_evaluations(self)
 	local previous_frame = self.head
 	local frame = previous_frame
 	if frame < 0 then
 		frame = 0
+		self.head = frame
 	end
-	self.head = frame
 	local previous_time_ms = self.position_ms
-	local duration_ms<const> = program.duration_ms
-	if duration_ms == nil then
-		local time_ms<const> = previous_time_ms + delta_time * self.direction
-		self.position_ms = time_ms
+	local duration_ms<const> = self.program.duration_ms
+	local remaining = delta_time
+	while previous_time_ms + remaining >= duration_ms do
+		remaining = remaining - (duration_ms - previous_time_ms)
 		write_evaluation(
 			self,
 			previous_frame,
 			frame,
 			previous_time_ms,
-			time_ms,
+			0,
 			play_update_method,
-			self.direction,
+			1,
 			true,
-			boundary_none,
-			false,
+			boundary_loop,
+			true,
 			false
 		)
-		return self
+		previous_frame = frame
+		previous_time_ms = 0
 	end
-	local mode<const> = program.playback_mode
-	if mode == playback_once then
-		local time_ms = previous_time_ms + delta_time
-		local ended<const> = time_ms >= duration_ms
-		if ended then
-			time_ms = duration_ms
-			self.ended = true
-		end
-		self.position_ms = time_ms
+	if remaining > 0 or self.evaluation_count == 0 then
+		local time_ms<const> = previous_time_ms + remaining
 		write_evaluation(
 			self,
 			previous_frame,
@@ -194,48 +212,23 @@ local update_continuous<const> = function(self, delta_time)
 			false,
 			false
 		)
-		return self
+		previous_time_ms = time_ms
 	end
+	self.position_ms = previous_time_ms
+	return self
+end
+
+local update_continuous_pingpong<const> = function(self, delta_time)
+	clear_evaluations(self)
+	local previous_frame = self.head
+	local frame = previous_frame
+	if frame < 0 then
+		frame = 0
+		self.head = frame
+	end
+	local previous_time_ms = self.position_ms
+	local duration_ms<const> = self.program.duration_ms
 	local remaining = delta_time
-	if mode == playback_loop then
-		while previous_time_ms + remaining >= duration_ms do
-			remaining = remaining - (duration_ms - previous_time_ms)
-			write_evaluation(
-				self,
-				previous_frame,
-				frame,
-				previous_time_ms,
-				0,
-				play_update_method,
-				1,
-				boundary_loop,
-				true,
-				true,
-				false
-			)
-			previous_frame = frame
-			previous_time_ms = 0
-		end
-		if remaining > 0 or self.evaluation_count == 0 then
-			local time_ms<const> = previous_time_ms + remaining
-			write_evaluation(
-				self,
-				previous_frame,
-				frame,
-				previous_time_ms,
-				time_ms,
-				play_update_method,
-				1,
-				true,
-				boundary_none,
-				false,
-				false
-			)
-			previous_time_ms = time_ms
-		end
-		self.position_ms = previous_time_ms
-		return self
-	end
 	while remaining > 0 do
 		local direction<const> = self.direction
 		local boundary_ms
@@ -279,28 +272,86 @@ local update_continuous<const> = function(self, delta_time)
 	return self
 end
 
-function timeline:update(delta_time)
-	local program<const> = self.program
+local update_immediate_frames<const> = function(self)
 	clear_evaluations(self)
-	if program.continuous then
-		return update_continuous(self, delta_time)
-	end
-	self.frame_elapsed = self.frame_elapsed + delta_time
-	local frame_duration<const> = program.frame_duration
-	if frame_duration <= 0 then
-		return self:advance_internal(false)
-	end
-	while self.frame_elapsed >= frame_duration do
-		self.frame_elapsed = self.frame_elapsed - frame_duration
+	return self:advance_internal(false)
+end
+
+local update_timed_frames<const> = function(self, delta_time)
+	clear_evaluations(self)
+	local frame_elapsed = self.frame_elapsed + delta_time
+	local frame_duration<const> = self.program.frame_duration
+	while frame_elapsed >= frame_duration do
+		frame_elapsed = frame_elapsed - frame_duration
 		self:advance_internal(true)
 		if self.ended then
 			break
 		end
 	end
+	self.frame_elapsed = frame_elapsed
 	if self.evaluation_count > 0 then
 		return self
 	end
 	return nil
+end
+
+local select_updater<const> = function(program)
+	if not program.continuous then
+		if program.frame_duration <= 0 then
+			return update_immediate_frames
+		end
+		return update_timed_frames
+	end
+	if program.duration_ms == nil then
+		return update_continuous_unbounded
+	end
+	local mode<const> = program.playback_mode
+	if mode == playback_once then
+		return update_continuous_once
+	end
+	if mode == playback_loop then
+		return update_continuous_loop
+	end
+	return update_continuous_pingpong
+end
+
+function timeline.new(id, program)
+	local self<const> = setmetatable({}, timeline)
+	self.id = id
+	self.program = program
+	self.update = select_updater(program)
+	self.head = timelinestart_index
+	self.frame_elapsed = 0
+	self.position_ms = 0
+	self.ended = false
+	self.direction = 1
+	self.wrapped = false
+	self.evaluations = {}
+	self.evaluation_count = 0
+	return self
+end
+
+function timeline:rebind_program(program)
+	self.program = program
+	self.update = select_updater(program)
+end
+
+function timeline:build(params)
+	self:rebind_program(timeline_frame_program.build(self.program, params))
+	self:rewind()
+end
+
+function timeline:value()
+	return timeline_frame_program.value(self.program, self.head)
+end
+
+function timeline:rewind()
+	self.head = timelinestart_index
+	self.frame_elapsed = 0
+	self.position_ms = 0
+	self.ended = false
+	self.direction = 1
+	clear_evaluations(self)
 end
 
 function timeline:advance()
