@@ -4,7 +4,8 @@ module<entry>
 require('base')
 table = require('table')
 string = require('string')
-load = require('compiler/api').load
+lua_compiler = require('compiler/api')
+load = lua_compiler.load
 os = require('os')
 
 math = require('math')

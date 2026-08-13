@@ -1,14 +1,15 @@
-local lua_syntax<const> = require('cartlib/codegen/lua_syntax')
+local syntax_factory<const> = lua_compiler.syntax_factory
 
 local apply_source<const> = {}
-local identifier<const> = lua_syntax.identifier
-local numeric_literal<const> = lua_syntax.numeric_literal
-local member_expression<const> = lua_syntax.member_expression
-local index_expression<const> = lua_syntax.index_expression
-local index_path<const> = lua_syntax.index_path
-local function_expression<const> = lua_syntax.function_expression
-local assignment_statement<const> = lua_syntax.assignment_statement
-local return_statement<const> = lua_syntax.return_statement
+local block<const> = syntax_factory.block
+local identifier<const> = syntax_factory.identifier
+local numeric_literal<const> = syntax_factory.number_literal
+local member_expression<const> = syntax_factory.member_expression
+local index_expression<const> = syntax_factory.index_expression
+local index_path<const> = syntax_factory.index_path
+local function_expression<const> = syntax_factory.function_expression
+local assignment_statement<const> = syntax_factory.assignment_statement
+local return_statement<const> = syntax_factory.return_statement
 
 local collect_frame_assignments
 collect_frame_assignments = function(statements, node, path)
@@ -19,8 +20,8 @@ collect_frame_assignments = function(statements, node, path)
 			collect_frame_assignments(statements, value, path)
 		else
 			statements[#statements + 1] = assignment_statement(
-				{ index_path(identifier('target'), path) },
-				{ index_path(identifier('frame'), path) }
+				index_path(identifier('target'), path),
+				index_path(identifier('frame'), path)
 			)
 		end
 		path[path_index] = nil
@@ -30,9 +31,14 @@ end
 function apply_source.build_frame(frame)
 	local body<const> = {}
 	collect_frame_assignments(body, frame, {})
-	return lua_syntax.chunk({
-		return_statement({ function_expression({ 'target', 'frame' }, body) }),
-	})
+	return syntax_factory.chunk(block({
+		return_statement({
+			function_expression(
+				{ identifier('target'), identifier('frame') },
+				block(body)
+			),
+		}),
+	}))
 end
 
 function apply_source.build_step(path, binding_index)
@@ -43,16 +49,19 @@ function apply_source.build_step(path, binding_index)
 			numeric_literal(binding_index)
 		)
 	end
-	return lua_syntax.chunk({
+	return syntax_factory.chunk(block({
 		return_statement({
-			function_expression({ 'entry', 'value' }, {
+			function_expression(
+				{ identifier('entry'), identifier('value') },
+				block({
 				assignment_statement(
-					{ index_path(binding, path) },
-					{ identifier('value') }
+					index_path(binding, path),
+					identifier('value')
 				),
-			}),
+				})
+			),
 		}),
-	})
+	}))
 end
 
 return apply_source

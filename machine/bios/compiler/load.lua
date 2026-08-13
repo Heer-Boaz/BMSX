@@ -24,12 +24,7 @@ local create_root_closure<const> = function(function_address, const_pool)
 	return blua32.closure(function_address)
 end
 
-function load_compiler.compile(source, chunk_name, mode, environment)
-	if not mode_accepts_text(mode) then
-		error("attempt to load a text chunk (mode is '" .. mode .. "')")
-	end
-	chunk_name = chunk_name or '=(load)'
-	local chunk<const> = parser.parse(source, chunk_name)
+function load_compiler.compile_chunk(chunk, chunk_name, environment)
 	local function_address<const>, const_pool<const> = linker.link(
 		compiler.compile(
 			chunk,
@@ -39,6 +34,15 @@ function load_compiler.compile(source, chunk_name, mode, environment)
 		)
 	)
 	return create_root_closure(function_address, const_pool)
+end
+
+function load_compiler.compile(source, chunk_name, mode, environment)
+	if not mode_accepts_text(mode) then
+		error("attempt to load a text chunk (mode is '" .. mode .. "')")
+	end
+	chunk_name = chunk_name or '=(load)'
+	local chunk<const> = parser.parse(source, chunk_name)
+	return load_compiler.compile_chunk(chunk, chunk_name, environment)
 end
 
 return load_compiler

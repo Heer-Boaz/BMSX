@@ -25,6 +25,7 @@ const SYSTEM_MODULE_FILES = [
 	['compiler/parser', 'machine/bios/compiler/parser.lua'],
 	['compiler/semantic', 'machine/bios/compiler/semantic.lua'],
 	['compiler/syntax', 'machine/bios/compiler/syntax.lua'],
+	['compiler/syntax_factory', 'machine/bios/compiler/syntax_factory.lua'],
 	['compiler/token', 'machine/bios/compiler/token.lua'],
 ] as const;
 
@@ -92,7 +93,8 @@ require('base')
 table = require('table')
 string = require('string/base')
 string.find = require('string/pattern').find
-load = require('compiler/api').load
+lua_compiler = require('compiler/api')
+load = lua_compiler.load
 math = { sin = function(value) return value end, pi = 3.141592653589793 }
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
