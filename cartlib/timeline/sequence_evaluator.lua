@@ -327,6 +327,8 @@ local evaluate_play_range<const> = function(
 	initial
 )
 	local state<const> = entry.sequence_state
+	local forward<const> = direction > 0
+	local backward<const> = direction < 0
 	local sorted_candidate_count<const> = begin_candidates(state)
 	if initial then
 		position_boundary_cursors(state, sequence, previous_time_ms)
@@ -337,7 +339,7 @@ local evaluate_play_range<const> = function(
 			end
 		end
 	end
-	if direction > 0 then
+	if forward then
 		local clip_count<const> = sequence.clip_count
 		local clips<const> = sequence.clips_by_start
 		local index = state.next_start_index
@@ -352,7 +354,7 @@ local evaluate_play_range<const> = function(
 			index = index + 1
 		end
 		state.next_end_index = index
-	elseif direction < 0 then
+	elseif backward then
 		local clips_by_start<const> = sequence.clips_by_start
 		local clips<const> = sequence.clips_by_end
 		local index = state.next_end_index - 1
@@ -373,9 +375,11 @@ local evaluate_play_range<const> = function(
 	-- Candidate admission guarantees that this range intersects each clip. Its
 	-- monotonic direction therefore determines the only interval edge it can
 	-- cross. Child completion changes only at interval admission and removal.
+	local candidates<const> = state.candidates
+	local entries<const> = state.entries
 	for candidate_index = 1, state.candidate_count do
-		local clip_index<const> = state.candidates[candidate_index]
-		local child_entry<const> = state.entries[clip_index]
+		local clip_index<const> = candidates[candidate_index]
+		local child_entry<const> = entries[clip_index]
 		local clip<const> = child_entry.clip
 		local clip_initial<const> = child_entry.active_index == nil
 		local start_time_ms<const> = clip.start_time_ms
@@ -383,7 +387,7 @@ local evaluate_play_range<const> = function(
 		local source_time_ms = previous_time_ms
 		local destination_time_ms = time_ms
 		local destination_active = true
-		if direction > 0 then
+		if forward then
 			if clip_initial and source_time_ms < start_time_ms then
 				source_time_ms = start_time_ms
 			end
@@ -391,7 +395,7 @@ local evaluate_play_range<const> = function(
 				destination_time_ms = end_time_ms
 				destination_active = false
 			end
-		elseif direction < 0 then
+		elseif backward then
 			if clip_initial and source_time_ms > end_time_ms then
 				source_time_ms = end_time_ms
 			end
