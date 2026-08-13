@@ -367,14 +367,16 @@ local process_position_clip<const> = function(
 	end
 end
 
-local evaluate_play_range<const> = function(sequence, entry, owner, previous_time_ms, time_ms, initial)
+local evaluate_play_range<const> = function(
+	sequence,
+	entry,
+	owner,
+	previous_time_ms,
+	time_ms,
+	direction,
+	initial
+)
 	local state<const> = entry.sequence_state
-	local direction = 0
-	if time_ms > previous_time_ms then
-		direction = 1
-	elseif time_ms < previous_time_ms then
-		direction = -1
-	end
 	local sorted_candidate_count<const> = begin_candidates(state)
 	if initial then
 		for clip_index = 1, sequence.clip_count do
@@ -494,10 +496,11 @@ function sequence_evaluator.bind_play(program)
 					owner,
 					previous_time_ms,
 					duration_ms,
+					direction,
 					flags & initial_flag ~= 0
 				)
 				clear_active_clips(entry, owner)
-				evaluate_play_range(sequence, entry, owner, 0, time_ms, true)
+				evaluate_play_range(sequence, entry, owner, 0, time_ms, direction, true)
 			else
 				evaluate_play_range(
 					sequence,
@@ -505,10 +508,11 @@ function sequence_evaluator.bind_play(program)
 					owner,
 					previous_time_ms,
 					0,
+					direction,
 					flags & initial_flag ~= 0
 				)
 				clear_active_clips(entry, owner)
-				evaluate_play_range(sequence, entry, owner, duration_ms, time_ms, true)
+				evaluate_play_range(sequence, entry, owner, duration_ms, time_ms, direction, true)
 			end
 			return
 		end
@@ -518,6 +522,7 @@ function sequence_evaluator.bind_play(program)
 			owner,
 			previous_time_ms,
 			time_ms,
+			direction,
 			flags & initial_flag ~= 0
 		)
 	end

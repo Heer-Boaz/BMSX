@@ -14,6 +14,7 @@ local evaluation_flag<const> = timeline_playback.evaluation_flag
 local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
+local reset_step_flags<const> = wrapped_flag | initial_flag
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -515,9 +516,8 @@ local evaluate_play_frame_steps<const> = function(
 	evaluation
 )
 	if flags & sample_flag ~= 0 then
-		if flags & initial_flag ~= 0
-			or flags & wrapped_flag ~= 0
-			or current > previous + 1
+		if flags & reset_step_flags ~= 0
+		or current > previous + 1
 			or current < previous - 1 then
 			sample_step_tracks(entry, steps, current, params, evaluation)
 		elseif direction > 0 then
@@ -543,8 +543,7 @@ local evaluate_play_time_steps<const> = function(
 	flags,
 	evaluation
 )
-	if flags & initial_flag ~= 0
-	or flags & wrapped_flag ~= 0 then
+	if flags & reset_step_flags ~= 0 then
 		sample_time_step_tracks(entry, steps, time_ms, params, evaluation)
 	elseif time_ms > previous_time_ms then
 		advance_time_step_tracks(entry, steps, time_ms, params, evaluation)
