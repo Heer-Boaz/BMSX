@@ -5,7 +5,6 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
 local evaluation_flag<const> = timeline_playback.evaluation_flag
-local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
 local jump_update_method<const> = timeline_playback.update_method.jump
@@ -14,86 +13,6 @@ local jump_update_method<const> = timeline_playback.update_method.jump
 -- interval state under their parent entry. They never become ECS systems or
 -- independently ticking timeline-component entries.
 local sequence_evaluator<const> = {}
-
-local write_continuous_child_time_range<const> = function(
-	entry,
-	owner,
-	previous_time_ms,
-	time_ms,
-	evaluate,
-	direction,
-	initial,
-	range_flags
-)
-	local instance<const> = entry.instance
-	local flags = range_flags | sample_flag
-	if initial then
-		instance.head = 0
-		flags = flags | initial_flag
-	end
-	instance.position_ms = time_ms
-	instance.direction = direction
-	evaluate(
-		entry,
-		owner,
-		0,
-		0,
-		previous_time_ms,
-		time_ms,
-		direction,
-		flags
-	)
-end
-
-local write_frame_child_time_range<const> = function(
-	entry,
-	owner,
-	previous_time_ms,
-	time_ms,
-	evaluate,
-	direction,
-	initial,
-	range_flags
-)
-	local instance<const> = entry.instance
-	local program<const> = instance.program
-	local frame_duration<const> = program.frame_duration
-	local last_frame<const> = program.last_frame
-	-- An active child committed this frame before its preceding evaluation.
-	-- Admission alone has no retained source frame yet.
-	local previous_frame = instance.head
-	if initial then
-		previous_frame = (previous_time_ms / frame_duration) // 1
-		if previous_frame > last_frame then
-			previous_frame = last_frame
-		end
-	end
-	local frame = (time_ms / frame_duration) // 1
-	if frame > last_frame then
-		frame = last_frame
-	end
-	instance.head = frame
-	instance.frame_elapsed = time_ms - frame * frame_duration
-	instance.position_ms = time_ms
-	instance.direction = direction
-	local flags = range_flags
-	if initial or frame ~= previous_frame then
-		flags = flags | sample_flag
-	end
-	if initial then
-		flags = flags | initial_flag
-	end
-	evaluate(
-		entry,
-		owner,
-		previous_frame,
-		frame,
-		previous_time_ms,
-		time_ms,
-		direction,
-		flags
-	)
-end
 
 local first_start_after<const> = function(clips, count, time_ms)
 	local low = 1
@@ -249,13 +168,6 @@ function sequence_evaluator.init_entry(entry)
 			duration_ms = child_program.duration_ms,
 			play_evaluator = child_program.evaluate_play,
 		}
-		if clip.cyclic then
-			if child_program.continuous then
-				child_entry.write_time_range = write_continuous_child_time_range
-			else
-				child_entry.write_time_range = write_frame_child_time_range
-			end
-		end
 		if child_program.has_evaluation_callbacks or clip.on_loop ~= nil or clip.on_turn ~= nil then
 			child_entry.evaluation_context = {}
 		end

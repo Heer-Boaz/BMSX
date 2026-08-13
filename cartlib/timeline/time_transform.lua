@@ -2,38 +2,51 @@ local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local time_transform_syntax<const> = require('cartlib/timeline/time_transform_syntax')
 
--- A clip transform is a linear parent-to-child mapping followed by an optional
--- time warp. The evaluator emits monotonic child ranges at every warp boundary
--- so downstream track code never has to infer skipped turns.
+-- Clip transforms are immutable execution programs selected at sequence
+-- admission. Generated datapaths own both time mapping and child transport, so
+-- the 50 Hz sequence evaluator only dispatches the retained transform.
 local time_transform<const> = {}
-local playback_loop<const> = timeline_playback.mode.loop
-local playback_pingpong<const> = timeline_playback.mode.pingpong
-local play_update_method<const> = timeline_playback.update_method.play
+local playback<const> = timeline_playback.mode
+local playback_once<const> = playback.once
+local playback_loop<const> = playback.loop
+local playback_pingpong<const> = playback.pingpong
 local boundary<const> = timeline_playback.boundary
 local boundary_none<const> = boundary.none
-local boundary_loop<const> = boundary.loop
 local boundary_turn<const> = boundary.turn
 local evaluation_flag<const> = timeline_playback.evaluation_flag
 local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
-local loop_boundary_flags<const> = boundary_loop | wrapped_flag
+local loop_boundary_flags<const> = boundary.loop | wrapped_flag
+local play_update_method<const> = timeline_playback.update_method.play
 local affine_identity<const> = 0
 local affine_translation<const> = 1
 local affine_scaled<const> = 2
-local shape_continuous<const> = 0x01
-local shape_bounded<const> = 0x02
-local shape_translation<const> = 0x04
-local shape_scaled<const> = 0x08
-local shape_backward<const> = 0x10
-local shape_position<const> = 0x20
+local shape_continuous<const> = 0x001
+local shape_bounded<const> = 0x002
+local shape_translation<const> = 0x004
+local shape_scaled<const> = 0x008
+local shape_backward<const> = 0x010
+local shape_position<const> = 0x020
+local shape_loop<const> = 0x040
+local shape_pingpong<const> = 0x080
+local shape_boundary_callback<const> = 0x100
+local shape_evaluation_callbacks<const> = 0x200
 local compile_syntax<const> = lua_compiler.compile_syntax
-local once_transform_by_shape<const> = {}
+local compile_environment<const> = {
+	write_evaluation_context = timeline_evaluation_context.write,
+}
+local transform_by_shape<const> = {}
 
--- Straight-line clips are lowered once per execution shape. This is the same
--- retained-template boundary used by track evaluators: authored policy selects
--- a datapath at admission, while the 50 Hz path commits the child directly.
-local compile_once_transform<const> = function(continuous, bounded, affine, direction)
+local transform_shape<const> = function(
+	playback_mode,
+	continuous,
+	bounded,
+	affine,
+	direction,
+	has_boundary_callback,
+	has_evaluation_callbacks
+)
 	local shape = 0
 	if continuous then
 		shape = shape | shape_continuous
@@ -51,448 +64,93 @@ local compile_once_transform<const> = function(continuous, bounded, affine, dire
 	elseif direction == 0 then
 		shape = shape | shape_position
 	end
-	local transform<const> = once_transform_by_shape[shape]
+	if playback_mode == playback_loop then
+		shape = shape | shape_loop
+	elseif playback_mode == playback_pingpong then
+		shape = shape | shape_pingpong
+	end
+	if has_boundary_callback then
+		shape = shape | shape_boundary_callback
+		if has_evaluation_callbacks then
+			shape = shape | shape_evaluation_callbacks
+		end
+	end
+	return shape
+end
+
+local compile_transform<const> = function(
+	playback_mode,
+	continuous,
+	bounded,
+	affine,
+	direction,
+	has_boundary_callback,
+	has_evaluation_callbacks
+)
+	local shape<const> = transform_shape(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		direction,
+		has_boundary_callback,
+		has_evaluation_callbacks
+	)
+	local transform<const> = transform_by_shape[shape]
 	if transform ~= nil then
 		return transform
 	end
+	local values<const> = {
+		continuous = continuous,
+		position = direction == 0,
+		bounded = bounded,
+		affine = affine,
+		direction = direction,
+		has_boundary_callback = has_boundary_callback,
+		has_evaluation_callbacks = has_evaluation_callbacks,
+		sample_flag = sample_flag,
+		initial_flag = initial_flag,
+		play_method = play_update_method,
+		boundary_none = boundary_none,
+		boundary_turn = boundary_turn,
+		loop_boundary_flags = loop_boundary_flags,
+	}
+	local syntax_tree
+	if playback_mode == playback_once then
+		syntax_tree = time_transform_syntax.build_once(values)
+	elseif playback_mode == playback_loop then
+		values.boundary_callback_member = 'on_loop'
+		syntax_tree = time_transform_syntax.build_loop(values)
+	else
+		values.boundary_callback_member = 'on_turn'
+		syntax_tree = time_transform_syntax.build_pingpong(values)
+	end
+	local environment = nil
+	if has_boundary_callback and not has_evaluation_callbacks then
+		environment = compile_environment
+	end
 	local compiled<const> = compile_syntax(
-		time_transform_syntax.build({
-			continuous = continuous,
-			bounded = bounded,
-			affine = affine,
-			direction = direction,
-			sample_flag = sample_flag,
-			initial_flag = initial_flag,
-		}),
-		'[timeline.time_transform]'
+		syntax_tree,
+		'[timeline.time_transform]',
+		environment
 	)()
-	once_transform_by_shape[shape] = compiled
+	transform_by_shape[shape] = compiled
 	return compiled
 end
 
--- Time transforms own loop and turn boundaries. Authored boundary callbacks
--- are therefore dispatched here, after the exact monotonic child range which
--- crossed the boundary has been evaluated.
-local notify_boundary<const> = function(
-	callback,
-	target,
-	previous_time_ms,
-	time_ms,
-	direction,
-	initial,
-	boundary_flags
-)
-	local instance<const> = target.instance
-	local program<const> = instance.program
-	local context<const> = target.evaluation_context
-	if not program.has_evaluation_callbacks then
-		local previous_frame = 0
-		local frame = 0
-		local sample = true
-		if not program.continuous then
-			local frame_duration<const> = program.frame_duration
-			local last_frame<const> = program.last_frame
-			previous_frame = (previous_time_ms / frame_duration) // 1
-			if previous_frame > last_frame then
-				previous_frame = last_frame
-			end
-			frame = instance.head
-			sample = initial or frame ~= previous_frame
+local classify_affine<const> = function(time_scale, time_offset_ms)
+	if time_scale == 1 then
+		if time_offset_ms == 0 then
+			return affine_identity
 		end
-		local flags = boundary_flags
-		if sample then
-			flags = flags | sample_flag
-		end
-		if initial then
-			flags = flags | initial_flag
-		end
-		timeline_evaluation_context.write(
-			context,
-			program,
-			play_update_method,
-			previous_frame,
-			frame,
-			previous_time_ms,
-			time_ms,
-			direction,
-			flags
-		)
+		return affine_translation
 	end
-	callback(target.primary_binding, context)
+	return affine_scaled
 end
 
-local child_time_at<const> = function(clip, parent_time_ms)
-	return parent_time_ms * clip.time_scale + clip.time_offset_ms
-end
-
-local pingpong_time<const> = function(time_ms, duration_ms)
-	local period_ms<const> = duration_ms * 2
-	local phase_ms<const> = time_ms % period_ms
-	if phase_ms <= duration_ms then
-		return phase_ms
-	end
-	return period_ms - phase_ms
-end
-
-local direction_between<const> = function(previous_time_ms, time_ms, default_direction)
-	if time_ms > previous_time_ms then
-		return 1
-	end
-	if time_ms < previous_time_ms then
-		return -1
-	end
-	return default_direction
-end
-
--- Monotonic loop playback resumes from the child transport position. Initial
--- admission decodes absolute parent time; positioning remains on the absolute
--- transforms below.
-local evaluate_loop_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local evaluate<const> = target.play_evaluator
-	local write_range<const> = target.write_time_range
-	local duration_ms<const> = target.duration_ms
-	local instance<const> = target.instance
-	instance.wrapped = false
-	local previous_local_ms
-	if initial then
-		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
-	else
-		previous_local_ms = instance.position_ms
-	end
-	local remaining_ms = (parent_time_ms - previous_parent_time_ms) * clip.time_scale
-	local evaluated = false
-	local distance_ms = duration_ms - previous_local_ms
-	while remaining_ms >= distance_ms do
-		remaining_ms = remaining_ms - distance_ms
-		instance.wrapped = true
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			0,
-			evaluate,
-			1,
-			initial,
-			loop_boundary_flags
-		)
-		local on_loop<const> = clip.on_loop
-		if on_loop ~= nil then
-			notify_boundary(
-				on_loop,
-				target,
-				previous_local_ms,
-				0,
-				1,
-				initial,
-				loop_boundary_flags
-			)
-		end
-		initial = false
-		evaluated = true
-		previous_local_ms = 0
-		distance_ms = duration_ms
-	end
-	if remaining_ms > 0 or not evaluated then
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			previous_local_ms + remaining_ms,
-			evaluate,
-			1,
-			initial,
-			boundary_none
-		)
-	end
-end
-
-local evaluate_loop_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local evaluate<const> = target.play_evaluator
-	local write_range<const> = target.write_time_range
-	local duration_ms<const> = target.duration_ms
-	local instance<const> = target.instance
-	instance.wrapped = false
-	local previous_local_ms
-	if initial then
-		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
-	else
-		previous_local_ms = instance.position_ms
-	end
-	local remaining_ms = (previous_parent_time_ms - parent_time_ms) * clip.time_scale
-	local evaluated = false
-	local distance_ms = previous_local_ms
-	while remaining_ms > distance_ms do
-		remaining_ms = remaining_ms - distance_ms
-		instance.wrapped = true
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			duration_ms,
-			evaluate,
-			-1,
-			initial,
-			loop_boundary_flags
-		)
-		local on_loop<const> = clip.on_loop
-		if on_loop ~= nil then
-			notify_boundary(
-				on_loop,
-				target,
-				previous_local_ms,
-				duration_ms,
-				-1,
-				initial,
-				loop_boundary_flags
-			)
-		end
-		initial = false
-		evaluated = true
-		previous_local_ms = duration_ms
-		distance_ms = duration_ms
-	end
-	if remaining_ms > 0 or not evaluated then
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			previous_local_ms - remaining_ms,
-			evaluate,
-			-1,
-			initial,
-			boundary_none
-		)
-	end
-end
-
-local evaluate_pingpong_forward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local evaluate<const> = target.play_evaluator
-	local write_range<const> = target.write_time_range
-	local duration_ms<const> = target.duration_ms
-	-- Both endpoints share the immutable linear transform coefficients, so a
-	-- range decodes them once rather than once per endpoint.
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
-	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
-	local cursor_ms = previous_time_ms
-	local segment<const> = cursor_ms // duration_ms
-	local segment_start_ms<const> = segment * duration_ms
-	local segment_offset_ms<const> = cursor_ms - segment_start_ms
-	local previous_local_ms
-	local direction
-	if segment & 1 == 0 then
-		previous_local_ms = segment_offset_ms
-		direction = 1
-	else
-		previous_local_ms = duration_ms - segment_offset_ms
-		direction = -1
-	end
-	local boundary_ms = segment_start_ms + duration_ms
-	while boundary_ms <= time_ms do
-		local local_time_ms = 0
-		if direction > 0 then
-			local_time_ms = duration_ms
-		end
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			local_time_ms,
-			evaluate,
-			direction,
-			initial,
-			boundary_turn
-		)
-		local on_turn<const> = clip.on_turn
-		if on_turn ~= nil then
-			notify_boundary(
-				on_turn,
-				target,
-				previous_local_ms,
-				local_time_ms,
-				direction,
-				initial,
-				boundary_turn
-			)
-		end
-		initial = false
-		cursor_ms = boundary_ms
-		previous_local_ms = local_time_ms
-		direction = -direction
-		boundary_ms = boundary_ms + duration_ms
-	end
-	if cursor_ms < time_ms or cursor_ms == previous_time_ms then
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			previous_local_ms + (time_ms - cursor_ms) * direction,
-			evaluate,
-			direction,
-			initial,
-			boundary_none
-		)
-	end
-end
-
-local evaluate_pingpong_backward<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	initial
-)
-	local clip<const> = target.clip
-	local evaluate<const> = target.play_evaluator
-	local write_range<const> = target.write_time_range
-	local duration_ms<const> = target.duration_ms
-	local time_scale<const> = clip.time_scale
-	local time_offset_ms<const> = clip.time_offset_ms
-	local previous_time_ms<const> = previous_parent_time_ms * time_scale + time_offset_ms
-	local time_ms<const> = parent_time_ms * time_scale + time_offset_ms
-	local cursor_ms = previous_time_ms
-	local segment = cursor_ms // duration_ms
-	local segment_start_ms = segment * duration_ms
-	local segment_offset_ms = cursor_ms - segment_start_ms
-	if segment_offset_ms == 0 then
-		segment = segment - 1
-		segment_start_ms = segment_start_ms - duration_ms
-		segment_offset_ms = duration_ms
-	end
-	local previous_local_ms
-	local direction
-	if segment & 1 == 0 then
-		previous_local_ms = segment_offset_ms
-		direction = -1
-	else
-		previous_local_ms = duration_ms - segment_offset_ms
-		direction = 1
-	end
-	local boundary_ms = segment_start_ms
-	while boundary_ms >= time_ms do
-		local local_time_ms = 0
-		if direction > 0 then
-			local_time_ms = duration_ms
-		end
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			local_time_ms,
-			evaluate,
-			direction,
-			initial,
-			boundary_turn
-		)
-		local on_turn<const> = clip.on_turn
-		if on_turn ~= nil then
-			notify_boundary(
-				on_turn,
-				target,
-				previous_local_ms,
-				local_time_ms,
-				direction,
-				initial,
-				boundary_turn
-			)
-		end
-		initial = false
-		cursor_ms = boundary_ms
-		previous_local_ms = local_time_ms
-		direction = -direction
-		boundary_ms = boundary_ms - duration_ms
-	end
-	if cursor_ms > time_ms or cursor_ms == previous_time_ms then
-		write_range(
-			target,
-			owner,
-			previous_local_ms,
-			previous_local_ms + (cursor_ms - time_ms) * direction,
-			evaluate,
-			direction,
-			initial,
-			boundary_none
-		)
-	end
-end
-
-local evaluate_position_loop<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	evaluate,
-	initial
-)
-	local clip<const> = target.clip
-	local duration_ms<const> = target.duration_ms
-	target.instance.wrapped = false
-	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms) % duration_ms
-	local time_ms<const> = child_time_at(clip, parent_time_ms) % duration_ms
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		evaluate,
-		direction_between(previous_time_ms, time_ms, 0),
-		initial,
-		boundary_none
-	)
-end
-
-local evaluate_position_pingpong<const> = function(
-	target,
-	owner,
-	previous_parent_time_ms,
-	parent_time_ms,
-	evaluate,
-	initial
-)
-	local clip<const> = target.clip
-	local duration_ms<const> = target.duration_ms
-	local previous_time_ms<const> = pingpong_time(
-		child_time_at(clip, previous_parent_time_ms),
-		duration_ms
-	)
-	local time_ms<const> = pingpong_time(child_time_at(clip, parent_time_ms), duration_ms)
-	target.write_time_range(
-		target,
-		owner,
-		previous_time_ms,
-		time_ms,
-		evaluate,
-		direction_between(previous_time_ms, time_ms, 0),
-		initial,
-		boundary_none
-	)
-end
-
--- Playback mode is authored configuration, not runtime transport state. Clip
--- admission resolves it and time-scale direction into direct parent-forward
--- and parent-backward datapaths retained by the compiled clip.
+-- Playback direction, affine mapping, bounds, child timing and callback
+-- capabilities are authored facts. Compile them into direct transforms once;
+-- runtime instances retain only transport state and the selected dispatch.
 function time_transform.compile(
 	playback_mode,
 	time_scale,
@@ -501,57 +159,62 @@ function time_transform.compile(
 	clip_duration_ms,
 	child_duration_ms,
 	child_duration_stable,
-	continuous
+	continuous,
+	has_evaluation_callbacks,
+	has_loop_callback,
+	has_turn_callback
 )
-	if playback_mode == playback_loop then
-		if time_scale < 0 then
-			return evaluate_loop_backward, evaluate_loop_forward, evaluate_position_loop
-		end
-		if time_scale == 0 then
-			return evaluate_loop_forward, evaluate_loop_forward, evaluate_position_loop
-		end
-		return evaluate_loop_forward, evaluate_loop_backward, evaluate_position_loop
-	end
-	if playback_mode == playback_pingpong then
-		if time_scale < 0 then
-			return evaluate_pingpong_backward, evaluate_pingpong_forward, evaluate_position_pingpong
-		end
-		if time_scale == 0 then
-			return evaluate_pingpong_forward, evaluate_pingpong_forward, evaluate_position_pingpong
-		end
-		return evaluate_pingpong_forward, evaluate_pingpong_backward, evaluate_position_pingpong
-	end
-	-- A static once clip whose complete authored interval maps inside the child
-	-- interval cannot reach a clamp edge during playback. Frame builders retain
-	-- the bounded datapath because binding can replace their child duration.
-	local child_end_time_ms<const> = clip_in_ms + clip_duration_ms * time_scale
-	local in_range<const> = child_duration_stable
-	and (child_duration_ms == nil
-	or (clip_in_ms >= 0
-	and clip_in_ms <= child_duration_ms
-	and child_end_time_ms >= 0
-	and child_end_time_ms <= child_duration_ms))
-	local affine = affine_scaled
-	if time_scale == 1 then
-		if time_offset_ms == 0 then
-			affine = affine_identity
-		else
-			affine = affine_translation
-		end
-	end
 	local forward_direction = 1
 	local backward_direction = -1
 	if time_scale < 0 then
 		forward_direction = -1
 		backward_direction = 1
-	end
-	if time_scale == 0 then
+	elseif time_scale == 0 then
 		backward_direction = 1
 	end
-	local bounded<const> = not in_range
-	return compile_once_transform(continuous, bounded, affine, forward_direction),
-		compile_once_transform(continuous, bounded, affine, backward_direction),
-		compile_once_transform(continuous, bounded, affine, 0)
+	local bounded = false
+	if playback_mode == playback_once then
+		local child_end_time_ms<const> = clip_in_ms + clip_duration_ms * time_scale
+		local in_range<const> = child_duration_stable
+		and (child_duration_ms == nil
+		or (clip_in_ms >= 0
+		and clip_in_ms <= child_duration_ms
+		and child_end_time_ms >= 0
+		and child_end_time_ms <= child_duration_ms))
+		bounded = not in_range
+	end
+	local has_boundary_callback = false
+	if playback_mode == playback_loop then
+		has_boundary_callback = has_loop_callback
+	elseif playback_mode == playback_pingpong then
+		has_boundary_callback = has_turn_callback
+	end
+	local affine<const> = classify_affine(time_scale, time_offset_ms)
+	return compile_transform(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		forward_direction,
+		has_boundary_callback,
+		has_evaluation_callbacks
+	), compile_transform(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		backward_direction,
+		has_boundary_callback,
+		has_evaluation_callbacks
+	), compile_transform(
+		playback_mode,
+		continuous,
+		bounded,
+		affine,
+		0,
+		false,
+		false
+	)
 end
 
 return time_transform
