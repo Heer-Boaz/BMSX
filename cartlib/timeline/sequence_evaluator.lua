@@ -154,6 +154,8 @@ function sequence_evaluator.init_entry(entry)
 		candidate_generation = 0,
 		candidate_count = 0,
 		candidate_snapshot_current = false,
+		active_runner_factories = sequence.active_runner_factories,
+		active_runner = nil,
 		position_tree_stack = {},
 		next_boundary_index = 1,
 		play_backward = nil,
@@ -263,6 +265,11 @@ local begin_candidates<const> = function(state)
 	for index = 1, count do
 		candidate_entries[index] = active_entries[index]
 	end
+	if count == 0 then
+		state.active_runner = nil
+	else
+		state.active_runner = state.active_runner_factories[count](candidate_entries)
+	end
 	state.candidate_snapshot_current = true
 	return count
 end
@@ -345,15 +352,9 @@ local evaluate_play_range<const> = function(
 		if forward then
 			if boundary_index > sequence.boundary_count
 			or boundary_times[boundary_index] > time_ms then
-				local candidate_entries<const> = state.candidate_entries
-				for candidate_index = 1, state.candidate_count do
-					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.active_play_transform(
-						child_entry,
-						owner,
-						previous_time_ms,
-						time_ms
-					)
+				local active_runner<const> = state.active_runner
+				if active_runner ~= nil then
+					active_runner(owner, previous_time_ms, time_ms)
 				end
 				return
 			end
@@ -361,15 +362,9 @@ local evaluate_play_range<const> = function(
 			local previous_boundary_index<const> = boundary_index - 1
 			if previous_boundary_index == 0
 			or boundary_times[previous_boundary_index] <= time_ms then
-				local candidate_entries<const> = state.candidate_entries
-				for candidate_index = 1, state.candidate_count do
-					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.active_play_transform(
-						child_entry,
-						owner,
-						previous_time_ms,
-						time_ms
-					)
+				local active_runner<const> = state.active_runner
+				if active_runner ~= nil then
+					active_runner(owner, previous_time_ms, time_ms)
 				end
 				return
 			end

@@ -53,6 +53,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/frame_program', 'cartlib/timeline/frame_program.lua'],
 	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
 	['cartlib/timeline/child_transport_syntax', 'cartlib/timeline/child_transport_syntax.lua'],
+	['cartlib/timeline/sequence_evaluator_syntax', 'cartlib/timeline/sequence_evaluator_syntax.lua'],
 	['cartlib/timeline/time_transform_syntax', 'cartlib/timeline/time_transform_syntax.lua'],
 	['cartlib/timeline/time_transform', 'cartlib/timeline/time_transform.lua'],
 	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],

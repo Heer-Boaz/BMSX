@@ -1,8 +1,11 @@
 -- Nested sequence definitions are admitted into immutable clip records. The
 -- runtime consumes dense binding maps and boundary-sorted clip references.
 local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
+local sequence_evaluator_syntax<const> = require('cartlib/timeline/sequence_evaluator_syntax')
 
 local sequence_program<const> = {}
+local compile_syntax<const> = lua_compiler.compile_syntax
+local active_runner_factory_by_count<const> = {}
 local empty_clips<const> = {}
 sequence_program.empty = {
 	clips = empty_clips,
@@ -15,6 +18,19 @@ sequence_program.empty = {
 	clip_count = 0,
 	duration_ms = 0,
 }
+
+local active_runner_factory<const> = function(count)
+	local existing<const> = active_runner_factory_by_count[count]
+	if existing ~= nil then
+		return existing
+	end
+	local factory<const> = compile_syntax(
+		sequence_evaluator_syntax.build_active_runner_factory(count),
+		'[timeline.sequence_evaluator]'
+	)()
+	active_runner_factory_by_count[count] = factory
+	return factory
+end
 
 -- Child programs, binding slots and parent-time transforms are resolved during
 -- admission. Runtime traversal consumes only these dense clip records.
@@ -128,6 +144,40 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			end_index = end_index + 1
 		end
 	end
+	local active_runner_factories<const> = {}
+	local active_count = 0
+	local active_frame_builder_count = 0
+	local boundary_index = 1
+	while boundary_index <= boundary_count do
+		local boundary_time_ms<const> = boundary_times[boundary_index]
+		repeat
+			local clip_index<const> = boundary_clip_indices[boundary_index]
+			local entering<const> = clip_index > 0
+			local clip
+			if entering then
+				clip = clips[clip_index]
+				active_count = active_count + 1
+			else
+				clip = clips[-clip_index]
+				active_count = active_count - 1
+			end
+			if clip.program.frame_builder ~= nil then
+				if entering then
+					active_frame_builder_count = active_frame_builder_count + 1
+				else
+					active_frame_builder_count = active_frame_builder_count - 1
+				end
+			end
+			boundary_index = boundary_index + 1
+		until boundary_index > boundary_count or boundary_times[boundary_index] ~= boundary_time_ms
+		if active_count > 0 and active_runner_factories[active_count] == nil then
+			active_runner_factories[active_count] = active_runner_factory(active_count)
+		end
+		local rebound_active_count<const> = active_count - active_frame_builder_count
+		if rebound_active_count > 0 and active_runner_factories[rebound_active_count] == nil then
+			active_runner_factories[rebound_active_count] = active_runner_factory(rebound_active_count)
+		end
+	end
 
 	-- Positioning can jump directly to any parent time. A flat max-end tree over
 	-- start-sorted clips finds every overlapping clip without copying active
@@ -156,6 +206,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 		boundary_times = boundary_times,
 		boundary_clip_indices = boundary_clip_indices,
 		boundary_count = boundary_count,
+		active_runner_factories = active_runner_factories,
 		position_tree_max_end_time_ms = position_tree_max_end_time_ms,
 		position_tree_leaf_count = position_tree_leaf_count,
 		clip_count = clip_count,
