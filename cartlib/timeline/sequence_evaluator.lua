@@ -273,15 +273,14 @@ end
 -- Active entries retain a source time inside their clip interval. Only a new
 -- entry or a destination which leaves that interval needs boundary clamping.
 local process_play_clip<const> = function(
-	sequence,
 	state,
 	owner,
 	clip_index,
 	previous_time_ms,
 	time_ms
 )
-	local clip<const> = sequence.clips[clip_index]
 	local child_entry<const> = state.entries[clip_index]
+	local clip<const> = child_entry.clip
 	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
 	local end_time_ms<const> = clip.end_time_ms
@@ -317,7 +316,6 @@ local process_play_clip<const> = function(
 end
 
 local process_position_clip<const> = function(
-	sequence,
 	state,
 	owner,
 	clip_index,
@@ -325,8 +323,8 @@ local process_position_clip<const> = function(
 	time_ms,
 	method
 )
-	local clip<const> = sequence.clips[clip_index]
 	local child_entry<const> = state.entries[clip_index]
+	local clip<const> = child_entry.clip
 	local initial<const> = child_entry.active_index == nil
 	local start_time_ms<const> = clip.start_time_ms
 	local end_time_ms<const> = clip.end_time_ms
@@ -389,7 +387,6 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 	end
 	for index = 1, state.candidate_count do
 		process_play_clip(
-			sequence,
 			state,
 			owner,
 			state.candidates[index],
@@ -452,7 +449,6 @@ local evaluate_position<const> = function(
 		local clip<const> = sequence.clips[clip_index]
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
 			process_position_clip(
-				sequence,
 				state,
 				owner,
 				clip_index,
