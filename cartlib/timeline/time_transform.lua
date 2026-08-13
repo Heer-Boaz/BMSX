@@ -25,8 +25,32 @@ local pingpong_time<const> = function(time_ms, duration_ms)
 	return period_ms - phase_ms
 end
 
-local pingpong_direction<const> = function(time_ms, duration_ms, raw_direction)
-	local phase_ms<const> = time_ms % (duration_ms * 2)
+local direction_between<const> = function(previous_time_ms, time_ms, default_direction)
+	if time_ms > previous_time_ms then
+		return 1
+	end
+	if time_ms < previous_time_ms then
+		return -1
+	end
+	return default_direction
+end
+
+-- A ping-pong phase is needed only when a range has zero local displacement.
+-- Keep that modulus off ordinary monotonic traversal.
+local pingpong_direction_between<const> = function(
+	previous_time_ms,
+	time_ms,
+	raw_time_ms,
+	duration_ms,
+	raw_direction
+)
+	if time_ms > previous_time_ms then
+		return 1
+	end
+	if time_ms < previous_time_ms then
+		return -1
+	end
+	local phase_ms<const> = raw_time_ms % (duration_ms * 2)
 	if raw_direction > 0 then
 		if phase_ms < duration_ms then
 			return 1
@@ -37,16 +61,6 @@ local pingpong_direction<const> = function(time_ms, duration_ms, raw_direction)
 		return 1
 	end
 	return -1
-end
-
-local direction_between<const> = function(previous_time_ms, time_ms, default_direction)
-	if time_ms > previous_time_ms then
-		return 1
-	end
-	if time_ms < previous_time_ms then
-		return -1
-	end
-	return default_direction
 end
 
 local bound_once_range<const> = function(target, previous_time_ms, time_ms)
@@ -178,10 +192,12 @@ local evaluate_pingpong_forward<const> = function(
 	local boundary_ms = (cursor_ms // duration_ms + 1) * duration_ms
 	while boundary_ms <= time_ms do
 		local local_time_ms<const> = pingpong_time(boundary_ms, duration_ms)
-		local direction<const> = direction_between(
+		local direction<const> = pingpong_direction_between(
 			previous_local_ms,
 			local_time_ms,
-			pingpong_direction(boundary_ms, duration_ms, 1)
+			boundary_ms,
+			duration_ms,
+			1
 		)
 		write_range(
 			target,
@@ -201,10 +217,12 @@ local evaluate_pingpong_forward<const> = function(
 	end
 	if cursor_ms < time_ms or cursor_ms == previous_time_ms then
 		local local_time_ms<const> = pingpong_time(time_ms, duration_ms)
-		local direction<const> = direction_between(
+		local direction<const> = pingpong_direction_between(
 			previous_local_ms,
 			local_time_ms,
-			pingpong_direction(time_ms, duration_ms, 1)
+			time_ms,
+			duration_ms,
+			1
 		)
 		write_range(
 			target,
@@ -243,10 +261,12 @@ local evaluate_pingpong_backward<const> = function(
 	end
 	while boundary_ms >= time_ms do
 		local local_time_ms<const> = pingpong_time(boundary_ms, duration_ms)
-		local direction<const> = direction_between(
+		local direction<const> = pingpong_direction_between(
 			previous_local_ms,
 			local_time_ms,
-			pingpong_direction(boundary_ms, duration_ms, -1)
+			boundary_ms,
+			duration_ms,
+			-1
 		)
 		write_range(
 			target,
@@ -266,10 +286,12 @@ local evaluate_pingpong_backward<const> = function(
 	end
 	if cursor_ms > time_ms or cursor_ms == previous_time_ms then
 		local local_time_ms<const> = pingpong_time(time_ms, duration_ms)
-		local direction<const> = direction_between(
+		local direction<const> = pingpong_direction_between(
 			previous_local_ms,
 			local_time_ms,
-			pingpong_direction(time_ms, duration_ms, -1)
+			time_ms,
+			duration_ms,
+			-1
 		)
 		write_range(
 			target,
