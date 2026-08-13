@@ -160,6 +160,7 @@ function sequence_evaluator.init_entry(entry)
 		candidate_marks = {},
 		candidate_generation = 0,
 		candidate_count = 0,
+		position_tree_stack = {},
 	}
 	entry.sequence_state = state
 	for clip_index = 1, sequence.clip_count do
@@ -387,7 +388,48 @@ local evaluate_position<const> = function(
 	method
 )
 	local state<const> = entry.sequence_state
-	for clip_index = 1, sequence.clip_count do
+	begin_candidates(state)
+	for active_index = 1, state.active_count do
+		add_candidate(state, state.active_clips[active_index])
+	end
+
+	local clips_by_start<const> = sequence.clips_by_start
+	local position_clip_count<const> = first_start_after(clips_by_start, sequence.clip_count, time_ms) - 1
+	if position_clip_count > 0 then
+		local stack<const> = state.position_tree_stack
+		local stack_count = 3
+		stack[1] = 1
+		stack[2] = 1
+		stack[3] = sequence.position_tree_leaf_count
+		local max_end_time_ms<const> = sequence.position_tree_max_end_time_ms
+		while stack_count > 0 do
+			local high<const> = stack[stack_count]
+			local low<const> = stack[stack_count - 1]
+			local node_index<const> = stack[stack_count - 2]
+			stack_count = stack_count - 3
+			if low <= position_clip_count and max_end_time_ms[node_index] >= time_ms then
+				if low == high then
+					add_candidate(state, clips_by_start[low].order)
+				else
+					local middle<const> = (low + high) // 2
+					local left_node_index<const> = node_index * 2
+					local right_stack_index<const> = stack_count + 1
+					stack[right_stack_index] = left_node_index + 1
+					stack[right_stack_index + 1] = middle + 1
+					stack[right_stack_index + 2] = high
+					local left_stack_index<const> = right_stack_index + 3
+					stack[left_stack_index] = left_node_index
+					stack[left_stack_index + 1] = low
+					stack[left_stack_index + 2] = middle
+					stack_count = stack_count + 6
+				end
+			end
+		end
+	end
+
+	sort_candidates(state)
+	for candidate_index = 1, state.candidate_count do
+		local clip_index<const> = state.candidates[candidate_index]
 		local clip<const> = sequence.clips[clip_index]
 		if time_ms >= clip.start_time_ms and time_ms <= clip.end_time_ms then
 			process_position_clip(
@@ -399,7 +441,7 @@ local evaluate_position<const> = function(
 				time_ms,
 				method
 			)
-		elseif state.active_index_by_clip[clip_index] ~= nil then
+		else
 			clear_child(state.entries[clip_index], owner)
 			remove_active_clip(state, clip_index)
 		end

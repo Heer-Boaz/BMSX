@@ -180,6 +180,96 @@ assert(camera.value == 10 and owner.tags.child_active == true and event_count ==
 timelines:tick_active(25)
 assert(camera.value == 20 and owner.tags.child_active == nil and event_count == events_before_scaled)
 
+local position_value<const> = function(target, value)
+	target.value = value
+end
+local position_child<const> = function(start_value, end_value, tag)
+	return {
+		continuous = true,
+		duration_ms = 100,
+		bindings = { 'target' },
+		tracks = {
+			{
+				kind = 'value',
+				binding = 'target',
+				interpolation = 'step',
+				apply = position_value,
+				keys = {
+					{ time_ms = 0, value = start_value },
+					{ time_ms = 100, value = end_value },
+				},
+			},
+			{
+				kind = 'tag',
+				name = 'active',
+				tag = tag,
+				start = { time_ms = 0 },
+				['end'] = { time_ms = 100 },
+			},
+		},
+	}
+end
+local starting_child<const> = position_child(20, 20, 'starting_active')
+local ending_child<const> = position_child(10, 15, 'ending_active')
+local overlay_child<const> = position_child(30, 30, 'overlay_active')
+local ending_target<const> = { value = 0 }
+local layered_target<const> = { value = 0 }
+timelines:define('positioned_parent', {
+	continuous = true,
+	duration_ms = 300,
+	bindings = { 'ending_target', 'layered_target' },
+	subsequences = {
+		{
+			id = 'starting',
+			start_time_ms = 100,
+			duration_ms = 100,
+			bindings = { target = 'layered_target' },
+			sequence = starting_child,
+		},
+		{
+			id = 'ending',
+			start_time_ms = 0,
+			duration_ms = 100,
+			bindings = { target = 'ending_target' },
+			sequence = ending_child,
+		},
+		{
+			id = 'overlay',
+			start_time_ms = 50,
+			duration_ms = 100,
+			bindings = { target = 'layered_target' },
+			sequence = overlay_child,
+		},
+		{
+			id = 'later_a',
+			start_time_ms = 240,
+			duration_ms = 10,
+			bindings = { target = 'layered_target' },
+			sequence = overlay_child,
+		},
+		{
+			id = 'later_b',
+			start_time_ms = 270,
+			duration_ms = 10,
+			bindings = { target = 'layered_target' },
+			sequence = overlay_child,
+		},
+	},
+})
+timelines:play('positioned_parent', {
+	bindings = {
+		ending_target = ending_target,
+		layered_target = layered_target,
+	},
+})
+timelines:seek_time('positioned_parent', 100)
+assert(ending_target.value == 15 and layered_target.value == 30)
+assert(owner.tags.ending_active == nil)
+assert(owner.tags.starting_active == true and owner.tags.overlay_active == true)
+timelines:scrub_time('positioned_parent', 225)
+assert(owner.tags.starting_active == nil and owner.tags.overlay_active == nil)
+timelines:stop('positioned_parent')
+
 	return nil
 end
 

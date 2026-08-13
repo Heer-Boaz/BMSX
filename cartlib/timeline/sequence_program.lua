@@ -7,6 +7,8 @@ sequence_program.empty = {
 	clips = empty_clips,
 	clips_by_start = empty_clips,
 	clips_by_end = empty_clips,
+	position_tree_max_end_time_ms = empty_clips,
+	position_tree_leaf_count = 0,
 	clip_count = 0,
 	duration_ms = 0,
 }
@@ -82,11 +84,36 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 	end
 	table.sort(clips_by_start, compare_start)
 	table.sort(clips_by_end, compare_end)
+
+	-- Positioning can jump directly to any parent time. A flat max-end tree over
+	-- start-sorted clips finds every overlapping clip without copying active
+	-- sets into each time span. Runtime queries use retained entry scratch.
+	local clip_count<const> = #clips
+	local position_tree_leaf_count = 1
+	while position_tree_leaf_count < clip_count do
+		position_tree_leaf_count = position_tree_leaf_count * 2
+	end
+	local position_tree_max_end_time_ms<const> = {}
+	for index = 1, clip_count do
+		position_tree_max_end_time_ms[position_tree_leaf_count + index - 1] = clips_by_start[index].end_time_ms
+	end
+	for node_index = position_tree_leaf_count - 1, 1, -1 do
+		local left_index<const> = node_index * 2
+		local left_max<const> = position_tree_max_end_time_ms[left_index]
+		local right_max<const> = position_tree_max_end_time_ms[left_index + 1]
+		if right_max == nil or left_max > right_max then
+			position_tree_max_end_time_ms[node_index] = left_max
+		else
+			position_tree_max_end_time_ms[node_index] = right_max
+		end
+	end
 	return {
 		clips = clips,
 		clips_by_start = clips_by_start,
 		clips_by_end = clips_by_end,
-		clip_count = #clips,
+		position_tree_max_end_time_ms = position_tree_max_end_time_ms,
+		position_tree_leaf_count = position_tree_leaf_count,
+		clip_count = clip_count,
 		duration_ms = duration_ms,
 	}
 end
