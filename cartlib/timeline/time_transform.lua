@@ -124,18 +124,20 @@ local evaluate_loop_forward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
+	local instance<const> = target.instance
+	instance.wrapped = false
 	local previous_local_ms
 	if initial then
 		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
 	else
-		previous_local_ms = target.instance.position_ms
+		previous_local_ms = instance.position_ms
 	end
 	local remaining_ms = (parent_time_ms - previous_parent_time_ms) * clip.time_scale
 	local evaluated = false
 	local distance_ms = duration_ms - previous_local_ms
 	while remaining_ms >= distance_ms do
 		remaining_ms = remaining_ms - distance_ms
-		target.instance.wrapped = true
+		instance.wrapped = true
 		write_range(
 			target,
 			owner,
@@ -188,18 +190,20 @@ local evaluate_loop_backward<const> = function(
 	local evaluate<const> = target.play_evaluator
 	local write_range<const> = target.write_time_range
 	local duration_ms<const> = target.duration_ms
+	local instance<const> = target.instance
+	instance.wrapped = false
 	local previous_local_ms
 	if initial then
 		previous_local_ms = child_time_at(clip, previous_parent_time_ms) % duration_ms
 	else
-		previous_local_ms = target.instance.position_ms
+		previous_local_ms = instance.position_ms
 	end
 	local remaining_ms = (previous_parent_time_ms - parent_time_ms) * clip.time_scale
 	local evaluated = false
 	local distance_ms = previous_local_ms
 	while remaining_ms > distance_ms do
 		remaining_ms = remaining_ms - distance_ms
-		target.instance.wrapped = true
+		instance.wrapped = true
 		write_range(
 			target,
 			owner,
@@ -436,6 +440,7 @@ local evaluate_position_loop<const> = function(
 )
 	local clip<const> = target.clip
 	local duration_ms<const> = target.duration_ms
+	target.instance.wrapped = false
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms) % duration_ms
 	local time_ms<const> = child_time_at(clip, parent_time_ms) % duration_ms
 	target.write_time_range(

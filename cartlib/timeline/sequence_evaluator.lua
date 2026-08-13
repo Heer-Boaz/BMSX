@@ -363,7 +363,6 @@ local process_position_clip<const> = function(
 		source_time_ms = clamp(previous_time_ms, start_time_ms, end_time_ms)
 	end
 	local instance<const> = child_entry.instance
-	instance.wrapped = false
 	local evaluate = instance.program.evaluate_scrub
 	if method == jump_update_method then
 		evaluate = instance.program.evaluate_jump
@@ -410,7 +409,6 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.instance.wrapped = false
 					child_entry.clip.play_forward_transform(
 						child_entry,
 						owner,
@@ -428,7 +426,6 @@ local evaluate_play_range<const> = function(
 				local candidate_entries<const> = state.candidate_entries
 				for candidate_index = 1, state.candidate_count do
 					local child_entry<const> = candidate_entries[candidate_index]
-					child_entry.instance.wrapped = false
 					child_entry.clip.play_backward_transform(
 						child_entry,
 						owner,
@@ -506,7 +503,6 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			child_timeline.wrapped = false
 			clip.play_forward_transform(
 				child_entry,
 				owner,
@@ -549,7 +545,6 @@ local evaluate_play_range<const> = function(
 				destination_active = false
 			end
 			local child_timeline<const> = child_entry.instance
-			child_timeline.wrapped = false
 			clip.play_backward_transform(
 				child_entry,
 				owner,
@@ -578,7 +573,6 @@ local evaluate_play_range<const> = function(
 			local clip<const> = child_entry.clip
 			local clip_initial<const> = child_entry.active_index == nil
 			local child_timeline<const> = child_entry.instance
-			child_timeline.wrapped = false
 			clip.play_forward_transform(
 				child_entry,
 				owner,

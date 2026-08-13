@@ -68,10 +68,6 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 				program.duration_ms,
 				program.frame_builder == nil
 			)
-		local direction = 1
-		if time_scale < 0 then
-			direction = -1
-		end
 		local clip<const> = {
 			id = definition.id,
 			order = index,
@@ -79,7 +75,6 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			end_time_ms = end_time_ms,
 			time_scale = time_scale,
 			time_offset_ms = clip_in_ms - start_time_ms * time_scale,
-			direction = direction,
 			play_forward_transform = play_forward_transform,
 			play_backward_transform = play_backward_transform,
 			position_transform = position_transform,
