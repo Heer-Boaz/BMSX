@@ -237,14 +237,27 @@ local add_candidate<const> = function(state, clip_index)
 	state.candidates[count] = clip_index
 end
 
+-- active_clips is retained in authored clip order. Copy that ordered prefix
+-- directly; only clips appended by the evaluated range need insertion sorting.
 local begin_candidates<const> = function(state)
-	state.candidate_generation = state.candidate_generation + 1
-	state.candidate_count = 0
+	local generation<const> = state.candidate_generation + 1
+	state.candidate_generation = generation
+	local count<const> = state.active_count
+	state.candidate_count = count
+	local active_clips<const> = state.active_clips
+	local candidates<const> = state.candidates
+	local candidate_marks<const> = state.candidate_marks
+	for index = 1, count do
+		local clip_index<const> = active_clips[index]
+		candidates[index] = clip_index
+		candidate_marks[clip_index] = generation
+	end
+	return count
 end
 
-local sort_candidates<const> = function(state)
+local sort_candidates<const> = function(state, sorted_count)
 	local candidates<const> = state.candidates
-	for index = 2, state.candidate_count do
+	for index = sorted_count + 1, state.candidate_count do
 		local clip_index<const> = candidates[index]
 		local insertion = index - 1
 		while insertion > 0 and candidates[insertion] > clip_index do
@@ -332,10 +345,7 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 	elseif time_ms < previous_time_ms then
 		direction = -1
 	end
-	begin_candidates(state)
-	for active_index = 1, state.active_count do
-		add_candidate(state, state.active_clips[active_index])
-	end
+	local sorted_candidate_count<const> = begin_candidates(state)
 	if initial then
 		for clip_index = 1, sequence.clip_count do
 			local clip<const> = sequence.clips[clip_index]
@@ -359,7 +369,9 @@ local evaluate_play_range<const> = function(sequence, entry, owner, previous_tim
 			add_candidate(state, clips[index].order)
 		end
 	end
-	sort_candidates(state)
+	if state.candidate_count > sorted_candidate_count then
+		sort_candidates(state, sorted_candidate_count)
+	end
 	for index = 1, state.candidate_count do
 		process_play_clip(
 			sequence,
@@ -381,10 +393,7 @@ local evaluate_position<const> = function(
 	method
 )
 	local state<const> = entry.sequence_state
-	begin_candidates(state)
-	for active_index = 1, state.active_count do
-		add_candidate(state, state.active_clips[active_index])
-	end
+	local sorted_candidate_count<const> = begin_candidates(state)
 
 	local clips_by_start<const> = sequence.clips_by_start
 	local position_clip_count<const> = first_start_after(clips_by_start, sequence.clip_count, time_ms) - 1
@@ -420,7 +429,9 @@ local evaluate_position<const> = function(
 		end
 	end
 
-	sort_candidates(state)
+	if state.candidate_count > sorted_candidate_count then
+		sort_candidates(state, sorted_candidate_count)
+	end
 	for candidate_index = 1, state.candidate_count do
 		local clip_index<const> = state.candidates[candidate_index]
 		local clip<const> = sequence.clips[clip_index]
