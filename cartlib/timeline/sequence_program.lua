@@ -1,5 +1,6 @@
 -- Nested sequence definitions are admitted into immutable clip records. The
 -- runtime consumes dense binding maps and boundary-sorted clip references.
+local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
 
 local sequence_program<const> = {}
 local empty_clips<const> = {}
@@ -55,6 +56,8 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 		local end_time_ms<const> = start_time_ms + definition.duration_ms
 		local clip_in_ms<const> = definition.clip_in_ms or 0
 		local time_scale<const> = definition.time_scale or 1
+		local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
+		local play_transform<const>, position_transform<const> = timeline_time_transform.compile(playback_mode)
 		local direction = 1
 		if time_scale < 0 then
 			direction = -1
@@ -67,7 +70,8 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 			time_scale = time_scale,
 			time_offset_ms = clip_in_ms - start_time_ms * time_scale,
 			direction = direction,
-			playback_mode = playback_mode_by_name[definition.playback_mode or 'once'],
+			play_transform = play_transform,
+			position_transform = position_transform,
 			program = program,
 			binding_indices = binding_indices,
 			params = definition.params,

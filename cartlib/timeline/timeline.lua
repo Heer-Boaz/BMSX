@@ -2,7 +2,6 @@ local clamp<const> = require('cartlib/util/clamp')
 local timeline_evaluation_context<const> = require('cartlib/timeline/evaluation_context')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
-local timeline_time_transform<const> = require('cartlib/timeline/time_transform')
 
 local timelinestart_index<const> = timeline_playback.start_index
 local update_method<const> = timeline_playback.update_method
@@ -595,7 +594,7 @@ function timeline:evaluate_clip_play_range(
 	finished
 )
 	self.wrapped = false
-	timeline_time_transform.evaluate_play(
+	clip.play_transform(
 		clip,
 		previous_parent_time_ms,
 		parent_time_ms,
@@ -610,7 +609,7 @@ end
 
 function timeline:evaluate_clip_at(entry, owner, clip, previous_parent_time_ms, parent_time_ms, method, initial)
 	self.wrapped = false
-	timeline_time_transform.evaluate_at(
+	clip.position_transform(
 		clip,
 		previous_parent_time_ms,
 		parent_time_ms,

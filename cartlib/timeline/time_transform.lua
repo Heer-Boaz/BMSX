@@ -39,18 +39,6 @@ local pingpong_direction<const> = function(time_ms, duration_ms, raw_direction)
 	return -1
 end
 
-local warped_time<const> = function(clip, time_ms)
-	local mode<const> = clip.playback_mode
-	local duration_ms<const> = clip.program.duration_ms
-	if mode == playback_loop then
-		return time_ms % duration_ms
-	end
-	if mode == playback_pingpong then
-		return pingpong_time(time_ms, duration_ms)
-	end
-	return time_ms
-end
-
 local direction_between<const> = function(previous_time_ms, time_ms, default_direction)
 	if time_ms > previous_time_ms then
 		return 1
@@ -271,7 +259,7 @@ local evaluate_pingpong_backward<const> = function(
 	end
 end
 
-function time_transform.evaluate_at(
+local evaluate_position_once<const> = function(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
@@ -283,22 +271,75 @@ function time_transform.evaluate_at(
 )
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	local previous_local_ms<const> = warped_time(clip, previous_time_ms)
-	local local_time_ms<const> = warped_time(clip, time_ms)
 	write_range(
 		target,
 		owner,
-		previous_local_ms,
-		local_time_ms,
+		previous_time_ms,
+		time_ms,
 		method,
-		direction_between(previous_local_ms, local_time_ms, 0),
+		direction_between(previous_time_ms, time_ms, 0),
 		initial,
 		boundary_none,
 		false
 	)
 end
 
-function time_transform.evaluate_play(
+local evaluate_position_loop<const> = function(
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
+	method,
+	initial,
+	target,
+	owner,
+	write_range
+)
+	local duration_ms<const> = clip.program.duration_ms
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms) % duration_ms
+	local time_ms<const> = child_time_at(clip, parent_time_ms) % duration_ms
+	write_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		method,
+		direction_between(previous_time_ms, time_ms, 0),
+		initial,
+		boundary_none,
+		false
+	)
+end
+
+local evaluate_position_pingpong<const> = function(
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
+	method,
+	initial,
+	target,
+	owner,
+	write_range
+)
+	local duration_ms<const> = clip.program.duration_ms
+	local previous_time_ms<const> = pingpong_time(
+		child_time_at(clip, previous_parent_time_ms),
+		duration_ms
+	)
+	local time_ms<const> = pingpong_time(child_time_at(clip, parent_time_ms), duration_ms)
+	write_range(
+		target,
+		owner,
+		previous_time_ms,
+		time_ms,
+		method,
+		direction_between(previous_time_ms, time_ms, 0),
+		initial,
+		boundary_none,
+		false
+	)
+end
+
+local evaluate_play_once<const> = function(
 	clip,
 	previous_parent_time_ms,
 	parent_time_ms,
@@ -309,23 +350,6 @@ function time_transform.evaluate_play(
 )
 	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
 	local time_ms<const> = child_time_at(clip, parent_time_ms)
-	local mode<const> = clip.playback_mode
-	if mode == playback_loop then
-		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-		else
-			evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-		end
-		return
-	end
-	if mode == playback_pingpong then
-		if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
-			evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-		else
-			evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
-		end
-		return
-	end
 	write_range(
 		target,
 		owner,
@@ -337,6 +361,54 @@ function time_transform.evaluate_play(
 		boundary_none,
 		false
 	)
+end
+
+local evaluate_play_loop<const> = function(
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial,
+	target,
+	owner,
+	write_range
+)
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
+		evaluate_loop_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
+	else
+		evaluate_loop_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
+	end
+end
+
+local evaluate_play_pingpong<const> = function(
+	clip,
+	previous_parent_time_ms,
+	parent_time_ms,
+	initial,
+	target,
+	owner,
+	write_range
+)
+	local previous_time_ms<const> = child_time_at(clip, previous_parent_time_ms)
+	local time_ms<const> = child_time_at(clip, parent_time_ms)
+	if time_ms > previous_time_ms or (time_ms == previous_time_ms and clip.direction > 0) then
+		evaluate_pingpong_forward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
+	else
+		evaluate_pingpong_backward(clip, previous_time_ms, time_ms, initial, target, owner, write_range)
+	end
+end
+
+-- Playback mode is authored configuration, not runtime transport state. Clip
+-- admission resolves it into the two datapaths retained by the compiled clip.
+function time_transform.compile(playback_mode)
+	if playback_mode == playback_loop then
+		return evaluate_play_loop, evaluate_position_loop
+	end
+	if playback_mode == playback_pingpong then
+		return evaluate_play_pingpong, evaluate_position_pingpong
+	end
+	return evaluate_play_once, evaluate_position_once
 end
 
 return time_transform
