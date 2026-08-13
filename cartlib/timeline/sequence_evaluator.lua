@@ -382,23 +382,29 @@ local evaluate_play_range<const> = function(
 		local child_entry<const> = entries[clip_index]
 		local clip<const> = child_entry.clip
 		local clip_initial<const> = child_entry.active_index == nil
-		local start_time_ms<const> = clip.start_time_ms
-		local end_time_ms<const> = clip.end_time_ms
 		local source_time_ms = previous_time_ms
 		local destination_time_ms = time_ms
 		local destination_active = true
 		if forward then
-			if clip_initial and source_time_ms < start_time_ms then
-				source_time_ms = start_time_ms
+			if clip_initial then
+				local start_time_ms<const> = clip.start_time_ms
+				if source_time_ms < start_time_ms then
+					source_time_ms = start_time_ms
+				end
 			end
+			local end_time_ms<const> = clip.end_time_ms
 			if destination_time_ms >= end_time_ms then
 				destination_time_ms = end_time_ms
 				destination_active = false
 			end
 		elseif backward then
-			if clip_initial and source_time_ms > end_time_ms then
-				source_time_ms = end_time_ms
+			if clip_initial then
+				local end_time_ms<const> = clip.end_time_ms
+				if source_time_ms > end_time_ms then
+					source_time_ms = end_time_ms
+				end
 			end
+			local start_time_ms<const> = clip.start_time_ms
 			if destination_time_ms < start_time_ms then
 				destination_time_ms = start_time_ms
 				destination_active = false
