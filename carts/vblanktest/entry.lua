@@ -23,6 +23,7 @@ local gpustat_display_disabled<const> = 0x00800000
 local gpustat_ready_command<const> = 0x04000000
 local gpustat_ready_dma<const> = 0x10000000
 local gpustat_dma_direction_mask<const> = 0x60000000
+local gpustat_dma_direction_cpu_to_gp0<const> = 0x40000000
 
 vblank_test_irq_count = 0
 vblank_test_update_count = 0
@@ -57,8 +58,8 @@ local check_gpustat<const> = function(label)
 	if (status & gpustat_ready_dma) == 0 then
 		fail(label .. ': GPUSTAT DMA receive bit clear')
 	end
-	if (status & gpustat_dma_direction_mask) ~= 0 then
-		fail(label .. ': GPUSTAT DMA direction not off')
+	if (status & gpustat_dma_direction_mask) ~= gpustat_dma_direction_cpu_to_gp0 then
+		fail(label .. ': GPUSTAT DMA direction not CPU-to-GP0')
 	end
 	return status
 end
@@ -100,18 +101,16 @@ local draw_cart<const> = function()
 	gx_gpu.fill_rect_color(24, 104, 296, 136, 0xff202020 | (pulse << 8))
 end
 
-local on_vblank_irq<const> = function(_, flags)
-	if (flags & irq_vblank) ~= 0 then
-		vblank_count = vblank_count + 1
-		vblank_test_irq_count = vblank_count
-		check_gpustat('vblank_irq')
-		if vblank_count >= target then
-			vblank_test_passed = true
-		end
-		*input_control_register = 0x00000001
-		update_cart()
-		draw_cart()
+local on_vblank_irq<const> = function()
+	vblank_count = vblank_count + 1
+	vblank_test_irq_count = vblank_count
+	check_gpustat('vblank_irq')
+	if vblank_count >= target then
+		vblank_test_passed = true
 	end
+	*input_control_register = 0x00000001
+	update_cart()
+	draw_cart()
 end
 
 init()
