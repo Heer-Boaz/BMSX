@@ -7,13 +7,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_PATH="$ROOT_DIR/dist/libretro_bmsx.so"
 
 # Zoek naar retroarch lokaal of op het systeem
-if [[ -f "$ROOT_DIR/tools/retroarch-gles2/retroarch" ]]; then
-	RETROARCH_BIN="$ROOT_DIR/tools/retroarch-gles2/retroarch"
+if [[ -f "$ROOT_DIR/third_party/retroarch-gles2/retroarch" ]]; then
+	RETROARCH_BIN="$ROOT_DIR/third_party/retroarch-gles2/retroarch"
 elif command -v retroarch >/dev/null 2>&1; then
 	RETROARCH_BIN="$(command -v retroarch)"
 else
 	echo "Error: RetroArch executable not found!" >&2
-	echo "Please install retroarch or provide it in tools/retroarch-gles2/" >&2
+	echo "Please install retroarch or provide it in third_party/retroarch-gles2/" >&2
 	exit 1
 fi
 

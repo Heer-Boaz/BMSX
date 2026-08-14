@@ -8,13 +8,13 @@ import {
 	SYSTEM_ROM_NAME,
 } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
-import { createCliUi } from '../tooling/cli_ui';
+import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../lib/cli_arguments';
+import { createCliUi } from '../lib/cli_ui';
 import { compileAudioEventResources } from './audioeventcompiler';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildPresentationConfigModuleSource, buildTextureBindingsModuleSource } from './gx_vram_layout';
-import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
+import type { TaskProgressReporter as ProgressReporter } from '../lib/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
@@ -119,7 +119,7 @@ const BIOS_BUILD_SOURCE_DIRECTORIES = [
 	'./machine/ts/spec',
 	'./scripts/lint',
 	'./scripts/rompacker',
-	'./scripts/tooling',
+	'./scripts/lib',
 	'./toolchain/ts',
 ] as const;
 const BIOS_BUILD_SOURCE_FILES = [

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 
-import { collectSourceFiles } from '../tooling/file_scan';
+import { collectSourceFiles } from '../lib/file_scan';
 
 const PRODUCT_SOURCE_EXTENSIONS = new Set([
 	'.css',

@@ -300,7 +300,7 @@ function main() {
 	const requestedPaths = process.argv.slice(2).filter(arg => arg !== '--check' && arg !== '-c');
 	const editorConfig = loadEditorConfig();
 	const files = listCandidateFiles(requestedPaths)
-		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
+		.filter(p => !p.startsWith('third_party/retroarch-gles2/') && p !== 'third_party/retroarch-gles2')
 		.filter(p => {
 			const base = path.basename(p);
 			const ext = path.extname(p).toLowerCase().replace(/^\./, '');

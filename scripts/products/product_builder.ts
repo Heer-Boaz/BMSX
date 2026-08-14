@@ -1,7 +1,7 @@
 import pc from 'picocolors';
 
-import { getParamOrEnv, parseArgsVector } from '../tooling/cli_arguments';
-import { createCliUi } from '../tooling/cli_ui';
+import { getParamOrEnv, parseArgsVector } from '../lib/cli_arguments';
+import { createCliUi } from '../lib/cli_ui';
 import {
 	buildBrowserPlayer,
 	buildBrowserPlayerPackage,

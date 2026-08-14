@@ -90,7 +90,7 @@ machine/cpp/build/
 
 # System roots for cross-compilation
 .snesmini
-tools/retroarch-gles2
+third_party/retroarch-gles2
 
 # Ignore all files in the .external folder
 .external/**

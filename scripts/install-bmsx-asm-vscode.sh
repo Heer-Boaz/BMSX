@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ext_dir="${root_dir}/tools/vscode/bmsx-asm"
+ext_dir="${root_dir}/extensions/vscode/bmsx-asm"
 vsix_path="${ext_dir}/bmsx-asm.vsix"
 
 cd "${ext_dir}"

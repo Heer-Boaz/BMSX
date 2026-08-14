@@ -17,7 +17,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type {
 	SuspendedGuestSession,
 	SuspendedGuestValue,
-} from '../../tooling/ts/runtime/suspended_guest';
+} from './suspended_guest';
 import { resolveWorkspacePath } from '../workspace/path';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import {

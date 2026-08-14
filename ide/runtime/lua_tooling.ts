@@ -3,7 +3,7 @@ import { LuaHandlerCache, isLuaHandlerFunction } from '../language/lua/interpret
 import { convertToError, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, isHostCallable, resolveNativeTypeName, LuaFunctionValue } from '../language/lua/interpreter/value';
 import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../language/lua/interpreter/interop';
-import type { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest';
+import type { SuspendedGuestSession } from './suspended_guest';
 import type { RuntimeSourceState } from './sources';
 
 export class RuntimeLuaTooling {

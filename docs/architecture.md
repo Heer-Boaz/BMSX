@@ -435,7 +435,7 @@ browser-deployment target; product modules do not import or execute the atlas
 producer. `scripts/rompacker/` owns BIOS/cart source compilation, linking,
 assets, and ROM emission and imports no host, IDE, runtime-composition, or
 product-build module. Shared CLI and source-scan mechanics live under
-`scripts/tooling/` rather than either solution owner.
+`scripts/lib/` rather than either solution owner.
 
 The compiler and ROM producer depend downward on `machine/{ts,cpp}/spec` and
 shared low-level code only. They never import/include `machine/**` or `core/**`
@@ -555,7 +555,9 @@ Split repositories only after all of these are true:
 - Parity audits and golden cases can run as a published conformance suite.
 - External consumers exist that need independent versioning.
 
-The package boundary is `machine`, `hosts`, `tools`, `carts`, and `tests`. Carts are software for the machine, not part of the machine package.
+The package boundary is `machine`, `hosts`, `toolchain`, `ide`, `extensions`,
+`third_party`, `scripts`, `carts`, and `tests`. Carts are software for the
+machine, not part of the machine package.
 Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
@@ -1470,8 +1472,8 @@ dispatch branch, GC path, or save-state representation. Studio language tooling
 may copy plain data into ordinary guest tables and inspect guest tables and
 closures, but it cannot inject host callbacks or opaque host objects into the
 machine.
-Suspended TypeScript inspection lives in the separate `tooling/ts/runtime`
-module above `@bmsx/machine`. Fault capture retains only shallow guest-value
+Suspended TypeScript inspection is owned by `ide/runtime/suspended_guest.ts`
+above `@bmsx/machine`. Fault capture retains only shallow guest-value
 references; table fields and metatable chains are read lazily from that retained
 guest representation. Tooling never turns a closure into a JavaScript
 function, recursively clones a reachable table graph, or adds debugger state

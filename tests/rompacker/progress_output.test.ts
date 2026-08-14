@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import stringWidth from 'string-width';
 
-import { renderTaskProgressLine } from '../../scripts/tooling/task_progress';
+import { renderTaskProgressLine } from '../../scripts/lib/task_progress';
 
 test('task progress line stays inside the terminal line width', () => {
 	const line = renderTaskProgressLine({

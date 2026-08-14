@@ -7,7 +7,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	type SuspendedGuestSession,
 	type SuspendedGuestValue,
-} from '../../tooling/ts/runtime/suspended_guest';
+} from '../runtime/suspended_guest';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import {
 	recordLuaError,

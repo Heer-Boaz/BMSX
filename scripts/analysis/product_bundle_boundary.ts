@@ -3,11 +3,10 @@ import { relative, resolve } from 'node:path';
 const PLAYER_FORBIDDEN_SOURCE_PATHS = [
 	'ide/',
 	'toolchain/ts/',
-	'tooling/ts/',
 	'scripts/analysis/',
 	'scripts/products/',
 	'scripts/rompacker/',
-	'scripts/tooling/',
+	'scripts/lib/',
 	'scripts/bootrom/platforms/input_timeline.ts',
 	'scripts/bootrom/platforms/node_tooling_entry.ts',
 	'scripts/bootrom/platforms/node_tooling_options.ts',

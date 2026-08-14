@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import ts from 'typescript';
-import { collectSourceFiles } from '../../tooling/file_scan';
+import { collectSourceFiles } from '../../lib/file_scan';
 import { addDuplicateExportedTypeIssues, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
 import { addNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
 import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';

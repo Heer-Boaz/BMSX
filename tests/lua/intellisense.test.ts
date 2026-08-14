@@ -24,7 +24,7 @@ import {
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import {
 	createBlua32SystemSourceImage,
 	type RuntimeSourceState,

@@ -22,7 +22,7 @@ test('player bundle boundary rejects IDE, compiler, and tooling sources', () => 
 		'scripts/analysis/code_quality.ts',
 		'scripts/products/product_build.ts',
 		'scripts/rompacker/rompacker.ts',
-		'scripts/tooling/cli_arguments.ts',
+		'scripts/lib/cli_arguments.ts',
 		'scripts/bootrom/platforms/input_timeline.ts',
 		'scripts/bootrom/platforms/node_tooling_entry.ts',
 		'scripts/bootrom/platforms/node_tooling_options.ts',

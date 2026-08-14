@@ -1,12 +1,12 @@
-import { ScratchBuffer } from '../../../machine/ts/common/scratchbuffer';
-import type { Closure } from '../../../machine/ts/machine/cpu/closure';
-import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
-import type { StringId, StringPool } from '../../../machine/ts/machine/cpu/string_pool';
+import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
 	type Table,
-} from '../../../machine/ts/machine/cpu/table';
-import { ValueSlots } from '../../../machine/ts/machine/cpu/value_slots';
+} from '../../machine/ts/machine/cpu/table';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import {
 	materializeValue,
 	EMPTY_CALL_ARGS,
@@ -16,8 +16,8 @@ import {
 	valueToString,
 	valueTag,
 	ValueTag,
-} from '../../../machine/ts/machine/cpu/value';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+} from '../../machine/ts/machine/cpu/value';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 
 export type SuspendedGuestValue = Value;
 

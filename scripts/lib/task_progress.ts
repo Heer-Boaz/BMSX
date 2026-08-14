@@ -1,7 +1,6 @@
 import pc from 'picocolors';
 import stringWidth from 'string-width';
 
-import { renderProgressBar } from '../rominspector/asciiart';
 import type { CliTerminal } from './cli_terminal';
 
 function timer(ms: number) {
@@ -86,10 +85,9 @@ export function renderTaskProgressLine(state: TaskProgressLineState): string {
 			statusWidth = availableWidth - barSize - 1;
 		}
 	}
-	const bar = renderProgressBar(completed, state.total, barSize, {
-		complete: pc.green('█'),
-		incomplete: pc.dim('░'),
-	});
+	const completeBarLength = Math.round((completed / state.total) * barSize);
+	const bar = pc.green('█').repeat(completeBarLength)
+		+ pc.dim('░').repeat(barSize - completeBarLength);
 	const status = renderStatusText(state.label, state.detail, statusWidth, state.failed);
 	const statusSegment = status ? ` ${status}` : '';
 	return `${pc.dim('[')}${bar}${pc.dim(']')} ${pc.dim(countText)} ${pc.cyan(pctText)}${statusSegment}`;

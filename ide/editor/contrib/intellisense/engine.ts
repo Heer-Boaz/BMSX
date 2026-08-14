@@ -13,7 +13,7 @@ import { blua32FunctionIndexAtAddress } from '../../../../toolchain/ts/rompack/b
 import {
 	SuspendedGuestValueKind,
 	type SuspendedGuestValue,
-} from '../../../../tooling/ts/runtime/suspended_guest';
+} from '../../../runtime/suspended_guest';
 import {
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,

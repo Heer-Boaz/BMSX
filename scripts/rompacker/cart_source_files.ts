@@ -1,4 +1,4 @@
-import { collectSourceFiles } from '../tooling/file_scan';
+import { collectSourceFiles } from '../lib/file_scan';
 
 const CART_SOURCE_EXTENSIONS = new Set(['.lua']);
 

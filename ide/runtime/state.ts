@@ -13,7 +13,7 @@ import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, type RuntimeDebuggerState } from './debugger_state';
 import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
 import { RuntimeLuaTooling } from './lua_tooling';
-import { SuspendedGuestSession } from '../../tooling/ts/runtime/suspended_guest';
+import { SuspendedGuestSession } from './suspended_guest';
 import { OverlayRenderer } from './overlay_renderer';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeTaskQueue } from './task_queue';

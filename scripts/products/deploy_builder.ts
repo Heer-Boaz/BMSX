@@ -8,8 +8,8 @@ import { decodeCartManifest } from '../../toolchain/ts/rompack/manifest';
 import {
 	getOptionalParamOrEnv,
 	parseArgsVector,
-} from '../tooling/cli_arguments';
-import { createCliUi } from '../tooling/cli_ui';
+} from '../lib/cli_arguments';
+import { createCliUi } from '../lib/cli_ui';
 import {
 	buildBrowserPlayer,
 	buildBrowserPlayerPackage,
