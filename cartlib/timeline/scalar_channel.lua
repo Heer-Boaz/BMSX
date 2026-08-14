@@ -17,6 +17,7 @@ local sample_flag<const> = timeline_playback.evaluation_flag.sample
 
 scalar_channel.empty_program = {
 	track_count = 0,
+	has_callbacks = false,
 	cached_segment_count = 0,
 	linear_tracks = {},
 	linear_time_tracks = {},
@@ -105,7 +106,7 @@ local compile_runner_factory<const> = function(channels)
 		scalar_channel_syntax.build(channels, analysis, sample_flag),
 		'[timeline.scalar_channel]',
 		environment
-	)(), analysis.cached_segment_count
+	)(), analysis.cached_segment_count, analysis.callback_functions ~= nil
 end
 
 local compare_frame_key<const> = function(left, right)
@@ -160,7 +161,8 @@ function scalar_channel.prepare(definitions)
 		cubic_tracks = cubic_tracks,
 		cubic_time_tracks = cubic_time_tracks,
 	}
-	program.runner_factory, program.cached_segment_count = compile_runner_factory(program)
+	program.runner_factory, program.cached_segment_count, program.has_callbacks
+		= compile_runner_factory(program)
 	return program
 end
 

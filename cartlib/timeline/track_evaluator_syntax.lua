@@ -28,6 +28,31 @@ local sample_function_name<const> = function(index)
 	return 'sample_function_' .. index
 end
 
+local identifiers<const> = function(names)
+	local parameters<const> = {}
+	for index = 1, #names do
+		parameters[index] = identifier(names[index])
+	end
+	return parameters
+end
+
+local scalar_runner_arguments<const> = function(values)
+	local arguments<const> = { identifier('entry') }
+	if values.has_scalar_frame_channels then
+		arguments[#arguments + 1] = identifier('frame')
+	end
+	if values.has_scalar_time_channels then
+		arguments[#arguments + 1] = identifier('time_ms')
+	end
+	if values.has_scalar_frame_channels then
+		arguments[#arguments + 1] = identifier('flags')
+	end
+	if values.value_has_evaluation_context then
+		arguments[#arguments + 1] = identifier('evaluation')
+	end
+	return arguments
+end
+
 local emit_dependency_captures<const> = function(statements, values)
 	step_track_syntax.emit_dependency_captures(statements, values)
 	if values.sample_functions ~= nil then
@@ -216,13 +241,10 @@ local emit_value_runner<const> = function(statements, values, position)
 		step_track_syntax.emit_play(statements, values)
 	end
 	if values.has_scalar_channels then
-		statements[#statements + 1] = call_statement(call_expression(identifier('scalar_runner'), {
-			identifier('entry'),
-			identifier('frame'),
-			identifier('time_ms'),
-			identifier('flags'),
-			identifier('evaluation'),
-		}))
+		statements[#statements + 1] = call_statement(call_expression(
+			identifier('scalar_runner'),
+			scalar_runner_arguments(values)
+		))
 	end
 	emit_sample(statements, values)
 end
@@ -253,16 +275,7 @@ function track_evaluator_syntax.build(values)
 	factory_body[#factory_body + 1] = local_statement(
 		identifier('play_runner'),
 		function_expression(
-			{
-				identifier('entry'),
-				identifier('previous_frame'),
-				identifier('frame'),
-				identifier('previous_time_ms'),
-				identifier('time_ms'),
-				identifier('direction'),
-				identifier('flags'),
-				identifier('evaluation'),
-			},
+			identifiers(values.play_value_operands),
 			block(play_body)
 		),
 		true
@@ -273,16 +286,7 @@ function track_evaluator_syntax.build(values)
 		factory_body[#factory_body + 1] = local_statement(
 			identifier('position_runner'),
 			function_expression(
-				{
-					identifier('entry'),
-					identifier('previous_frame'),
-					identifier('frame'),
-					identifier('previous_time_ms'),
-					identifier('time_ms'),
-					identifier('direction'),
-					identifier('flags'),
-					identifier('evaluation'),
-				},
+				identifiers(values.position_value_operands),
 				block(position_body)
 			),
 			true

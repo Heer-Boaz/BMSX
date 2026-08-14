@@ -32,6 +32,23 @@ local scalar_callback_name<const> = function(index)
 	return 'scalar_callback_' .. index
 end
 
+local evaluator_parameters<const> = function(channels, analysis)
+	local parameters<const> = { identifier('entry') }
+	if #channels.linear_tracks > 0 or #channels.cubic_tracks > 0 then
+		parameters[#parameters + 1] = identifier('frame')
+	end
+	if #channels.linear_time_tracks > 0 or #channels.cubic_time_tracks > 0 then
+		parameters[#parameters + 1] = identifier('time_ms')
+	end
+	if #channels.linear_tracks > 0 or #channels.cubic_tracks > 0 then
+		parameters[#parameters + 1] = identifier('flags')
+	end
+	if analysis.callback_functions ~= nil then
+		parameters[#parameters + 1] = identifier('evaluation')
+	end
+	return parameters
+end
+
 local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
 	statements[#statements + 1] = local_statement(identifier('keys'), nil, false)
 	statements[#statements + 1] = local_statement(identifier('value'), nil, false)
@@ -417,13 +434,7 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 	end
 	factory_body[#factory_body + 1] = return_statement({
 		function_expression(
-			{
-				identifier('entry'),
-				identifier('frame'),
-				identifier('time_ms'),
-				identifier('flags'),
-				identifier('evaluation'),
-			},
+			evaluator_parameters(channels, analysis),
 			block(evaluator_body)
 		),
 	})

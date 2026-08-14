@@ -230,25 +230,25 @@ local emit_tags<const> = function(statements, evaluator_name)
 	end
 end
 
+local value_runner_arguments<const> = function(values, position)
+	local operand_names = values.play_value_operands
+	if position then
+		operand_names = values.position_value_operands
+	end
+	local arguments<const> = {}
+	for index = 1, #operand_names do
+		arguments[index] = identifier(operand_names[index])
+	end
+	return arguments
+end
+
 local emit_values<const> = function(statements, values, evaluator_name)
 	local runner_name<const> = (evaluator_name == 'play' or not values.has_position_values)
 		and 'play_value_runner'
 		or 'position_value_runner'
-	local arguments<const> = {
-		identifier('entry'),
-		identifier('previous_frame'),
-		identifier('frame'),
-		identifier('previous_time_ms'),
-		identifier('time_ms'),
-		identifier('direction'),
-		identifier('flags'),
-	}
-	if values.has_evaluation_context then
-		arguments[#arguments + 1] = identifier('evaluation')
-	end
 	statements[#statements + 1] = call_statement(call_expression(
 		identifier(runner_name),
-		arguments
+		value_runner_arguments(values, runner_name == 'position_value_runner')
 	))
 end
 

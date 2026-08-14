@@ -3,6 +3,7 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_sequence_evaluator<const> = require('cartlib/timeline/sequence_evaluator')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local evaluation_program_syntax<const> = require('cartlib/timeline/evaluation_program_syntax')
+local value_runner_signature<const> = require('cartlib/timeline/value_runner_signature')
 
 local evaluation_program<const> = {}
 local compile_syntax<const> = lua_compiler.compile_syntax
@@ -39,6 +40,13 @@ function evaluation_program.compile(program)
 	local prepared_tracks<const> = program.prepared_tracks
 	local has_values<const> = prepared_tracks.value_track_count > 0
 	local has_position_values<const> = prepared_tracks.has_frame_steps or prepared_tracks.has_time_steps
+	local scalar_program<const> = prepared_tracks.scalar_program
+	local has_scalar_frame_channels<const> = #scalar_program.linear_tracks > 0
+		or #scalar_program.cubic_tracks > 0
+	local has_scalar_time_channels<const> = #scalar_program.linear_time_tracks > 0
+		or #scalar_program.cubic_time_tracks > 0
+	local has_sample_tracks<const> = prepared_tracks.sample_track_count > 0
+	local value_has_evaluation_context<const> = prepared_tracks.has_evaluation_callbacks
 	local has_tags<const> = #prepared_tracks.tag_defs > 0
 	local has_play_events<const> = #prepared_tracks.event_defs > 0
 	local has_seek_events<const> = prepared_tracks.has_seek_events
@@ -78,7 +86,30 @@ function evaluation_program.compile(program)
 	if has_evaluation_context then
 		shape = shape | shape_evaluation_context
 	end
-	local factory<const> = evaluation_factory_by_shape[shape]
+	local syntax_values<const> = {
+		has_frame_steps = prepared_tracks.has_frame_steps,
+		has_time_steps = prepared_tracks.has_time_steps,
+		has_scalar_frame_channels = has_scalar_frame_channels,
+		has_scalar_time_channels = has_scalar_time_channels,
+		has_sample_tracks = has_sample_tracks,
+		value_has_evaluation_context = value_has_evaluation_context,
+	}
+	syntax_values.play_value_operands = value_runner_signature.of(syntax_values, false)
+	if has_position_values then
+		syntax_values.position_value_operands = value_runner_signature.of(syntax_values, true)
+	end
+	local operand_signature = table.concat(syntax_values.play_value_operands, ',')
+	if has_position_values then
+		operand_signature = operand_signature
+			.. ';'
+			.. table.concat(syntax_values.position_value_operands, ',')
+	end
+	local factories_by_operands = evaluation_factory_by_shape[shape]
+	if factories_by_operands == nil then
+		factories_by_operands = {}
+		evaluation_factory_by_shape[shape] = factories_by_operands
+	end
+	local factory<const> = factories_by_operands[operand_signature]
 	if factory ~= nil then
 		return factory
 	end
@@ -98,30 +129,29 @@ function evaluation_program.compile(program)
 	if has_scrub_events then
 		scrub_evaluator = 'scrub'
 	end
-	local syntax_tree<const> = evaluation_program_syntax.build({
-		has_values = has_values,
-		has_position_values = has_position_values,
-		has_tags = has_tags,
-		has_play_events = has_play_events,
-		has_seek_events = has_seek_events,
-		has_scrub_events = has_scrub_events,
-		has_apply_function = has_apply_function,
-		has_frame_appliers = has_frame_appliers,
-		has_subsequences = has_subsequences,
-		has_evaluation_context = has_evaluation_context,
-		jump_evaluator = jump_evaluator,
-		scrub_evaluator = scrub_evaluator,
-		play_method = play_method,
-		jump_method = jump_method,
-		scrub_method = scrub_method,
-		sample_flag = sample_flag,
-	})
+	syntax_values.has_values = has_values
+	syntax_values.has_position_values = has_position_values
+	syntax_values.has_tags = has_tags
+	syntax_values.has_play_events = has_play_events
+	syntax_values.has_seek_events = has_seek_events
+	syntax_values.has_scrub_events = has_scrub_events
+	syntax_values.has_apply_function = has_apply_function
+	syntax_values.has_frame_appliers = has_frame_appliers
+	syntax_values.has_subsequences = has_subsequences
+	syntax_values.has_evaluation_context = has_evaluation_context
+	syntax_values.jump_evaluator = jump_evaluator
+	syntax_values.scrub_evaluator = scrub_evaluator
+	syntax_values.play_method = play_method
+	syntax_values.jump_method = jump_method
+	syntax_values.scrub_method = scrub_method
+	syntax_values.sample_flag = sample_flag
+	local syntax_tree<const> = evaluation_program_syntax.build(syntax_values)
 	local compiled_factory<const> = compile_syntax(
 		syntax_tree,
 		'[timeline.evaluation_program]',
 		evaluation_environment
 	)()
-	evaluation_factory_by_shape[shape] = compiled_factory
+	factories_by_operands[operand_signature] = compiled_factory
 	return compiled_factory
 end
 

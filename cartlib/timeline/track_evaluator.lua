@@ -4,6 +4,7 @@
 local easing<const> = require('cartlib/easing')
 local track_evaluator_syntax<const> = require('cartlib/timeline/track_evaluator_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
+local value_runner_signature<const> = require('cartlib/timeline/value_runner_signature')
 
 local track_evaluator<const> = {}
 local compile_syntax<const> = lua_compiler.compile_syntax
@@ -485,7 +486,12 @@ function track_evaluator.compile_values(program, sample_tracks)
 	local has_time_steps<const> = program.has_time_steps
 	local scalar_program<const> = program.scalar_program
 	local has_scalar_channels<const> = scalar_program.track_count > 0
+	local has_scalar_frame_channels<const> = #scalar_program.linear_tracks > 0
+		or #scalar_program.cubic_tracks > 0
+	local has_scalar_time_channels<const> = #scalar_program.linear_time_tracks > 0
+		or #scalar_program.cubic_time_tracks > 0
 	local has_sample_tracks<const> = #sample_tracks > 0
+	local value_has_evaluation_context<const> = program.has_evaluation_callbacks
 	local has_primary_sample_binding = false
 	local has_secondary_sample_binding = false
 	local has_pingpong_tracks = false
@@ -531,12 +537,14 @@ function track_evaluator.compile_values(program, sample_tracks)
 			track.function_index = function_index
 		end
 	end
-	local factory<const> = compile_syntax(
-		track_evaluator_syntax.build({
+	local syntax_values<const> = {
 			has_frame_steps = has_frame_steps,
 			has_time_steps = has_time_steps,
 			has_scalar_channels = has_scalar_channels,
+			has_scalar_frame_channels = has_scalar_frame_channels,
+			has_scalar_time_channels = has_scalar_time_channels,
 			has_sample_tracks = has_sample_tracks,
+			value_has_evaluation_context = value_has_evaluation_context,
 			has_primary_sample_binding = has_primary_sample_binding,
 			has_secondary_sample_binding = has_secondary_sample_binding,
 			has_wave_tracks = has_wave_tracks,
@@ -549,7 +557,13 @@ function track_evaluator.compile_values(program, sample_tracks)
 			sample_tracks = sample_tracks,
 			sample_functions = sample_functions,
 			tau = tau,
-		}),
+		}
+	syntax_values.play_value_operands = value_runner_signature.of(syntax_values, false)
+	if has_frame_steps or has_time_steps then
+		syntax_values.position_value_operands = value_runner_signature.of(syntax_values, true)
+	end
+	local factory<const> = compile_syntax(
+		track_evaluator_syntax.build(syntax_values),
 		'[timeline.track_values]',
 		{
 			apply_step_bucket = apply_step_bucket,
