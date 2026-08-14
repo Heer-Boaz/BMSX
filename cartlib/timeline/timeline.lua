@@ -74,14 +74,14 @@ end
 -- mode-specific datapath instead of decoding once, loop and pingpong policy on
 -- every frame.
 local advance_frame_once<const> = function(self, owner, preserve_elapsed)
-	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local current_frame<const> = previous_frame + 1
-	local last_index<const> = program.last_frame
-	if current_frame > last_index then
-		self.head = last_index
-		self.position_ms = program.duration_ms
+	local last_frame<const> = self.last_frame
+	if current_frame > last_frame then
+		local duration_ms<const> = self.duration_ms
+		self.head = last_frame
+		self.position_ms = duration_ms
 		self.ended = true
 		self.direction = 1
 		if not preserve_elapsed then
@@ -93,8 +93,8 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 			time_ms = 0
 			flags = initial_flag
 		else
-			time_ms = program.duration_ms
-			if previous_frame ~= last_index then
+			time_ms = duration_ms
+			if previous_frame ~= last_frame then
 				flags = sample_flag
 			else
 				flags = boundary_none
@@ -104,7 +104,7 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 			self,
 			owner,
 			previous_frame,
-			last_index,
+			last_frame,
 			previous_time_ms,
 			time_ms,
 			1,
@@ -118,7 +118,7 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 		time_ms = 0
 		flags = sample_flag | initial_flag
 	else
-		time_ms = previous_time_ms + program.frame_duration
+		time_ms = previous_time_ms + self.frame_duration
 		flags = sample_flag
 	end
 	self.head = current_frame
@@ -139,11 +139,10 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 end
 
 local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
-	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local current_frame<const> = previous_frame + 1
-	if current_frame > program.last_frame then
+	if current_frame > self.last_frame then
 		self.head = 0
 		self.position_ms = 0
 		self.direction = 1
@@ -173,7 +172,7 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 		time_ms = 0
 		flags = sample_flag | initial_flag
 	else
-		time_ms = previous_time_ms + program.frame_duration
+		time_ms = previous_time_ms + self.frame_duration
 		flags = sample_flag
 	end
 	self.head = current_frame
@@ -194,15 +193,15 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 end
 
 local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
-	local program<const> = self.program
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
+	local last_frame<const> = self.last_frame
 	if previous_frame == timelinestart_index then
 		local current_frame = 0
 		local flags = sample_flag | initial_flag
-		if current_frame > program.last_frame then
-			current_frame = program.last_frame
+		if current_frame > last_frame then
+			current_frame = last_frame
 			flags = initial_flag | boundary_turn
 			if current_frame ~= previous_frame then
 				flags = flags | sample_flag
@@ -236,11 +235,11 @@ local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
 		self.direction = 1
 		flags = sample_flag | boundary_turn
 		time_ms = previous_time_ms
-	elseif current_frame > program.last_frame then
-		current_frame = program.last_frame
+	elseif current_frame > last_frame then
+		current_frame = last_frame
 		flags = boundary_turn
 		if current_frame ~= previous_frame then
-			time_ms = previous_time_ms + direction * program.frame_duration
+			time_ms = previous_time_ms + direction * self.frame_duration
 			flags = flags | sample_flag
 		else
 			time_ms = previous_time_ms
@@ -249,7 +248,7 @@ local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
 			self.direction = -1
 		end
 	else
-		time_ms = previous_time_ms + direction * program.frame_duration
+		time_ms = previous_time_ms + direction * self.frame_duration
 		flags = sample_flag
 	end
 	self.head = current_frame
@@ -632,6 +631,7 @@ function timeline.new(id, program)
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
 	self.frame_duration = program.frame_duration
+	self.last_frame = program.last_frame
 	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, false)
 	self.head = timelinestart_index
@@ -648,6 +648,7 @@ function timeline:rebind_program(program)
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
 	self.frame_duration = program.frame_duration
+	self.last_frame = program.last_frame
 	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, self.head >= 0)
 end
@@ -821,12 +822,12 @@ end
 -- Position-only access for frame-sequence consumers; no evaluation is emitted.
 function timeline:set_frame(frame)
 	self.wrapped = false
-	self.head = clamp(frame, timelinestart_index, self.program.last_frame)
+	self.head = clamp(frame, timelinestart_index, self.last_frame)
 	self.frame_elapsed = 0
 	if self.head < 0 then
 		self.position_ms = 0
 	else
-		self.position_ms = self.head * self.program.frame_duration
+		self.position_ms = self.head * self.frame_duration
 	end
 end
 
