@@ -1,3 +1,5 @@
+module<const>
+
 return {
 	input = 10,
 	actioneffects = 20,
