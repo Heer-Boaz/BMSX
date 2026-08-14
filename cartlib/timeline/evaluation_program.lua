@@ -94,16 +94,17 @@ function evaluation_program.compile(program)
 		has_sample_tracks = has_sample_tracks,
 		value_has_evaluation_context = value_has_evaluation_context,
 	}
-	syntax_values.play_value_operands = value_runner_signature.of(syntax_values, false)
+	local play_operands<const>, play_signature<const>
+		= value_runner_signature.compile(syntax_values, false)
+	syntax_values.play_value_operands = play_operands
+	local position_signature = 0
 	if has_position_values then
-		syntax_values.position_value_operands = value_runner_signature.of(syntax_values, true)
+		local position_operands<const>, compiled_position_signature<const>
+			= value_runner_signature.compile(syntax_values, true)
+		syntax_values.position_value_operands = position_operands
+		position_signature = compiled_position_signature
 	end
-	local operand_signature = table.concat(syntax_values.play_value_operands, ',')
-	if has_position_values then
-		operand_signature = operand_signature
-			.. ';'
-			.. table.concat(syntax_values.position_value_operands, ',')
-	end
+	local operand_signature<const> = play_signature | position_signature << 7
 	local factories_by_operands = evaluation_factory_by_shape[shape]
 	if factories_by_operands == nil then
 		factories_by_operands = {}

@@ -558,9 +558,9 @@ function track_evaluator.compile_values(program, sample_tracks)
 			sample_functions = sample_functions,
 			tau = tau,
 		}
-	syntax_values.play_value_operands = value_runner_signature.of(syntax_values, false)
+	syntax_values.play_value_operands = value_runner_signature.compile(syntax_values, false)
 	if has_frame_steps or has_time_steps then
-		syntax_values.position_value_operands = value_runner_signature.of(syntax_values, true)
+		syntax_values.position_value_operands = value_runner_signature.compile(syntax_values, true)
 	end
 	local factory<const> = compile_syntax(
 		track_evaluator_syntax.build(syntax_values),
