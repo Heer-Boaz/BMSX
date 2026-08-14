@@ -125,6 +125,11 @@ local emit_time_event_range<const> = function(lane, owner, previous, current, di
 	local keys<const> = lane.time_keys
 	local count<const> = lane.time_count
 	if direction > 0 then
+		if current < keys[1].time_ms
+		or previous > keys[count].time_ms
+		or (previous == keys[count].time_ms and not include_previous) then
+			return
+		end
 		local first
 		if include_previous then
 			first = first_time_at(keys, count, previous)
@@ -137,6 +142,11 @@ local emit_time_event_range<const> = function(lane, owner, previous, current, di
 			owner.events:emit(key.event, key.payload)
 		end
 	elseif direction < 0 then
+		if previous < keys[1].time_ms
+		or (previous == keys[1].time_ms and not include_previous)
+		or current > keys[count].time_ms then
+			return
+		end
 		local first
 		if include_previous then
 			first = first_time_after(keys, count, previous) - 1
@@ -296,6 +306,12 @@ local apply_time_tag_range<const> = function(
 	local boundaries<const> = tags.time_boundaries
 	local count<const> = tags.time_boundary_count
 	if direction > 0 then
+		if current < boundaries[1].time_ms
+		or (current == boundaries[1].time_ms and not include_current)
+		or previous > boundaries[count].time_ms
+		or (previous == boundaries[count].time_ms and not include_previous) then
+			return
+		end
 		local first
 		if include_previous then
 			first = first_time_at(boundaries, count, previous)
@@ -312,6 +328,12 @@ local apply_time_tag_range<const> = function(
 			apply_tag_boundary(tags, entry, owner, boundaries[index], direction)
 		end
 	elseif direction < 0 then
+		if previous < boundaries[1].time_ms
+		or (previous == boundaries[1].time_ms and not include_previous)
+		or current > boundaries[count].time_ms
+		or (current == boundaries[count].time_ms and not include_current) then
+			return
+		end
 		local first
 		if include_previous then
 			first = first_time_after(boundaries, count, previous) - 1

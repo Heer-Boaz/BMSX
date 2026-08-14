@@ -29,11 +29,12 @@ function evaluation_context.write(
 	context.time_ms = time_ms
 	context.method = method
 	context.direction = direction
-	context.sample = flags & sample_flag ~= 0
+	local sample<const> = flags & sample_flag ~= 0
+	context.sample = sample
 	context.boundary = flags & boundary_mask
 	context.wrapped = flags & wrapped_flag ~= 0
 	context.initial = flags & initial_flag ~= 0
-	if flags & sample_flag ~= 0 then
+	if sample then
 		context.value = timeline_frame_program.value(program, frame)
 	end
 	return context
