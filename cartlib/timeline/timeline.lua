@@ -274,8 +274,10 @@ end
 -- Entering or positioning continuous playback publishes frame zero once. Each
 -- retained steady updater consumes that playback-state invariant directly;
 -- 50 Hz evaluation does not rediscover the start sentinel every tick.
+-- Unbounded, once and pingpong transport never assert wrapped; admission and
+-- explicit positioning clear that latch, while loop/frame traversal owns it
+-- per advance.
 local update_continuous_unbounded<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
 	local time_ms<const> = previous_time_ms + delta_time * direction
@@ -293,7 +295,6 @@ local update_continuous_unbounded<const> = function(self, owner, delta_time)
 end
 
 local update_continuous_unbounded_initial<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	self.head = 0
 	self.update = update_continuous_unbounded
 	local previous_time_ms<const> = self.position_ms
@@ -313,7 +314,6 @@ local update_continuous_unbounded_initial<const> = function(self, owner, delta_t
 end
 
 local update_continuous_once<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	local previous_time_ms<const> = self.position_ms
 	local duration_ms<const> = self.duration_ms
 	local time_ms<const> = previous_time_ms + delta_time
@@ -346,7 +346,6 @@ local update_continuous_once<const> = function(self, owner, delta_time)
 end
 
 local update_continuous_once_initial<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	self.head = 0
 	self.update = update_continuous_once
 	local previous_time_ms<const> = self.position_ms
@@ -467,7 +466,6 @@ local update_continuous_loop_initial<const> = function(self, owner, delta_time)
 end
 
 local update_continuous_pingpong<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	local previous_time_ms = self.position_ms
 	local duration_ms<const> = self.duration_ms
 	local evaluate_play<const> = self.evaluate_play
@@ -511,7 +509,6 @@ local update_continuous_pingpong<const> = function(self, owner, delta_time)
 end
 
 local update_continuous_pingpong_initial<const> = function(self, owner, delta_time)
-	self.wrapped = false
 	self.head = 0
 	self.update = update_continuous_pingpong
 	local previous_frame = timelinestart_index
@@ -645,6 +642,7 @@ function timeline:rebind_program(program)
 	self.last_frame = program.last_frame
 	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, self.head >= 0)
+	self.wrapped = false
 end
 
 function timeline:build(params)
