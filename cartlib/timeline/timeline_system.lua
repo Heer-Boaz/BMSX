@@ -18,10 +18,7 @@ end
 function timeline_system:update(delta_time)
 	local components<const> = self._component_view.components
 	for i = 1, #components do
-		local component<const> = components[i]
-		if component._tick_count ~= 0 then
-			component:tick_active(delta_time)
-		end
+		components[i]:tick_active(delta_time)
 	end
 end
 

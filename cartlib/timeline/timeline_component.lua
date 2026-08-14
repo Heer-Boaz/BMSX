@@ -11,6 +11,9 @@ timeline_component.__index = timeline_component
 timeline_component.unique = true
 setmetatable(timeline_component, { __index = base_component })
 
+-- The world's existing enabled-component view is the playback scheduler.
+-- First auto-tick admission enables this component; removing the final entry
+-- disables it, so timeline_system never scans an idle parallel population.
 local reconcile_timeline_schedule<const> = function(self, entry)
 	local tick_index<const> = entry.tick_index
 	if entry.playing and entry.program.auto_tick then
@@ -21,6 +24,9 @@ local reconcile_timeline_schedule<const> = function(self, entry)
 		self._tick_count = tick_count
 		self._tick_entries[tick_count] = entry
 		entry.tick_index = tick_count
+		if tick_count == 1 then
+			self:set_enabled(true)
+		end
 		return
 	end
 	if tick_index == nil then
@@ -34,6 +40,9 @@ local reconcile_timeline_schedule<const> = function(self, entry)
 	if tick_index < tick_count then
 		self._tick_entries[tick_index] = last_entry
 		last_entry.tick_index = tick_index
+	end
+	if tick_count == 1 then
+		self:set_enabled(false)
 	end
 end
 
@@ -77,6 +86,7 @@ end
 
 function timeline_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), timeline_component)
+	self.enabled = false
 	self._entries_by_id = {}
 	self._tick_entries = {}
 	self._tick_count = 0
