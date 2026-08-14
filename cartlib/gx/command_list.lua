@@ -28,15 +28,13 @@ function command_list.submit(draw)
 	draw.word_count = 0
 end
 
-local reserve<const> = function(draw, command_words, block_atomic)
+local reserve_atomic<const> = function(draw, command_words)
 	local word_count = draw.word_count
-	local padding = 0
-	if block_atomic then
-		local block_words_remaining<const> = dma.block_words - (word_count & (dma.block_words - 1))
-		if command_words > block_words_remaining then
-			padding = block_words_remaining
-		end
+	local block_words_remaining<const> = dma.block_words - (word_count & (dma.block_words - 1))
+	if command_words <= block_words_remaining then
+		return word_count
 	end
+	local padding<const> = block_words_remaining
 	local words<const>: *word = draw.words
 	for index = word_count, word_count + padding - 1 do
 		words[index] = gp0.nop
@@ -61,7 +59,7 @@ function command_list.begin(draw, draw_mode)
 end
 
 function command_list.submit_fenced(draw)
-	local index<const> = reserve(draw, 1, false)
+	local index<const> = draw.word_count
 	local words<const>: *word = draw.words
 	words[index] = gp0.irq_request
 	draw.word_count = index + 1
@@ -73,7 +71,7 @@ function command_list.submit_fenced(draw)
 end
 
 function draw_list:clear(origin_word, size_word, color)
-	local index<const> = reserve(self, 3, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.fill_rectangle | gp0.argb_to_rgb(color)
 	words[index + 1] = origin_word
@@ -85,7 +83,7 @@ function draw_list:mode(draw_mode)
 	if draw_mode == self.draw_mode then
 		return
 	end
-	local index<const> = reserve(self, 1, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_mode | draw_mode
 	self.word_count = index + 1
@@ -93,14 +91,14 @@ function draw_list:mode(draw_mode)
 end
 
 function draw_list:mask(mode_word)
-	local index<const> = reserve(self, 1, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.mask_bit_mode | mode_word
 	self.word_count = index + 1
 end
 
 local emit_rect_color<const> = function(self, opcode, x0, y0, x1, y1, color)
-	local index<const> = reserve(self, 3, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = opcode | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -117,7 +115,7 @@ function draw_list:semitransparent_rect(x0, y0, x1, y1, color)
 end
 
 function draw_list:line(x0, y0, x1, y1, color)
-	local index<const> = reserve(self, 3, true)
+	local index<const> = reserve_atomic(self, 3)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_line | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -126,7 +124,7 @@ function draw_list:line(x0, y0, x1, y1, color)
 end
 
 local emit_quad_color<const> = function(self, opcode, x0, y0, x1, y1, x2, y2, x3, y3, color)
-	local index<const> = reserve(self, 5, true)
+	local index<const> = reserve_atomic(self, 5)
 	local words<const>: *word = self.words
 	words[index] = opcode | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -145,7 +143,7 @@ function draw_list:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
 end
 
 function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
-	local index<const> = reserve(self, 4, true)
+	local index<const> = reserve_atomic(self, 4)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_triangle | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -155,7 +153,7 @@ function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
 end
 
 function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)
-	local index<const> = reserve(self, 6, true)
+	local index<const> = reserve_atomic(self, 6)
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_gouraud_triangle | gp0.argb_to_rgb(color0)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -171,7 +169,7 @@ function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color,
 	local texture_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
 	local draw_mode<const> = gp0.direct16_draw_mode(texture_x, texture_y, blend_mode) | rectangle_flip_mode
 	self:mode(draw_mode)
-	local index<const> = reserve(self, 4, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
@@ -189,7 +187,7 @@ function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, 
 	local texture_source_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
 	local draw_mode<const> = gp0.palette4_draw_mode(texture_x, texture_source_x, texture_source_y, blend_mode) | rectangle_flip_mode
 	self:mode(draw_mode)
-	local index<const> = reserve(self, 4, false)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
@@ -216,7 +214,7 @@ function draw_list:direct16_quad(
 	blend_mode)
 	local draw_mode<const> = gp0.direct16_draw_mode(page_source_x, page_source_y, blend_mode)
 	self:mode(draw_mode)
-	local index<const> = reserve(self, 9, true)
+	local index<const> = reserve_atomic(self, 9)
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_quad | 0x00808080
@@ -249,7 +247,7 @@ function draw_list:palette4_quad(
 	blend_mode)
 	local draw_mode<const> = gp0.palette4_draw_mode(texture_x, page_source_x, page_source_y, blend_mode)
 	self:mode(draw_mode)
-	local index<const> = reserve(self, 9, true)
+	local index<const> = reserve_atomic(self, 9)
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_quad | 0x00808080
