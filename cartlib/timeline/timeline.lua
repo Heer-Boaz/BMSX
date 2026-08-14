@@ -73,7 +73,7 @@ end
 -- Playback mode is immutable program data. Frame traversal retains one
 -- mode-specific datapath instead of decoding once, loop and pingpong policy on
 -- every frame.
-local advance_frame_once<const> = function(self, owner, preserve_elapsed)
+local advance_frame_once<const> = function(self, owner)
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local current_frame<const> = previous_frame + 1
@@ -84,9 +84,6 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 		self.position_ms = duration_ms
 		self.ended = true
 		self.direction = 1
-		if not preserve_elapsed then
-			self.frame_elapsed = 0
-		end
 		local time_ms
 		local flags
 		if previous_frame == timelinestart_index then
@@ -123,9 +120,6 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 	end
 	self.head = current_frame
 	self.position_ms = time_ms
-	if not preserve_elapsed then
-		self.frame_elapsed = 0
-	end
 	self.evaluate_play(
 		self,
 		owner,
@@ -138,7 +132,7 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 	)
 end
 
-local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
+local advance_frame_loop<const> = function(self, owner)
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local current_frame<const> = previous_frame + 1
@@ -147,9 +141,6 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 		self.position_ms = 0
 		self.direction = 1
 		self.wrapped = true
-		if not preserve_elapsed then
-			self.frame_elapsed = 0
-		end
 		local flags = sample_flag | wrapped_flag | boundary_loop
 		if previous_frame == timelinestart_index then
 			flags = flags | initial_flag
@@ -177,9 +168,6 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 	end
 	self.head = current_frame
 	self.position_ms = time_ms
-	if not preserve_elapsed then
-		self.frame_elapsed = 0
-	end
 	self.evaluate_play(
 		self,
 		owner,
@@ -192,7 +180,7 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 	)
 end
 
-local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
+local advance_frame_pingpong<const> = function(self, owner)
 	local previous_frame<const> = self.head
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
@@ -212,9 +200,6 @@ local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
 		end
 		self.head = current_frame
 		self.position_ms = 0
-		if not preserve_elapsed then
-			self.frame_elapsed = 0
-		end
 		self.evaluate_play(
 			self,
 			owner,
@@ -253,9 +238,6 @@ local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
 	end
 	self.head = current_frame
 	self.position_ms = time_ms
-	if not preserve_elapsed then
-		self.frame_elapsed = 0
-	end
 	self.evaluate_play(
 		self,
 		owner,
@@ -569,7 +551,8 @@ end
 
 local update_immediate_frames<const> = function(self, owner)
 	self.wrapped = false
-	return self.advance_frame(self, owner, false)
+	self.frame_elapsed = 0
+	return self.advance_frame(self, owner)
 end
 
 local update_timed_frames<const> = function(self, owner, delta_time)
@@ -583,7 +566,7 @@ local update_timed_frames<const> = function(self, owner, delta_time)
 	local advance_frame<const> = self.advance_frame
 	repeat
 		frame_elapsed = frame_elapsed - frame_duration
-		if advance_frame(self, owner, true) then
+		if advance_frame(self, owner) then
 			self.frame_elapsed = frame_elapsed
 			return true
 		end
@@ -674,7 +657,8 @@ end
 
 function timeline:advance(owner)
 	self.wrapped = false
-	return self.advance_frame(self, owner, false)
+	self.frame_elapsed = 0
+	return self.advance_frame(self, owner)
 end
 
 local move_to<const> = function(self, owner, frame, evaluate)
