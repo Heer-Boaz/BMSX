@@ -7,6 +7,14 @@ local fail<const> = function(chunk_name, message, node)
 		.. tostring(node.line) .. ':' .. tostring(node.column))
 end
 
+local identifier_display_name<const> = function(identifier)
+	local name<const> = identifier.name
+	if type(name) == 'table' then
+		return name.name
+	end
+	return name
+end
+
 local literal_value<const> = function(state, expression)
 	local kind<const> = expression.kind
 	if kind == syntax.number_literal_expression
@@ -46,7 +54,7 @@ local end_scope<const> = function(state, scope)
 	local bindings<const> = scope.bindings
 	for index = #bindings, 1, -1 do
 		local binding<const> = bindings[index]
-		state.local_binding_by_name[binding.name] = binding.previous
+		state.local_binding_by_key[binding.key] = binding.previous
 	end
 	state.scope = scope.previous
 end
@@ -58,16 +66,16 @@ local reserve_local_slot<const> = function(state)
 end
 
 local bind_local_identifier<const> = function(state, identifier, is_const)
-	local name<const> = identifier.name
+	local key<const> = identifier.name
 	local binding<const> = {
-		name = name,
+		key = key,
 		function_state = state,
 		kind = 'local',
 		slot = reserve_local_slot(state),
 		is_const = is_const,
-		previous = state.local_binding_by_name[name],
+		previous = state.local_binding_by_key[key],
 	}
-	state.local_binding_by_name[name] = binding
+	state.local_binding_by_key[key] = binding
 	local bindings<const> = state.scope.bindings
 	bindings[#bindings + 1] = binding
 	identifier.binding = binding
@@ -77,18 +85,23 @@ local bind_parameters<const> = function(state)
 	local parameters<const> = state.function_expression.parameters
 	for index = 1, #parameters do
 		local parameter<const> = parameters[index]
-		local name<const> = parameter.name
-		if state.parameter_binding_by_name[name] ~= nil then
-			fail(state.chunk_name, "duplicate function parameter '" .. name .. "'", parameter)
+		local key<const> = parameter.name
+		if state.parameter_binding_by_key[key] ~= nil then
+			fail(
+				state.chunk_name,
+				"duplicate function parameter '"
+					.. identifier_display_name(parameter) .. "'",
+				parameter
+			)
 		end
 		local binding<const> = {
-			name = name,
+			key = key,
 			function_state = state,
 			kind = 'parameter',
 			register = index - 1,
 			is_const = false,
 		}
-		state.parameter_binding_by_name[name] = binding
+		state.parameter_binding_by_key[key] = binding
 		parameter.binding = binding
 	end
 end
@@ -113,17 +126,17 @@ local add_upvalue<const> = function(state, binding, in_stack, index)
 end
 
 local resolve_upvalue
-resolve_upvalue = function(state, name)
+resolve_upvalue = function(state, key)
 	local parent<const> = state.parent
 	if parent == nil then
 		return nil
 	end
-	local binding<const> = parent.local_binding_by_name[name]
-		or parent.parameter_binding_by_name[name]
+	local binding<const> = parent.local_binding_by_key[key]
+		or parent.parameter_binding_by_key[key]
 	if binding ~= nil then
 		return add_upvalue(state, binding, true, binding)
 	end
-	local parent_upvalue<const> = resolve_upvalue(parent, name)
+	local parent_upvalue<const> = resolve_upvalue(parent, key)
 	if parent_upvalue == nil then
 		return nil
 	end
@@ -136,14 +149,14 @@ resolve_upvalue = function(state, name)
 end
 
 local bind_identifier<const> = function(state, expression)
-	local name<const> = expression.name
-	local binding<const> = state.local_binding_by_name[name]
-		or state.parameter_binding_by_name[name]
+	local key<const> = expression.name
+	local binding<const> = state.local_binding_by_key[key]
+		or state.parameter_binding_by_key[key]
 	if binding ~= nil then
 		expression.binding = binding
 		return
 	end
-	local upvalue<const> = resolve_upvalue(state, name)
+	local upvalue<const> = resolve_upvalue(state, key)
 	if upvalue ~= nil then
 		upvalue.direct_use_count = upvalue.direct_use_count + 1
 		if state.loop_depth > 0 then
@@ -152,13 +165,14 @@ local bind_identifier<const> = function(state, expression)
 		expression.upvalue = upvalue
 		return
 	end
-	if state.has_environment then
-		expression.environment_key = name
+	if state.has_environment and type(key) == 'string' then
+		expression.environment_key = expression.name
 		return
 	end
 	fail(
 		state.chunk_name,
-		"unknown local or function parameter '" .. name .. "'",
+		"unknown local or function parameter '"
+			.. identifier_display_name(expression) .. "'",
 		expression
 	)
 end
@@ -242,7 +256,12 @@ local bind_assignment<const> = function(state, statement)
 			binding = target.upvalue.binding
 		end
 		if binding ~= nil and binding.is_const then
-			fail(state.chunk_name, "cannot assign to const local '" .. target.name .. "'", target)
+			fail(
+				state.chunk_name,
+				"cannot assign to const local '"
+					.. identifier_display_name(target) .. "'",
+				target
+			)
 		end
 	end
 	bind_value(state, statement.value)
@@ -253,7 +272,9 @@ local bind_local_statement<const> = function(state, statement)
 	if statement.is_const and initializer == nil then
 		fail(
 			state.chunk_name,
-			"const local '" .. statement.name.name .. "' needs an initializer",
+			"const local '"
+				.. identifier_display_name(statement.name)
+				.. "' needs an initializer",
 			statement.name
 		)
 	end
@@ -349,8 +370,8 @@ bind_function = function(parent, function_expression)
 		function_expression = function_expression,
 		parent = parent,
 		children = {},
-		parameter_binding_by_name = {},
-		local_binding_by_name = {},
+		parameter_binding_by_key = {},
+		local_binding_by_key = {},
 		local_count = 0,
 		scope = nil,
 		has_environment = parent.has_environment,
@@ -377,8 +398,8 @@ function semantic.bind(chunk, chunk_name, has_environment)
 		function_expression = root_function,
 		parent = nil,
 		children = {},
-		parameter_binding_by_name = {},
-		local_binding_by_name = {},
+		parameter_binding_by_key = {},
+		local_binding_by_key = {},
 		local_count = 0,
 		scope = nil,
 		has_environment = has_environment,
