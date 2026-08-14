@@ -150,16 +150,11 @@ local advance_internal<const> = function(self, owner, preserve_elapsed)
 	return self.ended
 end
 
+-- Entering or positioning continuous playback publishes frame zero once. Each
+-- retained steady updater consumes that playback-state invariant directly;
+-- 50 Hz evaluation does not rediscover the start sentinel every tick.
 local update_continuous_unbounded<const> = function(self, owner, delta_time)
 	self.wrapped = false
-	local previous_frame<const> = self.head
-	local frame = previous_frame
-	local flags = sample_range_flags
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-		flags = initial_sample_range_flags
-	end
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
 	local time_ms<const> = previous_time_ms + delta_time * direction
@@ -167,18 +162,35 @@ local update_continuous_unbounded<const> = function(self, owner, delta_time)
 	self.evaluate_play(
 		self,
 		owner,
-		previous_frame,
-		frame,
+		0,
+		0,
 		previous_time_ms,
 		time_ms,
 		direction,
-		flags
+		sample_range_flags
 	)
 end
 
--- Entering or positioning continuous playback publishes frame zero once. The
--- retained updater below consumes that playback-state invariant directly;
--- steady 50 Hz evaluation does not rediscover the start sentinel every tick.
+local update_continuous_unbounded_initial<const> = function(self, owner, delta_time)
+	self.wrapped = false
+	self.head = 0
+	self.update = update_continuous_unbounded
+	local previous_time_ms<const> = self.position_ms
+	local direction<const> = self.direction
+	local time_ms<const> = previous_time_ms + delta_time * direction
+	self.position_ms = time_ms
+	self.evaluate_play(
+		self,
+		owner,
+		timelinestart_index,
+		0,
+		previous_time_ms,
+		time_ms,
+		direction,
+		initial_sample_range_flags
+	)
+end
+
 local update_continuous_once<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local previous_time_ms<const> = self.position_ms
@@ -381,6 +393,9 @@ local select_updater<const> = function(program, positioned)
 		return update_timed_frames
 	end
 	if program.duration_ms == nil then
+		if not positioned then
+			return update_continuous_unbounded_initial
+		end
 		return update_continuous_unbounded
 	end
 	local mode<const> = program.playback_mode
