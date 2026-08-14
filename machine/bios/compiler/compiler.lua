@@ -124,6 +124,10 @@ prepare_value_operands = function(state, expression)
 	end
 	if kind == syntax.call_expression then
 		prepare_value_operands(state, expression.callee)
+		local method_name<const> = expression.method_name
+		if method_name ~= nil then
+			expression.method_constant_index = add_constant(state, method_name)
+		end
 		local arguments<const> = expression.arguments
 		for index = 1, #arguments do
 			prepare_value_operands(state, arguments[index])
@@ -558,21 +562,49 @@ local emit_call_expression<const> = function(
 	if not use_target then
 		call_base = reserve_register(state)
 	end
-	local callee_register<const> = emit_value(
-		state,
-		instruction_words,
-		expression.callee,
-		call_base,
-		true
-	)
-	if callee_register ~= call_base then
+	local method_name<const> = expression.method_name
+	if method_name ~= nil then
+		local self_register<const> = reserve_register(state)
+		local receiver_register<const> = emit_value(
+			state,
+			instruction_words,
+			expression.callee,
+			self_register,
+			true
+		)
+		if receiver_register ~= self_register then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_mov,
+				self_register,
+				receiver_register,
+				0
+			)
+		end
 		bytecode.emit_abc(
 			instruction_words,
-			isa.op_mov,
+			isa.op_gett,
 			call_base,
-			callee_register,
-			0
+			self_register,
+			constant_register(state, expression.method_constant_index)
 		)
+	else
+		local callee_register<const> = emit_value(
+			state,
+			instruction_words,
+			expression.callee,
+			call_base,
+			true
+		)
+		if callee_register ~= call_base then
+			bytecode.emit_abc(
+				instruction_words,
+				isa.op_mov,
+				call_base,
+				callee_register,
+				0
+			)
+		end
 	end
 	local arguments<const> = expression.arguments
 	for index = 1, #arguments do
@@ -598,7 +630,8 @@ local emit_call_expression<const> = function(
 		instruction_words,
 		isa.op_call,
 		call_base,
-		#arguments + isa.fixed_call_arg_count_bias,
+		#arguments + isa.fixed_call_arg_count_bias
+			+ (method_name ~= nil and 1 or 0),
 		1
 	)
 	if not use_target then

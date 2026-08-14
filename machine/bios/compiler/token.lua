@@ -43,6 +43,7 @@ local token<const> = {
 	keyword_while = 42,
 	keyword_for = 43,
 	hash = 44,
+	colon = 45,
 }
 
 token.keyword_by_text = {
@@ -78,6 +79,7 @@ token.single_character_by_code = {
 	[45] = token.minus,
 	[46] = token.dot,
 	[47] = token.slash,
+	[58] = token.colon,
 	[59] = token.semicolon,
 	[60] = token.less,
 	[61] = token.equal,
@@ -108,6 +110,7 @@ token.name = {
 	[token.greater_equal] = '>=',
 	[token.comma] = ',',
 	[token.dot] = '.',
+	[token.colon] = ':',
 	[token.semicolon] = ';',
 	[token.string] = 'string',
 	[token.number] = 'number',

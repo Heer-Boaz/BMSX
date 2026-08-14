@@ -112,11 +112,12 @@ function syntax_factory.index_path(base, path)
 	return expression
 end
 
-function syntax_factory.call_expression(callee, arguments)
+function syntax_factory.call_expression(callee, arguments, method_name)
 	return {
 		kind = syntax.call_expression,
 		callee = callee,
 		arguments = arguments,
+		method_name = method_name,
 		line = generated_line,
 		column = generated_column,
 	}

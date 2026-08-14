@@ -77,6 +77,10 @@ function __bmsx_host_test.setup()
 	local load_for_header_count = 0
 	local load_environment<const> = {
 		scale = function(value, factor) return value * factor end,
+		scaler = {
+			factor = 4,
+			scale = function(self, value) return self.factor * value end,
+		},
 		touch = function(value)
 			load_touch_count = load_touch_count + 1
 			return value
@@ -113,6 +117,7 @@ return function(target, frame)
 	local scaled = scale(frame["left"] + 1, 3)
 	scaled = scaled + 2
 	target["called"] = scaled
+	target["method_called"] = scaler:scale(frame["left"])
 	target["less"] = frame["left"] < scaled
 	target["equal"] = scaled == 26
 	target["not_equal"] = scaled ~= 26
@@ -251,6 +256,7 @@ end;
 	assert(loaded_target[0x10] == 12.5, 'load numeric literal mismatch')
 	assert(loaded_target.leading_fraction == 0.5, 'load leading fraction mismatch')
 	assert(loaded_target.sum == 47, 'load arithmetic precedence mismatch')
+	assert(loaded_target.method_called == 28, 'load method call mismatch')
 	assert(loaded_target.grouped == 54, 'load grouped arithmetic mismatch')
 	assert(loaded_target.difference == 11, 'load subtraction associativity mismatch')
 	assert(loaded_target.division == 10, 'load division mismatch')

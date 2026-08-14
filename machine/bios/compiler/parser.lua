@@ -209,7 +209,14 @@ local parse_prefix_expression<const> = function(state)
 				line = expression.line,
 				column = expression.column,
 			}
-		elseif match(state, token.left_parenthesis) then
+		else
+			local method_name
+			if match(state, token.colon) then
+				method_name = consume_identifier(state)
+				expect(state, token.left_parenthesis)
+			elseif not match(state, token.left_parenthesis) then
+				return expression
+			end
 			local arguments<const> = {}
 			if state.token_kind ~= token.right_parenthesis then
 				while true do
@@ -224,11 +231,10 @@ local parse_prefix_expression<const> = function(state)
 				kind = syntax.call_expression,
 				callee = expression,
 				arguments = arguments,
+				method_name = method_name,
 				line = expression.line,
 				column = expression.column,
 			}
-		else
-			return expression
 		end
 	end
 end
