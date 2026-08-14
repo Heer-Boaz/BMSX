@@ -9,11 +9,11 @@ local track_list_names<const> = {
 	'linear_time_tracks',
 	'cubic_time_tracks',
 }
-local single_track_names<const> = {
-	linear_tracks = 'linear_keys',
-	cubic_tracks = 'cubic_keys',
-	linear_time_tracks = 'linear_time_keys',
-	cubic_time_tracks = 'cubic_time_keys',
+local single_track_prefixes<const> = {
+	linear_tracks = 'linear',
+	cubic_tracks = 'cubic',
+	linear_time_tracks = 'linear_time',
+	cubic_time_tracks = 'cubic_time',
 }
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
@@ -56,7 +56,9 @@ local evaluator_parameters<const> = function(channels, analysis)
 end
 
 local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
-	statements[#statements + 1] = local_statement(identifier('keys'), nil, false)
+	if analysis.has_key_arrays then
+		statements[#statements + 1] = local_statement(identifier('keys'), nil, false)
+	end
 	statements[#statements + 1] = local_statement(identifier('value'), nil, false)
 	if analysis.callback_functions ~= nil then
 		statements[#statements + 1] = local_statement(
@@ -87,12 +89,11 @@ local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
 		)
 	end
 	if analysis.max_key_count > 1 then
-		statements[#statements + 1] = local_statement(identifier('position'), nil, false)
 		statements[#statements + 1] = local_statement(identifier('first_key'), nil, false)
 		statements[#statements + 1] = local_statement(identifier('last_key'), nil, false)
-		statements[#statements + 1] = local_statement(identifier('key'), nil, false)
 	end
 	if analysis.max_key_count > 2 then
+		statements[#statements + 1] = local_statement(identifier('key'), nil, false)
 		statements[#statements + 1] = local_statement(identifier('low'), nil, false)
 		statements[#statements + 1] = local_statement(identifier('high'), nil, false)
 		statements[#statements + 1] = local_statement(identifier('middle'), nil, false)
@@ -103,13 +104,6 @@ local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
 end
 
 local emit_segment_search<const> = function(statements, track, position_key, key_count)
-	if key_count == 2 then
-		statements[#statements + 1] = assignment_statement(
-			identifier('key'),
-			identifier('first_key')
-		)
-		return
-	end
 	statements[#statements + 1] = assignment_statement(
 		identifier('key'),
 		index_expression(
@@ -201,11 +195,11 @@ local emit_segment_search<const> = function(statements, track, position_key, key
 	})
 end
 
-local emit_interpolation<const> = function(statements, position_key, cubic)
+local emit_interpolation<const> = function(statements, position_key, cubic, key_name)
 	local position_delta<const> = binary_expression(
 		syntax.binary_subtract,
 		identifier('position'),
-		member_expression(identifier('key'), position_key)
+		member_expression(identifier(key_name), position_key)
 	)
 	if cubic then
 		statements[#statements + 1] = assignment_statement(
@@ -213,7 +207,7 @@ local emit_interpolation<const> = function(statements, position_key, cubic)
 			binary_expression(
 				syntax.binary_multiply,
 				position_delta,
-				member_expression(identifier('key'), 'span_inv')
+				member_expression(identifier(key_name), 'span_inv')
 			)
 		)
 		statements[#statements + 1] = assignment_statement(
@@ -230,18 +224,18 @@ local emit_interpolation<const> = function(statements, position_key, cubic)
 								syntax.binary_add,
 								binary_expression(
 									syntax.binary_multiply,
-									member_expression(identifier('key'), 'cubic3'),
+									member_expression(identifier(key_name), 'cubic3'),
 									identifier('u')
 								),
-								member_expression(identifier('key'), 'cubic2')
+								member_expression(identifier(key_name), 'cubic2')
 							),
 							identifier('u')
 						),
-						member_expression(identifier('key'), 'cubic1')
+						member_expression(identifier(key_name), 'cubic1')
 					),
 					identifier('u')
 				),
-				member_expression(identifier('key'), 'value')
+				member_expression(identifier(key_name), 'value')
 			)
 		)
 		return
@@ -250,39 +244,61 @@ local emit_interpolation<const> = function(statements, position_key, cubic)
 		identifier('value'),
 		binary_expression(
 			syntax.binary_add,
-			member_expression(identifier('key'), 'value'),
+			member_expression(identifier(key_name), 'value'),
 			binary_expression(
 				syntax.binary_multiply,
-				member_expression(identifier('key'), 'value_delta'),
+				member_expression(identifier(key_name), 'value_delta'),
 				binary_expression(
 					syntax.binary_multiply,
 					position_delta,
-					member_expression(identifier('key'), 'span_inv')
+					member_expression(identifier(key_name), 'span_inv')
 				)
 			)
 		)
 	)
 end
 
-local emit_track_sample<const> = function(statements, track, position_key, cubic)
+local emit_track_sample<const> = function(statements, track, position_key, cubic, resolved_track_prefix)
 	local key_count<const> = #track.keys
 	if key_count == 1 then
-		statements[#statements + 1] = assignment_statement(
-			identifier('value'),
-			member_expression(
+		local value_source
+		if resolved_track_prefix == nil then
+			value_source = member_expression(
 				index_expression(identifier('keys'), numeric_literal(1)),
 				'value'
 			)
+		else
+			value_source = identifier(resolved_track_prefix .. '_value')
+		end
+		statements[#statements + 1] = assignment_statement(
+			identifier('value'),
+			value_source
 		)
 		return
 	end
+	local first_key_source
+	if resolved_track_prefix == nil then
+		first_key_source = index_expression(identifier('keys'), numeric_literal(1))
+	else
+		first_key_source = identifier(resolved_track_prefix .. '_first_key')
+	end
 	statements[#statements + 1] = assignment_statement(
 		identifier('first_key'),
-		index_expression(identifier('keys'), numeric_literal(1))
+		first_key_source
 	)
 	local final_segment<const> = {}
-	emit_segment_search(final_segment, track, position_key, key_count)
-	emit_interpolation(final_segment, position_key, cubic)
+	local interpolation_key = 'first_key'
+	if key_count > 2 then
+		emit_segment_search(final_segment, track, position_key, key_count)
+		interpolation_key = 'key'
+	end
+	emit_interpolation(final_segment, position_key, cubic, interpolation_key)
+	local last_key_source
+	if resolved_track_prefix == nil then
+		last_key_source = index_expression(identifier('keys'), numeric_literal(key_count))
+	else
+		last_key_source = identifier(resolved_track_prefix .. '_last_key')
+	end
 	statements[#statements + 1] = if_statement({
 		if_clause(
 			binary_expression(
@@ -300,7 +316,7 @@ local emit_track_sample<const> = function(statements, track, position_key, cubic
 		else_clause(block({
 			assignment_statement(
 				identifier('last_key'),
-				index_expression(identifier('keys'), numeric_literal(key_count))
+				last_key_source
 			),
 			if_statement({
 				if_clause(
@@ -322,12 +338,14 @@ local emit_track_sample<const> = function(statements, track, position_key, cubic
 	})
 end
 
-local emit_track<const> = function(statements, source_keys, track, position_key, cubic)
-	statements[#statements + 1] = assignment_statement(
-		identifier('keys'),
-		source_keys
-	)
-	emit_track_sample(statements, track, position_key, cubic)
+local emit_track<const> = function(statements, source_keys, resolved_track_prefix, track, position_key, cubic)
+	if source_keys ~= nil then
+		statements[#statements + 1] = assignment_statement(
+			identifier('keys'),
+			source_keys
+		)
+	end
+	emit_track_sample(statements, track, position_key, cubic, resolved_track_prefix)
 	local binding
 	if track.binding_index == 1 then
 		binding = identifier('primary_binding')
@@ -355,8 +373,17 @@ end
 local emit_tracks<const> = function(statements, track_list_name, tracks, position_key, cubic)
 	local track_count<const> = #tracks
 	for track_index = 1, track_count do
-		local source_keys = identifier(single_track_names[track_list_name])
-		if track_count > 1 then
+		local track<const> = tracks[track_index]
+		local source_keys
+		local resolved_track_prefix
+		if track_count == 1 then
+			local single_track_prefix<const> = single_track_prefixes[track_list_name]
+			if #track.keys <= 2 then
+				resolved_track_prefix = single_track_prefix
+			else
+				source_keys = identifier(single_track_prefix .. '_keys')
+			end
+		else
 			source_keys = index_expression(
 				identifier(track_list_name),
 				numeric_literal(track_index)
@@ -365,7 +392,8 @@ local emit_tracks<const> = function(statements, track_list_name, tracks, positio
 		emit_track(
 			statements,
 			source_keys,
-			tracks[track_index],
+			resolved_track_prefix,
+			track,
 			position_key,
 			cubic
 		)
@@ -378,7 +406,11 @@ local emit_frame_lane<const> = function(statements, channels, analysis, sample_f
 	end
 	local body<const> = {}
 	if analysis.frame_max_key_count > 1 then
-		body[#body + 1] = assignment_statement(identifier('position'), identifier('frame'))
+		body[#body + 1] = local_statement(
+			identifier('position'),
+			identifier('frame'),
+			true
+		)
 	end
 	emit_tracks(body, 'linear_tracks', channels.linear_tracks, 'frame', false)
 	emit_tracks(body, 'cubic_tracks', channels.cubic_tracks, 'frame', true)
@@ -403,13 +435,46 @@ local emit_time_lane<const> = function(statements, channels, analysis)
 		return
 	end
 	if analysis.time_max_key_count > 1 then
-		statements[#statements + 1] = assignment_statement(
+		statements[#statements + 1] = local_statement(
 			identifier('position'),
-			identifier('time_ms')
+			identifier('time_ms'),
+			true
 		)
 	end
 	emit_tracks(statements, 'linear_time_tracks', channels.linear_time_tracks, 'time_ms', false)
 	emit_tracks(statements, 'cubic_time_tracks', channels.cubic_time_tracks, 'time_ms', true)
+end
+
+local emit_single_track_captures<const> = function(statements, track_list_name, track)
+	local prefix<const> = single_track_prefixes[track_list_name]
+	local keys_name<const> = prefix .. '_keys'
+	statements[#statements + 1] = local_statement(
+		identifier(keys_name),
+		member_expression(identifier('source_channels'), prefix .. '_track'),
+		true
+	)
+	local key_count<const> = #track.keys
+	if key_count == 1 then
+		statements[#statements + 1] = local_statement(
+			identifier(prefix .. '_value'),
+			member_expression(
+				index_expression(identifier(keys_name), numeric_literal(1)),
+				'value'
+			),
+			true
+		)
+	elseif key_count == 2 then
+		statements[#statements + 1] = local_statement(
+			identifier(prefix .. '_first_key'),
+			index_expression(identifier(keys_name), numeric_literal(1)),
+			true
+		)
+		statements[#statements + 1] = local_statement(
+			identifier(prefix .. '_last_key'),
+			index_expression(identifier(keys_name), numeric_literal(2)),
+			true
+		)
+	end
 end
 
 function scalar_channel_syntax.build(channels, analysis, sample_flag)
@@ -442,13 +507,10 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 		local track_list_name<const> = track_list_names[index]
 		local track_count<const> = #channels[track_list_name]
 		if track_count == 1 then
-			factory_body[#factory_body + 1] = local_statement(
-				identifier(single_track_names[track_list_name]),
-				index_expression(
-					member_expression(identifier('source_channels'), track_list_name),
-					numeric_literal(1)
-				),
-				true
+			emit_single_track_captures(
+				factory_body,
+				track_list_name,
+				channels[track_list_name][1]
 			)
 		elseif track_count > 1 then
 			factory_body[#factory_body + 1] = local_statement(

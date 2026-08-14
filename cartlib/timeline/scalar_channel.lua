@@ -1,14 +1,14 @@
 -- Numeric curve channels own their compiled segment representation. Their
 -- shape-specific runner factory is prepared once; length-dependent channels
--- are bound once when a definitive frame program is compiled. Direct property
--- lanes retain their key arrays directly; an interpolation family containing
--- one track binds that lane without a containing family lookup. Equal callback
--- identities share one captured function. Binding selection and property paths
--- are encoded in the runner. Channels with more than two keys retain one current
--- segment per active timeline entry. Each shared key carries an exclusive
--- segment end, so evaluation only searches again when traversal leaves that
--- range. Generic step values remain track-program data because they may carry
--- non-numeric cart values.
+-- are bound once when a definitive frame program is compiled. A family
+-- containing one track stores that lane directly; multi-track families store a
+-- dense track array. Constant lanes bind their value and two-key lanes bind
+-- their endpoints. Equal callback identities share one captured function.
+-- Binding selection and property paths are encoded in the runner. Channels with
+-- more than two keys retain one current segment per active timeline entry. Each
+-- shared key carries an exclusive segment end. Evaluation searches again only
+-- when traversal leaves that range. Generic step values remain track-program
+-- data because they may carry non-numeric cart values.
 local scalar_channel_syntax<const> = require('cartlib/timeline/scalar_channel_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
@@ -31,14 +31,14 @@ scalar_channel.empty = {
 	track_count = 0,
 	cached_segment_count = 0,
 	initial_cached_segments = {},
-	linear_tracks = {},
-	linear_time_tracks = {},
-	cubic_tracks = {},
-	cubic_time_tracks = {},
 }
 
 local analyze_tracks<const> = function(analysis, tracks, time_domain)
-	for index = 1, #tracks do
+	local track_count<const> = #tracks
+	if track_count > 1 or (track_count == 1 and #tracks[1].keys > 2) then
+		analysis.has_key_arrays = true
+	end
+	for index = 1, track_count do
 		local track<const> = tracks[index]
 		if track.apply ~= nil then
 			local callback_functions = analysis.callback_functions
@@ -92,6 +92,7 @@ local compile_runner_factory<const> = function(channels)
 		frame_max_key_count = 0,
 		time_max_key_count = 0,
 		max_key_count = 0,
+		has_key_arrays = false,
 		cached_segment_count = 0,
 	}
 	analyze_tracks(analysis, linear_tracks, false)
@@ -167,73 +168,89 @@ function scalar_channel.prepare(definitions)
 	return program
 end
 
-local compile_tracks<const> = function(definitions, length, time_domain, cubic, initial_cached_segments)
-	local tracks<const> = {}
-	for track_index = 1, #definitions do
-		local definition<const> = definitions[track_index]
-		local keys<const> = {}
-		for key_index = 1, #definition.keys do
-			local source<const> = definition.keys[key_index]
-			local key<const> = {
-				value = source.value,
-				order = key_index,
-			}
-			if time_domain then
-				key.time_ms = source.time_ms
-			else
-				key.frame = frame_at(source, length)
-			end
-			if cubic then
-				key.arrive_tangent = source.arrive_tangent
-				key.leave_tangent = source.leave_tangent
-			end
-			keys[key_index] = key
-		end
+local compile_track<const> = function(definition, length, time_domain, cubic, initial_cached_segments)
+	local keys<const> = {}
+	for key_index = 1, #definition.keys do
+		local source<const> = definition.keys[key_index]
+		local key<const> = {
+			value = source.value,
+			order = key_index,
+		}
 		if time_domain then
-			table.sort(keys, compare_time_key)
+			key.time_ms = source.time_ms
 		else
-			table.sort(keys, compare_frame_key)
-		end
-		for key_index = 1, #keys do
-			keys[key_index].order = nil
-		end
-		local cached_segment_index<const> = definition.cached_segment_index
-		for key_index = 1, #keys - 1 do
-			local key<const> = keys[key_index]
-			local next_key<const> = keys[key_index + 1]
-			local span
-			if time_domain then
-				span = next_key.time_ms - key.time_ms
-			else
-				span = next_key.frame - key.frame
-			end
-			if cached_segment_index ~= nil then
-				key.segment_end = time_domain and next_key.time_ms or next_key.frame
-			end
-			key.span_inv = 1 / span
-			if cubic then
-				local leave<const> = key.leave_tangent * span
-				local arrive<const> = next_key.arrive_tangent * span
-				key.cubic3 = 2 * key.value - 2 * next_key.value + leave + arrive
-				key.cubic2 = -3 * key.value + 3 * next_key.value - 2 * leave - arrive
-				key.cubic1 = leave
-			else
-				key.value_delta = next_key.value - key.value
-			end
+			key.frame = frame_at(source, length)
 		end
 		if cubic then
-			for key_index = 1, #keys do
-				local key<const> = keys[key_index]
-				key.arrive_tangent = nil
-				key.leave_tangent = nil
-			end
+			key.arrive_tangent = source.arrive_tangent
+			key.leave_tangent = source.leave_tangent
+		end
+		keys[key_index] = key
+	end
+	if time_domain then
+		table.sort(keys, compare_time_key)
+	else
+		table.sort(keys, compare_frame_key)
+	end
+	for key_index = 1, #keys do
+		keys[key_index].order = nil
+	end
+	local cached_segment_index<const> = definition.cached_segment_index
+	for key_index = 1, #keys - 1 do
+		local key<const> = keys[key_index]
+		local next_key<const> = keys[key_index + 1]
+		local span
+		if time_domain then
+			span = next_key.time_ms - key.time_ms
+		else
+			span = next_key.frame - key.frame
 		end
 		if cached_segment_index ~= nil then
-			initial_cached_segments[cached_segment_index] = keys[1]
+			key.segment_end = time_domain and next_key.time_ms or next_key.frame
 		end
-		tracks[track_index] = keys
+		key.span_inv = 1 / span
+		if cubic then
+			local leave<const> = key.leave_tangent * span
+			local arrive<const> = next_key.arrive_tangent * span
+			key.cubic3 = 2 * key.value - 2 * next_key.value + leave + arrive
+			key.cubic2 = -3 * key.value + 3 * next_key.value - 2 * leave - arrive
+			key.cubic1 = leave
+		else
+			key.value_delta = next_key.value - key.value
+		end
 	end
-	return tracks
+	if cubic then
+		for key_index = 1, #keys do
+			local key<const> = keys[key_index]
+			key.arrive_tangent = nil
+			key.leave_tangent = nil
+		end
+	end
+	if cached_segment_index ~= nil then
+		initial_cached_segments[cached_segment_index] = keys[1]
+	end
+	return keys
+end
+
+local compile_family<const> = function(definitions, length, time_domain, cubic, initial_cached_segments)
+	local track_count<const> = #definitions
+	if track_count == 1 then
+		return compile_track(definitions[1], length, time_domain, cubic, initial_cached_segments), nil
+	end
+	if track_count == 0 then
+		return nil, nil
+	end
+	local tracks<const> = {}
+	for track_index = 1, track_count do
+		tracks[track_index] = compile_track(
+			definitions[track_index],
+			length,
+			time_domain,
+			cubic,
+			initial_cached_segments
+		)
+	end
+	return nil, tracks
 end
 
 function scalar_channel.compile(program, length)
@@ -241,17 +258,25 @@ function scalar_channel.compile(program, length)
 		return scalar_channel.empty
 	end
 	local initial_cached_segments<const> = {}
-	local linear_tracks<const> = compile_tracks(program.linear_tracks, length, false, false, initial_cached_segments)
-	local linear_time_tracks<const> = compile_tracks(program.linear_time_tracks, length, true, false, initial_cached_segments)
-	local cubic_tracks<const> = compile_tracks(program.cubic_tracks, length, false, true, initial_cached_segments)
-	local cubic_time_tracks<const> = compile_tracks(program.cubic_time_tracks, length, true, true, initial_cached_segments)
+	local linear_track<const>, linear_tracks<const>
+		= compile_family(program.linear_tracks, length, false, false, initial_cached_segments)
+	local linear_time_track<const>, linear_time_tracks<const>
+		= compile_family(program.linear_time_tracks, length, true, false, initial_cached_segments)
+	local cubic_track<const>, cubic_tracks<const>
+		= compile_family(program.cubic_tracks, length, false, true, initial_cached_segments)
+	local cubic_time_track<const>, cubic_time_tracks<const>
+		= compile_family(program.cubic_time_tracks, length, true, true, initial_cached_segments)
 	return {
 		track_count = program.track_count,
 		cached_segment_count = program.cached_segment_count,
 		initial_cached_segments = initial_cached_segments,
+		linear_track = linear_track,
 		linear_tracks = linear_tracks,
+		linear_time_track = linear_time_track,
 		linear_time_tracks = linear_time_tracks,
+		cubic_track = cubic_track,
 		cubic_tracks = cubic_tracks,
+		cubic_time_track = cubic_time_track,
 		cubic_time_tracks = cubic_time_tracks,
 	}
 end
