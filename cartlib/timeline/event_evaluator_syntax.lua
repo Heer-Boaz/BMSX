@@ -22,6 +22,21 @@ local if_clause<const> = syntax_factory.if_clause
 local else_clause<const> = syntax_factory.else_clause
 local if_statement<const> = syntax_factory.if_statement
 local numeric_for_statement<const> = syntax_factory.numeric_for_statement
+local include_previous_never<const> = 0
+local include_previous_always<const> = 1
+local include_previous_initial<const> = 2
+local time_key_symbol_suffix<const> = '_time_key'
+local time_symbol_suffix<const> = '_time_ms'
+
+-- Factory captures and evaluator bodies are separate syntax regions. Their
+-- generated bindings share this single naming contract instead of rebuilding
+-- identifier strings independently at each emission site.
+local lane_symbol_name<const> = function(prefix, forward)
+	if forward then
+		return prefix .. '_event_forward'
+	end
+	return prefix .. '_event_backward'
+end
 
 local intersects<const> = function(shape, mask)
 	return shape & mask ~= 0
@@ -56,21 +71,131 @@ local event_range_statement<const> = function(
 	}))
 end
 
+-- A nil time operand denotes the timeline origin. Every call creates owned AST
+-- occurrences because semantic binding annotates generated syntax in place.
+local time_operand<const> = function(name)
+	if name == nil then
+		return numeric_literal(0)
+	end
+	return identifier(name)
+end
+
+local include_previous_expression<const> = function(mode, initial_flag)
+	if mode == include_previous_never then
+		return boolean_literal(false)
+	end
+	if mode == include_previous_always then
+		return boolean_literal(true)
+	end
+	return flag_set_expression(initial_flag)
+end
+
+local singleton_time_intersection<const> = function(
+	lane_name,
+	previous_name,
+	current_name,
+	forward,
+	include_previous,
+	initial_flag
+)
+	local time_name<const> = lane_name .. time_symbol_suffix
+	local previous_operator = forward and syntax.binary_less or syntax.binary_greater
+	if include_previous == include_previous_always then
+		previous_operator = forward and syntax.binary_less_equal or syntax.binary_greater_equal
+	end
+	local previous_intersects = binary_expression(
+		previous_operator,
+		time_operand(previous_name),
+		identifier(time_name)
+	)
+	if include_previous == include_previous_initial then
+		previous_intersects = binary_expression(
+			syntax.binary_or,
+			previous_intersects,
+			binary_expression(
+				syntax.binary_and,
+				binary_expression(
+					syntax.binary_equal,
+					time_operand(previous_name),
+					identifier(time_name)
+				),
+				flag_set_expression(initial_flag)
+			)
+		)
+	end
+	return binary_expression(
+		syntax.binary_and,
+		binary_expression(
+			forward and syntax.binary_greater_equal or syntax.binary_less_equal,
+			time_operand(current_name),
+			identifier(time_name)
+		),
+		previous_intersects
+	)
+end
+
 local time_event_range_statement<const> = function(
 	lane_name,
-	previous,
-	current,
-	direction,
-	include_previous
+	previous_name,
+	current_name,
+	forward,
+	dynamic_direction,
+	include_previous,
+	initial_flag,
+	singleton
 )
-	return call_statement(call_expression(identifier('emit_time_event_range'), {
-		identifier(lane_name),
-		identifier('owner'),
-		previous,
-		current,
-		direction,
+	local direction_expression
+	if dynamic_direction then
+		direction_expression = identifier('direction')
+	else
+		direction_expression = numeric_literal(forward and 1 or -1)
+	end
+	if not singleton then
+		return call_statement(call_expression(identifier('emit_time_event_range'), {
+			identifier(lane_name),
+			identifier('owner'),
+			time_operand(previous_name),
+			time_operand(current_name),
+			direction_expression,
+			include_previous_expression(include_previous, initial_flag),
+		}))
+	end
+	local intersection<const> = singleton_time_intersection(
+		lane_name,
+		previous_name,
+		current_name,
+		forward,
 		include_previous,
-	}))
+		initial_flag
+	)
+	local condition = intersection
+	if dynamic_direction and not forward then
+		condition = binary_expression(
+			syntax.binary_and,
+			binary_expression(
+				syntax.binary_less,
+				identifier('direction'),
+				numeric_literal(0)
+			),
+			intersection
+		)
+	end
+	local key_name<const> = lane_name .. time_key_symbol_suffix
+	return if_statement({
+		if_clause(
+			condition,
+			block({
+				call_statement(call_expression(
+					member_expression(identifier('owner'), 'events'),
+					{
+						member_expression(identifier(key_name), 'event'),
+						member_expression(identifier(key_name), 'payload'),
+					},
+					'emit'
+				)),
+			})
+		),
+	})
 end
 
 local event_dispatch_loop<const> = function(lane_name, reverse)
@@ -254,41 +379,54 @@ local time_direction_statements<const> = function(
 	lane_name,
 	forward,
 	wrapped_flag,
-	initial_flag
+	initial_flag,
+	singleton
 )
 	local wrapped_ranges
 	if forward then
 		wrapped_ranges = {
 			time_event_range_statement(
 				lane_name,
-				identifier('previous_time_ms'),
-				identifier('event_duration_ms'),
-				numeric_literal(1),
-				flag_set_expression(initial_flag)
+				'previous_time_ms',
+				'event_duration_ms',
+				true,
+				false,
+				include_previous_initial,
+				initial_flag,
+				singleton
 			),
 			time_event_range_statement(
 				lane_name,
-				numeric_literal(0),
-				identifier('time_ms'),
-				numeric_literal(1),
-				boolean_literal(true)
+				nil,
+				'time_ms',
+				true,
+				false,
+				include_previous_always,
+				initial_flag,
+				singleton
 			),
 		}
 	else
 		wrapped_ranges = {
 			time_event_range_statement(
 				lane_name,
-				identifier('previous_time_ms'),
-				numeric_literal(0),
-				numeric_literal(-1),
-				flag_set_expression(initial_flag)
+				'previous_time_ms',
+				nil,
+				false,
+				false,
+				include_previous_initial,
+				initial_flag,
+				singleton
 			),
 			time_event_range_statement(
 				lane_name,
-				identifier('event_duration_ms'),
-				identifier('time_ms'),
-				numeric_literal(-1),
-				boolean_literal(true)
+				'event_duration_ms',
+				'time_ms',
+				false,
+				false,
+				include_previous_always,
+				initial_flag,
+				singleton
 			),
 		}
 	end
@@ -300,20 +438,26 @@ local time_direction_statements<const> = function(
 				block({
 					time_event_range_statement(
 						lane_name,
-						identifier('previous_time_ms'),
-						identifier('time_ms'),
-						identifier('direction'),
-						boolean_literal(true)
+						'previous_time_ms',
+						'time_ms',
+						forward,
+						true,
+						include_previous_always,
+						initial_flag,
+						singleton
 					),
 				})
 			),
 			else_clause(block({
 				time_event_range_statement(
 					lane_name,
-					identifier('previous_time_ms'),
-					identifier('time_ms'),
-					identifier('direction'),
-					boolean_literal(false)
+					'previous_time_ms',
+					'time_ms',
+					forward,
+					true,
+					include_previous_never,
+					initial_flag,
+					singleton
 				),
 			})),
 		}),
@@ -327,24 +471,28 @@ local emit_directional_domain<const> = function(
 	has_backward,
 	build_direction,
 	wrapped_flag,
-	initial_flag
+	initial_flag,
+	forward_specialization,
+	backward_specialization
 )
 	local forward_block
 	local backward_block
 	if has_forward then
 		forward_block = block(build_direction(
-			prefix .. '_event_forward',
+			lane_symbol_name(prefix, true),
 			true,
 			wrapped_flag,
-			initial_flag
+			initial_flag,
+			forward_specialization
 		))
 	end
 	if has_backward then
 		backward_block = block(build_direction(
-			prefix .. '_event_backward',
+			lane_symbol_name(prefix, false),
 			false,
 			wrapped_flag,
-			initial_flag
+			initial_flag,
+			backward_specialization
 		))
 	end
 	local clauses<const> = {}
@@ -385,6 +533,19 @@ local any_time_domain<const> = function(values)
 		| values.scrub_event_shape) & event_lane_shape.time_mask ~= 0
 end
 
+local has_multi_time_lane<const> = function(shape)
+	return (intersects(shape, event_lane_shape.forward_time)
+		and not intersects(shape, event_lane_shape.forward_single_time))
+		or (intersects(shape, event_lane_shape.backward_time)
+			and not intersects(shape, event_lane_shape.backward_single_time))
+end
+
+local any_multi_time_domain<const> = function(values)
+	return has_multi_time_lane(values.play_event_shape)
+		or has_multi_time_lane(values.seek_event_shape)
+		or has_multi_time_lane(values.scrub_event_shape)
+end
+
 function event_evaluator_syntax.capture_dependencies(statements, values)
 	if any_frame_domain(values) then
 		statements[#statements + 1] = local_statement(
@@ -393,10 +554,46 @@ function event_evaluator_syntax.capture_dependencies(statements, values)
 			true
 		)
 	end
-	if any_time_domain(values) then
+	if any_multi_time_domain(values) then
 		statements[#statements + 1] = local_statement(
 			identifier('emit_time_event_range'),
 			identifier('emit_time_event_range'),
+			true
+		)
+	end
+end
+
+local capture_direction_lane<const> = function(
+	statements,
+	lanes_name,
+	prefix,
+	forward,
+	present,
+	single_time
+)
+	if not present then
+		return
+	end
+	local lane_name<const> = lane_symbol_name(prefix, forward)
+	local member_name<const> = forward and 'forward' or 'backward'
+	statements[#statements + 1] = local_statement(
+		identifier(lane_name),
+		member_expression(identifier(lanes_name), member_name),
+		true
+	)
+	if single_time then
+		local key_name<const> = lane_name .. time_key_symbol_suffix
+		statements[#statements + 1] = local_statement(
+			identifier(key_name),
+			index_expression(
+				member_expression(identifier(lane_name), 'time_keys'),
+				numeric_literal(1)
+			),
+			true
+		)
+		statements[#statements + 1] = local_statement(
+			identifier(lane_name .. time_symbol_suffix),
+			member_expression(identifier(key_name), 'time_ms'),
 			true
 		)
 	end
@@ -407,8 +604,7 @@ local capture_event_lanes<const> = function(
 	events_name,
 	prefix,
 	method,
-	has_forward,
-	has_backward
+	shape
 )
 	local lanes_name<const> = prefix .. '_event_lanes'
 	statements[#statements + 1] = local_statement(
@@ -416,20 +612,22 @@ local capture_event_lanes<const> = function(
 		index_expression(identifier(events_name), numeric_literal(method + 1)),
 		true
 	)
-	if has_forward then
-		statements[#statements + 1] = local_statement(
-			identifier(prefix .. '_event_forward'),
-			member_expression(identifier(lanes_name), 'forward'),
-			true
-		)
-	end
-	if has_backward then
-		statements[#statements + 1] = local_statement(
-			identifier(prefix .. '_event_backward'),
-			member_expression(identifier(lanes_name), 'backward'),
-			true
-		)
-	end
+	capture_direction_lane(
+		statements,
+		lanes_name,
+		prefix,
+		true,
+		intersects(shape, event_lane_shape.forward_mask),
+		intersects(shape, event_lane_shape.forward_single_time)
+	)
+	capture_direction_lane(
+		statements,
+		lanes_name,
+		prefix,
+		false,
+		intersects(shape, event_lane_shape.backward_mask),
+		intersects(shape, event_lane_shape.backward_single_time)
+	)
 end
 
 function event_evaluator_syntax.capture_program(statements, values)
@@ -463,8 +661,7 @@ function event_evaluator_syntax.capture_program(statements, values)
 		events_name,
 		'play',
 		values.play_method,
-		intersects(values.play_event_shape, event_lane_shape.forward_mask),
-		intersects(values.play_event_shape, event_lane_shape.backward_mask)
+		values.play_event_shape
 	)
 	if values.seek_event_shape ~= 0 then
 		capture_event_lanes(
@@ -472,8 +669,7 @@ function event_evaluator_syntax.capture_program(statements, values)
 			events_name,
 			'jump',
 			values.jump_method,
-			intersects(values.seek_event_shape, event_lane_shape.forward_mask),
-			intersects(values.seek_event_shape, event_lane_shape.backward_mask)
+			values.seek_event_shape
 		)
 	end
 	if values.scrub_event_shape ~= 0 then
@@ -482,8 +678,7 @@ function event_evaluator_syntax.capture_program(statements, values)
 			events_name,
 			'scrub',
 			values.scrub_method,
-			intersects(values.scrub_event_shape, event_lane_shape.forward_mask),
-			intersects(values.scrub_event_shape, event_lane_shape.backward_mask)
+			values.scrub_event_shape
 		)
 	end
 end
@@ -506,7 +701,9 @@ local emit_domains<const> = function(
 			has_backward_frame,
 			frame_direction_statements,
 			values.wrapped_flag,
-			values.initial_flag
+			values.initial_flag,
+			false,
+			false
 		)
 	end
 	if has_forward_time or has_backward_time then
@@ -517,7 +714,9 @@ local emit_domains<const> = function(
 			has_backward_time,
 			time_direction_statements,
 			values.wrapped_flag,
-			values.initial_flag
+			values.initial_flag,
+			intersects(shape, event_lane_shape.forward_single_time),
+			intersects(shape, event_lane_shape.backward_single_time)
 		)
 	end
 end

@@ -79,6 +79,7 @@ local update_method<const> = timeline_playback.update_method
 local play_event_index<const> = update_method.play + 1
 local seek_event_index<const> = update_method.jump + 1
 local scrub_event_index<const> = update_method.scrub + 1
+local merge_event_shape<const> = event_lane_shape.merge
 
 local compare_key<const> = function(left, right)
 	if left.frame == right.frame then
@@ -181,30 +182,43 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			local fire_on_seek<const> = track.fire_on_seek
 			local fire_on_scrub<const> = track.fire_on_scrub
 			local keys<const> = track.keys
+			local track_event_shape = 0
+			local forward_time_count = 0
+			local backward_time_count = 0
 			for key_index = 1, #keys do
 				local key<const> = keys[key_index]
 				local admits_forward<const> = event_forward_directions[key.direction]
 				local admits_backward<const> = event_backward_directions[key.direction]
-				local forward_bit<const> = key.time_ms ~= nil
-					and event_lane_shape.forward_time
-					or event_lane_shape.forward_frame
-				local backward_bit<const> = key.time_ms ~= nil
-					and event_lane_shape.backward_time
-					or event_lane_shape.backward_frame
-				local key_shape = 0
-				if admits_forward then
-					key_shape = forward_bit
+				if key.time_ms == nil then
+					if admits_forward then
+						track_event_shape = track_event_shape | event_lane_shape.forward_frame
+					end
+					if admits_backward then
+						track_event_shape = track_event_shape | event_lane_shape.backward_frame
+					end
+				else
+					if admits_forward then
+						track_event_shape = track_event_shape | event_lane_shape.forward_time
+						forward_time_count = forward_time_count + 1
+					end
+					if admits_backward then
+						track_event_shape = track_event_shape | event_lane_shape.backward_time
+						backward_time_count = backward_time_count + 1
+					end
 				end
-				if admits_backward then
-					key_shape = key_shape | backward_bit
-				end
-				play_event_shape = play_event_shape | key_shape
-				if fire_on_seek then
-					seek_event_shape = seek_event_shape | key_shape
-				end
-				if fire_on_scrub then
-					scrub_event_shape = scrub_event_shape | key_shape
-				end
+			end
+			if forward_time_count == 1 then
+				track_event_shape = track_event_shape | event_lane_shape.forward_single_time
+			end
+			if backward_time_count == 1 then
+				track_event_shape = track_event_shape | event_lane_shape.backward_single_time
+			end
+			play_event_shape = merge_event_shape(play_event_shape, track_event_shape)
+			if fire_on_seek then
+				seek_event_shape = merge_event_shape(seek_event_shape, track_event_shape)
+			end
+			if fire_on_scrub then
+				scrub_event_shape = merge_event_shape(scrub_event_shape, track_event_shape)
 			end
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
