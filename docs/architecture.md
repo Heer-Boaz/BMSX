@@ -638,14 +638,21 @@ three decode/timing tables, and both tooling string tables entry for entry.
 
 ## Mirrored core contract
 
-The TypeScript core under `machine/ts/machine`, the C++ core under
-`machine/cpp/machine`, and their specification owners are mirrored
-implementations of the same machine.
+The TypeScript implementation under `machine/ts` and the C++ implementation
+under `machine/cpp` contain mirrored machine, specification, render and shared
+owners. The parity registry is derived from those physical source trees rather
+than from a hand-maintained list of reachable entrypoints.
 
 Rules:
 
-- Core files use the same relative path and basename unless
-  `scripts/core_parity_manifest.json` has a narrow explicit exclusion.
+- A TypeScript source with a C++ header or implementation at the same relative
+  stem is core automatically. The reverse scan covers the complete native
+  source tree, so a new owner directory cannot bypass classification.
+- Alternate owner paths are declared as exact `strict_file_pair_parity`
+  mappings with the shared module basename. Generated specializations identify
+  their generator explicitly.
+- Host, language and tooling exclusions must match a live source. A wildcard
+  exclusion cannot cover a source that has a physical same-stem peer.
 - Public constants, register words, opcodes, state records, device methods, and
   save-state fields match by role and representation.
 - Runtime representation is not changed to make one language easier. If a value

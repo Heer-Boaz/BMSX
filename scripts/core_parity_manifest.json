@@ -1,89 +1,54 @@
 {
 	"patterns": [
 		{
-			"pattern": "ide/language/**",
-			"category": "language",
-			"reason": "language_tooling"
-		},
-		{
-			"pattern": "ide/**",
-			"category": "ide",
-			"reason": "ide_only"
-		},
-		{
 			"pattern": "machine/ts/index.ts",
 			"category": "barrel",
 			"reason": "machine_runtime_public_barrel"
 		},
 		{
-			"pattern": "hosts/common/input/**",
+			"pattern": "machine/ts/audio/output_resampler.ts",
 			"category": "host",
-			"reason": "browser_ide_input_state_and_host_to_icu_snapshot_adapter_not_machine_core"
-		},
-		{
-			"pattern": "hosts/common/audio_output.ts",
-			"category": "host",
-			"reason": "ts_browser_audio_context_and_ide_mute_lifecycle; libretro_frontend_owns_host_lifecycle_outside_the_cpp_machine_runtime"
-		},
-		{
-			"pattern": "machine/ts/audio/**",
-			"category": "host",
-			"reason": "host_audio_not_core"
+			"reason": "host_audio_resampler_outside_emulated_machine_state"
 		},
 		{
 			"pattern": "machine/ts/common/rect.ts",
-			"category": "ide",
-			"reason": "ide_geometry_helper_not_runtime_core"
+			"category": "host",
+			"reason": "shared_host_and_rom_authoring_geometry"
 		},
 		{
 			"pattern": "machine/ts/common/pool.ts",
-			"category": "host",
-			"reason": "host_render_pool_not_runtime_core"
+			"category": "ide",
+			"reason": "studio_intellisense_diagnostic_pool"
 		},
 		{
 			"pattern": "machine/ts/common/wav.ts",
-			"category": "host",
-			"reason": "host_or_tooling_audio_decode_not_core"
+			"category": "rompacker_tooling",
+			"reason": "rom_authoring_wav_decoder"
 		},
 		{
 			"pattern": "machine/ts/common/text_lines.ts",
-			"category": "host",
-			"reason": "host_text_layout_not_core"
-		},
-		{
-			"pattern": "machine/ts/common/arrayify.ts",
-			"category": "host",
-			"reason": "host_or_tooling_collection_helper_not_core"
-		},
-		{
-			"pattern": "machine/ts/common/shallowcopy.ts",
-			"category": "host",
-			"reason": "host_or_tooling_collection_helper_not_core"
-		},
-		{
-			"pattern": "machine/ts/runtime/assets/**",
-			"category": "host",
-			"reason": "host_asset_runtime_not_machine_core"
+			"category": "language",
+			"reason": "source_text_line_splitter"
 		},
 		{
 			"pattern": "machine/ts/render/backend/webgl/**",
 			"category": "host",
-			"reason": "browser_render_backend_not_core"
+			"reason": "browser_webgl_render_backend"
 		},
 		{
-			"pattern": "machine/ts/render/backend/**",
+			"pattern": "machine/ts/render/backend/webgpu/**",
 			"category": "host",
-			"reason": "host_render_backend_not_core"
+			"reason": "browser_webgpu_render_backend"
+		},
+		{
+			"pattern": "machine/ts/render/backend/color_space.ts",
+			"category": "host",
+			"reason": "browser_present_color_conversion_lut"
 		},
 		{
 			"pattern": "machine/ts/render/headless/**",
 			"category": "host",
-			"reason": "headless_host_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/debug/**",
-			"category": "host",
-			"reason": "debug_render_host_not_core"
+			"reason": "node_headless_render_backend"
 		},
 		{
 			"pattern": "machine/ts/render/post/crt/state.ts",
@@ -103,7 +68,7 @@
 		{
 			"pattern": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
 			"category": "host",
-			"reason": "host_device_quantize_postprocess_backend"
+			"reason": "webgl_device_quantize_postprocess_backend"
 		},
 		{
 			"pattern": "machine/ts/render/post/device_quantize/state.ts",
@@ -123,12 +88,12 @@
 		{
 			"pattern": "machine/ts/render/host_overlay/webgl/**",
 			"category": "host",
-			"reason": "browser_host_overlay_not_core"
+			"reason": "browser_webgl_host_overlay_backend"
 		},
 		{
 			"pattern": "machine/ts/render/host_overlay/webgpu/**",
 			"category": "host",
-			"reason": "browser_webgpu_host_overlay_not_core"
+			"reason": "browser_webgpu_host_overlay_backend"
 		},
 		{
 			"pattern": "machine/ts/render/host_overlay/quad_stream.ts",
@@ -143,84 +108,90 @@
 		{
 			"pattern": "machine/ts/render/host_overlay/headless/**",
 			"category": "host",
-			"reason": "headless_host_overlay_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/graph/**",
-			"category": "host",
-			"reason": "host_render_graph_not_core"
+			"reason": "node_headless_host_overlay_backend"
 		},
 		{
 			"pattern": "machine/ts/machine/cpu/value_slots.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
-		},
-		{
-			"pattern": "machine/ts/.bmsx/**",
-			"category": "host",
-			"reason": "workspace_data_not_source"
-		},
-		{
-			"pattern": "machine/ts/glsl.d.ts",
-			"category": "barrel",
-			"reason": "ambient_declaration_not_core"
 		}
 	],
-	"core_roots": [
-		"machine/ts/machine/machine.ts",
-		"machine/ts/machine/runtime/machine_state.ts",
-		"machine/ts/machine/runtime/runtime.ts",
-		"machine/ts/machine/runtime/save_machine_state.ts",
-		"machine/ts/machine/runtime/save_state.ts",
-		"machine/ts/machine/runtime/save_state/codec.ts",
-		"machine/ts/machine/runtime/save_state/schema.ts",
-		"machine/ts/render/host_overlay/pipeline.ts",
-		"machine/ts/render/video_presenter.ts",
-		"machine/ts/render/post/device_quantize/lut.ts",
-		"machine/ts/render/post/device_quantize/mode.ts",
-		"machine/ts/render/shared/bmsx_font.ts",
-		"machine/ts/render/shared/glyph_runs.ts",
-		"machine/ts/render/shared/layers.ts",
-		"machine/ts/rompack/format.ts",
-		"machine/ts/rompack/image.ts",
-		"machine/ts/render/host_overlay/atlas.generated.ts",
-		"machine/ts/render/host_overlay/atlas.ts",
-		"machine/ts/render/shared/submissions.ts",
-		"machine/ts/render/shared/solid_pixels.ts",
-		"machine/ts/common/fixed_point.ts"
-	],
-	"must_have_cpp": [
-		"machine/ts/common/vector.ts",
-		"machine/ts/common/hash.ts",
-		"machine/ts/spec/bmsx/model.ts",
-		"machine/ts/machine/devices/audio/biquad_filter.ts",
-		"machine/ts/machine/devices/audio/output.ts",
-		"machine/ts/machine/devices/gx/gpu_display.ts",
-		"machine/ts/machine/devices/gx/gte.ts",
-		"machine/ts/spec/bmsx/memory_map.ts",
-		"machine/ts/spec/bmsx/cartridge.ts",
-		"machine/ts/spec/bmsx/io.ts",
-		"machine/ts/spec/bmsx/rom_header.ts",
-		"machine/ts/spec/bmsx/rom_package.ts",
-		"machine/ts/spec/bmsx/rom_toc.ts",
-		"machine/ts/spec/audio/apu.ts",
-		"machine/ts/spec/blua32/builtin.ts",
-		"machine/ts/spec/blua32/cop0.ts",
-		"machine/ts/spec/blua32/execution_domain.ts",
-		"machine/ts/spec/blua32/diagnostics.ts",
-		"machine/ts/spec/blua32/image_format.ts",
-		"machine/ts/spec/blua32/instruction_format.ts",
-		"machine/ts/spec/blua32/memory_access_kind.ts",
-		"machine/ts/machine/cpu/string_pool.ts",
-		"machine/ts/spec/blua32/opcode.ts",
-		"machine/ts/spec/gx/gp0.ts",
-		"machine/ts/spec/gx/vram.ts",
-		"machine/ts/spec/imgdec/registers.ts",
-		"machine/ts/spec/imgdec/stream.ts",
-		"machine/ts/machine/runtime/timing/state.ts",
-		"machine/ts/rompack/tokens.ts",
-		"machine/ts/rompack/toc.ts",
-		"machine/ts/render/shared/solid_pixels.ts"
+	"cpp_patterns": [
+		{
+			"pattern": "machine/cpp/common/mmap_file.*",
+			"category": "host",
+			"reason": "native_host_memory_mapped_file"
+		},
+		{
+			"pattern": "machine/cpp/common/primitives.h",
+			"category": "language",
+			"reason": "native_primitive_aliases_and_shared_includes"
+		},
+		{
+			"pattern": "machine/cpp/common/scope_exit.h",
+			"category": "language",
+			"reason": "cpp_raii_counterpart_to_typescript_control_flow"
+		},
+		{
+			"pattern": "machine/cpp/common/time.h",
+			"category": "host",
+			"reason": "native_host_clock_alias"
+		},
+		{
+			"pattern": "machine/cpp/common/types.h",
+			"category": "language",
+			"reason": "native_scalar_type_aliases"
+		},
+		{
+			"pattern": "machine/cpp/render/backend/gles2/**",
+			"category": "host",
+			"reason": "native_gles2_render_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/host_overlay/gles2/**",
+			"category": "host",
+			"reason": "native_gles2_host_overlay_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/host_overlay/software/**",
+			"category": "host",
+			"reason": "native_software_host_overlay_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/host_overlay/pass_registration.h",
+			"category": "host",
+			"reason": "native_host_overlay_pass_registration"
+		},
+		{
+			"pattern": "machine/cpp/render/post/crt/gles2/**",
+			"category": "host",
+			"reason": "native_gles2_crt_postprocess_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/post/crt/software/**",
+			"category": "host",
+			"reason": "native_software_crt_postprocess_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/post/device_quantize/gles2/**",
+			"category": "host",
+			"reason": "native_gles2_device_quantize_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/post/device_quantize/software/**",
+			"category": "host",
+			"reason": "native_software_device_quantize_backend"
+		},
+		{
+			"pattern": "machine/cpp/render/shared/glyphs.*",
+			"category": "host",
+			"reason": "native_host_glyph_decode_storage"
+		},
+		{
+			"pattern": "machine/cpp/render/shared/software_pixels.h",
+			"category": "host",
+			"reason": "native_software_pixel_storage"
+		}
 	],
 	"strict_runtime_symbol_parity": [
 		{
@@ -1212,6 +1183,37 @@
 				"machine/cpp/rompack/tooling/source_text.cpp"
 			],
 			"reason": "blua32_tooling_source_text_filename_parity"
+		},
+		{
+			"ts": "toolchain/ts/rompack/blua32_image.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/blua32_image.h",
+				"machine/cpp/rompack/tooling/blua32_image.cpp"
+			],
+			"reason": "blua32_tooling_image_filename_parity"
+		},
+		{
+			"ts": "toolchain/ts/lua/opcode_metadata.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/opcode_metadata.h",
+				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
+			],
+			"reason": "blua32_tooling_opcode_metadata_filename_parity"
+		},
+		{
+			"ts": "toolchain/ts/lua/source_range.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/source_range.h"
+			],
+			"reason": "blua32_tooling_source_range_filename_parity"
+		},
+		{
+			"ts": "toolchain/ts/rompack/toc_encode.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/toc_encode.h",
+				"machine/cpp/rompack/tooling/toc_encode.cpp"
+			],
+			"reason": "rom_toc_tooling_encoder_filename_parity"
 		}
 	],
 	"strict_generated_ts_parity_exclusions": [
@@ -1219,12 +1221,6 @@
 			"ts": "machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts",
 			"generator": "scripts/render/generate_gx_gpu_software_scanout_specializations.mjs",
 			"reason": "TS emits storage-and-operation-specialized loops while C++ owns equivalent native specializations in gx_gpu_scanout.cpp"
-		}
-	],
-	"cpp_missing_ts_exclusions": [
-		{
-			"cpp": "machine/cpp/common/scope_exit.h",
-			"reason": "C++20 RAII counterpart to TypeScript try/finally"
 		}
 	],
 	"public_symbol_parity": [

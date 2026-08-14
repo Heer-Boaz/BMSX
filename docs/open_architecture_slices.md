@@ -4,12 +4,6 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Doorlopende architectuurgates
-
-| ID | Controle | Groen wanneer |
-| --- | --- | --- |
-| `PARITY-COVERAGE-01` | Laat de parity-audit de werkelijke machinegrens bewaken nadat host- en Studio-code hun juiste owner hebben. | Brede paduitzonderingen verbergen geen machinecode of afwijkende machinecontracten; iedere resterende uitsluiting is een echte taal-, host- of productgrens en een groene audit bewijst de geclaimde TS/C++-surface. |
-
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |

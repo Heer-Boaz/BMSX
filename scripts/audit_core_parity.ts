@@ -70,7 +70,6 @@ type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: st
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictGeneratedTsParityExclusion = { ts: string; generator: string; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
-type CppMissingTsExclusion = { cpp: string; reason: string };
 type StrictRuntimeSymbols = {
 	constants: Map<string, string>;
 	constantValues: Map<string, string>;
@@ -81,22 +80,20 @@ type StrictRuntimeSymbols = {
 };
 type Manifest = {
 	patterns: ManifestPattern[];
-	core_roots?: string[];
-	must_have_cpp?: string[];
-	strict_runtime_symbol_parity?: StrictRuntimeSymbolParityEntry[];
-	strict_runtime_shape_parity?: StrictRuntimeShapeParityEntry[];
-	strict_runtime_method_parity?: StrictRuntimeMethodParityEntry[];
-	strict_runtime_no_churn?: StrictRuntimeNoChurnEntry[];
-	strict_runtime_no_heap_functions?: StrictRuntimeNoHeapFunctionEntry[];
-	strict_lua_no_heap_functions?: StrictLuaNoHeapFunctionEntry[];
-	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
+	cpp_patterns: ManifestPattern[];
+	strict_runtime_symbol_parity: StrictRuntimeSymbolParityEntry[];
+	strict_runtime_shape_parity: StrictRuntimeShapeParityEntry[];
+	strict_runtime_method_parity: StrictRuntimeMethodParityEntry[];
+	strict_runtime_no_churn: StrictRuntimeNoChurnEntry[];
+	strict_runtime_no_heap_functions: StrictRuntimeNoHeapFunctionEntry[];
+	strict_lua_no_heap_functions: StrictLuaNoHeapFunctionEntry[];
+	strict_rpu_table_parity: StrictRpuTableParityEntry[];
 	strict_blua32_isa_parity: StrictBlua32IsaParityEntry[];
-	strict_file_layout?: StrictFileLayoutEntry[];
-	strict_file_pair_parity?: StrictFilePairParityEntry[];
-	strict_generated_ts_parity_exclusions?: StrictGeneratedTsParityExclusion[];
-	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
+	strict_file_layout: StrictFileLayoutEntry[];
+	strict_file_pair_parity: StrictFilePairParityEntry[];
+	strict_generated_ts_parity_exclusions: StrictGeneratedTsParityExclusion[];
+	strict_save_state_schema_parity: StrictSaveStateSchemaParityEntry[];
 	public_symbol_parity: PublicSymbolParityEntry[];
-	cpp_missing_ts_exclusions?: CppMissingTsExclusion[];
 };
 
 type ClassifiedFile = { file: string; category: Category; reason: string };
@@ -105,7 +102,6 @@ const repoRoot = process.cwd();
 const sourceRoot = 'machine/ts';
 const cppRoot = 'machine/cpp';
 const manifestPath = 'scripts/core_parity_manifest.json';
-const noGeneratedTsParityExclusions: readonly StrictGeneratedTsParityExclusion[] = [];
 
 function repoPath(value: string): string {
 	const relative = path.relative(repoRoot, value);
@@ -185,11 +181,11 @@ function listTsFiles(dir: string, out: string[]): void {
 	}
 }
 
-function listCppMachineFiles(dir: string, out: string[]): void {
+function listCppFiles(dir: string, out: string[]): void {
 	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 		const full = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
-			listCppMachineFiles(full, out);
+			listCppFiles(full, out);
 		} else if (entry.isFile() && (entry.name.endsWith('.h') || entry.name.endsWith('.cpp'))) {
 			out.push(repoPath(full));
 		}
@@ -199,64 +195,6 @@ function listCppMachineFiles(dir: string, out: string[]): void {
 function tsEquivalentForCppMachineFile(file: string): string {
 	const relative = file.slice(`${cppRoot}/`.length);
 	return `${sourceRoot}/${relative.replace(/\.(?:h|cpp)$/, '.ts')}`;
-}
-
-function resolveImport(fromFile: string, specifier: string): string | null {
-	if (!specifier.startsWith('.')) return null;
-	const baseDir = path.dirname(path.join(repoRoot, fromFile));
-	const resolved = path.resolve(baseDir, specifier);
-	const candidates = [
-		resolved + '.ts',
-		path.join(resolved, 'index.ts'),
-	];
-	for (const candidate of candidates) {
-		if (fs.existsSync(candidate)) return repoPath(candidate);
-	}
-	return null;
-}
-
-function importDeclarationIsTypeOnly(node: ts.ImportDeclaration): boolean {
-	const clause = node.importClause;
-	if (!clause) return false;
-	if (clause.isTypeOnly) return true;
-	if (clause.name) return false;
-	const named = clause.namedBindings;
-	if (!named) return false;
-	if (ts.isNamespaceImport(named)) return false;
-	return named.elements.length > 0 && named.elements.every((element) => element.isTypeOnly);
-}
-
-function exportDeclarationIsTypeOnly(node: ts.ExportDeclaration): boolean {
-	if (node.isTypeOnly) return true;
-	const clause = node.exportClause;
-	if (!clause || !ts.isNamedExports(clause)) return false;
-	return clause.elements.length > 0 && clause.elements.every((element) => element.isTypeOnly);
-}
-
-function buildImportGraph(files: string[]): Map<string, string[]> {
-	const graph = new Map<string, string[]>();
-	for (const file of files) {
-		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-		const imports: string[] = [];
-		const visit = (node: ts.Node): void => {
-			if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
-				if (!importDeclarationIsTypeOnly(node)) {
-					const resolved = resolveImport(file, node.moduleSpecifier.text);
-					if (resolved) imports.push(resolved);
-				}
-			} else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
-				if (!exportDeclarationIsTypeOnly(node)) {
-					const resolved = resolveImport(file, node.moduleSpecifier.text);
-					if (resolved) imports.push(resolved);
-				}
-			}
-			ts.forEachChild(node, visit);
-		};
-		visit(source);
-		graph.set(file, imports);
-	}
-	return graph;
 }
 
 function isBarrelFile(file: string): boolean {
@@ -271,77 +209,62 @@ function isBarrelFile(file: string): boolean {
 	return true;
 }
 
-function isExplicitNonCore(file: string, manifest: Manifest): boolean {
-	const match = matchPattern(file, manifest.patterns);
-	return match !== null && match.category !== 'core';
-}
-
-
-function manifestCoreScopeConflicts(manifest: Manifest): string[] {
-	const conflicts: string[] = [];
-	if (manifest.core_roots) {
-		for (const file of manifest.core_roots) {
-			if (!fs.existsSync(path.join(repoRoot, file))) {
-				conflicts.push(`core_roots contains missing file ${file}`);
-				continue;
-			}
-			const explicit = matchPattern(file, manifest.patterns);
-			if (explicit && explicit.category !== 'core') {
-				conflicts.push(`core_roots contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
-			}
-		}
-	}
-	if (manifest.must_have_cpp) {
-		for (const file of manifest.must_have_cpp) {
-			if (!fs.existsSync(path.join(repoRoot, file))) {
-				conflicts.push(`must_have_cpp contains missing file ${file}`);
-				continue;
-			}
-			const explicit = matchPattern(file, manifest.patterns);
-			if (explicit && explicit.category !== 'core') {
-				conflicts.push(`must_have_cpp contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
-			}
-		}
-	}
-	return conflicts;
-}
-
-function collectCoreReachable(manifest: Manifest, graph: Map<string, string[]>): Set<string> {
-	const core = new Set<string>();
-	const stack: string[] = [];
-	if (manifest.core_roots) {
-		for (const file of manifest.core_roots) {
-			if (isExplicitNonCore(file, manifest)) continue;
-			core.add(file);
-			stack.push(file);
-		}
-	}
-	if (manifest.must_have_cpp) {
-		for (const file of manifest.must_have_cpp) {
-			if (isExplicitNonCore(file, manifest)) continue;
-			core.add(file);
-			stack.push(file);
-		}
-	}
-	while (stack.length > 0) {
-		const file = stack.pop()!;
-		if (!graph.has(file)) continue;
-		for (const imported of graph.get(file)!) {
-			if (core.has(imported)) continue;
-			if (isExplicitNonCore(imported, manifest)) continue;
-			core.add(imported);
-			stack.push(imported);
-		}
-	}
-	return core;
-}
-
 function equivalentPaths(tsFile: string): string[] {
 	const relative = tsFile.slice(sourceRoot.length + 1, -'.ts'.length);
 	return [
 		`${cppRoot}/${relative}.h`,
 		`${cppRoot}/${relative}.cpp`,
 	];
+}
+
+function hasExactCppPeer(tsFile: string): boolean {
+	return equivalentPaths(tsFile).some((file) => fs.existsSync(path.join(repoRoot, file)));
+}
+
+function moduleStem(file: string): string {
+	return file.slice(0, -path.extname(file).length);
+}
+
+function mappedCppModuleStems(manifest: Manifest): Set<string> {
+	const stems = new Set<string>();
+	for (const entry of manifest.strict_file_pair_parity) {
+		for (const file of entry.cpp) stems.add(moduleStem(file));
+	}
+	return stems;
+}
+
+function auditManifestPatterns(
+	patterns: readonly ManifestPattern[],
+	files: readonly string[],
+	exactPeer: (file: string) => boolean,
+): string[] {
+	const errors: string[] = [];
+	const seen = new Set<string>();
+	for (const entry of patterns) {
+		if (seen.has(entry.pattern)) {
+			errors.push(`${entry.pattern}: exclusion is declared more than once`);
+			continue;
+		}
+		seen.add(entry.pattern);
+		if (entry.category === 'core') {
+			errors.push(`${entry.pattern}: core sources must be discovered from physical TS/C++ peers, not exclusions`);
+		}
+		if (entry.reason.trim().length === 0) {
+			errors.push(`${entry.pattern}: exclusion has no reason`);
+		}
+		let matchCount = 0;
+		for (const file of files) {
+			if (!matchesPattern(file, entry.pattern)) continue;
+			matchCount += 1;
+			if (entry.pattern.includes('*') && exactPeer(file)) {
+				errors.push(`${entry.pattern}: broad exclusion hides mirrored source ${file} (${entry.reason})`);
+			}
+		}
+		if (matchCount === 0) {
+			errors.push(`${entry.pattern}: exclusion matches no source file (${entry.reason})`);
+		}
+	}
+	return errors;
 }
 
 function cppFileHasLogic(file: string): boolean {
@@ -629,7 +552,8 @@ function collectCppRuntimePublicMethods(files: readonly string[]): Set<string> {
 
 function exclusionNameSet(file: string, exclusions: readonly StrictRuntimeMethodExclusion[] | undefined, present: ReadonlySet<string>): Set<string> {
 	const names = new Set<string>();
-	for (const exclusion of exclusions ?? []) {
+	if (exclusions === undefined) return names;
+	for (const exclusion of exclusions) {
 		if (!present.has(exclusion.name)) {
 			throw new Error(`${file}: method parity exclusion '${exclusion.name}' does not match a public method`);
 		}
@@ -643,7 +567,7 @@ function exclusionNameSet(file: string, exclusions: readonly StrictRuntimeMethod
 
 function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_symbol_parity ?? []) {
+	for (const entry of manifest.strict_runtime_symbol_parity) {
 		const tsBase = path.basename(entry.ts, '.ts');
 		const cppHasSameBase = entry.cpp.some((file) => path.basename(file, path.extname(file)) === tsBase);
 		if (!cppHasSameBase) {
@@ -723,7 +647,7 @@ function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 
 function auditStrictRuntimeMethodParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_method_parity ?? []) {
+	for (const entry of manifest.strict_runtime_method_parity) {
 		const tsSymbols = collectTsStrictSymbols(entry.ts);
 		const cppSymbols = collectCppStrictSymbols(entry.cpp);
 		const compareMethod = (method: string): void => {
@@ -741,8 +665,8 @@ function auditStrictRuntimeMethodParity(manifest: Manifest): string[] {
 				errors.push(`${method}: TS params (${tsParams.join(',')}) differ from C++ (${cppParams.join(',')}) (${entry.reason})`);
 			}
 		};
-		for (const method of entry.methods ?? []) {
-			compareMethod(method);
+		if (entry.methods !== undefined) {
+			for (const method of entry.methods) compareMethod(method);
 		}
 		if (entry.compare_public) {
 			const tsPublic = collectTsClassPublicMethods(entry.ts, 'Runtime');
@@ -805,7 +729,8 @@ function collectTsShapeFields(file: string, symbol: string): string[] | null {
 	}
 	const intersectionMatch = new RegExp(`export\\s+type\\s+${symbol}\\s*=\\s*([A-Za-z_]\\w*)\\s*&\\s*(?:Readonly<)?\\{([\\s\\S]*?)\\}\\s*>?;`).exec(text);
 	if (intersectionMatch) {
-		const fields = collectTsShapeFields(file, intersectionMatch[1]) ?? [];
+		const fields = collectTsShapeFields(file, intersectionMatch[1]);
+		if (fields === null) return null;
 		fields.push(...collectObjectFields(intersectionMatch[2]));
 		return fields;
 	}
@@ -825,7 +750,8 @@ function collectCppShapeFields(files: readonly string[], symbol: string): string
 		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 		const match = new RegExp(`(?:struct|class)\\s+${symbol}(?:\\s*:\\s*(?:public\\s+)?([A-Za-z_]\\w*))?\\s*\\{([\\s\\S]*?)\\n\\};`).exec(text);
 		if (!match) continue;
-		const fields = match[1] ? (collectCppShapeFields(files, match[1]) ?? []) : [];
+		const fields = match[1] ? collectCppShapeFields(files, match[1]) : [];
+		if (fields === null) return null;
 		let bodyDepth = 0;
 		for (const rawLine of match[2].split('\n')) {
 			let line = rawLine.replace(/\/\/.*$/, '').trim();
@@ -849,7 +775,7 @@ function collectCppShapeFields(files: readonly string[], symbol: string): string
 
 function auditStrictRuntimeShapeParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_shape_parity ?? []) {
+	for (const entry of manifest.strict_runtime_shape_parity) {
 		for (const symbol of entry.symbols) {
 			const tsFields = collectTsShapeFields(entry.ts, symbol);
 			if (!tsFields) {
@@ -942,7 +868,7 @@ function stripLineComment(line: string): string {
 
 function auditStrictRuntimeNoChurn(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_no_churn ?? []) {
+	for (const entry of manifest.strict_runtime_no_churn) {
 		for (const file of entry.files) {
 			const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 			const lines = text.split('\n');
@@ -983,7 +909,7 @@ function functionBodyRegion(text: string, name: string): { body: string; lineOff
 
 function auditStrictRuntimeNoHeapFunctions(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_no_heap_functions ?? []) {
+	for (const entry of manifest.strict_runtime_no_heap_functions) {
 		const text = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
 		for (const name of entry.functions) {
 			const region = functionBodyRegion(text, name);
@@ -1099,7 +1025,7 @@ function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock): string
 
 function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_lua_no_heap_functions ?? []) {
+	for (const entry of manifest.strict_lua_no_heap_functions) {
 		const source = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
 		const lines = source.split('\n');
 		const parsed = parseLuaChunk(source, entry.file, lines);
@@ -1159,7 +1085,7 @@ function cppRpuTableTokens(file: string, table: string): string | null {
 
 function auditStrictRpuTableParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_rpu_table_parity ?? []) {
+	for (const entry of manifest.strict_rpu_table_parity) {
 		for (const table of entry.tables) {
 			const tsTokens = tsRpuTableTokens(entry.ts, table);
 			if (tsTokens === null) {
@@ -1347,12 +1273,16 @@ function auditStrictBlua32IsaParity(manifest: Manifest): string[] {
 
 function auditStrictFileLayout(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_file_layout ?? []) {
-		for (const file of entry.present ?? []) {
-			if (!fs.existsSync(path.join(repoRoot, file))) errors.push(`${file}: required file missing (${entry.reason})`);
+	for (const entry of manifest.strict_file_layout) {
+		if (entry.present !== undefined) {
+			for (const file of entry.present) {
+				if (!fs.existsSync(path.join(repoRoot, file))) errors.push(`${file}: required file missing (${entry.reason})`);
+			}
 		}
-		for (const file of entry.absent ?? []) {
-			if (fs.existsSync(path.join(repoRoot, file))) errors.push(`${file}: retired file still exists (${entry.reason})`);
+		if (entry.absent !== undefined) {
+			for (const file of entry.absent) {
+				if (fs.existsSync(path.join(repoRoot, file))) errors.push(`${file}: retired file still exists (${entry.reason})`);
+			}
 		}
 	}
 	return errors;
@@ -1360,7 +1290,7 @@ function auditStrictFileLayout(manifest: Manifest): string[] {
 
 function auditStrictFilePairParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_file_pair_parity ?? []) {
+	for (const entry of manifest.strict_file_pair_parity) {
 		const tsPath = path.join(repoRoot, entry.ts);
 		const tsBase = path.basename(entry.ts, '.ts');
 		if (!fs.existsSync(tsPath)) {
@@ -1386,7 +1316,7 @@ function auditStrictFilePairParity(manifest: Manifest): string[] {
 			}
 		}
 	}
-	for (const entry of manifest.strict_generated_ts_parity_exclusions ?? noGeneratedTsParityExclusions) {
+	for (const entry of manifest.strict_generated_ts_parity_exclusions) {
 		const tsPath = path.join(repoRoot, entry.ts);
 		const generatorPath = path.join(repoRoot, entry.generator);
 		if (!fs.existsSync(tsPath)) {
@@ -1443,7 +1373,7 @@ function cppStringArrayLiteralItems(file: string, symbol: string): string[] | nu
 
 function auditStrictSaveStateSchemaParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_save_state_schema_parity ?? []) {
+	for (const entry of manifest.strict_save_state_schema_parity) {
 		const tsItems = tsStringArrayLiteralItems(entry.ts, entry.symbol);
 		if (!tsItems) {
 			errors.push(`${entry.ts}: save-state schema ${entry.symbol} missing`);
@@ -1465,26 +1395,34 @@ function auditStrictSaveStateSchemaParity(manifest: Manifest): string[] {
 	return errors;
 }
 
-function classify(file: string, manifest: Manifest, core: Set<string>): ClassifiedFile | null {
+function classify(file: string, manifest: Manifest, generatedTsFiles: ReadonlySet<string>): ClassifiedFile | null {
 	const pattern = matchPattern(file, manifest.patterns);
 	if (pattern) return { file, category: pattern.category, reason: pattern.reason };
-	if (core.has(file)) return { file, category: 'core', reason: 'reachable_from_core_root_or_must_have_cpp' };
+	if (hasExactCppPeer(file)) return { file, category: 'core', reason: 'physical_ts_cpp_file_pair' };
+	if (generatedTsFiles.has(file)) return { file, category: 'core', reason: 'generated_ts_native_specialization_pair' };
 	if (isBarrelFile(file)) return { file, category: 'barrel', reason: 'export_or_type_only_barrel' };
 	return null;
 }
 
 function main(): void {
 	const manifest = readJsonManifest();
-	const manifestConflicts = manifestCoreScopeConflicts(manifest);
 	const files: string[] = [];
 	listTsFiles(path.join(repoRoot, sourceRoot), files);
 	files.sort();
-	const graph = buildImportGraph(files);
-	const core = collectCoreReachable(manifest, graph);
+	const cppFiles: string[] = [];
+	listCppFiles(path.join(repoRoot, cppRoot), cppFiles);
+	cppFiles.sort();
+	const generatedTsFiles = new Set(manifest.strict_generated_ts_parity_exclusions.map((entry) => entry.ts));
+	const manifestPatternErrors = auditManifestPatterns(manifest.patterns, files, hasExactCppPeer);
+	const cppPatternErrors = auditManifestPatterns(
+		manifest.cpp_patterns,
+		cppFiles,
+		(file) => fs.existsSync(path.join(repoRoot, tsEquivalentForCppMachineFile(file))),
+	);
 	const classified: ClassifiedFile[] = [];
 	const unclassified: string[] = [];
 	for (const file of files) {
-		const entry = classify(file, manifest, core);
+		const entry = classify(file, manifest, generatedTsFiles);
 		if (entry) classified.push(entry);
 		else unclassified.push(file);
 	}
@@ -1492,7 +1430,7 @@ function main(): void {
 	const missing: string[] = [];
 	const fake: string[] = [];
 	const cppMissingTs: string[] = [];
-	const cppMissingTsExclusions = new Set((manifest.cpp_missing_ts_exclusions ?? []).map(entry => entry.cpp));
+	const mappedCppStems = mappedCppModuleStems(manifest);
 	const strictRuntimeSymbolParityErrors = auditStrictRuntimeSymbolParity(manifest);
 	const strictRuntimeShapeParityErrors = auditStrictRuntimeShapeParity(manifest);
 	const strictRuntimeMethodParityErrors = auditStrictRuntimeMethodParity(manifest);
@@ -1510,6 +1448,7 @@ function main(): void {
 	);
 	for (const entry of classified) {
 		if (entry.category !== 'core') continue;
+		if (generatedTsFiles.has(entry.file)) continue;
 		const equivalents = equivalentPaths(entry.file);
 		const existing = equivalents.filter((file) => fs.existsSync(path.join(repoRoot, file)));
 		if (existing.length === 0) {
@@ -1521,14 +1460,12 @@ function main(): void {
 		}
 	}
 
-	const cppFiles: string[] = [];
-	listCppMachineFiles(path.join(repoRoot, cppRoot, 'machine'), cppFiles);
-	cppFiles.sort();
 	for (const file of cppFiles) {
 		const equivalent = tsEquivalentForCppMachineFile(file);
-		if (!fs.existsSync(path.join(repoRoot, equivalent)) && !cppMissingTsExclusions.has(file)) {
-			cppMissingTs.push(`${file} -> ${equivalent}`);
-		}
+		if (fs.existsSync(path.join(repoRoot, equivalent))) continue;
+		if (mappedCppStems.has(moduleStem(file))) continue;
+		if (matchPattern(file, manifest.cpp_patterns) !== null) continue;
+		cppMissingTs.push(`${file} -> ${equivalent} or a strict_file_pair_parity mapping`);
 	}
 
 	const counts = new Map<Category, number>();
@@ -1538,10 +1475,15 @@ function main(): void {
 	}
 
 	let hasErrors = false;
-	if (manifestConflicts.length > 0) {
+	if (manifestPatternErrors.length > 0) {
 		hasErrors = true;
-		console.error(`\nManifest core-scope conflicts (${manifestConflicts.length}):`);
-		for (const item of manifestConflicts) console.error(`  ${item}`);
+		console.error(`\nTS parity exclusion errors (${manifestPatternErrors.length}):`);
+		for (const item of manifestPatternErrors) console.error(`  ${item}`);
+	}
+	if (cppPatternErrors.length > 0) {
+		hasErrors = true;
+		console.error(`\nC++ parity exclusion errors (${cppPatternErrors.length}):`);
+		for (const item of cppPatternErrors) console.error(`  ${item}`);
 	}
 	if (unclassified.length > 0) {
 		hasErrors = true;
@@ -1560,7 +1502,7 @@ function main(): void {
 	}
 	if (cppMissingTs.length > 0) {
 		hasErrors = true;
-		console.error(`\nMachine C++ files missing exact TS equivalents (${cppMissingTs.length}):`);
+		console.error(`\nC++ parity sources missing TS equivalents (${cppMissingTs.length}):`);
 		for (const item of cppMissingTs) console.error(`  ${item}`);
 	}
 	if (strictRuntimeSymbolParityErrors.length > 0) {
