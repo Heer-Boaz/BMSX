@@ -7,7 +7,6 @@ local update_method<const> = timeline_playback.update_method
 local playback_mode<const> = timeline_playback.mode
 local playback_once<const> = playback_mode.once
 local playback_loop<const> = playback_mode.loop
-local playback_pingpong<const> = playback_mode.pingpong
 local playback_boundary<const> = timeline_playback.boundary
 local boundary_none<const> = playback_boundary.none
 local boundary_loop<const> = playback_boundary.loop
@@ -70,88 +69,9 @@ local range<const> = function(frame_count)
 	}
 end
 
-local advance_internal<const> = function(self, owner, preserve_elapsed)
-	local program<const> = self.program
-	local previous_frame<const> = self.head
-	local previous_time_ms<const> = self.position_ms
-	local initial<const> = previous_frame == timelinestart_index
-	local traversal_direction<const> = program.playback_mode == playback_pingpong and self.direction or 1
-	local current_frame = previous_frame + (initial and 1 or traversal_direction)
-	local sample = true
-	local at_boundary = false
-	local boundary = boundary_none
-	local wrapped = false
-	local last_index<const> = program.last_frame
-	if current_frame < 0 then
-		current_frame = 0
-		self.direction = 1
-		at_boundary = true
-		boundary = boundary_turn
-	elseif current_frame > last_index then
-		at_boundary = true
-		if program.playback_mode == playback_loop then
-			current_frame = 0
-			boundary = boundary_loop
-			wrapped = true
-			self.direction = 1
-		elseif program.playback_mode == playback_pingpong then
-			current_frame = last_index
-			boundary = boundary_turn
-			if last_index > 0 then
-				self.direction = -1
-			end
-			sample = previous_frame ~= current_frame
-		else
-			current_frame = last_index
-			sample = previous_frame ~= current_frame
-			self.ended = true
-			self.direction = 1
-		end
-	end
-	if previous_frame == current_frame and not at_boundary then
-		return nil
-	end
-	local time_ms
-	if initial or wrapped then
-		time_ms = 0
-	elseif at_boundary and program.playback_mode ~= playback_pingpong then
-		time_ms = program.duration_ms
-	elseif current_frame == previous_frame then
-		time_ms = previous_time_ms
-	else
-		time_ms = previous_time_ms + traversal_direction * program.frame_duration
-	end
-	self.head = current_frame
-	self.position_ms = time_ms
-	if not preserve_elapsed then
-		self.frame_elapsed = 0
-	end
-	local flags = boundary
-	if sample then
-		flags = flags | sample_flag
-	end
-	if wrapped then
-		flags = flags | wrapped_flag
-		self.wrapped = true
-	end
-	if initial then
-		flags = flags | initial_flag
-	end
-	self.evaluate_play(
-		self,
-		owner,
-		previous_frame,
-		current_frame,
-		previous_time_ms,
-		time_ms,
-		traversal_direction,
-		flags
-	)
-	return self.ended
-end
-
--- Playback mode is immutable program data. Once-mode frame traversal retains
--- its own datapath instead of decoding loop and pingpong policy on every frame.
+-- Playback mode is immutable program data. Frame traversal retains one
+-- mode-specific datapath instead of decoding once, loop and pingpong policy on
+-- every frame.
 local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 	local program<const> = self.program
 	local previous_frame<const> = self.head
@@ -272,6 +192,82 @@ local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
 	)
 end
 
+local advance_frame_pingpong<const> = function(self, owner, preserve_elapsed)
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	local direction<const> = self.direction
+	if previous_frame == timelinestart_index then
+		local current_frame = 0
+		local flags = sample_flag | initial_flag
+		if current_frame > program.last_frame then
+			current_frame = program.last_frame
+			flags = initial_flag | boundary_turn
+			if current_frame ~= previous_frame then
+				flags = flags | sample_flag
+			end
+			if current_frame > 0 then
+				self.direction = -1
+			end
+		end
+		self.head = current_frame
+		self.position_ms = 0
+		if not preserve_elapsed then
+			self.frame_elapsed = 0
+		end
+		self.evaluate_play(
+			self,
+			owner,
+			previous_frame,
+			current_frame,
+			previous_time_ms,
+			0,
+			direction,
+			flags
+		)
+		return
+	end
+	local current_frame = previous_frame + direction
+	local time_ms
+	local flags
+	if current_frame < 0 then
+		current_frame = 0
+		self.direction = 1
+		flags = sample_flag | boundary_turn
+		time_ms = previous_time_ms
+	elseif current_frame > program.last_frame then
+		current_frame = program.last_frame
+		flags = boundary_turn
+		if current_frame ~= previous_frame then
+			time_ms = previous_time_ms + direction * program.frame_duration
+			flags = flags | sample_flag
+		else
+			time_ms = previous_time_ms
+		end
+		if current_frame > 0 then
+			self.direction = -1
+		end
+	else
+		time_ms = previous_time_ms + direction * program.frame_duration
+		flags = sample_flag
+	end
+	self.head = current_frame
+	self.position_ms = time_ms
+	if not preserve_elapsed then
+		self.frame_elapsed = 0
+	end
+	self.evaluate_play(
+		self,
+		owner,
+		previous_frame,
+		current_frame,
+		previous_time_ms,
+		time_ms,
+		direction,
+		flags
+	)
+end
+
 local select_frame_advance<const> = function(program)
 	if program.playback_mode == playback_once then
 		return advance_frame_once
@@ -279,7 +275,7 @@ local select_frame_advance<const> = function(program)
 	if program.playback_mode == playback_loop then
 		return advance_frame_loop
 	end
-	return advance_internal
+	return advance_frame_pingpong
 end
 
 -- Entering or positioning continuous playback publishes frame zero once. Each
