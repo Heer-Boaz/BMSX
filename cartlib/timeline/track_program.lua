@@ -5,6 +5,8 @@ local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluato
 
 -- Track definitions are classified and specialized once. Runtime evaluation
 -- consumes these dense phase programs without inspecting authored track kinds.
+-- Sample and wave definitions are fully lowered into their value-runner factory
+-- and are not retained in the length-dependent track program.
 local track_program<const> = {}
 local empty_defs<const> = {}
 local empty_event_lane<const> = {
@@ -47,7 +49,6 @@ local empty_steps<const> = {
 	time_track_count = 0,
 }
 local empty_prepared<const> = {
-	sample_tracks = {},
 	sample_track_count = 0,
 	value_track_count = 0,
 	value_runner_factory = nil,
@@ -220,7 +221,6 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			sample_tracks[#sample_tracks + 1] = compile_sample_track(track, binding_index_by_id)
 		end
 	end
-	prepared.sample_tracks = sample_tracks
 	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #scalar_defs
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
@@ -230,7 +230,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.has_evaluation_callbacks = has_evaluation_callbacks
 	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
 	if prepared.value_track_count > 0 then
-		prepared.value_runner_factory = timeline_track_evaluator.compile_values(prepared)
+		prepared.value_runner_factory = timeline_track_evaluator.compile_values(prepared, sample_tracks)
 	end
 	return prepared
 end

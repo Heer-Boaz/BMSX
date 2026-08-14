@@ -480,12 +480,11 @@ local sample_time_step_tracks<const> = function(entry, steps, time_ms, params, e
 	position_time_step_cursor(entry, steps, time_ms)
 end
 
-function track_evaluator.compile_values(program)
+function track_evaluator.compile_values(program, sample_tracks)
 	local has_frame_steps<const> = program.has_frame_steps
 	local has_time_steps<const> = program.has_time_steps
 	local scalar_program<const> = program.scalar_program
 	local has_scalar_channels<const> = scalar_program.track_count > 0
-	local sample_tracks<const> = program.sample_tracks
 	local has_sample_tracks<const> = #sample_tracks > 0
 	local has_primary_sample_binding = false
 	local has_secondary_sample_binding = false
@@ -493,8 +492,11 @@ function track_evaluator.compile_values(program)
 	local has_sin_tracks = false
 	local has_wave_tracks = false
 	local has_sample_params = false
+	local sample_functions
+	local sample_function_index_by_value
 	for index = 1, #sample_tracks do
 		local track<const> = sample_tracks[index]
+		local sample_function
 		if track.binding_index == 1 then
 			has_primary_sample_binding = true
 		else
@@ -510,8 +512,23 @@ function track_evaluator.compile_values(program)
 			else
 				has_sin_tracks = true
 			end
+			sample_function = track.ease
 		else
 			has_sample_params = true
+			sample_function = track.apply
+		end
+		if sample_function ~= nil then
+			if sample_functions == nil then
+				sample_functions = {}
+				sample_function_index_by_value = {}
+			end
+			local function_index = sample_function_index_by_value[sample_function]
+			if function_index == nil then
+				function_index = #sample_functions + 1
+				sample_functions[function_index] = sample_function
+				sample_function_index_by_value[sample_function] = function_index
+			end
+			track.function_index = function_index
 		end
 	end
 	local factory<const> = compile_syntax(
@@ -530,16 +547,17 @@ function track_evaluator.compile_values(program)
 			wrapped_flag = wrapped_flag,
 			reset_step_flags = reset_step_flags,
 			sample_tracks = sample_tracks,
+			sample_functions = sample_functions,
+			tau = tau,
 		}),
 		'[timeline.track_values]',
 		{
 			apply_step_bucket = apply_step_bucket,
 			sample_step_tracks = sample_step_tracks,
 			sample_time_step_tracks = sample_time_step_tracks,
-			sample_tracks = sample_tracks,
+			sample_functions = sample_functions,
 			pingpong01 = pingpong01,
 			sin = sin,
-			tau = tau,
 		}
 	)()
 	return function(tracks)

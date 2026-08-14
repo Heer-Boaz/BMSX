@@ -1,5 +1,7 @@
 -- Admission-only lowering from cooked track capabilities to canonical firmware
 -- syntax. Runtime evaluation contains only the selected traversal phases.
+-- Authored wave scalars become literal operands; equal callback and easing
+-- identities share one captured function.
 local syntax_factory<const> = lua_compiler.syntax_factory
 local step_track_syntax<const> = require('cartlib/timeline/step_track_syntax')
 
@@ -22,16 +24,16 @@ local if_clause<const> = syntax_factory.if_clause
 local if_statement<const> = syntax_factory.if_statement
 local return_statement<const> = syntax_factory.return_statement
 
-local sample_name<const> = function(prefix, index)
-	return prefix .. index
+local sample_function_name<const> = function(index)
+	return 'sample_function_' .. index
 end
 
 local emit_dependency_captures<const> = function(statements, values)
 	step_track_syntax.emit_dependency_captures(statements, values)
-	if values.has_sample_tracks then
+	if values.sample_functions ~= nil then
 		statements[#statements + 1] = local_statement(
-			identifier('sample_tracks'),
-			identifier('sample_tracks'),
+			identifier('sample_functions'),
+			identifier('sample_functions'),
 			true
 		)
 	end
@@ -48,58 +50,6 @@ local emit_dependency_captures<const> = function(statements, values)
 			identifier('sin'),
 			true
 		)
-		statements[#statements + 1] = local_statement(
-			identifier('tau'),
-			identifier('tau'),
-			true
-		)
-	end
-end
-
-local sample_track_expression<const> = function(index)
-	return index_expression(identifier('sample_tracks'), numeric_literal(index))
-end
-
-local emit_sample_track_captures<const> = function(statements, tracks)
-	for index = 1, #tracks do
-		local track<const> = tracks[index]
-		if track.kind == 'sample' then
-			statements[#statements + 1] = local_statement(
-				identifier(sample_name('sample_callback_', index)),
-				member_expression(sample_track_expression(index), 'apply'),
-				true
-			)
-		else
-			if track.base_param == nil then
-				statements[#statements + 1] = local_statement(
-					identifier(sample_name('sample_base_', index)),
-					member_expression(sample_track_expression(index), 'base'),
-					true
-				)
-			end
-			statements[#statements + 1] = local_statement(
-				identifier(sample_name('sample_amp_', index)),
-				member_expression(sample_track_expression(index), 'amp'),
-				true
-			)
-			statements[#statements + 1] = local_statement(
-				identifier(sample_name('sample_phase_', index)),
-				member_expression(sample_track_expression(index), 'phase'),
-				true
-			)
-			statements[#statements + 1] = local_statement(
-				identifier(sample_name('sample_period_inv_', index)),
-				member_expression(sample_track_expression(index), 'period_inv'),
-				true
-			)
-			if track.ease ~= nil then
-				statements[#statements + 1] = local_statement(
-					identifier(sample_name('sample_ease_', index)),
-					member_expression(sample_track_expression(index), 'ease'),
-					true
-				)
-			end
-		end
 	end
 end
 
@@ -110,11 +60,11 @@ local sample_target<const> = function(track)
 	return index_expression(identifier('bindings'), numeric_literal(track.binding_index))
 end
 
-local emit_sample_track<const> = function(statements, track, index)
+local emit_sample_track<const> = function(statements, track, tau)
 	local target<const> = sample_target(track)
 	if track.kind == 'sample' then
 		statements[#statements + 1] = call_statement(call_expression(
-			identifier(sample_name('sample_callback_', index)),
+			identifier(sample_function_name(track.function_index)),
 			{
 				target,
 				identifier('params'),
@@ -129,9 +79,9 @@ local emit_sample_track<const> = function(statements, track, index)
 		binary_expression(
 			syntax.binary_multiply,
 			identifier('time_seconds'),
-			identifier(sample_name('sample_period_inv_', index))
+			numeric_literal(track.period_inv)
 		),
-		identifier(sample_name('sample_phase_', index))
+		numeric_literal(track.phase)
 	)
 	if track.wave == 'pingpong' then
 		statements[#statements + 1] = assignment_statement(
@@ -149,7 +99,7 @@ local emit_sample_track<const> = function(statements, track, index)
 						binary_expression(
 							syntax.binary_multiply,
 							wave_position,
-							identifier('tau')
+							numeric_literal(tau)
 						),
 					}),
 					numeric_literal(1)
@@ -162,14 +112,14 @@ local emit_sample_track<const> = function(statements, track, index)
 		statements[#statements + 1] = assignment_statement(
 			identifier('wave_value'),
 			call_expression(
-				identifier(sample_name('sample_ease_', index)),
+				identifier(sample_function_name(track.function_index)),
 				{ identifier('wave_value') }
 			)
 		)
 	end
 	local base
 	if track.base_param == nil then
-		base = identifier(sample_name('sample_base_', index))
+		base = numeric_literal(track.base)
 	else
 		base = index_expression(identifier('params'), string_literal(track.base_param))
 	end
@@ -189,7 +139,7 @@ local emit_sample_track<const> = function(statements, track, index)
 					),
 					numeric_literal(2)
 				),
-				identifier(sample_name('sample_amp_', index))
+				numeric_literal(track.amp)
 			)
 		)
 	)
@@ -234,7 +184,7 @@ local emit_sample<const> = function(statements, values)
 		body[#body + 1] = local_statement(identifier('wave_value'), nil, false)
 	end
 	for index = 1, #values.sample_tracks do
-		emit_sample_track(body, values.sample_tracks[index], index)
+		emit_sample_track(body, values.sample_tracks[index], values.tau)
 	end
 	statements[#statements + 1] = if_statement({
 		if_clause(
@@ -280,7 +230,16 @@ end
 function track_evaluator_syntax.build(values)
 	local statements<const> = {}
 	emit_dependency_captures(statements, values)
-	emit_sample_track_captures(statements, values.sample_tracks)
+	local sample_functions<const> = values.sample_functions
+	if sample_functions ~= nil then
+		for index = 1, #sample_functions do
+			statements[#statements + 1] = local_statement(
+				identifier(sample_function_name(index)),
+				index_expression(identifier('sample_functions'), numeric_literal(index)),
+				true
+			)
+		end
+	end
 	local factory_body<const> = {}
 	if values.has_frame_steps or values.has_time_steps then
 		factory_body[#factory_body + 1] = local_statement(
