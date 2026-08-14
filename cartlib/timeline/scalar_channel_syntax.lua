@@ -9,6 +9,12 @@ local track_list_names<const> = {
 	'linear_time_tracks',
 	'cubic_time_tracks',
 }
+local single_track_names<const> = {
+	linear_tracks = 'linear_keys',
+	cubic_tracks = 'cubic_keys',
+	linear_time_tracks = 'linear_time_keys',
+	cubic_time_tracks = 'cubic_time_keys',
+}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
@@ -316,11 +322,7 @@ local emit_track_sample<const> = function(statements, track, position_key, cubic
 	})
 end
 
-local emit_track<const> = function(statements, track_list_name, track_index, track, position_key, cubic)
-	local source_keys<const> = index_expression(
-		identifier(track_list_name),
-		numeric_literal(track_index)
-	)
+local emit_track<const> = function(statements, source_keys, track, position_key, cubic)
 	statements[#statements + 1] = assignment_statement(
 		identifier('keys'),
 		source_keys
@@ -351,8 +353,22 @@ local emit_track<const> = function(statements, track_list_name, track_index, tra
 end
 
 local emit_tracks<const> = function(statements, track_list_name, tracks, position_key, cubic)
-	for track_index = 1, #tracks do
-		emit_track(statements, track_list_name, track_index, tracks[track_index], position_key, cubic)
+	local track_count<const> = #tracks
+	for track_index = 1, track_count do
+		local source_keys = identifier(single_track_names[track_list_name])
+		if track_count > 1 then
+			source_keys = index_expression(
+				identifier(track_list_name),
+				numeric_literal(track_index)
+			)
+		end
+		emit_track(
+			statements,
+			source_keys,
+			tracks[track_index],
+			position_key,
+			cubic
+		)
 	end
 end
 
@@ -424,7 +440,17 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 	local factory_body<const> = {}
 	for index = 1, #track_list_names do
 		local track_list_name<const> = track_list_names[index]
-		if #channels[track_list_name] > 0 then
+		local track_count<const> = #channels[track_list_name]
+		if track_count == 1 then
+			factory_body[#factory_body + 1] = local_statement(
+				identifier(single_track_names[track_list_name]),
+				index_expression(
+					member_expression(identifier('source_channels'), track_list_name),
+					numeric_literal(1)
+				),
+				true
+			)
+		elseif track_count > 1 then
 			factory_body[#factory_body + 1] = local_statement(
 				identifier(track_list_name),
 				member_expression(identifier('source_channels'), track_list_name),

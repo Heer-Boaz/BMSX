@@ -1,13 +1,14 @@
 -- Numeric curve channels own their compiled segment representation. Their
 -- shape-specific runner factory is prepared once; length-dependent channels
 -- are bound once when a definitive frame program is compiled. Direct property
--- lanes retain their key arrays directly; equal callback identities share one
--- captured function. Binding selection and property paths are encoded in the
--- runner. Channels with more than two keys retain one current segment per
--- active timeline entry; each shared key carries an exclusive segment end, so
--- evaluation only searches again when traversal leaves that range. Generic
--- step values remain track-program data because they may carry non-numeric cart
--- values.
+-- lanes retain their key arrays directly; an interpolation family containing
+-- one track binds that lane without a containing family lookup. Equal callback
+-- identities share one captured function. Binding selection and property paths
+-- are encoded in the runner. Channels with more than two keys retain one current
+-- segment per active timeline entry. Each shared key carries an exclusive
+-- segment end, so evaluation only searches again when traversal leaves that
+-- range. Generic step values remain track-program data because they may carry
+-- non-numeric cart values.
 local scalar_channel_syntax<const> = require('cartlib/timeline/scalar_channel_syntax')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
