@@ -1,6 +1,7 @@
 -- Admission-only lowering from a cooked timeline shape to its method-specific
 -- evaluator. Playback does not branch over absent track families.
 local syntax_factory<const> = lua_compiler.syntax_factory
+local event_evaluator_syntax<const> = require('cartlib/timeline/event_evaluator_syntax')
 
 local evaluation_program_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
@@ -57,13 +58,7 @@ local build_dependency_captures<const> = function(values)
 			true
 		)
 	end
-	if values.has_play_events or values.has_seek_events or values.has_scrub_events then
-		statements[#statements + 1] = local_statement(
-			identifier('bind_events'),
-			identifier('bind_events'),
-			true
-		)
-	end
+	event_evaluator_syntax.capture_dependencies(statements, values)
 	if values.has_evaluation_context then
 		statements[#statements + 1] = local_statement(
 			identifier('write_evaluation_context'),
@@ -82,6 +77,7 @@ end
 
 local build_program_captures<const> = function(values)
 	local statements<const> = {}
+	event_evaluator_syntax.capture_program(statements, values)
 	if values.has_values then
 		statements[#statements + 1] = local_statement(
 			identifier('play_value_runner'),
@@ -125,36 +121,6 @@ local build_program_captures<const> = function(values)
 		statements[#statements + 1] = local_statement(
 			identifier('evaluate_position_tags'),
 			call_expression(identifier('bind_position_tags'), { identifier('program') }),
-			true
-		)
-	end
-	if values.has_play_events then
-		statements[#statements + 1] = local_statement(
-			identifier('emit_play_events'),
-			call_expression(identifier('bind_events'), {
-				identifier('program'),
-				numeric_literal(values.play_method),
-			}),
-			true
-		)
-	end
-	if values.has_seek_events then
-		statements[#statements + 1] = local_statement(
-			identifier('emit_jump_events'),
-			call_expression(identifier('bind_events'), {
-				identifier('program'),
-				numeric_literal(values.jump_method),
-			}),
-			true
-		)
-	end
-	if values.has_scrub_events then
-		statements[#statements + 1] = local_statement(
-			identifier('emit_scrub_events'),
-			call_expression(identifier('bind_events'), {
-				identifier('program'),
-				numeric_literal(values.scrub_method),
-			}),
 			true
 		)
 	end
@@ -349,28 +315,6 @@ local emit_sequences<const> = function(statements, values, evaluator_name, updat
 	}))
 end
 
-local emit_events<const> = function(statements, values, evaluator_name, update_method)
-	local emitter
-	if evaluator_name == 'play' and values.has_play_events then
-		emitter = 'emit_play_events'
-	elseif update_method == values.jump_method and values.has_seek_events then
-		emitter = 'emit_jump_events'
-	elseif update_method == values.scrub_method and values.has_scrub_events then
-		emitter = 'emit_scrub_events'
-	else
-		return
-	end
-	statements[#statements + 1] = call_statement(call_expression(identifier(emitter), {
-		identifier('owner'),
-		identifier('previous_frame'),
-		identifier('frame'),
-		identifier('previous_time_ms'),
-		identifier('time_ms'),
-		identifier('direction'),
-		identifier('flags'),
-	}))
-end
-
 local build_evaluator_body<const> = function(values, evaluator_name, update_method)
 	local statements<const> = {}
 	if values.has_evaluation_context then
@@ -388,7 +332,7 @@ local build_evaluator_body<const> = function(values, evaluator_name, update_meth
 	if values.has_subsequences then
 		emit_sequences(statements, values, evaluator_name, update_method)
 	end
-	emit_events(statements, values, evaluator_name, update_method)
+	event_evaluator_syntax.emit(statements, values, evaluator_name, update_method)
 	return statements
 end
 

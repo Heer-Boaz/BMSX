@@ -1,4 +1,5 @@
 local timeline_apply<const> = require('cartlib/timeline/apply')
+local event_lane_shape<const> = require('cartlib/timeline/event_lane_shape')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
@@ -54,8 +55,9 @@ local empty_prepared<const> = {
 	value_runner_factory = nil,
 	has_frame_steps = false,
 	has_time_steps = false,
-	has_seek_events = false,
-	has_scrub_events = false,
+	play_event_shape = 0,
+	seek_event_shape = 0,
+	scrub_event_shape = 0,
 	has_evaluation_callbacks = false,
 	event_defs = empty_defs,
 	tag_defs = empty_defs,
@@ -162,8 +164,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local scalar_defs<const> = {}
 	local has_frame_steps = false
 	local has_time_steps = false
-	local has_seek_events = false
-	local has_scrub_events = false
+	local play_event_shape = 0
+	local seek_event_shape = 0
+	local scrub_event_shape = 0
 	local has_evaluation_callbacks = false
 	local prepared<const> = {
 		event_defs = event_defs,
@@ -175,11 +178,33 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		local kind<const> = track.kind
 		if kind == 'event' then
 			event_defs[#event_defs + 1] = track
-			if track.fire_on_seek then
-				has_seek_events = true
-			end
-			if track.fire_on_scrub then
-				has_scrub_events = true
+			local fire_on_seek<const> = track.fire_on_seek
+			local fire_on_scrub<const> = track.fire_on_scrub
+			local keys<const> = track.keys
+			for key_index = 1, #keys do
+				local key<const> = keys[key_index]
+				local admits_forward<const> = event_forward_directions[key.direction]
+				local admits_backward<const> = event_backward_directions[key.direction]
+				local forward_bit<const> = key.time_ms ~= nil
+					and event_lane_shape.forward_time
+					or event_lane_shape.forward_frame
+				local backward_bit<const> = key.time_ms ~= nil
+					and event_lane_shape.backward_time
+					or event_lane_shape.backward_frame
+				local key_shape = 0
+				if admits_forward then
+					key_shape = forward_bit
+				end
+				if admits_backward then
+					key_shape = key_shape | backward_bit
+				end
+				play_event_shape = play_event_shape | key_shape
+				if fire_on_seek then
+					seek_event_shape = seek_event_shape | key_shape
+				end
+				if fire_on_scrub then
+					scrub_event_shape = scrub_event_shape | key_shape
+				end
 			end
 		elseif kind == 'tag' then
 			tag_defs[#tag_defs + 1] = track
@@ -225,8 +250,9 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
 	prepared.has_time_steps = has_time_steps
-	prepared.has_seek_events = has_seek_events
-	prepared.has_scrub_events = has_scrub_events
+	prepared.play_event_shape = play_event_shape
+	prepared.seek_event_shape = seek_event_shape
+	prepared.scrub_event_shape = scrub_event_shape
 	prepared.has_evaluation_callbacks = has_evaluation_callbacks
 	prepared.scalar_program = scalar_channel.prepare(scalar_defs)
 	if prepared.value_track_count > 0 then
@@ -296,10 +322,12 @@ local compile_events<const> = function(prepared, length)
 	if #event_defs == 0 then
 		return empty_events
 	end
+	local has_seek_events<const> = prepared.seek_event_shape ~= 0
+	local has_scrub_events<const> = prepared.scrub_event_shape ~= 0
 	local events<const> = {
 		new_directional_events(),
-		prepared.has_seek_events and new_directional_events() or empty_directional_events,
-		prepared.has_scrub_events and new_directional_events() or empty_directional_events,
+		has_seek_events and new_directional_events() or empty_directional_events,
+		has_scrub_events and new_directional_events() or empty_directional_events,
 	}
 	local order = 0
 	for track_index = 1, #event_defs do
@@ -330,10 +358,10 @@ local compile_events<const> = function(prepared, length)
 		end
 	end
 	finalize_directional_events(events[play_event_index])
-	if prepared.has_seek_events then
+	if has_seek_events then
 		finalize_directional_events(events[seek_event_index])
 	end
-	if prepared.has_scrub_events then
+	if has_scrub_events then
 		finalize_directional_events(events[scrub_event_index])
 	end
 	local play_events<const> = events[play_event_index]

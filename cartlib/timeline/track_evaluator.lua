@@ -73,25 +73,7 @@ local first_time_at<const> = function(records, count, time_ms)
 	return low
 end
 
-local emit_event_bucket<const> = function(lane, owner, frame, direction)
-	local bucket<const> = lane.by_frame[frame]
-	if bucket == nil then
-		return
-	end
-	if direction > 0 then
-		for index = 1, #bucket do
-			local key<const> = bucket[index]
-			owner.events:emit(key.event, key.payload)
-		end
-	else
-		for index = #bucket, 1, -1 do
-			local key<const> = bucket[index]
-			owner.events:emit(key.event, key.payload)
-		end
-	end
-end
-
-local emit_event_range<const> = function(lane, owner, previous, current, direction, include_previous)
+function track_evaluator.emit_event_range(lane, owner, previous, current, direction, include_previous)
 	local keys<const> = lane.keys
 	local count<const> = lane.count
 	if direction > 0 then
@@ -121,7 +103,7 @@ local emit_event_range<const> = function(lane, owner, previous, current, directi
 	end
 end
 
-local emit_time_event_range<const> = function(lane, owner, previous, current, direction, include_previous)
+function track_evaluator.emit_time_event_range(lane, owner, previous, current, direction, include_previous)
 	local keys<const> = lane.time_keys
 	local count<const> = lane.time_count
 	if direction > 0 then
@@ -157,53 +139,6 @@ local emit_time_event_range<const> = function(lane, owner, previous, current, di
 		for index = first, finish, -1 do
 			local key<const> = keys[index]
 			owner.events:emit(key.event, key.payload)
-		end
-	end
-end
-
-function track_evaluator.bind_events(program, method)
-	local events<const> = program.tracks.events[method + 1]
-	local last_frame<const> = program.last_frame
-	local duration_ms<const> = program.duration_ms
-	return function(owner, previous, current, previous_time_ms, time_ms, direction, flags)
-		local lane = events.backward
-		if direction > 0 then
-			lane = events.forward
-		end
-		if flags & wrapped_flag ~= 0 then
-			if direction > 0 then
-				emit_event_range(lane, owner, previous, last_frame, 1, flags & initial_flag ~= 0)
-				emit_event_range(lane, owner, 0, current, 1, true)
-			else
-				emit_event_range(lane, owner, previous, 0, -1, flags & initial_flag ~= 0)
-				emit_event_range(lane, owner, last_frame, current, -1, true)
-			end
-		elseif flags & initial_flag ~= 0 then
-			emit_event_range(lane, owner, previous, current, direction, true)
-		elseif previous ~= current then
-			if direction > 0 and current == previous + 1 then
-				emit_event_bucket(lane, owner, current, 1)
-			elseif direction < 0 and current == previous - 1 then
-				emit_event_bucket(lane, owner, current, -1)
-			else
-				emit_event_range(lane, owner, previous, current, direction, false)
-			end
-		end
-		if lane.time_count == 0 then
-			return
-		end
-		if flags & wrapped_flag ~= 0 then
-			if direction > 0 then
-				emit_time_event_range(lane, owner, previous_time_ms, duration_ms, 1, flags & initial_flag ~= 0)
-				emit_time_event_range(lane, owner, 0, time_ms, 1, true)
-			else
-				emit_time_event_range(lane, owner, previous_time_ms, 0, -1, flags & initial_flag ~= 0)
-				emit_time_event_range(lane, owner, duration_ms, time_ms, -1, true)
-			end
-		elseif flags & initial_flag ~= 0 then
-			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, true)
-		else
-			emit_time_event_range(lane, owner, previous_time_ms, time_ms, direction, false)
 		end
 	end
 end
