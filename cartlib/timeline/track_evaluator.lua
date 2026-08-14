@@ -11,10 +11,9 @@ local compile_syntax<const> = lua_compiler.compile_syntax
 local pingpong01<const> = easing.pingpong01
 local sin<const> = math.sin
 local tau<const> = math.pi * 2
-local evaluation_flag<const> = timeline_playback.evaluation_flag
-local sample_flag<const> = evaluation_flag.sample
-local wrapped_flag<const> = evaluation_flag.wrapped
-local initial_flag<const> = evaluation_flag.initial
+local sample_flag<const> = timeline_playback.evaluation_flag.sample
+local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
+local initial_flag<const> = timeline_playback.evaluation_flag.initial
 local reset_step_flags<const> = wrapped_flag | initial_flag
 
 local first_frame_after<const> = function(records, count, frame)

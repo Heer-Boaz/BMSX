@@ -73,10 +73,9 @@ track_program.empty = {
 }
 local event_forward_directions<const> = { forward = true, both = true }
 local event_backward_directions<const> = { backward = true, both = true }
-local update_method<const> = timeline_playback.update_method
-local play_event_index<const> = update_method.play + 1
-local seek_event_index<const> = update_method.jump + 1
-local scrub_event_index<const> = update_method.scrub + 1
+local play_event_index<const> = timeline_playback.update_method.play + 1
+local seek_event_index<const> = timeline_playback.update_method.jump + 1
+local scrub_event_index<const> = timeline_playback.update_method.scrub + 1
 
 local compare_key<const> = function(left, right)
 	if left.frame == right.frame then

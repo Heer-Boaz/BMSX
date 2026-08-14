@@ -4,9 +4,8 @@ local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
-local evaluation_flag<const> = timeline_playback.evaluation_flag
-local wrapped_flag<const> = evaluation_flag.wrapped
-local initial_flag<const> = evaluation_flag.initial
+local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
+local initial_flag<const> = timeline_playback.evaluation_flag.initial
 local jump_update_method<const> = timeline_playback.update_method.jump
 
 -- Nested clips retain child runtime entries, resolved binding slots and active
@@ -664,7 +663,7 @@ end
 function sequence_evaluator.sync_entry(entry, owner, time_ms)
 	local sequence<const> = entry.program.subsequences
 	if sequence.clip_count > 0 then
-		evaluate_position(sequence, entry, owner, time_ms, time_ms, timeline_playback.update_method.jump)
+		evaluate_position(sequence, entry, owner, time_ms, time_ms, jump_update_method)
 	end
 end
 

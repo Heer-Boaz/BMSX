@@ -9,7 +9,11 @@ local timeline_track_program<const> = require('cartlib/timeline/track_program')
 -- one mutable playback record with its resolved bindings and evaluator state,
 -- and atomically replaces this program on rebind.
 local timeline_program<const> = {}
-local playback_mode_by_name<const> = timeline_playback.mode
+local playback_mode_by_name<const> = {
+	once = timeline_playback.mode.once,
+	loop = timeline_playback.mode.loop,
+	pingpong = timeline_playback.mode.pingpong,
+}
 local empty_defs<const> = {}
 local primary_binding_ids<const> = { 'target' }
 local primary_binding_index_by_id<const> = { target = 1 }

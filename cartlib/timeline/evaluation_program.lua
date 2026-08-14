@@ -7,10 +7,9 @@ local value_runner_signature<const> = require('cartlib/timeline/value_runner_sig
 
 local evaluation_program<const> = {}
 local compile_syntax<const> = lua_compiler.compile_syntax
-local update_method<const> = timeline_playback.update_method
-local play_method<const> = update_method.play
-local jump_method<const> = update_method.jump
-local scrub_method<const> = update_method.scrub
+local play_method<const> = timeline_playback.update_method.play
+local jump_method<const> = timeline_playback.update_method.jump
+local scrub_method<const> = timeline_playback.update_method.scrub
 local sample_flag<const> = timeline_playback.evaluation_flag.sample
 local shape_values<const> = 0x001
 local shape_position_values<const> = 0x002

@@ -3,18 +3,29 @@ local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local timelinestart_index<const> = timeline_playback.start_index
-local update_method<const> = timeline_playback.update_method
-local playback_mode<const> = timeline_playback.mode
-local playback_once<const> = playback_mode.once
-local playback_loop<const> = playback_mode.loop
-local playback_boundary<const> = timeline_playback.boundary
-local boundary_none<const> = playback_boundary.none
-local boundary_loop<const> = playback_boundary.loop
-local boundary_turn<const> = playback_boundary.turn
-local evaluation_flag<const> = timeline_playback.evaluation_flag
-local sample_flag<const> = evaluation_flag.sample
-local wrapped_flag<const> = evaluation_flag.wrapped
-local initial_flag<const> = evaluation_flag.initial
+local playback_once<const> = timeline_playback.mode.once
+local playback_loop<const> = timeline_playback.mode.loop
+local boundary_none<const> = timeline_playback.boundary.none
+local boundary_loop<const> = timeline_playback.boundary.loop
+local boundary_turn<const> = timeline_playback.boundary.turn
+local sample_flag<const> = timeline_playback.evaluation_flag.sample
+local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
+local initial_flag<const> = timeline_playback.evaluation_flag.initial
+local update_method<const> = {
+	play = timeline_playback.update_method.play,
+	jump = timeline_playback.update_method.jump,
+	scrub = timeline_playback.update_method.scrub,
+}
+local playback_mode<const> = {
+	once = playback_once,
+	loop = playback_loop,
+	pingpong = timeline_playback.mode.pingpong,
+}
+local playback_boundary<const> = {
+	none = boundary_none,
+	loop = boundary_loop,
+	turn = boundary_turn,
+}
 -- Traversal publishes initial state once at this boundary. Evaluators consume
 -- the bit directly instead of rediscovering it from the frame sentinel.
 local sample_range_flags<const> = sample_flag | boundary_none
