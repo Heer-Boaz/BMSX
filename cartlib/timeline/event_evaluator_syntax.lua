@@ -47,6 +47,16 @@ local new_method_symbols<const> = function()
 end
 
 local symbols<const> = {
+	emit_event_range = generated_symbol('emit_event_range'),
+	emit_time_event_range = generated_symbol('emit_time_event_range'),
+	events = generated_symbol('timeline_events'),
+	last_frame = generated_symbol('event_last_frame'),
+	duration_ms = generated_symbol('event_duration_ms'),
+	bucket = generated_symbol('event_bucket'),
+	port = generated_symbol('event_port'),
+	emit = generated_symbol('emit_event'),
+	index = generated_symbol('event_index'),
+	key = generated_symbol('event_key'),
 	play = new_method_symbols(),
 	jump = new_method_symbols(),
 	scrub = new_method_symbols(),
@@ -56,12 +66,12 @@ local intersects<const> = function(shape, mask)
 	return shape & mask ~= 0
 end
 
-local flag_set_expression<const> = function(flag)
+local flag_set_expression<const> = function(flag, evaluation_symbols)
 	return binary_expression(
 		syntax.binary_not_equal,
 		binary_expression(
 			syntax.binary_bitwise_and,
-			identifier('flags'),
+			reference(evaluation_symbols.flags),
 			numeric_literal(flag)
 		),
 		numeric_literal(0)
@@ -70,14 +80,15 @@ end
 
 local event_range_statement<const> = function(
 	lane_symbols,
+	evaluation_symbols,
 	previous,
 	current,
 	direction,
 	include_previous
 )
-	return call_statement(call_expression(identifier('emit_event_range'), {
+	return call_statement(call_expression(reference(symbols.emit_event_range), {
 		reference(lane_symbols.lane),
-		identifier('owner'),
+		reference(evaluation_symbols.owner),
 		previous,
 		current,
 		direction,
@@ -87,27 +98,28 @@ end
 
 -- A nil time operand denotes the timeline origin. Every call creates owned AST
 -- occurrences because semantic binding annotates generated syntax in place.
-local time_operand<const> = function(name)
-	if name == nil then
+local time_operand<const> = function(symbol)
+	if symbol == nil then
 		return numeric_literal(0)
 	end
-	return identifier(name)
+	return reference(symbol)
 end
 
-local include_previous_expression<const> = function(mode, initial_flag)
+local include_previous_expression<const> = function(mode, initial_flag, evaluation_symbols)
 	if mode == include_previous_never then
 		return boolean_literal(false)
 	end
 	if mode == include_previous_always then
 		return boolean_literal(true)
 	end
-	return flag_set_expression(initial_flag)
+	return flag_set_expression(initial_flag, evaluation_symbols)
 end
 
 local singleton_time_intersection<const> = function(
 	lane_symbols,
-	previous_name,
-	current_name,
+	evaluation_symbols,
+	previous_symbol,
+	current_symbol,
 	forward,
 	include_previous,
 	initial_flag
@@ -118,7 +130,7 @@ local singleton_time_intersection<const> = function(
 	end
 	local previous_intersects = binary_expression(
 		previous_operator,
-		time_operand(previous_name),
+		time_operand(previous_symbol),
 		reference(lane_symbols.time_ms)
 	)
 	if include_previous == include_previous_initial then
@@ -129,10 +141,10 @@ local singleton_time_intersection<const> = function(
 				syntax.binary_and,
 				binary_expression(
 					syntax.binary_equal,
-					time_operand(previous_name),
+					time_operand(previous_symbol),
 					reference(lane_symbols.time_ms)
 				),
-				flag_set_expression(initial_flag)
+				flag_set_expression(initial_flag, evaluation_symbols)
 			)
 		)
 	end
@@ -140,7 +152,7 @@ local singleton_time_intersection<const> = function(
 		syntax.binary_and,
 		binary_expression(
 			forward and syntax.binary_greater_equal or syntax.binary_less_equal,
-			time_operand(current_name),
+			time_operand(current_symbol),
 			reference(lane_symbols.time_ms)
 		),
 		previous_intersects
@@ -149,8 +161,9 @@ end
 
 local time_event_range_statement<const> = function(
 	lane_symbols,
-	previous_name,
-	current_name,
+	evaluation_symbols,
+	previous_symbol,
+	current_symbol,
 	forward,
 	dynamic_direction,
 	include_previous,
@@ -159,24 +172,29 @@ local time_event_range_statement<const> = function(
 )
 	local direction_expression
 	if dynamic_direction then
-		direction_expression = identifier('direction')
+		direction_expression = reference(evaluation_symbols.direction)
 	else
 		direction_expression = numeric_literal(forward and 1 or -1)
 	end
 	if not singleton then
-		return call_statement(call_expression(identifier('emit_time_event_range'), {
+		return call_statement(call_expression(reference(symbols.emit_time_event_range), {
 			reference(lane_symbols.lane),
-			identifier('owner'),
-			time_operand(previous_name),
-			time_operand(current_name),
+			reference(evaluation_symbols.owner),
+			time_operand(previous_symbol),
+			time_operand(current_symbol),
 			direction_expression,
-			include_previous_expression(include_previous, initial_flag),
+			include_previous_expression(
+				include_previous,
+				initial_flag,
+				evaluation_symbols
+			),
 		}))
 	end
 	local intersection<const> = singleton_time_intersection(
 		lane_symbols,
-		previous_name,
-		current_name,
+		evaluation_symbols,
+		previous_symbol,
+		current_symbol,
 		forward,
 		include_previous,
 		initial_flag
@@ -187,7 +205,7 @@ local time_event_range_statement<const> = function(
 			syntax.binary_and,
 			binary_expression(
 				syntax.binary_less,
-				identifier('direction'),
+				reference(evaluation_symbols.direction),
 				numeric_literal(0)
 			),
 			intersection
@@ -198,7 +216,7 @@ local time_event_range_statement<const> = function(
 			condition,
 			block({
 				call_statement(call_expression(
-					member_expression(identifier('owner'), 'events'),
+					member_expression(reference(evaluation_symbols.owner), 'events'),
 					{
 						member_expression(reference(lane_symbols.time_key), 'event'),
 						member_expression(reference(lane_symbols.time_key), 'payload'),
@@ -210,23 +228,23 @@ local time_event_range_statement<const> = function(
 	})
 end
 
-local event_dispatch_loop<const> = function(lane_symbols, reverse)
+local event_dispatch_loop<const> = function(lane_symbols, evaluation_symbols, reverse)
 	local start_expression<const> = reverse
-		and unary_expression(syntax.unary_length, identifier('bucket'))
+		and unary_expression(syntax.unary_length, reference(symbols.bucket))
 		or numeric_literal(1)
 	local limit_expression<const> = reverse
 		and numeric_literal(1)
-		or unary_expression(syntax.unary_length, identifier('bucket'))
+		or unary_expression(syntax.unary_length, reference(symbols.bucket))
 	local step_expression = nil
 	if reverse then
 		step_expression = numeric_literal(-1)
 	end
 	return {
 		local_statement(
-			identifier('bucket'),
+			reference(symbols.bucket),
 			index_expression(
 				member_expression(reference(lane_symbols.lane), 'by_frame'),
-				identifier('frame')
+				reference(evaluation_symbols.frame)
 			),
 			true
 		),
@@ -234,38 +252,38 @@ local event_dispatch_loop<const> = function(lane_symbols, reverse)
 			if_clause(
 				binary_expression(
 					syntax.binary_not_equal,
-					identifier('bucket'),
+					reference(symbols.bucket),
 					nil_literal()
 				),
 				block({
 					local_statement(
-						identifier('event_port'),
-						member_expression(identifier('owner'), 'events'),
+						reference(symbols.port),
+						member_expression(reference(evaluation_symbols.owner), 'events'),
 						true
 					),
 					local_statement(
-						identifier('emit'),
-						member_expression(identifier('event_port'), 'emit'),
+						reference(symbols.emit),
+						member_expression(reference(symbols.port), 'emit'),
 						true
 					),
 					numeric_for_statement(
-						identifier('event_index'),
+						reference(symbols.index),
 						start_expression,
 						limit_expression,
 						step_expression,
 						block({
 							local_statement(
-								identifier('event_key'),
+								reference(symbols.key),
 								index_expression(
-									identifier('bucket'),
-									identifier('event_index')
+									reference(symbols.bucket),
+									reference(symbols.index)
 								),
 								true
 							),
-							call_statement(call_expression(identifier('emit'), {
-								identifier('event_port'),
-								member_expression(identifier('event_key'), 'event'),
-								member_expression(identifier('event_key'), 'payload'),
+							call_statement(call_expression(reference(symbols.emit), {
+								reference(symbols.port),
+								member_expression(reference(symbols.key), 'event'),
+								member_expression(reference(symbols.key), 'payload'),
 							})),
 						})
 					),
@@ -277,6 +295,7 @@ end
 
 local frame_direction_statements<const> = function(
 	lane_symbols,
+	evaluation_symbols,
 	forward,
 	wrapped_flag,
 	initial_flag
@@ -287,25 +306,27 @@ local frame_direction_statements<const> = function(
 		wrapped_ranges = {
 			event_range_statement(
 				lane_symbols,
-				identifier('previous_frame'),
-				identifier('event_last_frame'),
+				evaluation_symbols,
+				reference(evaluation_symbols.previous_frame),
+				reference(symbols.last_frame),
 				numeric_literal(1),
-				flag_set_expression(initial_flag)
+				flag_set_expression(initial_flag, evaluation_symbols)
 			),
 			event_range_statement(
 				lane_symbols,
+				evaluation_symbols,
 				numeric_literal(0),
-				identifier('frame'),
+				reference(evaluation_symbols.frame),
 				numeric_literal(1),
 				boolean_literal(true)
 			),
 		}
 		adjacent_condition = binary_expression(
 			syntax.binary_equal,
-			identifier('frame'),
+			reference(evaluation_symbols.frame),
 			binary_expression(
 				syntax.binary_add,
-				identifier('previous_frame'),
+				reference(evaluation_symbols.previous_frame),
 				numeric_literal(1)
 			)
 		)
@@ -313,15 +334,17 @@ local frame_direction_statements<const> = function(
 		wrapped_ranges = {
 			event_range_statement(
 				lane_symbols,
-				identifier('previous_frame'),
+				evaluation_symbols,
+				reference(evaluation_symbols.previous_frame),
 				numeric_literal(0),
 				numeric_literal(-1),
-				flag_set_expression(initial_flag)
+				flag_set_expression(initial_flag, evaluation_symbols)
 			),
 			event_range_statement(
 				lane_symbols,
-				identifier('event_last_frame'),
-				identifier('frame'),
+				evaluation_symbols,
+				reference(symbols.last_frame),
+				reference(evaluation_symbols.frame),
 				numeric_literal(-1),
 				boolean_literal(true)
 			),
@@ -330,15 +353,15 @@ local frame_direction_statements<const> = function(
 			syntax.binary_and,
 			binary_expression(
 				syntax.binary_less,
-				identifier('direction'),
+				reference(evaluation_symbols.direction),
 				numeric_literal(0)
 			),
 			binary_expression(
 				syntax.binary_equal,
-				identifier('frame'),
+				reference(evaluation_symbols.frame),
 				binary_expression(
 					syntax.binary_subtract,
-					identifier('previous_frame'),
+					reference(evaluation_symbols.previous_frame),
 					numeric_literal(1)
 				)
 			)
@@ -346,15 +369,19 @@ local frame_direction_statements<const> = function(
 	end
 	return {
 		if_statement({
-			if_clause(flag_set_expression(wrapped_flag), block(wrapped_ranges)),
 			if_clause(
-				flag_set_expression(initial_flag),
+				flag_set_expression(wrapped_flag, evaluation_symbols),
+				block(wrapped_ranges)
+			),
+			if_clause(
+				flag_set_expression(initial_flag, evaluation_symbols),
 				block({
 					event_range_statement(
 						lane_symbols,
-						identifier('previous_frame'),
-						identifier('frame'),
-						identifier('direction'),
+						evaluation_symbols,
+						reference(evaluation_symbols.previous_frame),
+						reference(evaluation_symbols.frame),
+						reference(evaluation_symbols.direction),
 						boolean_literal(true)
 					),
 				})
@@ -362,21 +389,26 @@ local frame_direction_statements<const> = function(
 			if_clause(
 				binary_expression(
 					syntax.binary_not_equal,
-					identifier('previous_frame'),
-					identifier('frame')
+					reference(evaluation_symbols.previous_frame),
+					reference(evaluation_symbols.frame)
 				),
 				block({
 					if_statement({
 						if_clause(
 							adjacent_condition,
-							block(event_dispatch_loop(lane_symbols, not forward))
+							block(event_dispatch_loop(
+								lane_symbols,
+								evaluation_symbols,
+								not forward
+							))
 						),
 						else_clause(block({
 							event_range_statement(
 								lane_symbols,
-								identifier('previous_frame'),
-								identifier('frame'),
-								identifier('direction'),
+								evaluation_symbols,
+								reference(evaluation_symbols.previous_frame),
+								reference(evaluation_symbols.frame),
+								reference(evaluation_symbols.direction),
 								boolean_literal(false)
 							),
 						})),
@@ -389,6 +421,7 @@ end
 
 local time_direction_statements<const> = function(
 	lane_symbols,
+	evaluation_symbols,
 	forward,
 	wrapped_flag,
 	initial_flag,
@@ -399,8 +432,9 @@ local time_direction_statements<const> = function(
 		wrapped_ranges = {
 			time_event_range_statement(
 				lane_symbols,
-				'previous_time_ms',
-				'event_duration_ms',
+				evaluation_symbols,
+				evaluation_symbols.previous_time_ms,
+				symbols.duration_ms,
 				true,
 				false,
 				include_previous_initial,
@@ -409,8 +443,9 @@ local time_direction_statements<const> = function(
 			),
 			time_event_range_statement(
 				lane_symbols,
+				evaluation_symbols,
 				nil,
-				'time_ms',
+				evaluation_symbols.time_ms,
 				true,
 				false,
 				include_previous_always,
@@ -422,7 +457,8 @@ local time_direction_statements<const> = function(
 		wrapped_ranges = {
 			time_event_range_statement(
 				lane_symbols,
-				'previous_time_ms',
+				evaluation_symbols,
+				evaluation_symbols.previous_time_ms,
 				nil,
 				false,
 				false,
@@ -432,8 +468,9 @@ local time_direction_statements<const> = function(
 			),
 			time_event_range_statement(
 				lane_symbols,
-				'event_duration_ms',
-				'time_ms',
+				evaluation_symbols,
+				symbols.duration_ms,
+				evaluation_symbols.time_ms,
 				false,
 				false,
 				include_previous_always,
@@ -444,14 +481,18 @@ local time_direction_statements<const> = function(
 	end
 	return {
 		if_statement({
-			if_clause(flag_set_expression(wrapped_flag), block(wrapped_ranges)),
 			if_clause(
-				flag_set_expression(initial_flag),
+				flag_set_expression(wrapped_flag, evaluation_symbols),
+				block(wrapped_ranges)
+			),
+			if_clause(
+				flag_set_expression(initial_flag, evaluation_symbols),
 				block({
 					time_event_range_statement(
 						lane_symbols,
-						'previous_time_ms',
-						'time_ms',
+						evaluation_symbols,
+						evaluation_symbols.previous_time_ms,
+						evaluation_symbols.time_ms,
 						forward,
 						true,
 						include_previous_always,
@@ -463,8 +504,9 @@ local time_direction_statements<const> = function(
 			else_clause(block({
 				time_event_range_statement(
 					lane_symbols,
-					'previous_time_ms',
-					'time_ms',
+					evaluation_symbols,
+					evaluation_symbols.previous_time_ms,
+					evaluation_symbols.time_ms,
 					forward,
 					true,
 					include_previous_never,
@@ -479,6 +521,7 @@ end
 local emit_directional_domain<const> = function(
 	statements,
 	method_symbols,
+	evaluation_symbols,
 	has_forward,
 	has_backward,
 	build_direction,
@@ -492,6 +535,7 @@ local emit_directional_domain<const> = function(
 	if has_forward then
 		forward_block = block(build_direction(
 			method_symbols.forward,
+			evaluation_symbols,
 			true,
 			wrapped_flag,
 			initial_flag,
@@ -501,6 +545,7 @@ local emit_directional_domain<const> = function(
 	if has_backward then
 		backward_block = block(build_direction(
 			method_symbols.backward,
+			evaluation_symbols,
 			false,
 			wrapped_flag,
 			initial_flag,
@@ -512,7 +557,7 @@ local emit_directional_domain<const> = function(
 		clauses[1] = if_clause(
 			binary_expression(
 				syntax.binary_greater,
-				identifier('direction'),
+				reference(evaluation_symbols.direction),
 				numeric_literal(0)
 			),
 			forward_block
@@ -524,7 +569,7 @@ local emit_directional_domain<const> = function(
 		clauses[1] = if_clause(
 			binary_expression(
 				syntax.binary_less_equal,
-				identifier('direction'),
+				reference(evaluation_symbols.direction),
 				numeric_literal(0)
 			),
 			backward_block
@@ -561,14 +606,14 @@ end
 function event_evaluator_syntax.capture_dependencies(statements, values)
 	if any_frame_domain(values) then
 		statements[#statements + 1] = local_statement(
-			identifier('emit_event_range'),
+			reference(symbols.emit_event_range),
 			identifier('emit_event_range'),
 			true
 		)
 	end
 	if any_multi_time_domain(values) then
 		statements[#statements + 1] = local_statement(
-			identifier('emit_time_event_range'),
+			reference(symbols.emit_time_event_range),
 			identifier('emit_time_event_range'),
 			true
 		)
@@ -611,14 +656,13 @@ end
 
 local capture_event_lanes<const> = function(
 	statements,
-	events_name,
 	method_symbols,
 	method,
 	shape
 )
 	statements[#statements + 1] = local_statement(
 		reference(method_symbols.lanes),
-		index_expression(identifier(events_name), numeric_literal(method + 1)),
+		index_expression(reference(symbols.events), numeric_literal(method + 1)),
 		true
 	)
 	capture_direction_lane(
@@ -639,35 +683,36 @@ local capture_event_lanes<const> = function(
 	)
 end
 
-function event_evaluator_syntax.capture_program(statements, values)
+function event_evaluator_syntax.capture_program(statements, values, evaluation_symbols)
 	local has_frame<const> = any_frame_domain(values)
 	local has_time<const> = any_time_domain(values)
 	if not has_frame and not has_time then
 		return
 	end
-	local events_name<const> = 'timeline_events'
 	statements[#statements + 1] = local_statement(
-		identifier(events_name),
-		member_expression(member_expression(identifier('program'), 'tracks'), 'events'),
+		reference(symbols.events),
+		member_expression(
+			member_expression(reference(evaluation_symbols.program), 'tracks'),
+			'events'
+		),
 		true
 	)
 	if has_frame then
 		statements[#statements + 1] = local_statement(
-			identifier('event_last_frame'),
-			member_expression(identifier('program'), 'last_frame'),
+			reference(symbols.last_frame),
+			member_expression(reference(evaluation_symbols.program), 'last_frame'),
 			true
 		)
 	end
 	if has_time then
 		statements[#statements + 1] = local_statement(
-			identifier('event_duration_ms'),
-			member_expression(identifier('program'), 'duration_ms'),
+			reference(symbols.duration_ms),
+			member_expression(reference(evaluation_symbols.program), 'duration_ms'),
 			true
 		)
 	end
 	capture_event_lanes(
 		statements,
-		events_name,
 		symbols.play,
 		values.play_method,
 		values.play_event_shape
@@ -675,7 +720,6 @@ function event_evaluator_syntax.capture_program(statements, values)
 	if values.seek_event_shape ~= 0 then
 		capture_event_lanes(
 			statements,
-			events_name,
 			symbols.jump,
 			values.jump_method,
 			values.seek_event_shape
@@ -684,7 +728,6 @@ function event_evaluator_syntax.capture_program(statements, values)
 	if values.scrub_event_shape ~= 0 then
 		capture_event_lanes(
 			statements,
-			events_name,
 			symbols.scrub,
 			values.scrub_method,
 			values.scrub_event_shape
@@ -695,6 +738,7 @@ end
 local emit_domains<const> = function(
 	statements,
 	method_symbols,
+	evaluation_symbols,
 	shape,
 	values
 )
@@ -706,6 +750,7 @@ local emit_domains<const> = function(
 		emit_directional_domain(
 			statements,
 			method_symbols,
+			evaluation_symbols,
 			has_forward_frame,
 			has_backward_frame,
 			frame_direction_statements,
@@ -719,6 +764,7 @@ local emit_domains<const> = function(
 		emit_directional_domain(
 			statements,
 			method_symbols,
+			evaluation_symbols,
 			has_forward_time,
 			has_backward_time,
 			time_direction_statements,
@@ -730,11 +776,18 @@ local emit_domains<const> = function(
 	end
 end
 
-function event_evaluator_syntax.emit(statements, values, evaluator_name, method)
+function event_evaluator_syntax.emit(
+	statements,
+	values,
+	evaluation_symbols,
+	evaluator_name,
+	method
+)
 	if evaluator_name == 'play' then
 		emit_domains(
 			statements,
 			symbols.play,
+			evaluation_symbols,
 			values.play_event_shape,
 			values
 		)
@@ -742,6 +795,7 @@ function event_evaluator_syntax.emit(statements, values, evaluator_name, method)
 		emit_domains(
 			statements,
 			symbols.jump,
+			evaluation_symbols,
 			values.seek_event_shape,
 			values
 		)
@@ -749,6 +803,7 @@ function event_evaluator_syntax.emit(statements, values, evaluator_name, method)
 		emit_domains(
 			statements,
 			symbols.scrub,
+			evaluation_symbols,
 			values.scrub_event_shape,
 			values
 		)

@@ -4,6 +4,7 @@
 -- identities share one captured function.
 local syntax_factory<const> = lua_compiler.syntax_factory
 local step_track_syntax<const> = require('cartlib/timeline/step_track_syntax')
+local value_runner_signature<const> = require('cartlib/timeline/value_runner_signature')
 
 local track_evaluator_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
@@ -51,10 +52,23 @@ local runner_symbols<const> = {
 	position_runner = generated_symbol('position_runner'),
 }
 
-local references<const> = function(names)
+local operand<const> = value_runner_signature.operand
+local runner_symbol_by_operand<const> = {
+	[operand.entry] = runner_symbols.entry,
+	[operand.previous_frame] = runner_symbols.previous_frame,
+	[operand.frame] = runner_symbols.frame,
+	[operand.previous_time_ms] = runner_symbols.previous_time_ms,
+	[operand.time_ms] = runner_symbols.time_ms,
+	[operand.direction] = runner_symbols.direction,
+	[operand.flags] = runner_symbols.flags,
+	[operand.sample] = runner_symbols.sample,
+	[operand.evaluation] = runner_symbols.evaluation,
+}
+
+local operand_references<const> = function(operands)
 	local parameters<const> = {}
-	for index = 1, #names do
-		parameters[index] = reference(runner_symbols[names[index]])
+	for index = 1, #operands do
+		parameters[index] = reference(runner_symbol_by_operand[operands[index]])
 	end
 	return parameters
 end
@@ -317,7 +331,7 @@ function track_evaluator_syntax.build(values)
 	factory_body[#factory_body + 1] = local_statement(
 		reference(runner_symbols.play_runner),
 		function_expression(
-			references(values.play_value_operands),
+			operand_references(values.play_value_operands),
 			block(play_body)
 		),
 		true
@@ -328,7 +342,7 @@ function track_evaluator_syntax.build(values)
 		factory_body[#factory_body + 1] = local_statement(
 			reference(runner_symbols.position_runner),
 			function_expression(
-				references(values.position_value_operands),
+				operand_references(values.position_value_operands),
 				block(position_body)
 			),
 			true

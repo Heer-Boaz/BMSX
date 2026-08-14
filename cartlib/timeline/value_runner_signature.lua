@@ -3,28 +3,41 @@
 -- domains never cross the 50 Hz call boundary. Callback-bearing runners receive
 -- the private sample latch separately from the authored evaluation table.
 local value_runner_signature<const> = {}
+local operand<const> = {
+	entry = 1,
+	previous_frame = 2,
+	frame = 3,
+	previous_time_ms = 4,
+	time_ms = 5,
+	direction = 6,
+	flags = 7,
+	sample = 8,
+	evaluation = 9,
+}
+
+value_runner_signature.operand = operand
 
 function value_runner_signature.compile(values, position)
-	local names<const> = { 'entry' }
+	local operands<const> = { operand.entry }
 	local mask = 0
 	if values.has_frame_steps and not position then
-		names[#names + 1] = 'previous_frame'
+		operands[#operands + 1] = operand.previous_frame
 		mask = mask | 0x01
 	end
 	if values.has_frame_steps or values.has_scalar_frame_channels then
-		names[#names + 1] = 'frame'
+		operands[#operands + 1] = operand.frame
 		mask = mask | 0x02
 	end
 	if values.has_time_steps and not position then
-		names[#names + 1] = 'previous_time_ms'
+		operands[#operands + 1] = operand.previous_time_ms
 		mask = mask | 0x04
 	end
 	if values.has_time_steps or values.has_scalar_time_channels or values.has_sample_tracks then
-		names[#names + 1] = 'time_ms'
+		operands[#operands + 1] = operand.time_ms
 		mask = mask | 0x08
 	end
 	if values.has_frame_steps and not position then
-		names[#names + 1] = 'direction'
+		operands[#operands + 1] = operand.direction
 		mask = mask | 0x10
 	end
 	if values.has_frame_steps
@@ -33,19 +46,19 @@ function value_runner_signature.compile(values, position)
 		(values.has_scalar_frame_channels or values.has_sample_tracks)
 		and not values.value_has_evaluation_context
 	) then
-		names[#names + 1] = 'flags'
+		operands[#operands + 1] = operand.flags
 		mask = mask | 0x20
 	end
 	if values.value_has_evaluation_context
 	and (values.has_scalar_frame_channels or values.has_sample_tracks) then
-		names[#names + 1] = 'sample'
+		operands[#operands + 1] = operand.sample
 		mask = mask | 0x80
 	end
 	if values.value_has_evaluation_context then
-		names[#names + 1] = 'evaluation'
+		operands[#operands + 1] = operand.evaluation
 		mask = mask | 0x40
 	end
-	return names, mask
+	return operands, mask
 end
 
 return value_runner_signature
