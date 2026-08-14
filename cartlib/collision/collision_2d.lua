@@ -249,8 +249,8 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	*geo_cmd_register = 0x00000022
 end
 
-function collision_2d.on_geo_irq(flags)
-	*geo_completion_irq_flags = flags
+function collision_2d.on_geo_irq(source)
+	*geo_completion_irq_flags = *geo_completion_irq_flags | source
 end
 
 function collision_2d.collect_overlaps(colliders, collider_count, pairs)

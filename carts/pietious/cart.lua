@@ -58,7 +58,8 @@ local init_epoch = 0
 local pending_title_boot_epoch = -1
 
 local irq_mask_register<const>: *word = 0x08000008
-local irq_geo_done_error<const> = 0x0018
+local irq_geo_done<const> = 0x0008
+local irq_geo_error<const> = 0x0010
 local irq_apu<const> = 0x0020
 
 local grant_starting_loadout<const> = function(player, castle)
@@ -128,7 +129,8 @@ end
 
 local function init<init>()
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
-	irq_module.register(irq_geo_done_error, collision_2d.on_geo_irq)
+	irq_module.register(irq_geo_done, collision_2d.on_geo_irq)
+	irq_module.register(irq_geo_error, collision_2d.on_geo_irq)
 	irq_module.register(irq_apu, aem.on_apu_irq)
 	pietious_font.register_fonts()
 
@@ -194,7 +196,7 @@ end
 
 *irq_mask_register = 0
 init()
-*irq_mask_register = vblank.irq_mask | irq_geo_done_error | irq_apu | gx_gpu.irq_mask
+*irq_mask_register = vblank.irq_mask | irq_geo_done | irq_geo_error | irq_apu | gx_gpu.irq_mask
 gx_texture.upload('pietolon_stand_r')
 new_game()
 vblank.wait()

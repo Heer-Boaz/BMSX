@@ -1,27 +1,29 @@
 local irq_ack_register<const>: *word = 0x08000004
+local irq_mask_register<const>: *word = 0x08000008
 
 local handlers<const> = {}
 local irq<const> = {}
 
-function irq.register(mask, handler)
-	handlers[mask] = handler
+-- One retained callback slot corresponds to one physical IRQ source bit. The
+-- dispatcher walks only asserted, unmasked sources instead of scanning every
+-- registered subsystem on every interrupt. Each source is acknowledged before
+-- its callback so an edge raised during the callback remains pending.
+function irq.register(source, handler)
+	handlers[source] = handler
 end
 
-function irq.unregister(mask)
-	handlers[mask] = nil
+function irq.unregister(source)
+	handlers[source] = nil
 end
 
 function irq.dispatch(flags)
-	local ack = 0
-	for mask, handler in pairs(handlers) do
-		local matched<const> = flags & mask
-		if matched ~= 0 then
-			handler(matched, flags)
-			ack = ack | matched
-		end
-	end
-	if ack ~= 0 then
-		*irq_ack_register = ack
+	local pending = flags & *irq_mask_register
+	while pending ~= 0 do
+		local source<const> = pending & (0 - pending)
+		local handler<const> = handlers[source]
+		*irq_ack_register = source
+		handler(source)
+		pending = pending - source
 	end
 end
 
