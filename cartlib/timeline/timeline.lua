@@ -176,16 +176,11 @@ local update_continuous_unbounded<const> = function(self, owner, delta_time)
 	)
 end
 
+-- Entering or positioning continuous playback publishes frame zero once. The
+-- retained updater below consumes that playback-state invariant directly;
+-- steady 50 Hz evaluation does not rediscover the start sentinel every tick.
 local update_continuous_once<const> = function(self, owner, delta_time)
 	self.wrapped = false
-	local previous_frame<const> = self.head
-	local frame = previous_frame
-	local flags = sample_range_flags
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-		flags = initial_sample_range_flags
-	end
 	local previous_time_ms<const> = self.position_ms
 	local duration_ms<const> = self.duration_ms
 	local time_ms<const> = previous_time_ms + delta_time
@@ -195,12 +190,12 @@ local update_continuous_once<const> = function(self, owner, delta_time)
 		self.evaluate_play(
 			self,
 			owner,
-			previous_frame,
-			frame,
+			0,
+			0,
 			previous_time_ms,
 			duration_ms,
 			1,
-			flags
+			sample_range_flags
 		)
 		return true
 	end
@@ -208,12 +203,47 @@ local update_continuous_once<const> = function(self, owner, delta_time)
 	self.evaluate_play(
 		self,
 		owner,
-		previous_frame,
-		frame,
+		0,
+		0,
 		previous_time_ms,
 		time_ms,
 		1,
-		flags
+		sample_range_flags
+	)
+end
+
+local update_continuous_once_initial<const> = function(self, owner, delta_time)
+	self.wrapped = false
+	self.head = 0
+	self.update = update_continuous_once
+	local previous_time_ms<const> = self.position_ms
+	local duration_ms<const> = self.duration_ms
+	local time_ms<const> = previous_time_ms + delta_time
+	if time_ms >= duration_ms then
+		self.ended = true
+		self.position_ms = duration_ms
+		self.evaluate_play(
+			self,
+			owner,
+			timelinestart_index,
+			0,
+			previous_time_ms,
+			duration_ms,
+			1,
+			initial_sample_range_flags
+		)
+		return true
+	end
+	self.position_ms = time_ms
+	self.evaluate_play(
+		self,
+		owner,
+		timelinestart_index,
+		0,
+		previous_time_ms,
+		time_ms,
+		1,
+		initial_sample_range_flags
 	)
 end
 
@@ -343,7 +373,7 @@ local update_timed_frames<const> = function(self, owner, delta_time)
 	return evaluated and self.ended
 end
 
-local select_updater<const> = function(program)
+local select_updater<const> = function(program, positioned)
 	if not program.continuous then
 		if program.frame_duration <= 0 then
 			return update_immediate_frames
@@ -355,6 +385,9 @@ local select_updater<const> = function(program)
 	end
 	local mode<const> = program.playback_mode
 	if mode == playback_once then
+		if not positioned then
+			return update_continuous_once_initial
+		end
 		return update_continuous_once
 	end
 	if mode == playback_loop then
@@ -369,7 +402,7 @@ function timeline.new(id, program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
-	self.update = select_updater(program)
+	self.update = select_updater(program, false)
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
 	self.position_ms = 0
@@ -383,7 +416,7 @@ function timeline:rebind_program(program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
-	self.update = select_updater(program)
+	self.update = select_updater(program, self.head >= 0)
 end
 
 function timeline:build(params)
@@ -396,6 +429,7 @@ function timeline:value()
 end
 
 function timeline:rewind()
+	self.update = select_updater(self.program, false)
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
 	self.position_ms = 0
@@ -427,6 +461,7 @@ local move_to<const> = function(self, owner, frame, evaluate)
 		flags = initial_sample_range_flags
 	end
 	self.head = current_frame
+	self.update = select_updater(program, true)
 	self.frame_elapsed = 0
 	self.position_ms = time_ms
 	self.ended = false
@@ -488,6 +523,7 @@ local move_time<const> = function(self, owner, requested_time_ms, evaluate)
 		direction = -1
 	end
 	self.head = frame
+	self.update = select_updater(program, true)
 	if program.continuous then
 		self.frame_elapsed = 0
 	else
@@ -532,6 +568,7 @@ function timeline:snap_to_start(owner)
 		flags = initial_sample_range_flags
 	end
 	self.head = 0
+	self.update = select_updater(self.program, true)
 	self.frame_elapsed = 0
 	self.position_ms = 0
 	self.ended = false
