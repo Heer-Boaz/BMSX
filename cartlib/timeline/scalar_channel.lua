@@ -1,8 +1,8 @@
 -- Numeric curve channels own their compiled segment representation. Their
 -- shape-specific runner factory is prepared once; length-dependent channels
 -- are bound once when a definitive frame program is compiled. Direct property
--- lanes retain their key arrays directly; callback lanes retain only the key
--- array and callback. Binding selection and property paths are encoded in the
+-- lanes retain their key arrays directly; equal callback identities share one
+-- captured function. Binding selection and property paths are encoded in the
 -- runner. Channels with more than two keys retain one current segment per
 -- active timeline entry; each shared key carries an exclusive segment end, so
 -- evaluation only searches again when traversal leaves that range. Generic
@@ -39,7 +39,21 @@ local analyze_tracks<const> = function(analysis, tracks, time_domain)
 	for index = 1, #tracks do
 		local track<const> = tracks[index]
 		if track.apply ~= nil then
-			analysis.has_callback = true
+			local callback_functions = analysis.callback_functions
+			local callback_index_by_function = analysis.callback_index_by_function
+			if callback_functions == nil then
+				callback_functions = {}
+				callback_index_by_function = {}
+				analysis.callback_functions = callback_functions
+				analysis.callback_index_by_function = callback_index_by_function
+			end
+			local callback_index = callback_index_by_function[track.apply]
+			if callback_index == nil then
+				callback_index = #callback_functions + 1
+				callback_functions[callback_index] = track.apply
+				callback_index_by_function[track.apply] = callback_index
+			end
+			track.callback_index = callback_index
 		end
 		if track.binding_index == 1 then
 			analysis.has_primary_binding = true
@@ -71,7 +85,6 @@ local compile_runner_factory<const> = function(channels)
 	local cubic_tracks<const> = channels.cubic_tracks
 	local cubic_time_tracks<const> = channels.cubic_time_tracks
 	local analysis<const> = {
-		has_callback = false,
 		has_primary_binding = false,
 		has_secondary_binding = false,
 		frame_max_key_count = 0,
@@ -84,9 +97,14 @@ local compile_runner_factory<const> = function(channels)
 	analyze_tracks(analysis, linear_time_tracks, true)
 	analyze_tracks(analysis, cubic_time_tracks, true)
 
+	local environment = nil
+	if analysis.callback_functions ~= nil then
+		environment = { scalar_callbacks = analysis.callback_functions }
+	end
 	return compile_syntax(
 		scalar_channel_syntax.build(channels, analysis, sample_flag),
-		'[timeline.scalar_channel]'
+		'[timeline.scalar_channel]',
+		environment
 	)(), analysis.cached_segment_count
 end
 
@@ -210,14 +228,7 @@ local compile_tracks<const> = function(definitions, length, time_domain, cubic, 
 		if cached_segment_index ~= nil then
 			initial_cached_segments[cached_segment_index] = keys[1]
 		end
-		if definition.apply == nil then
-			tracks[track_index] = keys
-		else
-			tracks[track_index] = {
-				apply = definition.apply,
-				keys = keys,
-			}
-		end
+		tracks[track_index] = keys
 	end
 	return tracks
 end

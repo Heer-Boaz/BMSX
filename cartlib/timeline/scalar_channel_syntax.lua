@@ -28,11 +28,14 @@ local if_statement<const> = syntax_factory.if_statement
 local while_statement<const> = syntax_factory.while_statement
 local return_statement<const> = syntax_factory.return_statement
 
+local scalar_callback_name<const> = function(index)
+	return 'scalar_callback_' .. index
+end
+
 local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
 	statements[#statements + 1] = local_statement(identifier('keys'), nil, false)
 	statements[#statements + 1] = local_statement(identifier('value'), nil, false)
-	if analysis.has_callback then
-		statements[#statements + 1] = local_statement(identifier('track'), nil, false)
+	if analysis.callback_functions ~= nil then
 		statements[#statements + 1] = local_statement(
 			identifier('params'),
 			member_expression(identifier('entry'), 'params'),
@@ -297,22 +300,14 @@ local emit_track_sample<const> = function(statements, track, position_key, cubic
 end
 
 local emit_track<const> = function(statements, track_list_name, track_index, track, position_key, cubic)
-	local source_track<const> = index_expression(
+	local source_keys<const> = index_expression(
 		identifier(track_list_name),
 		numeric_literal(track_index)
 	)
-	if track.apply ~= nil then
-		statements[#statements + 1] = assignment_statement(identifier('track'), source_track)
-		statements[#statements + 1] = assignment_statement(
-			identifier('keys'),
-			member_expression(identifier('track'), 'keys')
-		)
-	else
-		statements[#statements + 1] = assignment_statement(
-			identifier('keys'),
-			source_track
-		)
-	end
+	statements[#statements + 1] = assignment_statement(
+		identifier('keys'),
+		source_keys
+	)
 	emit_track_sample(statements, track, position_key, cubic)
 	local binding
 	if track.binding_index == 1 then
@@ -322,7 +317,7 @@ local emit_track<const> = function(statements, track_list_name, track_index, tra
 	end
 	if track.apply ~= nil then
 		statements[#statements + 1] = call_statement(call_expression(
-			member_expression(identifier('track'), 'apply'),
+			identifier(scalar_callback_name(track.callback_index)),
 			{
 				binding,
 				identifier('value'),
@@ -385,6 +380,22 @@ local emit_time_lane<const> = function(statements, channels, analysis)
 end
 
 function scalar_channel_syntax.build(channels, analysis, sample_flag)
+	local statements<const> = {}
+	local callback_functions<const> = analysis.callback_functions
+	if callback_functions ~= nil then
+		statements[#statements + 1] = local_statement(
+			identifier('scalar_callbacks'),
+			identifier('scalar_callbacks'),
+			true
+		)
+		for index = 1, #callback_functions do
+			statements[#statements + 1] = local_statement(
+				identifier(scalar_callback_name(index)),
+				index_expression(identifier('scalar_callbacks'), numeric_literal(index)),
+				true
+			)
+		end
+	end
 	local evaluator_body<const> = {}
 	emit_locals(
 		evaluator_body,
@@ -416,14 +427,13 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 			block(evaluator_body)
 		),
 	})
-	return syntax_factory.chunk(block({
-		return_statement({
-			function_expression(
-				{ identifier('source_channels') },
-				block(factory_body)
-			),
-		}),
-	}))
+	statements[#statements + 1] = return_statement({
+		function_expression(
+			{ identifier('source_channels') },
+			block(factory_body)
+		),
+	})
+	return syntax_factory.chunk(block(statements))
 end
 
 return scalar_channel_syntax
