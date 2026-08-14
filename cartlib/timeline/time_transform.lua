@@ -6,15 +6,18 @@ local time_transform_syntax<const> = require('cartlib/timeline/time_transform_sy
 -- admission. Generated datapaths own both time mapping and child transport, so
 -- the 50 Hz sequence evaluator only dispatches the retained transform.
 local time_transform<const> = {}
-local playback_once<const> = timeline_playback.mode.once
-local playback_loop<const> = timeline_playback.mode.loop
-local playback_pingpong<const> = timeline_playback.mode.pingpong
-local boundary_none<const> = timeline_playback.boundary.none
-local boundary_turn<const> = timeline_playback.boundary.turn
-local sample_flag<const> = timeline_playback.evaluation_flag.sample
-local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
-local initial_flag<const> = timeline_playback.evaluation_flag.initial
-local loop_boundary_flags<const> = timeline_playback.boundary.loop | wrapped_flag
+local playback<const> = timeline_playback.mode
+local playback_once<const> = playback.once
+local playback_loop<const> = playback.loop
+local playback_pingpong<const> = playback.pingpong
+local boundary<const> = timeline_playback.boundary
+local boundary_none<const> = boundary.none
+local boundary_turn<const> = boundary.turn
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local sample_flag<const> = evaluation_flag.sample
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
+local loop_boundary_flags<const> = boundary.loop | wrapped_flag
 local play_update_method<const> = timeline_playback.update_method.play
 local affine_identity<const> = 0
 local affine_translation<const> = 1

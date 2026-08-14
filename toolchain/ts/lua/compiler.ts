@@ -2638,6 +2638,13 @@ class FunctionBuilder {
 		if (this.resolveStaticFunctionExportCallTarget(binding)) {
 			return true;
 		}
+		// A shaped const export without a leaf value is a namespace. Retaining its
+		// path lets subsequent member reads resolve directly to the exported leaf.
+		if (binding.kind === 'source'
+			&& binding.moduleInfo.constModule
+			&& !binding.moduleInfo.exportConstValueByPathKey.has(binding.exportPathKey)) {
+			return true;
+		}
 		return binding.exportDepth === 0 && (binding.kind === 'installed'
 			|| binding.moduleInfo.constModule
 			|| binding.moduleInfo.staticFunctionExportByPathKey.has(''));
@@ -2712,10 +2719,8 @@ class FunctionBuilder {
 
 	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding) {
-			if (binding.exportDepth === 0 || this.resolveStaticFunctionExportCallTarget(binding)) {
-				return binding;
-			}
+		if (binding && this.moduleBindingOwnsCompileTimeLocal(binding)) {
+			return binding;
 		}
 	}
 

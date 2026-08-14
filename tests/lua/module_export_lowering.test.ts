@@ -294,6 +294,25 @@ test('const modules inline direct require member reads', () => {
 	assert.doesNotMatch(disasm, /\bNEWT\b/, 'direct const module member read must not build a runtime export table');
 });
 
+test('const module namespace aliases retain their compile-time export path', () => {
+	const moduleSource = 'return { flags = { sample = 4, initial = 16 } }';
+	const { compiled, disasm } = compileWithConstModule(
+		[
+			'local playback<const> = require("assets")',
+			'local flags<const> = playback.flags',
+			'return flags.sample | flags.initial',
+		].join('\n'),
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false);
+	assert.doesNotMatch(disasm, /\bCALL\b/);
+	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/);
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [20]);
+});
+
 test('relocatable const-module values remain operands until the linker supplies them', () => {
 	const moduleSource = [
 		'local len<const> = 6156',

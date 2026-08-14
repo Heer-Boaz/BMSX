@@ -4,8 +4,9 @@ local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
 local timeline<const> = timeline_module.timeline
-local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
-local initial_flag<const> = timeline_playback.evaluation_flag.initial
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
 local jump_update_method<const> = timeline_playback.update_method.jump
 
 -- Nested clips retain child runtime entries, resolved binding slots and active

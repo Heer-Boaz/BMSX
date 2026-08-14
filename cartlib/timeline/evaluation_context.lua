@@ -2,10 +2,11 @@ local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 
 local evaluation_context<const> = {}
-local boundary_mask<const> = timeline_playback.evaluation_flag.boundary_mask
-local sample_flag<const> = timeline_playback.evaluation_flag.sample
-local wrapped_flag<const> = timeline_playback.evaluation_flag.wrapped
-local initial_flag<const> = timeline_playback.evaluation_flag.initial
+local evaluation_flag<const> = timeline_playback.evaluation_flag
+local boundary_mask<const> = evaluation_flag.boundary_mask
+local sample_flag<const> = evaluation_flag.sample
+local wrapped_flag<const> = evaluation_flag.wrapped
+local initial_flag<const> = evaluation_flag.initial
 
 evaluation_context.value = timeline_frame_program.value
 
