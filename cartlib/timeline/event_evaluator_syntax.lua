@@ -23,7 +23,7 @@ local else_clause<const> = syntax_factory.else_clause
 local if_statement<const> = syntax_factory.if_statement
 local numeric_for_statement<const> = syntax_factory.numeric_for_statement
 local generated_symbol<const> = syntax_factory.generated_symbol
-local generated_identifier<const> = syntax_factory.generated_identifier
+local reference<const> = syntax_factory.reference
 local include_previous_never<const> = 0
 local include_previous_always<const> = 1
 local include_previous_initial<const> = 2
@@ -76,7 +76,7 @@ local event_range_statement<const> = function(
 	include_previous
 )
 	return call_statement(call_expression(identifier('emit_event_range'), {
-		generated_identifier(lane_symbols.lane),
+		reference(lane_symbols.lane),
 		identifier('owner'),
 		previous,
 		current,
@@ -119,7 +119,7 @@ local singleton_time_intersection<const> = function(
 	local previous_intersects = binary_expression(
 		previous_operator,
 		time_operand(previous_name),
-		generated_identifier(lane_symbols.time_ms)
+		reference(lane_symbols.time_ms)
 	)
 	if include_previous == include_previous_initial then
 		previous_intersects = binary_expression(
@@ -130,7 +130,7 @@ local singleton_time_intersection<const> = function(
 				binary_expression(
 					syntax.binary_equal,
 					time_operand(previous_name),
-					generated_identifier(lane_symbols.time_ms)
+					reference(lane_symbols.time_ms)
 				),
 				flag_set_expression(initial_flag)
 			)
@@ -141,7 +141,7 @@ local singleton_time_intersection<const> = function(
 		binary_expression(
 			forward and syntax.binary_greater_equal or syntax.binary_less_equal,
 			time_operand(current_name),
-			generated_identifier(lane_symbols.time_ms)
+			reference(lane_symbols.time_ms)
 		),
 		previous_intersects
 	)
@@ -165,7 +165,7 @@ local time_event_range_statement<const> = function(
 	end
 	if not singleton then
 		return call_statement(call_expression(identifier('emit_time_event_range'), {
-			generated_identifier(lane_symbols.lane),
+			reference(lane_symbols.lane),
 			identifier('owner'),
 			time_operand(previous_name),
 			time_operand(current_name),
@@ -200,8 +200,8 @@ local time_event_range_statement<const> = function(
 				call_statement(call_expression(
 					member_expression(identifier('owner'), 'events'),
 					{
-						member_expression(generated_identifier(lane_symbols.time_key), 'event'),
-						member_expression(generated_identifier(lane_symbols.time_key), 'payload'),
+						member_expression(reference(lane_symbols.time_key), 'event'),
+						member_expression(reference(lane_symbols.time_key), 'payload'),
 					},
 					'emit'
 				)),
@@ -225,7 +225,7 @@ local event_dispatch_loop<const> = function(lane_symbols, reverse)
 		local_statement(
 			identifier('bucket'),
 			index_expression(
-				member_expression(generated_identifier(lane_symbols.lane), 'by_frame'),
+				member_expression(reference(lane_symbols.lane), 'by_frame'),
 				identifier('frame')
 			),
 			true
@@ -588,22 +588,22 @@ local capture_direction_lane<const> = function(
 	end
 	local member_name<const> = forward and 'forward' or 'backward'
 	statements[#statements + 1] = local_statement(
-		generated_identifier(lane_symbols.lane),
-		member_expression(generated_identifier(lanes_symbol), member_name),
+		reference(lane_symbols.lane),
+		member_expression(reference(lanes_symbol), member_name),
 		true
 	)
 	if single_time then
 		statements[#statements + 1] = local_statement(
-			generated_identifier(lane_symbols.time_key),
+			reference(lane_symbols.time_key),
 			index_expression(
-				member_expression(generated_identifier(lane_symbols.lane), 'time_keys'),
+				member_expression(reference(lane_symbols.lane), 'time_keys'),
 				numeric_literal(1)
 			),
 			true
 		)
 		statements[#statements + 1] = local_statement(
-			generated_identifier(lane_symbols.time_ms),
-			member_expression(generated_identifier(lane_symbols.time_key), 'time_ms'),
+			reference(lane_symbols.time_ms),
+			member_expression(reference(lane_symbols.time_key), 'time_ms'),
 			true
 		)
 	end
@@ -617,7 +617,7 @@ local capture_event_lanes<const> = function(
 	shape
 )
 	statements[#statements + 1] = local_statement(
-		generated_identifier(method_symbols.lanes),
+		reference(method_symbols.lanes),
 		index_expression(identifier(events_name), numeric_literal(method + 1)),
 		true
 	)

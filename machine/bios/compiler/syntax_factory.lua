@@ -37,13 +37,13 @@ function syntax_factory.identifier(name)
 end
 
 -- Generated locals bind by symbol identity rather than by a reconstructed
--- spelling contract. Each generated_identifier call still creates an owned AST
+-- spelling contract. Each reference call still creates an owned AST
 -- occurrence because semantic binding annotates identifier nodes in place.
 function syntax_factory.generated_symbol(name)
 	return { name = name }
 end
 
-function syntax_factory.generated_identifier(symbol)
+function syntax_factory.reference(symbol)
 	return {
 		kind = syntax.identifier_expression,
 		name = symbol,
