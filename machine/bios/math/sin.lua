@@ -41,33 +41,23 @@ local q16_one<const> = 65536
 
 return function(angle)
 	local quadrant<const> = (angle >> 30) & 3
-	local phase<const> = angle & 0x3fffffff
+	local phase = angle & 0x3fffffff
 	local lut<const>: *word = sin_quarter_lut
-
-	local forward_index<const> = (phase >> interval_shift) & 255
-	local forward_fraction<const> = phase & interval_fraction_mask
-	local forward_base<const> = lut[forward_index]
-	local forward_delta<const> = lut[forward_index + 1] - forward_base
-	local forward<const> = forward_base + ((forward_delta * forward_fraction) >> interval_shift)
-
-	local reverse_phase<const> = quarter_turn - phase
-	local reverse = q16_one
-	if reverse_phase ~= quarter_turn then
-		local reverse_index<const> = (reverse_phase >> interval_shift) & 255
-		local reverse_fraction<const> = reverse_phase & interval_fraction_mask
-		local reverse_base<const> = lut[reverse_index]
-		local reverse_delta<const> = lut[reverse_index + 1] - reverse_base
-		reverse = reverse_base + ((reverse_delta * reverse_fraction) >> interval_shift)
+	if (quadrant & 1) ~= 0 then
+		phase = quarter_turn - phase
 	end
 
-	if quadrant == 0 then
-		return forward, reverse
+	local value = q16_one
+	if phase ~= quarter_turn then
+		local index<const> = (phase >> interval_shift) & 255
+		local fraction<const> = phase & interval_fraction_mask
+		local base<const> = lut[index]
+		local delta<const> = lut[index + 1] - base
+		value = base + ((delta * fraction) >> interval_shift)
 	end
-	if quadrant == 1 then
-		return reverse, 0 - forward
+
+	if quadrant >= 2 then
+		return 0 - value
 	end
-	if quadrant == 2 then
-		return 0 - forward, 0 - reverse
-	end
-	return 0 - reverse, forward
+	return value
 end

@@ -69,7 +69,7 @@ return width, height
 `;
 const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
-	['math/sincos', 'machine/bios/math/sincos.lua'],
+	['math/sin', 'machine/bios/math/sin.lua'],
 ] as const;
 const CART_MODULE_FILES = [
 	['cartlib/gx/display', 'cartlib/gx/display.lua'],

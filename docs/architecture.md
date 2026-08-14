@@ -176,7 +176,7 @@ Angles used by fixed-point firmware trig helpers are 32-bit binary turns: one
 full revolution wraps at `2^32`, `0x40000000` is 90 degrees, `0x80000000` is
 180 degrees, and arithmetic overflow is natural turn wrap. Firmware helpers may
 store lookup tables in `.rodata` and read them through ordinary typed pointer
-loads. Function names such as `sincos_turn32` are ordinary exported BLua symbols,
+loads. Function names such as `sin_turn32` are ordinary exported BLua symbols,
 not compiler, CPU, interpreter, or device intrinsics.
 
 The guest Lua language deliberately includes its table and string value types
@@ -993,7 +993,7 @@ cartridge may carry its own private symbols.
 
 The ordered BIOS export declaration pins each public module function to the
 matching leading system function record. Public entries are bare BIOS routines
-such as `math/sincos` and `string/float/decode`, using the same module paths
+such as `math/sin` and `string/float/decode`, using the same module paths
 exposed by BIOS source tooling. Cartridge compilation treats those paths as
 installed function imports rather than linking BIOS source into the cartridge;
 Studio can still navigate to the public firmware implementation. Those exact

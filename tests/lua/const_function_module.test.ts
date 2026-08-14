@@ -21,7 +21,7 @@ const ROL8_PATH = 'cartlib/util/rol8';
 const ROUND_TO_NEAREST_PATH = 'system/round_to_nearest';
 const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
-const SINCOS_TURN32_PATH = 'math/sincos';
+const SIN_TURN32_PATH = 'math/sin';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 const ROUND_TO_NEAREST_SOURCE = `return function(value)
 	if value >= 0 then
@@ -143,24 +143,24 @@ return rol8(5), rol8(128)
 	}
 });
 
-test('sincos_turn32 is a const function module backed by visible rodata', () => {
-	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
+test('sin_turn32 is a const function module backed by visible rodata', () => {
+	const moduleSource = readFileSync('machine/bios/math/sin.lua', 'utf8');
 	const entrySource = `
-local s0<const>, c0<const> = require("${SINCOS_TURN32_PATH}")(0)
-local s90<const>, c90<const> = require("${SINCOS_TURN32_PATH}")(1073741824)
-local s180<const>, c180<const> = require("${SINCOS_TURN32_PATH}")(2147483648)
-local s270<const>, c270<const> = require("${SINCOS_TURN32_PATH}")(3221225472)
-local s360<const>, c360<const> = require("${SINCOS_TURN32_PATH}")(4294967296)
-local s45<const>, c45<const> = require("${SINCOS_TURN32_PATH}")(536870912)
-local sn45<const>, cn45<const> = require("${SINCOS_TURN32_PATH}")(-536870912)
-return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn45
+local s0<const> = require("${SIN_TURN32_PATH}")(0)
+local s90<const> = require("${SIN_TURN32_PATH}")(1073741824)
+local s180<const> = require("${SIN_TURN32_PATH}")(2147483648)
+local s270<const> = require("${SIN_TURN32_PATH}")(3221225472)
+local s360<const> = require("${SIN_TURN32_PATH}")(4294967296)
+local s45<const> = require("${SIN_TURN32_PATH}")(536870912)
+local sn45<const> = require("${SIN_TURN32_PATH}")(-536870912)
+return s0, s90, s180, s270, s360, s45, sn45
 `;
-	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource);
+	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
-	assert.equal(compiled.moduleProtoMap.has(SINCOS_TURN32_PATH), false);
+	assert.equal(compiled.moduleProtoMap.has(SIN_TURN32_PATH), false);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
 	assert.deepEqual(image.sections.rodata.symbols, [{
-		name: 'module:math/sincos/rodata:sin_quarter_lut',
+		name: 'module:math/sin/rodata:sin_quarter_lut',
 		offset: 0,
 		byteCount: 257 * 4,
 		alignment: 4,
@@ -170,39 +170,40 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 	for (let index = 0; index < expectedQuarter.length; index += 1) {
 		assert.equal(readLE32(image.sections.rodata.bytes, index * 4), expectedQuarter[index] >>> 0);
 	}
-	const disasm = disassembleConstExport(compiled, SINCOS_TURN32_PATH);
+	const disasm = disassembleConstExport(compiled, SIN_TURN32_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [
-		0, 65536,
-		65536, 0,
-		0, -65536,
-		-65536, 0,
-		0, 65536,
-		46340, 46340,
-		-46340, 46340,
+		0,
+		65536,
+		0,
+		-65536,
+		0,
+		46340,
+		-46340,
 	]);
 });
 
-test('sincos_turn32 rodata relocations survive O3 constant folding', () => {
-	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
+test('sin_turn32 rodata relocations survive O3 constant folding', () => {
+	const moduleSource = readFileSync('machine/bios/math/sin.lua', 'utf8');
 	const entrySource = `
-return require("${SINCOS_TURN32_PATH}")(0)
+return require("${SIN_TURN32_PATH}")(0)
 `;
-	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
-	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
+	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource, 3);
+	assert.deepEqual(runColdCompiled(compiled), [0]);
 });
 
 test('const function export aliases stay compile-time call targets', () => {
-	const moduleSource = readFileSync('machine/bios/math/sincos.lua', 'utf8');
+	const moduleSource = readFileSync('machine/bios/math/sin.lua', 'utf8');
 	const entrySource = `
-local sincos_turn32<const> = require("${SINCOS_TURN32_PATH}")
-return sincos_turn32(0)
+local sin_turn32<const> = require("${SIN_TURN32_PATH}")
+local angle<const>: *word = 0x08040000
+return sin_turn32(*angle)
 `;
-	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
-	const disasm = disassembleConstExport(compiled, SINCOS_TURN32_PATH);
+	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource, 3);
+	assert.equal(compiled.moduleProtoMap.has(SIN_TURN32_PATH), false);
+	const disasm = disassembleConstExport(compiled, SIN_TURN32_PATH);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
-	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
+	assert.deepEqual(runColdCompiled(compiled), [0]);
 });
 
 test('const function modules do not materialize Lua function values', () => {

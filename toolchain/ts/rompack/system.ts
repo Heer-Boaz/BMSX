@@ -8,7 +8,7 @@ export const SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY = 4096;
 
 export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> = [
 	{
-		path: 'math/sincos',
+		path: 'math/sin',
 		exportPathKey: '',
 	},
 	{
