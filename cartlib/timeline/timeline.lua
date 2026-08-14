@@ -22,7 +22,8 @@ local initial_sample_range_flags<const> = sample_range_flags | initial_flag
 local loop_boundary_flags<const> = wrapped_flag | boundary_loop
 
 -- A timeline is the single mutable playback record scheduled by a component or
--- parent sequence. Its immutable program remains shareable across playbacks.
+-- parent sequence. Its immutable program remains shareable across playbacks;
+-- steady transport operands are retained directly on this datapath.
 local timeline<const> = {}
 timeline.__index = timeline
 
@@ -575,19 +576,21 @@ end
 local update_timed_frames<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local frame_elapsed = self.frame_elapsed + delta_time
-	local frame_duration<const> = self.program.frame_duration
-	local advance_frame<const> = self.advance_frame
-	local evaluated = false
-	while frame_elapsed >= frame_duration do
-		frame_elapsed = frame_elapsed - frame_duration
-		advance_frame(self, owner, true)
-		evaluated = true
-		if self.ended then
-			break
-		end
+	local frame_duration<const> = self.frame_duration
+	if frame_elapsed < frame_duration then
+		self.frame_elapsed = frame_elapsed
+		return false
 	end
+	local advance_frame<const> = self.advance_frame
+	repeat
+		frame_elapsed = frame_elapsed - frame_duration
+		if advance_frame(self, owner, true) then
+			self.frame_elapsed = frame_elapsed
+			return true
+		end
+	until frame_elapsed < frame_duration
 	self.frame_elapsed = frame_elapsed
-	return evaluated and self.ended
+	return false
 end
 
 local select_updater<const> = function(program, positioned)
@@ -628,6 +631,7 @@ function timeline.new(id, program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
+	self.frame_duration = program.frame_duration
 	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, false)
 	self.head = timelinestart_index
@@ -643,6 +647,7 @@ function timeline:rebind_program(program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
+	self.frame_duration = program.frame_duration
 	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, self.head >= 0)
 end
