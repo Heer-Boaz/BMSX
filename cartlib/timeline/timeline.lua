@@ -188,11 +188,21 @@ local update_continuous_once<const> = function(self, owner, delta_time)
 	end
 	local previous_time_ms<const> = self.position_ms
 	local duration_ms<const> = self.duration_ms
-	local time_ms = previous_time_ms + delta_time
-	local ended<const> = time_ms >= duration_ms
-	if ended then
-		time_ms = duration_ms
+	local time_ms<const> = previous_time_ms + delta_time
+	if time_ms >= duration_ms then
 		self.ended = true
+		self.position_ms = duration_ms
+		self.evaluate_play(
+			self,
+			owner,
+			previous_frame,
+			frame,
+			previous_time_ms,
+			duration_ms,
+			1,
+			flags
+		)
+		return true
 	end
 	self.position_ms = time_ms
 	self.evaluate_play(
@@ -205,7 +215,6 @@ local update_continuous_once<const> = function(self, owner, delta_time)
 		1,
 		flags
 	)
-	return ended
 end
 
 local update_continuous_loop<const> = function(self, owner, delta_time)
