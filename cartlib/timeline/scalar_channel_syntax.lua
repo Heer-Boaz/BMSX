@@ -46,8 +46,13 @@ local evaluator_parameters<const> = function(channels, analysis)
 	if #channels.linear_time_tracks > 0 or #channels.cubic_time_tracks > 0 then
 		parameters[#parameters + 1] = identifier('time_ms')
 	end
-	if #channels.linear_tracks > 0 or #channels.cubic_tracks > 0 then
+	if (#channels.linear_tracks > 0 or #channels.cubic_tracks > 0)
+	and analysis.callback_functions == nil then
 		parameters[#parameters + 1] = identifier('flags')
+	end
+	if (#channels.linear_tracks > 0 or #channels.cubic_tracks > 0)
+	and analysis.callback_functions ~= nil then
+		parameters[#parameters + 1] = identifier('sample')
 	end
 	if analysis.callback_functions ~= nil then
 		parameters[#parameters + 1] = identifier('evaluation')
@@ -414,19 +419,22 @@ local emit_frame_lane<const> = function(statements, channels, analysis, sample_f
 	end
 	emit_tracks(body, 'linear_tracks', channels.linear_tracks, 'frame', false)
 	emit_tracks(body, 'cubic_tracks', channels.cubic_tracks, 'frame', true)
-	statements[#statements + 1] = if_statement({
-		if_clause(
+	local sample_condition
+	if analysis.callback_functions ~= nil then
+		sample_condition = identifier('sample')
+	else
+		sample_condition = binary_expression(
+			syntax.binary_not_equal,
 			binary_expression(
-				syntax.binary_not_equal,
-				binary_expression(
-					syntax.binary_bitwise_and,
-					identifier('flags'),
-					numeric_literal(sample_flag)
-				),
-				numeric_literal(0)
+				syntax.binary_bitwise_and,
+				identifier('flags'),
+				numeric_literal(sample_flag)
 			),
-			block(body)
-		),
+			numeric_literal(0)
+		)
+	end
+	statements[#statements + 1] = if_statement({
+		if_clause(sample_condition, block(body)),
 	})
 end
 

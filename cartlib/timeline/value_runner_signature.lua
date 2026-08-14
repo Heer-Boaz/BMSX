@@ -1,6 +1,7 @@
 -- The value-runner signature is owned once at admission. Evaluation programs
 -- and generated runners consume the same ordered operand list, so absent track
--- domains never cross the 50 Hz call boundary.
+-- domains never cross the 50 Hz call boundary. Callback-bearing runners receive
+-- the private sample latch separately from the authored evaluation table.
 local value_runner_signature<const> = {}
 
 function value_runner_signature.compile(values, position)
@@ -28,10 +29,17 @@ function value_runner_signature.compile(values, position)
 	end
 	if values.has_frame_steps
 	or values.has_time_steps
-	or values.has_scalar_frame_channels
-	or values.has_sample_tracks then
+	or (
+		(values.has_scalar_frame_channels or values.has_sample_tracks)
+		and not values.value_has_evaluation_context
+	) then
 		names[#names + 1] = 'flags'
 		mask = mask | 0x20
+	end
+	if values.value_has_evaluation_context
+	and (values.has_scalar_frame_channels or values.has_sample_tracks) then
+		names[#names + 1] = 'sample'
+		mask = mask | 0x80
 	end
 	if values.value_has_evaluation_context then
 		names[#names + 1] = 'evaluation'

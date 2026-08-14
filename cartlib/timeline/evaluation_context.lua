@@ -4,7 +4,6 @@ local timeline_playback<const> = require('cartlib/timeline/playback')
 local evaluation_context<const> = {}
 local evaluation_flag<const> = timeline_playback.evaluation_flag
 local boundary_mask<const> = evaluation_flag.boundary_mask
-local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
 
@@ -21,6 +20,7 @@ function evaluation_context.write(
 	previous_time_ms,
 	time_ms,
 	direction,
+	sample,
 	flags
 )
 	context.previous_frame = previous_frame
@@ -29,7 +29,6 @@ function evaluation_context.write(
 	context.time_ms = time_ms
 	context.method = method
 	context.direction = direction
-	local sample<const> = flags & sample_flag ~= 0
 	context.sample = sample
 	context.boundary = flags & boundary_mask
 	context.wrapped = flags & wrapped_flag ~= 0

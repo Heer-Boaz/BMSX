@@ -104,7 +104,7 @@ function evaluation_program.compile(program)
 		syntax_values.position_value_operands = position_operands
 		position_signature = compiled_position_signature
 	end
-	local operand_signature<const> = play_signature | position_signature << 7
+	local operand_signature<const> = play_signature | position_signature << 8
 	local factories_by_operands = evaluation_factory_by_shape[shape]
 	if factories_by_operands == nil then
 		factories_by_operands = {}

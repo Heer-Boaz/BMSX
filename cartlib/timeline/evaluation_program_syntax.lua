@@ -184,7 +184,20 @@ local build_program_captures<const> = function(values)
 	return statements
 end
 
-local emit_evaluation_context<const> = function(statements, update_method)
+local emit_evaluation_context<const> = function(statements, values, update_method)
+	statements[#statements + 1] = local_statement(
+		identifier('sample'),
+		binary_expression(
+			syntax.binary_not_equal,
+			binary_expression(
+				syntax.binary_bitwise_and,
+				identifier('flags'),
+				numeric_literal(values.sample_flag)
+			),
+			numeric_literal(0)
+		),
+		true
+	)
 	statements[#statements + 1] = local_statement(
 		identifier('evaluation'),
 		call_expression(identifier('write_evaluation_context'), {
@@ -196,6 +209,7 @@ local emit_evaluation_context<const> = function(statements, update_method)
 			identifier('previous_time_ms'),
 			identifier('time_ms'),
 			identifier('direction'),
+			identifier('sample'),
 			identifier('flags'),
 		}),
 		true
@@ -290,19 +304,22 @@ local emit_sample<const> = function(statements, values)
 			}
 		))
 	end
-	statements[#statements + 1] = if_statement({
-		if_clause(
+	local sample_condition
+	if values.has_evaluation_context then
+		sample_condition = identifier('sample')
+	else
+		sample_condition = binary_expression(
+			syntax.binary_not_equal,
 			binary_expression(
-				syntax.binary_not_equal,
-				binary_expression(
-					syntax.binary_bitwise_and,
-					identifier('flags'),
-					numeric_literal(values.sample_flag)
-				),
-				numeric_literal(0)
+				syntax.binary_bitwise_and,
+				identifier('flags'),
+				numeric_literal(values.sample_flag)
 			),
-			block(sample_statements)
-		),
+			numeric_literal(0)
+		)
+	end
+	statements[#statements + 1] = if_statement({
+		if_clause(sample_condition, block(sample_statements)),
 	})
 end
 
@@ -357,7 +374,7 @@ end
 local build_evaluator_body<const> = function(values, evaluator_name, update_method)
 	local statements<const> = {}
 	if values.has_evaluation_context then
-		emit_evaluation_context(statements, update_method)
+		emit_evaluation_context(statements, values, update_method)
 	end
 	if values.has_tags then
 		emit_tags(statements, evaluator_name)

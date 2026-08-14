@@ -101,6 +101,15 @@ local emit_boundary_callback<const> = function(
 				identifier(previous_time_name),
 				identifier(time_name),
 				direction_expression(direction, dynamic_direction),
+				binary_expression(
+					syntax.binary_not_equal,
+					binary_expression(
+						syntax.binary_bitwise_and,
+						identifier('flags'),
+						numeric_literal(values.sample_flag)
+					),
+					numeric_literal(0)
+				),
 				identifier('flags'),
 			}
 		))

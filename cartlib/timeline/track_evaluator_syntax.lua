@@ -44,8 +44,11 @@ local scalar_runner_arguments<const> = function(values)
 	if values.has_scalar_time_channels then
 		arguments[#arguments + 1] = identifier('time_ms')
 	end
-	if values.has_scalar_frame_channels then
+	if values.has_scalar_frame_channels and not values.value_has_evaluation_context then
 		arguments[#arguments + 1] = identifier('flags')
+	end
+	if values.has_scalar_frame_channels and values.value_has_evaluation_context then
+		arguments[#arguments + 1] = identifier('sample')
 	end
 	if values.value_has_evaluation_context then
 		arguments[#arguments + 1] = identifier('evaluation')
@@ -211,19 +214,22 @@ local emit_sample<const> = function(statements, values)
 	for index = 1, #values.sample_tracks do
 		emit_sample_track(body, values.sample_tracks[index], values.tau)
 	end
-	statements[#statements + 1] = if_statement({
-		if_clause(
+	local sample_condition
+	if values.value_has_evaluation_context then
+		sample_condition = identifier('sample')
+	else
+		sample_condition = binary_expression(
+			syntax.binary_not_equal,
 			binary_expression(
-				syntax.binary_not_equal,
-				binary_expression(
-					syntax.binary_bitwise_and,
-					identifier('flags'),
-					numeric_literal(values.sample_flag)
-				),
-				numeric_literal(0)
+				syntax.binary_bitwise_and,
+				identifier('flags'),
+				numeric_literal(values.sample_flag)
 			),
-			block(body)
-		),
+			numeric_literal(0)
+		)
+	end
+	statements[#statements + 1] = if_statement({
+		if_clause(sample_condition, block(body)),
 	})
 end
 
