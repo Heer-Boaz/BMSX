@@ -7,7 +7,8 @@ local syntax_factory<const> = lua_compiler.syntax_factory
 local time_transform_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
-local identifier<const> = syntax_factory.identifier
+local generated_symbol<const> = syntax_factory.generated_symbol
+local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
 local boolean_literal<const> = syntax_factory.boolean_literal
 local nil_literal<const> = syntax_factory.nil_literal
@@ -26,117 +27,155 @@ local return_statement<const> = syntax_factory.return_statement
 local affine_identity<const> = 0
 local affine_translation<const> = 1
 
+-- One transform owns every lexical binding emitted into its function, including
+-- the child-transport fragment. Names remain diagnostic metadata only.
+local symbols<const> = {
+	target = generated_symbol('target'),
+	owner = generated_symbol('owner'),
+	previous_parent_time_ms = generated_symbol('previous_parent_time_ms'),
+	parent_time_ms = generated_symbol('parent_time_ms'),
+	evaluate = generated_symbol('evaluate'),
+	initial = generated_symbol('initial'),
+	clip = generated_symbol('clip'),
+	time_scale = generated_symbol('time_scale'),
+	time_offset_ms = generated_symbol('time_offset_ms'),
+	previous_time_ms = generated_symbol('previous_time_ms'),
+	time_ms = generated_symbol('time_ms'),
+	duration_ms = generated_symbol('duration_ms'),
+	direction = generated_symbol('direction'),
+	remaining_ms = generated_symbol('remaining_ms'),
+	evaluated = generated_symbol('evaluated'),
+	distance_ms = generated_symbol('distance_ms'),
+	period_ms = generated_symbol('period_ms'),
+	previous_phase_ms = generated_symbol('previous_phase_ms'),
+	phase_ms = generated_symbol('phase_ms'),
+	cursor_ms = generated_symbol('cursor_ms'),
+	segment = generated_symbol('segment'),
+	segment_start_ms = generated_symbol('segment_start_ms'),
+	segment_offset_ms = generated_symbol('segment_offset_ms'),
+	previous_local_ms = generated_symbol('previous_local_ms'),
+	boundary_ms = generated_symbol('boundary_ms'),
+	local_time_ms = generated_symbol('local_time_ms'),
+	program = generated_symbol('program'),
+	frame_duration = generated_symbol('frame_duration'),
+	last_frame = generated_symbol('last_frame'),
+	context = generated_symbol('context'),
+	flags = generated_symbol('flags'),
+	previous_frame = generated_symbol('previous_frame'),
+	frame = generated_symbol('frame'),
+}
+
 local target_member<const> = function(name)
-	return member_expression(identifier('target'), name)
+	return member_expression(reference(symbols.target), name)
 end
 
 local clip_member<const> = function(name)
-	return member_expression(identifier('clip'), name)
+	return member_expression(reference(symbols.clip), name)
 end
 
-local mapped_time_expression<const> = function(parent_time_name, affine)
+local mapped_time_expression<const> = function(parent_time_symbol, affine)
 	if affine == affine_identity then
-		return identifier(parent_time_name)
+		return reference(parent_time_symbol)
 	end
 	if affine == affine_translation then
 		return binary_expression(
 			syntax.binary_add,
-			identifier(parent_time_name),
-			identifier('time_offset_ms')
+			reference(parent_time_symbol),
+			reference(symbols.time_offset_ms)
 		)
 	end
 	return binary_expression(
 		syntax.binary_add,
 		binary_expression(
 			syntax.binary_multiply,
-			identifier(parent_time_name),
-			identifier('time_scale')
+			reference(parent_time_symbol),
+			reference(symbols.time_scale)
 		),
-		identifier('time_offset_ms')
+		reference(symbols.time_offset_ms)
 	)
 end
 
 local emit_once_time_mapping<const> = function(statements, values)
 	if values.affine == affine_translation then
 		statements[#statements + 1] = local_statement(
-			identifier('time_offset_ms'),
+			reference(symbols.time_offset_ms),
 			member_expression(target_member('clip'), 'time_offset_ms'),
 			true
 		)
 	elseif values.affine ~= affine_identity then
 		statements[#statements + 1] = local_statement(
-			identifier('clip'),
+			reference(symbols.clip),
 			target_member('clip'),
 			true
 		)
 		statements[#statements + 1] = local_statement(
-			identifier('time_scale'),
+			reference(symbols.time_scale),
 			clip_member('time_scale'),
 			true
 		)
 		statements[#statements + 1] = local_statement(
-			identifier('time_offset_ms'),
+			reference(symbols.time_offset_ms),
 			clip_member('time_offset_ms'),
 			true
 		)
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('previous_time_ms'),
-		mapped_time_expression('previous_parent_time_ms', values.affine),
+		reference(symbols.previous_time_ms),
+		mapped_time_expression(symbols.previous_parent_time_ms, values.affine),
 		not values.bounded
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('time_ms'),
-		mapped_time_expression('parent_time_ms', values.affine),
+		reference(symbols.time_ms),
+		mapped_time_expression(symbols.parent_time_ms, values.affine),
 		not values.bounded
 	)
 end
 
 local emit_cyclic_captures<const> = function(statements, values)
 	statements[#statements + 1] = local_statement(
-		identifier('clip'),
+		reference(symbols.clip),
 		target_member('clip'),
 		true
 	)
 	if values.affine ~= affine_identity then
 		statements[#statements + 1] = local_statement(
-			identifier('time_offset_ms'),
+			reference(symbols.time_offset_ms),
 			clip_member('time_offset_ms'),
 			true
 		)
 	end
 	if values.affine ~= affine_identity and values.affine ~= affine_translation then
 		statements[#statements + 1] = local_statement(
-			identifier('time_scale'),
+			reference(symbols.time_scale),
 			clip_member('time_scale'),
 			true
 		)
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('duration_ms'),
+		reference(symbols.duration_ms),
 		target_member('duration_ms'),
 		true
 	)
 end
 
-local clamp_time_statement<const> = function(name)
+local clamp_time_statement<const> = function(time_symbol)
 	return if_statement({
 		if_clause(
 			binary_expression(
 				syntax.binary_less,
-				identifier(name),
+				reference(time_symbol),
 				numeric_literal(0)
 			),
-			block({ assignment_statement(identifier(name), numeric_literal(0)) })
+			block({ assignment_statement(reference(time_symbol), numeric_literal(0)) })
 		),
 		if_clause(
 			binary_expression(
 				syntax.binary_greater,
-				identifier(name),
-				identifier('duration_ms')
+				reference(time_symbol),
+				reference(symbols.duration_ms)
 			),
 			block({
-				assignment_statement(identifier(name), identifier('duration_ms')),
+				assignment_statement(reference(time_symbol), reference(symbols.duration_ms)),
 			})
 		),
 	})
@@ -147,7 +186,7 @@ local emit_bounds<const> = function(statements, bounded)
 		return
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('duration_ms'),
+		reference(symbols.duration_ms),
 		target_member('duration_ms'),
 		true
 	)
@@ -155,12 +194,12 @@ local emit_bounds<const> = function(statements, bounded)
 		if_clause(
 			binary_expression(
 				syntax.binary_not_equal,
-				identifier('duration_ms'),
+				reference(symbols.duration_ms),
 				nil_literal()
 			),
 			block({
-				clamp_time_statement('previous_time_ms'),
-				clamp_time_statement('time_ms'),
+				clamp_time_statement(symbols.previous_time_ms),
+				clamp_time_statement(symbols.time_ms),
 			})
 		),
 	})
@@ -168,7 +207,7 @@ end
 
 local emit_direction<const> = function(statements)
 	statements[#statements + 1] = local_statement(
-		identifier('direction'),
+		reference(symbols.direction),
 		numeric_literal(0),
 		false
 	)
@@ -176,18 +215,18 @@ local emit_direction<const> = function(statements)
 		if_clause(
 			binary_expression(
 				syntax.binary_greater,
-				identifier('time_ms'),
-				identifier('previous_time_ms')
+				reference(symbols.time_ms),
+				reference(symbols.previous_time_ms)
 			),
-			block({ assignment_statement(identifier('direction'), numeric_literal(1)) })
+			block({ assignment_statement(reference(symbols.direction), numeric_literal(1)) })
 		),
 		if_clause(
 			binary_expression(
 				syntax.binary_less,
-				identifier('time_ms'),
-				identifier('previous_time_ms')
+				reference(symbols.time_ms),
+				reference(symbols.previous_time_ms)
 			),
-			block({ assignment_statement(identifier('direction'), numeric_literal(-1)) })
+			block({ assignment_statement(reference(symbols.direction), numeric_literal(-1)) })
 		),
 	})
 end
@@ -196,16 +235,16 @@ local emit_transport_captures<const> = child_transport_syntax.emit_captures
 local emit_child_range<const> = child_transport_syntax.emit_range
 local transform_parameters<const> = function(position, active)
 	local parameters<const> = {
-		identifier('target'),
-		identifier('owner'),
-		identifier('previous_parent_time_ms'),
-		identifier('parent_time_ms'),
+		reference(symbols.target),
+		reference(symbols.owner),
+		reference(symbols.previous_parent_time_ms),
+		reference(symbols.parent_time_ms),
 	}
 	if position then
-		parameters[#parameters + 1] = identifier('evaluate')
+		parameters[#parameters + 1] = reference(symbols.evaluate)
 	end
 	if not active then
-		parameters[#parameters + 1] = identifier('initial')
+		parameters[#parameters + 1] = reference(symbols.initial)
 	end
 	return parameters
 end
@@ -225,12 +264,13 @@ function time_transform_syntax.build_once(values)
 	if values.direction == 0 then
 		emit_direction(statements)
 	end
-	emit_transport_captures(statements, values)
+	emit_transport_captures(statements, values, symbols)
 	emit_child_range(
 		statements,
 		values,
-		'previous_time_ms',
-		'time_ms',
+		symbols,
+		symbols.previous_time_ms,
+		symbols.time_ms,
 		values.direction,
 		values.direction == 0,
 		values.boundary_none
@@ -240,26 +280,26 @@ end
 
 local emit_loop_position<const> = function(statements, values)
 	emit_cyclic_captures(statements, values)
-	emit_transport_captures(statements, values)
+	emit_transport_captures(statements, values, symbols)
 	statements[#statements + 1] = assignment_statement(
 		target_member('wrapped'),
 		boolean_literal(false)
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('previous_time_ms'),
+		reference(symbols.previous_time_ms),
 		binary_expression(
 			syntax.binary_modulus,
-			mapped_time_expression('previous_parent_time_ms', values.affine),
-			identifier('duration_ms')
+			mapped_time_expression(symbols.previous_parent_time_ms, values.affine),
+			reference(symbols.duration_ms)
 		),
 		true
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('time_ms'),
+		reference(symbols.time_ms),
 		binary_expression(
 			syntax.binary_modulus,
-			mapped_time_expression('parent_time_ms', values.affine),
-			identifier('duration_ms')
+			mapped_time_expression(symbols.parent_time_ms, values.affine),
+			reference(symbols.duration_ms)
 		),
 		true
 	)
@@ -267,8 +307,9 @@ local emit_loop_position<const> = function(statements, values)
 	emit_child_range(
 		statements,
 		values,
-		'previous_time_ms',
-		'time_ms',
+		symbols,
+		symbols.previous_time_ms,
+		symbols.time_ms,
 		0,
 		true,
 		values.boundary_none
@@ -280,14 +321,14 @@ local loop_delta_expression<const> = function(values)
 	if values.direction > 0 then
 		delta = binary_expression(
 			syntax.binary_subtract,
-			identifier('parent_time_ms'),
-			identifier('previous_parent_time_ms')
+			reference(symbols.parent_time_ms),
+			reference(symbols.previous_parent_time_ms)
 		)
 	else
 		delta = binary_expression(
 			syntax.binary_subtract,
-			identifier('previous_parent_time_ms'),
-			identifier('parent_time_ms')
+			reference(symbols.previous_parent_time_ms),
+			reference(symbols.parent_time_ms)
 		)
 	end
 	if values.affine == affine_identity or values.affine == affine_translation then
@@ -296,48 +337,48 @@ local loop_delta_expression<const> = function(values)
 	return binary_expression(
 		syntax.binary_multiply,
 		delta,
-		identifier('time_scale')
+		reference(symbols.time_scale)
 	)
 end
 
 local emit_loop_play<const> = function(statements, values)
 	emit_cyclic_captures(statements, values)
-	emit_transport_captures(statements, values)
+	emit_transport_captures(statements, values, symbols)
 	statements[#statements + 1] = assignment_statement(
 		target_member('wrapped'),
 		boolean_literal(false)
 	)
 	if values.active then
 		statements[#statements + 1] = local_statement(
-			identifier('previous_time_ms'),
+			reference(symbols.previous_time_ms),
 			target_member('position_ms'),
 			false
 		)
 	else
-		statements[#statements + 1] = local_statement(identifier('previous_time_ms'), nil, false)
+		statements[#statements + 1] = local_statement(reference(symbols.previous_time_ms), nil, false)
 		statements[#statements + 1] = if_statement({
-			if_clause(identifier('initial'), block({
+			if_clause(reference(symbols.initial), block({
 				assignment_statement(
-					identifier('previous_time_ms'),
+					reference(symbols.previous_time_ms),
 					binary_expression(
 						syntax.binary_modulus,
-						mapped_time_expression('previous_parent_time_ms', values.affine),
-						identifier('duration_ms')
+						mapped_time_expression(symbols.previous_parent_time_ms, values.affine),
+						reference(symbols.duration_ms)
 					)
 				),
 			})),
 			else_clause(block({
-				assignment_statement(identifier('previous_time_ms'), target_member('position_ms')),
+				assignment_statement(reference(symbols.previous_time_ms), target_member('position_ms')),
 			})),
 		})
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('remaining_ms'),
+		reference(symbols.remaining_ms),
 		loop_delta_expression(values),
 		false
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('evaluated'),
+		reference(symbols.evaluated),
 		boolean_literal(false),
 		false
 	)
@@ -345,24 +386,24 @@ local emit_loop_play<const> = function(statements, values)
 	if values.direction > 0 then
 		initial_distance = binary_expression(
 			syntax.binary_subtract,
-			identifier('duration_ms'),
-			identifier('previous_time_ms')
+			reference(symbols.duration_ms),
+			reference(symbols.previous_time_ms)
 		)
 	else
-		initial_distance = identifier('previous_time_ms')
+		initial_distance = reference(symbols.previous_time_ms)
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('distance_ms'),
+		reference(symbols.distance_ms),
 		initial_distance,
 		false
 	)
 	local loop_body<const> = {
 		assignment_statement(
-			identifier('remaining_ms'),
+			reference(symbols.remaining_ms),
 			binary_expression(
 				syntax.binary_subtract,
-				identifier('remaining_ms'),
-				identifier('distance_ms')
+				reference(symbols.remaining_ms),
+				reference(symbols.distance_ms)
 			)
 		),
 		assignment_statement(target_member('wrapped'), boolean_literal(true)),
@@ -371,39 +412,43 @@ local emit_loop_play<const> = function(statements, values)
 	if values.direction > 0 then
 		boundary_time = numeric_literal(0)
 	else
-		boundary_time = identifier('duration_ms')
+		boundary_time = reference(symbols.duration_ms)
 	end
 	loop_body[#loop_body + 1] = local_statement(
-		identifier('time_ms'),
+		reference(symbols.time_ms),
 		boundary_time,
 		true
 	)
 	emit_child_range(
 		loop_body,
 		values,
-		'previous_time_ms',
-		'time_ms',
+		symbols,
+		symbols.previous_time_ms,
+		symbols.time_ms,
 		values.direction,
 		false,
 		values.loop_boundary_flags
 	)
 	if not values.active then
-		loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+		loop_body[#loop_body + 1] = assignment_statement(reference(symbols.initial), boolean_literal(false))
 	end
-	loop_body[#loop_body + 1] = assignment_statement(identifier('evaluated'), boolean_literal(true))
+	loop_body[#loop_body + 1] = assignment_statement(reference(symbols.evaluated), boolean_literal(true))
 	loop_body[#loop_body + 1] = assignment_statement(
-		identifier('previous_time_ms'),
-		identifier('time_ms')
+		reference(symbols.previous_time_ms),
+		reference(symbols.time_ms)
 	)
-	loop_body[#loop_body + 1] = assignment_statement(identifier('distance_ms'), identifier('duration_ms'))
+	loop_body[#loop_body + 1] = assignment_statement(
+		reference(symbols.distance_ms),
+		reference(symbols.duration_ms)
+	)
 	local loop_operator<const> = values.direction > 0
 		and syntax.binary_greater_equal
 		or syntax.binary_greater
 	statements[#statements + 1] = while_statement(
 		binary_expression(
 			loop_operator,
-			identifier('remaining_ms'),
-			identifier('distance_ms')
+			reference(symbols.remaining_ms),
+			reference(symbols.distance_ms)
 		),
 		block(loop_body)
 	)
@@ -412,22 +457,23 @@ local emit_loop_play<const> = function(statements, values)
 	if values.direction > 0 then
 		final_time = binary_expression(
 			syntax.binary_add,
-			identifier('previous_time_ms'),
-			identifier('remaining_ms')
+			reference(symbols.previous_time_ms),
+			reference(symbols.remaining_ms)
 		)
 	else
 		final_time = binary_expression(
 			syntax.binary_subtract,
-			identifier('previous_time_ms'),
-			identifier('remaining_ms')
+			reference(symbols.previous_time_ms),
+			reference(symbols.remaining_ms)
 		)
 	end
-	final_body[#final_body + 1] = local_statement(identifier('time_ms'), final_time, true)
+	final_body[#final_body + 1] = local_statement(reference(symbols.time_ms), final_time, true)
 	emit_child_range(
 		final_body,
 		values,
-		'previous_time_ms',
-		'time_ms',
+		symbols,
+		symbols.previous_time_ms,
+		symbols.time_ms,
 		values.direction,
 		false,
 		values.boundary_none
@@ -438,10 +484,10 @@ local emit_loop_play<const> = function(statements, values)
 				syntax.binary_or,
 				binary_expression(
 					syntax.binary_greater,
-					identifier('remaining_ms'),
+					reference(symbols.remaining_ms),
 					numeric_literal(0)
 				),
-				unary_expression(syntax.unary_not, identifier('evaluated'))
+				unary_expression(syntax.unary_not, reference(symbols.evaluated))
 			),
 			block(final_body)
 		),
@@ -458,33 +504,39 @@ function time_transform_syntax.build_loop(values)
 	return transform_chunk(statements, values.direction == 0, values.active)
 end
 
-local emit_pingpong_time<const> = function(statements, values, parent_time_name, phase_name, time_name)
+local emit_pingpong_time<const> = function(
+	statements,
+	values,
+	parent_time_symbol,
+	phase_symbol,
+	time_symbol
+)
 	statements[#statements + 1] = local_statement(
-		identifier(phase_name),
+		reference(phase_symbol),
 		binary_expression(
 			syntax.binary_modulus,
-			mapped_time_expression(parent_time_name, values.affine),
-			identifier('period_ms')
+			mapped_time_expression(parent_time_symbol, values.affine),
+			reference(symbols.period_ms)
 		),
 		true
 	)
-	statements[#statements + 1] = local_statement(identifier(time_name), nil, false)
+	statements[#statements + 1] = local_statement(reference(time_symbol), nil, false)
 	statements[#statements + 1] = if_statement({
 		if_clause(
 			binary_expression(
 				syntax.binary_less_equal,
-				identifier(phase_name),
-				identifier('duration_ms')
+				reference(phase_symbol),
+				reference(symbols.duration_ms)
 			),
-			block({ assignment_statement(identifier(time_name), identifier(phase_name)) })
+			block({ assignment_statement(reference(time_symbol), reference(phase_symbol)) })
 		),
 		else_clause(block({
 			assignment_statement(
-				identifier(time_name),
+				reference(time_symbol),
 				binary_expression(
 					syntax.binary_subtract,
-					identifier('period_ms'),
-					identifier(phase_name)
+					reference(symbols.period_ms),
+					reference(phase_symbol)
 				)
 			),
 		})),
@@ -493,12 +545,12 @@ end
 
 local emit_pingpong_position<const> = function(statements, values)
 	emit_cyclic_captures(statements, values)
-	emit_transport_captures(statements, values)
+	emit_transport_captures(statements, values, symbols)
 	statements[#statements + 1] = local_statement(
-		identifier('period_ms'),
+		reference(symbols.period_ms),
 		binary_expression(
 			syntax.binary_multiply,
-			identifier('duration_ms'),
+			reference(symbols.duration_ms),
 			numeric_literal(2)
 		),
 		true
@@ -506,17 +558,24 @@ local emit_pingpong_position<const> = function(statements, values)
 	emit_pingpong_time(
 		statements,
 		values,
-		'previous_parent_time_ms',
-		'previous_phase_ms',
-		'previous_time_ms'
+		symbols.previous_parent_time_ms,
+		symbols.previous_phase_ms,
+		symbols.previous_time_ms
 	)
-	emit_pingpong_time(statements, values, 'parent_time_ms', 'phase_ms', 'time_ms')
+	emit_pingpong_time(
+		statements,
+		values,
+		symbols.parent_time_ms,
+		symbols.phase_ms,
+		symbols.time_ms
+	)
 	emit_direction(statements)
 	emit_child_range(
 		statements,
 		values,
-		'previous_time_ms',
-		'time_ms',
+		symbols,
+		symbols.previous_time_ms,
+		symbols.time_ms,
 		0,
 		true,
 		values.boundary_none
@@ -525,34 +584,34 @@ end
 
 local emit_pingpong_initial_segment<const> = function(statements, backward)
 	statements[#statements + 1] = local_statement(
-		identifier('cursor_ms'),
-		identifier('previous_time_ms'),
+		reference(symbols.cursor_ms),
+		reference(symbols.previous_time_ms),
 		false
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('segment'),
+		reference(symbols.segment),
 		binary_expression(
 			syntax.binary_floor_divide,
-			identifier('cursor_ms'),
-			identifier('duration_ms')
+			reference(symbols.cursor_ms),
+			reference(symbols.duration_ms)
 		),
 		not backward
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('segment_start_ms'),
+		reference(symbols.segment_start_ms),
 		binary_expression(
 			syntax.binary_multiply,
-			identifier('segment'),
-			identifier('duration_ms')
+			reference(symbols.segment),
+			reference(symbols.duration_ms)
 		),
 		not backward
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('segment_offset_ms'),
+		reference(symbols.segment_offset_ms),
 		binary_expression(
 			syntax.binary_subtract,
-			identifier('cursor_ms'),
-			identifier('segment_start_ms')
+			reference(symbols.cursor_ms),
+			reference(symbols.segment_start_ms)
 		),
 		not backward
 	)
@@ -561,33 +620,33 @@ local emit_pingpong_initial_segment<const> = function(statements, backward)
 			if_clause(
 				binary_expression(
 					syntax.binary_equal,
-					identifier('segment_offset_ms'),
+					reference(symbols.segment_offset_ms),
 					numeric_literal(0)
 				),
 				block({
 					assignment_statement(
-						identifier('segment'),
+						reference(symbols.segment),
 						binary_expression(
 							syntax.binary_subtract,
-							identifier('segment'),
+							reference(symbols.segment),
 							numeric_literal(1)
 						)
 					),
 					assignment_statement(
-						identifier('segment_start_ms'),
+						reference(symbols.segment_start_ms),
 						binary_expression(
 							syntax.binary_subtract,
-							identifier('segment_start_ms'),
-							identifier('duration_ms')
+							reference(symbols.segment_start_ms),
+							reference(symbols.duration_ms)
 						)
 					),
-					assignment_statement(identifier('segment_offset_ms'), identifier('duration_ms')),
+					assignment_statement(reference(symbols.segment_offset_ms), reference(symbols.duration_ms)),
 				})
 			),
 		})
 	end
-	statements[#statements + 1] = local_statement(identifier('previous_local_ms'), nil, false)
-	statements[#statements + 1] = local_statement(identifier('direction'), nil, false)
+	statements[#statements + 1] = local_statement(reference(symbols.previous_local_ms), nil, false)
+	statements[#statements + 1] = local_statement(reference(symbols.direction), nil, false)
 	local even_direction<const> = backward and -1 or 1
 	local odd_direction<const> = -even_direction
 	statements[#statements + 1] = if_statement({
@@ -596,26 +655,26 @@ local emit_pingpong_initial_segment<const> = function(statements, backward)
 				syntax.binary_equal,
 				binary_expression(
 					syntax.binary_bitwise_and,
-					identifier('segment'),
+					reference(symbols.segment),
 					numeric_literal(1)
 				),
 				numeric_literal(0)
 			),
 			block({
-				assignment_statement(identifier('previous_local_ms'), identifier('segment_offset_ms')),
-				assignment_statement(identifier('direction'), numeric_literal(even_direction)),
+				assignment_statement(reference(symbols.previous_local_ms), reference(symbols.segment_offset_ms)),
+				assignment_statement(reference(symbols.direction), numeric_literal(even_direction)),
 			})
 		),
 		else_clause(block({
 			assignment_statement(
-				identifier('previous_local_ms'),
+				reference(symbols.previous_local_ms),
 				binary_expression(
 					syntax.binary_subtract,
-					identifier('duration_ms'),
-					identifier('segment_offset_ms')
+					reference(symbols.duration_ms),
+					reference(symbols.segment_offset_ms)
 				)
 			),
-			assignment_statement(identifier('direction'), numeric_literal(odd_direction)),
+			assignment_statement(reference(symbols.direction), numeric_literal(odd_direction)),
 		})),
 	})
 end
@@ -623,44 +682,44 @@ end
 local emit_pingpong_play<const> = function(statements, values)
 	local backward<const> = values.direction < 0
 	emit_cyclic_captures(statements, values)
-	emit_transport_captures(statements, values)
+	emit_transport_captures(statements, values, symbols)
 	statements[#statements + 1] = local_statement(
-		identifier('previous_time_ms'),
-		mapped_time_expression('previous_parent_time_ms', values.affine),
+		reference(symbols.previous_time_ms),
+		mapped_time_expression(symbols.previous_parent_time_ms, values.affine),
 		true
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('time_ms'),
-		mapped_time_expression('parent_time_ms', values.affine),
+		reference(symbols.time_ms),
+		mapped_time_expression(symbols.parent_time_ms, values.affine),
 		true
 	)
 	emit_pingpong_initial_segment(statements, backward)
 	local boundary_initial
 	if backward then
-		boundary_initial = identifier('segment_start_ms')
+		boundary_initial = reference(symbols.segment_start_ms)
 	else
 		boundary_initial = binary_expression(
 			syntax.binary_add,
-			identifier('segment_start_ms'),
-			identifier('duration_ms')
+			reference(symbols.segment_start_ms),
+			reference(symbols.duration_ms)
 		)
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('boundary_ms'),
+		reference(symbols.boundary_ms),
 		boundary_initial,
 		false
 	)
 	local loop_body<const> = {
-		local_statement(identifier('local_time_ms'), numeric_literal(0), false),
+		local_statement(reference(symbols.local_time_ms), numeric_literal(0), false),
 		if_statement({
 			if_clause(
 				binary_expression(
 					syntax.binary_greater,
-					identifier('direction'),
+					reference(symbols.direction),
 					numeric_literal(0)
 				),
 				block({
-					assignment_statement(identifier('local_time_ms'), identifier('duration_ms')),
+					assignment_statement(reference(symbols.local_time_ms), reference(symbols.duration_ms)),
 				})
 			),
 		}),
@@ -668,36 +727,43 @@ local emit_pingpong_play<const> = function(statements, values)
 	emit_child_range(
 		loop_body,
 		values,
-		'previous_local_ms',
-		'local_time_ms',
+		symbols,
+		symbols.previous_local_ms,
+		symbols.local_time_ms,
 		0,
 		true,
 		values.boundary_turn
 	)
 	if not values.active then
-		loop_body[#loop_body + 1] = assignment_statement(identifier('initial'), boolean_literal(false))
+		loop_body[#loop_body + 1] = assignment_statement(reference(symbols.initial), boolean_literal(false))
 	end
-	loop_body[#loop_body + 1] = assignment_statement(identifier('cursor_ms'), identifier('boundary_ms'))
-	loop_body[#loop_body + 1] = assignment_statement(identifier('previous_local_ms'), identifier('local_time_ms'))
 	loop_body[#loop_body + 1] = assignment_statement(
-		identifier('direction'),
-		unary_expression(syntax.unary_negate, identifier('direction'))
+		reference(symbols.cursor_ms),
+		reference(symbols.boundary_ms)
+	)
+	loop_body[#loop_body + 1] = assignment_statement(
+		reference(symbols.previous_local_ms),
+		reference(symbols.local_time_ms)
+	)
+	loop_body[#loop_body + 1] = assignment_statement(
+		reference(symbols.direction),
+		unary_expression(syntax.unary_negate, reference(symbols.direction))
 	)
 	local boundary_step_operator<const> = backward and syntax.binary_subtract or syntax.binary_add
 	loop_body[#loop_body + 1] = assignment_statement(
-		identifier('boundary_ms'),
+		reference(symbols.boundary_ms),
 		binary_expression(
 			boundary_step_operator,
-			identifier('boundary_ms'),
-			identifier('duration_ms')
+			reference(symbols.boundary_ms),
+			reference(symbols.duration_ms)
 		)
 	)
 	local loop_comparison<const> = backward and syntax.binary_greater_equal or syntax.binary_less_equal
 	statements[#statements + 1] = while_statement(
 		binary_expression(
 			loop_comparison,
-			identifier('boundary_ms'),
-			identifier('time_ms')
+			reference(symbols.boundary_ms),
+			reference(symbols.time_ms)
 		),
 		block(loop_body)
 	)
@@ -706,25 +772,25 @@ local emit_pingpong_play<const> = function(statements, values)
 	if backward then
 		distance = binary_expression(
 			syntax.binary_subtract,
-			identifier('cursor_ms'),
-			identifier('time_ms')
+			reference(symbols.cursor_ms),
+			reference(symbols.time_ms)
 		)
 	else
 		distance = binary_expression(
 			syntax.binary_subtract,
-			identifier('time_ms'),
-			identifier('cursor_ms')
+			reference(symbols.time_ms),
+			reference(symbols.cursor_ms)
 		)
 	end
 	final_body[#final_body + 1] = local_statement(
-		identifier('local_time_ms'),
+		reference(symbols.local_time_ms),
 		binary_expression(
 			syntax.binary_add,
-			identifier('previous_local_ms'),
+			reference(symbols.previous_local_ms),
 			binary_expression(
 				syntax.binary_multiply,
 				distance,
-				identifier('direction')
+				reference(symbols.direction)
 			)
 		),
 		true
@@ -732,8 +798,9 @@ local emit_pingpong_play<const> = function(statements, values)
 	emit_child_range(
 		final_body,
 		values,
-		'previous_local_ms',
-		'local_time_ms',
+		symbols,
+		symbols.previous_local_ms,
+		symbols.local_time_ms,
 		0,
 		true,
 		values.boundary_none
@@ -745,13 +812,13 @@ local emit_pingpong_play<const> = function(statements, values)
 				syntax.binary_or,
 				binary_expression(
 					final_comparison,
-					identifier('cursor_ms'),
-					identifier('time_ms')
+					reference(symbols.cursor_ms),
+					reference(symbols.time_ms)
 				),
 				binary_expression(
 					syntax.binary_equal,
-					identifier('cursor_ms'),
-					identifier('previous_time_ms')
+					reference(symbols.cursor_ms),
+					reference(symbols.previous_time_ms)
 				)
 			),
 			block(final_body)

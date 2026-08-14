@@ -7,6 +7,7 @@ local child_transport_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
+local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
 local member_expression<const> = syntax_factory.member_expression
 local call_expression<const> = syntax_factory.call_expression
@@ -17,47 +18,47 @@ local call_statement<const> = syntax_factory.call_statement
 local if_clause<const> = syntax_factory.if_clause
 local if_statement<const> = syntax_factory.if_statement
 
-local target_member<const> = function(name)
-	return member_expression(identifier('target'), name)
+local target_member<const> = function(symbols, name)
+	return member_expression(reference(symbols.target), name)
 end
 
-local program_member<const> = function(name)
-	return member_expression(identifier('program'), name)
+local program_member<const> = function(symbols, name)
+	return member_expression(reference(symbols.program), name)
 end
 
-function child_transport_syntax.emit_captures(statements, values)
+function child_transport_syntax.emit_captures(statements, values, symbols)
 	if not values.position then
 		statements[#statements + 1] = local_statement(
-			identifier('evaluate'),
-			target_member('evaluate_play'),
+			reference(symbols.evaluate),
+			target_member(symbols, 'evaluate_play'),
 			true
 		)
 	end
 	if not values.continuous
 	or (values.has_boundary_callback and not values.has_evaluation_callbacks) then
 		statements[#statements + 1] = local_statement(
-			identifier('program'),
-			target_member('program'),
+			reference(symbols.program),
+			target_member(symbols, 'program'),
 			true
 		)
 	end
 	if not values.continuous then
 		statements[#statements + 1] = local_statement(
-			identifier('frame_duration'),
-			program_member('frame_duration'),
+			reference(symbols.frame_duration),
+			program_member(symbols, 'frame_duration'),
 			true
 		)
 		statements[#statements + 1] = local_statement(
-			identifier('last_frame'),
-			program_member('last_frame'),
+			reference(symbols.last_frame),
+			program_member(symbols, 'last_frame'),
 			true
 		)
 	end
 end
 
-local direction_expression<const> = function(direction, dynamic_direction)
+local direction_expression<const> = function(direction, dynamic_direction, symbols)
 	if dynamic_direction then
-		return identifier('direction')
+		return reference(symbols.direction)
 	end
 	return numeric_literal(direction)
 end
@@ -65,10 +66,11 @@ end
 local emit_boundary_callback<const> = function(
 	statements,
 	values,
-	previous_frame_name,
-	frame_name,
-	previous_time_name,
-	time_name,
+	symbols,
+	previous_frame_symbol,
+	frame_symbol,
+	previous_time_symbol,
+	time_symbol,
 	direction,
 	dynamic_direction
 )
@@ -76,49 +78,49 @@ local emit_boundary_callback<const> = function(
 		return
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('context'),
-		target_member('evaluation_context'),
+		reference(symbols.context),
+		target_member(symbols, 'evaluation_context'),
 		true
 	)
 	if not values.has_evaluation_callbacks then
 		local previous_frame
 		local frame
-		if previous_frame_name == nil then
+		if previous_frame_symbol == nil then
 			previous_frame = numeric_literal(0)
 			frame = numeric_literal(0)
 		else
-			previous_frame = identifier(previous_frame_name)
-			frame = identifier(frame_name)
+			previous_frame = reference(previous_frame_symbol)
+			frame = reference(frame_symbol)
 		end
 		statements[#statements + 1] = call_statement(call_expression(
 			identifier('write_evaluation_context'),
 			{
-				identifier('context'),
-				identifier('program'),
+				reference(symbols.context),
+				reference(symbols.program),
 				numeric_literal(values.play_method),
 				previous_frame,
 				frame,
-				identifier(previous_time_name),
-				identifier(time_name),
-				direction_expression(direction, dynamic_direction),
+				reference(previous_time_symbol),
+				reference(time_symbol),
+				direction_expression(direction, dynamic_direction, symbols),
 				binary_expression(
 					syntax.binary_not_equal,
 					binary_expression(
 						syntax.binary_bitwise_and,
-						identifier('flags'),
+						reference(symbols.flags),
 						numeric_literal(values.sample_flag)
 					),
 					numeric_literal(0)
 				),
-				identifier('flags'),
+				reference(symbols.flags),
 			}
 		))
 	end
 	statements[#statements + 1] = call_statement(call_expression(
-		member_expression(identifier('clip'), values.boundary_callback_member),
+		member_expression(reference(symbols.clip), values.boundary_callback_member),
 		{
-			target_member('primary_binding'),
-			identifier('context'),
+			target_member(symbols, 'primary_binding'),
+			reference(symbols.context),
 		}
 	))
 end
@@ -126,62 +128,64 @@ end
 local emit_continuous_range<const> = function(
 	statements,
 	values,
-	previous_time_name,
-	time_name,
+	symbols,
+	previous_time_symbol,
+	time_symbol,
 	direction,
 	dynamic_direction,
 	range_flags
 )
 	if values.active then
 		statements[#statements + 1] = local_statement(
-			identifier('flags'),
+			reference(symbols.flags),
 			numeric_literal(range_flags | values.sample_flag),
 			true
 		)
 	else
 		statements[#statements + 1] = local_statement(
-			identifier('flags'),
+			reference(symbols.flags),
 			numeric_literal(range_flags | values.sample_flag),
 			false
 		)
 		statements[#statements + 1] = if_statement({
-			if_clause(identifier('initial'), block({
-				assignment_statement(target_member('head'), numeric_literal(0)),
+			if_clause(reference(symbols.initial), block({
+				assignment_statement(target_member(symbols, 'head'), numeric_literal(0)),
 				assignment_statement(
-					identifier('flags'),
+					reference(symbols.flags),
 					numeric_literal(range_flags | values.sample_flag | values.initial_flag)
 				),
 			})),
 		})
 	end
 	statements[#statements + 1] = assignment_statement(
-		target_member('position_ms'),
-		identifier(time_name)
+		target_member(symbols, 'position_ms'),
+		reference(time_symbol)
 	)
 	statements[#statements + 1] = assignment_statement(
-		target_member('direction'),
-		direction_expression(direction, dynamic_direction)
+		target_member(symbols, 'direction'),
+		direction_expression(direction, dynamic_direction, symbols)
 	)
-	statements[#statements + 1] = call_statement(call_expression(identifier('evaluate'), {
-		identifier('target'),
-		identifier('owner'),
+	statements[#statements + 1] = call_statement(call_expression(reference(symbols.evaluate), {
+		reference(symbols.target),
+		reference(symbols.owner),
 		numeric_literal(0),
 		numeric_literal(0),
-		identifier(previous_time_name),
-		identifier(time_name),
-		direction_expression(direction, dynamic_direction),
-		identifier('flags'),
+		reference(previous_time_symbol),
+		reference(time_symbol),
+		direction_expression(direction, dynamic_direction, symbols),
+		reference(symbols.flags),
 	}))
 	if range_flags ~= values.boundary_none then
-		emit_boundary_callback(
-			statements,
-			values,
-			nil,
-			nil,
-			previous_time_name,
-			time_name,
-			direction,
-			dynamic_direction
+			emit_boundary_callback(
+				statements,
+				values,
+				symbols,
+				nil,
+				nil,
+				previous_time_symbol,
+				time_symbol,
+				direction,
+				dynamic_direction
 		)
 	end
 end
@@ -189,39 +193,40 @@ end
 local emit_frame_range<const> = function(
 	statements,
 	values,
-	previous_time_name,
-	time_name,
+	symbols,
+	previous_time_symbol,
+	time_symbol,
 	direction,
 	dynamic_direction,
 	range_flags
 )
 	statements[#statements + 1] = local_statement(
-		identifier('previous_frame'),
-		target_member('head'),
+		reference(symbols.previous_frame),
+		target_member(symbols, 'head'),
 		values.active
 	)
 	if not values.active then
 		statements[#statements + 1] = if_statement({
-			if_clause(identifier('initial'), block({
+			if_clause(reference(symbols.initial), block({
 				assignment_statement(
-					identifier('previous_frame'),
+					reference(symbols.previous_frame),
 					binary_expression(
 						syntax.binary_floor_divide,
-						identifier(previous_time_name),
-						identifier('frame_duration')
+						reference(previous_time_symbol),
+						reference(symbols.frame_duration)
 					)
 				),
 				if_statement({
 					if_clause(
 						binary_expression(
 							syntax.binary_greater,
-							identifier('previous_frame'),
-							identifier('last_frame')
+							reference(symbols.previous_frame),
+							reference(symbols.last_frame)
 						),
 						block({
 							assignment_statement(
-								identifier('previous_frame'),
-								identifier('last_frame')
+								reference(symbols.previous_frame),
+								reference(symbols.last_frame)
 							),
 						})
 					),
@@ -230,11 +235,11 @@ local emit_frame_range<const> = function(
 		})
 	end
 	statements[#statements + 1] = local_statement(
-		identifier('frame'),
+		reference(symbols.frame),
 		binary_expression(
 			syntax.binary_floor_divide,
-			identifier(time_name),
-			identifier('frame_duration')
+			reference(time_symbol),
+			reference(symbols.frame_duration)
 		),
 		false
 	)
@@ -242,83 +247,87 @@ local emit_frame_range<const> = function(
 		if_clause(
 			binary_expression(
 				syntax.binary_greater,
-				identifier('frame'),
-				identifier('last_frame')
+				reference(symbols.frame),
+				reference(symbols.last_frame)
 			),
-			block({ assignment_statement(identifier('frame'), identifier('last_frame')) })
+			block({ assignment_statement(reference(symbols.frame), reference(symbols.last_frame)) })
 		),
 	})
-	statements[#statements + 1] = assignment_statement(target_member('head'), identifier('frame'))
 	statements[#statements + 1] = assignment_statement(
-		target_member('frame_elapsed'),
+		target_member(symbols, 'head'),
+		reference(symbols.frame)
+	)
+	statements[#statements + 1] = assignment_statement(
+		target_member(symbols, 'frame_elapsed'),
 		binary_expression(
 			syntax.binary_subtract,
-			identifier(time_name),
+			reference(time_symbol),
 			binary_expression(
 				syntax.binary_multiply,
-				identifier('frame'),
-				identifier('frame_duration')
+				reference(symbols.frame),
+				reference(symbols.frame_duration)
 			)
 		)
 	)
 	statements[#statements + 1] = assignment_statement(
-		target_member('position_ms'),
-		identifier(time_name)
+		target_member(symbols, 'position_ms'),
+		reference(time_symbol)
 	)
 	statements[#statements + 1] = assignment_statement(
-		target_member('direction'),
-		direction_expression(direction, dynamic_direction)
+		target_member(symbols, 'direction'),
+		direction_expression(direction, dynamic_direction, symbols)
 	)
 	statements[#statements + 1] = local_statement(
-		identifier('flags'),
+		reference(symbols.flags),
 		numeric_literal(range_flags),
 		false
 	)
 	local frame_changed<const> = binary_expression(
 		syntax.binary_not_equal,
-		identifier('frame'),
-		identifier('previous_frame')
+		reference(symbols.frame),
+		reference(symbols.previous_frame)
 	)
 	local sample = frame_changed
 	if not values.active then
-		sample = binary_expression(syntax.binary_or, identifier('initial'), frame_changed)
+		sample = binary_expression(syntax.binary_or, reference(symbols.initial), frame_changed)
 	end
 	statements[#statements + 1] = if_statement({
 		if_clause(sample, block({
 			assignment_statement(
-				identifier('flags'),
+				reference(symbols.flags),
 				numeric_literal(range_flags | values.sample_flag)
 			),
 		})),
 	})
 	if not values.active then
 		statements[#statements + 1] = if_statement({
-			if_clause(identifier('initial'), block({
+			if_clause(reference(symbols.initial), block({
 				assignment_statement(
-					identifier('flags'),
+					reference(symbols.flags),
 					numeric_literal(range_flags | values.sample_flag | values.initial_flag)
 				),
 			})),
 		})
 	end
-	statements[#statements + 1] = call_statement(call_expression(identifier('evaluate'), {
-		identifier('target'),
-		identifier('owner'),
-		identifier('previous_frame'),
-		identifier('frame'),
-		identifier(previous_time_name),
-		identifier(time_name),
-		direction_expression(direction, dynamic_direction),
-		identifier('flags'),
+	statements[#statements + 1] = call_statement(call_expression(reference(symbols.evaluate), {
+		reference(symbols.target),
+		reference(symbols.owner),
+		reference(symbols.previous_frame),
+		reference(symbols.frame),
+		reference(previous_time_symbol),
+		reference(time_symbol),
+		direction_expression(direction, dynamic_direction, symbols),
+		reference(symbols.flags),
 	}))
 	if range_flags ~= values.boundary_none then
 		emit_boundary_callback(
 			statements,
 			values,
-			'previous_frame',
-			'frame',
-			previous_time_name,
-			time_name,
+			symbols,
+			symbols.previous_frame,
+			symbols.frame,
+			previous_time_symbol,
+			time_symbol,
 			direction,
 			dynamic_direction
 		)
@@ -328,8 +337,9 @@ end
 function child_transport_syntax.emit_range(
 	statements,
 	values,
-	previous_time_name,
-	time_name,
+	symbols,
+	previous_time_symbol,
+	time_symbol,
 	direction,
 	dynamic_direction,
 	range_flags
@@ -338,8 +348,9 @@ function child_transport_syntax.emit_range(
 		emit_continuous_range(
 			statements,
 			values,
-			previous_time_name,
-			time_name,
+			symbols,
+			previous_time_symbol,
+			time_symbol,
 			direction,
 			dynamic_direction,
 			range_flags
@@ -348,8 +359,9 @@ function child_transport_syntax.emit_range(
 		emit_frame_range(
 			statements,
 			values,
-			previous_time_name,
-			time_name,
+			symbols,
+			previous_time_symbol,
+			time_symbol,
 			direction,
 			dynamic_direction,
 			range_flags
