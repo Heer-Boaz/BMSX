@@ -217,9 +217,67 @@ local advance_frame_once<const> = function(self, owner, preserve_elapsed)
 	)
 end
 
+local advance_frame_loop<const> = function(self, owner, preserve_elapsed)
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	local current_frame<const> = previous_frame + 1
+	if current_frame > program.last_frame then
+		self.head = 0
+		self.position_ms = 0
+		self.direction = 1
+		self.wrapped = true
+		if not preserve_elapsed then
+			self.frame_elapsed = 0
+		end
+		local flags = sample_flag | wrapped_flag | boundary_loop
+		if previous_frame == timelinestart_index then
+			flags = flags | initial_flag
+		end
+		self.evaluate_play(
+			self,
+			owner,
+			previous_frame,
+			0,
+			previous_time_ms,
+			0,
+			1,
+			flags
+		)
+		return
+	end
+	local time_ms
+	local flags
+	if previous_frame == timelinestart_index then
+		time_ms = 0
+		flags = sample_flag | initial_flag
+	else
+		time_ms = previous_time_ms + program.frame_duration
+		flags = sample_flag
+	end
+	self.head = current_frame
+	self.position_ms = time_ms
+	if not preserve_elapsed then
+		self.frame_elapsed = 0
+	end
+	self.evaluate_play(
+		self,
+		owner,
+		previous_frame,
+		current_frame,
+		previous_time_ms,
+		time_ms,
+		1,
+		flags
+	)
+end
+
 local select_frame_advance<const> = function(program)
 	if program.playback_mode == playback_once then
 		return advance_frame_once
+	end
+	if program.playback_mode == playback_loop then
+		return advance_frame_loop
 	end
 	return advance_internal
 end
