@@ -347,14 +347,54 @@ end
 
 local update_continuous_pingpong<const> = function(self, owner, delta_time)
 	self.wrapped = false
-	local previous_frame = self.head
-	local frame = previous_frame
-	local flags = sample_flag
-	if frame < 0 then
-		frame = 0
-		self.head = frame
-		flags = initial_sample_range_flags
+	local previous_time_ms = self.position_ms
+	local duration_ms<const> = self.duration_ms
+	local evaluate_play<const> = self.evaluate_play
+	local remaining = delta_time
+	while remaining > 0 do
+		local direction<const> = self.direction
+		local boundary_ms
+		local distance_ms
+		if direction > 0 then
+			boundary_ms = duration_ms
+			distance_ms = duration_ms - previous_time_ms
+		else
+			boundary_ms = 0
+			distance_ms = previous_time_ms
+		end
+		local time_ms
+		local boundary
+		if remaining >= distance_ms then
+			time_ms = boundary_ms
+			remaining = remaining - distance_ms
+			boundary = boundary_turn
+			self.direction = -direction
+		else
+			time_ms = previous_time_ms + remaining * direction
+			remaining = 0
+			boundary = boundary_none
+		end
+		evaluate_play(
+			self,
+			owner,
+			0,
+			0,
+			previous_time_ms,
+			time_ms,
+			direction,
+			sample_flag | boundary
+		)
+		previous_time_ms = time_ms
 	end
+	self.position_ms = previous_time_ms
+end
+
+local update_continuous_pingpong_initial<const> = function(self, owner, delta_time)
+	self.wrapped = false
+	self.head = 0
+	self.update = update_continuous_pingpong
+	local previous_frame = timelinestart_index
+	local flags = initial_sample_range_flags
 	local previous_time_ms = self.position_ms
 	local duration_ms<const> = self.duration_ms
 	local evaluate_play<const> = self.evaluate_play
@@ -386,13 +426,13 @@ local update_continuous_pingpong<const> = function(self, owner, delta_time)
 			self,
 			owner,
 			previous_frame,
-			frame,
+			0,
 			previous_time_ms,
 			time_ms,
 			direction,
 			flags | boundary
 		)
-		previous_frame = frame
+		previous_frame = 0
 		previous_time_ms = time_ms
 		flags = sample_flag
 	end
@@ -446,6 +486,9 @@ local select_updater<const> = function(program, positioned)
 			return update_continuous_loop_initial
 		end
 		return update_continuous_loop
+	end
+	if not positioned then
+		return update_continuous_pingpong_initial
 	end
 	return update_continuous_pingpong
 end
