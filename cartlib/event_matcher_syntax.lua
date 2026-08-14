@@ -6,6 +6,8 @@ local event_matcher_syntax<const> = {}
 local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local identifier<const> = syntax_factory.identifier
+local generated_symbol<const> = syntax_factory.generated_symbol
+local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
 local string_literal<const> = syntax_factory.string_literal
 local boolean_literal<const> = syntax_factory.boolean_literal
@@ -18,11 +20,19 @@ local function_expression<const> = syntax_factory.function_expression
 local local_statement<const> = syntax_factory.local_statement
 local return_statement<const> = syntax_factory.return_statement
 
+local symbols<const> = {
+	operands = generated_symbol('operands'),
+	value_type = generated_symbol('value_type'),
+	any_matches = generated_symbol('any_matches'),
+	list_contains = generated_symbol('list_contains'),
+	payload = generated_symbol('payload'),
+}
+
 local add_operand<const> = function(state, operand)
 	local operands<const> = state.operands
 	local index<const> = #operands + 1
 	operands[index] = operand
-	return index_expression(identifier('operands'), numeric_literal(index))
+	return index_expression(reference(symbols.operands), numeric_literal(index))
 end
 
 local append_condition<const> = function(expression, condition)
@@ -40,9 +50,9 @@ local build_any_entries<const> = function(state, expression, entries)
 	for key, list in pairs(entries) do
 		expression = append_condition(
 			expression,
-			call_expression(identifier('any_matches'), {
+			call_expression(reference(symbols.any_matches), {
 				add_operand(state, list),
-				index_expression(identifier('payload'), add_operand(state, key)),
+				index_expression(reference(symbols.payload), add_operand(state, key)),
 			})
 		)
 	end
@@ -58,7 +68,7 @@ local build_payload_match<const> = function(state, matcher)
 				expression,
 				binary_expression(
 					syntax.binary_equal,
-					index_expression(identifier('payload'), add_operand(state, key)),
+					index_expression(reference(symbols.payload), add_operand(state, key)),
 					add_operand(state, value)
 				)
 			)
@@ -71,13 +81,13 @@ local build_payload_match<const> = function(state, matcher)
 		state.uses_list_contains = true
 		expression = append_condition(
 			expression,
-			member_expression(identifier('payload'), 'tags')
+			member_expression(reference(symbols.payload), 'tags')
 		)
 		for index = 1, #required_tags do
 			expression = append_condition(
 				expression,
-				call_expression(identifier('list_contains'), {
-					member_expression(identifier('payload'), 'tags'),
+				call_expression(reference(symbols.list_contains), {
+					member_expression(reference(symbols.payload), 'tags'),
 					add_operand(state, required_tags[index]),
 				})
 			)
@@ -91,7 +101,7 @@ local build_payload_match<const> = function(state, matcher)
 		syntax.binary_and,
 		binary_expression(
 			syntax.binary_equal,
-			call_expression(identifier('value_type'), { identifier('payload') }),
+			call_expression(reference(symbols.value_type), { reference(symbols.payload) }),
 			string_literal('table')
 		),
 		expression
@@ -146,33 +156,33 @@ function event_matcher_syntax.build(matcher)
 	local statements<const> = {}
 	if state.uses_payload_fields then
 		statements[#statements + 1] = local_statement(
-			identifier('operands'),
+			reference(symbols.operands),
 			identifier('operands'),
 			true
 		)
 		statements[#statements + 1] = local_statement(
-			identifier('value_type'),
+			reference(symbols.value_type),
 			identifier('value_type'),
 			true
 		)
 	end
 	if state.uses_any_matches then
 		statements[#statements + 1] = local_statement(
-			identifier('any_matches'),
+			reference(symbols.any_matches),
 			identifier('any_matches'),
 			true
 		)
 	end
 	if state.uses_list_contains then
 		statements[#statements + 1] = local_statement(
-			identifier('list_contains'),
+			reference(symbols.list_contains),
 			identifier('list_contains'),
 			true
 		)
 	end
 	statements[#statements + 1] = return_statement({
 		function_expression(
-			{ identifier('payload') },
+			{ reference(symbols.payload) },
 			block({ return_statement({ matcher_expression }) })
 		),
 	})
