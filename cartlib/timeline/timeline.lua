@@ -150,6 +150,80 @@ local advance_internal<const> = function(self, owner, preserve_elapsed)
 	return self.ended
 end
 
+-- Playback mode is immutable program data. Once-mode frame traversal retains
+-- its own datapath instead of decoding loop and pingpong policy on every frame.
+local advance_frame_once<const> = function(self, owner, preserve_elapsed)
+	local program<const> = self.program
+	local previous_frame<const> = self.head
+	local previous_time_ms<const> = self.position_ms
+	local current_frame<const> = previous_frame + 1
+	local last_index<const> = program.last_frame
+	if current_frame > last_index then
+		self.head = last_index
+		self.position_ms = program.duration_ms
+		self.ended = true
+		self.direction = 1
+		if not preserve_elapsed then
+			self.frame_elapsed = 0
+		end
+		local time_ms
+		local flags
+		if previous_frame == timelinestart_index then
+			time_ms = 0
+			flags = initial_flag
+		else
+			time_ms = program.duration_ms
+			if previous_frame ~= last_index then
+				flags = sample_flag
+			else
+				flags = boundary_none
+			end
+		end
+		self.evaluate_play(
+			self,
+			owner,
+			previous_frame,
+			last_index,
+			previous_time_ms,
+			time_ms,
+			1,
+			flags
+		)
+		return true
+	end
+	local time_ms
+	local flags
+	if previous_frame == timelinestart_index then
+		time_ms = 0
+		flags = sample_flag | initial_flag
+	else
+		time_ms = previous_time_ms + program.frame_duration
+		flags = sample_flag
+	end
+	self.head = current_frame
+	self.position_ms = time_ms
+	if not preserve_elapsed then
+		self.frame_elapsed = 0
+	end
+	self.evaluate_play(
+		self,
+		owner,
+		previous_frame,
+		current_frame,
+		previous_time_ms,
+		time_ms,
+		1,
+		flags
+	)
+end
+
+local select_frame_advance<const> = function(program)
+	if program.playback_mode == playback_once then
+		return advance_frame_once
+	end
+	return advance_internal
+end
+
 -- Entering or positioning continuous playback publishes frame zero once. Each
 -- retained steady updater consumes that playback-state invariant directly;
 -- 50 Hz evaluation does not rediscover the start sentinel every tick.
@@ -441,17 +515,18 @@ end
 
 local update_immediate_frames<const> = function(self, owner)
 	self.wrapped = false
-	return advance_internal(self, owner, false)
+	return self.advance_frame(self, owner, false)
 end
 
 local update_timed_frames<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	local frame_elapsed = self.frame_elapsed + delta_time
 	local frame_duration<const> = self.program.frame_duration
+	local advance_frame<const> = self.advance_frame
 	local evaluated = false
 	while frame_elapsed >= frame_duration do
 		frame_elapsed = frame_elapsed - frame_duration
-		advance_internal(self, owner, true)
+		advance_frame(self, owner, true)
 		evaluated = true
 		if self.ended then
 			break
@@ -499,6 +574,7 @@ function timeline.new(id, program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
+	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, false)
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
@@ -513,6 +589,7 @@ function timeline:rebind_program(program)
 	self.program = program
 	self.evaluate_play = program.evaluate_play
 	self.duration_ms = program.duration_ms
+	self.advance_frame = select_frame_advance(program)
 	self.update = select_updater(program, self.head >= 0)
 end
 
@@ -537,7 +614,7 @@ end
 
 function timeline:advance(owner)
 	self.wrapped = false
-	return advance_internal(self, owner, false)
+	return self.advance_frame(self, owner, false)
 end
 
 local move_to<const> = function(self, owner, frame, evaluate)
