@@ -8,7 +8,6 @@ local compile_matcher<const> = require('cartlib/event_matcher').compile
 local rom_dir<const> = require('cartlib/rom_dir')
 
 local aem<const> = {}
-local global_actor_key<const> = false
 local slot_sfx<const> = 0
 local slot_music_a<const> = 1
 local slot_music_b<const> = 2
@@ -48,6 +47,7 @@ local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
 local action_kind_random_uniform<const> = 5
 local action_kind_random_weighted<const> = 6
+local emitter_state_metatable<const> = { __mode = 'k' }
 local default_modulation<const> = {
 	pitch_delta = 0,
 	pitch_range_min = 0,
@@ -66,13 +66,6 @@ local default_modulation<const> = {
 	filter_b2_a1 = 0x00000000,
 	filter_a2 = 0x00000000,
 }
-
-local actor_key_for_payload<const> = function(payload)
-	if type(payload) == 'table' then
-		return payload['actorId'] or global_actor_key
-	end
-	return global_actor_key
-end
 
 local resolve_audio<const> = function(audio_cache, audio_id)
 	local audio = audio_cache[audio_id]
@@ -116,7 +109,7 @@ local compile_play_action<const> = function(action, audio_cache)
 		filter_a2 = modulation.filter_a2,
 	}
 	if action.cooldown_ms ~= nil and action.cooldown_ms > 0 then
-		compiled.cooldown_by_actor = {}
+		compiled.cooldown_by_emitter = setmetatable({}, emitter_state_metatable)
 	end
 	return compiled
 end
@@ -190,7 +183,7 @@ compile_action = function(action, audio_cache)
 			compiled.weight_total = action.weight_total
 		end
 		if action.avoid_repeat then
-			compiled.last_pick_by_actor = {}
+			compiled.last_pick_by_emitter = setmetatable({}, emitter_state_metatable)
 		end
 		return compiled
 	end
@@ -278,19 +271,18 @@ local merge_events<const> = function(event_maps)
 	return merged
 end
 
-local apply_cooldown<const> = function(action, payload)
-	local by_actor<const> = action.cooldown_by_actor
-	if not by_actor then
+local apply_cooldown<const> = function(action, emitter)
+	local cooldowns<const> = action.cooldown_by_emitter
+	if not cooldowns then
 		return true
 	end
 	local cooldown_ms<const> = action.cooldown_ms
-	local actor_key<const> = actor_key_for_payload(payload)
 	local now<const> = clock.milliseconds()
-	local last<const> = by_actor[actor_key]
+	local last<const> = cooldowns[emitter]
 	if last ~= nil and clock.elapsed_milliseconds(last, now) < cooldown_ms then
 		return false
 	end
-	by_actor[actor_key] = now
+	cooldowns[emitter] = now
 	return true
 end
 
@@ -456,8 +448,8 @@ local submit_play<const> = function(
 	)
 end
 
-local dispatch_audio_play<const> = function(entry, action, payload)
-	if not apply_cooldown(action, payload) then
+local dispatch_audio_play<const> = function(entry, action, emitter)
+	if not apply_cooldown(action, emitter) then
 		return
 	end
 	local pitch_delta = action.pitch_delta
@@ -614,10 +606,10 @@ local dispatch_music_transition<const> = function(transition)
 end
 
 local dispatch_action
-dispatch_action = function(entry, action, payload)
+dispatch_action = function(entry, action, emitter)
 	local kind<const> = action.kind
 	if kind == action_kind_play then
-		dispatch_audio_play(entry, action, payload)
+		dispatch_audio_play(entry, action, emitter)
 		return
 	end
 	if kind == action_kind_stop_music then
@@ -631,38 +623,36 @@ dispatch_action = function(entry, action, payload)
 	if kind == action_kind_sequence then
 		local actions<const> = action.actions
 		for i = 1, #actions do
-			dispatch_action(entry, actions[i], payload)
+			dispatch_action(entry, actions[i], emitter)
 		end
 		return
 	end
 	if kind == action_kind_random_uniform then
 		local actions<const> = action.actions
-		local by_actor<const> = action.last_pick_by_actor
-		local actor_key<const> = by_actor and actor_key_for_payload(payload)
-		local avoid<const> = by_actor and by_actor[actor_key]
+		local last_picks<const> = action.last_pick_by_emitter
+		local avoid<const> = last_picks and last_picks[emitter]
 		local index<const> = pick_uniform_index(#actions, avoid)
-		if by_actor then
-			by_actor[actor_key] = index
+		if last_picks then
+			last_picks[emitter] = index
 		end
-		dispatch_action(entry, actions[index], payload)
+		dispatch_action(entry, actions[index], emitter)
 		return
 	end
 	if kind == action_kind_random_weighted then
 		local actions<const> = action.actions
-		local by_actor<const> = action.last_pick_by_actor
-		local actor_key<const> = by_actor and actor_key_for_payload(payload)
-		local avoid<const> = by_actor and by_actor[actor_key]
+		local last_picks<const> = action.last_pick_by_emitter
+		local avoid<const> = last_picks and last_picks[emitter]
 		local index<const> = pick_weighted_index(action.weights, action.weight_total, avoid)
-		if by_actor then
-			by_actor[actor_key] = index
+		if last_picks then
+			last_picks[emitter] = index
 		end
-		dispatch_action(entry, actions[index], payload)
+		dispatch_action(entry, actions[index], emitter)
 		return
 	end
 	dispatch_music_transition(action)
 end
 
-local handle_event<const> = function(_subscriber, event_type, _emitter, payload)
+local handle_event<const> = function(_subscriber, event_type, emitter, payload)
 	local entry<const> = events[event_type]
 	if entry == nil then
 		return
@@ -671,7 +661,7 @@ local handle_event<const> = function(_subscriber, event_type, _emitter, payload)
 	for i = 1, #rules do
 		local rule<const> = rules[i]
 		if rule.predicate(payload) then
-			dispatch_action(entry, rule.action, payload)
+			dispatch_action(entry, rule.action, emitter)
 			return
 		end
 	end
