@@ -7,7 +7,6 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
-local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
@@ -641,13 +640,16 @@ end
 function text_object:submit_text_glyph_lines(draw, x, y)
 	local tc<const> = self.text_component
 	local lines<const> = tc.glyph_lines
+	local span_binding<const> = tc.font.span_binding
+	local blit_span<const> = span_binding.writer
+	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
 	local line_offsets<const> = self.wrapped_line_y_offsets
 	local color<const> = tc.color
 	for i = 1, tc.glyph_line_count do
 		local line<const> = lines[i]
 		local line_length<const> = line.visible_count
 		if line_length > 0 then
-			command_list.blit_span(
+			blit_span(
 				draw,
 				line,
 				line.x_offsets,
@@ -655,7 +657,8 @@ function text_object:submit_text_glyph_lines(draw, x, y)
 				line_length,
 				x,
 				y + line_offsets[i],
-				color)
+				color,
+				uniform_draw_mode_source)
 		end
 	end
 end

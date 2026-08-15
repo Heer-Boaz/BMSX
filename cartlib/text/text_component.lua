@@ -1,5 +1,4 @@
 local font_catalog<const> = require('cartlib/text/font_catalog')
-local command_list<const> = require('cartlib/gx/command_list')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
@@ -81,6 +80,9 @@ end
 
 function text_component:render_glyphs(draw, x, y)
 	local glyphs<const> = self.glyph_lines
+	local span_binding<const> = self.font.span_binding
+	local blit_span<const> = span_binding.writer
+	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths or self.layout_line_widths
@@ -98,7 +100,7 @@ function text_component:render_glyphs(draw, x, y)
 				local line_width<const> = line_widths[i]
 				line_x = x + ((self.center_block_width - line_width) // 2)
 			end
-			command_list.blit_span(
+			blit_span(
 				draw,
 				line,
 				line.x_offsets,
@@ -106,7 +108,8 @@ function text_component:render_glyphs(draw, x, y)
 				line_length,
 				line_x,
 				line_y,
-				color)
+				color,
+				uniform_draw_mode_source)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + self.line_height
