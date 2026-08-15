@@ -26,16 +26,27 @@ function bt_component.factory(tree_id)
 end
 
 function bt_component:rebind_program(program)
+	self:abort()
 	self.evaluate = program.evaluate
 	self.operand = program.operand
+	self.reset = program.reset
 	-- A program replacement restarts evaluator-owned progress while retaining
 	-- action-owned blackboard data. Runtime slot numbers belong only to the
 	-- installed program and never become cart-visible state keys.
-	if program.state_slot_count == 0 then
-		self._execution_state = nil
-	else
-		self._execution_state = {}
+	self._execution_state = program.create_execution_state()
+end
+
+-- Aborting a tree clears compiler-owned execution paths and halts every
+-- running stateful action in the displaced subtree.
+function bt_component:abort()
+	local reset<const> = self.reset
+	if reset ~= nil then
+		reset(self.parent, self, self._execution_state)
 	end
+end
+
+function bt_component:on_detach()
+	self:abort()
 end
 
 return bt_component

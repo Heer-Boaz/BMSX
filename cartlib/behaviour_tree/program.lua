@@ -2,7 +2,8 @@ local contract<const> = require('cartlib/behaviour_tree/contract')
 
 -- Admission-only lowering. Standard sequence/selector programs retain their
 -- running child; reactive variants explicitly restart and abort displaced
--- built-in subtree state. Parallel programs retain terminal children. The
+-- subtree state. Parallel programs retain terminal children. Stateful actions
+-- receive one component-owned state table and an explicit halt callback. The
 -- frame path allocates nothing and never resolves authored node ids or state
 -- property names.
 
@@ -35,6 +36,25 @@ local return_failure<const> = function()
 	return result_failure
 end
 
+local create_no_execution_state<const> = function()
+	return nil
+end
+
+local create_plain_execution_state<const> = function()
+	return {}
+end
+
+local compile_task_state_factory<const> = function(task_state_slots)
+	local task_state_count<const> = #task_state_slots
+	return function()
+		local execution_state<const> = {}
+		for index = 1, task_state_count do
+			execution_state[task_state_slots[index]] = {}
+		end
+		return execution_state
+	end
+end
+
 local compile_subtree_resetter<const> = function(resetters, resetter_count)
 	local active<const> = {}
 	for index = 1, resetter_count do
@@ -50,9 +70,9 @@ local compile_subtree_resetter<const> = function(resetters, resetter_count)
 	if active_count == 1 then
 		return active[1]
 	end
-	return function(execution_state)
+	return function(target, blackboard, execution_state)
 		for index = 1, active_count do
-			active[index](execution_state)
+			active[index](target, blackboard, execution_state)
 		end
 	end
 end
@@ -80,13 +100,13 @@ compile_by_kind[kind.sequence] = function(node, context)
 		return evaluators[1], operands[1], resetters[1]
 	end
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(execution_state)
+				reset_child(target, blackboard, execution_state)
 			end
 		end
 	end
@@ -119,13 +139,13 @@ compile_by_kind[kind.selector] = function(node, context)
 		return evaluators[1], operands[1], resetters[1]
 	end
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(execution_state)
+				reset_child(target, blackboard, execution_state)
 			end
 		end
 	end
@@ -170,9 +190,9 @@ compile_by_kind[kind.reactive_sequence] = function(node, context)
 		end
 	end
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		execution_state[state_slot] = nil
-		reset_children(execution_state)
+		reset_children(target, blackboard, execution_state)
 	end
 	return function(target, blackboard)
 		local execution_state<const> = blackboard._execution_state
@@ -181,7 +201,7 @@ compile_by_kind[kind.reactive_sequence] = function(node, context)
 			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
 			if status ~= result_success then
 				if previous_child_index ~= nil and previous_child_index ~= child_index then
-					resetters[previous_child_index](execution_state)
+					resetters[previous_child_index](target, blackboard, execution_state)
 				end
 				if status == result_running and resetters[child_index] then
 					execution_state[state_slot] = child_index
@@ -217,9 +237,9 @@ compile_by_kind[kind.reactive_selector] = function(node, context)
 		end
 	end
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		execution_state[state_slot] = nil
-		reset_children(execution_state)
+		reset_children(target, blackboard, execution_state)
 	end
 	return function(target, blackboard)
 		local execution_state<const> = blackboard._execution_state
@@ -228,7 +248,7 @@ compile_by_kind[kind.reactive_selector] = function(node, context)
 			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
 			if status ~= result_failure then
 				if previous_child_index ~= nil and previous_child_index ~= child_index then
-					resetters[previous_child_index](execution_state)
+					resetters[previous_child_index](target, blackboard, execution_state)
 				end
 				if status == result_running and resetters[child_index] then
 					execution_state[state_slot] = child_index
@@ -253,12 +273,12 @@ local compile_parallel_all<const> = function(children, context)
 	end
 	local first_state_slot<const> = allocate_state_slots(context, child_count)
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		for child_index = 1, child_count do
 			execution_state[first_state_slot + child_index - 1] = nil
 		end
 		if reset_children ~= nil then
-			reset_children(execution_state)
+			reset_children(target, blackboard, execution_state)
 		end
 	end
 	return function(target, blackboard)
@@ -274,7 +294,7 @@ local compile_parallel_all<const> = function(children, context)
 				if status == result_running then
 					any_running = true
 				else
-					reset(execution_state)
+					reset(target, blackboard, execution_state)
 					return status
 				end
 			else
@@ -284,7 +304,7 @@ local compile_parallel_all<const> = function(children, context)
 		if any_running then
 			return result_running
 		end
-		reset(execution_state)
+		reset(target, blackboard, execution_state)
 		return result_success
 	end, nil, reset
 end
@@ -299,12 +319,12 @@ local compile_parallel_one<const> = function(children, context)
 	end
 	local first_state_slot<const> = allocate_state_slots(context, child_count)
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		for child_index = 1, child_count do
 			execution_state[first_state_slot + child_index - 1] = nil
 		end
 		if reset_children ~= nil then
-			reset_children(execution_state)
+			reset_children(target, blackboard, execution_state)
 		end
 	end
 	return function(target, blackboard)
@@ -320,7 +340,7 @@ local compile_parallel_one<const> = function(children, context)
 				if status == result_running then
 					any_running = true
 				else
-					reset(execution_state)
+					reset(target, blackboard, execution_state)
 					return status
 				end
 			else
@@ -330,7 +350,7 @@ local compile_parallel_one<const> = function(children, context)
 		if any_running then
 			return result_running
 		end
-		reset(execution_state)
+		reset(target, blackboard, execution_state)
 		return result_failure
 	end, nil, reset
 end
@@ -354,7 +374,7 @@ compile_by_kind[kind.decorator] = function(node, context)
 	return function(target, blackboard)
 		local status<const> = decorate(target, blackboard, evaluate(target, blackboard, operand))
 		if status ~= result_running then
-			reset(blackboard._execution_state)
+			reset(target, blackboard, blackboard._execution_state)
 		end
 		return status
 	end, nil, reset
@@ -407,13 +427,13 @@ end
 compile_by_kind[kind.random_selector] = function(node, context)
 	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, context)
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(target, blackboard, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(execution_state)
+				reset_child(target, blackboard, execution_state)
 			end
 		end
 	end
@@ -453,7 +473,7 @@ end
 compile_by_kind[kind.wait] = function(node, context)
 	local wait_time<const> = node.wait_time
 	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(execution_state)
+	local reset<const> = function(_target, _blackboard, execution_state)
 		execution_state[state_slot] = nil
 	end
 	return function(_target, blackboard)
@@ -472,6 +492,39 @@ compile_by_kind[kind.action] = function(node)
 	return node.action, node.parameters
 end
 
+compile_by_kind[kind.stateful_action] = function(node, context)
+	local state_slot<const> = allocate_state_slot(context)
+	local task_state_slots<const> = context.task_state_slots
+	task_state_slots[#task_state_slots + 1] = state_slot
+	local running_slot<const> = allocate_state_slot(context)
+	local on_start<const> = node.on_start
+	local on_running<const> = node.on_running
+	local on_halted<const> = node.on_halted
+	local parameters<const> = node.parameters
+	local reset<const> = function(target, blackboard, execution_state)
+		if execution_state[running_slot] then
+			execution_state[running_slot] = nil
+			on_halted(execution_state[state_slot], target, blackboard, parameters)
+		end
+	end
+	return function(target, blackboard)
+		local execution_state<const> = blackboard._execution_state
+		local task_state<const> = execution_state[state_slot]
+		local status
+		if execution_state[running_slot] then
+			status = on_running(task_state, target, blackboard, parameters)
+		else
+			status = on_start(task_state, target, blackboard, parameters)
+		end
+		if status == result_running then
+			execution_state[running_slot] = true
+		else
+			execution_state[running_slot] = nil
+		end
+		return status
+	end, nil, reset
+end
+
 compile_by_kind[kind.composite_action] = function(node, context)
 	return compile_parallel_all(node.actions, context)
 end
@@ -481,16 +534,30 @@ compile_node = function(node, context)
 end
 
 -- Authored node objects are admission input. The retained program contains
--- only the evaluator graph, immutable operands and its runtime-slot count.
--- Components own both their action blackboard and private evaluator slots.
+-- only the evaluator graph, immutable operands, its reset path and a factory
+-- for component-owned evaluator slots and stateful-action records.
 function program.compile(root)
-	local context<const> = { state_slot_count = 0 }
-	local evaluate<const>, operand<const> = compile_node(root, context)
+	local context<const> = {
+		state_slot_count = 0,
+		task_state_slots = {},
+	}
+	local evaluate<const>, operand<const>, reset<const> = compile_node(root, context)
+	local state_slot_count<const> = context.state_slot_count
+	local task_state_slots<const> = context.task_state_slots
+	local create_execution_state
+	if state_slot_count == 0 then
+		create_execution_state = create_no_execution_state
+	elseif #task_state_slots == 0 then
+		create_execution_state = create_plain_execution_state
+	else
+		create_execution_state = compile_task_state_factory(task_state_slots)
+	end
 	return {
 		id = root.id,
 		evaluate = evaluate,
 		operand = operand,
-		state_slot_count = context.state_slot_count,
+		reset = reset,
+		create_execution_state = create_execution_state,
 	}
 end
 

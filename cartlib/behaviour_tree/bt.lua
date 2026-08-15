@@ -217,6 +217,24 @@ function action_node.new(id, action_fn, priority, parameters)
 	return self
 end
 
+-- Stateful actions have per-component node state and an explicit halt path.
+-- on_start runs on the first tick, on_running runs while the previous result
+-- was RUNNING, and on_halted runs only when a parent preempts the running
+-- action. The compiler owns the running latch and allocates the state table
+-- when the component binds its program, never in the frame path.
+local stateful_action_node<const> = {}
+stateful_action_node.__index = stateful_action_node
+stateful_action_node.program_kind = program_kind.stateful_action
+setmetatable(stateful_action_node, { __index = parametrized_bt_node })
+
+function stateful_action_node.new(id, callbacks, priority, parameters)
+	local self<const> = setmetatable(parametrized_bt_node.new(id, priority, parameters), stateful_action_node)
+	self.on_start = callbacks.on_start
+	self.on_running = callbacks.on_running
+	self.on_halted = callbacks.on_halted
+	return self
+end
+
 local composite_action_node<const> = {}
 composite_action_node.__index = composite_action_node
 composite_action_node.program_kind = program_kind.composite_action
@@ -243,6 +261,7 @@ behaviour_tree.limit_node = limit_node
 behaviour_tree.priority_selector_node = priority_selector_node
 behaviour_tree.wait_node = wait_node
 behaviour_tree.action_node = action_node
+behaviour_tree.stateful_action_node = stateful_action_node
 behaviour_tree.composite_action_node = composite_action_node
 
 return behaviour_tree

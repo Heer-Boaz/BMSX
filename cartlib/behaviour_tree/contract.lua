@@ -23,6 +23,7 @@ contract.node_kind = {
 	composite_action = 14,
 	reactive_sequence = 15,
 	reactive_selector = 16,
+	stateful_action = 17,
 }
 
 return contract
