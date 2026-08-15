@@ -109,11 +109,16 @@ local emit_overlap_event<const> = function(payload, event_type, phase, owner, se
 	owner.events:emit(event_type, payload)
 end
 
-local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
-	local has_new_pairs<const> = new_pairs ~= nil
+-- Previous-pair history is consumed exactly once. End-event detection and row
+-- recycling share that traversal, leaving the old map empty for the next
+-- frame's write side instead of rescanning it at the following update.
+local retire_previous_pairs<const> = function(overlap, payload, prev_pairs, new_pairs)
+	local row_pool<const> = overlap.pair_row_pool
+	local row_pool_count = overlap.pair_row_pool_count
 	for a, row in pairs(prev_pairs) do
+		local new_row<const> = new_pairs[a]
 		for b in pairs(row) do
-			if not (has_new_pairs and new_pairs[a] ~= nil and new_pairs[a][b]) then
+			if not (new_row ~= nil and new_row[b]) then
 				local owner_a<const> = a.parent
 				local owner_b<const> = b.parent
 				if owner_a.active and owner_b.active then
@@ -122,7 +127,12 @@ local emit_overlap_end_events<const> = function(payload, prev_pairs, new_pairs)
 				end
 			end
 		end
+		clear_map(row)
+		row_pool_count = row_pool_count + 1
+		row_pool[row_pool_count] = row
+		prev_pairs[a] = nil
 	end
+	overlap.pair_row_pool_count = row_pool_count
 end
 
 function overlap_2d_system.new(world)
@@ -130,6 +140,7 @@ function overlap_2d_system.new(world)
 	self._component_view = world:active_component_view(collider_2d_component)
 	self.prev_pairs = {}
 	self.next_pairs = {}
+	self.prev_pair_count = 0
 	self.pair_row_pool = {}
 	self.pair_row_pool_count = 0
 	self.overlap_payload = {
@@ -152,15 +163,17 @@ end
 function overlap_2d_system:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
+	local prev_pair_count<const> = self.prev_pair_count
 	local overlap_pairs<const> = self.overlap_pairs
 	local overlap_payload<const> = self.overlap_payload
-	release_pair_rows(self, new_pairs)
 
 	local colliders<const> = self._component_view.components
 	local collider_count<const> = #colliders
 	if collider_count <= 1 then
-		emit_overlap_end_events(overlap_payload, prev_pairs, nil)
-		release_pair_rows(self, prev_pairs)
+		if prev_pair_count > 0 then
+			retire_previous_pairs(self, overlap_payload, prev_pairs, new_pairs)
+			self.prev_pair_count = 0
+		end
 		return
 	end
 
@@ -201,15 +214,19 @@ function overlap_2d_system:update()
 		end
 	end
 
-	emit_overlap_end_events(overlap_payload, prev_pairs, new_pairs)
+	if prev_pair_count > 0 then
+		retire_previous_pairs(self, overlap_payload, prev_pairs, new_pairs)
+	end
 
 	self.prev_pairs = new_pairs
 	self.next_pairs = prev_pairs
+	self.prev_pair_count = overlap_pair_count
 end
 
 function overlap_2d_system:clear()
 	release_pair_rows(self, self.prev_pairs)
 	release_pair_rows(self, self.next_pairs)
+	self.prev_pair_count = 0
 	local overlap_items<const> = self.overlap_pairs.items
 	for index = 1, #overlap_items do
 		clear_map(overlap_items[index])
