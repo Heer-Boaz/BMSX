@@ -154,9 +154,9 @@ local apply_tag_boundary<const> = function(tags, entry, owner, boundary, directi
 	counts[tag_index] = current_count
 	local tag<const> = tags.tags[tag_index]
 	if previous_count == 0 and current_count > 0 then
-		owner:add_tag(tag)
+		owner:_retain_tag(tag)
 	elseif previous_count > 0 and current_count == 0 then
-		owner:remove_tag(tag)
+		owner:_release_tag(tag)
 	end
 	if delta > 0 then
 		owner.events:emit(interval.start_event, interval.start_payload)
@@ -315,9 +315,9 @@ local sync_tags<const> = function(tags, entry, owner, frame, time_ms)
 		local previous_count<const> = counts[index]
 		local current_count<const> = target_counts[index]
 		if previous_count == 0 and current_count > 0 then
-			owner:add_tag(tags.tags[index])
+			owner:_retain_tag(tags.tags[index])
 		elseif previous_count > 0 and current_count == 0 then
-			owner:remove_tag(tags.tags[index])
+			owner:_release_tag(tags.tags[index])
 		end
 		counts[index] = current_count
 	end
@@ -586,7 +586,7 @@ function track_evaluator.clear_tags(entry, owner)
 	local counts<const> = entry.track_state.tag_counts
 	for index = 1, tags.tag_count do
 		if counts[index] > 0 then
-			owner:remove_tag(tags.tags[index])
+			owner:_release_tag(tags.tags[index])
 		end
 		counts[index] = 0
 	end

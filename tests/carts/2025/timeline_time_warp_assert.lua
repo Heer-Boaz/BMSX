@@ -1,6 +1,6 @@
-local event_emitter<const> = require('cartlib/event_emitter')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local world_object<const> = require('cartlib/world/world_object')
 
 __bmsx_host_test = {}
 
@@ -10,17 +10,20 @@ end
 
 function __bmsx_host_test.setup()
 
-local owner<const> = {
-	id = 'timeline_time_warp_test',
-	tags = {},
-}
-function owner:add_tag(tag)
-	self.tags[tag] = true
-end
-function owner:remove_tag(tag)
-	self.tags[tag] = nil
-end
-owner.events = event_emitter.events_of(owner)
+local owner<const> = setmetatable({ id = 'timeline_time_warp_test' }, world_object)
+world_object.initialize(owner)
+owner:add_tag('tag_ownership_probe')
+owner:_retain_tag('tag_ownership_probe')
+owner:remove_tag('tag_ownership_probe')
+assert(owner:has_tag('tag_ownership_probe'))
+owner:_release_tag('tag_ownership_probe')
+assert(not owner:has_tag('tag_ownership_probe'))
+owner:_retain_tag('tag_ownership_probe')
+owner:_retain_tag('tag_ownership_probe')
+owner:_release_tag('tag_ownership_probe')
+assert(owner:has_tag('tag_ownership_probe'))
+owner:_release_tag('tag_ownership_probe')
+assert(not owner:has_tag('tag_ownership_probe'))
 
 local zero_count = 0
 local backward_count = 0

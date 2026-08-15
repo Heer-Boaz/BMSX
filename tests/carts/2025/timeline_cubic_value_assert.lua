@@ -1,6 +1,6 @@
-local event_emitter<const> = require('cartlib/event_emitter')
 local timeline_module<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local world_object<const> = require('cartlib/world/world_object')
 
 local abs<const> = math.abs
 
@@ -16,12 +16,8 @@ end
 
 function __bmsx_host_test.setup()
 
-local owner<const> = { id = 'timeline_cubic_value_test' }
-function owner:add_tag()
-end
-function owner:remove_tag()
-end
-owner.events = event_emitter.events_of(owner)
+local owner<const> = setmetatable({ id = 'timeline_cubic_value_test' }, world_object)
+world_object.initialize(owner)
 
 local timelines<const> = timeline_component.new({ parent = owner })
 timelines:on_attach()

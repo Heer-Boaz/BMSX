@@ -72,6 +72,8 @@ function world_object.initialize(self)
 	self.visible = self.visible == nil or self.visible
 	self.active = false
 	self.tags = self.tags or {}
+	self._explicit_tags = nil
+	self._retained_tag_counts = nil
 	self._components = {}
 	self._components_by_class = {}
 	self._bound = false
@@ -215,16 +217,25 @@ function world_object:_detach_component(comp)
 	comp:unbind()
 end
 
--- has_tag(tag): returns true if this object currently carries the given tag.
--- Tags are plain-string keys set on self.tags.  The FSM also manages tags
--- automatically through state declarations and timeline tag tracks.
+-- Explicit tags and retained tags share one aggregate lookup. FSM states,
+-- timeline intervals and other scoped producers retain their contributions;
+-- the tag remains present until every producer releases it and cart code has
+-- removed its explicit contribution.
 function world_object:has_tag(tag)
 	return (self.tags[tag])
 end
 
 function world_object:add_tag(tag)
-	if not self.tags[tag] then
-		self.tags[tag] = true
+	local explicit_tags<const> = self._explicit_tags
+	if explicit_tags ~= nil then
+		if explicit_tags[tag] then
+			return
+		end
+		explicit_tags[tag] = true
+	end
+	local tags<const> = self.tags
+	if not tags[tag] then
+		tags[tag] = true
 		if self._world_object_index ~= nil then
 			self.world:reconcile_object_tag(self, tag)
 		end
@@ -232,16 +243,81 @@ function world_object:add_tag(tag)
 end
 
 function world_object:remove_tag(tag)
-	if self.tags[tag] then
-		self.tags[tag] = nil
+	local explicit_tags<const> = self._explicit_tags
+	if explicit_tags ~= nil then
+		if not explicit_tags[tag] then
+			return
+		end
+		explicit_tags[tag] = nil
+		local retained<const> = self._retained_tag_counts[tag]
+		if retained ~= nil then
+			return
+		end
+	end
+	local tags<const> = self.tags
+	if tags[tag] then
+		tags[tag] = nil
 		if self._world_object_index ~= nil then
 			self.world:reconcile_object_tag(self, tag)
 		end
 	end
 end
 
+-- Scoped cartlib producers use retain/release instead of explicit add/remove.
+-- The first retained tag snapshots the existing explicit set once; has_tag()
+-- and Registry indexing continue to consume the aggregate table directly.
+function world_object:_retain_tag(tag)
+	local counts = self._retained_tag_counts
+	if counts == nil then
+		local explicit_tags<const> = {}
+		for explicit_tag in pairs(self.tags) do
+			explicit_tags[explicit_tag] = true
+		end
+		self._explicit_tags = explicit_tags
+		counts = {}
+		self._retained_tag_counts = counts
+	end
+	local count<const> = counts[tag]
+	if count ~= nil then
+		counts[tag] = count + 1
+		return
+	end
+	counts[tag] = 1
+	local tags<const> = self.tags
+	if not tags[tag] then
+		tags[tag] = true
+		if self._world_object_index ~= nil then
+			self.world:reconcile_object_tag(self, tag)
+		end
+	end
+end
+
+function world_object:_release_tag(tag)
+	local counts<const> = self._retained_tag_counts
+	local count<const> = counts[tag]
+	if count > 1 then
+		counts[tag] = count - 1
+		return
+	end
+	counts[tag] = nil
+	if self._explicit_tags[tag] then
+		return
+	end
+	self.tags[tag] = nil
+	if self._world_object_index ~= nil then
+		self.world:reconcile_object_tag(self, tag)
+	end
+end
+
 function world_object:toggle_tag(tag)
-	if self.tags[tag] then
+	local explicit_tags<const> = self._explicit_tags
+	if explicit_tags ~= nil then
+		if explicit_tags[tag] then
+			self:remove_tag(tag)
+		else
+			self:add_tag(tag)
+		end
+	elseif self.tags[tag] then
 		self:remove_tag(tag)
 	else
 		self:add_tag(tag)

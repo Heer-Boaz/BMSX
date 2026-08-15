@@ -108,8 +108,8 @@
 --    (a) collects all active state tags from the current state tree (including
 --        concurrent regions, recursively), then
 --    (b) runs the derivation rules to compute derived tags, and
---    (c) diffs against previously applied tags to add/remove tags on the
---        target object via add_tag/remove_tag.
+--    (c) diffs against previously applied tags to retain/release the FSM's
+--        contribution in the target object's aggregate tag state.
 --    Derivation rules support: any (array = any-of), all, and none operators.
 --    Rules can chain — derived tags can reference other derived tags.
 --
@@ -367,48 +367,6 @@ local state<const> = {}
 state.__index = state
 
 local bst_max_history<const> = 10
-local target_state_tag_refs<const> = setmetatable({}, { __mode = 'k' })
-
-local get_target_state_tag_refs<const> = function(target)
-	local refs = target_state_tag_refs[target]
-	if refs then
-		return refs
-	end
-	refs = {}
-	target_state_tag_refs[target] = refs
-	return refs
-end
-
-local increment_target_state_tag_ref<const> = function(target, tag)
-	local refs<const> = get_target_state_tag_refs(target)
-	local count<const> = refs[tag]
-	if count then
-		refs[tag] = count + 1
-		return
-	end
-	refs[tag] = 1
-	target:add_tag(tag)
-end
-
-local decrement_target_state_tag_ref<const> = function(target, tag)
-	local refs<const> = target_state_tag_refs[target]
-	if not refs then
-		error('missing state-tag reference map for target while removing "' .. tostring(tag) .. '".')
-	end
-	local count<const> = refs[tag]
-	if not count then
-		error('missing state-tag reference for "' .. tostring(tag) .. '".')
-	end
-	if count == 1 then
-		refs[tag] = nil
-		target:remove_tag(tag)
-		if next(refs) == nil then
-			target_state_tag_refs[target] = nil
-		end
-		return
-	end
-	refs[tag] = count - 1
-end
 
 local reset_state_data<const> = function(data, defaults)
 	for key in pairs(data) do
@@ -1319,8 +1277,9 @@ function state:collect_derived_state_tags(out)
 end
 
 -- sync_target_state_tags: diffs active state tags (including derived tags)
--- against previously applied tags on the target object.  Adds new tags and
--- removes stale ones via add_tag/remove_tag.  Called after every transition.
+-- against this machine's previously applied tags on the target object. Called
+-- after every transition; the target aggregates contributions from all FSMs,
+-- timelines and explicit cart state.
 function state:sync_target_state_tags()
 	local root<const> = self:is_root() and self or self.root
 	local target<const> = root.target
@@ -1357,13 +1316,13 @@ function state:sync_target_state_tags()
 		end
 	end
 	for tag in pairs(remove_tags) do
-		decrement_target_state_tag_ref(target, tag)
+		target:_release_tag(tag)
 		prev_tags[tag] = nil
 	end
 
 	for tag in pairs(next_tags) do
 		if not prev_tags[tag] then
-			increment_target_state_tag_ref(target, tag)
+			target:_retain_tag(tag)
 			prev_tags[tag] = true
 		end
 	end
@@ -1589,7 +1548,7 @@ function state:dispose()
 		local applied<const> = self._applied_state_tags
 		if applied then
 			for tag in pairs(applied) do
-				decrement_target_state_tag_ref(self.target, tag)
+				self.target:_release_tag(tag)
 			end
 		end
 	end
