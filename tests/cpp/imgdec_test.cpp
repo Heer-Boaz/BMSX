@@ -1,5 +1,7 @@
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/audio/controller.h"
+#include "machine/devices/audio/output.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/geometry/contracts.h"
@@ -43,7 +45,9 @@ struct ImgDecHarness {
 	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
+	bmsx::ApuOutputMixer audioOutput;
 	bmsx::DmaController dma;
+	bmsx::AudioController audio;
 	bmsx::GeometryController geometry;
 	bmsx::GxGpu gpu;
 	bmsx::ImgDecController imgDec;
@@ -57,17 +61,20 @@ struct ImgDecHarness {
 		, executionAddressSpace(memory)
 		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
+		, audioOutput()
 		, dma(memory, cpu, irq, scheduler)
+		, audio(memory, audioOutput, dma, irq, scheduler)
 		, geometry(memory, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes)
 		, imgDec(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
-		, system(memory, cpu, scheduler, irq, dma, geometry, gpu, imgDec, bmsx::PSX_MACHINE_SPEC.cpuFreqHz) {
+		, system(memory, cpu, scheduler, irq, dma, geometry, gpu, imgDec, audio, bmsx::PSX_MACHINE_SPEC.cpuFreqHz) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
 		memory.cartridgeController().reset();
 		geometry.reset();
 		gpu.reset();
 		imgDec.reset();
+		audio.reset();
 		system.reset();
 		irq.reset();
 		dma.setTiming(

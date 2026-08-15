@@ -1,4 +1,5 @@
 #include "render/post/device_quantize/lut.h"
+#include "spec/bmsx/model.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2/backend.h"
 #include "render/post/device_quantize/gles2/pipeline.h"
@@ -37,7 +38,11 @@ int main() {
 	require(fnv1a32(bmsx::DEVICE_QUANTIZE_LUTS[1].green) == 0x63162341u, "RGB343 green quantize LUT drifted");
 	require(fnv1a32(bmsx::DEVICE_QUANTIZE_LUTS[1].texture) == 0xa8287db5u, "RGB343 texture quantize LUT drifted");
 #if BMSX_ENABLE_GLES2
-	bmsx::OpenGLES2Backend backend(1, 1, false);
+	bmsx::OpenGLES2Backend backend(
+		1,
+		1,
+		false,
+		bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	backend.onContextLost();
 	bmsx::DeviceQuantizePipeline::GLES2::State pipeline;
 	pipeline.lutTextures[0] = new bmsx::GLES2Texture{};

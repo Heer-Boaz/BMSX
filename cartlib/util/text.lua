@@ -91,6 +91,6 @@ local split_lines<const> = function(value)
 end
 
 return {
-    split_lines = split_lines,
+	split_lines = split_lines,
 	wrap_text_lines = wrap_text_lines
 }
