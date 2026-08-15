@@ -186,8 +186,8 @@ end
 -- already retained by the image source. Keep that path separate from the
 -- transformed rectangle encoder: it must not redo flip selection or repack an
 -- immutable image size for every submission.
-function draw_list:direct16_blit(source_x, source_y, x, y, size_word, color)
-	self:mode(gp0.direct16_draw_mode(source_x, source_y, gp0.draw_mode_blend_half))
+function draw_list:textured_blit(draw_mode, uv_word, x, y, size_word, color)
+	self:mode(draw_mode)
 	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
@@ -196,7 +196,7 @@ function draw_list:direct16_blit(source_x, source_y, x, y, size_word, color)
 		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
 	end
 	words[index + 1] = gp0.pair16(x, y)
-	words[index + 2] = gp0.uv(source_x, source_y)
+	words[index + 2] = uv_word
 	words[index + 3] = size_word
 	self.word_count = index + 4
 end
@@ -219,31 +219,13 @@ function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, 
 	self.word_count = index + 4
 end
 
-function draw_list:palette4_blit(texture_x, clut_x, clut_y, source_x, source_y, x, y, size_word, color)
-	self:mode(gp0.palette4_draw_mode(texture_x, source_x, source_y, gp0.draw_mode_blend_half))
-	local index<const> = self.word_count
-	local words<const>: *word = self.words
-	if (color & 0x00ffffff) == 0x00ffffff then
-		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
-	else
-		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
-	end
-	words[index + 1] = gp0.pair16(x, y)
-	words[index + 2] = gp0.uv_clut(source_x, source_y, clut_x, clut_y)
-	words[index + 3] = size_word
-	self.word_count = index + 4
-end
-
--- Retained text/image layout submits consecutive blits through these span
--- writers. Texture placement remains live owner state, while packet color,
--- word storage and the current draw mode are resolved once per span instead of
--- redispatched through image and draw-list methods for every rectangle.
-function command_list.direct16_blit_span(draw, texture, glyphs, x_offsets, first_index, last_index, x, y, color)
+-- Resolved image sources carry placement-dependent draw-mode and UV words.
+-- Consecutive layouts consume those retained words directly while keeping
+-- packet color, storage and current draw mode local to one submission.
+function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color)
 	local words<const>: *word = draw.words
 	local index = draw.word_count
 	local draw_mode = draw.draw_mode
-	local texture_x<const> = texture.x
-	local texture_y<const> = texture.y
 	local command
 	if (color & 0x00ffffff) == 0x00ffffff then
 		command = gp0.draw_raw_textured_rectangle | 0x00808080
@@ -252,9 +234,8 @@ function command_list.direct16_blit_span(draw, texture, glyphs, x_offsets, first
 	end
 	for glyph_index = first_index, last_index do
 		local glyph<const> = glyphs[glyph_index]
-		local source_x<const> = texture_x + glyph.source_x
-		local source_y<const> = texture_y + glyph.source_y
-		local next_draw_mode<const> = gp0.direct16_draw_mode(source_x, source_y, gp0.draw_mode_blend_half)
+		local source<const> = glyph.source
+		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
 			words[index] = gp0.draw_mode | next_draw_mode
 			index = index + 1
@@ -262,43 +243,51 @@ function command_list.direct16_blit_span(draw, texture, glyphs, x_offsets, first
 		end
 		words[index] = command
 		words[index + 1] = gp0.pair16(x + x_offsets[glyph_index], y)
-		words[index + 2] = gp0.uv(source_x, source_y)
-		words[index + 3] = glyph.size_word
+		words[index + 2] = source._blit_uv_word
+		words[index + 3] = source._size_word
 		index = index + 4
 	end
 	draw.word_count = index
 	draw.draw_mode = draw_mode
 end
 
-function command_list.palette4_blit_span(draw, texture, glyphs, x_offsets, first_index, last_index, x, y, color)
+-- Tile layers retain a row-major image-source grid and a visible column
+-- interval. One submission walks visible cells without redispatching through
+-- image and draw-list methods; each retained source supplies its current page,
+-- CLUT and UV packet words, so one layer may use any admitted texture sources.
+function command_list.tile_layer(
+	draw, sources, tile_count, columns,
+	first_column, last_column, tile_size, origin_x, origin_y)
 	local words<const>: *word = draw.words
 	local index = draw.word_count
 	local draw_mode = draw.draw_mode
-	local texture_x<const> = texture.x
-	local texture_y<const> = texture.y
-	local clut_x<const> = texture.clut_x
-	local clut_y<const> = texture.clut_y
-	local command
-	if (color & 0x00ffffff) == 0x00ffffff then
-		command = gp0.draw_raw_textured_rectangle | 0x00808080
-	else
-		command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
-	end
-	for glyph_index = first_index, last_index do
-		local glyph<const> = glyphs[glyph_index]
-		local source_x<const> = glyph.source_x
-		local source_y<const> = texture_y + glyph.source_y
-		local next_draw_mode<const> = gp0.palette4_draw_mode(texture_x, source_x, source_y, gp0.draw_mode_blend_half)
-		if next_draw_mode ~= draw_mode then
-			words[index] = gp0.draw_mode | next_draw_mode
-			index = index + 1
-			draw_mode = next_draw_mode
+	local target_y = origin_y
+	local row_start = first_column
+	while row_start <= tile_count do
+		local row_end = row_start + last_column - first_column
+		if row_end > tile_count then
+			row_end = tile_count
 		end
-		words[index] = command
-		words[index + 1] = gp0.pair16(x + x_offsets[glyph_index], y)
-		words[index + 2] = gp0.uv_clut(source_x, source_y, clut_x, clut_y)
-		words[index + 3] = glyph.size_word
-		index = index + 4
+		local target_x = origin_x
+		for source_index = row_start, row_end do
+			local source<const> = sources[source_index]
+			if source ~= nil then
+				local next_draw_mode<const> = source._blit_draw_mode
+				if next_draw_mode ~= draw_mode then
+					words[index] = gp0.draw_mode | next_draw_mode
+					index = index + 1
+					draw_mode = next_draw_mode
+				end
+				words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
+				words[index + 1] = gp0.pair16(target_x, target_y)
+				words[index + 2] = source._blit_uv_word
+				words[index + 3] = source._size_word
+				index = index + 4
+			end
+			target_x = target_x + tile_size
+		end
+		row_start = row_start + columns
+		target_y = target_y + tile_size
 	end
 	draw.word_count = index
 	draw.draw_mode = draw_mode

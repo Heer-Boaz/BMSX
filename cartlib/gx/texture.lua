@@ -5,6 +5,11 @@ local texture_bindings<const> = require('bmsx/texture_bindings')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
+gx_texture.fixed_direct16 = {
+	mode = gp0.texture_mode_direct16,
+	x = 0,
+	y = 0,
+}
 local binding_pools<const> = {}
 local placement_pools<const> = texture_bindings.placement_pools
 for pool_index = 1, #placement_pools do
@@ -12,6 +17,23 @@ for pool_index = 1, #placement_pools do
 		placement_words = placement_pools[pool_index],
 		next_index = 1,
 	}
+end
+
+local refresh_direct16_source<const> = function(texture, source)
+	local source_x<const> = texture.x + source.source_x
+	local source_y<const> = texture.y + source.source_y
+	source._blit_draw_mode = gp0.direct16_draw_mode(
+		source_x, source_y, gp0.draw_mode_blend_half)
+	source._blit_uv_word = gp0.uv(source_x, source_y)
+end
+
+local refresh_palette4_source<const> = function(texture, source)
+	local source_x<const> = source.source_x
+	local source_y<const> = texture.y + source.source_y
+	source._blit_draw_mode = gp0.palette4_draw_mode(
+		texture.x, source_x, source_y, gp0.draw_mode_blend_half)
+	source._blit_uv_word = gp0.uv_clut(
+		source_x, source_y, texture.clut_x, texture.clut_y)
 end
 
 -- Semantic texture identity survives until residency admission. Admission
@@ -39,9 +61,32 @@ function gx_texture.resolve(texture_id)
 		clut_x = 0,
 		clut_y = 0,
 		binding_pool = binding_pools[texture_bindings.pool_index_by_texture[texture_id]],
+		_sources = {},
+		_source_count = 0,
 	}
 	texture_by_id[texture_id] = resolved
 	return resolved
+end
+
+-- Resolved images retain placement-dependent packet words. Texture admission
+-- refreshes those words once, before IMGDEC starts, so every renderer consumes
+-- the newly published destination directly without rebuilding page or CLUT
+-- state for each draw.
+function gx_texture.bind_source(texture, source)
+	local source_count<const> = texture._source_count + 1
+	texture._source_count = source_count
+	texture._sources[source_count] = source
+	if texture.mode == gp0.texture_mode_palette4 then
+		refresh_palette4_source(texture, source)
+	else
+		refresh_direct16_source(texture, source)
+	end
+end
+
+-- Fixed BIOS atlas sources are admitted once and never need a relocation
+-- reverse-list entry.
+function gx_texture.bind_fixed_source(texture, source)
+	refresh_direct16_source(texture, source)
 end
 
 local resolve_image_texture<const> = function(imgid)
@@ -52,10 +97,16 @@ local upload_texture<const> = function(texture, destination, clut_destination)
 	texture.x = destination & 0x0000ffff
 	texture.y = destination >> 16
 	local clut = 0
+	local refresh_source = refresh_direct16_source
 	if texture.mode == gp0.texture_mode_palette4 then
 		texture.clut_x = clut_destination & 0x0000ffff
 		texture.clut_y = clut_destination >> 16
 		clut = clut_destination
+		refresh_source = refresh_palette4_source
+	end
+	local sources<const> = texture._sources
+	for source_index = 1, texture._source_count do
+		refresh_source(texture, sources[source_index])
 	end
 	imgdec.upload(
 		texture.source_addr,

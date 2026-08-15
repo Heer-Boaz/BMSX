@@ -1,19 +1,14 @@
 local rom_dir<const> = require('cartlib/rom_dir')
-local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_texture<const> = require('cartlib/gx/texture')
 
 local image<const> = {}
 local image_by_id<const> = {}
-local fixed_direct16_texture<const> = {
-	mode = gp0.texture_mode_direct16,
-	x = 0,
-	y = 0,
-}
 
--- Image resolution selects texture-mode-specific packet writers once.
--- Ordinary image draws never redispatch on mode or scan page tiles; explicitly
--- producer-split large surfaces are handled by surface_component instead.
+-- Image resolution selects transformed packet writers and binds ordinary blit
+-- packet words once. Ordinary draws never redispatch on texture mode or scan
+-- page tiles; explicitly producer-split large surfaces are handled by
+-- surface_component instead.
 
 local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, blend_mode)
 	local texture<const> = source._texture
@@ -22,10 +17,9 @@ local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
 end
 
-local direct16_blit<const> = function(source, draw, x, y, color)
-	local texture<const> = source._texture
-	draw:direct16_blit(
-		texture.x + source.source_x, texture.y + source.source_y,
+local blit<const> = function(source, draw, x, y, color)
+	draw:textured_blit(
+		source._blit_draw_mode, source._blit_uv_word,
 		x, y, source._size_word, color)
 end
 
@@ -108,14 +102,6 @@ local palette4_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 		texture.x, texture.clut_x, texture.clut_y,
 		source.source_x, texture.y + source.source_y,
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
-end
-
-local palette4_blit<const> = function(source, draw, x, y, color)
-	local texture<const> = source._texture
-	draw:palette4_blit(
-		texture.x, texture.clut_x, texture.clut_y,
-		source.source_x, texture.y + source.source_y,
-		x, y, source._size_word, color)
 end
 
 local palette4_draw_source_rect<const> = function(source, draw, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
@@ -202,37 +188,34 @@ function image.resolve(id)
 	local resource<const> = rom_dir.image(id)
 	local meta<const> = resource.imgmeta
 	local texture
+	local bind_source
 	local source_x
 	local source_y
 	if meta.gx_source_x then
-		texture = fixed_direct16_texture
+		texture = gx_texture.fixed_direct16
+		bind_source = gx_texture.bind_fixed_source
 		source_x = meta.gx_source_x
 		source_y = meta.gx_source_y
 	else
 		texture = gx_texture.resolve(meta.gx_texture_resid)
+		bind_source = gx_texture.bind_source
 		source_x = meta.texture_u
 		source_y = meta.texture_v
 	end
 	local draw
-	local blit
 	local draw_source_rect
 	local draw_affine
 	local draw_quad
-	local blit_span
 	if texture.mode == gp0.texture_mode_palette4 then
 		draw = palette4_draw
-		blit = palette4_blit
 		draw_source_rect = palette4_draw_source_rect
 		draw_affine = palette4_draw_affine
 		draw_quad = palette4_draw_quad
-		blit_span = command_list.palette4_blit_span
 	else
 		draw = direct16_draw
-		blit = direct16_blit
 		draw_source_rect = direct16_draw_source_rect
 		draw_affine = direct16_draw_affine
 		draw_quad = direct16_draw_quad
-		blit_span = command_list.direct16_blit_span
 	end
 	local source<const> = {
 		_texture = texture,
@@ -247,7 +230,7 @@ function image.resolve(id)
 		local tiles<const> = {}
 		for index = 1, #page_tiles do
 			local tile<const> = page_tiles[index]
-			tiles[index] = {
+			local tile_source<const> = {
 				_texture = texture,
 				source_x = tile.u,
 				source_y = tile.v,
@@ -259,10 +242,12 @@ function image.resolve(id)
 				draw = draw,
 				blit = blit,
 			}
+			bind_source(texture, tile_source)
+			tiles[index] = tile_source
 		end
 		source._tiles = tiles
 	else
-		source._blit_span = blit_span
+		bind_source(texture, source)
 		source.draw = draw
 		source.blit = blit
 		source.draw_source_rect = draw_source_rect

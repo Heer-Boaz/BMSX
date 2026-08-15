@@ -922,15 +922,14 @@ function room_object:rebuild_room_tiles()
 		end
 	end
 	self.room_tile_count = tile_count
-	room_tile_layer:set_tile_count(tile_count)
-	room_tile_layer.columns = tile_columns
+	room_tile_layer:resize(tile_count, tile_columns)
 
 	if self.water == nil then
 		self.water_tile_count = 0
 		self.water_rows = 0
 		self.water_surface_tile_count = 0
 		self.last_water_surface_frame = 1
-		self.water_tile_layer:set_tile_count(0)
+		self.water_tile_layer:resize(0, self.tile_columns)
 		self.water_tile_layer.visible = false
 		return
 	end
@@ -965,8 +964,7 @@ function room_object:rebuild_room_tiles()
 	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
-	water_tile_layer:set_tile_count(water_tile_count)
-	water_tile_layer.columns = self.tile_columns
+	water_tile_layer:resize(water_tile_count, self.tile_columns)
 	water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true

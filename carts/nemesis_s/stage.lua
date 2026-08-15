@@ -5,6 +5,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local bin<const> = require('cartlib/bin')
@@ -34,7 +35,7 @@ local non_collision_tile_keys<const> = {
 	snowtree20 = true,
 }
 
-local tile_source_by_key<const> = {
+local tile_imgid_by_key<const> = {
 	collision = assets_house_tile_1,
 	house_1 = assets_house_tile_1,
 	house_2 = assets_house_tile_2,
@@ -91,9 +92,6 @@ local tile_source_by_key<const> = {
 	snowtree20 = assets_snowtree20,
 	snowtree21 = assets_snowtree21,
 }
-for key, id in pairs(tile_source_by_key) do
-	tile_source_by_key[key] = image.resolve(id)
-end
 local star_sources<const> = {
 	yellow = image.resolve(assets_star_yellow),
 	blue = image.resolve(assets_star_blue),
@@ -377,17 +375,18 @@ local resolve_tile_material<const> = function(tile_key)
 		return nil, 0
 	end
 
-	local source<const> = tile_source_by_key[tile_key]
+	local imgid<const> = tile_imgid_by_key[tile_key]
 	if non_collision_tile_keys[tile_key] then
-		return source, 0
+		return imgid, 0
 	end
-	return source, 1
+	return imgid, 1
 end
 
 function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
-	self.stage_visual:set_offset_z(stage_data.draw_z)
+	self.star_visual:set_offset_z(stage_data.draw_z)
+	self.stage_tiles:set_offset_z(stage_data.draw_z)
 	self.scroll_mode_pause = stage_data.scroll_mode_pause
 	self.scroll_mode_forced = stage_data.scroll_mode_forced
 	self.scroll_mode_gated = stage_data.scroll_mode_gated
@@ -406,15 +405,16 @@ function stage:build_tape()
 	self.tile_rows = height
 	self.tape_length_tiles = width
 	self.stop_tape_head = stage_data.stop_tape_head
-	self.tile_tape = new_rows(width, height, nil)
+	local stage_tiles<const> = self.stage_tiles
+	stage_tiles:resize(width * height, width)
+	stage_tiles.tile_size = self.tile_size
 	self.solid_tape = new_rows(width, height, 0)
 
 	for stage_y = 1, height do
-		local row<const> = map_rows[stage_y]
 		for stage_x = 1, width do
 			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y)
-			local source<const> , solid<const> = resolve_tile_material(tile_key)
-			self.tile_tape[stage_y][stage_x] = source
+			local imgid<const> , solid<const> = resolve_tile_material(tile_key)
+			stage_tiles:set_tile(((stage_y - 1) * width) + stage_x, imgid)
 			self.solid_tape[stage_y][stage_x] = solid
 		end
 	end
@@ -431,10 +431,11 @@ function stage:apply_star_scroll(stars, step)
 end
 
 function stage:reset_runtime()
-	if #self.tile_tape == 0 then
+	if self.stage_tiles.tile_count == 0 then
 		self:build_tape()
 	end
 	self.left_tile = 1
+	self.stage_tiles:set_visible_columns(1, self.tile_columns + 2)
 	self.tape_head = self.tile_columns
 	self.tile_steps = 0
 	self.total_scroll_px = 0
@@ -482,6 +483,7 @@ function stage:update_runtime()
 				})
 			else
 				self.left_tile = self.left_tile + 1
+				self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 				self.tape_head = self.left_tile + self.tile_columns - 1
 				self.tile_steps = self.tile_steps + 1
 				self.scroll_advanced = true
@@ -521,27 +523,9 @@ function stage:draw_star_particles(draw, stars, source, hidden)
 	end
 end
 
-function stage:draw(draw)
+function stage:draw_stars(draw)
 	self:draw_star_particles(draw, self.yellow_stars, star_sources.yellow, self.yellow_blink)
 	self:draw_star_particles(draw, self.blue_stars, star_sources.blue, self.blue_blink)
-
-	local draw_columns<const> = self.tile_columns + 1
-	local tile_size<const> = self.tile_size
-
-	for screen_column = 0, draw_columns do
-		local stage_column<const> = self.left_tile + screen_column
-		if stage_column > self.tape_length_tiles then
-			break
-		end
-
-		local draw_x<const> = screen_column * tile_size
-		for stage_row = 1, self.tile_rows do
-			local source<const> = self.tile_tape[stage_row][stage_column]
-			if source ~= nil then
-				source:blit(draw, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
-			end
-		end
-	end
 end
 
 function stage:is_solid_pixel(screen_x, screen_y)
@@ -555,12 +539,12 @@ function stage:is_solid_pixel(screen_x, screen_y)
 end
 
 function stage:ctor()
-	self.tile_tape = {}
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
-	self.stage_visual = self:get_component(custom_visual_component)
-	self.stage_visual.producer = stage.draw
+	self.star_visual = self:get_component(custom_visual_component)
+	self.star_visual.producer = stage.draw_stars
+	self.stage_tiles = self:get_component(tile_layer_component)
 end
 
 local define_stage_fsm<const> = function()
@@ -620,6 +604,7 @@ local register_stage_definition<const> = function()
 		class = stage,
 		components = {
 			custom_visual_component.new,
+			tile_layer_component.new,
 			timeline_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},

@@ -24,11 +24,7 @@ local build_resolved_font<const> = function(id, definition)
 	for glyph, imgid in pairs(definition.glyphs) do
 		local source<const> = image.resolve(imgid)
 		items[byte(glyph)] = {
-			texture = source._texture,
-			blit_span = source._blit_span,
-			source_x = source.source_x,
-			source_y = source.source_y,
-			size_word = source._size_word,
+			source = source,
 			width = source.width,
 			height = source.height,
 			advance = source.width + advance_padding,
@@ -37,11 +33,7 @@ local build_resolved_font<const> = function(id, definition)
 	local space<const> = items[0x20]
 	if space and not items[0x09] then
 		items[0x09] = {
-			texture = space.texture,
-			blit_span = space.blit_span,
-			source_x = space.source_x,
-			source_y = space.source_y,
-			size_word = space.size_word,
+			source = space.source,
 			width = space.width,
 			height = space.height,
 			advance = space.advance * 4,
@@ -91,30 +83,11 @@ function font_catalog.write_glyph_line(resolved_font, line, target)
 		x_offsets = {}
 		target.x_offsets = x_offsets
 	end
-	local runs = target.runs
-	if runs == nil then
-		runs = {}
-		target.runs = runs
-	end
 	local width = 0
-	local run_count = 0
-	local run
 	for index = 1, length do
 		local glyph<const> = items[byte(line, index)] or fallback
 		target[index] = glyph
 		x_offsets[index] = width
-		if run == nil or run.texture ~= glyph.texture or run.blit_span ~= glyph.blit_span then
-			run_count = run_count + 1
-			run = runs[run_count]
-			if run == nil then
-				run = {}
-				runs[run_count] = run
-			end
-			run.texture = glyph.texture
-			run.blit_span = glyph.blit_span
-			run.first_index = index
-		end
-		run.last_index = index
 		width = width + glyph.advance
 	end
 	for index = length + 1, #target do
@@ -122,7 +95,6 @@ function font_catalog.write_glyph_line(resolved_font, line, target)
 	end
 	target.glyph_count = length
 	target.visible_count = length
-	target.run_count = run_count
 	return width
 end
 
