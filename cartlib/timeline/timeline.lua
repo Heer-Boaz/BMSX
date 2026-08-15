@@ -583,10 +583,80 @@ local update_timed_frames<const> = function(self, owner, delta_time)
 	return false
 end
 
+-- Discrete loop playback without authored evaluation callbacks advances one
+-- monotonic range per wrap, not one evaluator call per crossed frame. Sampled
+-- state is written at the destination while event, tag and sequence programs
+-- consume the complete crossed range.
+local update_timed_loop<const> = function(self, owner, delta_time)
+	self.wrapped = false
+	local frame_elapsed<const> = self.frame_elapsed + delta_time
+	local frame_duration<const> = self.frame_duration
+	if frame_elapsed < frame_duration then
+		self.frame_elapsed = frame_elapsed
+		return false
+	end
+	local remaining_frames = frame_elapsed // frame_duration
+	local next_frame_elapsed<const> = frame_elapsed - remaining_frames * frame_duration
+	local previous_frame = self.head
+	local previous_time_ms = self.position_ms
+	local frame_count<const> = self.last_frame + 1
+	local evaluate_play<const> = self.evaluate_play
+	local flags = sample_flag
+	if previous_frame == timelinestart_index then
+		flags = flags | initial_flag
+	end
+	while remaining_frames > 0 do
+		local frames_to_wrap<const> = frame_count - previous_frame
+		if remaining_frames < frames_to_wrap then
+			local frame<const> = previous_frame + remaining_frames
+			local time_ms<const> = frame * frame_duration
+			self.head = frame
+			self.position_ms = time_ms
+			evaluate_play(
+				self,
+				owner,
+				previous_frame,
+				frame,
+				previous_time_ms,
+				time_ms,
+				1,
+				flags
+			)
+			self.frame_elapsed = next_frame_elapsed
+			return false
+		end
+		remaining_frames = remaining_frames - frames_to_wrap
+		self.head = 0
+		self.position_ms = 0
+		self.direction = 1
+		self.wrapped = true
+		evaluate_play(
+			self,
+			owner,
+			previous_frame,
+			0,
+			previous_time_ms,
+			0,
+			1,
+			flags | loop_boundary_flags
+		)
+		previous_frame = 0
+		previous_time_ms = 0
+		flags = sample_flag
+	end
+	self.frame_elapsed = next_frame_elapsed
+	return false
+end
+
 local select_updater<const> = function(program, positioned)
 	if not program.continuous then
 		if program.frame_duration <= 0 then
 			return update_immediate_frames
+		end
+		if program.playback_mode == playback_loop
+		and not program.requires_frame_sampling
+		and program.length > 0 then
+			return update_timed_loop
 		end
 		return update_timed_frames
 	end

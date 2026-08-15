@@ -17,6 +17,7 @@ sequence_program.empty = {
 	position_tree_leaf_count = 0,
 	clip_count = 0,
 	duration_ms = 0,
+	requires_frame_sampling = false,
 }
 
 local active_runner_factory<const> = function(count)
@@ -57,9 +58,13 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 	local clips_by_start<const> = {}
 	local clips_by_end<const> = {}
 	local duration_ms = 0
+	local requires_frame_sampling = false
 	for index = 1, #definitions do
 		local definition<const> = definitions[index]
 		local program<const> = compile_timeline(definition.sequence)
+		if program.requires_frame_sampling then
+			requires_frame_sampling = true
+		end
 		local binding_overrides<const> = definition.bindings
 		local binding_indices<const> = {}
 		for binding_index = 1, program.binding_count do
@@ -211,6 +216,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 		position_tree_leaf_count = position_tree_leaf_count,
 		clip_count = clip_count,
 		duration_ms = duration_ms,
+		requires_frame_sampling = requires_frame_sampling,
 	}
 end
 
