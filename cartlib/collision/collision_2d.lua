@@ -2,6 +2,7 @@
 -- GEO overlap orchestration for direct pair queries + same-step ECS overlap passes
 
 local collision_2d<const> = {}
+local select_sprite_shape_ref<const> = require('cartlib/collision/sprite_shape')
 
 local irq_geo_error<const> = 0x0010
 
@@ -73,7 +74,6 @@ struct geo_param_registers
 	stride2: word
 end
 
-bss geo_batch_token: word
 bss geo_completion_irq_flags: word
 local geo_fault_register<const>: *word = 0x08000060
 local geo_cmd_register<const>: *word = 0x0800003c
@@ -85,14 +85,6 @@ local direct_query_contact<const> = {
 	piece_b = 0,
 	feature_meta = 0,
 }
-
-local next_geo_batch_token<const> = function()
-	*geo_batch_token = *geo_batch_token + 1
-	if *geo_batch_token >= 0x7fffffff then
-		*geo_batch_token = 1
-	end
-	return *geo_batch_token
-end
 
 local unpack_geo_fault<const> = function()
 	local fault<const> = *geo_fault_register
@@ -107,32 +99,48 @@ local raise_geo_fault<const> = function(label)
 	error(string.format('GEO %s failed (fault=%08Xh hex=%08Xh code=%04Xh index=%08Xh)', label, fault_u, fault_u, fault_code, fault_index))
 end
 
-local stage_geo_aabb_shape<const> = function(collider, shape_addr)
+local stage_geo_aabb_shape<const> = function(collider, parent, shape_addr)
 	local shape<const>: *geo_overlap_aabb_shape = shape_addr
 	shape->kind = 0x00000001
 	shape->data_count = 0x00000004
 	shape->data_offset = 0x00000010
 	shape->bounds_offset = 0x00000010
-	shape->bounds[0] = collider._overlap_local_left
-	shape->bounds[1] = collider._overlap_local_top
-	shape->bounds[2] = collider._overlap_local_right
-	shape->bounds[3] = collider._overlap_local_bottom
+	local local_area<const> = collider.local_area
+	if local_area then
+		shape->bounds[0] = local_area.left
+		shape->bounds[1] = local_area.top
+		shape->bounds[2] = local_area.right
+		shape->bounds[3] = local_area.bottom
+	else
+		shape->bounds[0] = 0
+		shape->bounds[1] = 0
+		shape->bounds[2] = parent.sx
+		shape->bounds[3] = parent.sy
+	end
 	return shape_addr
 end
 
-local stage_geo_overlap_instance<const> = function(collider, batch_token, instance_base, aabb_shape_addr)
-	if collider._geo_overlap_stage_token == batch_token then
-		return
+local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb_shape_addr)
+	local parent<const> = collider.parent
+	local sprite<const> = collider.sprite
+	local shape_ref
+	local tx
+	local ty
+	if sprite then
+		shape_ref = select_sprite_shape_ref(collider, sprite)
+		tx = parent.x + sprite.offset_x
+		ty = parent.y + sprite.offset_y
+	else
+		shape_ref = stage_geo_aabb_shape(collider, parent, aabb_shape_addr)
+		tx = parent.x + collider.shape_offset_x
+		ty = parent.y + collider.shape_offset_y
 	end
-	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * 0x00000014
-	local shape_ref<const> = collider._overlap_geo_shape_ref or stage_geo_aabb_shape(collider, aabb_shape_addr)
 	local instance<const>: *geo_overlap_instance = instance_addr
 	instance->shape = shape_ref
-	instance->tx = collider._overlap_geo_tx
-	instance->ty = collider._overlap_geo_ty
+	instance->tx = tx
+	instance->ty = ty
 	instance->layer = collider.layer
 	instance->mask = collider.mask
-	collider._geo_overlap_stage_token = batch_token
 end
 
 local wait_for_geo_completion<const> = function(label)
@@ -254,14 +262,16 @@ function collision_2d.on_geo_irq(source)
 end
 
 function collision_2d.collect_overlaps(colliders, collider_count, pairs)
-	local batch_token<const> = next_geo_batch_token()
 	local shape_base<const> = geo_overlap_batch_base
 	local instance_base<const> = shape_base + collider_count * 0x00000020
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
-		collider:prepare_overlap()
-		collider._geo_overlap_instance_index = i - 1
-		stage_geo_overlap_instance(collider, batch_token, instance_base, shape_base + (i - 1) * 0x00000020)
+		local instance_index<const> = i - 1
+		stage_geo_overlap_instance(
+			collider,
+			instance_base + instance_index * 0x00000014,
+			shape_base + instance_index * 0x00000020
+		)
 	end
 	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
 	local scratch_for_results<const> = geo_overlap_batch_size - collider_count * (0x00000020 + 0x00000014) - 0x00000010
@@ -271,21 +281,12 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	local summary_base<const> = result_base + result_capacity * 0x00000024
 	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)
 	wait_for_geo_completion('overlap full pass')
-	for i = 1, collider_count do
-		local collider<const> = colliders[i]
-		collider._overlap_cache_valid = false
-	end
 	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
 end
 
 function collision_2d.collides(a, b)
-	a:prepare_overlap()
-	b:prepare_overlap()
-	local batch_token<const> = next_geo_batch_token()
-	a._geo_overlap_instance_index = 0
-	b._geo_overlap_instance_index = 1
-	stage_geo_overlap_instance(a, batch_token, geo_direct_instance_base, geo_direct_shape_base)
-	stage_geo_overlap_instance(b, batch_token, geo_direct_instance_base, geo_direct_shape_base + 0x00000020)
+	stage_geo_overlap_instance(a, geo_direct_instance_base, geo_direct_shape_base)
+	stage_geo_overlap_instance(b, geo_direct_instance_base + 0x00000014, geo_direct_shape_base + 0x00000020)
 	local direct_pair<const>: *geo_overlap_pair = geo_direct_pair_base
 	direct_pair->instance_a = 0
 	direct_pair->instance_b = 1
@@ -298,8 +299,6 @@ function collision_2d.collides(a, b)
 		2,
 		1
 	)
-	a._overlap_cache_valid = false
-	b._overlap_cache_valid = false
 	local direct_summary<const>: *geo_overlap_summary = geo_direct_summary_base
 	if direct_summary.result_count == 0 then
 		return nil
