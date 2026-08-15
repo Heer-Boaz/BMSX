@@ -2,10 +2,24 @@ local frame_evaluator_syntax<const> = require('cartlib/fsm/frame_evaluator_synta
 
 local frame_program<const> = {}
 local compile_syntax<const> = lua_compiler.compile_syntax
+local component_factories_by_machine_count<const> = {}
 local factories_by_shape<const> = {}
 local shape_current<const> = 0x1
 local shape_update<const> = 0x2
 local shape_input_first<const> = 0x4
+
+function frame_program.compile_component_runner(machines)
+	local machine_count<const> = #machines
+	local factory = component_factories_by_machine_count[machine_count]
+	if factory == nil then
+		factory = compile_syntax(
+			frame_evaluator_syntax.build_component(machine_count),
+			'[fsm.component_frame]'
+		)()
+		component_factories_by_machine_count[machine_count] = factory
+	end
+	return factory(machines)
+end
 
 local get_evaluator_factory<const> = function(
 	shape,
@@ -34,7 +48,7 @@ local get_evaluator_factory<const> = function(
 	return factory
 end
 
-function frame_program.compile(definition, no_op)
+function frame_program.compile_state_evaluator(definition, no_op)
 	local has_current_frame_work<const> = definition.has_current_frame_work
 	local has_update<const> = definition.update ~= nil
 	local input_handler_count<const> = definition.input_handler_count

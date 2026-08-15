@@ -1,6 +1,6 @@
--- Admission-only lowering from immutable state topology to the active-frame
--- evaluator. Runtime states execute only the child lanes and local handlers
--- that their definition can actually contain.
+-- Admission-only lowering from immutable FSM topology to active-frame
+-- evaluators. Runtime components and states execute only the machine roots,
+-- child lanes, and local handlers their definitions can actually contain.
 local syntax_factory<const> = lua_compiler.syntax_factory
 
 local frame_evaluator_syntax<const> = {}
@@ -22,6 +22,7 @@ local if_statement<const> = syntax_factory.if_statement
 local return_statement<const> = syntax_factory.return_statement
 
 local symbols<const> = {
+	machines = generated_symbol('machines'),
 	update_handler = generated_symbol('update_handler'),
 	transition_kinds = generated_symbol('transition_kinds'),
 	transitions = generated_symbol('transitions'),
@@ -31,6 +32,42 @@ local symbols<const> = {
 	bindings = generated_symbol('input_bindings'),
 	next_state = generated_symbol('next_state'),
 }
+
+function frame_evaluator_syntax.build_component(machine_count)
+	local factory_body<const> = {}
+	local evaluator_body<const> = {}
+	for index = 1, machine_count do
+		local machine_symbol<const> = generated_symbol('machine')
+		factory_body[index] = local_statement(
+			reference(machine_symbol),
+			index_expression(reference(symbols.machines), numeric_literal(index)),
+			true
+		)
+		evaluator_body[index] = if_statement({
+			if_clause(
+				member_expression(reference(machine_symbol), 'active_frame_work'),
+				block({
+					call_statement(call_expression(
+						reference(machine_symbol),
+						{},
+						'update'
+					)),
+				})
+			),
+		})
+	end
+	factory_body[#factory_body + 1] = return_statement({
+		function_expression({}, block(evaluator_body)),
+	})
+	return syntax_factory.chunk(block({
+		return_statement({
+			function_expression(
+				{ reference(symbols.machines) },
+				block(factory_body)
+			),
+		}),
+	}))
+end
 
 local emit_child<const> = function(statements, state_symbol)
 	statements[#statements + 1] = if_statement({

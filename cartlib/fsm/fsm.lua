@@ -1206,7 +1206,7 @@ compile_definition_frame_evaluators = function(definition)
 		compile_definition_frame_evaluators(states[state_ids[i]])
 	end
 	if definition.has_subtree_frame_work then
-		definition.frame_evaluator = frame_program.compile(definition, no_op)
+		definition.frame_evaluator = frame_program.compile_state_evaluator(definition, no_op)
 	end
 end
 

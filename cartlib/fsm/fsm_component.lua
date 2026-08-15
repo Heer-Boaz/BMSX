@@ -1,6 +1,7 @@
 local base_component<const> = require('cartlib/component/base_component')
 local event_emitter<const> = require('cartlib/event_emitter')
 local fsm<const> = require('cartlib/fsm/fsm')
+local frame_program<const> = require('cartlib/fsm/frame_program')
 local state<const> = fsm.state
 local bind_machine_state_path<const> = fsm.bind_state_path
 local machine_matches_state_path<const> = fsm.matches_state_path
@@ -32,8 +33,12 @@ function fsm_component.new(opts, machine_ids)
 	self._state_paths = nil
 	for i = 1, #machine_ids do
 		local machine_id<const> = machine_ids[i]
-		self:add_state_machine(machine_id, definitions_by_id[machine_id])
+		local machine<const> = state.new(definitions_by_id[machine_id], self.parent)
+		self._machine_count = i
+		self._machines[i] = machine
+		self._machines_by_id[machine_id] = machine
 	end
+	self.update = frame_program.compile_component_runner(self._machines)
 	return self
 end
 
@@ -63,23 +68,6 @@ local append_bound_machine<const> = function(bound, machine, path)
 	bound.count = count
 	bound[count * 2 - 1] = machine
 	bound[count * 2] = bind_machine_state_path(machine.definition, path)
-end
-
-function fsm_component:add_state_machine(id, definition)
-	local machine<const> = state.new(definition, self.parent)
-	local index<const> = self._machine_count + 1
-	self._machine_count = index
-	self._machines[index] = machine
-	self._machines_by_id[id] = machine
-	local paths<const> = self._state_paths
-	if paths then
-		for path, bound in pairs(paths) do
-			if not string.find(path, ':/', 1, true) then
-				append_bound_machine(bound, machine, path)
-			end
-		end
-	end
-	return machine
 end
 
 local bind_machines<const> = function(self)
@@ -166,18 +154,6 @@ function fsm_component:start()
 		list[i]:start()
 	end
 	self._started = true
-end
-
-function fsm_component:update()
-	local list<const> = self._machines
-	-- Components only tick machines whose active subtree can actually do frame
-	-- work. That keeps event-only and dormant FSMs out of the per-frame loop.
-	for i = 1, self._machine_count do
-		local machine<const> = list[i]
-		if machine.active_frame_work then
-			machine:update()
-		end
-	end
 end
 
 -- fsm_component:dispatch(event_name, payload): deliver an event
