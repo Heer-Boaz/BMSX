@@ -139,19 +139,23 @@ function draw_list:rect(x0, y0, x1, y1, color)
 end
 
 -- Horizontal rectangle spans retain one origin, height and color while their
--- producer supplies dense geometry views. The shared command word is encoded
+-- producer supplies dense integral geometry views. The shared command word is encoded
 -- once and the packet cursor advances without per-rectangle method dispatch.
 function draw_list:horizontal_rect_span(indices, count, y_offsets, widths, x, y, height, color)
 	local words<const>: *word = self.words
 	local target: *word = words + self.word_count * sizeof(word)
 	local command<const> = gp0.draw_rectangle | gp0.argb_to_rgb(color)
+	local base_position<const> = gp0.pair16(x, y)
+	local position_x<const> = base_position & 0x0000ffff
+	local position_y<const> = base_position >> 16
+	local size_y<const> = height << 16
 	for index = 1, count do
 		local item_index<const> = indices[index]
 		local width<const> = widths[item_index]
 		local packet<const>: *gp0_rectangle_packet = target
 		packet.command = command
-		packet.position = gp0.pair16(x, y + y_offsets[item_index])
-		packet.size = gp0.pair16(width, height)
+		packet.position = position_x | ((position_y + y_offsets[item_index]) << 16)
+		packet.size = (width & 0x0000ffff) | size_y
 		target = target + rectangle_packet_size
 	end
 	self.word_count = (target - words) >> 2
