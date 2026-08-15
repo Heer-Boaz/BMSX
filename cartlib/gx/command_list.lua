@@ -20,6 +20,19 @@ draw_list.__index = draw_list
 
 local command_list<const> = {}
 
+-- GP0 textured-rectangle packets are written through a forward cursor. The
+-- named layout keeps packet structure explicit while constant field offsets
+-- lower to displaced stores; dynamic words[index + n] addressing would repeat
+-- index scaling for every operand in the packet.
+struct gp0_textured_rectangle_packet
+	command: word
+	position: word
+	uv: word
+	size: word
+end
+
+local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
+
 function command_list.submit(draw)
 	dma.wait0_idle()
 	dma.wait1_idle()
@@ -187,22 +200,24 @@ end
 -- redispatch and immutable size, page, CLUT and UV words are never rebuilt.
 function command_list.blit(source, draw, x, y, color)
 	local words<const>: *word = draw.words
-	local index = draw.word_count
+	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode<const> = source._blit_draw_mode
 	if draw_mode ~= draw.draw_mode then
-		words[index] = gp0.draw_mode | draw_mode
-		index = index + 1
+		*target = gp0.draw_mode | draw_mode
+		target = target + sizeof(word)
 		draw.draw_mode = draw_mode
 	end
+	local packet<const>: *gp0_textured_rectangle_packet = target
 	if (color & 0x00ffffff) == 0x00ffffff then
-		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
+		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
 	else
-		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
+		packet.command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
 	end
-	words[index + 1] = gp0.pair16(x, y)
-	words[index + 2] = source._blit_uv_word
-	words[index + 3] = source._size_word
-	draw.word_count = index + 4
+	packet.position = gp0.pair16(x, y)
+	packet.uv = source._blit_uv_word
+	packet.size = source._size_word
+	target = target + textured_rectangle_packet_size
+	draw.word_count = (target - words) >> 2
 end
 
 function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
@@ -228,7 +243,7 @@ end
 -- packet color, storage and current draw mode local to one submission.
 function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color)
 	local words<const>: *word = draw.words
-	local index = draw.word_count
+	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
 	local command
 	if (color & 0x00ffffff) == 0x00ffffff then
@@ -241,17 +256,18 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 		local source<const> = glyph.source
 		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
-			words[index] = gp0.draw_mode | next_draw_mode
-			index = index + 1
+			*target = gp0.draw_mode | next_draw_mode
+			target = target + sizeof(word)
 			draw_mode = next_draw_mode
 		end
-		words[index] = command
-		words[index + 1] = gp0.pair16(x + x_offsets[glyph_index], y)
-		words[index + 2] = source._blit_uv_word
-		words[index + 3] = source._size_word
-		index = index + 4
+		local packet<const>: *gp0_textured_rectangle_packet = target
+		packet.command = command
+		packet.position = gp0.pair16(x + x_offsets[glyph_index], y)
+		packet.uv = source._blit_uv_word
+		packet.size = source._size_word
+		target = target + textured_rectangle_packet_size
 	end
-	draw.word_count = index
+	draw.word_count = (target - words) >> 2
 	draw.draw_mode = draw_mode
 end
 
@@ -262,23 +278,24 @@ end
 -- texture admission can still replace each source's page, CLUT and UV words.
 function command_list.tile_layer(draw, sources, position_words, source_count)
 	local words<const>: *word = draw.words
-	local index = draw.word_count
+	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
 	for source_index = 1, source_count do
 		local source<const> = sources[source_index]
 		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
-			words[index] = gp0.draw_mode | next_draw_mode
-			index = index + 1
+			*target = gp0.draw_mode | next_draw_mode
+			target = target + sizeof(word)
 			draw_mode = next_draw_mode
 		end
-		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
-		words[index + 1] = position_words[source_index]
-		words[index + 2] = source._blit_uv_word
-		words[index + 3] = source._size_word
-		index = index + 4
+		local packet<const>: *gp0_textured_rectangle_packet = target
+		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
+		packet.position = position_words[source_index]
+		packet.uv = source._blit_uv_word
+		packet.size = source._size_word
+		target = target + textured_rectangle_packet_size
 	end
-	draw.word_count = index
+	draw.word_count = (target - words) >> 2
 	draw.draw_mode = draw_mode
 end
 
@@ -286,23 +303,24 @@ end
 -- rewrite a retained position array that would be stale again next frame.
 function command_list.translated_tile_layer(draw, sources, x_offsets, y_offsets, source_count, origin_x, origin_y)
 	local words<const>: *word = draw.words
-	local index = draw.word_count
+	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
 	for source_index = 1, source_count do
 		local source<const> = sources[source_index]
 		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
-			words[index] = gp0.draw_mode | next_draw_mode
-			index = index + 1
+			*target = gp0.draw_mode | next_draw_mode
+			target = target + sizeof(word)
 			draw_mode = next_draw_mode
 		end
-		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
-		words[index + 1] = gp0.pair16(origin_x + x_offsets[source_index], origin_y + y_offsets[source_index])
-		words[index + 2] = source._blit_uv_word
-		words[index + 3] = source._size_word
-		index = index + 4
+		local packet<const>: *gp0_textured_rectangle_packet = target
+		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
+		packet.position = gp0.pair16(origin_x + x_offsets[source_index], origin_y + y_offsets[source_index])
+		packet.uv = source._blit_uv_word
+		packet.size = source._size_word
+		target = target + textured_rectangle_packet_size
 	end
-	draw.word_count = index
+	draw.word_count = (target - words) >> 2
 	draw.draw_mode = draw_mode
 end
 
