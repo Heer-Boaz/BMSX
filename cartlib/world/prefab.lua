@@ -9,9 +9,9 @@ local empty_components<const> = {}
 -- Prefab definitions retain concrete classes and ordered component
 -- constructors. World owns identity, construction and publication.
 
-function prefab.define(definition)
-	local prototype<const> = definition.base or world_object
-	local class<const> = definition.class
+function prefab.define(source)
+	local prototype<const> = source.base or world_object
+	local class<const> = source.class
 	local class_metatable<const> = getmetatable(class)
 	if class_metatable then
 		if not class_metatable.__index then
@@ -20,12 +20,13 @@ function prefab.define(definition)
 	else
 		setmetatable(class, { __index = prototype })
 	end
-	definition.ctor = class.ctor
-	definition.instance_metatable = { __index = class }
-	definition.initialize = prototype.initialize
-	definition.defaults = definition.defaults or empty_values
-	definition.components = definition.components or empty_components
-	definitions[definition.def_id] = definition
+	definitions[source.def_id] = {
+		ctor = class.ctor,
+		instance_metatable = { __index = class },
+		initialize = prototype.initialize,
+		defaults = source.defaults or empty_values,
+		components = source.components or empty_components,
+	}
 end
 
 function prefab.definition(definition_id)
