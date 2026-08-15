@@ -1,5 +1,6 @@
 local dma<const> = {}
 local irq<const> = require('cartlib/irq')
+local irq_source<const> = require('cartlib/irq/source')
 
 dma.block_words = 16
 
@@ -25,8 +26,6 @@ local control_read_increment_imgdec_write<const> = 0x00003d41
 local control_imgdec_read_gx_write<const> = 0x00003c58
 local trigger_start<const> = 0x00000001
 local status_busy<const> = 0x00000001
-local irq_dma0_done<const> = 0x0001
-local irq_dma1_done<const> = 0x0100
 
 bss dma0_completion_sequence: word
 bss dma1_completion_sequence: word
@@ -40,8 +39,8 @@ local on_dma1_done<const> = function()
 end
 
 local function init_dma_irq<init>()
-	irq.register(irq_dma0_done, on_dma0_done)
-	irq.register(irq_dma1_done, on_dma1_done)
+	irq.register(irq_source.dma0_done, on_dma0_done)
+	irq.register(irq_source.dma1_done, on_dma1_done)
 end
 init_dma_irq()
 

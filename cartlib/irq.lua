@@ -8,7 +8,8 @@ local irq<const> = {}
 -- dispatcher walks only asserted, unmasked sources instead of scanning every
 -- registered subsystem on every interrupt. Each source is acknowledged before
 -- its callback so an edge raised during the callback remains pending. The
--- callback owner also owns the corresponding hardware mask bit.
+-- callback owner also owns the corresponding hardware mask bit. Physical
+-- source words live in the compile-time cartlib/irq/source contract.
 function irq.register(source, handler)
 	handlers[source] = handler
 	*irq_mask_register = *irq_mask_register | source

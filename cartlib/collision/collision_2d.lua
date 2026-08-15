@@ -3,8 +3,7 @@
 
 local collision_2d<const> = {}
 local select_sprite_shape_ref<const> = require('cartlib/collision/sprite_shape')
-
-local irq_geo_error<const> = 0x0010
+local irq_source<const> = require('cartlib/irq/source')
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
@@ -149,7 +148,7 @@ local wait_for_geo_completion<const> = function(label)
 	until *geo_completion_irq_flags ~= 0
 	local geo_flags<const> = *geo_completion_irq_flags
 	*geo_completion_irq_flags = 0
-	if (geo_flags & irq_geo_error) ~= 0 then
+	if (geo_flags & irq_source.geo_error) ~= 0 then
 		raise_geo_fault(label)
 	end
 end

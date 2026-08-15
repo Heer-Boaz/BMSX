@@ -2,6 +2,7 @@ local dma<const> = require('cartlib/dma')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local irq<const> = require('cartlib/irq')
+local irq_source<const> = require('cartlib/irq/source')
 
 local gpu_completion_sequence = 0
 
@@ -11,7 +12,7 @@ local on_gpu_irq<const> = function()
 end
 
 local function init_gpu_irq<init>()
-	irq.register(gx_gpu.irq_mask, on_gpu_irq)
+	irq.register(irq_source.gpu, on_gpu_irq)
 end
 init_gpu_irq()
 

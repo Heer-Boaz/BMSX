@@ -9,6 +9,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 local irq_module<const> = require('cartlib/irq')
+local irq_source<const> = require('cartlib/irq/source')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local surface_component<const> = require('cartlib/component/surface_component')
@@ -26,9 +27,6 @@ require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_imgdec<const> = 0x0080
-local irq_apu<const> = 0x0020
-
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
@@ -289,9 +287,9 @@ local register_director<const> = function()
 end
 
 local function init<init>()
-	irq_module.register(vblank.irq_mask, vblank.on_irq)
-	irq_module.register(irq_imgdec, texture_residency.complete_upload)
-	irq_module.register(irq_apu, aem.on_apu_irq)
+	irq_module.register(irq_source.vblank, vblank.on_irq)
+	irq_module.register(irq_source.imgdec, texture_residency.complete_upload)
+	irq_module.register(irq_source.apu, aem.on_apu_irq)
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

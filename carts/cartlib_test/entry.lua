@@ -5,6 +5,7 @@ local vblank<const> = require('cartlib/gx/vblank')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
+local irq_source<const> = require('cartlib/irq/source')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -52,7 +53,7 @@ cartlib_test_gte_plus_ready = true
 
 cartlib_test_ready = false
 world:clear()
-irq_module.register(vblank.irq_mask, vblank.on_irq)
+irq_module.register(irq_source.vblank, vblank.on_irq)
 vblank.wait()
 cartlib_test_ready = true
 
