@@ -284,6 +284,8 @@ function text_object.initialize(self)
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
 	self.full_glyph_lines = {}
+	self._background_line_indices = {}
+	self._background_line_count = 0
 	self._has_visible_glyphs = false
 	self.current_line_index = 0
 	self.current_char_index = 0
@@ -337,6 +339,23 @@ end
 local update_text_component_admission<const> = function(self)
 	self.text_component:set_enabled(
 		self._has_visible_glyphs or self.highlight_anim_y ~= nil)
+end
+
+local rebuild_background_line_view<const> = function(self)
+	local indices<const> = self._background_line_indices
+	local lines<const> = self.text_component.glyph_lines
+	local highlighted_logical_line<const> = self.highlighted_line_index
+	local skip_logical_line<const> = highlighted_logical_line ~= nil and (highlighted_logical_line + 1) or 0
+	local wrapped_line_to_logical_line<const> = self.wrapped_line_to_logical_line
+	local count = 0
+	for line_index = 1, self.text_component.glyph_line_count do
+		if lines[line_index].visible_count > 0
+		and wrapped_line_to_logical_line[line_index] ~= skip_logical_line then
+			count = count + 1
+			indices[count] = line_index
+		end
+	end
+	self._background_line_count = count
 end
 
 function text_object:onspawn(_pos)
@@ -479,6 +498,7 @@ function text_object:set_highlighted_line(index)
 	end
 	self.highlighted_line_index = index
 	self:update_highlight_animation()
+	rebuild_background_line_view(self)
 	update_text_component_admission(self)
 end
 
@@ -549,6 +569,7 @@ function text_object:reset_typing_buffer()
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	self._background_line_count = 0
 	update_text_component_admission(self)
 end
 
@@ -567,6 +588,7 @@ function text_object:apply_full_text()
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = self.full_text_line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	rebuild_background_line_view(self)
 	update_text_component_admission(self)
 end
 
@@ -588,6 +610,15 @@ function text_object:advance_typing()
 		if not self._has_visible_glyphs then
 			self._has_visible_glyphs = true
 			update_text_component_admission(self)
+		end
+		if char_index == 1 then
+			local highlighted_logical_line<const> = self.highlighted_line_index
+			if highlighted_logical_line == nil
+			or self.wrapped_line_to_logical_line[line_index] ~= highlighted_logical_line + 1 then
+				local background_line_count<const> = self._background_line_count + 1
+				self._background_line_count = background_line_count
+				self._background_line_indices[background_line_count] = line_index
+			end
 		end
 		if char_index < source_glyphs.glyph_count then
 			self.displayed_line_widths[line_index] = source_glyphs.x_offsets[char_index + 1]
@@ -614,26 +645,21 @@ function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
 end
 
--- Text objects own wrapped, left-aligned line geometry. The generic text
--- component retains optional centered and caller-supplied line layouts; this
--- path consumes the stronger text-object invariant directly.
+-- Text objects own wrapped, left-aligned line geometry and retain the dense
+-- background line view at layout, typing and highlight mutations. Presentation
+-- consumes that view without rediscovering visibility or logical-line state.
 function text_object:submit_text_background_lines(draw, x, y)
 	local tc<const> = self.text_component
-	local glyphs<const> = tc.glyph_lines
-	local highlighted_logical_line<const> = self.highlighted_line_index
-	local skip_logical_line<const> = highlighted_logical_line ~= nil and (highlighted_logical_line + 1) or 0
+	local background_line_indices<const> = self._background_line_indices
 	local line_offsets<const> = self.wrapped_line_y_offsets
 	local line_widths<const> = tc.line_widths
 	local background_color<const> = tc.background_color
 	local line_height<const> = tc.font.line_height
-	local wrapped_line_to_logical_line<const> = self.wrapped_line_to_logical_line
-	for i = 1, tc.glyph_line_count do
-		local line<const> = glyphs[i]
-		if line.visible_count > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
-			local line_y<const> = y + line_offsets[i]
-			local line_width<const> = line_widths[i]
-			draw:rect(x, line_y, x + line_width, line_y + line_height, background_color)
-		end
+	for index = 1, self._background_line_count do
+		local line_index<const> = background_line_indices[index]
+		local line_y<const> = y + line_offsets[line_index]
+		local line_width<const> = line_widths[line_index]
+		draw:rect(x, line_y, x + line_width, line_y + line_height, background_color)
 	end
 end
 
