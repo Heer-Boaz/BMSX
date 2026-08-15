@@ -84,30 +84,28 @@ function tile_layer_row.rebuild(
 	row.dirty = false
 end
 
+-- The visible bounds are retained fingers into the ordered source columns.
+-- Scrolling therefore advances only across cells that entered or left the
+-- view; direct jumps still converge on the same lower and upper bounds.
 function tile_layer_row.select_visible(row, first_column, last_column)
 	local columns<const> = row.columns
 	local source_count<const> = row.source_count
-	local low = 1
-	local high = source_count + 1
-	while low < high do
-		local middle<const> = (low + high) >> 1
-		if columns[middle] < first_column then
-			low = middle + 1
-		else
-			high = middle
-		end
+	local first_source = row.first_visible_source
+	while first_source > 1 and columns[first_source - 1] >= first_column do
+		first_source = first_source - 1
 	end
-	row.first_visible_source = low
-	high = source_count + 1
-	while low < high do
-		local middle<const> = (low + high) >> 1
-		if columns[middle] <= last_column then
-			low = middle + 1
-		else
-			high = middle
-		end
+	while first_source <= source_count and columns[first_source] < first_column do
+		first_source = first_source + 1
 	end
-	row.last_visible_source = low - 1
+	local last_source = row.last_visible_source
+	while last_source > 0 and columns[last_source] > last_column do
+		last_source = last_source - 1
+	end
+	while last_source < source_count and columns[last_source + 1] <= last_column do
+		last_source = last_source + 1
+	end
+	row.first_visible_source = first_source
+	row.last_visible_source = last_source
 end
 
 return tile_layer_row
