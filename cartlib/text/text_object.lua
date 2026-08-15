@@ -285,6 +285,7 @@ function text_object.initialize(self)
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
 	self.full_glyph_lines = {}
+	self._has_visible_glyphs = false
 	self.current_line_index = 0
 	self.current_char_index = 0
 	self.maximum_characters_per_line = 0
@@ -330,6 +331,13 @@ function text_object.initialize(self)
 	self.text_component.line_widths = self.displayed_line_widths
 	self:add_component(self.text_component)
 	self:set_dimensions(self.dimensions)
+end
+
+-- The attached component remains addressable while the text object admits it
+-- to active render views only when glyphs or highlight geometry can emit work.
+local update_text_component_admission<const> = function(self)
+	self.text_component:set_enabled(
+		self._has_visible_glyphs or self.highlight_anim_y ~= nil)
 end
 
 function text_object:onspawn(_pos)
@@ -472,6 +480,7 @@ function text_object:set_highlighted_line(index)
 	end
 	self.highlighted_line_index = index
 	self:update_highlight_animation()
+	update_text_component_admission(self)
 end
 
 function text_object:set_highlight_pulse_enabled(enabled)
@@ -537,21 +546,29 @@ function text_object:reset_typing_buffer()
 	end
 	self.current_line_index = 0
 	self.current_char_index = 0
+	self._has_visible_glyphs = false
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	update_text_component_admission(self)
 end
 
 function text_object:apply_full_text()
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
+	local has_visible_glyphs = false
 	for i = 1, #self.full_text_lines do
 		local line<const> = self.full_glyph_lines[i]
 		line.visible_count = line.glyph_count
+		if line.glyph_count > 0 then
+			has_visible_glyphs = true
+		end
 	end
+	self._has_visible_glyphs = has_visible_glyphs
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = self.full_text_line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	update_text_component_admission(self)
 end
 
 function text_object:reveal_text()
@@ -569,6 +586,10 @@ function text_object:advance_typing()
 		self.current_line_index = line_index
 		self.current_char_index = char_index
 		source_glyphs.visible_count = char_index
+		if not self._has_visible_glyphs then
+			self._has_visible_glyphs = true
+			update_text_component_admission(self)
+		end
 		if char_index < source_glyphs.glyph_count then
 			self.displayed_line_widths[line_index] = source_glyphs.x_offsets[char_index + 1]
 		else
