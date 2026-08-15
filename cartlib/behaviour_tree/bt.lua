@@ -1,6 +1,7 @@
 -- Behaviour-tree authoring nodes. The library compiles each immutable authored
--- tree into one shared evaluator program; per-object node state lives on the
--- component blackboard.
+-- tree into one shared evaluator program. Actions own named blackboard data;
+-- evaluator progress uses compiler-assigned component slots and is not part of
+-- the cart-authored blackboard namespace.
 
 local contract<const> = require('cartlib/behaviour_tree/contract')
 
@@ -134,10 +135,9 @@ random_selector_node.__index = random_selector_node
 random_selector_node.program_kind = program_kind.random_selector
 setmetatable(random_selector_node, { __index = bt_node })
 
-function random_selector_node.new(id, children, property_name, priority)
+function random_selector_node.new(id, children, priority)
 	local self<const> = setmetatable(bt_node.new(id, priority), random_selector_node)
 	self.children = children
-	self.current_child_property_name = property_name
 	return self
 end
 
@@ -146,10 +146,9 @@ limit_node.__index = limit_node
 limit_node.program_kind = program_kind.limit
 setmetatable(limit_node, { __index = bt_node })
 
-function limit_node.new(id, limit_count, property_name, child, priority)
+function limit_node.new(id, limit_count, child, priority)
 	local self<const> = setmetatable(bt_node.new(id, priority), limit_node)
 	self.limit = limit_count
-	self.count_property_name = property_name
 	self.child = child
 	return self
 end
@@ -177,10 +176,9 @@ wait_node.__index = wait_node
 wait_node.program_kind = program_kind.wait
 setmetatable(wait_node, { __index = bt_node })
 
-function wait_node.new(id, wait_time, property_name, priority)
+function wait_node.new(id, wait_time, priority)
 	local self<const> = setmetatable(bt_node.new(id, priority), wait_node)
 	self.wait_time = wait_time
-	self.wait_property_name = property_name
 	return self
 end
 

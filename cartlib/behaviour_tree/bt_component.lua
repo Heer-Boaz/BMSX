@@ -14,9 +14,8 @@ function bt_component.new(opts, tree_id)
 	local self<const> = setmetatable(base_component.new(opts), bt_component)
 	local program<const> = programs_by_id[tree_id]
 	self.tree_id = tree_id
-	self.evaluate = program.evaluate
-	self.operand = program.operand
 	self.node_data = {}
+	self:rebind_program(program)
 	return self
 end
 
@@ -29,6 +28,14 @@ end
 function bt_component:rebind_program(program)
 	self.evaluate = program.evaluate
 	self.operand = program.operand
+	-- A program replacement restarts evaluator-owned progress while retaining
+	-- action-owned blackboard data. Runtime slot numbers belong only to the
+	-- installed program and never become cart-visible state keys.
+	if program.state_slot_count == 0 then
+		self._execution_state = nil
+	else
+		self._execution_state = {}
+	end
 end
 
 return bt_component

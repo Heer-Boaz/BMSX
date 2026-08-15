@@ -9,6 +9,12 @@ local result_failure<const> = result.failure
 local compile_by_kind<const> = {}
 local compile_node
 
+local allocate_state_slot<const> = function(context)
+	local slot<const> = context.state_slot_count + 1
+	context.state_slot_count = slot
+	return slot
+end
+
 local return_success<const> = function()
 	return result_success
 end
@@ -17,20 +23,20 @@ local return_failure<const> = function()
 	return result_failure
 end
 
-local compile_children<const> = function(children)
+local compile_children<const> = function(children, context)
 	local child_count<const> = #children
 	local evaluators<const> = {}
 	local operands<const> = {}
 	for index = 1, child_count do
-		local evaluate<const>, operand<const> = compile_node(children[index])
+		local evaluate<const>, operand<const> = compile_node(children[index], context)
 		evaluators[index] = evaluate
 		operands[index] = operand
 	end
 	return evaluators, operands, child_count
 end
 
-compile_by_kind[kind.sequence] = function(node)
-	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children)
+compile_by_kind[kind.sequence] = function(node, context)
+	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children, context)
 	if child_count == 0 then
 		return return_success
 	end
@@ -48,8 +54,8 @@ compile_by_kind[kind.sequence] = function(node)
 	end
 end
 
-compile_by_kind[kind.selector] = function(node)
-	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children)
+compile_by_kind[kind.selector] = function(node, context)
+	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children, context)
 	if child_count == 0 then
 		return return_failure
 	end
@@ -67,8 +73,8 @@ compile_by_kind[kind.selector] = function(node)
 	end
 end
 
-compile_by_kind[kind.parallel_all] = function(node)
-	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children)
+compile_by_kind[kind.parallel_all] = function(node, context)
+	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children, context)
 	return function(target, blackboard)
 		local any_running
 		for index = 1, child_count do
@@ -85,8 +91,8 @@ compile_by_kind[kind.parallel_all] = function(node)
 	end
 end
 
-compile_by_kind[kind.parallel_one] = function(node)
-	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children)
+compile_by_kind[kind.parallel_one] = function(node, context)
+	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children, context)
 	return function(target, blackboard)
 		local any_running
 		for index = 1, child_count do
@@ -103,8 +109,8 @@ compile_by_kind[kind.parallel_one] = function(node)
 	end
 end
 
-compile_by_kind[kind.decorator] = function(node)
-	local evaluate<const>, operand<const> = compile_node(node.child)
+compile_by_kind[kind.decorator] = function(node, context)
+	local evaluate<const>, operand<const> = compile_node(node.child, context)
 	local decorate<const> = node.decorator
 	return function(target, blackboard)
 		return decorate(target, blackboard, evaluate(target, blackboard, operand))
@@ -155,35 +161,35 @@ compile_by_kind[kind.composite_or_condition] = function(node)
 	end
 end
 
-compile_by_kind[kind.random_selector] = function(node)
-	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children)
-	local property_name<const> = node.current_child_property_name
+compile_by_kind[kind.random_selector] = function(node, context)
+	local evaluators<const>, operands<const>, child_count<const> = compile_children(node.children, context)
+	local state_slot<const> = allocate_state_slot(context)
 	return function(target, blackboard)
-		local node_data<const> = blackboard.node_data
-		local child_index = node_data[property_name]
+		local execution_state<const> = blackboard._execution_state
+		local child_index = execution_state[state_slot]
 		if child_index == nil then
 			child_index = math.random(1, child_count)
-			node_data[property_name] = child_index
+			execution_state[state_slot] = child_index
 		end
 		local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
 		if status ~= result_running then
-			node_data[property_name] = nil
+			execution_state[state_slot] = nil
 		end
 		return status
 	end
 end
 
-compile_by_kind[kind.limit] = function(node)
-	local evaluate<const>, operand<const> = compile_node(node.child)
+compile_by_kind[kind.limit] = function(node, context)
+	local evaluate<const>, operand<const> = compile_node(node.child, context)
 	local limit<const> = node.limit
-	local property_name<const> = node.count_property_name
+	local state_slot<const> = allocate_state_slot(context)
 	return function(target, blackboard)
-		local node_data<const> = blackboard.node_data
-		local count<const> = node_data[property_name] or 0
+		local execution_state<const> = blackboard._execution_state
+		local count<const> = execution_state[state_slot] or 0
 		if count < limit then
 			local status<const> = evaluate(target, blackboard, operand)
 			if status ~= result_running then
-				node_data[property_name] = count + 1
+				execution_state[state_slot] = count + 1
 			end
 			return status
 		end
@@ -191,17 +197,17 @@ compile_by_kind[kind.limit] = function(node)
 	end
 end
 
-compile_by_kind[kind.wait] = function(node)
+compile_by_kind[kind.wait] = function(node, context)
 	local wait_time<const> = node.wait_time
-	local property_name<const> = node.wait_property_name
+	local state_slot<const> = allocate_state_slot(context)
 	return function(_target, blackboard)
-		local node_data<const> = blackboard.node_data
-		local elapsed<const> = node_data[property_name] or 0
+		local execution_state<const> = blackboard._execution_state
+		local elapsed<const> = execution_state[state_slot] or 0
 		if elapsed < wait_time then
-			node_data[property_name] = elapsed + 1
+			execution_state[state_slot] = elapsed + 1
 			return result_running
 		end
-		node_data[property_name] = nil
+		execution_state[state_slot] = nil
 		return result_success
 	end
 end
@@ -210,8 +216,8 @@ compile_by_kind[kind.action] = function(node)
 	return node.action, node.parameters
 end
 
-compile_by_kind[kind.composite_action] = function(node)
-	local evaluators<const>, operands<const>, action_count<const> = compile_children(node.actions)
+compile_by_kind[kind.composite_action] = function(node, context)
+	local evaluators<const>, operands<const>, action_count<const> = compile_children(node.actions, context)
 	return function(target, blackboard)
 		local outcome
 		for index = 1, action_count do
@@ -227,19 +233,21 @@ compile_by_kind[kind.composite_action] = function(node)
 	end
 end
 
-compile_node = function(node)
-	return compile_by_kind[getmetatable(node).program_kind](node)
+compile_node = function(node, context)
+	return compile_by_kind[getmetatable(node).program_kind](node, context)
 end
 
 -- Authored node objects are admission input. The retained program contains
--- only the evaluator graph and its immutable operands; every component keeps
--- its own mutable blackboard.
+-- only the evaluator graph, immutable operands and its runtime-slot count.
+-- Components own both their action blackboard and private evaluator slots.
 function program.compile(root)
-	local evaluate<const>, operand<const> = compile_node(root)
+	local context<const> = { state_slot_count = 0 }
+	local evaluate<const>, operand<const> = compile_node(root, context)
 	return {
 		id = root.id,
 		evaluate = evaluate,
 		operand = operand,
+		state_slot_count = context.state_slot_count,
 	}
 end
 
