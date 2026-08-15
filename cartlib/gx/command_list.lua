@@ -254,6 +254,42 @@ function command_list.blit(source, draw, x, y)
 	draw.word_count = (target - words) >> 2
 end
 
+-- Producer-split surfaces retain one ordered source list with integral offsets.
+-- Emit that list through one packet cursor so large surfaces do not redispatch
+-- through the ordinary single-image blit path for every texture-page tile.
+function command_list.blit_offset_span(draw, sources, x, y, color)
+	local words<const>: *word = draw.words
+	local target: *word = words + draw.word_count * sizeof(word)
+	local draw_mode = draw.draw_mode
+	local base_position<const> = gp0.pair16(x, y)
+	local base_x<const> = base_position & 0x0000ffff
+	local base_y<const> = base_position >> 16
+	local command
+	if (color & 0x00ffffff) == 0x00ffffff then
+		command = gp0.draw_raw_textured_rectangle | 0x00808080
+	else
+		command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
+	end
+	for source_index = 1, #sources do
+		local source<const> = sources[source_index]
+		local next_draw_mode<const> = source._blit_draw_mode
+		if next_draw_mode ~= draw_mode then
+			*target = gp0.draw_mode | next_draw_mode
+			target = target + sizeof(word)
+			draw_mode = next_draw_mode
+		end
+		local packet<const>: *gp0_textured_rectangle_packet = target
+		packet.command = command
+		packet.position = ((base_x + source.offset_x) & 0x0000ffff)
+			| (((base_y + source.offset_y) & 0x0000ffff) << 16)
+		packet.uv = source._blit_uv_word
+		packet.size = source._size_word
+		target = target + textured_rectangle_packet_size
+	end
+	draw.word_count = (target - words) >> 2
+	draw.draw_mode = draw_mode
+end
+
 function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
 	local texture_source_x<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
 	local texture_source_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
