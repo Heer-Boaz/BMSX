@@ -89,6 +89,14 @@ local append_bound_machine<const> = function(bound, machine, path)
 	bound[count * 2] = bind_machine_state_path(machine.definition, path)
 end
 
+local auto_dispatch<const> = function(self, event_type, emitter, payload, emitter_id)
+	local parent<const> = self.parent
+	if not self.enabled or not parent.active then
+		return
+	end
+	self:dispatch(event_type, payload, emitter, emitter_id)
+end
+
 local bind_machines<const> = function(self)
 	local filters_by_event<const> = {}
 	local list<const> = self._machines
@@ -115,9 +123,7 @@ local bind_machines<const> = function(self)
 		if filters == unfiltered_emitter then
 			event_emitter:on({
 				event = event_name,
-				handler = function(dispatched_type, emitter, payload, emitter_id)
-					self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
-				end,
+				handler = auto_dispatch,
 				subscriber = self,
 			})
 		else
@@ -129,9 +135,7 @@ local bind_machines<const> = function(self)
 				self.parent.events:on({
 					event = event_name,
 					emitter = emitter_filter,
-					handler = function(dispatched_type, emitter, payload, emitter_id)
-						self:auto_dispatch(dispatched_type, emitter, payload, emitter_id)
-					end,
+					handler = auto_dispatch,
 					subscriber = self,
 				})
 			end
@@ -150,14 +154,6 @@ function fsm_component:rebind_state_machine(id, definition)
 		self:unbind()
 		bind_machines(self)
 	end
-end
-
-function fsm_component:auto_dispatch(event_type, emitter, payload, emitter_id)
-	local parent<const> = self.parent
-	if not self.enabled or not parent.active then
-		return
-	end
-	self:dispatch(event_type, payload, emitter, emitter_id)
 end
 
 -- fsm_component:start(): start all managed FSMs from their initial

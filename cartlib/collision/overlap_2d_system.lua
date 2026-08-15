@@ -27,11 +27,7 @@
 --        function hero:bind()
 --          self.events:on({
 --            event = 'overlap.begin',
---            handler = function(_event_type, _emitter, payload)
---              if payload.other_layer == enemy_layer then
---                self:take_damage()
---              end
---            end,
+--            handler = self.on_overlap,
 --          })
 --        end
 --

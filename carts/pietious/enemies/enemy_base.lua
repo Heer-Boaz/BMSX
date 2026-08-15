@@ -28,54 +28,44 @@ function enemy_base.setup_projectile_boundary(self)
 	}))
 end
 
+function enemy_base.on_space_event(self, event_type)
+	if event_type == 'shrine_transition_enter' then
+		self:set_space('transition')
+	else
+		self:set_space('main')
+	end
+end
+
 function enemy_base.bind(self)
 	self.events:on({
 		event = 'overlap.begin',
-		subscriber = self,
-		handler = function(_event_type, _emitter, payload)
-			self:on_overlap(payload)
-		end,
+		handler = enemy_base.on_overlap,
 	})
 
 	self.events:on({
 		event = 'shrine_transition_enter',
-		subscriber = self,
-		handler = function()
-			self:set_space('transition')
-		end,
+		handler = enemy_base.on_space_event,
 	})
 	self.events:on({
 		event = 'world_transition',
 		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:mark_for_disposal()
-		end,
+		handler = self.mark_for_disposal,
 	})
 	self.events:on({
 		event = 'room',
 		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:set_space('main')
-		end,
+		handler = enemy_base.on_space_event,
 	})
 
 	if self:get_component(screen_boundary_component) ~= nil then
 		self.events:on({
 			event = 'screen.leave',
-			subscriber = self,
-			handler = function()
-				self:mark_for_disposal()
-			end,
+			handler = self.mark_for_disposal,
 		})
 		self.events:on({
 			event = 'room.switched',
 			emitter = 'pietolon',
-			subscriber = self,
-			handler = function()
-				self:mark_for_disposal()
-			end,
+			handler = self.mark_for_disposal,
 		})
 	end
 end
@@ -116,7 +106,7 @@ function enemy_base.process_damage_result(self, result)
 	end
 end
 
-function enemy_base.on_overlap(self, event)
+function enemy_base.on_overlap(self, _event_type, _emitter, event)
 	local player<const> = self.player
 	local contact_kind<const> = combat_overlap.classify_player_contact(event)
 	if contact_kind == nil then

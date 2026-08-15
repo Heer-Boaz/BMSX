@@ -263,7 +263,7 @@ local dispatch_rules_to_runtime<const> = function(rt, rules, event_type, emitter
 	rt.dispatch_depth = depth - 1
 end
 
-local dispatch_event<const> = function(event_type, emitter, payload)
+local dispatch_event<const> = function(_subscriber, event_type, emitter, payload)
 	local runtimes<const> = runtimes_by_event[event_type]
 	if runtimes == nil then
 		return
@@ -298,7 +298,7 @@ local dispatch_event<const> = function(event_type, emitter, payload)
 		runtimes.removals_pending = nil
 		if write_index == 1 then
 			runtimes_by_event[event_type] = nil
-			event_emitter:off(event_type, dispatch_event, nil)
+			event_emitter:off(event_type, progression, dispatch_event, nil)
 		end
 	end
 end
@@ -335,7 +335,7 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 	if runtimes.dispatch_depth == 0 and #runtimes == 0 then
 		runtimes_by_event[event_name] = nil
-		event_emitter:off(event_name, dispatch_event, nil)
+		event_emitter:off(event_name, progression, dispatch_event, nil)
 	end
 end
 

@@ -7,6 +7,7 @@ local event_emitter<const> = require('cartlib/event_emitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
 local rom_dir<const> = require('cartlib/rom_dir')
 
+local aem<const> = {}
 local global_actor_key<const> = false
 local slot_sfx<const> = 0
 local slot_music_a<const> = 1
@@ -693,7 +694,7 @@ dispatch_action = function(entry, action, payload)
 	dispatch_music_transition(action)
 end
 
-local handle_event<const> = function(event_type, emitter, payload)
+local handle_event<const> = function(_subscriber, event_type, _emitter, payload)
 	local entry<const> = events[event_type]
 	if entry == nil then
 		return
@@ -720,13 +721,13 @@ end
 reset_audio_state()
 
 local rebind<const> = function()
-	event_emitter:remove_subscriber(handle_event)
+	event_emitter:remove_subscriber(aem)
 	events = merge_events(rom_dir.aem_event_maps())
 	for event_name in pairs(events) do
 		event_emitter:on({
 			event = event_name,
 			handler = handle_event,
-			subscriber = handle_event,
+			subscriber = aem,
 		})
 	end
 end
@@ -779,7 +780,7 @@ end
 
 rebind()
 
-return {
-	reload_from_rom = reload_from_rom,
-	on_apu_irq = on_apu_irq,
-}
+aem.reload_from_rom = reload_from_rom
+aem.on_apu_irq = on_apu_irq
+
+return aem

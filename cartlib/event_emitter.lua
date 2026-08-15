@@ -18,8 +18,7 @@
 --      self.events:emit('level_entered')
 --      -- each subsystem that needs to reset subscribes in its own bind():
 --      self.events:on({ event = 'level_entered', emitter = 'coordinator',
---          subscriber = self,
---          handler = function() self:reset() end })
+--          handler = self.on_level_entered })
 --
 -- 2. BROADCAST WITH PAYLOAD — DATA IN THE EVENT, NOT SEPARATE EVENTS.
 --    When a subsystem needs data alongside a mode switch, carry it as a
@@ -47,8 +46,7 @@
 --      self.events:emit('subsystem.query_result')
 --      -- B subscribes in its bind():
 --      self.events:on({ event = 'subsystem.query_result', emitter = 'a',
---          subscriber = self,
---          handler = function() self:compute_and_reply() end })
+--          handler = self.on_result_requested })
 --      -- B emits the answer with a payload:
 --      self.events:emit('subsystem.result', { value = computed_value })
 --      -- A reacts in its FSM on-handler:
@@ -62,10 +60,12 @@
 --    (e.g. short names such as 'ready', 'done', 'update') to avoid reacting
 --    to unrelated emitters of the same event name.
 --
--- 5. SUBSCRIBER FIELD.
---    `subscriber` in on() is used exclusively by remove_subscriber(); it plays
---    no role in dispatch filtering.  Always populate it so that subscriptions
---    are cleaned up when the subscriber object is removed.
+-- 5. SUBSCRIBER + HANDLER FORM ONE CALLABLE.
+--    The listener record retains the subscriber and unbound handler separately.
+--    Dispatch invokes handler(subscriber, event_type, emitter, payload,
+--    emitter_id), matching an object-method callable without allocating a
+--    closure per subscription. remove_subscriber() uses the same receiver for
+--    lifecycle cleanup. It plays no role in dispatch filtering.
 --
 -- 6. EVENTPORT VS EVENTEMITTER.
 --    Cart code should use event_port (self.events) not event_emitter directly.
@@ -131,23 +131,18 @@ local append_listener<const> = function(self, list, entry)
 	entry.list = list
 	entry.list_index = list_index
 	local subscriber<const> = entry.subscriber
-	if subscriber ~= nil then
-		local subscriptions = self._subscriptions_by_subscriber[subscriber]
-		if subscriptions == nil then
-			subscriptions = {}
-			self._subscriptions_by_subscriber[subscriber] = subscriptions
-		end
-		local subscriber_index<const> = #subscriptions + 1
-		subscriptions[subscriber_index] = entry
-		entry.subscriber_index = subscriber_index
+	local subscriptions = self._subscriptions_by_subscriber[subscriber]
+	if subscriptions == nil then
+		subscriptions = {}
+		self._subscriptions_by_subscriber[subscriber] = subscriptions
 	end
+	local subscriber_index<const> = #subscriptions + 1
+	subscriptions[subscriber_index] = entry
+	entry.subscriber_index = subscriber_index
 end
 
 local unlink_subscriber<const> = function(self, entry)
 	local subscriber<const> = entry.subscriber
-	if subscriber == nil then
-		return
-	end
 	local subscriptions<const> = self._subscriptions_by_subscriber[subscriber]
 	local subscriber_index<const> = entry.subscriber_index
 	local last_index<const> = #subscriptions
@@ -200,13 +195,7 @@ end
 function event_emitter.events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
-		local emitter_id = emitter
-		local subscriber
-		if type(emitter) == 'table' then
-			emitter_id = emitter.id
-			subscriber = emitter
-		end
-		port = setmetatable({ emitter = emitter, emitter_id = emitter_id, subscriber = subscriber }, event_port)
+		port = setmetatable({ emitter = emitter, emitter_id = emitter.id }, event_port)
 		port_cache[emitter] = port
 	end
 	return port
@@ -215,10 +204,11 @@ end
 -- event_emitter:on(spec): register a listener.
 -- spec fields:
 --   event               (string)  — required; event type to listen for.
---   handler             (function)— required; called with event type, emitter
---                                    and payload as direct Lua values.
---   subscriber          (object)  — strongly recommended; used by
---                                    remove_subscriber() for cleanup.
+--   handler             (function)— required unbound method; called with the
+--                                    subscriber first, then event type, emitter,
+--                                    payload and emitter id as direct Lua values.
+--   subscriber          (object)  — method receiver and lifecycle owner used
+--                                    by remove_subscriber().
 --   emitter             (id)      — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
 function event_emitter:on(spec, default_subscriber, default_emitter)
@@ -263,10 +253,9 @@ function event_emitter:on(spec, default_subscriber, default_emitter)
 	})
 end
 
--- event_emitter:off(event_name, handler, emitter): remove a specific listener
--- by exact handler reference + emitter.  Prefer remove_subscriber() for bulk
--- cleanup of all subscriptions owned by a subscriber.
-function event_emitter:off(event_name, handler, emitter)
+-- event_emitter:off(event_name, subscriber, handler, emitter): remove one
+-- object-method callable. Prefer remove_subscriber() for bulk cleanup.
+function event_emitter:off(event_name, subscriber, handler, emitter)
 	local list
 	if emitter == nil then
 		list = self._global_listeners[event_name]
@@ -281,7 +270,7 @@ function event_emitter:off(event_name, handler, emitter)
 	end
 	for i = #list, 1, -1 do
 		local entry<const> = list[i]
-		if entry and entry.handler == handler then
+		if entry and entry.subscriber == subscriber and entry.handler == handler then
 			remove_listener(self, entry)
 		end
 	end
@@ -304,13 +293,13 @@ function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	for i = 1, scoped_count do
 		local entry<const> = scoped_list[i]
 		if entry then
-			entry.handler(event_type, emitter, payload, emitter_id)
+			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
 	end
 	for i = 1, global_count do
 		local entry<const> = global_list[i]
 		if entry then
-			entry.handler(event_type, emitter, payload, emitter_id)
+			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
 	end
 	local dispatch_depth<const> = self._dispatch_depth - 1
@@ -338,7 +327,7 @@ end
 -- subscriber to the port owner. The caller's declarative spec is not retained
 -- or modified.
 function event_port:on(spec)
-	event_emitter:on(spec, self.subscriber, self.emitter_id)
+	event_emitter:on(spec, self.emitter, self.emitter_id)
 end
 
 -- event_port:emit(event_name, payload): preferred cart API for emitting events.

@@ -19,18 +19,17 @@
 --
 -- 2. bind() / unbind() — event subscription lifecycle.
 --    All external event subscriptions must be registered inside bind(), not
---    in ctor / new().  Every subscription must set `subscriber = self` so
---    that the default unbind() can clean them up automatically via
---    remove_subscriber(self).
+--    in ctor / new(). The object's event port retains self as the subscriber,
+--    so the default unbind() can clean them up through remove_subscriber(self).
 --
 --    WRONG — subscribing in ctor (fires before object is active/ready):
 --      function myobj:ctor()
---          self.events:on({ event = 'something', handler = function() ... end })
+--          self.events:on({ event = 'something', handler = self.on_something })
 --      end
 --    RIGHT — subscribing in bind():
 --      function myobj:bind()
 --          self.events:on({ event = 'something', emitter = 'src',
---              subscriber = self, handler = function() ... end })
+--              handler = self.on_something })
 --      end
 --
 --    Override unbind() only when you need extra cleanup beyond event
@@ -351,8 +350,8 @@ function world_object:activate()
 end
 
 -- bind(): override in subclasses to register event subscriptions.
--- Called once by the first activate() before attached components activate. Always set
--- `subscriber = self` on every subscription so unbind() cleans them up.
+-- Called once by the first activate() before attached components activate. The
+-- object event port retains self so unbind() owns subscription cleanup.
 function world_object:bind()
 end
 
