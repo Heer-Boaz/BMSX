@@ -519,7 +519,7 @@ function stage:draw_star_particles(draw, stars, source, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		source:blit(draw, star.x, star.y, 0xffffffff)
+		source:blit(draw, star.x, star.y)
 	end
 end
 

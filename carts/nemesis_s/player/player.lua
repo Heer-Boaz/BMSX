@@ -195,7 +195,7 @@ function player:draw_lasers(draw)
 		end
 		local x = start_x
 		while x < end_x do
-			sources.laser:blit(draw, x, visual_y, 0xffffffff)
+			sources.laser:blit(draw, x, visual_y)
 			x = x + weapons_laser.tile_width
 		end
 	end
@@ -204,7 +204,7 @@ end
 function player:draw_missiles(draw)
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
-		missile.sprite:blit(draw, missile.x, missile.y, 0xffffffff)
+		missile.sprite:blit(draw, missile.x, missile.y)
 	end
 end
 
@@ -214,7 +214,7 @@ function player:draw_uplasers(draw)
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, weapons_uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, weapons_uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			sources.laser:blit(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff)
+			sources.laser:blit(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y)
 		end
 	end
 end
@@ -223,9 +223,9 @@ function player:draw_visual(draw)
 	local option_source<const> = sources.options[self.option_anim_index]
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
-		option_source:blit(draw, option.x, option.y, 0xffffffff)
+		option_source:blit(draw, option.x, option.y)
 	end
-	self.sprite.source:blit(draw, self.x, self.y, 0xffffffff)
+	self.sprite.source:blit(draw, self.x, self.y)
 	self:draw_lasers(draw)
 	self:draw_missiles(draw)
 	self:draw_uplasers(draw)

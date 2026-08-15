@@ -85,16 +85,16 @@ function ui:draw_ui(draw)
 		return
 	end
 	local player<const> = self.player
-	sources.header:blit(draw, 0, 0, 0xffffffff)
+	sources.header:blit(draw, 0, 0)
 	for i = 0, (self.hud_health_level - 1) do
-		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff)
+		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff)
+		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y)
 	end
 	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
 	if equipped_source ~= nil then
-		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff)
+		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size)
 	end
 end
 

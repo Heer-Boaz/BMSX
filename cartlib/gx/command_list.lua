@@ -195,10 +195,10 @@ function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color,
 	self.word_count = index + 4
 end
 
--- An admitted image source is itself the ordinary unflipped packet binding.
--- Write it directly into the batch: there is no image -> draw-list -> mode
--- redispatch and immutable size, page, CLUT and UV words are never rebuilt.
-function command_list.blit(source, draw, x, y, color)
+-- An admitted image source is itself the ordinary unflipped raw packet
+-- binding. Modulated draws use the source's draw datapath instead; raw blits
+-- never decode a color merely to rediscover the GP0 raw-texture opcode.
+function command_list.blit(source, draw, x, y)
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode<const> = source._blit_draw_mode
@@ -208,11 +208,7 @@ function command_list.blit(source, draw, x, y, color)
 		draw.draw_mode = draw_mode
 	end
 	local packet<const>: *gp0_textured_rectangle_packet = target
-	if (color & 0x00ffffff) == 0x00ffffff then
-		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
-	else
-		packet.command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
-	end
+	packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
 	packet.position = gp0.pair16(x, y)
 	packet.uv = source._blit_uv_word
 	packet.size = source._size_word

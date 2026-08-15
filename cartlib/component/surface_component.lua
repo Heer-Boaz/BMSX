@@ -1,4 +1,5 @@
 local image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
 local visual_component<const> = require('cartlib/component/visual_component')
 
 local surface_component<const> = {}
@@ -30,9 +31,23 @@ function surface_component:draw(draw)
 	local x<const> = parent.x + self.offset_x + self.draw_offset_x
 	local y<const> = parent.y + self.offset_y + self.draw_offset_y
 	local tiles<const> = source._tiles
-	for index = 1, #tiles do
-		local tile<const> = tiles[index]
-		tile:blit(draw, x + tile.offset_x, y + tile.offset_y, self.color)
+	local color<const> = self.color
+	if (color & 0x00ffffff) == 0x00ffffff then
+		for index = 1, #tiles do
+			local tile<const> = tiles[index]
+			tile:blit(draw, x + tile.offset_x, y + tile.offset_y)
+		end
+	else
+		for index = 1, #tiles do
+			local tile<const> = tiles[index]
+			tile:draw(
+				draw,
+				x + tile.offset_x,
+				y + tile.offset_y,
+				color,
+				0,
+				gp0.draw_mode_blend_half)
+		end
 	end
 end
 
