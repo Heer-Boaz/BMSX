@@ -888,6 +888,7 @@ function room_object:rebuild_room_tiles()
 	local tile_count<const> = tile_columns * tile_rows
 	local dissolve_step<const> = self.room_dissolve_step
 	local room_tile_layer<const> = self.room_tile_layer
+	room_tile_layer:resize(tile_count, tile_columns)
 
 	for y = 1, tile_rows do
 		local row_base<const> = ((y - 1) * tile_columns)
@@ -922,7 +923,6 @@ function room_object:rebuild_room_tiles()
 		end
 	end
 	self.room_tile_count = tile_count
-	room_tile_layer:resize(tile_count, tile_columns)
 
 	if self.water == nil then
 		self.water_tile_count = 0
@@ -940,6 +940,7 @@ function room_object:rebuild_room_tiles()
 	local water_tile_layer<const> = self.water_tile_layer
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
 	local water_surface_tile_count = 0
+	water_tile_layer:resize(water_tile_count, self.tile_columns)
 
 	for y = self.water.surface_row, self.tile_rows do
 		local row_base<const> = ((y - self.water.surface_row) * self.tile_columns)
@@ -964,7 +965,6 @@ function room_object:rebuild_room_tiles()
 	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
-	water_tile_layer:resize(water_tile_count, self.tile_columns)
 	water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true
@@ -978,7 +978,7 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	local water_surface_imgid<const> = water_surface_frame_imgids[water_surface_frame]
 	local water_tile_layer<const> = self.water_tile_layer
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
-	water_tile_layer:set_indexed_tiles(water_surface_tile_indices, self.water_surface_tile_count, water_surface_imgid)
+	water_tile_layer:replace_indexed_tiles(water_surface_tile_indices, self.water_surface_tile_count, water_surface_imgid)
 	self.last_water_surface_frame = water_surface_frame
 end
 

@@ -417,8 +417,8 @@ function stage:build_tape()
 	self.tape_length_tiles = width
 	self.stop_tape_head = stage_data.stop_tape_head
 	local stage_tiles<const> = self.stage_tiles
-	stage_tiles:resize(width * height, width)
 	stage_tiles:set_tile_size(self.tile_size)
+	stage_tiles:resize(width * height, width)
 	self.solid_tape = new_rows(width, height, 0)
 
 	for stage_y = 1, height do

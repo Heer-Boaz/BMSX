@@ -64,11 +64,18 @@ function command_list.new(words)
 	}, draw_list)
 end
 
-function command_list.begin(draw, draw_mode)
+function command_list.begin(draw, draw_mode, target_origin)
 	local words<const>: *word = draw.words
 	words[0] = gp0.draw_mode | draw_mode
 	draw.word_count = 1
 	draw.draw_mode = draw_mode
+	local target_x<const> = target_origin & 0x0000ffff
+	local target_y<const> = target_origin >> 16
+	draw.target_x = target_x
+	draw.target_y = target_y
+	local drawing_offset<const> = gp0.drawing_offset_word(target_x, target_y)
+	draw.base_drawing_offset = drawing_offset
+	draw.drawing_offset = drawing_offset
 end
 
 function command_list.submit_fenced(draw)
@@ -270,59 +277,148 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 	draw.draw_mode = draw_mode
 end
 
--- Stable and translated tile packets keep separate direct loops: merging the
--- representations would add a mode branch or position callback to every tile.
--- Stable tile layers retain their absolute position words alongside the
--- visible source list. Submission consumes those packet operands directly;
--- texture admission can still replace each source's page, CLUT and UV words.
-function command_list.tile_layer(draw, sources, position_words, source_count)
-	local words<const>: *word = draw.words
-	local target: *word = words + draw.word_count * sizeof(word)
-	local draw_mode = draw.draw_mode
+-- Retained tile rows preserve authored row-major order. The common single
+-- coordinate-domain path never reads a per-tile domain selector; maps crossing
+-- the GP0 signed-coordinate boundary use the separate stateful path below.
+local emit_single_domain_tile_rows<const> = function(
+	target,
+	rows,
+	row_count,
+	draw_mode
+)
+	local cursor: *word = target
 	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
-	for source_index = 1, source_count do
-		local source<const> = sources[source_index]
-		local next_draw_mode<const> = source._blit_draw_mode
-		if next_draw_mode ~= draw_mode then
-			*target = gp0.draw_mode | next_draw_mode
-			target = target + sizeof(word)
-			draw_mode = next_draw_mode
+	for row_index = 1, row_count do
+		local row<const> = rows[row_index]
+		local sources<const> = row.sources
+		local position_words<const> = row.position_words
+		for source_index = row.first_visible_source, row.last_visible_source do
+			local source<const> = sources[source_index]
+			local next_draw_mode<const> = source._blit_draw_mode
+			if next_draw_mode ~= draw_mode then
+				*cursor = gp0.draw_mode | next_draw_mode
+				cursor = cursor + sizeof(word)
+				draw_mode = next_draw_mode
+			end
+			local packet<const>: *gp0_textured_rectangle_packet = cursor
+			packet.command = command
+			packet.position = position_words[source_index]
+			packet.uv = source._blit_uv_word
+			packet.size = source._size_word
+			cursor = cursor + textured_rectangle_packet_size
 		end
-		local packet<const>: *gp0_textured_rectangle_packet = target
-		packet.command = command
-		packet.position = position_words[source_index]
-		packet.uv = source._blit_uv_word
-		packet.size = source._size_word
-		target = target + textured_rectangle_packet_size
 	end
-	draw.word_count = (target - words) >> 2
-	draw.draw_mode = draw_mode
+	return cursor, draw_mode
 end
 
--- A moving tile layer keeps the exact per-tile rounding path and does not
--- rewrite a retained position array that would be stale again next frame.
-function command_list.translated_tile_layer(draw, sources, x_offsets, y_offsets, source_count, origin_x, origin_y)
+local emit_multi_domain_tile_rows<const> = function(
+	target,
+	rows,
+	row_count,
+	first_visible_column,
+	coordinate_domain_columns,
+	tile_size,
+	offset_origin_x,
+	offset_y,
+	drawing_offset,
+	draw_mode
+)
+	local cursor: *word = target
+	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
+	local coordinate_domain = 0
+	for row_index = 1, row_count do
+		local row<const> = rows[row_index]
+		local coordinate_domains<const> = row.coordinate_domains
+		local sources<const> = row.sources
+		local position_words<const> = row.position_words
+		for source_index = row.first_visible_source, row.last_visible_source do
+			local next_coordinate_domain<const> = coordinate_domains[source_index]
+			if next_coordinate_domain ~= coordinate_domain then
+				coordinate_domain = next_coordinate_domain
+				local domain_first_column<const> = ((coordinate_domain - 1) * coordinate_domain_columns) + 1
+				local offset_x<const> = offset_origin_x
+					+ ((domain_first_column - first_visible_column) * tile_size)
+				local next_drawing_offset<const> = gp0.drawing_offset_word(offset_x, offset_y)
+				if next_drawing_offset ~= drawing_offset then
+					*cursor = next_drawing_offset
+					cursor = cursor + sizeof(word)
+					drawing_offset = next_drawing_offset
+				end
+			end
+			local source<const> = sources[source_index]
+			local next_draw_mode<const> = source._blit_draw_mode
+			if next_draw_mode ~= draw_mode then
+				*cursor = gp0.draw_mode | next_draw_mode
+				cursor = cursor + sizeof(word)
+				draw_mode = next_draw_mode
+			end
+			local packet<const>: *gp0_textured_rectangle_packet = cursor
+			packet.command = command
+			packet.position = position_words[source_index]
+			packet.uv = source._blit_uv_word
+			packet.size = source._size_word
+			cursor = cursor + textured_rectangle_packet_size
+		end
+	end
+	return cursor, drawing_offset, draw_mode
+end
+
+function command_list.tile_layer(
+	draw,
+	rows,
+	row_count,
+	first_visible_column,
+	last_visible_column,
+	coordinate_domain_columns,
+	tile_size,
+	origin_x,
+	origin_y
+)
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
-	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
-	for source_index = 1, source_count do
-		local source<const> = sources[source_index]
-		local next_draw_mode<const> = source._blit_draw_mode
-		if next_draw_mode ~= draw_mode then
-			*target = gp0.draw_mode | next_draw_mode
+	local drawing_offset = draw.drawing_offset
+	local offset_y<const> = draw.target_y + origin_y
+	local first_coordinate_domain<const> = ((first_visible_column - 1) // coordinate_domain_columns) + 1
+	local last_coordinate_domain<const> = ((last_visible_column - 1) // coordinate_domain_columns) + 1
+	if first_coordinate_domain == last_coordinate_domain then
+		local domain_first_column<const> = ((first_coordinate_domain - 1) * coordinate_domain_columns) + 1
+		local offset_x<const> = draw.target_x + origin_x
+			+ ((domain_first_column - first_visible_column) * tile_size)
+		local next_drawing_offset<const> = gp0.drawing_offset_word(offset_x, offset_y)
+		if next_drawing_offset ~= drawing_offset then
+			*target = next_drawing_offset
 			target = target + sizeof(word)
-			draw_mode = next_draw_mode
+			drawing_offset = next_drawing_offset
 		end
-		local packet<const>: *gp0_textured_rectangle_packet = target
-		packet.command = command
-		packet.position = gp0.pair16(origin_x + x_offsets[source_index], origin_y + y_offsets[source_index])
-		packet.uv = source._blit_uv_word
-		packet.size = source._size_word
-		target = target + textured_rectangle_packet_size
+		target, draw_mode = emit_single_domain_tile_rows(
+			target,
+			rows,
+			row_count,
+			draw_mode
+		)
+	else
+		target, drawing_offset, draw_mode = emit_multi_domain_tile_rows(
+			target,
+			rows,
+			row_count,
+			first_visible_column,
+			coordinate_domain_columns,
+			tile_size,
+			draw.target_x + origin_x,
+			offset_y,
+			drawing_offset,
+			draw_mode
+		)
+	end
+	local base_drawing_offset<const> = draw.base_drawing_offset
+	if drawing_offset ~= base_drawing_offset then
+		*target = base_drawing_offset
+		target = target + sizeof(word)
 	end
 	draw.word_count = (target - words) >> 2
 	draw.draw_mode = draw_mode
+	draw.drawing_offset = base_drawing_offset
 end
 
 function draw_list:direct16_quad(

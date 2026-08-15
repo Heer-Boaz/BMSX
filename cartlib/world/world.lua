@@ -738,7 +738,7 @@ end
 
 function world_class:_build_render_commands(draw_page)
 	local draw_commands<const> = self._draw_commands
-	command_list.begin(draw_commands, gp0.draw_mode_blend_half)
+	command_list.begin(draw_commands, gp0.draw_mode_blend_half, draw_page)
 	draw_commands:clear(draw_page, self._page_size, clear_color)
 	self:_rebuild_render_visuals()
 	local visuals<const> = self._render_visuals

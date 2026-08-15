@@ -1,5 +1,8 @@
 module<const>
 
+local drawing_offset<const> = 0xe5000000
+local signed_coordinate_extent<const> = 0x400
+
 local argb_to_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
 end
@@ -24,6 +27,22 @@ local pair16<const> = function(first, second)
 		rounded_second = -(((-second) + 0.5) // 1)
 	end
 	return (rounded_first & 0x0000ffff) | ((rounded_second & 0x0000ffff) << 16)
+end
+
+local drawing_offset_word<const> = function(x, y)
+	local rounded_x
+	if x >= 0 then
+		rounded_x = (x + 0.5) // 1
+	else
+		rounded_x = -(((-x) + 0.5) // 1)
+	end
+	local rounded_y
+	if y >= 0 then
+		rounded_y = (y + 0.5) // 1
+	else
+		rounded_y = -(((-y) + 0.5) // 1)
+	end
+	return drawing_offset | (rounded_x & 0x000007ff) | ((rounded_y & 0x000007ff) << 11)
 end
 
 local uv<const> = function(u, v)
@@ -69,7 +88,7 @@ return {
 	draw_mode = 0xe1000000,
 	drawing_area_top_left = 0xe3000000,
 	drawing_area_bottom_right = 0xe4000000,
-	drawing_offset = 0xe5000000,
+	drawing_offset = drawing_offset,
 	mask_bit_mode = 0xe6000000,
 
 	draw_mode_blend_half = 0x00000000,
@@ -81,9 +100,11 @@ return {
 	draw_mode_texture_rectangle_x_flip = 0x00001000,
 	draw_mode_texture_rectangle_y_flip = 0x00002000,
 	texture_page_span = 256,
+	signed_coordinate_extent = signed_coordinate_extent,
 	argb_to_rgb = argb_to_rgb,
 	argb_to_texture_rgb = argb_to_texture_rgb,
 	pair16 = pair16,
+	drawing_offset_word = drawing_offset_word,
 	uv = uv,
 	uv_texpage = uv_texpage,
 	uv_clut = uv_clut,
