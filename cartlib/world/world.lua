@@ -173,7 +173,7 @@ function world_class:_commit_active_space(space_id)
 end
 
 function world_class:configure(world_module)
-	self._system_manager:configure(world_module.systems)
+	self.update = self._system_manager:configure(world_module.systems)
 	local spaces<const> = world_module.spaces
 	for space_index = 1, #spaces do
 		self:_add_space(spaces[space_index])
@@ -710,10 +710,6 @@ function world_class:_commit_mutation_barrier()
 		self:_commit_clear()
 		return true
 	end
-end
-
-function world_class:update()
-	self._system_manager:update()
 end
 
 function world_class:_rebuild_render_visuals()
