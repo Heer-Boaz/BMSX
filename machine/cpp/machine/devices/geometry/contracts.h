@@ -146,7 +146,7 @@ constexpr uint32_t GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT = 16u;
 constexpr uint32_t GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK = 0xffffu;
 constexpr uint32_t GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK = 0xffffu;
 
-constexpr uint32_t GEO_FAULT_ABORTED_BY_HOST = 0x0001u;
+constexpr uint32_t GEO_FAULT_ABORTED = 0x0001u;
 constexpr uint32_t GEO_FAULT_BAD_RECORD_ALIGNMENT = 0x0002u;
 constexpr uint32_t GEO_FAULT_BAD_VERTEX_COUNT = 0x0003u;
 constexpr uint32_t GEO_FAULT_SRC_RANGE = 0x0004u;

@@ -22,7 +22,7 @@ import {
 } from '../../../spec/bmsx/io';
 import {
 	GEO_CTRL_ABORT,
-	GEO_FAULT_ABORTED_BY_HOST,
+	GEO_FAULT_ABORTED,
 	GEO_FAULT_CODE_MASK,
 	GEO_FAULT_CODE_SHIFT,
 	GEO_FAULT_RECORD_INDEX_MASK,
@@ -287,7 +287,7 @@ export class GeometryController {
 			return;
 		}
 		if (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY) {
-			this.finishError(GEO_FAULT_ABORTED_BY_HOST, this.activeJob!.processed);
+			this.finishError(GEO_FAULT_ABORTED, this.activeJob!.processed);
 		}
 	}
 

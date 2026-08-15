@@ -144,7 +144,7 @@ void GeometryController::onCtrlWrite(int64_t) {
 		return;
 	}
 	if (m_phase == GeometryControllerPhase::Busy) {
-		finishError(GEO_FAULT_ABORTED_BY_HOST, m_activeJob->processed);
+		finishError(GEO_FAULT_ABORTED, m_activeJob->processed);
 	}
 }
 
