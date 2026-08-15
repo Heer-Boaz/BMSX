@@ -50,11 +50,9 @@ assert(
 	'GTE+ completion latches mismatch')
 cartlib_test_gte_plus_ready = true
 
-local irq_mask_register<const>: *word = 0x08000008
 cartlib_test_ready = false
 world:clear()
 irq_module.register(vblank.irq_mask, vblank.on_irq)
-*irq_mask_register = vblank.irq_mask
 vblank.wait()
 cartlib_test_ready = true
 

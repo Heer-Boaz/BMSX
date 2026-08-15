@@ -1,6 +1,5 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
@@ -57,7 +56,6 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_mask_register<const>: *word = 0x08000008
 local irq_geo_done<const> = 0x0008
 local irq_geo_error<const> = 0x0010
 local irq_apu<const> = 0x0020
@@ -194,9 +192,7 @@ local function init<init>()
 	pending_title_boot_epoch = init_epoch
 end
 
-*irq_mask_register = 0
 init()
-*irq_mask_register = vblank.irq_mask | irq_geo_done | irq_geo_error | irq_apu | gx_gpu.irq_mask
 gx_texture.upload('pietolon_stand_r')
 new_game()
 vblank.wait()

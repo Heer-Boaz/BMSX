@@ -26,7 +26,6 @@ require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_mask_register<const>: *word = 0x08000008
 local irq_imgdec<const> = 0x0080
 local irq_apu<const> = 0x0020
 
@@ -293,7 +292,6 @@ local function init<init>()
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	irq_module.register(irq_imgdec, texture_residency.complete_upload)
 	irq_module.register(irq_apu, aem.on_apu_irq)
-	*irq_mask_register = vblank.irq_mask | irq_imgdec | irq_apu
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

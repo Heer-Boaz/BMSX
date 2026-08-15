@@ -7,13 +7,16 @@ local irq<const> = {}
 -- One retained callback slot corresponds to one physical IRQ source bit. The
 -- dispatcher walks only asserted, unmasked sources instead of scanning every
 -- registered subsystem on every interrupt. Each source is acknowledged before
--- its callback so an edge raised during the callback remains pending.
+-- its callback so an edge raised during the callback remains pending. The
+-- callback owner also owns the corresponding hardware mask bit.
 function irq.register(source, handler)
 	handlers[source] = handler
+	*irq_mask_register = *irq_mask_register | source
 end
 
 function irq.unregister(source)
 	handlers[source] = nil
+	*irq_mask_register = *irq_mask_register & ~source
 end
 
 function irq.dispatch(flags)

@@ -1,4 +1,5 @@
 local dma<const> = {}
+local irq<const> = require('cartlib/irq')
 
 dma.block_words = 16
 
@@ -24,15 +25,44 @@ local control_read_increment_imgdec_write<const> = 0x00003d41
 local control_imgdec_read_gx_write<const> = 0x00003c58
 local trigger_start<const> = 0x00000001
 local status_busy<const> = 0x00000001
+local irq_dma0_done<const> = 0x0001
+local irq_dma1_done<const> = 0x0100
+
+bss dma0_completion_sequence: word
+bss dma1_completion_sequence: word
+
+local on_dma0_done<const> = function()
+	*dma0_completion_sequence = *dma0_completion_sequence + 1
+end
+
+local on_dma1_done<const> = function()
+	*dma1_completion_sequence = *dma1_completion_sequence + 1
+end
+
+local function init_dma_irq<init>()
+	irq.register(irq_dma0_done, on_dma0_done)
+	irq.register(irq_dma1_done, on_dma1_done)
+end
+init_dma_irq()
 
 function dma.wait0_idle()
-	while (*dma0_status & status_busy) ~= 0 do
+	local sequence<const> = *dma0_completion_sequence
+	if (*dma0_status & status_busy) == 0 then
+		return
 	end
+	repeat
+		halt_until_irq
+	until *dma0_completion_sequence ~= sequence
 end
 
 function dma.wait1_idle()
-	while (*dma1_status & status_busy) ~= 0 do
+	local sequence<const> = *dma1_completion_sequence
+	if (*dma1_status & status_busy) == 0 then
+		return
 	end
+	repeat
+		halt_until_irq
+	until *dma1_completion_sequence ~= sequence
 end
 
 function dma.copy_to_gp0(source, word_count)
