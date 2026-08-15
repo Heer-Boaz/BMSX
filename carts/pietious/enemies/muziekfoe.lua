@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
@@ -101,15 +100,13 @@ function muziekfoe.choose_drop_type(_self)
 	return nil
 end
 
-enemy_base.extend(muziekfoe, 'muziekfoe')
-
 function muziekfoe.register()
 	local root<const> = behaviour_tree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)
 	behaviour_tree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
-		base = sprite_object,
+		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			damage = 4,

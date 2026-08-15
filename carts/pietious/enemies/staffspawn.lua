@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
 local bt_running<const> = behaviour_tree.result.running
@@ -25,15 +24,13 @@ function staffspawn.choose_drop_type(_self, _random_percent_hit)
 	return nil
 end
 
-enemy_base.extend(staffspawn, 'staffspawn')
-
 function staffspawn.register()
 	local root<const> = behaviour_tree.action_node.new('enemy_staffspawn', staffspawn.bt_tick)
 	behaviour_tree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.staffspawn',
 		class = staffspawn,
-		base = sprite_object,
+		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			trigger = nil,

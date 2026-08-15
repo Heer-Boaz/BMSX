@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
@@ -83,15 +82,13 @@ function stafffoe.choose_drop_type(_self)
 	return 'life'
 end
 
-enemy_base.extend(stafffoe, 'stafffoe')
-
 function stafffoe.register()
 	local root<const> = behaviour_tree.action_node.new('enemy_stafffoe', stafffoe.bt_tick)
 	behaviour_tree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
-		base = sprite_object,
+		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			damage = 4,

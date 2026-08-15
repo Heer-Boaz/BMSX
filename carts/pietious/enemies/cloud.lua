@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
 local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -130,15 +129,13 @@ function cloud.choose_drop_type(_self)
 	return nil
 end
 
-enemy_base.extend(cloud, 'cloud')
-
 function cloud.register()
 	local root<const> = behaviour_tree.action_node.new('enemy_cloud', cloud.bt_tick)
 	behaviour_tree_library.register(root)
 	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,
-		base = sprite_object,
+		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			damage = 2,

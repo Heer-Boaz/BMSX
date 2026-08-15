@@ -1,4 +1,5 @@
 local world<const> = require('cartlib/world/world')
+local sprite_object<const> = require('cartlib/sprite')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
@@ -6,10 +7,17 @@ local collider_2d_component<const> = require('cartlib/collision/collider_2d_comp
 local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
 
 local enemy_base<const> = {}
+enemy_base.__index = enemy_base
+setmetatable(enemy_base, { __index = sprite_object })
 local damaging_contact_kinds<const> = {
 	sword = true,
 	projectile = true,
 }
+
+function enemy_base.initialize(self)
+	sprite_object.initialize(self)
+	self.sprite_component:set_offset_z(110)
+end
 
 function enemy_base.new_collider(opts)
 	local collider<const> = collider_2d_component.new_for_sprite(opts)
@@ -130,22 +138,6 @@ function enemy_base.on_overlap(self, _event_type, _emitter, event)
 			enemy_id = self.id,
 			contact_kind = contact_kind,
 		})
-	end
-end
-
-function enemy_base.extend(enemy_class, enemy_kind)
-	local original_ctor<const> = enemy_class.ctor
-	enemy_class.enemy_kind = enemy_kind
-	enemy_class.bind = enemy_base.bind
-	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect
-	enemy_class.apply_damage = enemy_base.apply_damage
-	enemy_class.process_damage_result = enemy_base.process_damage_result
-	enemy_class.on_overlap = enemy_base.on_overlap
-	enemy_class.ctor = function(self, ...)
-		self.sprite_component:set_offset_z(110)
-		if original_ctor then
-			original_ctor(self, ...)
-		end
 	end
 end
 
