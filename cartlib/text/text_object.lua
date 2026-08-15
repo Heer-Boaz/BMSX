@@ -38,6 +38,10 @@ end
 
 local highlight_move_timeline_id<const> = 'hmove'
 local highlight_vibe_timeline_id<const> = 'hvibe'
+local highlight_vibe_play_options<const> = {
+	rewind = true,
+	snap_to_start = true,
+}
 local text_object_fsm_id<const> = 'text_object'
 local text_object_machine_ids<const> = { text_object_fsm_id }
 local text_object_state_idle<const> = 'idle'
@@ -239,11 +243,7 @@ fsm_library.register(text_object_fsm_id, {
 					},
 				},
 			},
-			autoplay = true,
-			play_options = {
-				rewind = true,
-				snap_to_start = true,
-			},
+			autoplay = false,
 		},
 	},
 	on = {
@@ -397,6 +397,23 @@ function text_object:compute_highlight_block()
 	return y, h
 end
 
+-- Highlight motion owns its timeline admission. An inactive highlight is not
+-- an animation that happens to render nothing: it has no frame work at all.
+-- This mirrors the play/stop scheduling used by retained animation players.
+local update_highlight_vibe<const> = function(self)
+	local entry<const> = self.timelines:get(highlight_vibe_timeline_id)
+	local active<const> = self.highlight_anim_y ~= nil
+		and (self.highlight_pulse_enabled or self.highlight_jitter_enabled)
+	if entry.playing == active then
+		return
+	end
+	if active then
+		self.timelines:play(highlight_vibe_timeline_id, highlight_vibe_play_options)
+	else
+		self.timelines:stop(highlight_vibe_timeline_id)
+	end
+end
+
 function text_object:update_highlight_animation()
 	if self.highlighted_line_index == nil then
 		self.highlight_last_line_index = nil
@@ -404,6 +421,7 @@ function text_object:update_highlight_animation()
 		self.highlight_anim_h = nil
 		self.highlight_target_y = nil
 		self.highlight_target_h = nil
+		update_highlight_vibe(self)
 		return
 	end
 	local target_y<const>, target_h<const> = self:compute_highlight_block()
@@ -412,6 +430,7 @@ function text_object:update_highlight_animation()
 		self.highlight_anim_h = nil
 		self.highlight_target_y = nil
 		self.highlight_target_h = nil
+		update_highlight_vibe(self)
 		return
 	end
 	if not self.highlight_move_enabled then
@@ -421,6 +440,7 @@ function text_object:update_highlight_animation()
 		self.highlight_target_y = target_y
 		self.highlight_target_h = target_h
 		self.highlight_last_line_index = self.highlighted_line_index
+		update_highlight_vibe(self)
 		return
 	end
 	if self.highlight_anim_y == nil then
@@ -442,6 +462,7 @@ function text_object:update_highlight_animation()
 			},
 		})
 	end
+	update_highlight_vibe(self)
 end
 
 function text_object:set_highlighted_line(index)
@@ -450,6 +471,22 @@ function text_object:set_highlighted_line(index)
 	end
 	self.highlighted_line_index = index
 	self:update_highlight_animation()
+end
+
+function text_object:set_highlight_pulse_enabled(enabled)
+	if self.highlight_pulse_enabled == enabled then
+		return
+	end
+	self.highlight_pulse_enabled = enabled
+	update_highlight_vibe(self)
+end
+
+function text_object:set_highlight_jitter_enabled(enabled)
+	if self.highlight_jitter_enabled == enabled then
+		return
+	end
+	self.highlight_jitter_enabled = enabled
+	update_highlight_vibe(self)
 end
 
 function text_object:set_text(text_or_lines, opts)

@@ -987,7 +987,7 @@ function combat.define_fsm()
 			self.text_main:set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
 			self.text_choice:set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
-			self.text_choice.highlight_jitter_enabled = true
+			self.text_choice:set_highlight_jitter_enabled(true)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local portrait<const> = self.all_out_portrait
@@ -1064,7 +1064,7 @@ function combat.define_fsm()
 			portrait.visible = false
 			portrait.sprite_component.scale_x = 1
 			portrait.sprite_component.scale_y = 1
-			self.text_choice.highlight_jitter_enabled = false
+			self.text_choice:set_highlight_jitter_enabled(false)
 		end,
 	}
 
