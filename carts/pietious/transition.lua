@@ -50,7 +50,7 @@ function transition:ctor()
 	text.visible = false
 	text.center_block_width = screen_width
 	self.text_component = text
-	self:get_component(custom_visual_component).producer = draw_transition_visual
+	self:get_component(custom_visual_component):set_draw_function(draw_transition_visual)
 	self.timelines:define('transition.timeline', {
 		frames = timeline.range(flow_room_transition_frames),
 		playback_mode = 'once',

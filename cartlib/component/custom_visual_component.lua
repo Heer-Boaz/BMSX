@@ -4,15 +4,13 @@ local custom_visual_component<const> = {}
 custom_visual_component.__index = custom_visual_component
 setmetatable(custom_visual_component, { __index = visual_component })
 
+-- `draw(component, draw_list)` is the retained visual datapath. The callback
+-- receives this component directly, so custom visuals do not allocate a bound
+-- closure or forward through a second per-frame producer call.
 function custom_visual_component.new(opts)
 	local self<const> = setmetatable(visual_component.new(opts), custom_visual_component)
-	self.producer = opts.producer
-	self:set_draw_function(custom_visual_component.draw_visual)
+	self:set_draw_function(opts.draw)
 	return self
-end
-
-function custom_visual_component:draw_visual(draw)
-	self.producer(self.parent, draw)
 end
 
 return custom_visual_component

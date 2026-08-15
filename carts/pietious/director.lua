@@ -86,8 +86,8 @@ local daemon_timeline_id<const> = 'director.daemon'
 local director<const> = {}
 director.__index = director
 
-function director:draw_visual(draw)
-	if not self.seal_flash_on then
+local draw_director_visual<const> = function(component, draw)
+	if not component.parent.seal_flash_on then
 		return
 	end
 	draw:mode(gp0.draw_mode_blend_half)
@@ -222,7 +222,7 @@ function director:ctor()
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component(custom_visual_component).producer = director.draw_visual
+	self:get_component(custom_visual_component):set_draw_function(draw_director_visual)
 	self:ensure_daemon_cloud_pool()
 end
 

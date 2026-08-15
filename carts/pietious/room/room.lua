@@ -833,6 +833,19 @@ function room_object:switch_room(direction)
 	}
 end
 
+local draw_room_effect<const> = function(component, draw)
+	local room<const> = component.parent
+	if not room:has_tag('r.seal_fx') then
+		return
+	end
+	local director<const> = room.director
+	if not director:has_tag('d.seal.flash') then
+		return
+	end
+	draw:mode(gp0.draw_mode_blend_half)
+	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+end
+
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self.rock_drops = {}
@@ -867,7 +880,7 @@ function room_object:ctor()
 	self.tiles_visible = false
 	local room_effect<const> = self:get_component(custom_visual_component)
 	room_effect:set_offset_z(draw_z_room_effect)
-	room_effect.producer = room_object.render_room
+	room_effect:set_draw_function(draw_room_effect)
 end
 
 function room_object:hide_room_tiles()
@@ -980,18 +993,6 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
 	water_tile_layer:replace_indexed_tiles(water_surface_tile_indices, self.water_surface_tile_count, water_surface_imgid)
 	self.last_water_surface_frame = water_surface_frame
-end
-
-function room_object:render_room(draw)
-	if not self:has_tag('r.seal_fx') then
-		return
-	end
-	local director<const> = self.director
-	if not director:has_tag('d.seal.flash') then
-		return
-	end
-	draw:mode(gp0.draw_mode_blend_half)
-	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)

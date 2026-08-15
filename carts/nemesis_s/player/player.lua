@@ -218,16 +218,17 @@ function player:draw_uplasers(draw)
 	end
 end
 
-function player:draw_visual(draw)
-	local option_source<const> = sources.options[self.option_anim_index]
-	for i = 1, #self.options do
-		local option<const> = self.options[i]
+local draw_player_visual<const> = function(component, draw)
+	local owner<const> = component.parent
+	local option_source<const> = sources.options[owner.option_anim_index]
+	for i = 1, #owner.options do
+		local option<const> = owner.options[i]
 		option_source:blit(draw, option.x, option.y)
 	end
-	self.sprite.source:blit(draw, self.x, self.y)
-	self:draw_lasers(draw)
-	self:draw_missiles(draw)
-	self:draw_uplasers(draw)
+	owner.sprite.source:blit(draw, owner.x, owner.y)
+	owner:draw_lasers(draw)
+	owner:draw_missiles(draw)
+	owner:draw_uplasers(draw)
 end
 
 function player:on_fire_input_pressed()
@@ -702,8 +703,8 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc<const> = self:get_component(custom_visual_component)
-	rc.producer = player.draw_visual
+	local visual<const> = self:get_component(custom_visual_component)
+	visual:set_draw_function(draw_player_visual)
 end
 
 local define_player_fsm<const> = function()

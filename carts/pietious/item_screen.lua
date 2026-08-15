@@ -71,8 +71,16 @@ local item_screen_mode_exit_events<const> = {
 	'daemon_appearance',
 }
 
+local draw_item_screen<const> = function(component, draw)
+	local owner<const> = component.parent
+	sources.screen_background:blit(draw, 0, room_hud_height)
+	owner:draw_inventory_items(draw)
+	owner:draw_secondary_weapon_selector(draw)
+	owner:draw_map(draw)
+end
+
 function item_screen:ctor()
-	self:get_component(custom_visual_component).producer = item_screen.draw_screen
+	self:get_component(custom_visual_component):set_draw_function(draw_item_screen)
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
@@ -175,13 +183,6 @@ function item_screen:shift_secondary_weapon_selection(direction)
 		self.events:emit('select')
 	end
 	self:apply_selected_secondary_weapon()
-end
-
-function item_screen:draw_screen(draw)
-	sources.screen_background:blit(draw, 0, room_hud_height)
-	self:draw_inventory_items(draw)
-	self:draw_secondary_weapon_selector(draw)
-	self:draw_map(draw)
 end
 
 local define_item_screen_fsm<const> = function()

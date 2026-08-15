@@ -540,9 +540,10 @@ function stage:draw_star_particles(draw, stars, source, hidden)
 	end
 end
 
-function stage:draw_stars(draw)
-	self:draw_star_particles(draw, self.yellow_stars, star_sources.yellow, self.yellow_blink)
-	self:draw_star_particles(draw, self.blue_stars, star_sources.blue, self.blue_blink)
+local draw_stars<const> = function(component, draw)
+	local owner<const> = component.parent
+	owner:draw_star_particles(draw, owner.yellow_stars, star_sources.yellow, owner.yellow_blink)
+	owner:draw_star_particles(draw, owner.blue_stars, star_sources.blue, owner.blue_blink)
 end
 
 function stage:is_solid_pixel(screen_x, screen_y)
@@ -560,7 +561,7 @@ function stage:ctor()
 	self.yellow_stars = {}
 	self.blue_stars = {}
 	self.star_visual = self:get_component(custom_visual_component)
-	self.star_visual.producer = stage.draw_stars
+	self.star_visual:set_draw_function(draw_stars)
 	self.stage_tiles = self:get_component(tile_layer_component)
 end
 

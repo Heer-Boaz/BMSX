@@ -108,7 +108,8 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
-local draw_combat_slash<const> = function(director, draw)
+local draw_combat_slash<const> = function(component, draw)
+	local director<const> = component.parent
 	local frame<const> = director.combat_hit_slash_frame
 	if not frame.slash_active then
 		return
@@ -125,7 +126,7 @@ function combat_director:ctor()
 		parent = self,
 		id_local = 'slash',
 		offset_z = combat_hit_slash_z,
-		producer = draw_combat_slash,
+		draw = draw_combat_slash,
 	}))
 end
 

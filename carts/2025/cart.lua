@@ -88,7 +88,8 @@ local create_transition_visuals<const> = function()
 	}
 end
 
-local draw_director_visual<const> = function(parent, draw)
+local draw_director_visual<const> = function(component, draw)
+	local parent<const> = component.parent
 	local results<const> = parent.combat_results_visual
 	if results.visible then
 		draw:rect(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
@@ -114,9 +115,9 @@ local draw_director_visual<const> = function(parent, draw)
 end
 
 function director:ctor()
-	local transition_rc<const> = self:get_component(custom_visual_component)
-	transition_rc:set_offset_z(director_visual_z)
-	transition_rc.producer = draw_director_visual
+	local transition_visual<const> = self:get_component(custom_visual_component)
+	transition_visual:set_offset_z(director_visual_z)
+	transition_visual:set_draw_function(draw_director_visual)
 end
 
 function director:apply_effects(effects)

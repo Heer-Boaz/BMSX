@@ -28,6 +28,25 @@ local animate_level<const> = function(current, target)
 	return current
 end
 
+local draw_ui<const> = function(component, draw)
+	local owner<const> = component.parent
+	if not owner.hud_visible then
+		return
+	end
+	local player<const> = owner.player
+	sources.header:blit(draw, 0, 0)
+	for i = 0, (owner.hud_health_level - 1) do
+		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y)
+	end
+	for i = 0, (owner.hud_weapon_level - 1) do
+		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y)
+	end
+	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
+	if equipped_source ~= nil then
+		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size)
+	end
+end
+
 function ui:set_health_target(value)
 	self.hud_health_target = clamp(value // 1, 0, damage_max_health)
 end
@@ -37,7 +56,7 @@ function ui:set_weapon_target(value)
 end
 
 function ui:ctor()
-	self:get_component(custom_visual_component).producer = ui.draw_ui
+	self:get_component(custom_visual_component):set_draw_function(draw_ui)
 	local player<const> = self.player
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
@@ -77,24 +96,6 @@ function ui:update_hud_animation()
 		end
 	else
 		self.hud_weapon_anim_ticks = 0
-	end
-end
-
-function ui:draw_ui(draw)
-	if not self.hud_visible then
-		return
-	end
-	local player<const> = self.player
-	sources.header:blit(draw, 0, 0)
-	for i = 0, (self.hud_health_level - 1) do
-		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y)
-	end
-	for i = 0, (self.hud_weapon_level - 1) do
-		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y)
-	end
-	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
-	if equipped_source ~= nil then
-		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size)
 	end
 end
 
