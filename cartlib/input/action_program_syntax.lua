@@ -29,10 +29,12 @@ local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
 local boolean_literal<const> = syntax_factory.boolean_literal
 local member_expression<const> = syntax_factory.member_expression
+local index_expression<const> = syntax_factory.index_expression
 local call_expression<const> = syntax_factory.call_expression
 local binary_expression<const> = syntax_factory.binary_expression
 local unary_expression<const> = syntax_factory.unary_expression
 local function_expression<const> = syntax_factory.function_expression
+local call_statement<const> = syntax_factory.call_statement
 local assignment_statement<const> = syntax_factory.assignment_statement
 local local_statement<const> = syntax_factory.local_statement
 local if_clause<const> = syntax_factory.if_clause
@@ -42,12 +44,10 @@ local return_statement<const> = syntax_factory.return_statement
 -- Recursive lowering passes result targets by symbol identity. The diagnostic
 -- spelling is never used to reconnect a nested expression to its accumulator.
 local symbols<const> = {
-	source_get_state = generated_symbol('source_get_state'),
-	source_states = generated_symbol('source_states'),
-	source_win = generated_symbol('source_win'),
-	get_state = generated_symbol('get_state'),
-	context = generated_symbol('context'),
+	player = generated_symbol('player'),
+	states = generated_symbol('states'),
 	win = generated_symbol('win'),
+	evaluation_serial = generated_symbol('evaluation_serial'),
 	result = generated_symbol('result'),
 	state = generated_symbol('state'),
 	edge_ok = generated_symbol('edge_ok'),
@@ -273,11 +273,27 @@ local emit_action<const> = function(statements, state, node, target_symbol, bare
 	end
 	statements[#statements + 1] = assignment_statement(
 		reference(symbols.state),
-		call_expression(reference(symbols.get_state), {
-			reference(symbols.context),
-			numeric_literal(node.action_index),
-		})
+		reference(state.action_state_symbols[node.action_index])
 	)
+	statements[#statements + 1] = if_statement({
+		if_clause(
+			binary_expression(
+				syntax.binary_not_equal,
+				member_expression(reference(symbols.state), 'evaluation_serial'),
+				reference(symbols.evaluation_serial)
+			),
+			block({
+				call_statement(call_expression(
+					member_expression(reference(symbols.state), 'evaluation_runner'),
+					{
+						reference(symbols.state),
+						member_expression(reference(symbols.player), 'sample_frame'),
+						reference(symbols.evaluation_serial),
+					}
+				)),
+			})
+		),
+	})
 	statements[#statements + 1] = assignment_statement(
 		reference(target_symbol),
 		action_condition(node, bare_requires_pressed)
@@ -581,13 +597,16 @@ end
 
 function action_program_syntax.build(ast, action_count)
 	local action_requirement_masks<const> = {}
+	local action_state_symbols<const> = {}
 	for action_index = 1, action_count do
 		action_requirement_masks[action_index] = 0
+		action_state_symbols[action_index] = generated_symbol('action_state')
 	end
 	local state<const> = {
 		uses_state = false,
 		uses_edge = false,
 		action_requirement_masks = action_requirement_masks,
+		action_state_symbols = action_state_symbols,
 	}
 	local evaluation_body<const> = {}
 	emit_evaluation(evaluation_body, state, ast, symbols.result, nil)
@@ -595,6 +614,11 @@ function action_program_syntax.build(ast, action_count)
 		local_statement(reference(symbols.result), nil, false),
 	}
 	if state.uses_state then
+		evaluator_body[#evaluator_body + 1] = local_statement(
+			reference(symbols.evaluation_serial),
+			member_expression(reference(symbols.player), 'evaluation_serial'),
+			true
+		)
 		evaluator_body[#evaluator_body + 1] = local_statement(reference(symbols.state), nil, false)
 	end
 	if state.uses_edge then
@@ -607,32 +631,26 @@ function action_program_syntax.build(ast, action_count)
 		evaluator_body[#evaluator_body + 1] = evaluation_body[index]
 	end
 	evaluator_body[#evaluator_body + 1] = return_statement({ reference(symbols.result) })
+	local factory_body<const> = {}
+	for action_index = 1, action_count do
+		factory_body[action_index] = local_statement(
+			reference(action_state_symbols[action_index]),
+			index_expression(reference(symbols.states), numeric_literal(action_index)),
+			true
+		)
+	end
+	factory_body[#factory_body + 1] = return_statement({
+		function_expression({}, block(evaluator_body)),
+	})
 	local chunk<const> = syntax_factory.chunk(block({
 		return_statement({
 			function_expression(
 				{
-					reference(symbols.source_get_state),
-					reference(symbols.source_states),
-					reference(symbols.source_win),
+					reference(symbols.player),
+					reference(symbols.states),
+					reference(symbols.win),
 				},
-				block({
-					local_statement(
-						reference(symbols.get_state),
-						reference(symbols.source_get_state),
-						true
-					),
-					local_statement(
-						reference(symbols.context),
-						reference(symbols.source_states),
-						true
-					),
-					local_statement(
-						reference(symbols.win),
-						reference(symbols.source_win),
-						true
-					),
-					return_statement({ function_expression({}, block(evaluator_body)) }),
-				})
+				block(factory_body)
 			),
 		}),
 	}))

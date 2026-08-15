@@ -8,6 +8,7 @@ end
 
 local action_state<const> = function(values)
 	local state<const> = {
+		evaluation_serial = 0,
 		pressed = false,
 		just_pressed = false,
 		all_just_pressed = false,
@@ -27,13 +28,10 @@ local action_state<const> = function(values)
 	return state
 end
 
-local state_at<const> = function(states, index)
-	return states[index]
-end
-
 local evaluate<const> = function(source, states, window)
+	local player<const> = { evaluation_serial = 0, sample_frame = 0 }
 	return action_parser.compile(source).evaluation_factory(
-		state_at,
+		player,
 		states,
 		window
 	)()
@@ -47,12 +45,17 @@ function __bmsx_host_test.setup()
 	assert(program.action_names[1] == 'a' and program.action_names[2] == 'b')
 
 	local reads<const> = { 0, 0 }
-	local count_state<const> = function(states, index)
-		reads[index] = reads[index] + 1
-		return states[index]
+	local player<const> = { evaluation_serial = 1, sample_frame = 0 }
+	pressed.evaluation_runner = function(state, _sample_frame, evaluation_serial)
+		reads[1] = reads[1] + 1
+		state.evaluation_serial = evaluation_serial
+	end
+	idle.evaluation_runner = function(state, _sample_frame, evaluation_serial)
+		reads[2] = reads[2] + 1
+		state.evaluation_serial = evaluation_serial
 	end
 	assert(program.evaluation_factory(
-		count_state,
+		player,
 		{ pressed, idle },
 		4
 	)())

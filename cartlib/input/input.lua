@@ -174,9 +174,8 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	end
 end
 
-local new_action_state<const> = function(player, action)
+local new_action_state<const> = function(action)
 	return {
-		player = player,
 		action = action,
 		source_lists = {
 			{ source_index = source_keyboard },
@@ -415,7 +414,7 @@ local rebuild_action_bindings<const> = function(player, state)
 end
 
 local create_action_state<const> = function(player, action)
-	local state<const> = new_action_state(player, action)
+	local state<const> = new_action_state(action)
 	player.actions[action] = state
 	local index<const> = player.action_state_count + 1
 	player.action_state_count = index
@@ -651,16 +650,6 @@ function input.clear_context(player_index, id)
 	clear_action_evaluation_state(player)
 end
 
-local evaluate_action_state<const> = function(states, action_key)
-	local state<const> = states[action_key]
-	local player<const> = state.player
-	local evaluation_serial<const> = player.evaluation_serial
-	if state.evaluation_serial ~= evaluation_serial then
-		state.evaluation_runner(state, player.sample_frame, evaluation_serial)
-	end
-	return state
-end
-
 -- Direct action queries admit their retained state on first use. Compiled
 -- expressions already admit every state while input.bind builds their context.
 local evaluate_player_action_state<const> = function(player, action, requirement_mask)
@@ -687,7 +676,7 @@ function input.bind(player_index, pattern)
 			states[i] = admit_action_state(player, action_names[i], action_requirement_masks[i])
 		end
 		evaluate = program.evaluation_factory(
-			evaluate_action_state,
+			player,
 			states,
 			buffer_frame_retention
 		)
