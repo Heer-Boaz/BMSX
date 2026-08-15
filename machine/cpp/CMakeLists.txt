@@ -252,6 +252,7 @@ add_library(bmsx_core STATIC
 	spec/blua32/instruction_format.cpp
 	machine/devices/cartridge/controller.cpp
 	machine/devices/dma/controller.cpp
+	machine/devices/dma/registers.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/device_status.cpp
 	machine/devices/geometry/addressing.cpp

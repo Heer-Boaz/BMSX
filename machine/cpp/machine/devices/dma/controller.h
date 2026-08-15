@@ -1,10 +1,9 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/devices/dma/registers.h"
 #include "spec/bmsx/io.h"
 #include "machine/memory/bus_signals.h"
-
-#include <array>
 
 namespace bmsx {
 
@@ -14,16 +13,8 @@ class IrqController;
 class Memory;
 enum class MemoryRegionKind;
 
-struct DmaChannelState {
-	u32 readAddressWord = 0;
-	u32 writeAddressWord = 0;
-	u32 transferCountWord = 0;
-	u32 controlWord = 0;
-	u32 statusWord = 0;
-};
-
 struct DmaControllerState {
-	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> channels{};
+	DmaChannelStates channels{};
 	u32 activeChannel = IO_DMA_CHANNEL_COUNT;
 	u32 nextChannel = 0;
 	u32 scheduledBlockWords = 0;
@@ -34,7 +25,7 @@ struct DmaControllerState {
 	u32 scheduledControlWord = 0;
 	bool supervisorQuiesceRequested = false;
 	bool supervisorAdmissionQuiesceRequested = false;
-	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> userChannels{};
+	DmaChannelStates userChannels{};
 	u32 userNextChannel = 0;
 };
 
@@ -59,9 +50,8 @@ public:
 	void leaveSupervisorContext();
 
 private:
-	static void onControlWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static void onAddressWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
-	static void onTransferCountWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void onChannelConfigWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static void onTriggerWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool triggerWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 
@@ -77,8 +67,6 @@ private:
 	bool busy(u32 channel) const;
 	u32 channelReadAddress(u32 channel) const;
 	u32 channelWriteAddress(u32 channel) const;
-	DmaChannelState captureChannel(u32 channel) const;
-	void restoreChannel(u32 channel, const DmaChannelState& state);
 	void clearLiveTransfer();
 	void clearUserContext();
 	void clearAdmittedBlock();
@@ -102,7 +90,8 @@ private:
 	bool m_restorePending = false;
 	bool m_supervisorQuiesceRequested = false;
 	bool m_supervisorAdmissionQuiesceRequested = false;
-	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> m_userChannels{};
+	DmaRegisterFile m_registers;
+	DmaRegisterFile m_userRegisters;
 	u32 m_userNextChannel = 0;
 	Memory& m_memory;
 	CPU& m_cpu;

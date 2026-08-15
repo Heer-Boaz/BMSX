@@ -11,7 +11,8 @@ import type {
 	CartridgeSlotState,
 } from '../../devices/cartridge/contracts';
 import { CARTRIDGE_SLOT_COUNT } from '../../../spec/bmsx/cartridge';
-import type { DmaChannelState, DmaControllerState } from '../../devices/dma/controller';
+import type { DmaControllerState } from '../../devices/dma/controller';
+import type { DmaChannelState } from '../../devices/dma/registers';
 import type {
 	ApuBadpDecoderSaveState,
 	ApuBiquadFilterState,
