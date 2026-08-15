@@ -283,6 +283,7 @@ function command_list.tile_layer(draw, sources, position_words, source_count)
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
+	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
 	for source_index = 1, source_count do
 		local source<const> = sources[source_index]
 		local next_draw_mode<const> = source._blit_draw_mode
@@ -292,7 +293,7 @@ function command_list.tile_layer(draw, sources, position_words, source_count)
 			draw_mode = next_draw_mode
 		end
 		local packet<const>: *gp0_textured_rectangle_packet = target
-		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
+		packet.command = command
 		packet.position = position_words[source_index]
 		packet.uv = source._blit_uv_word
 		packet.size = source._size_word
@@ -308,6 +309,7 @@ function command_list.translated_tile_layer(draw, sources, x_offsets, y_offsets,
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
+	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
 	for source_index = 1, source_count do
 		local source<const> = sources[source_index]
 		local next_draw_mode<const> = source._blit_draw_mode
@@ -317,7 +319,7 @@ function command_list.translated_tile_layer(draw, sources, x_offsets, y_offsets,
 			draw_mode = next_draw_mode
 		end
 		local packet<const>: *gp0_textured_rectangle_packet = target
-		packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
+		packet.command = command
 		packet.position = gp0.pair16(origin_x + x_offsets[source_index], origin_y + y_offsets[source_index])
 		packet.uv = source._blit_uv_word
 		packet.size = source._size_word

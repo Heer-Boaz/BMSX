@@ -2801,7 +2801,14 @@ class FunctionBuilder {
 		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
-			if (constBinding.constRelocValue !== null) {
+			const localReg = this.resolveReferenceLocal(reference);
+			// A current-function <const> local already owns an immutable register.
+			// Keep that value resident; downstream RK propagation can still inline it.
+			if (localReg !== null) {
+				if (localReg !== target) {
+					this.emitABC(OpCode.MOV, target, localReg, 0);
+				}
+			} else if (constBinding.constRelocValue !== null) {
 				this.emitLoadConstExportValue(target, constBinding.constRelocValue);
 			} else {
 				this.emitLoadConst(target, constBinding.constValue);

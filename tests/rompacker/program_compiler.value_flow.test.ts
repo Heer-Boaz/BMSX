@@ -13,6 +13,10 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { runCompiledLua } from '../lua/cpu_test_harness';
+import {
+	disassembleTestBlua32Functions,
+	linkTestSystemBlua32,
+} from '../helpers/blua32';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);
@@ -75,4 +79,39 @@ test('ProgramCompiler treats raw ICU MMIO writes as plain word writes', () => {
 		{ entrySource: source },
 	);
 	assert.ok(compiled.program.code.length > 0);
+});
+
+test('ProgramCompiler -O3 keeps large local constants resident for register-only loop operands', () => {
+	const source = `
+local write_words<const> = function(base, count)
+	local target: *word = base
+	local value<const> = 0x64808080
+	local index = 1
+	while index <= count do
+		*target = value
+		target = target + sizeof(word)
+		index = index + 1
+	end
+end
+return write_words
+`;
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(source, 'resident_loop_constant.lua'),
+		[],
+		{ entrySource: source, optLevel: 3, programDomain: 'system' },
+	);
+	const image = linkTestSystemBlua32(compiled);
+	const functionIndex = image.symbols.metadata.functionIds.indexOf(
+		'module:resident_loop_constant.lua/entry/local:write_words',
+	);
+	assert.notEqual(functionIndex, -1);
+	const disassembly = disassembleTestBlua32Functions(
+		image,
+		[image.symbols.functionAddresses[functionIndex]],
+	);
+	const constantLoads = Array.from(disassembly.matchAll(/\bLOADK r(\d+),/g));
+
+	assert.equal(constantLoads.length, 1);
+	assert.ok(constantLoads[0].index < disassembly.indexOf('LE '));
+	assert.match(disassembly, new RegExp(`\\bSTORE_MEM_D r${constantLoads[0][1]},`));
 });

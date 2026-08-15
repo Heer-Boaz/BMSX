@@ -461,6 +461,7 @@ return first_image._texture == second_image._texture and 1 or 0, imgdec.last_upl
 			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
 			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
 			['cartlib/gx/gp0', readFileSync('cartlib/gx/gp0.lua', 'utf8')],
+			['cartlib/gx/command_list', 'return { blit = function() end }'],
 			['cartlib/gx/imgdec', `
 local imgdec<const> = {}
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
