@@ -216,8 +216,8 @@ compile_by_kind[kind.reactive_sequence] = function(node, context)
 	end, nil, reset
 end
 
-compile_by_kind[kind.reactive_selector] = function(node, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, context)
+local compile_reactive_selector<const> = function(children, context)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, context)
 	if child_count == 0 then
 		return return_failure
 	end
@@ -261,6 +261,27 @@ compile_by_kind[kind.reactive_selector] = function(node, context)
 		execution_state[state_slot] = nil
 		return result_failure
 	end, nil, reset
+end
+
+compile_by_kind[kind.reactive_selector] = function(node, context)
+	return compile_reactive_selector(node.children, context)
+end
+
+local sort_by_priority_desc<const> = function(a, b)
+	return a.priority > b.priority
+end
+
+compile_by_kind[kind.priority_selector] = function(node, context)
+	local children<const> = node.children
+	local child_count<const> = #children
+	local ordered_children<const> = {}
+	for index = 1, child_count do
+		ordered_children[index] = children[index]
+	end
+	if child_count > 1 then
+		table.sort(ordered_children, sort_by_priority_desc)
+	end
+	return compile_reactive_selector(ordered_children, context)
 end
 
 local compile_parallel_all<const> = function(children, context)

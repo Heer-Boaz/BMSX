@@ -179,19 +179,12 @@ end
 
 local priority_selector_node<const> = {}
 priority_selector_node.__index = priority_selector_node
-priority_selector_node.program_kind = program_kind.reactive_selector
+priority_selector_node.program_kind = program_kind.priority_selector
 setmetatable(priority_selector_node, { __index = bt_node })
-
-local sort_by_priority_desc<const> = function(a, b)
-	return a.priority > b.priority
-end
 
 function priority_selector_node.new(id, children, priority)
 	local self<const> = setmetatable(bt_node.new(id, priority), priority_selector_node)
 	self.children = children
-	if #self.children > 1 then
-		table.sort(self.children, sort_by_priority_desc)
-	end
 	return self
 end
 

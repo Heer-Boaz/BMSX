@@ -24,6 +24,7 @@ contract.node_kind = {
 	reactive_sequence = 15,
 	reactive_selector = 16,
 	stateful_action = 17,
+	priority_selector = 18,
 }
 
 return contract
