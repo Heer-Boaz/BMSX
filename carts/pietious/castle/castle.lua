@@ -31,6 +31,7 @@ end
 local build_progression_program<const> = function()
 	local rules<const> = {}
 	local filters<const> = {}
+	local filter_targets<const> = {}
 	local condition_name_set<const> = {}
 	local condition_names<const> = {}
 	local world1_marspein_destroyed_keys<const> = {}
@@ -42,7 +43,9 @@ local build_progression_program<const> = function()
 		local enemies<const> = room_template.enemies
 		for i = 1, #enemies do
 			local enemy_def<const> = enemies[i]
-			filters[#filters + 1] = enemy_def.conditions
+			local filter_index<const> = #filters + 1
+			filters[filter_index] = enemy_def.conditions
+			filter_targets[filter_index] = enemy_def
 			if enemy_def.retain_defeat_in_region then
 				rules[#rules + 1] = {
 					id = enemy_def.id,
@@ -73,7 +76,9 @@ local build_progression_program<const> = function()
 		local items<const> = room_template.items
 		for i = 1, #items do
 			local item<const> = items[i]
-			filters[#filters + 1] = item.conditions
+			local filter_index<const> = #filters + 1
+			filters[filter_index] = item.conditions
+			filter_targets[filter_index] = item
 			if world_item_inventory[item.item_type] then
 				persistent_item_ids[#persistent_item_ids + 1] = item.id
 			end
@@ -84,7 +89,9 @@ local build_progression_program<const> = function()
 		end
 		local seal<const> = room_template.seal
 		if seal ~= nil then
-			filters[#filters + 1] = seal.conditions
+			local filter_index<const> = #filters + 1
+			filters[filter_index] = seal.conditions
+			filter_targets[filter_index] = seal
 		end
 	end
 	for i = 1, #persistent_item_ids do
@@ -251,7 +258,7 @@ local build_progression_program<const> = function()
 		},
 	}
 
-	return progression.compile_program({
+	local program<const>, compiled_filters<const> = progression.compile_program({
 		rules = rules,
 		filters = filters,
 		handlers = {
@@ -287,6 +294,10 @@ local build_progression_program<const> = function()
 			end,
 		},
 	})
+	for i = 1, #filter_targets do
+		filter_targets[i].progression_filter = compiled_filters[i]
+	end
+	return program
 end
 
 castle._progression_program = build_progression_program()
@@ -399,12 +410,12 @@ function castle:refresh_current_room_customizations()
 	if seal ~= nil then
 		if self:has_tag(castle_tags.seal_broken) then
 			if world_boss_defeated then
-				has_active_seal = progression.matches(self, seal.conditions)
+				has_active_seal = progression.matches(self, seal.progression_filter)
 			else
 				has_active_seal = false
 			end
 		else
-			has_active_seal = progression.matches(self, seal.conditions)
+			has_active_seal = progression.matches(self, seal.progression_filter)
 		end
 	end
 	set_tag_flag(self, castle_tags.seal_active, has_active_seal)

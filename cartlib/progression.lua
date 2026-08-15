@@ -14,7 +14,7 @@
 --
 --    STEP 1 — compile the cart-owned rules and query filters, then mount that
 --    program onto a context:
---      local program = progression.compile_program({
+--      local program, compiled_filters = progression.compile_program({
 --          rules = {
 --              { id = 'record_kill', on = 'enemy.defeated',
 --                set = {{ key = 'kills', value = true }} },
@@ -31,7 +31,7 @@
 --
 --    STEP 3 — query state:
 --      if progression.get(campaign, 'bonus_active') then ... end
---      progression.matches(campaign, bonus_filter)
+--      progression.matches(campaign, compiled_filters[1])
 --
 -- 3. RULE ANATOMY.
 --    Each rule is a table with these fields:
@@ -46,8 +46,9 @@
 --
 -- 4. CONDITIONS.
 --    Conditions have one representation: { key = 'key_name', equals = true }.
---    Query filters must be listed in compile_program().filters so key interning
---    and predicate compilation finish before the runtime is mounted.
+--    Query filters must be listed in compile_program().filters. The compiler
+--    returns their runtime handles in the same order without modifying the
+--    authored condition tables.
 --
 -- 5. DO NOT USE progression FOR FRAME-BY-FRAME GAME LOGIC.
 --    Progression is for persistent cross-room world-state transitions
@@ -77,17 +78,23 @@ local intern_key<const> = function(program, key)
 	return key_idx
 end
 
-local compile_predicates<const> = function(program, source)
+local compile_predicates<const> = function(program, predicates_by_source, source)
 	if source == nil then
 		return empty_list
 	end
-	for i = #source, 1, -1 do
+	local compiled = predicates_by_source[source]
+	if compiled ~= nil then
+		return compiled
+	end
+	compiled = {}
+	predicates_by_source[source] = compiled
+	for i = 1, #source do
 		local condition<const> = source[i]
 		local out_index<const> = i * 2
-		source[out_index - 1] = intern_key(program, condition.key)
-		source[out_index] = condition.equals
+		compiled[out_index - 1] = intern_key(program, condition.key)
+		compiled[out_index] = condition.equals
 	end
-	return source
+	return compiled
 end
 
 local eval_predicates<const> = function(values, predicates)
@@ -132,32 +139,35 @@ local compile_set_actions<const> = function(state_program, actions)
 	if actions == nil then
 		return empty_list
 	end
-	for i = #actions, 1, -1 do
+	local compiled<const> = {}
+	for i = 1, #actions do
 		local action<const> = actions[i]
 		local out_index<const> = i * 2
-		actions[out_index - 1] = intern_key(state_program, action.key)
-		actions[out_index] = action.value
+		compiled[out_index - 1] = intern_key(state_program, action.key)
+		compiled[out_index] = action.value
 	end
-	return actions
+	return compiled
 end
 
 local compile_commands<const> = function(handlers, commands)
 	if commands == nil then
 		return empty_list
 	end
-	for i = #commands, 1, -1 do
+	local compiled<const> = {}
+	for i = 1, #commands do
 		local command<const> = commands[i]
 		local out_index<const> = i * 2
-		commands[out_index - 1] = handlers[command.op]
-		commands[out_index] = command
+		compiled[out_index - 1] = handlers[command.op]
+		compiled[out_index] = command
 	end
-	return commands
+	return compiled
 end
 
 -- progression.compile_program(program_spec)
 --   Compiles the cart-owned rules and every query filter into retained indexed
---   runtime data before mount() publishes the program. Condition arrays are
---   consumed in place and become the compiled handles passed to matches().
+--   runtime data before mount() publishes the program. Authored rules, actions
+--   and conditions remain source data; the second return value contains the
+--   compiled filter handles in program_spec.filters order.
 function progression.compile_program(program_spec)
 	local rule_defs<const> = program_spec.rules
 	local handlers<const> = program_spec.handlers
@@ -168,12 +178,13 @@ function progression.compile_program(program_spec)
 	local rules_by_event<const> = {}
 	local event_names<const> = {}
 	local seen_event<const> = {}
+	local predicates_by_source<const> = {}
 	for i = 1, #rule_defs do
 		local rule_def<const> = rule_defs[i]
 		local event_name<const> = rule_def.on
 		local rule<const> = {
 			id = rule_def.id,
-			when_all = compile_predicates(state_program, rule_def.when_all),
+			when_all = compile_predicates(state_program, predicates_by_source, rule_def.when_all),
 			when_event = event_matcher.compile(rule_def.when_event),
 			set = compile_set_actions(state_program, rule_def.set),
 			apply = compile_commands(handlers, rule_def.apply),
@@ -190,9 +201,10 @@ function progression.compile_program(program_spec)
 			event_names[#event_names + 1] = event_name
 		end
 	end
-	local filters<const> = program_spec.filters
-	for i = 1, #filters do
-		compile_predicates(state_program, filters[i])
+	local filter_defs<const> = program_spec.filters
+	local compiled_filters<const> = {}
+	for i = 1, #filter_defs do
+		compiled_filters[i] = compile_predicates(state_program, predicates_by_source, filter_defs[i])
 	end
 	state_program.key_count = nil
 
@@ -201,7 +213,7 @@ function progression.compile_program(program_spec)
 		rules_by_event = rules_by_event,
 		event_names = event_names,
 	}
-	return program
+	return program, compiled_filters
 end
 
 local apply_set_actions<const> = function(rt, actions)

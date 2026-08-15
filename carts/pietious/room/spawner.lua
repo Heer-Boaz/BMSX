@@ -121,7 +121,7 @@ local spawn_items<const> = function(room)
 	for i = 1, #room.items do
 		local def<const> = room.items[i]
 		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
-		local matches_conditions<const> = progression.matches(castle, def.conditions)
+		local matches_conditions<const> = progression.matches(castle, def.progression_filter)
 		local already_owned<const> = player.inventory_items[def.item_type]
 
 		local should_spawn<const> = not picked and matches_conditions and not already_owned
@@ -155,7 +155,7 @@ local spawn_enemies<const> = function(room)
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
-		local matches_conditions<const> = progression.matches(castle, def.conditions)
+		local matches_conditions<const> = progression.matches(castle, def.progression_filter)
 		local should_spawn<const> = not defeated and matches_conditions
 		local existing = registry:get(def.id)
 		if should_spawn then
