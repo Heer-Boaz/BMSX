@@ -46,7 +46,8 @@ local action_kind_play<const> = 1
 local action_kind_stop_music<const> = 2
 local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
-local action_kind_random<const> = 5
+local action_kind_random_uniform<const> = 5
+local action_kind_random_weighted<const> = 6
 
 local actor_key_for_payload<const> = function(payload)
 	if type(payload) == 'table' then
@@ -198,30 +199,18 @@ compile_action = function(action, audio_cache)
 	if action.one_of ~= nil then
 		local source_actions<const> = action.one_of
 		local actions<const> = {}
-		local weights<const> = {}
-		local has_weights
-		local weight_total = 0
 		for i = 1, #source_actions do
-			local source_action<const> = source_actions[i]
-			actions[i] = compile_action(source_action, audio_cache)
-			local weight<const> = source_action.weight or 1
-			weights[i] = weight
-			weight_total = weight_total + weight
-			if weight ~= 1 then
-				has_weights = true
-			end
+			actions[i] = compile_action(source_actions[i], audio_cache)
 		end
-		local weighted = action.pick == 'weighted'
-		if action.pick == nil and has_weights then
-			weighted = true
-		end
+		local weights<const> = action.weights
 		local compiled<const> = {
-			kind = action_kind_random,
+			kind = weights == nil and action_kind_random_uniform or action_kind_random_weighted,
 			actions = actions,
-			weights = weights,
-			weight_total = weight_total,
-			weighted = weighted,
 		}
+		if weights ~= nil then
+			compiled.weights = weights
+			compiled.weight_total = action.weight_total
+		end
 		if action.avoid_repeat then
 			compiled.last_pick_by_actor = {}
 		end
@@ -243,10 +232,7 @@ local compile_rules<const> = function(rules, audio_cache)
 end
 
 local pick_uniform_index<const> = function(count, avoid_index)
-	if count <= 1 then
-		return 1
-	end
-	if avoid_index then
+	if avoid_index ~= nil then
 		local idx<const> = math.random(count - 1)
 		if idx >= avoid_index then
 			return idx + 1
@@ -257,27 +243,24 @@ local pick_uniform_index<const> = function(count, avoid_index)
 end
 
 local pick_weighted_index<const> = function(weights, total, avoid_index)
+	-- ROM production admits only positive weights and, for avoid-repeat pools,
+	-- at least two choices. The final dense interval therefore owns the tail.
 	local count<const> = #weights
-	if count <= 1 then
-		return 1
-	end
-	if avoid_index then
+	if avoid_index ~= nil then
 		total = total - weights[avoid_index]
 	end
-	if total <= 0 then
-		return pick_uniform_index(count, avoid_index)
-	end
 	local r = math.random() * total
-	for i = 1, count do
-		local weight<const> = (avoid_index and avoid_index == i) and 0 or weights[i]
-		if weight > 0 then
-			r = r - weight
-			if r <= 0 then
+	local last_index<const> = avoid_index == count and count - 1 or count
+	for i = 1, last_index - 1 do
+		if i ~= avoid_index then
+			local weight<const> = weights[i]
+			if r < weight then
 				return i
 			end
+			r = r - weight
 		end
 	end
-	return count
+	return last_index
 end
 
 local merge_events<const> = function(event_maps)
@@ -674,17 +657,24 @@ dispatch_action = function(entry, action, payload)
 		end
 		return
 	end
-	if kind == action_kind_random then
+	if kind == action_kind_random_uniform then
 		local actions<const> = action.actions
 		local by_actor<const> = action.last_pick_by_actor
 		local actor_key<const> = by_actor and actor_key_for_payload(payload)
 		local avoid<const> = by_actor and by_actor[actor_key]
-		local index
-		if action.weighted then
-			index = pick_weighted_index(action.weights, action.weight_total, avoid)
-		else
-			index = pick_uniform_index(#actions, avoid)
+		local index<const> = pick_uniform_index(#actions, avoid)
+		if by_actor then
+			by_actor[actor_key] = index
 		end
+		dispatch_action(entry, actions[index], payload)
+		return
+	end
+	if kind == action_kind_random_weighted then
+		local actions<const> = action.actions
+		local by_actor<const> = action.last_pick_by_actor
+		local actor_key<const> = by_actor and actor_key_for_payload(payload)
+		local avoid<const> = by_actor and by_actor[actor_key]
+		local index<const> = pick_weighted_index(action.weights, action.weight_total, avoid)
 		if by_actor then
 			by_actor[actor_key] = index
 		end

@@ -105,6 +105,21 @@ const STINGER_SYNC_KEYS = new Set(['stinger', 'return_to']);
 const MODULATION_KEYS = new Set(['pitchDelta', 'volumeDelta', 'offset', 'playbackRate', 'pitchRange', 'volumeRange', 'offsetRange', 'playbackRateRange', 'filter']);
 const FILTER_KEYS = new Set(['type', 'frequency', 'q', 'gain']);
 
+function usesWeightedSelection(action: Record<string, unknown>, choices: Array<Record<string, unknown>>): boolean {
+	if (action.pick === 'weighted') {
+		return true;
+	}
+	if (action.pick === 'uniform') {
+		return false;
+	}
+	for (let index = 0; index < choices.length; index += 1) {
+		if (choices[index]!.weight !== undefined) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function parseStructuredTextDocument(source: string, format: StructuredTextDocumentFormat, label: string): unknown {
 	try {
 		if (format === 'json') {
@@ -367,7 +382,7 @@ function resolveDataPath(lookup: AemValidationLookup, path: string): unknown {
 	return cursor;
 }
 
-function inlineModulationPresets(action: Record<string, unknown>, lookup: AemValidationLookup): void {
+function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup): void {
 	const presetPath = action.modulation_preset as string | undefined;
 	if (presetPath !== undefined) {
 		action.modulation_params = { ...(resolveDataPath(lookup, presetPath) as ModulationParams) };
@@ -385,13 +400,41 @@ function inlineModulationPresets(action: Record<string, unknown>, lookup: AemVal
 	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
 	if (sequence !== undefined) {
 		for (let index = 0; index < sequence.length; index += 1) {
-			inlineModulationPresets(sequence[index]!, lookup);
+			cookAction(sequence[index]!, lookup);
 		}
 	}
 	const oneOf = action.one_of as Array<Record<string, unknown>> | undefined;
 	if (oneOf !== undefined) {
 		for (let index = 0; index < oneOf.length; index += 1) {
-			inlineModulationPresets(oneOf[index]!, lookup);
+			cookAction(oneOf[index]!, lookup);
+		}
+
+		const weighted = usesWeightedSelection(action, oneOf);
+		delete action.pick;
+		if (weighted) {
+			// The cart consumes a dense positive-weight pool. Disabled authoring
+			// choices and selection totals never reach the event dispatch path.
+			const choices: Array<Record<string, unknown>> = [];
+			const weights: number[] = [];
+			let weightTotal = 0;
+			for (let index = 0; index < oneOf.length; index += 1) {
+				const choice = oneOf[index]!;
+				const weight = (choice.weight as number | undefined) ?? 1;
+				delete choice.weight;
+				if (weight > 0) {
+					choices.push(choice);
+					weights.push(weight);
+					weightTotal += weight;
+				}
+			}
+			action.one_of = choices;
+			action.weights = weights;
+			action.weight_total = weightTotal;
+			return;
+		}
+
+		for (let index = 0; index < oneOf.length; index += 1) {
+			delete oneOf[index]!.weight;
 		}
 	}
 }
@@ -402,7 +445,7 @@ export function buildAemEventMap(document: AemDocument, lookup: AemValidationLoo
 	for (let eventIndex = 0; eventIndex < eventNames.length; eventIndex += 1) {
 		const event = eventMap[eventNames[eventIndex]!] as { rules: Array<{ go: Record<string, unknown> }> };
 		for (let ruleIndex = 0; ruleIndex < event.rules.length; ruleIndex += 1) {
-			inlineModulationPresets(event.rules[ruleIndex]!.go, lookup);
+			cookAction(event.rules[ruleIndex]!.go, lookup);
 		}
 	}
 	return eventMap;
@@ -608,17 +651,36 @@ function validateActionSpec(
 		if (actionObject.avoid_repeat !== undefined && typeof actionObject.avoid_repeat !== 'boolean') {
 			errors.push(`Invalid avoid_repeat at ${where}: expected boolean`);
 		}
+		let hasExplicitWeight = false;
+		let positiveWeightCount = 0;
 		for (let index = 0; index < oneOf.length; index += 1) {
 			const item = oneOf[index];
 			if (item && typeof item === 'object') {
 				checkAction(item, { file, eventName, ruleIndex, sequenceIndex, choiceIndex: index }, lookup, errors, musicTransitionsWithFallback);
 				const weight = item.weight;
-				if (weight !== undefined && (typeof weight !== 'number' || weight < 0)) {
-					errors.push(`Invalid weight '${weight}' at ${where}[${index}]: expected number >= 0`);
+				if (weight === undefined) {
+					positiveWeightCount += 1;
+				} else {
+					hasExplicitWeight = true;
+					if (typeof weight !== 'number' || weight < 0) {
+						errors.push(`Invalid weight '${weight}' at ${where}[${index}]: expected number >= 0`);
+					} else if (weight > 0) {
+						positiveWeightCount += 1;
+					}
 				}
 				continue;
 			}
 			errors.push(`Invalid one_of item at ${where}[${index}]`);
+		}
+		if (pick === 'uniform' && hasExplicitWeight) {
+			errors.push(`Invalid one_of at ${where}: weights are not used by uniform selection`);
+		}
+		const weighted = usesWeightedSelection(actionObject, oneOf as Array<Record<string, unknown>>);
+		if (weighted && positiveWeightCount === 0) {
+			errors.push(`Invalid weighted one_of at ${where}: expected at least one positive weight`);
+		} else if (actionObject.avoid_repeat === true
+			&& positiveWeightCount < 2) {
+			errors.push(`Invalid avoid_repeat at ${where}: expected at least two selectable items`);
 		}
 		return;
 	}
