@@ -136,6 +136,7 @@
 --     restrict to events from a specific source object.
 
 local clear_map<const> = require('cartlib/util/clear_map')
+local frame_program<const> = require('cartlib/fsm/frame_program')
 local input<const> = require('cartlib/input/input')
 
 local state_definition<const> = {}
@@ -150,6 +151,7 @@ local transition_no_op<const> = 0
 local transition_path<const> = 1
 local transition_callback<const> = 2
 local compile_definition_transitions
+local compile_definition_frame_evaluators
 local transition_cached_path
 
 local assert_rebind_compatible
@@ -329,28 +331,45 @@ function state_definition.new(id, def, root, parent)
 		end
 	end
 
-	-- Compiled definitions own immutable traversal order and tag membership.
-	-- Runtime trees retain these arrays instead of rebuilding topology per object.
+	-- Compiled definitions own immutable traversal order, tag membership and the
+	-- dense concurrent lane that can execute frame work. Runtime trees bind these
+	-- retained plans instead of rediscovering topology every frame.
 	local states<const> = self.states
 	local state_ids<const> = {}
 	local state_count = 0
 	local concurrent_state_ids
 	local concurrent_state_count = 0
+	local frame_concurrent_state_ids
+	local frame_concurrent_state_count = 0
+	local has_current_frame_work = false
 	for state_id, child in pairs(states) do
 		state_count = state_count + 1
 		state_ids[state_count] = state_id
+		if child.has_subtree_frame_work then
+			has_current_frame_work = true
+		end
 		if child.is_concurrent then
 			if concurrent_state_ids == nil then
 				concurrent_state_ids = {}
 			end
 			concurrent_state_count = concurrent_state_count + 1
 			concurrent_state_ids[concurrent_state_count] = state_id
+			if child.has_subtree_frame_work then
+				if frame_concurrent_state_ids == nil then
+					frame_concurrent_state_ids = {}
+				end
+				frame_concurrent_state_count = frame_concurrent_state_count + 1
+				frame_concurrent_state_ids[frame_concurrent_state_count] = state_id
+			end
 		end
 	end
 	self.state_ids = state_ids
 	self.state_count = state_count
 	self.concurrent_state_ids = concurrent_state_ids
 	self.concurrent_state_count = concurrent_state_count
+	self.frame_concurrent_state_ids = frame_concurrent_state_ids
+	self.frame_concurrent_state_count = frame_concurrent_state_count
+	self.has_current_frame_work = has_current_frame_work
 	if not self.initial then
 		self.initial = state_ids[1]
 	end
@@ -367,6 +386,7 @@ function state_definition.new(id, def, root, parent)
 	end
 	if self.root == self then
 		compile_definition_transitions(self)
+		compile_definition_frame_evaluators(self)
 		local list<const> = {}
 		local seen<const> = {}
 		collect_event_list(self, list, seen)
@@ -497,6 +517,7 @@ function state.new(definition, target, parent)
 	if self.concurrent_state_count ~= 0 then
 		self.concurrent_states = {}
 	end
+	self.frame_evaluator = definition.frame_evaluator
 	self.current_id = nil
 	-- Current child state is cached directly so the frame hot path does not keep
 	-- reloading states[self.current_id] from the state map on every recursive step.
@@ -543,6 +564,15 @@ function state.new(definition, target, parent)
 	for i = 1, self.concurrent_state_count do
 		concurrent_states[i] = states[concurrent_state_ids[i]]
 	end
+	local frame_concurrent_state_count<const> = definition.frame_concurrent_state_count
+	if frame_concurrent_state_count ~= 0 then
+		local frame_concurrent_states<const> = {}
+		self.frame_concurrent_states = frame_concurrent_states
+		local frame_concurrent_state_ids<const> = definition.frame_concurrent_state_ids
+		for i = 1, frame_concurrent_state_count do
+			frame_concurrent_states[i] = states[frame_concurrent_state_ids[i]]
+		end
+	end
 	self:reset(true)
 	return self
 end
@@ -561,6 +591,7 @@ rebind_definition_tree = function(self, definition)
 		end
 	end
 	self.definition = definition
+	self.frame_evaluator = definition.frame_evaluator
 	self.def_id = definition.def_id
 	self.timeline_bindings = build_timeline_bindings(self.target, definition.timelines)
 	local timeline_bindings<const> = self.timeline_bindings
@@ -597,6 +628,23 @@ rebind_definition_tree = function(self, definition)
 	local concurrent_state_ids<const> = definition.concurrent_state_ids
 	for i = 1, self.concurrent_state_count do
 		concurrent_states[i] = states[concurrent_state_ids[i]]
+	end
+	local frame_concurrent_state_count<const> = definition.frame_concurrent_state_count
+	if frame_concurrent_state_count == 0 then
+		self.frame_concurrent_states = nil
+	else
+		local frame_concurrent_states = self.frame_concurrent_states
+		if frame_concurrent_states == nil then
+			frame_concurrent_states = {}
+			self.frame_concurrent_states = frame_concurrent_states
+		end
+		local frame_concurrent_state_ids<const> = definition.frame_concurrent_state_ids
+		for i = 1, frame_concurrent_state_count do
+			frame_concurrent_states[i] = states[frame_concurrent_state_ids[i]]
+		end
+		for i = frame_concurrent_state_count + 1, #frame_concurrent_states do
+			frame_concurrent_states[i] = nil
+		end
 	end
 end
 
@@ -1151,6 +1199,17 @@ compile_definition_transitions = function(definition)
 	end
 end
 
+compile_definition_frame_evaluators = function(definition)
+	local states<const> = definition.states
+	local state_ids<const> = definition.state_ids
+	for i = 1, definition.state_count do
+		compile_definition_frame_evaluators(states[state_ids[i]])
+	end
+	if definition.has_subtree_frame_work then
+		definition.frame_evaluator = frame_program.compile(definition, no_op)
+	end
+end
+
 function state:matches_state_tag(tag)
 	local tags<const> = self.tag_lookup
 	if tags and tags[tag] then
@@ -1424,52 +1483,11 @@ function state:dispatch_event(event_name, payload, emitter, emitter_id)
 	return dispatch_resolved_event(self, event_name, payload, emitter, emitter_id)
 end
 
--- The machine root owns one critical scope for the complete frame traversal.
--- Recursive child updates run inside that scope instead of reopening it.
-function state:_update_active_subtree()
-	local current<const> = self.current_state
-	if current ~= nil and current.active_frame_work then
-		current:_update_active_subtree()
-	end
-	local concurrent_states<const> = self.concurrent_states
-	for i = 1, self.concurrent_state_count do
-		local child<const> = concurrent_states[i]
-		if child.active_frame_work then
-			child:_update_active_subtree()
-		end
-	end
-
-	local definition<const> = self.definition
-	local target<const> = self.target
-	local transitions<const> = definition.input_transitions
-	if transitions then
-		local stop_after_match<const> = definition.input_eval_first
-		local bindings<const> = self.input_bindings
-		local kinds<const> = definition.input_transition_kinds
-		for i = 1, definition.input_handler_count do
-			if bindings[i]() then
-				local handled<const> = self:execute_transition(kinds[i], transitions[i])
-				if handled and stop_after_match then
-					break
-				end
-			end
-		end
-	end
-
-	local update_handler<const> = definition.update
-	if update_handler ~= nil then
-		local next_state<const> = update_handler(target, self)
-		if next_state and not is_no_op_string(next_state) then
-			self:transition_to(next_state)
-		end
-	end
-end
-
 -- FSM components call update only on machine roots; child states are traversed
--- by _update_active_subtree inside this single critical scope.
+-- by their definition-owned evaluator inside this single critical scope.
 function state:update()
 	self.critical_section_counter = 1
-	self:_update_active_subtree()
+	self:frame_evaluator()
 	self.critical_section_counter = 0
 	if self.transition_queue_count ~= 0 then
 		self:process_transition_queue()
