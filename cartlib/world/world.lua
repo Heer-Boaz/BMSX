@@ -117,6 +117,8 @@ function world_class.new()
 	self._active_definition_view_list = {}
 	self._active_component_views_by_class = {}
 	self._active_component_view_list = {}
+	self._active_tick_views_by_class = {}
+	self._active_tick_view_list = {}
 	self.active_space_id = nil
 	self._active_space = nil
 	self._pending_space_id = nil
@@ -160,6 +162,10 @@ function world_class:_add_space(space_id)
 	for view_index = 1, #component_views do
 		created:register_component_class(component_views[view_index].component_class)
 	end
+	local tick_views<const> = self._active_tick_view_list
+	for view_index = 1, #tick_views do
+		created:register_tick_class(tick_views[view_index].component_class)
+	end
 	self._spaces[space_id] = created
 	self._space_order[#self._space_order + 1] = space_id
 end
@@ -176,6 +182,11 @@ function world_class:_commit_active_space(space_id)
 	for view_index = 1, #component_views do
 		local view<const> = component_views[view_index]
 		view.components = active_space:component_bucket(view.component_class)
+	end
+	local tick_views<const> = self._active_tick_view_list
+	for view_index = 1, #tick_views do
+		local view<const> = tick_views[view_index]
+		view.components = active_space:tick_bucket(view.component_class)
 	end
 	self._visual_revision = self._visual_revision + 1
 end
@@ -213,6 +224,34 @@ function world_class:active_component_view(component_class)
 	end
 	if self._active_space ~= nil then
 		created.components = self._active_space:component_bucket(component_class)
+	end
+	return created
+end
+
+-- Systems that execute component-owned frame work retain this view. Component
+-- lifecycle and tick eligibility are separate: a dormant FSM stays active for
+-- event dispatch while it is absent from this dense schedule.
+function world_class:active_tick_view(component_class)
+	local views<const> = self._active_tick_views_by_class
+	local view<const> = views[component_class]
+	if view then
+		return view
+	end
+	local created<const> = {
+		component_class = component_class,
+		components = empty_object_bucket,
+	}
+	views[component_class] = created
+	local view_list<const> = self._active_tick_view_list
+	view_list[#view_list + 1] = created
+	local spaces<const> = self._spaces
+	local space_order<const> = self._space_order
+	for space_index = 1, #space_order do
+		local partition<const> = spaces[space_order[space_index]]
+		partition:register_tick_class(component_class)
+	end
+	if self._active_space ~= nil then
+		created.components = self._active_space:tick_bucket(component_class)
 	end
 	return created
 end
@@ -382,6 +421,8 @@ function world_class:_reconcile_active_component(comp)
 				self._visual_revision = self._visual_revision + 1
 			end
 		end
+	elseif target_space ~= nil then
+		target_space:reconcile_component_tick(comp)
 	end
 end
 

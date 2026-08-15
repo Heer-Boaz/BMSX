@@ -24,20 +24,39 @@ end
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
+function fsm_component:machine_frame_work_changed(active)
+	local count
+	if active then
+		count = self._ticking_machine_count + 1
+	else
+		count = self._ticking_machine_count - 1
+	end
+	self._ticking_machine_count = count
+	self:set_tick_enabled(count ~= 0)
+end
+
 function fsm_component.new(opts, machine_ids)
 	local self<const> = setmetatable(base_component.new(opts), fsm_component)
 	self._machines_by_id = {}
 	self._machines = {}
 	self._machine_count = 0
+	self._ticking_machine_count = 0
 	self._started = false
 	self._state_paths = nil
 	for i = 1, #machine_ids do
 		local machine_id<const> = machine_ids[i]
-		local machine<const> = state.new(definitions_by_id[machine_id], self.parent)
+		local machine<const> = state.new(
+			definitions_by_id[machine_id],
+			self.parent,
+			nil,
+			self,
+			fsm_component.machine_frame_work_changed
+		)
 		self._machine_count = i
 		self._machines[i] = machine
 		self._machines_by_id[machine_id] = machine
 	end
+	self:set_tick_enabled(self._ticking_machine_count ~= 0)
 	self.update = frame_program.compile_component_runner(self._machines)
 	return self
 end

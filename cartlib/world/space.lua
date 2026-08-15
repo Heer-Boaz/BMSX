@@ -14,6 +14,7 @@ function space.new(id)
 		_active_objects = {},
 		_active_objects_by_definition = {},
 		_active_components_by_class = {},
+		_ticking_components_by_class = {},
 		_active_visuals = {},
 	}, space)
 end
@@ -75,6 +76,47 @@ function space:component_bucket(component_class)
 	return self._active_components_by_class[component_class].items
 end
 
+function space:register_tick_class(component_class)
+	local tick_buckets<const> = self._ticking_components_by_class
+	local existing<const> = tick_buckets[component_class]
+	if existing ~= nil then
+		return existing.items
+	end
+	local bucket<const> = dense_set.new()
+	tick_buckets[component_class] = bucket
+	local components<const> = self:register_component_class(component_class)
+	for component_index = 1, #components do
+		local component<const> = components[component_index]
+		if component._tick_enabled then
+			dense_set.add(bucket, component)
+		end
+	end
+	return bucket.items
+end
+
+function space:tick_bucket(component_class)
+	return self._ticking_components_by_class[component_class].items
+end
+
+function space:reconcile_component_tick(comp)
+	local classes<const> = component_class_chain(getmetatable(comp))
+	local tick_buckets<const> = self._ticking_components_by_class
+	local enabled<const> = comp._tick_enabled
+	for class_index = 1, #classes do
+		local bucket<const> = tick_buckets[classes[class_index]]
+		if bucket ~= nil then
+			local included<const> = bucket.indices[comp] ~= nil
+			if enabled then
+				if not included then
+					dense_set.add(bucket, comp)
+				end
+			elseif included then
+				dense_set.remove(bucket, comp)
+			end
+		end
+	end
+end
+
 function space:activate_object(obj)
 	local objects<const> = self._active_objects
 	local index<const> = #objects + 1
@@ -117,6 +159,15 @@ function space:activate_component(comp, visual_sequence)
 			dense_set.add(bucket, comp)
 		end
 	end
+	if comp._tick_enabled then
+		local tick_buckets<const> = self._ticking_components_by_class
+		for class_index = 1, #classes do
+			local bucket<const> = tick_buckets[classes[class_index]]
+			if bucket ~= nil then
+				dense_set.add(bucket, comp)
+			end
+		end
+	end
 	if comp.is_visual then
 		local visuals<const> = self._active_visuals
 		comp._visual_sequence = visual_sequence
@@ -141,6 +192,13 @@ function space:deactivate_component(comp)
 	end
 
 	local classes<const> = component_class_chain(getmetatable(comp))
+	local tick_buckets<const> = self._ticking_components_by_class
+	for class_index = 1, #classes do
+		local bucket<const> = tick_buckets[classes[class_index]]
+		if bucket ~= nil and bucket.indices[comp] ~= nil then
+			dense_set.remove(bucket, comp)
+		end
+	end
 	local component_buckets<const> = self._active_components_by_class
 	for class_index = 1, #classes do
 		local bucket<const> = component_buckets[classes[class_index]]

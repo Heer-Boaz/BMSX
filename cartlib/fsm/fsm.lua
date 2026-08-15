@@ -496,7 +496,7 @@ local build_input_bindings<const> = function(target, definition)
 	return bindings
 end
 
-function state.new(definition, target, parent)
+function state.new(definition, target, parent, frame_work_owner, frame_work_changed)
 	local self<const> = setmetatable({}, state)
 	self.definition = definition
 	self.target = target
@@ -505,6 +505,10 @@ function state.new(definition, target, parent)
 	self.def_id = definition.def_id
 	self.parent = parent
 	self.root = parent and parent.root or self
+	if self.root == self then
+		self.frame_work_owner = frame_work_owner
+		self.frame_work_changed = frame_work_changed
+	end
 	self.id = self:make_id()
 	self.data = {}
 	reset_state_data(self.data, definition.data)
@@ -557,7 +561,7 @@ function state.new(definition, target, parent)
 	local state_ids<const> = self.state_ids
 	for i = 1, self.state_count do
 		local state_id<const> = state_ids[i]
-		states[state_id] = state.new(definition.states[state_id], target, self)
+		states[state_id] = state.new(definition.states[state_id], target, self, nil, nil)
 	end
 	local concurrent_states<const> = self.concurrent_states
 	local concurrent_state_ids<const> = definition.concurrent_state_ids
@@ -618,7 +622,7 @@ rebind_definition_tree = function(self, definition)
 	for i = 1, definition.state_count do
 		local state_id<const> = state_ids[i]
 		if states[state_id] == nil then
-			states[state_id] = state.new(definition.states[state_id], self.target, self)
+			states[state_id] = state.new(definition.states[state_id], self.target, self, nil, nil)
 		end
 	end
 	self.state_ids = state_ids
@@ -1494,7 +1498,8 @@ function state:update()
 	end
 end
 
-function state:refresh_active_frame_work()
+local refresh_active_subtree_frame_work
+refresh_active_subtree_frame_work = function(self)
 	local definition<const> = self.definition
 	if not definition.has_subtree_frame_work then
 		self.active_frame_work = false
@@ -1503,17 +1508,26 @@ function state:refresh_active_frame_work()
 	local active<const> = definition.has_local_frame_work
 	local subtree_active = active
 	local current<const> = self.current_state
-	if current ~= nil and current:refresh_active_frame_work() then
+	if current ~= nil and refresh_active_subtree_frame_work(current) then
 		subtree_active = true
 	end
 	local concurrent_states<const> = self.concurrent_states
 	for i = 1, self.concurrent_state_count do
-		if concurrent_states[i]:refresh_active_frame_work() then
+		if refresh_active_subtree_frame_work(concurrent_states[i]) then
 			subtree_active = true
 		end
 	end
 	self.active_frame_work = subtree_active
 	return subtree_active
+end
+
+function state:refresh_active_frame_work()
+	local previous<const> = self.active_frame_work
+	local active<const> = refresh_active_subtree_frame_work(self)
+	if previous ~= active then
+		self.frame_work_changed(self.frame_work_owner, active)
+	end
+	return active
 end
 
 function state:reset(reset_tree)

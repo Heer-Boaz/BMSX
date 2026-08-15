@@ -24,6 +24,22 @@ function base_component:set_enabled(enabled)
 	return self
 end
 
+-- Tick enablement is independent from component enablement. Event-driven
+-- components remain active and subscribed while their frame work is absent;
+-- systems consume the world's retained tick view instead of polling those
+-- dormant components every frame.
+function base_component:set_tick_enabled(enabled)
+	if self._tick_enabled == enabled then
+		return self
+	end
+	self._tick_enabled = enabled
+	local parent<const> = self.parent
+	if self._attached and parent._world_object_index ~= nil and parent.active then
+		parent.world:reconcile_component(self)
+	end
+	return self
+end
+
 function base_component:on_attach()
 end
 
