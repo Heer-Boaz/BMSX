@@ -21,6 +21,8 @@ contract.node_kind = {
 	wait = 12,
 	action = 13,
 	composite_action = 14,
+	reactive_sequence = 15,
+	reactive_selector = 16,
 }
 
 return contract

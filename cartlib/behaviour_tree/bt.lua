@@ -39,6 +39,19 @@ function sequence_node.new(id, children, priority)
 	return self
 end
 
+-- Standard ordered composites retain the running child. Reactive variants
+-- deliberately restart at the first child so conditions can preempt work.
+local reactive_sequence_node<const> = {}
+reactive_sequence_node.__index = reactive_sequence_node
+reactive_sequence_node.program_kind = program_kind.reactive_sequence
+setmetatable(reactive_sequence_node, { __index = bt_node })
+
+function reactive_sequence_node.new(id, children, priority)
+	local self<const> = setmetatable(bt_node.new(id, priority), reactive_sequence_node)
+	self.children = children
+	return self
+end
+
 local selector_node<const> = {}
 selector_node.__index = selector_node
 selector_node.program_kind = program_kind.selector
@@ -46,6 +59,17 @@ setmetatable(selector_node, { __index = bt_node })
 
 function selector_node.new(id, children, priority)
 	local self<const> = setmetatable(bt_node.new(id, priority), selector_node)
+	self.children = children
+	return self
+end
+
+local reactive_selector_node<const> = {}
+reactive_selector_node.__index = reactive_selector_node
+reactive_selector_node.program_kind = program_kind.reactive_selector
+setmetatable(reactive_selector_node, { __index = bt_node })
+
+function reactive_selector_node.new(id, children, priority)
+	local self<const> = setmetatable(bt_node.new(id, priority), reactive_selector_node)
 	self.children = children
 	return self
 end
@@ -155,7 +179,7 @@ end
 
 local priority_selector_node<const> = {}
 priority_selector_node.__index = priority_selector_node
-priority_selector_node.program_kind = program_kind.selector
+priority_selector_node.program_kind = program_kind.reactive_selector
 setmetatable(priority_selector_node, { __index = bt_node })
 
 local sort_by_priority_desc<const> = function(a, b)
@@ -207,7 +231,9 @@ end
 behaviour_tree.result = contract.result
 behaviour_tree.bt_node = bt_node
 behaviour_tree.sequence_node = sequence_node
+behaviour_tree.reactive_sequence_node = reactive_sequence_node
 behaviour_tree.selector_node = selector_node
+behaviour_tree.reactive_selector_node = reactive_selector_node
 behaviour_tree.parallel_node = parallel_node
 behaviour_tree.decorator_node = decorator_node
 behaviour_tree.condition_node = condition_node
