@@ -1,17 +1,30 @@
 -- clock.lua
 -- Cart-library clock helpers backed by the machine time and frame-timing words.
 
-local clock<const> = {}
+module<const>
 
-local time_milliseconds<const>: *word = 0x08010224
-local frame_milliseconds_q16<const>: *word = 0x08010228
-
-function clock.milliseconds()
+local milliseconds<const> = function()
+	local time_milliseconds<const>: *word = 0x08010224
 	return *time_milliseconds
 end
 
-function clock.frame_milliseconds()
+local frame_milliseconds<const> = function()
+	local frame_milliseconds_q16<const>: *word = 0x08010228
 	return *frame_milliseconds_q16 / 0x00010000
 end
 
-return clock
+-- SYS_TIME_MS is a wrapping hardware word. Durations shorter than one complete
+-- word period use the unsigned distance between two retained samples.
+local elapsed_milliseconds<const> = function(start_time_ms, current_time_ms)
+	local elapsed<const> = current_time_ms - start_time_ms
+	if elapsed < 0 then
+		return elapsed + 0x100000000
+	end
+	return elapsed
+end
+
+return {
+	milliseconds = milliseconds,
+	frame_milliseconds = frame_milliseconds,
+	elapsed_milliseconds = elapsed_milliseconds,
+}

@@ -2,6 +2,7 @@
 -- Cart Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('cartlib/apu')
+local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
 local rom_dir<const> = require('cartlib/rom_dir')
@@ -322,9 +323,9 @@ local apply_cooldown<const> = function(action, payload)
 	end
 	local cooldown_ms<const> = action.cooldown_ms
 	local actor_key<const> = actor_key_for_payload(payload)
-	local now<const> = os.clock() * 1000
-	local last<const> = by_actor[actor_key] or 0
-	if (now - last) < cooldown_ms then
+	local now<const> = clock.milliseconds()
+	local last<const> = by_actor[actor_key]
+	if last ~= nil and clock.elapsed_milliseconds(last, now) < cooldown_ms then
 		return false
 	end
 	by_actor[actor_key] = now

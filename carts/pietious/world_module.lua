@@ -1,4 +1,3 @@
-local actioneffect_system<const> = require('cartlib/actioneffects/actioneffect_system')
 local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
 local elevator_system<const> = require('elevator/system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
@@ -24,7 +23,6 @@ return {
 		input_system,
 		bt_system,
 		input_actioneffect_system,
-		actioneffect_system,
 		fsm_system,
 		screen_boundary_capture_system,
 		screen_boundary_system,

@@ -1,4 +1,5 @@
 local base_component<const> = require('cartlib/component/base_component')
+local clock<const> = require('cartlib/clock')
 
 local bind_state_paths<const> = function(owner, paths)
 	if not paths then
@@ -61,7 +62,6 @@ end
 function actioneffect_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), actioneffect_component)
 	self.effects = {}
-	self.time_ms = 0
 	return self
 end
 
@@ -101,7 +101,6 @@ function actioneffect_component:grant_effect(id)
 		definition = definition,
 		required_states = bind_state_paths(owner, definition.required_state_paths),
 		blocked_states = bind_state_paths(owner, definition.blocked_state_paths),
-		cooldown_until = 0,
 	}
 end
 
@@ -123,8 +122,16 @@ end
 
 function actioneffect_component:try_trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
-	if self.time_ms < effect.cooldown_until then
-		return false
+	-- Cooldowns retain machine-clock samples instead of ticking every component.
+	-- Inactive spaces therefore incur no update work and elapsed machine time has
+	-- the same meaning when an action is queried again.
+	local current_time_ms
+	local cooldown_duration_ms<const> = effect.cooldown_duration_ms
+	if cooldown_duration_ms ~= nil then
+		current_time_ms = clock.milliseconds()
+		if clock.elapsed_milliseconds(effect.cooldown_start_time_ms, current_time_ms) < cooldown_duration_ms then
+			return false
+		end
 	end
 	local definition<const> = effect.definition
 	local owner<const> = self.parent
@@ -153,7 +160,13 @@ function actioneffect_component:try_trigger(id, payload, ...)
 	end
 	local cooldown<const> = definition.cooldown_ms
 	if cooldown and cooldown > 0 then
-		effect.cooldown_until = self.time_ms + cooldown
+		if current_time_ms == nil then
+			current_time_ms = clock.milliseconds()
+		end
+		effect.cooldown_start_time_ms = current_time_ms
+		effect.cooldown_duration_ms = cooldown
+	else
+		effect.cooldown_duration_ms = nil
 	end
 	return true
 end
@@ -163,7 +176,14 @@ function actioneffect_component:cooldown_remaining(id)
 	if not effect then
 		return nil
 	end
-	local remaining<const> = effect.cooldown_until - self.time_ms
+	local duration<const> = effect.cooldown_duration_ms
+	if duration == nil then
+		return nil
+	end
+	local remaining<const> = duration - clock.elapsed_milliseconds(
+		effect.cooldown_start_time_ms,
+		clock.milliseconds()
+	)
 	if remaining > 0 then
 		return remaining
 	end
