@@ -1,5 +1,6 @@
 local image<const> = require('cartlib/gx/image')
 local command_list<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
 local visual_component<const> = require('cartlib/component/visual_component')
 
 local tile_layer_component<const> = {}
@@ -16,12 +17,13 @@ local resolve_source<const> = function(self, imgid)
 	return source
 end
 
-local rebuild_visible_tiles<const> = function(self)
+local rebuild_visible_tiles<const> = function(self, origin_x, origin_y)
 	local visible_tile_indices<const> = self._visible_tile_indices
 	local visible_slots_by_tile_index<const> = self._visible_slots_by_tile_index
 	local visible_sources<const> = self._visible_sources
 	local visible_x_offsets<const> = self._visible_x_offsets
 	local visible_y_offsets<const> = self._visible_y_offsets
+	local visible_position_words<const> = self._visible_position_words
 	local previous_count<const> = self._visible_tile_count
 	for slot = 1, previous_count do
 		visible_slots_by_tile_index[visible_tile_indices[slot]] = nil
@@ -51,6 +53,7 @@ local rebuild_visible_tiles<const> = function(self)
 				visible_sources[visible_count] = source
 				visible_x_offsets[visible_count] = x_offset
 				visible_y_offsets[visible_count] = y_offset
+				visible_position_words[visible_count] = gp0.pair16(origin_x + x_offset, origin_y + y_offset)
 			end
 			x_offset = x_offset + tile_size
 		end
@@ -62,9 +65,29 @@ local rebuild_visible_tiles<const> = function(self)
 		visible_sources[slot] = nil
 		visible_x_offsets[slot] = nil
 		visible_y_offsets[slot] = nil
+		visible_position_words[slot] = nil
 	end
 	self._visible_tile_count = visible_count
 	self._visible_tiles_dirty = false
+	self._position_origin_x = origin_x
+	self._position_origin_y = origin_y
+	self._pending_position_origin_x = nil
+	self._pending_position_origin_y = nil
+end
+
+local rebuild_visible_positions<const> = function(self, origin_x, origin_y)
+	local position_words<const> = self._visible_position_words
+	local x_offsets<const> = self._visible_x_offsets
+	local y_offsets<const> = self._visible_y_offsets
+	for source_index = 1, self._visible_tile_count do
+		position_words[source_index] = gp0.pair16(
+			origin_x + x_offsets[source_index],
+			origin_y + y_offsets[source_index])
+	end
+	self._position_origin_x = origin_x
+	self._position_origin_y = origin_y
+	self._pending_position_origin_x = nil
+	self._pending_position_origin_y = nil
 end
 
 function tile_layer_component.new(opts)
@@ -80,8 +103,13 @@ function tile_layer_component.new(opts)
 	self._visible_sources = {}
 	self._visible_x_offsets = {}
 	self._visible_y_offsets = {}
+	self._visible_position_words = {}
 	self._visible_tile_count = 0
 	self._visible_tiles_dirty = true
+	self._position_origin_x = nil
+	self._position_origin_y = nil
+	self._pending_position_origin_x = nil
+	self._pending_position_origin_y = nil
 	self.tile_count = 0
 	self.columns = opts.columns or 1
 	self._tile_size = opts.tile_size or 0
@@ -180,20 +208,36 @@ function tile_layer_component:set_indexed_tiles(indices, index_count, imgid)
 end
 
 function tile_layer_component:draw(draw)
-	if self._visible_tiles_dirty then
-		rebuild_visible_tiles(self)
-	end
 	local parent<const> = self.parent
 	local origin_x<const> = parent.x + self.offset_x + self.draw_offset_x
 	local origin_y<const> = parent.y + self.offset_y + self.draw_offset_y
+	if self._visible_tiles_dirty then
+		rebuild_visible_tiles(self, origin_x, origin_y)
+	elseif origin_x ~= self._position_origin_x or origin_y ~= self._position_origin_y then
+		-- Moving layers use the direct translated writer. Promote the new
+		-- position only after it remains unchanged for a frame, so continuous
+		-- movement never rewrites a cache that cannot be reused.
+		if origin_x == self._pending_position_origin_x and origin_y == self._pending_position_origin_y then
+			rebuild_visible_positions(self, origin_x, origin_y)
+		else
+			self._pending_position_origin_x = origin_x
+			self._pending_position_origin_y = origin_y
+			command_list.translated_tile_layer(
+				draw,
+				self._visible_sources,
+				self._visible_x_offsets,
+				self._visible_y_offsets,
+				self._visible_tile_count,
+				origin_x,
+				origin_y)
+			return
+		end
+	end
 	command_list.tile_layer(
 		draw,
 		self._visible_sources,
-		self._visible_x_offsets,
-		self._visible_y_offsets,
-		self._visible_tile_count,
-		origin_x,
-		origin_y)
+		self._visible_position_words,
+		self._visible_tile_count)
 end
 
 return tile_layer_component

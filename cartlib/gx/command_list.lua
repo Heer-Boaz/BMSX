@@ -255,10 +255,36 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 	draw.draw_mode = draw_mode
 end
 
--- Tile layers retain a flat row-major list of visible sources and local
--- positions. Submission therefore touches only packets that will be emitted;
--- each source supplies its current page, CLUT and UV words.
-function command_list.tile_layer(draw, sources, x_offsets, y_offsets, source_count, origin_x, origin_y)
+-- Stable and translated tile packets keep separate direct loops: merging the
+-- representations would add a mode branch or position callback to every tile.
+-- Stable tile layers retain their absolute position words alongside the
+-- visible source list. Submission consumes those packet operands directly;
+-- texture admission can still replace each source's page, CLUT and UV words.
+function command_list.tile_layer(draw, sources, position_words, source_count)
+	local words<const>: *word = draw.words
+	local index = draw.word_count
+	local draw_mode = draw.draw_mode
+	for source_index = 1, source_count do
+		local source<const> = sources[source_index]
+		local next_draw_mode<const> = source._blit_draw_mode
+		if next_draw_mode ~= draw_mode then
+			words[index] = gp0.draw_mode | next_draw_mode
+			index = index + 1
+			draw_mode = next_draw_mode
+		end
+		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
+		words[index + 1] = position_words[source_index]
+		words[index + 2] = source._blit_uv_word
+		words[index + 3] = source._size_word
+		index = index + 4
+	end
+	draw.word_count = index
+	draw.draw_mode = draw_mode
+end
+
+-- A moving tile layer keeps the exact per-tile rounding path and does not
+-- rewrite a retained position array that would be stale again next frame.
+function command_list.translated_tile_layer(draw, sources, x_offsets, y_offsets, source_count, origin_x, origin_y)
 	local words<const>: *word = draw.words
 	local index = draw.word_count
 	local draw_mode = draw.draw_mode
