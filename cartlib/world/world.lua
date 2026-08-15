@@ -49,6 +49,15 @@ local mutation_component<const> = 0x08
 local mutation_tag<const> = 0x10
 local mutation_component_detach<const> = 0x20
 local mutation_active_space<const> = 0x40
+local mutation_disposal<const> = 0x80
+local mutation_clear<const> = 0x100
+local structural_mutation_mask<const> = mutation_admission
+	| mutation_component_attach
+	| mutation_object
+	| mutation_component
+	| mutation_tag
+	| mutation_component_detach
+	| mutation_active_space
 
 bss cartlib_render_commands: word[render_command_capacity]
 
@@ -104,7 +113,6 @@ function world_class.new()
 	self._pending_tag_names = {}
 	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
-	self._clear_pending = false
 	self._active_definition_views = {}
 	self._active_definition_view_list = {}
 	self._active_component_views_by_class = {}
@@ -639,6 +647,7 @@ function world_class:mark_for_disposal(obj)
 	local pending_count<const> = self._pending_disposal_count + 1
 	self._pending_disposal_count = pending_count
 	self._pending_disposals[pending_count] = obj
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_disposal
 end
 
 function world_class:_flush_disposals()
@@ -694,19 +703,25 @@ function world_class:_flush_structural_mutations()
 			self._pending_space_id = nil
 			self:_commit_active_space(pending_space_id)
 		end
-	until self._pending_mutation_mask == 0
+	until (self._pending_mutation_mask & structural_mutation_mask) == 0
 end
 
 function world_class:_commit_mutation_barrier()
-	if self._pending_mutation_mask ~= 0 then
+	local pending_mutation_mask<const> = self._pending_mutation_mask
+	if pending_mutation_mask == 0 then
+		self._mutation_barrier_open = false
+		return
+	end
+	if (pending_mutation_mask & structural_mutation_mask) ~= 0 then
 		self:_flush_structural_mutations()
 	end
 	self._mutation_barrier_open = false
-	if self._pending_disposal_count ~= 0 then
+	if (self._pending_mutation_mask & mutation_disposal) ~= 0 then
 		self:_flush_disposals()
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
 	end
-	if self._clear_pending then
-		self._clear_pending = false
+	if (self._pending_mutation_mask & mutation_clear) ~= 0 then
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_clear
 		self:_commit_clear()
 		return true
 	end
@@ -781,7 +796,7 @@ function world_class:clear()
 		for i = 1, self._pending_admission_count do
 			self:mark_for_disposal(pending_admissions[i])
 		end
-		self._clear_pending = true
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_clear
 		return
 	end
 	self:_commit_clear()
