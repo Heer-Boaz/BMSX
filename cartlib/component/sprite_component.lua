@@ -58,17 +58,19 @@ function sprite_component:draw(draw)
 	local obj<const> = self.parent
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
-	local flip_flags = 0
-	if self.flip_h then
-		flip_flags = flip_flags | 1
-	end
-	if self.flip_v then
-		flip_flags = flip_flags | 2
-	end
 	local scale_x<const> = self.scale_x * self.draw_scale_x
 	local scale_y<const> = self.scale_y * self.draw_scale_y
-	if scale_x == 1 and scale_y == 1 then
-		source:draw(draw, x, y, self.color, flip_flags, gp0.draw_mode_blend_half)
+	local color<const> = self.color
+	local unit_scale<const> = scale_x == 1 and scale_y == 1
+	if unit_scale
+	and not self.flip_h and not self.flip_v
+	and (color & 0x00ffffff) == 0x00ffffff then
+		source:blit(draw, x, y)
+		return
+	end
+	local flip_flags<const> = (self.flip_h and 1 or 0) | (self.flip_v and 2 or 0)
+	if unit_scale then
+		source:draw(draw, x, y, color, flip_flags, gp0.draw_mode_blend_half)
 		return
 	end
 	source:draw_affine(
@@ -77,7 +79,7 @@ function sprite_component:draw(draw)
 		self.source_width * scale_x, 0.0,
 		0.0, self.source_height * scale_y,
 		flip_flags,
-		self.color,
+		color,
 		gp0.draw_mode_blend_half)
 end
 
