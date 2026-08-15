@@ -2,6 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 
 local elevator<const> = {}
@@ -9,9 +10,10 @@ elevator.__index = elevator
 
 function elevator:ctor()
 	self:set_imgid('elevator_platform')
-	self.collider:set_enabled(true)
-	self.collider.layer = collision_world_layer
-	self.collider.mask = collision_player_layer
+	local collider<const> = self:get_component(collider_2d_component)
+	self.collider = collider
+	collider.layer = collision_world_layer
+	collider.mask = collision_player_layer
 end
 
 local move_vertical<const> = function(self, target, vertical)
@@ -107,7 +109,10 @@ local register_elevator_definition<const> = function()
 		def_id = 'elevator_platform',
 		class = elevator,
 		base = sprite_object,
-		components = { fsm_component.factory({ 'elevator_platform' }) },
+		components = {
+			collider_2d_component.new_for_sprite,
+			fsm_component.factory({ 'elevator_platform' }),
+		},
 		defaults = {
 			path = nil,
 			vertical_to_point = nil,

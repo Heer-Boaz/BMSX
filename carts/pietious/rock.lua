@@ -2,6 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
@@ -13,8 +14,10 @@ rock.__index = rock
 local rock_break_timeline_id<const> = 'rock.tl.break'
 
 function rock:ctor()
-	self.collider.layer = collision_enemy_layer
-	self.collider.mask = collision_enemy_mask
+	local collider<const> = self:get_component(collider_2d_component)
+	self.collider = collider
+	collider.layer = collision_enemy_layer
+	collider.mask = collision_enemy_mask
 	self:set_imgid('stone')
 end
 
@@ -131,7 +134,11 @@ local register_rock_definition<const> = function()
 		def_id = 'rock',
 		class = rock,
 		base = sprite_object,
-		components = { timeline_component.new, fsm_component.factory({ 'rock' }) },
+		components = {
+			collider_2d_component.new_for_sprite,
+			timeline_component.new,
+			fsm_component.factory({ 'rock' }),
+		},
 		defaults = {
 			item_type = nil,
 			max_health = rock_max_health,

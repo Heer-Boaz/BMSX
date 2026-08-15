@@ -30,11 +30,6 @@ end
 local room_shrine<const> = {}
 room_shrine.__index = room_shrine
 
-function room_shrine:ctor()
-	self.collider:set_enabled(false)
-	self:set_imgid('shrine')
-end
-
 local define_shrine_fsm<const> = function()
 	fsm_library.register('shrine', {
 		initial = 'active',
@@ -78,6 +73,7 @@ local register_room_shrine_definition<const> = function()
 		class = room_shrine,
 		base = sprite_object,
 		defaults = {
+			imgid = 'shrine',
 		},
 	})
 end

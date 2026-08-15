@@ -46,7 +46,7 @@ function nootfoe.register()
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			trigger = nil,
 			damage = 2,

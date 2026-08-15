@@ -2,6 +2,7 @@ local world<const> = require('cartlib/world/world')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 require('constants')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
 
 local enemy_base<const> = {}
@@ -10,10 +11,11 @@ local damaging_contact_kinds<const> = {
 	projectile = true,
 }
 
-function enemy_base.ctor(self)
-	self.collider.layer = collision_enemy_layer
-	self.collider.mask = collision_enemy_mask
-	self.sprite_component:set_offset_z(110)
+function enemy_base.new_collider(opts)
+	local collider<const> = collider_2d_component.new_for_sprite(opts)
+	collider.layer = collision_enemy_layer
+	collider.mask = collision_enemy_mask
+	return collider
 end
 
 -- Attaches projectile boundary behaviour with the room bounds. The shared
@@ -36,12 +38,7 @@ function enemy_base.on_space_event(self, event_type)
 	end
 end
 
-function enemy_base.bind(self)
-	self.events:on({
-		event = 'overlap.begin',
-		handler = enemy_base.on_overlap,
-	})
-
+function enemy_base.bind_lifecycle(self)
 	self.events:on({
 		event = 'shrine_transition_enter',
 		handler = enemy_base.on_space_event,
@@ -68,6 +65,14 @@ function enemy_base.bind(self)
 			handler = self.mark_for_disposal,
 		})
 	end
+end
+
+function enemy_base.bind(self)
+	self.events:on({
+		event = 'overlap.begin',
+		handler = enemy_base.on_overlap,
+	})
+	enemy_base.bind_lifecycle(self)
 end
 
 function enemy_base.spawn_death_effect(self)
@@ -137,7 +142,7 @@ function enemy_base.extend(enemy_class, enemy_kind)
 	enemy_class.process_damage_result = enemy_base.process_damage_result
 	enemy_class.on_overlap = enemy_base.on_overlap
 	enemy_class.ctor = function(self, ...)
-		enemy_base.ctor(self)
+		self.sprite_component:set_offset_z(110)
 		if original_ctor then
 			original_ctor(self, ...)
 		end

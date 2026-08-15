@@ -143,7 +143,7 @@ function crossfoe.register()
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			trigger = nil,
 			damage = 4,

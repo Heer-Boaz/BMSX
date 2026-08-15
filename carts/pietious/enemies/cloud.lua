@@ -139,7 +139,7 @@ function cloud.register()
 		def_id = 'enemy.cloud',
 		class = cloud,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			damage = 2,
 			max_health = 15,

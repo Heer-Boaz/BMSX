@@ -2,6 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local world_object<const> = require('cartlib/world/world_object')
@@ -20,8 +21,9 @@ local sprite_for_loot_type<const> = function(loot_type)
 end
 
 function loot_drop:ctor()
-	self.collider.layer = collision_pickup_layer
-	self.collider.mask = collision_pickup_mask
+	local collider<const> = self:get_component(collider_2d_component)
+	collider.layer = collision_pickup_layer
+	collider.mask = collision_pickup_mask
 	self:set_imgid(sprite_for_loot_type(self.loot_type))
 end
 
@@ -58,7 +60,10 @@ local register_loot_drop_definition<const> = function()
 		def_id = 'loot_drop',
 		class = loot_drop,
 		base = sprite_object,
-		components = { fsm_component.factory({ 'loot_drop' }) },
+		components = {
+			collider_2d_component.new_for_sprite,
+			fsm_component.factory({ 'loot_drop' }),
+		},
 		defaults = {
 			loot_type = 'life',
 			loot_value = enemy_loot_life_regen,

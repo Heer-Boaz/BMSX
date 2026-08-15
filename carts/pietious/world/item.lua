@@ -2,14 +2,16 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local world_item<const> = {}
 world_item.__index = world_item
 
 function world_item:ctor()
-	self.collider.layer = collision_pickup_layer
-	self.collider.mask = collision_pickup_mask
+	local collider<const> = self:get_component(collider_2d_component)
+	collider.layer = collision_pickup_layer
+	collider.mask = collision_pickup_mask
 	self:set_imgid(world_item_sprite[self.item_type])
 end
 
@@ -50,7 +52,10 @@ local register_world_item_definition<const> = function()
 		def_id = 'world_item',
 		class = world_item,
 		base = sprite_object,
-		components = { fsm_component.factory({ 'world_item' }) },
+		components = {
+			collider_2d_component.new_for_sprite,
+			fsm_component.factory({ 'world_item' }),
+		},
 		defaults = {
 			item_id = nil,
 			item_type = nil,

@@ -38,11 +38,6 @@ function world_entrance:finish_opening()
 	})
 end
 
-function world_entrance:ctor()
-	self.collider:set_enabled(false)
-	self:set_entrance_state('closed')
-end
-
 local define_world_entrance_fsm<const> = function()
 	fsm_library.register('world_entrance', {
 		initial = 'closed',
@@ -107,6 +102,7 @@ local register_world_entrance_definition<const> = function()
 		base = sprite_object,
 		components = { timeline_component.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
+			imgid = world_entrance_sprite_ids.closed,
 			target = nil,
 			entrance_state = 'closed',
 		},

@@ -1,4 +1,5 @@
 local base_component<const> = require('cartlib/component/base_component')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 
 local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component
@@ -11,6 +12,20 @@ function collider_2d_component.new(opts)
 	self.local_area = opts.local_area
 	self.shape_offset_x = opts.shape_offset_x or 0
 	self.shape_offset_y = opts.shape_offset_y or 0
+	return self
+end
+
+-- Sprite-derived collision is explicit prefab composition. The collider keeps
+-- the resolved sprite component directly, and GEO selects the current packed
+-- @cx/@cc shape lazily when the pair is staged. Sprite objects without this
+-- constructor own no collider and never enter the overlap pass.
+--
+--   @cx  - one convex hull
+--   @cc  - a multi-piece convex fit
+--   none - the image bounds
+function collider_2d_component.new_for_sprite(opts)
+	local self<const> = collider_2d_component.new(opts)
+	self:set_sprite(opts.parent:get_component(sprite_component))
 	return self
 end
 

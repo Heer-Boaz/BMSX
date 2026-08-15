@@ -160,10 +160,7 @@ function draaideur:sync_sprite()
 	self.sprite_component.offset_x = -room_tile_half
 end
 
-function draaideur:ctor()
-	self.collider:set_enabled(false)
-	self:sync_sprite()
-end
+draaideur.ctor = draaideur.sync_sprite
 
 local define_draaideur_fsm<const> = function()
 	fsm_library.register('draaideur', {

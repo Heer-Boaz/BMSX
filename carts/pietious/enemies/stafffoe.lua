@@ -92,7 +92,7 @@ function stafffoe.register()
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			damage = 4,
 			max_health = 10,

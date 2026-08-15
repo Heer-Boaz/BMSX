@@ -34,7 +34,7 @@ function paperfoe.register()
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
 			trigger = nil,
 			damage = 2,

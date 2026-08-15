@@ -382,9 +382,11 @@ function player:ctor()
 	self:set_imgid('pietolon_stand_r')
 	self.width = player_width
 	self.height = player_height
-	self.collider.id_local = 'body'
-	self.collider.layer = collision_player_layer
-	self.collider.mask = collision_player_mask
+	local collider<const> = self:get_component(collider_2d_component)
+	self.collider = collider
+	collider.id_local = 'body'
+	collider.layer = collision_player_layer
+	collider.mask = collision_player_mask
 
 	self.sword_collider = collider_2d_component.new({
 		id_local = 'sword',
@@ -3194,6 +3196,7 @@ local register_player_definition<const> = function()
 		class = player,
 		base = sprite_object,
 		components = {
+			collider_2d_component.new_for_sprite,
 			timeline_component.new,
 			fsm_component.factory({ 'player' }),
 		},

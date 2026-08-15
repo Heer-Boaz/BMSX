@@ -3,17 +3,13 @@ local sprite_object<const> = require('cartlib/sprite')
 local lithograph<const> = {}
 lithograph.__index = lithograph
 
-function lithograph:ctor()
-	self.collider:set_enabled(false)
-	self:set_imgid('lithograph')
-end
-
 local register_lithograph_definition<const> = function()
 	prefab.define({
 		def_id = 'lithograph',
 		class = lithograph,
 		base = sprite_object,
 		defaults = {
+			imgid = 'lithograph',
 			text = nil,
 			room_number = 0,
 		},

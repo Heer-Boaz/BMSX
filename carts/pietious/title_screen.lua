@@ -131,7 +131,6 @@ local apply_title_start_frame<const> = function(self, frame)
 end
 
 function title_screen:ctor()
-	self.collider:set_enabled(false)
 	self:set_imgid('title_screen')
 	self:set_z(350)
 	self.sparkle_sprite = sprite_component.new({

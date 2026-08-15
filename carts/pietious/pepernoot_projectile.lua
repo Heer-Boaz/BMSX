@@ -14,6 +14,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
 local world_object<const> = require('cartlib/world/world_object')
@@ -26,8 +27,9 @@ local state_tags<const> = {
 }
 
 function pepernoot_projectile:ctor()
-	self.collider.layer = collision_projectile_layer
-	self.collider.mask = collision_projectile_mask
+	local collider<const> = self:get_component(collider_2d_component)
+	collider.layer = collision_projectile_layer
+	collider.mask = collision_projectile_mask
 	self:add_component(tile_collision_component.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
@@ -110,7 +112,10 @@ local register_pepernoot_projectile_definition<const> = function()
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		base = sprite_object,
-		components = { fsm_component.factory({ 'pepernoot_projectile' }) },
+		components = {
+			collider_2d_component.new_for_sprite,
+			fsm_component.factory({ 'pepernoot_projectile' }),
+		},
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,

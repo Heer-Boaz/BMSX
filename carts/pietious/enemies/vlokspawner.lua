@@ -13,7 +13,6 @@ vlokspawner.__index = vlokspawner
 
 function vlokspawner:ctor()
 	self.visible = false
-	self.collider:set_enabled(false)
 end
 
 function vlokspawner.bt_tick(self, blackboard)
@@ -46,11 +45,7 @@ function vlokspawner.bt_tick(self, blackboard)
 	return bt_running
 end
 
-function vlokspawner.choose_drop_type(_self)
-	return nil
-end
-
-enemy_base.extend(vlokspawner, 'vlokspawner')
+vlokspawner.bind = enemy_base.bind_lifecycle
 
 function vlokspawner.register()
 	local root<const> = behaviour_tree.action_node.new('enemy_vlokspawner', vlokspawner.bt_tick)
