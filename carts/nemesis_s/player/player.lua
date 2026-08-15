@@ -34,9 +34,6 @@ local sources<const> = {
 }
 
 function player:emit_event(name, extra)
-	if not telemetry_enabled then
-		return
-	end
 	if extra ~= nil then
 		print(string.format('%s|kind=player|f=%d|name=%s|%s', telemetry_event_prefix, self.frame, name, extra))
 		return
@@ -159,19 +156,21 @@ function player:reset_runtime()
 	self.missiles = {}
 	self.uplasers = {}
 	self:initialize_weapon_slots()
-	self:emit_event(
-		'player_reset',
-		string.format(
-			'x=%d|y=%d|speed=%d|options=%d|laser=%d|missile=%d|uplaser=%d',
-			self.x,
-			self.y,
-			loadout_speed_powerups,
-			loadout_option_count,
-			loadout_laser_level,
-			loadout_missile_level,
-			loadout_uplaser_level
+	if telemetry_enabled then
+		self:emit_event(
+			'player_reset',
+			string.format(
+				'x=%d|y=%d|speed=%d|options=%d|laser=%d|missile=%d|uplaser=%d',
+				self.x,
+				self.y,
+				loadout_speed_powerups,
+				loadout_option_count,
+				loadout_laser_level,
+				loadout_missile_level,
+				loadout_uplaser_level
+			)
 		)
-	)
+	end
 end
 
 function player:get_laser_visual_x(x, weapon)
@@ -275,7 +274,9 @@ function player:update_position()
 			self.edge_push_dx = dx
 		end
 		if collides_at(target_x, self.y) then
-			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
+			if telemetry_enabled then
+				self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
+			end
 			return
 		end
 		self.x = target_x
@@ -291,7 +292,9 @@ function player:update_position()
 			self.edge_push_dy = dy
 		end
 		if collides_at(self.x, target_y) then
-			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
+			if telemetry_enabled then
+				self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
+			end
 			return
 		end
 		self.y = target_y
@@ -373,16 +376,18 @@ function player:spawn_laser(vessel_id)
 	}
 	self.lasers[#self.lasers + 1] = laser
 	self.weapon_slots.laser[vessel_id] = self.weapon_slots.laser[vessel_id] + 1
-	self:emit_event(
-		'weapon_spawn',
-		string.format(
-			'weapon=laser|vessel=%d|active=%d|x=%.3f|y=%.3f',
-			vessel_id,
-			self.weapon_slots.laser[vessel_id],
-			laser.x,
-			laser.y
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_spawn',
+			string.format(
+				'weapon=laser|vessel=%d|active=%d|x=%.3f|y=%.3f',
+				vessel_id,
+				self.weapon_slots.laser[vessel_id],
+				laser.x,
+				laser.y
+			)
 		)
-	)
+	end
 end
 
 function player:spawn_missile(vessel_id)
@@ -396,16 +401,18 @@ function player:spawn_missile(vessel_id)
 	}
 	self.missiles[#self.missiles + 1] = missile
 	self.weapon_slots.missile[vessel_id] = self.weapon_slots.missile[vessel_id] + 1
-	self:emit_event(
-		'weapon_spawn',
-		string.format(
-			'weapon=missile|vessel=%d|active=%d|x=%.3f|y=%.3f',
-			vessel_id,
-			self.weapon_slots.missile[vessel_id],
-			missile.x,
-			missile.y
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_spawn',
+			string.format(
+				'weapon=missile|vessel=%d|active=%d|x=%.3f|y=%.3f',
+				vessel_id,
+				self.weapon_slots.missile[vessel_id],
+				missile.x,
+				missile.y
+			)
 		)
-	)
+	end
 end
 
 function player:spawn_uplaser(vessel_id)
@@ -434,20 +441,22 @@ function player:spawn_uplaser(vessel_id)
 	self:refresh_uplaser_dimensions(uplaser)
 	self.uplasers[#self.uplasers + 1] = uplaser
 	self.weapon_slots.uplaser[vessel_id] = self.weapon_slots.uplaser[vessel_id] + 1
-	self:emit_event(
-		'weapon_spawn',
-		string.format(
-			'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f|level=%d|len=%d|tiles=%d|width=%d',
-			vessel_id,
-			self.weapon_slots.uplaser[vessel_id],
-			uplaser.x,
-			uplaser.y,
-			uplaser.level,
-			uplaser.length_units,
-			uplaser.tile_count,
-			uplaser.width
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_spawn',
+			string.format(
+				'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f|level=%d|len=%d|tiles=%d|width=%d',
+				vessel_id,
+				self.weapon_slots.uplaser[vessel_id],
+				uplaser.x,
+				uplaser.y,
+				uplaser.level,
+				uplaser.length_units,
+				uplaser.tile_count,
+				uplaser.width
+			)
 		)
-	)
+	end
 end
 
 function player:fire_weapon_salvo()
@@ -456,7 +465,7 @@ function player:fire_weapon_salvo()
 		local laser_slots<const> = self.weapon_slots.laser[vessel_id]
 		if laser_slots < weapons_laser.max_active then
 			self:spawn_laser(vessel_id)
-		else
+		elseif telemetry_enabled then
 			self:emit_event(
 				'weapon_blocked',
 				string.format('weapon=laser|vessel=%d|active=%d|max=%d', vessel_id, laser_slots, weapons_laser.max_active)
@@ -466,7 +475,7 @@ function player:fire_weapon_salvo()
 		local missile_slots<const> = self.weapon_slots.missile[vessel_id]
 		if missile_slots < weapons_missile_max_active then
 			self:spawn_missile(vessel_id)
-		else
+		elseif telemetry_enabled then
 			self:emit_event(
 				'weapon_blocked',
 				string.format(
@@ -481,7 +490,7 @@ function player:fire_weapon_salvo()
 		local uplaser_slots<const> = self.weapon_slots.uplaser[vessel_id]
 		if uplaser_slots < weapons_uplaser.max_active then
 			self:spawn_uplaser(vessel_id)
-		else
+		elseif telemetry_enabled then
 			self:emit_event(
 				'weapon_blocked',
 				string.format(
@@ -499,51 +508,57 @@ function player:despawn_laser(index, reason)
 	local laser<const> = self.lasers[index]
 	swap_remove(self.lasers, index)
 	self.weapon_slots.laser[laser.vessel_id] = self.weapon_slots.laser[laser.vessel_id] - 1
-	self:emit_event(
-		'weapon_despawn',
-		string.format(
-			'weapon=laser|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
-			laser.vessel_id,
-			self.weapon_slots.laser[laser.vessel_id],
-			laser.left_x,
-			laser.y,
-			reason
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_despawn',
+			string.format(
+				'weapon=laser|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
+				laser.vessel_id,
+				self.weapon_slots.laser[laser.vessel_id],
+				laser.left_x,
+				laser.y,
+				reason
+			)
 		)
-	)
+	end
 end
 
 function player:despawn_missile(index, reason)
 	local missile<const> = self.missiles[index]
 	swap_remove(self.missiles, index)
 	self.weapon_slots.missile[missile.vessel_id] = self.weapon_slots.missile[missile.vessel_id] - 1
-	self:emit_event(
-		'weapon_despawn',
-		string.format(
-			'weapon=missile|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
-			missile.vessel_id,
-			self.weapon_slots.missile[missile.vessel_id],
-			missile.x,
-			missile.y,
-			reason
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_despawn',
+			string.format(
+				'weapon=missile|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
+				missile.vessel_id,
+				self.weapon_slots.missile[missile.vessel_id],
+				missile.x,
+				missile.y,
+				reason
+			)
 		)
-	)
+	end
 end
 
 function player:despawn_uplaser(index, reason)
 	local uplaser<const> = self.uplasers[index]
 	swap_remove(self.uplasers, index)
 	self.weapon_slots.uplaser[uplaser.vessel_id] = self.weapon_slots.uplaser[uplaser.vessel_id] - 1
-	self:emit_event(
-		'weapon_despawn',
-		string.format(
-			'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
-			uplaser.vessel_id,
-			self.weapon_slots.uplaser[uplaser.vessel_id],
-			uplaser.x,
-			uplaser.y,
-			reason
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_despawn',
+			string.format(
+				'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
+				uplaser.vessel_id,
+				self.weapon_slots.uplaser[uplaser.vessel_id],
+				uplaser.x,
+				uplaser.y,
+				reason
+			)
 		)
-	)
+	end
 end
 
 function player:update_lasers()

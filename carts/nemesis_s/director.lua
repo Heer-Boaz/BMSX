@@ -32,9 +32,6 @@ function director:emit_metric()
 end
 
 function director:emit_event(name, extra)
-	if not telemetry_enabled then
-		return
-	end
 	if extra ~= nil then
 		print(string.format('%s|kind=director|f=%d|name=%s|%s', telemetry_event_prefix, self.frame, name, extra))
 		return
@@ -58,45 +55,53 @@ local define_director_fsm<const> = function()
 			['star_blink_toggle'] = {
 				emitter = ids_stage_instance,
 				go = function(self)
-					local stage<const> = self.stage
-					self:emit_event(
-						'star_blink_toggle',
-						string.format(
-							'turn=%s|yellow_blink=%d|blue_blink=%d',
-							stage.blink_turn,
-							bool01(stage.yellow_blink),
-							bool01(stage.blue_blink)
+					if telemetry_enabled then
+						local stage<const> = self.stage
+						self:emit_event(
+							'star_blink_toggle',
+							string.format(
+								'turn=%s|yellow_blink=%d|blue_blink=%d',
+								stage.blink_turn,
+								bool01(stage.yellow_blink),
+								bool01(stage.blue_blink)
+							)
 						)
-					)
+					end
 				end,
 			},
 			['stage_scroll_stop'] = {
 				emitter = ids_stage_instance,
 				go = function(self, _state, event)
-					self:emit_event('stage_scroll_stop', string.format('left=%d|head=%d', event.left, event.head))
+					if telemetry_enabled then
+						self:emit_event('stage_scroll_stop', string.format('left=%d|head=%d', event.left, event.head))
+					end
 				end,
 			},
 			['stage_scroll_tile'] = {
 				emitter = ids_stage_instance,
 				go = function(self, _state, event)
-					self:emit_event('stage_scroll_tile', string.format('left=%d|head=%d', event.left, event.head))
+					if telemetry_enabled then
+						self:emit_event('stage_scroll_tile', string.format('left=%d|head=%d', event.left, event.head))
+					end
 				end,
 			},
 			['stage_scroll_gate'] = {
 				emitter = ids_stage_instance,
 				go = function(self, _state, event)
-					self:emit_event(
-						'stage_scroll_gate',
-						string.format(
-							'mode=%d|rot=%d|bit=%d|adv=%d|left=%d|head=%d',
-							event.mode,
-							event.rot,
-							event.bit,
-							bool01(event.adv),
-							event.left,
-							event.head
+					if telemetry_enabled then
+						self:emit_event(
+							'stage_scroll_gate',
+							string.format(
+								'mode=%d|rot=%d|bit=%d|adv=%d|left=%d|head=%d',
+								event.mode,
+								event.rot,
+								event.bit,
+								bool01(event.adv),
+								event.left,
+								event.head
+							)
 						)
-					)
+					end
 				end,
 			},
 		},
@@ -104,7 +109,9 @@ local define_director_fsm<const> = function()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
-					self:emit_event('director_boot')
+					if telemetry_enabled then
+						self:emit_event('director_boot')
+					end
 					return '/running'
 				end,
 			},
