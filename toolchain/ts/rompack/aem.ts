@@ -1,6 +1,29 @@
 import { load as loadYaml } from 'js-yaml';
 
 import { APU_SAMPLE_RATE_HZ } from '../../../machine/ts/spec/audio/apu';
+import {
+	AEM_ACTION_KEYS,
+	AEM_CHANNEL_SET,
+	AEM_CHOICE_ACTION_KEYS,
+	AEM_DOCUMENT_KEYS,
+	AEM_EVENT_KEYS,
+	AEM_FILTER_KEYS,
+	AEM_FILTER_TYPE_SET,
+	AEM_MATCHER_KEYS,
+	AEM_MUSIC_TRANSITION_ACTION_KEYS,
+	AEM_MODULATION_KEYS,
+	AEM_MUSIC_TRANSITION_KEYS,
+	AEM_PLAY_ACTION_KEYS,
+	AEM_POLICY_SET,
+	AEM_RANDOM_ACTION_KEYS,
+	AEM_RULE_KEYS,
+	AEM_SELECTION_MODE_SET,
+	AEM_SEQUENCE_ACTION_KEYS,
+	AEM_STINGER_SYNC_KEYS,
+	AEM_STOP_MUSIC_ACTION_KEYS,
+	AEM_STOP_MUSIC_KEYS,
+	AEM_SYNC_MODE_SET,
+} from './aem_contract';
 import { cookAemFilter, type AemFilterDefinition, type AemFilterWords } from './aem_filter';
 
 // Authoring-time AEM schema and validation. AEM may describe audio behavior,
@@ -87,23 +110,6 @@ export type AemValidationResult = {
 	errors: string[];
 	warnings: string[];
 };
-
-const VALID_CHANNELS = new Set(['sfx', 'music', 'ui']);
-const VALID_POLICIES = new Set(['replace', 'queue']);
-const VALID_SYNC_STRINGS = new Set(['immediate', 'loop']);
-const VALID_FILTER_TYPES = new Set(['lowpass', 'highpass', 'bandpass', 'notch', 'allpass', 'peaking', 'lowshelf', 'highshelf']);
-const VALID_ONE_OF_PICK = new Set(['uniform', 'weighted']);
-const DOCUMENT_KEYS = new Set(['events']);
-const EVENT_KEYS = new Set(['channel', 'policy', 'rules']);
-const RULE_KEYS = new Set(['when', 'go']);
-const MATCHER_KEYS = new Set(['equals', 'any_of', 'in', 'has_tag', 'and', 'or', 'not']);
-const ACTION_KEYS = new Set(['audio_id', 'modulation_preset', 'modulation_params', 'priority', 'cooldown_ms', 'stop_music', 'sequence', 'music_transition', 'one_of', 'pick', 'avoid_repeat', 'weight']);
-const AUDIO_ACTION_KEYS = new Set(['audio_id', 'modulation_preset', 'modulation_params', 'priority', 'cooldown_ms', 'weight']);
-const STOP_MUSIC_KEYS = new Set(['fade_ms']);
-const MUSIC_TRANSITION_KEYS = new Set(['audio_id', 'sync', 'fade_ms', 'crossfade_ms', 'start_at_loop_start', 'start_fresh']);
-const STINGER_SYNC_KEYS = new Set(['stinger', 'return_to']);
-const MODULATION_KEYS = new Set(['pitchDelta', 'volumeDelta', 'offset', 'playbackRate', 'pitchRange', 'volumeRange', 'offsetRange', 'playbackRateRange', 'filter']);
-const FILTER_KEYS = new Set(['type', 'frequency', 'q', 'gain']);
 
 function usesWeightedSelection(action: Record<string, unknown>, choices: Array<Record<string, unknown>>): boolean {
 	if (action.pick === 'weighted') {
@@ -208,16 +214,16 @@ function validateEventMeta(
 	errors: string[],
 ): void {
 	const where = `${file}${eventName ? `:${eventName}` : ''}`;
-	checkUnknownKeys(ev, EVENT_KEYS, where, errors);
+	checkUnknownKeys(ev, AEM_EVENT_KEYS, where, errors);
 	const channel = ev['channel'];
 	if (channel === undefined) {
-		errors.push(`Missing channel at ${where}: expected one of ${Array.from(VALID_CHANNELS).join(', ')}`);
-	} else if (typeof channel !== 'string' || !VALID_CHANNELS.has(channel)) {
-		errors.push(`Invalid channel '${channel}' at ${where}: expected one of ${Array.from(VALID_CHANNELS).join(', ')}`);
+		errors.push(`Missing channel at ${where}: expected one of ${Array.from(AEM_CHANNEL_SET).join(', ')}`);
+	} else if (typeof channel !== 'string' || !AEM_CHANNEL_SET.has(channel)) {
+		errors.push(`Invalid channel '${channel}' at ${where}: expected one of ${Array.from(AEM_CHANNEL_SET).join(', ')}`);
 	}
 	const policy = ev['policy'];
-	if (policy !== undefined && (typeof policy !== 'string' || !VALID_POLICIES.has(policy))) {
-		errors.push(`Invalid policy '${policy}' at ${where}: expected one of ${Array.from(VALID_POLICIES).join(', ')}`);
+	if (policy !== undefined && (typeof policy !== 'string' || !AEM_POLICY_SET.has(policy))) {
+		errors.push(`Invalid policy '${policy}' at ${where}: expected one of ${Array.from(AEM_POLICY_SET).join(', ')}`);
 	}
 }
 
@@ -230,7 +236,7 @@ function validateMatcher(matcher: unknown, where: string, errors: string[]): voi
 		return;
 	}
 	const obj = matcher as Record<string, unknown>;
-	checkUnknownKeys(obj, MATCHER_KEYS, where, errors);
+	checkUnknownKeys(obj, AEM_MATCHER_KEYS, where, errors);
 	const equals = obj.equals;
 	if (equals !== undefined && (!equals || typeof equals !== 'object' || Array.isArray(equals))) {
 		errors.push(`Invalid equals matcher at ${where}: expected object`);
@@ -311,7 +317,7 @@ function checkModulationParams(
 		return;
 	}
 	const params = value as ModulationParams;
-	checkUnknownKeys(params as Record<string, unknown>, MODULATION_KEYS, where, errors);
+	checkUnknownKeys(params as Record<string, unknown>, AEM_MODULATION_KEYS, where, errors);
 	checkOptionalNumber(params.pitchDelta, 'pitchDelta', where, errors);
 	checkOptionalNumber(params.volumeDelta, 'volumeDelta', where, errors);
 	checkOptionalNumber(params.offset, 'offset', where, errors);
@@ -346,9 +352,9 @@ function checkModulationParams(
 		errors.push(`Invalid filter at ${where}: expected object`);
 		return;
 	}
-	checkUnknownKeys(filter as Record<string, unknown>, FILTER_KEYS, where, errors);
-	if (typeof filter.type !== 'string' || !VALID_FILTER_TYPES.has(filter.type)) {
-		errors.push(`Invalid filter.type '${filter.type}' at ${where}: expected one of ${Array.from(VALID_FILTER_TYPES).join(', ')}`);
+	checkUnknownKeys(filter as Record<string, unknown>, AEM_FILTER_KEYS, where, errors);
+	if (typeof filter.type !== 'string' || !AEM_FILTER_TYPE_SET.has(filter.type)) {
+		errors.push(`Invalid filter.type '${filter.type}' at ${where}: expected one of ${Array.from(AEM_FILTER_TYPE_SET).join(', ')}`);
 	}
 	if (typeof filter.frequency !== 'number') {
 		errors.push(`Invalid filter.frequency '${filter.frequency}' at ${where}: expected number`);
@@ -459,10 +465,12 @@ function checkAction(
 	musicTransitionsWithFallback: Set<string>,
 ): void {
 	const where = `${ctx.file}${ctx.eventName ? `:${ctx.eventName}` : ''}${ctx.ruleIndex != null ? `#rule${ctx.ruleIndex}` : ''}${ctx.sequenceIndex != null ? `.sequence[${ctx.sequenceIndex}]` : ''}${ctx.choiceIndex != null ? `[${ctx.choiceIndex}]` : ''}`;
-	checkUnknownKeys(action as Record<string, unknown>, AUDIO_ACTION_KEYS, where, errors);
-	if (ctx.choiceIndex == null && (action as AudioAction & { weight?: unknown }).weight !== undefined) {
-		errors.push(`Invalid weight at ${where}: weight is only valid inside one_of`);
-	}
+	checkUnknownKeys(
+		action as Record<string, unknown>,
+		ctx.choiceIndex === undefined ? AEM_PLAY_ACTION_KEYS : AEM_CHOICE_ACTION_KEYS,
+		where,
+		errors,
+	);
 	const ruleKey = ctx.ruleIndex != null ? buildRuleKey(ctx.file, ctx.eventName, ctx.ruleIndex) : null;
 	if (action.audio_id === undefined || action.audio_id === null) {
 		const hasFallback = ruleKey !== null && musicTransitionsWithFallback.has(ruleKey);
@@ -521,7 +529,6 @@ function validateActionSpec(
 	action: unknown,
 	file: string,
 	eventName: string | undefined,
-	eventChannel: unknown,
 	ruleIndex: number,
 	lookup: AemValidationLookup,
 	errors: string[],
@@ -539,13 +546,21 @@ function validateActionSpec(
 		return;
 	}
 	const actionObject = action as Record<string, unknown>;
-	checkUnknownKeys(actionObject, ACTION_KEYS, where, errors);
 	let commandCount = 0;
 	if (actionObject.stop_music !== undefined) commandCount += 1;
 	if (actionObject.sequence !== undefined) commandCount += 1;
 	if (actionObject.music_transition !== undefined) commandCount += 1;
 	if (actionObject.one_of !== undefined) commandCount += 1;
 	if (actionObject.audio_id !== undefined) commandCount += 1;
+	let actionKeys = AEM_ACTION_KEYS;
+	if (commandCount === 1) {
+		if (actionObject.stop_music !== undefined) actionKeys = AEM_STOP_MUSIC_ACTION_KEYS;
+		else if (actionObject.sequence !== undefined) actionKeys = AEM_SEQUENCE_ACTION_KEYS;
+		else if (actionObject.music_transition !== undefined) actionKeys = AEM_MUSIC_TRANSITION_ACTION_KEYS;
+		else if (actionObject.one_of !== undefined) actionKeys = AEM_RANDOM_ACTION_KEYS;
+		else actionKeys = AEM_PLAY_ACTION_KEYS;
+	}
+	checkUnknownKeys(actionObject, actionKeys, where, errors);
 	if (commandCount !== 1) {
 		errors.push(`Invalid action command at ${where}: expected exactly one of audio_id, stop_music, sequence, music_transition, one_of`);
 	}
@@ -555,8 +570,11 @@ function validateActionSpec(
 			errors.push(`Invalid stop_music at ${where}: expected object`);
 			return;
 		}
-		checkUnknownKeys(stopMusic as Record<string, unknown>, STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
-		checkOptionalNumber((stopMusic as { fade_ms?: unknown }).fade_ms, 'stop_music.fade_ms', where, errors);
+		checkUnknownKeys(stopMusic as Record<string, unknown>, AEM_STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
+		const fadeMs = (stopMusic as { fade_ms?: unknown }).fade_ms;
+		if (fadeMs !== undefined && (typeof fadeMs !== 'number' || fadeMs < 0)) {
+			errors.push(`Invalid stop_music.fade_ms '${fadeMs}' at ${where}: expected number >= 0`);
+		}
 		return;
 	}
 	const sequence = actionObject.sequence;
@@ -570,7 +588,7 @@ function validateActionSpec(
 			return;
 		}
 		for (let index = 0; index < sequence.length; index += 1) {
-			validateActionSpec(sequence[index], file, eventName, eventChannel, ruleIndex, lookup, errors, warnings, musicTransitionsWithFallback, index);
+			validateActionSpec(sequence[index], file, eventName, ruleIndex, lookup, errors, warnings, musicTransitionsWithFallback, index);
 		}
 		return;
 	}
@@ -580,7 +598,7 @@ function validateActionSpec(
 			errors.push(`Invalid music_transition at ${where}: expected object`);
 			return;
 		}
-		checkUnknownKeys(transition as Record<string, unknown>, MUSIC_TRANSITION_KEYS, `${where}.music_transition`, errors);
+		checkUnknownKeys(transition as Record<string, unknown>, AEM_MUSIC_TRANSITION_KEYS, `${where}.music_transition`, errors);
 		const sync = transition.sync;
 		const ruleKey = buildRuleKey(file, eventName, ruleIndex);
 		const stingerSync = sync as AudioStingerSpec;
@@ -607,11 +625,11 @@ function validateActionSpec(
 			errors.push(`Ambiguous music_transition at ${where}: start_at_loop_start and start_fresh cannot both be true`);
 		}
 		if (typeof sync === 'string') {
-			if (!VALID_SYNC_STRINGS.has(sync)) {
-				errors.push(`Invalid music_transition sync '${sync}' at ${where}: expected one of ${Array.from(VALID_SYNC_STRINGS).join(', ')}`);
+			if (!AEM_SYNC_MODE_SET.has(sync)) {
+				errors.push(`Invalid music_transition sync '${sync}' at ${where}: expected one of ${Array.from(AEM_SYNC_MODE_SET).join(', ')}`);
 			}
 		} else if (sync && typeof sync === 'object' && !Array.isArray(sync)) {
-			checkUnknownKeys(sync as Record<string, unknown>, STINGER_SYNC_KEYS, `${where}.music_transition.sync`, errors);
+			checkUnknownKeys(sync as Record<string, unknown>, AEM_STINGER_SYNC_KEYS, `${where}.music_transition.sync`, errors);
 			const stinger = (sync as AudioStingerSpec).stinger;
 			const hasStinger = stinger !== undefined;
 			if (hasStinger) {
@@ -645,8 +663,8 @@ function validateActionSpec(
 			return;
 		}
 		const pick = actionObject.pick;
-		if (pick !== undefined && (typeof pick !== 'string' || !VALID_ONE_OF_PICK.has(pick))) {
-			errors.push(`Invalid one_of pick '${String(pick)}' at ${where}: expected one of ${Array.from(VALID_ONE_OF_PICK).join(', ')}`);
+		if (pick !== undefined && (typeof pick !== 'string' || !AEM_SELECTION_MODE_SET.has(pick))) {
+			errors.push(`Invalid one_of pick '${String(pick)}' at ${where}: expected one of ${Array.from(AEM_SELECTION_MODE_SET).join(', ')}`);
 		}
 		if (actionObject.avoid_repeat !== undefined && typeof actionObject.avoid_repeat !== 'boolean') {
 			errors.push(`Invalid avoid_repeat at ${where}: expected boolean`);
@@ -691,7 +709,6 @@ function validateRules(
 	rules: AudioEventRule[],
 	file: string,
 	eventName: string | undefined,
-	eventChannel: unknown,
 	lookup: AemValidationLookup,
 	errors: string[],
 	warnings: string[],
@@ -712,9 +729,9 @@ function validateRules(
 			errors.push(`Rule ${index} for ${eventLabel} must be an object.`);
 			continue;
 		}
-		checkUnknownKeys(rule as Record<string, unknown>, RULE_KEYS, `${eventLabel}#rule${index}`, errors);
+		checkUnknownKeys(rule as Record<string, unknown>, AEM_RULE_KEYS, `${eventLabel}#rule${index}`, errors);
 		validateMatcher((rule as { when?: unknown }).when, `${eventLabel}#rule${index}.when`, errors);
-		validateActionSpec(rule.go, file, eventName, eventChannel, index, lookup, errors, warnings, musicTransitionsWithFallback);
+		validateActionSpec(rule.go, file, eventName, index, lookup, errors, warnings, musicTransitionsWithFallback);
 	}
 }
 
@@ -741,7 +758,7 @@ function validateEventDefinition(
 		errors.push(`Event '${eventName ?? '<root>'}' in ${fileTag} is missing a 'rules' array.`);
 		return;
 	}
-	validateRules(eventObject.rules as AudioEventRule[], fileTag, eventName, eventObject.channel, lookup, errors, warnings, musicTransitionsWithFallback);
+	validateRules(eventObject.rules as AudioEventRule[], fileTag, eventName, lookup, errors, warnings, musicTransitionsWithFallback);
 }
 
 export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, fileTag: string): AemValidationResult {
@@ -753,7 +770,7 @@ export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, f
 		return { errors, warnings };
 	}
 	const object = doc as Record<string, unknown>;
-	checkUnknownKeys(object, DOCUMENT_KEYS, fileTag, errors);
+	checkUnknownKeys(object, AEM_DOCUMENT_KEYS, fileTag, errors);
 	if (!object.events || typeof object.events !== 'object' || Array.isArray(object.events)) {
 		errors.push(`AEM document '${fileTag}' has invalid events: expected object.`);
 		return { errors, warnings };

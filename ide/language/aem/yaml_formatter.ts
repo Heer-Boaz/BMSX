@@ -3,66 +3,32 @@ import {
 	type YamlMappingLineToken as MappingLineToken,
 	tokenizeYamlStructureLine,
 } from '../yaml/syntax/parser';
+import {
+	AEM_ACTION_KEYS,
+	AEM_CHOICE_ACTION_KEYS,
+	AEM_DOCUMENT_KEYS,
+	AEM_EVENT_KEYS,
+	AEM_FILTER_KEYS,
+	AEM_MATCHER_KEYS,
+	AEM_MODULATION_KEYS,
+	AEM_MUSIC_TRANSITION_KEYS,
+	AEM_RULE_KEYS,
+	AEM_STINGER_SYNC_KEYS,
+	AEM_STOP_MUSIC_KEYS,
+} from '../../../toolchain/ts/rompack/aem_contract';
 
 const BLOCK_INDENT = 4;
 const SEQUENCE_ITEM_KEY_OFFSET = 2;
 
-const EVENT_META_KEYS = new Set([
-	'$type',
-	'name',
-	'kind',
-	'channel',
-	'policy',
-	'rules',
-]);
-
-const RULE_ITEM_KEYS = new Set([
-	'when',
-	'go',
-]);
-
-const ACTION_KEYS = new Set([
-	'audio_id',
-	'modulation_preset',
-	'priority',
-	'cooldown_ms',
-	'stop_music',
-	'music_transition',
-	'sequence',
-	'one_of',
-]);
-
-const MUSIC_TRANSITION_KEYS = new Set([
-	'audio_id',
-	'sync',
-	'fade_ms',
-	'start_at_loop_start',
-	'start_fresh',
-]);
-
-const SYNC_KEYS = new Set([
-	'stinger',
-	'return_to',
-	'delay_ms',
-]);
-
 const CONDITION_EXIT_KEYS = new Set([
-	'events',
-	'$type',
-	'name',
-	'kind',
-	'channel',
-	'policy',
-	'rules',
-	'when',
-	'go',
+	...AEM_DOCUMENT_KEYS,
+	...AEM_EVENT_KEYS,
+	...AEM_RULE_KEYS,
+	...AEM_ACTION_KEYS,
 ]);
-
-type RootMode = 'unknown' | 'events' | 'event' | 'direct-events';
 
 type RootContext = {
 	kind: 'root';
-	mode: RootMode;
 };
 
 type EventsMapContext = {
@@ -95,16 +61,41 @@ type ConditionMapContext = {
 	indent: number;
 };
 
+type MatcherSequenceContext = {
+	kind: 'matcher-seq';
+	itemIndent: number;
+};
+
+type ScalarSequenceContext = {
+	kind: 'scalar-seq';
+	itemIndent: number;
+};
+
 type ActionMapContext = {
 	kind: 'action-map';
 	indent: number;
-	allowWeight: boolean;
+	choice: boolean;
 };
 
 type ActionSequenceContext = {
 	kind: 'action-seq';
 	itemIndent: number;
-	allowWeight: boolean;
+	choice: boolean;
+};
+
+type StopMusicMapContext = {
+	kind: 'stop-music-map';
+	indent: number;
+};
+
+type ModulationMapContext = {
+	kind: 'modulation-map';
+	indent: number;
+};
+
+type FilterMapContext = {
+	kind: 'filter-map';
+	indent: number;
 };
 
 type MusicTransitionMapContext = {
@@ -125,14 +116,18 @@ type Context =
 	| RuleItemMapContext
 	| WhenMapContext
 	| ConditionMapContext
+	| MatcherSequenceContext
+	| ScalarSequenceContext
 	| ActionMapContext
 	| ActionSequenceContext
+	| StopMusicMapContext
+	| ModulationMapContext
+	| FilterMapContext
 	| MusicTransitionMapContext
 	| SyncMapContext;
 
 type Placement = {
 	indent: number;
-	nextRootMode?: RootMode;
 	push?: Context[];
 };
 
@@ -160,12 +155,32 @@ function createConditionMap(indent: number): ConditionMapContext {
 	return { kind: 'condition-map', indent };
 }
 
-function createActionMap(indent: number, allowWeight: boolean): ActionMapContext {
-	return { kind: 'action-map', indent, allowWeight };
+function createMatcherSequence(itemIndent: number): MatcherSequenceContext {
+	return { kind: 'matcher-seq', itemIndent };
 }
 
-function createActionSequence(itemIndent: number, allowWeight: boolean): ActionSequenceContext {
-	return { kind: 'action-seq', itemIndent, allowWeight };
+function createScalarSequence(itemIndent: number): ScalarSequenceContext {
+	return { kind: 'scalar-seq', itemIndent };
+}
+
+function createActionMap(indent: number, choice: boolean): ActionMapContext {
+	return { kind: 'action-map', indent, choice };
+}
+
+function createActionSequence(itemIndent: number, choice: boolean): ActionSequenceContext {
+	return { kind: 'action-seq', itemIndent, choice };
+}
+
+function createStopMusicMap(indent: number): StopMusicMapContext {
+	return { kind: 'stop-music-map', indent };
+}
+
+function createModulationMap(indent: number): ModulationMapContext {
+	return { kind: 'modulation-map', indent };
+}
+
+function createFilterMap(indent: number): FilterMapContext {
+	return { kind: 'filter-map', indent };
 }
 
 function createMusicTransitionMap(indent: number): MusicTransitionMapContext {
@@ -180,11 +195,33 @@ function isConditionKey(keyLower: string): boolean {
 	return !CONDITION_EXIT_KEYS.has(keyLower);
 }
 
-function isActionKey(keyLower: string, allowWeight: boolean): boolean {
-	return ACTION_KEYS.has(keyLower) || (allowWeight && keyLower === 'weight');
+function buildMatcherChildContexts(keyLower: string, childIndent: number): Context[] {
+	if (keyLower === 'and' || keyLower === 'or') {
+		return [createMatcherSequence(childIndent)];
+	}
+	if (keyLower === 'not') {
+		return [createWhenMap(childIndent)];
+	}
+	if (keyLower === 'has_tag') {
+		return [createScalarSequence(childIndent)];
+	}
+	return [createConditionMap(childIndent)];
 }
 
-function buildActionChildContexts(keyLower: string, childIndent: number): Context[] {
+function isActionKey(keyLower: string, choice: boolean): boolean {
+	return (choice ? AEM_CHOICE_ACTION_KEYS : AEM_ACTION_KEYS).has(keyLower);
+}
+
+function buildActionChildContexts(keyLower: string, childIndent: number, choice: boolean): Context[] {
+	if (keyLower === 'modulation_params') {
+		return [createModulationMap(childIndent)];
+	}
+	if (choice) {
+		return [];
+	}
+	if (keyLower === 'stop_music') {
+		return [createStopMusicMap(childIndent)];
+	}
 	if (keyLower === 'music_transition') {
 		return [createMusicTransitionMap(childIndent)];
 	}
@@ -197,55 +234,22 @@ function buildActionChildContexts(keyLower: string, childIndent: number): Contex
 	return [];
 }
 
-function placeInRoot(context: RootContext, token: MappingLineToken): Placement {
-	if (context.mode === 'unknown') {
-		if (token.keyLower === 'events' && token.opensBlock) {
-			return {
-				indent: 0,
-				nextRootMode: 'events',
-				push: [createEventsMap(BLOCK_INDENT)],
-			};
-		}
-		if (EVENT_META_KEYS.has(token.keyLower)) {
-			const push = token.keyLower === 'rules' && token.opensBlock
-				? [createRulesSequence(BLOCK_INDENT)]
-				: [];
-			return {
-				indent: 0,
-				nextRootMode: 'event',
-				push,
-			};
-		}
-		return {
-			indent: 0,
-			nextRootMode: 'direct-events',
-			push: token.opensBlock ? [createEventMap(BLOCK_INDENT)] : [],
-		};
-	}
-	if (context.mode === 'event') {
-		if (!EVENT_META_KEYS.has(token.keyLower)) {
-			return null;
-		}
-		return {
-			indent: 0,
-			push: token.keyLower === 'rules' && token.opensBlock
-				? [createRulesSequence(BLOCK_INDENT)]
-				: [],
-		};
+function placeInRoot(token: MappingLineToken): Placement | null {
+	if (!AEM_DOCUMENT_KEYS.has(token.keyLower)) {
+		return null;
 	}
 	return {
 		indent: 0,
-		push: token.opensBlock
-			? [token.keyLower === 'events' ? createEventsMap(BLOCK_INDENT) : createEventMap(BLOCK_INDENT)]
-			: [],
+		push: token.opensBlock ? [createEventsMap(BLOCK_INDENT)] : [],
 	};
 }
 
 function placeInContext(context: Context, token: LineToken): Placement | null {
 	switch (context.kind) {
-		case 'root':
-			return token.kind === 'mapping' ? placeInRoot(context, token) : null;
-		case 'events-map':
+		case 'root': {
+			return token.kind === 'mapping' ? placeInRoot(token) : null;
+		}
+		case 'events-map': {
 			if (token.kind !== 'mapping') {
 				return null;
 			}
@@ -253,8 +257,9 @@ function placeInContext(context: Context, token: LineToken): Placement | null {
 				indent: context.indent,
 				push: token.opensBlock ? [createEventMap(context.indent + BLOCK_INDENT)] : [],
 			};
-		case 'event-map':
-			if (token.kind !== 'mapping' || !EVENT_META_KEYS.has(token.keyLower)) {
+		}
+		case 'event-map': {
+			if (token.kind !== 'mapping' || !AEM_EVENT_KEYS.has(token.keyLower)) {
 				return null;
 			}
 			return {
@@ -263,28 +268,32 @@ function placeInContext(context: Context, token: LineToken): Placement | null {
 					? [createRulesSequence(context.indent + BLOCK_INDENT)]
 					: [],
 			};
-		case 'rules-seq':
+		}
+		case 'rules-seq': {
 			if (token.kind !== 'sequence-mapping' && token.kind !== 'sequence-scalar') {
 				return null;
 			}
 			if (token.kind === 'sequence-scalar') {
 				return { indent: context.itemIndent };
 			}
+			const itemMapIndent = context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET;
+			const childIndent = itemMapIndent + BLOCK_INDENT;
 			return {
 				indent: context.itemIndent,
 				push: [
-					createRuleItemMap(context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET),
+					createRuleItemMap(itemMapIndent),
 					...(token.opensBlock
 						? (token.keyLower === 'when'
-							? [createWhenMap(context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET + BLOCK_INDENT)]
+							? [createWhenMap(childIndent)]
 							: token.keyLower === 'go'
-								? [createActionMap(context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET + BLOCK_INDENT, false)]
+								? [createActionMap(childIndent, false)]
 								: [])
 						: []),
 				],
 			};
-		case 'rule-item-map':
-			if (token.kind !== 'mapping' || !RULE_ITEM_KEYS.has(token.keyLower)) {
+		}
+		case 'rule-item-map': {
+			if (token.kind !== 'mapping' || !AEM_RULE_KEYS.has(token.keyLower)) {
 				return null;
 			}
 			return {
@@ -295,48 +304,97 @@ function placeInContext(context: Context, token: LineToken): Placement | null {
 						: [createActionMap(context.indent + BLOCK_INDENT, false)])
 					: [],
 			};
-		case 'when-map':
+		}
+		case 'when-map': {
+			if (token.kind !== 'mapping' || !AEM_MATCHER_KEYS.has(token.keyLower)) {
+				return null;
+			}
+			return {
+				indent: context.indent,
+				push: token.opensBlock ? buildMatcherChildContexts(token.keyLower, context.indent + BLOCK_INDENT) : [],
+			};
+		}
+		case 'condition-map': {
 			if (token.kind !== 'mapping' || !isConditionKey(token.keyLower)) {
 				return null;
 			}
 			return {
 				indent: context.indent,
-				push: token.opensBlock ? [createConditionMap(context.indent + BLOCK_INDENT)] : [],
+				push: token.opensBlock ? [createScalarSequence(context.indent + BLOCK_INDENT)] : [],
 			};
-		case 'condition-map':
-			if (token.kind !== 'mapping' || !isConditionKey(token.keyLower)) {
+		}
+		case 'matcher-seq': {
+			if (token.kind !== 'sequence-mapping' || !AEM_MATCHER_KEYS.has(token.keyLower)) {
+				return null;
+			}
+			const itemMapIndent = context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET;
+			return {
+				indent: context.itemIndent,
+				push: [
+					createWhenMap(itemMapIndent),
+					...(token.opensBlock
+						? buildMatcherChildContexts(token.keyLower, itemMapIndent + BLOCK_INDENT)
+						: []),
+				],
+			};
+		}
+		case 'scalar-seq': {
+			return token.kind === 'sequence-scalar'
+				? { indent: context.itemIndent }
+				: null;
+		}
+		case 'action-map': {
+			if (token.kind !== 'mapping' || !isActionKey(token.keyLower, context.choice)) {
 				return null;
 			}
 			return {
 				indent: context.indent,
-				push: token.opensBlock ? [createConditionMap(context.indent + BLOCK_INDENT)] : [],
+				push: token.opensBlock ? buildActionChildContexts(token.keyLower, context.indent + BLOCK_INDENT, context.choice) : [],
 			};
-		case 'action-map':
-			if (token.kind !== 'mapping' || !isActionKey(token.keyLower, context.allowWeight)) {
-				return null;
-			}
-			return {
-				indent: context.indent,
-				push: token.opensBlock ? buildActionChildContexts(token.keyLower, context.indent + BLOCK_INDENT) : [],
-			};
-		case 'action-seq':
+		}
+		case 'action-seq': {
 			if (token.kind !== 'sequence-mapping' && token.kind !== 'sequence-scalar') {
 				return null;
 			}
 			if (token.kind === 'sequence-scalar') {
 				return { indent: context.itemIndent };
 			}
+			const itemMapIndent = context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET;
 			return {
 				indent: context.itemIndent,
 				push: [
-					createActionMap(context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET, context.allowWeight),
+					createActionMap(itemMapIndent, context.choice),
 					...(token.opensBlock
-						? buildActionChildContexts(token.keyLower, context.itemIndent + SEQUENCE_ITEM_KEY_OFFSET + BLOCK_INDENT)
+						? buildActionChildContexts(token.keyLower, itemMapIndent + BLOCK_INDENT, context.choice)
 						: []),
 				],
 			};
-		case 'music-transition-map':
-			if (token.kind !== 'mapping' || !MUSIC_TRANSITION_KEYS.has(token.keyLower)) {
+		}
+		case 'stop-music-map': {
+			if (token.kind !== 'mapping' || !AEM_STOP_MUSIC_KEYS.has(token.keyLower)) {
+				return null;
+			}
+			return { indent: context.indent };
+		}
+		case 'modulation-map': {
+			if (token.kind !== 'mapping' || !AEM_MODULATION_KEYS.has(token.key)) {
+				return null;
+			}
+			return {
+				indent: context.indent,
+				push: token.keyLower === 'filter' && token.opensBlock
+					? [createFilterMap(context.indent + BLOCK_INDENT)]
+					: [],
+			};
+		}
+		case 'filter-map': {
+			if (token.kind !== 'mapping' || !AEM_FILTER_KEYS.has(token.keyLower)) {
+				return null;
+			}
+			return { indent: context.indent };
+		}
+		case 'music-transition-map': {
+			if (token.kind !== 'mapping' || !AEM_MUSIC_TRANSITION_KEYS.has(token.keyLower)) {
 				return null;
 			}
 			return {
@@ -345,13 +403,15 @@ function placeInContext(context: Context, token: LineToken): Placement | null {
 					? [createSyncMap(context.indent + BLOCK_INDENT)]
 					: [],
 			};
-		case 'sync-map':
-			if (token.kind !== 'mapping' || !SYNC_KEYS.has(token.keyLower)) {
+		}
+		case 'sync-map': {
+			if (token.kind !== 'mapping' || !AEM_STINGER_SYNC_KEYS.has(token.keyLower)) {
 				return null;
 			}
 			return {
 				indent: context.indent,
 			};
+		}
 	}
 }
 
@@ -382,7 +442,7 @@ export function formatAemYamlDocument(source: string, lines: readonly string[]):
 	const hadTrailingNewline = source.endsWith('\n');
 	const tokens = lines.map(tokenizeYamlStructureLine);
 	const indents: Array<number | null> = new Array(lines.length);
-	const stack: Context[] = [{ kind: 'root', mode: 'unknown' }];
+	const stack: Context[] = [{ kind: 'root' }];
 
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index]!;
@@ -397,9 +457,6 @@ export function formatAemYamlDocument(source: string, lines: readonly string[]):
 				continue;
 			}
 			stack.length = depth + 1;
-			if (placement.nextRootMode) {
-				(stack[0] as RootContext).mode = placement.nextRootMode;
-			}
 			if (placement.push && placement.push.length > 0) {
 				for (let pushIndex = 0; pushIndex < placement.push.length; pushIndex += 1) {
 					stack.push(placement.push[pushIndex]!);

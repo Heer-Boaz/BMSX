@@ -349,7 +349,10 @@ export function collectLintIssues(
 	};
 	const visit = (node: ts.Node, parent: ts.Node | undefined): void => {
 		const entered = isScopeBoundary(node, parent);
-		const repeatedEntered = ts.isSourceFile(node) || ts.isFunctionLike(node);
+		const repeatedEntered = ts.isSourceFile(node)
+			|| ts.isFunctionLike(node)
+			|| ts.isCaseClause(node)
+			|| ts.isDefaultClause(node);
 		if (entered) {
 			enterScope();
 		}

@@ -19,7 +19,6 @@ function buildYamlValueKeywordSet(extraValueKeywords?: ReadonlySet<string>): Rea
 }
 
 function buildUpperText(text: string, colors: number[]): string {
-	let mutated = false;
 	for (let index = 0; index < text.length; index += 1) {
 		if (colors[index] === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
 			continue;
@@ -27,19 +26,21 @@ function buildUpperText(text: string, colors: number[]): string {
 		const ch = text.charAt(index);
 		const upper = ch.toUpperCase();
 		if (upper !== ch) {
-			mutated = true;
-			break;
+			const buffer: string[] = new Array(text.length);
+			for (let prefix = 0; prefix < index; prefix += 1) {
+				buffer[prefix] = text.charAt(prefix);
+			}
+			buffer[index] = upper;
+			for (let suffix = index + 1; suffix < text.length; suffix += 1) {
+				const suffixChar = text.charAt(suffix);
+				buffer[suffix] = colors[suffix] === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING
+					? suffixChar
+					: suffixChar.toUpperCase();
+			}
+			return buffer.join('');
 		}
 	}
-	if (!mutated) {
-		return text;
-	}
-	const buffer: string[] = new Array(text.length);
-	for (let index = 0; index < text.length; index += 1) {
-		const ch = text.charAt(index);
-		buffer[index] = colors[index] === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING ? ch : ch.toUpperCase();
-	}
-	return buffer.join('');
+	return text;
 }
 
 function resolveYamlTokenColor(kind: ReturnType<typeof parseYamlInlineTokens>[number]['kind']): number {
@@ -61,7 +62,7 @@ function resolveYamlTokenColor(kind: ReturnType<typeof parseYamlInlineTokens>[nu
 	}
 }
 
-export function highlightYamlTextLine(line: string, extraValueKeywords?: ReadonlySet<string>): HighlightLine {
+function highlightYamlTextLine(line: string, valueKeywords: ReadonlySet<string>): HighlightLine {
 	const length = line.length;
 	const defaultColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	const columnColors: number[] = new Array(length);
@@ -69,7 +70,7 @@ export function highlightYamlTextLine(line: string, extraValueKeywords?: Readonl
 		columnColors[index] = defaultColor;
 	}
 
-	const tokens = parseYamlInlineTokens(line, buildYamlValueKeywordSet(extraValueKeywords));
+	const tokens = parseYamlInlineTokens(line, valueKeywords);
 	for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
 		const token = tokens[tokenIndex]!;
 		const color = resolveYamlTokenColor(token.kind);
@@ -106,4 +107,9 @@ export function highlightYamlTextLine(line: string, extraValueKeywords?: Readonl
 		colors,
 		columnToDisplay,
 	};
+}
+
+export function createYamlTextLineHighlighter(extraValueKeywords?: ReadonlySet<string>): (line: string) => HighlightLine {
+	const valueKeywords = buildYamlValueKeywordSet(extraValueKeywords);
+	return (line: string): HighlightLine => highlightYamlTextLine(line, valueKeywords);
 }
