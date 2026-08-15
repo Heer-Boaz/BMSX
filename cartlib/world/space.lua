@@ -45,6 +45,38 @@ function space:active_visuals()
 	return self._active_visuals
 end
 
+function space:_admit_visual(comp)
+	local visuals<const> = self._active_visuals
+	comp._active_visual_index = #visuals + 1
+	visuals[comp._active_visual_index] = comp
+end
+
+function space:_retire_visual(comp)
+	local visuals<const> = self._active_visuals
+	local visual_index<const> = comp._active_visual_index
+	local last_visual_index<const> = #visuals
+	if visual_index < last_visual_index then
+		local moved<const> = visuals[last_visual_index]
+		visuals[visual_index] = moved
+		moved._active_visual_index = visual_index
+	end
+	visuals[last_visual_index] = nil
+	comp._active_visual_index = nil
+end
+
+function space:reconcile_component_visual(comp)
+	if comp.draw ~= nil then
+		if comp._active_visual_index == nil then
+			self:_admit_visual(comp)
+			return true
+		end
+	elseif comp._active_visual_index ~= nil then
+		self:_retire_visual(comp)
+		return true
+	end
+	return false
+end
+
 function space:register_component_class(component_class)
 	local component_buckets<const> = self._active_components_by_class
 	local existing<const> = component_buckets[component_class]
@@ -169,25 +201,18 @@ function space:activate_component(comp, visual_sequence)
 		end
 	end
 	if comp.is_visual then
-		local visuals<const> = self._active_visuals
 		comp._visual_sequence = visual_sequence
-		comp._active_visual_index = #visuals + 1
-		visuals[comp._active_visual_index] = comp
+		if comp.draw ~= nil then
+			self:_admit_visual(comp)
+		end
 	end
 end
 
 function space:deactivate_component(comp)
 	if comp.is_visual then
-		local visuals<const> = self._active_visuals
-		local visual_index<const> = comp._active_visual_index
-		local last_visual_index<const> = #visuals
-		if visual_index < last_visual_index then
-			local moved<const> = visuals[last_visual_index]
-			visuals[visual_index] = moved
-			moved._active_visual_index = visual_index
+		if comp._active_visual_index ~= nil then
+			self:_retire_visual(comp)
 		end
-		visuals[last_visual_index] = nil
-		comp._active_visual_index = nil
 		comp._visual_sequence = nil
 	end
 

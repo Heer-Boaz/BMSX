@@ -39,12 +39,18 @@ function text_component:set_text(text)
 			end
 			self.layout_line_widths[1] = font_catalog.write_glyph_line(self.font, text, glyph_line)
 			self.glyph_line_count = 1
+			if #text ~= 0 then
+				self:set_draw_function(text_component.draw_visual)
+			else
+				self:set_draw_function(nil)
+			end
 			return
 		end
 	end
 	local lines<const> = text or empty_text_lines
 	local glyph_lines<const> = self.glyph_lines
 	local layout_line_widths<const> = self.layout_line_widths
+	local has_glyphs = false
 	for i = 1, #lines do
 		local glyph_line = glyph_lines[i]
 		if glyph_line == nil then
@@ -52,8 +58,16 @@ function text_component:set_text(text)
 			glyph_lines[i] = glyph_line
 		end
 		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, lines[i], glyph_line)
+		if #lines[i] ~= 0 then
+			has_glyphs = true
+		end
 	end
 	self.glyph_line_count = #lines
+	if has_glyphs then
+		self:set_draw_function(text_component.draw_visual)
+	else
+		self:set_draw_function(nil)
+	end
 end
 
 function text_component:set_font(font)
@@ -73,7 +87,7 @@ function text_component:set_wrap_chars(wrap_chars)
 	self:set_text(self.text)
 end
 
-function text_component:draw(draw)
+function text_component:draw_visual(draw)
 	local obj<const> = self.parent
 	self:render(draw, obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
 end

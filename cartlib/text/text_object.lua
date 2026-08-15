@@ -368,9 +368,12 @@ end
 
 -- The attached component remains addressable while the text object admits it
 -- to active render views only when glyphs or highlight geometry can emit work.
-local update_text_component_admission<const> = function(self)
-	self.text_component:set_enabled(
-		self._has_visible_glyphs or self.highlight_anim_y ~= nil)
+local update_text_component_draw_function<const> = function(self)
+	if self._has_visible_glyphs or self.highlight_anim_y ~= nil then
+		self.text_component:set_draw_function(text_component.draw_visual)
+	else
+		self.text_component:set_draw_function(nil)
+	end
 end
 
 local rebuild_background_line_view<const> = function(self)
@@ -531,7 +534,7 @@ function text_object:set_highlighted_line(index)
 	self.highlighted_line_index = index
 	self:update_highlight_animation()
 	rebuild_background_line_view(self)
-	update_text_component_admission(self)
+	update_text_component_draw_function(self)
 end
 
 function text_object:set_highlight_pulse_enabled(enabled)
@@ -602,7 +605,7 @@ function text_object:reset_typing_buffer()
 	self.text_component.line_widths = line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
 	self._background_line_count = 0
-	update_text_component_admission(self)
+	update_text_component_draw_function(self)
 end
 
 function text_object:apply_full_text()
@@ -621,7 +624,7 @@ function text_object:apply_full_text()
 	self.text_component.line_widths = self.full_text_line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
 	rebuild_background_line_view(self)
-	update_text_component_admission(self)
+	update_text_component_draw_function(self)
 end
 
 function text_object:reveal_text()
@@ -641,7 +644,7 @@ function text_object:advance_typing()
 		source_glyphs.visible_count = char_index
 		if not self._has_visible_glyphs then
 			self._has_visible_glyphs = true
-			update_text_component_admission(self)
+			update_text_component_draw_function(self)
 		end
 		if char_index == 1 then
 			local highlighted_logical_line<const> = self.highlighted_line_index

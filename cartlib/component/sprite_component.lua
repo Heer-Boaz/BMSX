@@ -33,10 +33,12 @@ function sprite_component:set_imgid(imgid)
 		self._source = source
 		self.source_width = source.width
 		self.source_height = source.height
+		self:set_draw_function(sprite_component.draw_visual)
 	else
 		self._source = nil
 		self.source_width = 0
 		self.source_height = 0
+		self:set_draw_function(nil)
 	end
 	return true
 end
@@ -50,11 +52,8 @@ function sprite_component:on_detach()
 	end
 end
 
-function sprite_component:draw(draw)
+function sprite_component:draw_visual(draw)
 	local source<const> = self._source
-	if not source then
-		return
-	end
 	local obj<const> = self.parent
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y

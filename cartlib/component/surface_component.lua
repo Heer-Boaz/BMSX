@@ -17,16 +17,15 @@ function surface_component:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
 		self._source = image.resolve(imgid)
+		self:set_draw_function(surface_component.draw_visual)
 	else
 		self._source = nil
+		self:set_draw_function(nil)
 	end
 end
 
-function surface_component:draw(draw)
+function surface_component:draw_visual(draw)
 	local source<const> = self._source
-	if not source then
-		return
-	end
 	local parent<const> = self.parent
 	local x<const> = parent.x + self.offset_x + self.draw_offset_x
 	local y<const> = parent.y + self.offset_y + self.draw_offset_y

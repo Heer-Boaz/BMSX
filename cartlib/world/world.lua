@@ -365,8 +365,9 @@ function world_class:_reconcile_object(obj)
 			local comp<const> = components[i]
 			local component_space<const> = comp._active_space
 			if component_space ~= nil then
+				local visual_was_active<const> = comp._active_visual_index ~= nil
 				component_space:deactivate_component(comp)
-				if comp.is_visual and component_space == self._active_space then
+				if visual_was_active and component_space == self._active_space then
 					self._visual_revision = self._visual_revision + 1
 				end
 			end
@@ -407,8 +408,9 @@ function world_class:_reconcile_active_component(comp)
 	local active_space<const> = comp._active_space
 	if active_space ~= target_space then
 		if active_space ~= nil then
+			local visual_was_active<const> = comp._active_visual_index ~= nil
 			active_space:deactivate_component(comp)
-			if comp.is_visual and active_space == self._active_space then
+			if visual_was_active and active_space == self._active_space then
 				self._visual_revision = self._visual_revision + 1
 			end
 		end
@@ -417,12 +419,17 @@ function world_class:_reconcile_active_component(comp)
 				self._visual_sequence = self._visual_sequence + 1
 			end
 			target_space:activate_component(comp, self._visual_sequence)
-			if comp.is_visual and target_space == self._active_space then
+			if comp._active_visual_index ~= nil and target_space == self._active_space then
 				self._visual_revision = self._visual_revision + 1
 			end
 		end
 	elseif target_space ~= nil then
 		target_space:reconcile_component_tick(comp)
+		if comp.is_visual
+		and target_space:reconcile_component_visual(comp)
+		and target_space == self._active_space then
+			self._visual_revision = self._visual_revision + 1
+		end
 	end
 end
 

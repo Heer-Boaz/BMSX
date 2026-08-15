@@ -118,6 +118,11 @@ function tile_layer_component:resize(tile_count, columns)
 	self._last_visible_column = columns
 	self._view_revision = self._view_revision + 1
 	configure_rows(self, previous_tile_count)
+	if tile_count ~= 0 then
+		self:set_draw_function(tile_layer_component.draw_visual)
+	else
+		self:set_draw_function(nil)
+	end
 end
 
 function tile_layer_component:set_visible_columns(first_column, column_count)
@@ -170,7 +175,7 @@ function tile_layer_component:replace_indexed_tiles(indices, index_count, imgid)
 	end
 end
 
-function tile_layer_component:draw(draw)
+function tile_layer_component:draw_visual(draw)
 	local rows<const> = self._rows
 	local view_revision<const> = self._view_revision
 	local first_visible_column<const> = self._first_visible_column
