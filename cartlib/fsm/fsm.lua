@@ -1424,22 +1424,18 @@ function state:dispatch_event(event_name, payload, emitter, emitter_id)
 	return dispatch_resolved_event(self, event_name, payload, emitter, emitter_id)
 end
 
-function state:update()
-	-- update() runs on every active machine every frame, so the whole frame path
-	-- stays open-coded. Keeping child updates, input scanning and current-state
-	-- execution in one direct loop cuts method-call churn and repeated definition
-	-- lookups that do not help gameplay work on a low-end machine.
-	local root<const> = self.root
-	root.critical_section_counter = root.critical_section_counter + 1
+-- The machine root owns one critical scope for the complete frame traversal.
+-- Recursive child updates run inside that scope instead of reopening it.
+function state:_update_active_subtree()
 	local current<const> = self.current_state
 	if current ~= nil and current.active_frame_work then
-		current:update()
+		current:_update_active_subtree()
 	end
 	local concurrent_states<const> = self.concurrent_states
 	for i = 1, self.concurrent_state_count do
 		local child<const> = concurrent_states[i]
 		if child.active_frame_work then
-			child:update()
+			child:_update_active_subtree()
 		end
 	end
 
@@ -1467,11 +1463,16 @@ function state:update()
 			self:transition_to(next_state)
 		end
 	end
-	root.critical_section_counter = root.critical_section_counter - 1
-	if root.critical_section_counter == 0 then
-		if root.transition_queue_count ~= 0 then
-			root:process_transition_queue()
-		end
+end
+
+-- FSM components call update only on machine roots; child states are traversed
+-- by _update_active_subtree inside this single critical scope.
+function state:update()
+	self.critical_section_counter = 1
+	self:_update_active_subtree()
+	self.critical_section_counter = 0
+	if self.transition_queue_count ~= 0 then
+		self:process_transition_queue()
 	end
 end
 
