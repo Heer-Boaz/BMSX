@@ -58,13 +58,13 @@ void ImgDecController::reset() {
 	m_dma.setRequestLines((1u << DMA_REQUEST_IMGDEC_WRITE) | (1u << DMA_REQUEST_IMGDEC_READ), 0u);
 	resetStreamState();
 	m_supervisorQuiesceRequested = false;
-	m_memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_CONTROL, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_STATUS, 0u);
-	m_memory.writeIoU32(IO_IMGDEC_DATA, 0u);
+	m_inputWordCountWord = 0u;
+	m_textureDestinationWord = 0u;
+	m_textureSizeWord = 0u;
+	m_clutDestinationWord = 0u;
+	m_controlWord = 0u;
+	m_statusWord = 0u;
+	mirrorRegisters();
 }
 
 void ImgDecController::resetStreamState() {
@@ -91,12 +91,12 @@ void ImgDecController::resetStreamState() {
 
 auto ImgDecController::captureState() const -> ImgDecControllerState {
 	ImgDecControllerState state;
-	state.inputWordCountWord = m_memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT);
-	state.textureDestinationWord = m_memory.readIoU32(IO_IMGDEC_TEXTURE_DESTINATION);
-	state.textureSizeWord = m_memory.readIoU32(IO_IMGDEC_TEXTURE_SIZE);
-	state.clutDestinationWord = m_memory.readIoU32(IO_IMGDEC_CLUT_DESTINATION);
-	state.controlWord = m_memory.readIoU32(IO_IMGDEC_CONTROL);
-	state.statusWord = m_memory.readIoU32(IO_IMGDEC_STATUS);
+	state.inputWordCountWord = m_inputWordCountWord;
+	state.textureDestinationWord = m_textureDestinationWord;
+	state.textureSizeWord = m_textureSizeWord;
+	state.clutDestinationWord = m_clutDestinationWord;
+	state.controlWord = m_controlWord;
+	state.statusWord = m_statusWord;
 	state.dataWord = m_dataWord;
 	state.inputWordsReceived = m_inputWordsReceived;
 	state.decodedWordCount = m_decodedWordCount;
@@ -125,13 +125,14 @@ auto ImgDecController::captureState() const -> ImgDecControllerState {
 
 void ImgDecController::restoreState(const ImgDecControllerState& state) {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
-	m_memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, state.inputWordCountWord);
-	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, state.textureDestinationWord);
-	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, state.textureSizeWord);
-	m_memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, state.clutDestinationWord);
-	m_memory.writeIoU32(IO_IMGDEC_CONTROL, state.controlWord);
-	m_memory.writeIoU32(IO_IMGDEC_STATUS, state.statusWord);
-	m_memory.writeIoU32(IO_IMGDEC_DATA, state.dataWord);
+	m_inputWordCountWord = state.inputWordCountWord;
+	m_textureDestinationWord = state.textureDestinationWord;
+	m_textureSizeWord = state.textureSizeWord;
+	m_clutDestinationWord = state.clutDestinationWord;
+	m_controlWord = state.controlWord;
+	m_statusWord = state.statusWord;
+	m_dataWord = state.dataWord;
+	mirrorRegisters();
 	m_inputWordsReceived = state.inputWordsReceived;
 	m_decodedWordCount = state.decodedWordCount;
 	m_textureWordCount = state.textureWordCount;
@@ -140,7 +141,6 @@ void ImgDecController::restoreState(const ImgDecControllerState& state) {
 		? 0u
 		: state.textureWordCount + 3u + (state.clutWordCount == 0u ? 0u : state.clutWordCount + 3u);
 	m_outputWordsRead = state.outputWordsRead;
-	m_dataWord = state.dataWord;
 	m_decodePhase = state.decodePhase;
 	m_outputStage = state.outputStage;
 	m_runWordsRemaining = state.runWordsRemaining;
@@ -159,7 +159,7 @@ void ImgDecController::restoreState(const ImgDecControllerState& state) {
 	m_decodeDeadline = m_scheduledDecodeWords == 0u
 		? -1
 		: m_scheduler.currentNowCycles() + state.scheduledDecodeCycles;
-	m_active = (state.statusWord & IMGDEC_STATUS_BUSY) != 0u;
+	m_active = (m_statusWord & IMGDEC_STATUS_BUSY) != 0u;
 	updateDmaRequests();
 	if (m_scheduledDecodeWords != 0u) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, m_decodeDeadline);
@@ -199,10 +199,11 @@ void ImgDecController::onService(i64 nowCycles) {
 void ImgDecController::start() {
 	resetStreamState();
 	m_active = true;
-	m_memory.writeIoU32(
-		IO_IMGDEC_CONTROL,
-		m_memory.readIoU32(IO_IMGDEC_CONTROL) & ~IMGDEC_CONTROL_START);
-	m_memory.writeIoU32(IO_IMGDEC_STATUS, IMGDEC_STATUS_BUSY);
+	m_controlWord &= ~IMGDEC_CONTROL_START;
+	m_statusWord = IMGDEC_STATUS_BUSY;
+	m_memory.writeIoU32(IO_IMGDEC_CONTROL, m_controlWord);
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, m_statusWord);
+	m_memory.writeIoU32(IO_IMGDEC_DATA, m_dataWord);
 	scheduleDecode(m_scheduler.currentNowCycles());
 	updateDmaRequests();
 }
@@ -336,14 +337,14 @@ void ImgDecController::decodeScheduledWords() {
 	m_decodeDeadline = -1;
 	if (m_outputStage == OutputTextureHeader) {
 		m_outputFifo.writeWord(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
-		m_outputFifo.writeWord(m_memory.readIoU32(IO_IMGDEC_TEXTURE_DESTINATION));
-		m_outputFifo.writeWord(m_memory.readIoU32(IO_IMGDEC_TEXTURE_SIZE));
+		m_outputFifo.writeWord(m_textureDestinationWord);
+		m_outputFifo.writeWord(m_textureSizeWord);
 		m_outputStage = OutputTexturePayload;
 		return;
 	}
 	if (m_outputStage == OutputClutHeader) {
 		m_outputFifo.writeWord(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
-		m_outputFifo.writeWord(m_memory.readIoU32(IO_IMGDEC_CLUT_DESTINATION));
+		m_outputFifo.writeWord(m_clutDestinationWord);
 		m_outputFifo.writeWord(GX_GPU_CLUT_4BIT_SIZE_WORD);
 		m_outputStage = OutputClutPayload;
 		return;
@@ -388,8 +389,7 @@ void ImgDecController::emitPayloadWord(u32 word) {
 }
 
 void ImgDecController::updateDmaRequests() {
-	const u32 inputWordCount = m_memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT);
-	const u32 inputRemaining = inputWordCount - m_inputWordsReceived;
+	const u32 inputRemaining = m_inputWordCountWord - m_inputWordsReceived;
 	const u32 inputBlockWords = inputRemaining < IMGDEC_DMA_BLOCK_WORDS ? inputRemaining : IMGDEC_DMA_BLOCK_WORDS;
 	const bool inputReady = !m_supervisorQuiesceRequested
 		&& m_active && inputRemaining != 0u && m_inputFifo.free() >= inputBlockWords;
@@ -401,11 +401,12 @@ void ImgDecController::updateDmaRequests() {
 	const u32 assertedRequests = (inputReady ? 1u << DMA_REQUEST_IMGDEC_WRITE : 0u)
 		| (outputReady ? 1u << DMA_REQUEST_IMGDEC_READ : 0u);
 	m_dma.setRequestLines(requestMask, assertedRequests);
-	const u32 status = m_memory.readIoU32(IO_IMGDEC_STATUS);
+	const u32 status = m_statusWord;
 	const u32 nextStatus = (status & ~(IMGDEC_STATUS_INPUT_REQUEST | IMGDEC_STATUS_OUTPUT_REQUEST))
 		| (inputReady ? IMGDEC_STATUS_INPUT_REQUEST : 0u)
 		| (outputReady ? IMGDEC_STATUS_OUTPUT_REQUEST : 0u);
 	if (nextStatus != status) {
+		m_statusWord = nextStatus;
 		m_memory.writeIoU32(IO_IMGDEC_STATUS, nextStatus);
 	}
 	if (inputReady && !m_dma.ownsWritePort(IO_IMGDEC_DATA)) {
@@ -416,12 +417,12 @@ void ImgDecController::updateDmaRequests() {
 auto ImgDecController::streamComplete() const -> bool {
 	return m_outputStage == OutputComplete
 		&& m_decodePhase == DecodeToken
-		&& m_inputWordsReceived == m_memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT)
+		&& m_inputWordsReceived == m_inputWordCountWord
 		&& m_inputFifo.empty();
 }
 
 void ImgDecController::failIfInputExhausted() {
-	if (m_inputWordsReceived == m_memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT)) {
+	if (m_inputWordsReceived == m_inputWordCountWord) {
 		stop(IMGDEC_STATUS_FORMAT_FAULT);
 	}
 }
@@ -432,6 +433,7 @@ void ImgDecController::stop(u32 statusWord) {
 	m_scheduledDecodeWords = 0u;
 	m_decodeDeadline = -1;
 	m_dma.setRequestLines((1u << DMA_REQUEST_IMGDEC_WRITE) | (1u << DMA_REQUEST_IMGDEC_READ), 0u);
+	m_statusWord = statusWord;
 	m_memory.writeIoU32(IO_IMGDEC_STATUS, statusWord);
 	resumeConfigWrites();
 	m_irq.raise(IRQ_IMGDEC);
@@ -459,8 +461,25 @@ u32 ImgDecController::readProgressThunk(void* context, u32 address, MappedBusSig
 
 void ImgDecController::writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
-	if (address == IO_IMGDEC_CONTROL && (value & IMGDEC_CONTROL_START) != 0u) {
-		controller.start();
+	switch (address) {
+	case IO_IMGDEC_INPUT_WORD_COUNT:
+		controller.m_inputWordCountWord = value;
+		return;
+	case IO_IMGDEC_TEXTURE_DESTINATION:
+		controller.m_textureDestinationWord = value;
+		return;
+	case IO_IMGDEC_TEXTURE_SIZE:
+		controller.m_textureSizeWord = value;
+		return;
+	case IO_IMGDEC_CLUT_DESTINATION:
+		controller.m_clutDestinationWord = value;
+		return;
+	case IO_IMGDEC_CONTROL:
+		controller.m_controlWord = value;
+		if ((value & IMGDEC_CONTROL_START) != 0u) {
+			controller.start();
+		}
+		return;
 	}
 }
 
@@ -520,9 +539,19 @@ bool ImgDecController::dataWriteReadyThunk(void* context, u32, MappedBusSignals 
 	auto& controller = *static_cast<ImgDecController*>(context);
 	return controller.m_active
 		&& !controller.m_supervisorQuiesceRequested
-		&& controller.m_inputWordsReceived < controller.m_memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT)
+		&& controller.m_inputWordsReceived < controller.m_inputWordCountWord
 		&& controller.m_inputFifo.free() != 0u
 		&& !controller.m_dma.ownsWritePort(IO_IMGDEC_DATA);
+}
+
+void ImgDecController::mirrorRegisters() {
+	m_memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, m_inputWordCountWord);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, m_textureDestinationWord);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, m_textureSizeWord);
+	m_memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, m_clutDestinationWord);
+	m_memory.writeIoU32(IO_IMGDEC_CONTROL, m_controlWord);
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, m_statusWord);
+	m_memory.writeIoU32(IO_IMGDEC_DATA, m_dataWord);
 }
 
 } // namespace bmsx

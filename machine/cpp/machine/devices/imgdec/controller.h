@@ -78,6 +78,7 @@ private:
 	void stop(u32 statusWord);
 	void resumeConfigWrites();
 	void notifySupervisorBoundary();
+	void mirrorRegisters();
 
 	static u32 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
@@ -104,6 +105,12 @@ private:
 	u32 m_clutWordCount = 0u;
 	u32 m_outputWordCount = 0u;
 	u32 m_outputWordsRead = 0u;
+	u32 m_inputWordCountWord = 0u;
+	u32 m_textureDestinationWord = 0u;
+	u32 m_textureSizeWord = 0u;
+	u32 m_clutDestinationWord = 0u;
+	u32 m_controlWord = 0u;
+	u32 m_statusWord = 0u;
 	u32 m_dataWord = 0u;
 	u32 m_decodePhase = 0u;
 	u32 m_outputStage = 0u;
