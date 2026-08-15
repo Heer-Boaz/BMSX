@@ -19,7 +19,7 @@ function disappearingwall:ctor()
 	local tile_layer<const> = self:get_component(tile_layer_component)
 	local tile_count<const> = self.width_tiles * self.height_tiles
 	tile_layer:fill(self.tiletype, tile_count, self.width_tiles)
-	tile_layer.tile_size = room_tile_size
+	tile_layer:set_tile_size(room_tile_size)
 	tile_layer.offset_x = 0
 	tile_layer.offset_y = 0
 end
