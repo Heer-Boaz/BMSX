@@ -1,9 +1,22 @@
 -- apu.lua
 -- Cart-library APU command helpers. Audio control reaches the device through MMIO.
-local endian<const> = require("cartlib/memory")
-local read_u16le<const> = endian.read_u16le
-local read_u32le<const> = endian.read_u32le
 local dma<const> = require("cartlib/dma")
+
+struct badp_header
+	magic: word
+	version: u16
+	channels: u16
+	sample_rate_hz: word
+	frame_count: word
+	loop_start_sample: word
+	loop_end_sample: word
+	seek_stride_frames: word
+	seek_entry_count: word
+	seek_table_offset: word
+	data_offset: word
+	reserved_0: word
+	reserved_1: word
+end
 
 struct apu_command_registers
 	source_addr: word
@@ -33,6 +46,7 @@ end
 local apu<const> = {}
 local output_sample_rate_hz<const> = 0x0000ac44
 local filter_coefficient_one<const> = 0x00004000
+local badp_no_loop<const> = 0xffffffff
 
 local command_registers<const>: *apu_command_registers = 0x08000120
 local transfer_address<const>: *word = 0x080001e8
@@ -69,57 +83,29 @@ function apu.ms_to_samples(ms)
 	return ms * output_sample_rate_hz / 1000
 end
 
-local read_badp_source<const> = function(addr, source_bytes)
-	local channels<const> = read_u16le(addr + 6)
-	local sample_rate_hz<const> = read_u32le(addr + 8)
-	local frame_count<const> = read_u32le(addr + 12)
-	local data_offset<const> = read_u32le(addr + 36)
-	return {
-		sample_rate_hz = sample_rate_hz,
-		channels = channels,
-		bits_per_sample = 4,
-		frame_count = frame_count,
-		data_offset = data_offset,
-		data_bytes = source_bytes - data_offset,
-	}
-end
-
 function apu.source(record)
-	local source = record.__apu_source
-	if source ~= nil then
-		return source
-	end
 	local source_addr<const> = record.addr
 	local source_bytes<const> = record.len
-	local format<const> = read_badp_source(source_addr, source_bytes)
-	local loop_start_sample = 0
-	local loop_end_sample = 0
-	local meta<const> = record.audiometa
-	if meta ~= nil and meta.loop ~= nil then
-		loop_start_sample = meta.loop * format.sample_rate_hz
-		local loop_end<const> = meta['loopEnd']
-		if loop_end ~= nil then
-			loop_end_sample = loop_end * format.sample_rate_hz
-		end
+	local header<const>: *badp_header = source_addr
+	local data_offset<const> = header->data_offset
+	local loop_start_sample = header->loop_start_sample
+	local loop_end_sample = header->loop_end_sample
+	if loop_start_sample == badp_no_loop then
+		loop_start_sample = 0
+		loop_end_sample = 0
 	end
-	source = {
+	return {
 		source_addr = source_addr,
 		source_bytes = source_bytes,
-		sample_rate_hz = format.sample_rate_hz,
-		channels = format.channels,
-		bits_per_sample = format.bits_per_sample,
-		frame_count = format.frame_count,
-		data_offset = format.data_offset,
-		data_bytes = format.data_bytes,
+		sample_rate_hz = header->sample_rate_hz,
+		channels = header->channels,
+		bits_per_sample = 4,
+		frame_count = header->frame_count,
+		data_offset = data_offset,
+		data_bytes = source_bytes - data_offset,
 		loop_start_sample = loop_start_sample,
 		loop_end_sample = loop_end_sample,
 	}
-	record.__apu_source = source
-	return source
-end
-
-function apu.loop_start_sample(record)
-	return apu.source(record).loop_start_sample
 end
 
 function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_control, filter_b0_b1, filter_b2_a1, filter_a2)
