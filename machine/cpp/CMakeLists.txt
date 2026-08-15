@@ -265,6 +265,7 @@ add_library(bmsx_core STATIC
 	machine/devices/input/registers.cpp
 	machine/devices/input/save_state.cpp
 	machine/devices/system/controller.cpp
+	machine/devices/system/debug_transmit.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp

@@ -270,40 +270,40 @@ test('system print registers latch writes and publish complete host lines', () =
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
 	machine.resetDevices();
-	const controller = machine.systemController;
+	const output = machine.systemDebugTransmit;
 
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x68);
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x69);
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
-	assert.equal(controller.hostOutputAvailableByteCount(), 3);
+	assert.equal(output.availableByteCount(), 3);
 	assert.deepEqual([
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
+		output.readByte(),
+		output.readByte(),
+		output.readByte(),
 	], [0x68, 0x69, 0x0a]);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x69);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
 
-	const state = controller.captureState();
-	controller.reset();
-	controller.restoreState(state);
+	const state = output.captureState();
+	output.reset();
+	output.restoreState(state);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x69);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
-	assert.equal(controller.hostOutputAvailableByteCount(), 0);
+	assert.equal(output.availableByteCount(), 0);
 
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x20ac);
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
-	assert.equal(controller.hostOutputAvailableByteCount(), 4);
+	assert.equal(output.availableByteCount(), 4);
 	assert.deepEqual([
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
+		output.readByte(),
+		output.readByte(),
+		output.readByte(),
+		output.readByte(),
 	], [0xe2, 0x82, 0xac, 0x0a]);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x20ac);
 	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 1);
 
-	controller.reset();
+	output.reset();
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x6f);
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x6b);
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
@@ -311,17 +311,17 @@ test('system print registers latch writes and publish complete host lines', () =
 		memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x78);
 	}
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
-	assert.equal(controller.hostOutputAvailableByteCount(), 3);
+	assert.equal(output.availableByteCount(), 3);
 	assert.deepEqual([
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
-		controller.readHostOutputByte(),
+		output.readByte(),
+		output.readByte(),
+		output.readByte(),
 	], [0x6f, 0x6b, 0x0a]);
 	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x79);
 	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
-	assert.equal(controller.hostOutputAvailableByteCount(), 2);
-	assert.equal(controller.readHostOutputByte(), 0x79);
-	assert.equal(controller.readHostOutputByte(), 0x0a);
+	assert.equal(output.availableByteCount(), 2);
+	assert.equal(output.readByte(), 0x79);
+	assert.equal(output.readByte(), 0x0a);
 });
 
 test('runtime reset boundary restarts system firmware and preserves cartridge entry', () => {

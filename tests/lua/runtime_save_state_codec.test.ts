@@ -440,14 +440,16 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						outputStatus: 4,
 					},
 				},
+				systemDebugTransmit: {
+					charWord: 0x20ac,
+					flushWord: 1,
+				},
 				systemControl: {
 					resetRequested: true,
 					supervisorPhase: 3,
 					supervisorTransitionTarget: 1,
 					supervisorResumable: true,
 					supervisorExitRequested: false,
-					printCharWord: 0x20ac,
-					printFlushWord: 1,
 					supervisorFaultSequenceWord: 0,
 					supervisorFaultCauseWord: 0,
 					supervisorFaultEpcWord: 0,

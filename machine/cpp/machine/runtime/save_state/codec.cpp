@@ -1296,8 +1296,6 @@ BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	object["supervisorTransitionTarget"] = static_cast<i64>(state.supervisorTransitionTarget);
 	object["supervisorResumable"] = state.supervisorResumable;
 	object["supervisorExitRequested"] = state.supervisorExitRequested;
-	object["printCharWord"] = static_cast<i64>(state.printCharWord);
-	object["printFlushWord"] = static_cast<i64>(state.printFlushWord);
 	object["supervisorFaultSequenceWord"] = static_cast<i64>(state.supervisorFaultSequenceWord);
 	object["supervisorFaultCauseWord"] = static_cast<i64>(state.supervisorFaultCauseWord);
 	object["supervisorFaultEpcWord"] = static_cast<i64>(state.supervisorFaultEpcWord);
@@ -1315,14 +1313,27 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	state.supervisorTransitionTarget = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorTransitionTarget", label), "machineState.machine.systemControl.supervisorTransitionTarget", SYSTEM_SUPERVISOR_TARGET_USER, SYSTEM_SUPERVISOR_TARGET_FAULT));
 	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
-	state.printCharWord = requireU32(requireField(object, "printCharWord", label), "machineState.machine.systemControl.printCharWord");
-	state.printFlushWord = requireU32(requireField(object, "printFlushWord", label), "machineState.machine.systemControl.printFlushWord");
 	state.supervisorFaultSequenceWord = requireU32(requireField(object, "supervisorFaultSequenceWord", label), "machineState.machine.systemControl.supervisorFaultSequenceWord");
 	state.supervisorFaultCauseWord = requireU32(requireField(object, "supervisorFaultCauseWord", label), "machineState.machine.systemControl.supervisorFaultCauseWord");
 	state.supervisorFaultEpcWord = requireU32(requireField(object, "supervisorFaultEpcWord", label), "machineState.machine.systemControl.supervisorFaultEpcWord");
 	state.supervisorFaultBadAddressWord = requireU32(requireField(object, "supervisorFaultBadAddressWord", label), "machineState.machine.systemControl.supervisorFaultBadAddressWord");
 	state.supervisorFaultLuaReasonWord = requireU32(requireField(object, "supervisorFaultLuaReasonWord", label), "machineState.machine.systemControl.supervisorFaultLuaReasonWord");
 	state.supervisorFaultDomainWord = requireU32(requireField(object, "supervisorFaultDomainWord", label), "machineState.machine.systemControl.supervisorFaultDomainWord");
+	return state;
+}
+
+BinValue encodeSystemDebugTransmitState(const SystemDebugTransmitState& state) {
+	BinObject object;
+	object["charWord"] = static_cast<i64>(state.charWord);
+	object["flushWord"] = static_cast<i64>(state.flushWord);
+	return BinValue(std::move(object));
+}
+
+SystemDebugTransmitState decodeSystemDebugTransmitState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	SystemDebugTransmitState state;
+	state.charWord = requireU32(requireField(object, "charWord", label), "machineState.machine.systemDebugTransmit.charWord");
+	state.flushWord = requireU32(requireField(object, "flushWord", label), "machineState.machine.systemDebugTransmit.flushWord");
 	return state;
 }
 
@@ -1339,6 +1350,7 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
 	object["imgDec"] = encodeImgDecControllerState(state.imgDec);
+	object["systemDebugTransmit"] = encodeSystemDebugTransmitState(state.systemDebugTransmit);
 	object["systemControl"] = encodeSystemControllerState(state.systemControl);
 	return BinValue(std::move(object));
 }
@@ -1365,6 +1377,7 @@ MachineSaveState decodeMachineSaveState(
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
 	state.imgDec = decodeImgDecControllerState(requireField(object, "imgDec", label), "machineState.machine.imgDec");
+	state.systemDebugTransmit = decodeSystemDebugTransmitState(requireField(object, "systemDebugTransmit", label), "machineState.machine.systemDebugTransmit");
 	state.systemControl = decodeSystemControllerState(requireField(object, "systemControl", label), "machineState.machine.systemControl");
 	return state;
 }

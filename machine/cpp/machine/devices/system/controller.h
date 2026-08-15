@@ -3,8 +3,6 @@
 #include "spec/bmsx/io.h"
 #include "machine/memory/memory.h"
 
-#include <array>
-
 namespace bmsx {
 
 class CPU;
@@ -33,8 +31,6 @@ struct SystemControllerState {
 	u8 supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool supervisorResumable = false;
 	bool supervisorExitRequested = false;
-	u32 printCharWord = 0u;
-	u32 printFlushWord = 0u;
 	u32 supervisorFaultSequenceWord = 0u;
 	u32 supervisorFaultCauseWord = 0u;
 	u32 supervisorFaultEpcWord = 0u;
@@ -70,8 +66,6 @@ public:
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
 	void postLoad();
-	u32 hostOutputAvailableByteCount() const { return m_hostOutputCompleteByteCount; }
-	u8 readHostOutputByte();
 
 private:
 	u32 readStatus(u32 address);
@@ -79,11 +73,6 @@ private:
 	u32 readFrameMillisecondsQ16(u32 address) const;
 	u32 readCyclesPerFrame(u32 address) const;
 	void writeControl(u32 address, u32 value);
-	void writePrintChar(u32 address, u32 value);
-	void flushPrintLine(u32 address, u32 value);
-	bool reserveHostOutputBytes(u32 byteCount);
-	void clearHostOutput();
-	void appendHostOutputByte(u8 value);
 	void activateSupervisorContext();
 	void enterSupervisorFault();
 	void publishSupervisorFault();
@@ -105,12 +94,6 @@ private:
 	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
-	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_hostOutputBuffer{};
-	u32 m_hostOutputReadIndex = 0u;
-	u32 m_hostOutputByteCount = 0u;
-	u32 m_hostOutputCompleteByteCount = 0u;
-	bool m_hostOutputLineOverflowed = false;
-	std::array<u8, 4> m_printEncodingBytes{};
 	i64 m_cpuHz;
 };
 

@@ -22,6 +22,7 @@ Machine::Machine(
 	, gxGpu(memory, cpu, irqController, scheduler, dmaController, model.gxGpuVramBytes)
 	, imgDecController(memory, cpu, irqController, scheduler, dmaController, model.imgDecCyclesPerOutputWord)
 	, gxGte(memory, cpu, scheduler)
+	, systemDebugTransmit(memory)
 	, systemController(
 		memory,
 		cpu,
@@ -57,6 +58,7 @@ void Machine::resetDevices() {
 	imgDecController.reset();
 	gxGte.reset();
 	audioController.reset();
+	systemDebugTransmit.reset();
 	systemController.reset();
 }
 

@@ -8,13 +8,13 @@ export class SystemOutputLog {
 	private readonly bytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 
 	public flush(runtime: Runtime, logOutput: LogOutput): void {
-		const output = runtime.machine.systemController;
-		const byteCount = output.hostOutputAvailableByteCount();
+		const output = runtime.machine.systemDebugTransmit;
+		const byteCount = output.availableByteCount();
 		if (byteCount === 0) {
 			return;
 		}
 		for (let index = 0; index < byteCount; index += 1) {
-			this.bytes[index] = output.readHostOutputByte();
+			this.bytes[index] = output.readByte();
 		}
 		let lineStart = 0;
 		for (let index = 0; index < byteCount; index += 1) {

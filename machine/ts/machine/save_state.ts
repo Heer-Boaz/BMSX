@@ -8,6 +8,7 @@ import type { InputControllerState } from './devices/input/save_state';
 import type { IrqControllerState } from './devices/irq/save_state';
 import type { ImgDecControllerState } from './devices/imgdec/controller';
 import type { SystemControllerState } from './devices/system/controller';
+import type { SystemDebugTransmitState } from './devices/system/debug_transmit';
 import type { MemorySaveState } from './memory/memory';
 import type { StringPoolState } from './cpu/string_pool';
 import type { Machine } from './machine';
@@ -22,6 +23,7 @@ export type MachineState = {
 	audio: AudioControllerState;
 	input: InputControllerState;
 	imgDec: ImgDecControllerState;
+	systemDebugTransmit: SystemDebugTransmitState;
 	systemControl: SystemControllerState;
 };
 
@@ -37,6 +39,7 @@ export type MachineSaveState = {
 	stringPool: StringPoolState;
 	input: InputControllerState;
 	imgDec: ImgDecControllerState;
+	systemDebugTransmit: SystemDebugTransmitState;
 	systemControl: SystemControllerState;
 };
 
@@ -58,6 +61,7 @@ export function captureMachineState(machine: Machine): MachineState {
 		audio,
 		input: machine.inputController.captureState(),
 		imgDec: machine.imgDecController.captureState(),
+		systemDebugTransmit: machine.systemDebugTransmit.captureState(),
 		systemControl: machine.systemController.captureState(),
 	};
 }
@@ -67,6 +71,7 @@ export function restoreMachineState(machine: Machine, state: MachineState): void
 	machine.gxGpu.restoreState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
+	machine.systemDebugTransmit.restoreState(state.systemDebugTransmit);
 	finishDeviceRestore(machine, state.systemControl);
 }
 
@@ -87,6 +92,7 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 		stringPool: machine.cpu.stringPool.captureState(),
 		input: machine.inputController.captureState(),
 		imgDec: machine.imgDecController.captureState(),
+		systemDebugTransmit: machine.systemDebugTransmit.captureState(),
 		systemControl: machine.systemController.captureState(),
 	};
 }
@@ -98,6 +104,7 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
+	machine.systemDebugTransmit.restoreState(state.systemDebugTransmit);
 	finishDeviceRestore(machine, state.systemControl);
 }
 

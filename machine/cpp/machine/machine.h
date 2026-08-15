@@ -13,6 +13,7 @@
 #include "machine/devices/imgdec/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/system/controller.h"
+#include "machine/devices/system/debug_transmit.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
@@ -47,6 +48,7 @@ public:
 	GxGpu gxGpu;
 	ImgDecController imgDecController;
 	GxGte gxGte;
+	SystemDebugTransmit systemDebugTransmit;
 	SystemController systemController;
 	InputController inputController;
 

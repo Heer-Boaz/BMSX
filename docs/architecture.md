@@ -1719,18 +1719,20 @@ the addresses nor supplies a parallel cart clock.
 | `SYS_FRAME_MS_Q16` | `0x08010228` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
 | `SYS_CYCLES_PER_FRAME` | `0x08010234` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
 
-Cart and firmware console output uses the system debug-transmit register pair.
+Cart and firmware console output uses the system debug-transmit device. Like a
+UART subdevice, it owns its register pair, transmit datapath and fixed output
+ring independently of supervisor control.
 A write to `SYS_PRINT_CHAR` latches one Unicode codepoint and transmits it. A
 write to `SYS_PRINT_FLUSH` latches the raw control word, transmits a newline and
 completes the current host log line. Reads expose those raw write latches; the
-two latch words are machine state. The system controller does not own terminal
+two latch words are machine state. The debug-transmit device does not own terminal
 cells or a guest-readable text queue.
 
 The transmit datapath UTF-8-encodes into a fixed 8192-byte host-output ring.
 MMIO writes allocate nothing and cannot grow host memory. The host drains only
 newline-complete bytes and performs UTF-8-to-host-string conversion at the host
 boundary. Complete pending lines retain FIFO priority. If the current
-uncommitted line exceeds the remaining capacity, the controller discards that
+uncommitted line exceeds the remaining capacity, the transmit device discards that
 whole line through its flush instead of replacing already completed output.
 Transmit bytes and cursors are presentation state and are not serialized.
 

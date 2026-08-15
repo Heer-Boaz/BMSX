@@ -2,8 +2,6 @@ import {
 	IO_SYS_CONTROL,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_SYS_FRAME_MS_Q16,
-	IO_SYS_PRINT_CHAR,
-	IO_SYS_PRINT_FLUSH,
 	IO_SYS_STATUS,
 	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
 	IO_SYS_SUPERVISOR_FAULT_CAUSE,
@@ -12,7 +10,6 @@ import {
 	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_TIME_MS,
-	SYS_PRINT_BUFFER_BYTES,
 	SYS_CONTROL_RESET,
 	SYS_CONTROL_SUPERVISOR_ENTER,
 	SYS_CONTROL_SUPERVISOR_FAULT,
@@ -23,7 +20,6 @@ import {
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
 } from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
-import { encodeUtf8Codepoint } from '../../../common/utf8';
 import type { AudioController } from '../audio/controller';
 import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';
@@ -50,8 +46,6 @@ export type SystemControllerState = {
 	supervisorTransitionTarget: number;
 	supervisorResumable: boolean;
 	supervisorExitRequested: boolean;
-	printCharWord: number;
-	printFlushWord: number;
 	supervisorFaultSequenceWord: number;
 	supervisorFaultCauseWord: number;
 	supervisorFaultEpcWord: number;
@@ -60,21 +54,12 @@ export type SystemControllerState = {
 	supervisorFaultDomainWord: number;
 };
 
-const ASCII_NEWLINE = 10;
-
 export class SystemController {
 	private resetRequested = false;
 	private supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	private supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
-	private readonly hostOutputBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
-	private hostOutputReadIndex = 0;
-	private hostOutputByteCount = 0;
-	private hostOutputCompleteByteCount = 0;
-	private hostOutputLineOverflowed = false;
-	private readonly printEncodingBytes = new Uint8Array(4);
-
 	public constructor(
 		private readonly memory: Memory,
 		private readonly cpu: CPU,
@@ -92,8 +77,6 @@ export class SystemController {
 		memory.mapIoRead(IO_SYS_TIME_MS, this, SystemController.readTimeMilliseconds);
 		memory.mapIoRead(IO_SYS_FRAME_MS_Q16, this, SystemController.readFrameMillisecondsQ16);
 		memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, SystemController.readCyclesPerFrame);
-		memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, SystemController.writePrintChar);
-		memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, SystemController.flushPrintLine);
 	}
 
 	public reset(): void {
@@ -104,10 +87,7 @@ export class SystemController {
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
 		this.audio.setVoiceClockHeld(false, this.scheduler.currentNowCycles());
-		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
-		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, 0);
-		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 0);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, 0);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, 0);
@@ -147,60 +127,6 @@ export class SystemController {
 
 	private static readCyclesPerFrame(context: SystemController): number {
 		return context.gpu.readPcrtcTiming().nextVblankCycleBudget >>> 0;
-	}
-
-	private static writePrintChar(context: SystemController, _address: number, value: number): void {
-		const byteCount = encodeUtf8Codepoint(value, context.printEncodingBytes);
-		if (!context.reserveHostOutputBytes(byteCount)) {
-			return;
-		}
-		for (let index = 0; index < byteCount; index += 1) {
-			context.appendHostOutputByte(context.printEncodingBytes[index]);
-		}
-	}
-
-	private static flushPrintLine(context: SystemController): void {
-		if (context.reserveHostOutputBytes(1)) {
-			context.appendHostOutputByte(ASCII_NEWLINE);
-			context.hostOutputCompleteByteCount = context.hostOutputByteCount;
-		}
-		context.hostOutputLineOverflowed = false;
-	}
-
-	private reserveHostOutputBytes(byteCount: number): boolean {
-		if (this.hostOutputLineOverflowed) {
-			return false;
-		}
-		if (this.hostOutputByteCount + byteCount <= SYS_PRINT_BUFFER_BYTES) {
-			return true;
-		}
-		this.hostOutputByteCount = this.hostOutputCompleteByteCount;
-		this.hostOutputLineOverflowed = true;
-		return false;
-	}
-
-	private clearHostOutput(): void {
-		this.hostOutputReadIndex = 0;
-		this.hostOutputByteCount = 0;
-		this.hostOutputCompleteByteCount = 0;
-		this.hostOutputLineOverflowed = false;
-	}
-
-	private appendHostOutputByte(value: number): void {
-		this.hostOutputBuffer[(this.hostOutputReadIndex + this.hostOutputByteCount) & (SYS_PRINT_BUFFER_BYTES - 1)] = value;
-		this.hostOutputByteCount += 1;
-	}
-
-	public hostOutputAvailableByteCount(): number {
-		return this.hostOutputCompleteByteCount;
-	}
-
-	public readHostOutputByte(): number {
-		const value = this.hostOutputBuffer[this.hostOutputReadIndex];
-		this.hostOutputReadIndex = (this.hostOutputReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
-		this.hostOutputByteCount -= 1;
-		this.hostOutputCompleteByteCount -= 1;
-		return value;
 	}
 
 	private static writeControl(context: SystemController, _address: number, value: number): void {
@@ -373,8 +299,6 @@ export class SystemController {
 			supervisorTransitionTarget: this.supervisorTransitionTarget,
 			supervisorResumable: this.supervisorResumable,
 			supervisorExitRequested: this.supervisorExitRequested,
-			printCharWord: this.memory.readIoU32(IO_SYS_PRINT_CHAR),
-			printFlushWord: this.memory.readIoU32(IO_SYS_PRINT_FLUSH),
 			supervisorFaultSequenceWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE),
 			supervisorFaultCauseWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE),
 			supervisorFaultEpcWord: this.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_EPC),
@@ -394,10 +318,7 @@ export class SystemController {
 			this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_USER,
 			this.scheduler.currentNowCycles(),
 		);
-		this.clearHostOutput();
 		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
-		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
-		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, state.supervisorFaultSequenceWord);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, state.supervisorFaultCauseWord);
 		this.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, state.supervisorFaultEpcWord);

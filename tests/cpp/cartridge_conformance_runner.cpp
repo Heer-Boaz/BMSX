@@ -50,11 +50,11 @@ size_t transcriptCount(std::string_view entry) {
 }
 
 void captureSystemOutput(bmsx::Runtime& runtime) {
-	bmsx::SystemController& output = runtime.machine.systemController;
-	const bmsx::u32 byteCount = output.hostOutputAvailableByteCount();
+	bmsx::SystemDebugTransmit& output = runtime.machine.systemDebugTransmit;
+	const bmsx::u32 byteCount = output.availableByteCount();
 	std::string line;
 	for (bmsx::u32 index = 0u; index < byteCount; ++index) {
-		const char byte = static_cast<char>(output.readHostOutputByte());
+		const char byte = static_cast<char>(output.readByte());
 		if (byte == '\n') {
 			if (line.starts_with(transcriptPrefix)) {
 				transcript.emplace_back(line.substr(transcriptPrefix.size()));

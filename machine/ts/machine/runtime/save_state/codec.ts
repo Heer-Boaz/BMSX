@@ -47,6 +47,7 @@ import {
 	SYSTEM_SUPERVISOR_TARGET_FAULT,
 	type SystemControllerState,
 } from '../../devices/system/controller';
+import type { SystemDebugTransmitState } from '../../devices/system/debug_transmit';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
@@ -1253,8 +1254,6 @@ function encodeSystemControllerState(state: SystemControllerState): SystemContro
 		supervisorTransitionTarget: state.supervisorTransitionTarget,
 		supervisorResumable: state.supervisorResumable,
 		supervisorExitRequested: state.supervisorExitRequested,
-		printCharWord: state.printCharWord,
-		printFlushWord: state.printFlushWord,
 		supervisorFaultSequenceWord: state.supervisorFaultSequenceWord,
 		supervisorFaultCauseWord: state.supervisorFaultCauseWord,
 		supervisorFaultEpcWord: state.supervisorFaultEpcWord,
@@ -1272,14 +1271,27 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 		supervisorTransitionTarget: requireBoundedU32(requireObjectKey(object, 'supervisorTransitionTarget', label, `${label}.supervisorTransitionTarget`), `${label}.supervisorTransitionTarget`, 0, SYSTEM_SUPERVISOR_TARGET_FAULT),
 		supervisorResumable: requireBooleanValue(requireObjectKey(object, 'supervisorResumable', label, `${label}.supervisorResumable`), `${label}.supervisorResumable`),
 		supervisorExitRequested: requireBooleanValue(requireObjectKey(object, 'supervisorExitRequested', label, `${label}.supervisorExitRequested`), `${label}.supervisorExitRequested`),
-		printCharWord: requireBoundedU32(requireObjectKey(object, 'printCharWord', label, `${label}.printCharWord`), `${label}.printCharWord`, 0, 0xffffffff),
-		printFlushWord: requireBoundedU32(requireObjectKey(object, 'printFlushWord', label, `${label}.printFlushWord`), `${label}.printFlushWord`, 0, 0xffffffff),
 		supervisorFaultSequenceWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultSequenceWord', label, `${label}.supervisorFaultSequenceWord`), `${label}.supervisorFaultSequenceWord`, 0, 0xffffffff),
 		supervisorFaultCauseWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultCauseWord', label, `${label}.supervisorFaultCauseWord`), `${label}.supervisorFaultCauseWord`, 0, 0xffffffff),
 		supervisorFaultEpcWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultEpcWord', label, `${label}.supervisorFaultEpcWord`), `${label}.supervisorFaultEpcWord`, 0, 0xffffffff),
 		supervisorFaultBadAddressWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultBadAddressWord', label, `${label}.supervisorFaultBadAddressWord`), `${label}.supervisorFaultBadAddressWord`, 0, 0xffffffff),
 		supervisorFaultLuaReasonWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultLuaReasonWord', label, `${label}.supervisorFaultLuaReasonWord`), `${label}.supervisorFaultLuaReasonWord`, 0, 0xffffffff),
 		supervisorFaultDomainWord: requireBoundedU32(requireObjectKey(object, 'supervisorFaultDomainWord', label, `${label}.supervisorFaultDomainWord`), `${label}.supervisorFaultDomainWord`, 0, 0xffffffff),
+	};
+}
+
+function encodeSystemDebugTransmitState(state: SystemDebugTransmitState): SystemDebugTransmitState {
+	return {
+		charWord: state.charWord,
+		flushWord: state.flushWord,
+	};
+}
+
+function decodeSystemDebugTransmitState(value: unknown, label: string): SystemDebugTransmitState {
+	const object = requireObject(value, label);
+	return {
+		charWord: requireBoundedU32(requireObjectKey(object, 'charWord', label, `${label}.charWord`), `${label}.charWord`, 0, 0xffffffff),
+		flushWord: requireBoundedU32(requireObjectKey(object, 'flushWord', label, `${label}.flushWord`), `${label}.flushWord`, 0, 0xffffffff),
 	};
 }
 
@@ -1296,6 +1308,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
 		imgDec: encodeImgDecControllerState(state.imgDec),
+		systemDebugTransmit: encodeSystemDebugTransmitState(state.systemDebugTransmit),
 		systemControl: encodeSystemControllerState(state.systemControl),
 	};
 }
@@ -1314,6 +1327,7 @@ function decodeMachineSaveState(value: unknown, label: string, ramByteCount: num
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
 		imgDec: decodeImgDecControllerState(requireObjectKey(object, 'imgDec', label, 'machineState.machine.imgDec'), 'machineState.machine.imgDec'),
+		systemDebugTransmit: decodeSystemDebugTransmitState(requireObjectKey(object, 'systemDebugTransmit', label, 'machineState.machine.systemDebugTransmit'), 'machineState.machine.systemDebugTransmit'),
 		systemControl: decodeSystemControllerState(requireObjectKey(object, 'systemControl', label, 'machineState.machine.systemControl'), 'machineState.machine.systemControl'),
 	};
 }

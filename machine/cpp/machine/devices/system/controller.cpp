@@ -1,6 +1,5 @@
 #include "machine/devices/system/controller.h"
 
-#include "common/utf8.h"
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
@@ -39,8 +38,6 @@ SystemController::SystemController(
 	memory.mapIoRead<&SystemController::readTimeMilliseconds>(IO_SYS_TIME_MS, *this);
 	memory.mapIoRead<&SystemController::readFrameMillisecondsQ16>(IO_SYS_FRAME_MS_Q16, *this);
 	memory.mapIoRead<&SystemController::readCyclesPerFrame>(IO_SYS_CYCLES_PER_FRAME, *this);
-	memory.mapIoWrite<&SystemController::writePrintChar>(IO_SYS_PRINT_CHAR, *this);
-	memory.mapIoWrite<&SystemController::flushPrintLine>(IO_SYS_PRINT_FLUSH, *this);
 }
 
 void SystemController::reset() {
@@ -51,10 +48,7 @@ void SystemController::reset() {
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
 	m_audio.setVoiceClockHeld(false, m_scheduler.currentNowCycles());
-	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
-	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, 0u);
-	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0u);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 0u);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, 0u);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, 0u);
@@ -84,56 +78,6 @@ u32 SystemController::readFrameMillisecondsQ16([[maybe_unused]] u32 address) con
 
 u32 SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
 	return static_cast<u32>(m_gpu.readPcrtcTiming().nextVblankCycleBudget);
-}
-
-void SystemController::writePrintChar([[maybe_unused]] u32 address, u32 value) {
-	const u32 byteCount = encodeUtf8Codepoint(value, m_printEncodingBytes);
-	if (!reserveHostOutputBytes(byteCount)) {
-		return;
-	}
-	for (u32 index = 0u; index < byteCount; ++index) {
-		appendHostOutputByte(m_printEncodingBytes[index]);
-	}
-}
-
-void SystemController::flushPrintLine([[maybe_unused]] u32 address, [[maybe_unused]] u32 value) {
-	if (reserveHostOutputBytes(1u)) {
-		appendHostOutputByte(static_cast<u8>('\n'));
-		m_hostOutputCompleteByteCount = m_hostOutputByteCount;
-	}
-	m_hostOutputLineOverflowed = false;
-}
-
-bool SystemController::reserveHostOutputBytes(u32 byteCount) {
-	if (m_hostOutputLineOverflowed) {
-		return false;
-	}
-	if (m_hostOutputByteCount + byteCount <= SYS_PRINT_BUFFER_BYTES) {
-		return true;
-	}
-	m_hostOutputByteCount = m_hostOutputCompleteByteCount;
-	m_hostOutputLineOverflowed = true;
-	return false;
-}
-
-void SystemController::clearHostOutput() {
-	m_hostOutputReadIndex = 0u;
-	m_hostOutputByteCount = 0u;
-	m_hostOutputCompleteByteCount = 0u;
-	m_hostOutputLineOverflowed = false;
-}
-
-void SystemController::appendHostOutputByte(u8 value) {
-	m_hostOutputBuffer[(m_hostOutputReadIndex + m_hostOutputByteCount) & (SYS_PRINT_BUFFER_BYTES - 1u)] = value;
-	m_hostOutputByteCount += 1u;
-}
-
-u8 SystemController::readHostOutputByte() {
-	const u8 value = m_hostOutputBuffer[m_hostOutputReadIndex];
-	m_hostOutputReadIndex = (m_hostOutputReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
-	m_hostOutputByteCount -= 1u;
-	m_hostOutputCompleteByteCount -= 1u;
-	return value;
 }
 
 void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
@@ -300,8 +244,6 @@ SystemControllerState SystemController::captureState() const {
 	state.supervisorTransitionTarget = m_supervisorTransitionTarget;
 	state.supervisorResumable = m_supervisorResumable;
 	state.supervisorExitRequested = m_supervisorExitRequested;
-	state.printCharWord = m_memory.readIoU32(IO_SYS_PRINT_CHAR);
-	state.printFlushWord = m_memory.readIoU32(IO_SYS_PRINT_FLUSH);
 	state.supervisorFaultSequenceWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
 	state.supervisorFaultCauseWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE);
 	state.supervisorFaultEpcWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_EPC);
@@ -321,10 +263,7 @@ void SystemController::restoreState(const SystemControllerState& state) {
 		m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_USER,
 		m_scheduler.currentNowCycles()
 	);
-	clearHostOutput();
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
-	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, state.printCharWord);
-	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.printFlushWord);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, state.supervisorFaultSequenceWord);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, state.supervisorFaultCauseWord);
 	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, state.supervisorFaultEpcWord);

@@ -11,6 +11,7 @@
 #include "machine/devices/imgdec/controller.h"
 #include "machine/devices/irq/save_state.h"
 #include "machine/devices/system/controller.h"
+#include "machine/devices/system/debug_transmit.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -27,6 +28,7 @@ struct MachineState {
 	AudioControllerState audio;
 	InputControllerState input;
 	ImgDecControllerState imgDec;
+	SystemDebugTransmitState systemDebugTransmit;
 	SystemControllerState systemControl;
 };
 
@@ -42,6 +44,7 @@ struct MachineSaveState {
 	StringPoolState stringPool;
 	InputControllerState input;
 	ImgDecControllerState imgDec;
+	SystemDebugTransmitState systemDebugTransmit;
 	SystemControllerState systemControl;
 };
 

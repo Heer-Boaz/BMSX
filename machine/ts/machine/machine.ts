@@ -12,6 +12,7 @@ import type { InputControllerInputSource } from './devices/input/contracts';
 import { ImgDecController } from './devices/imgdec/controller';
 import { IrqController } from './devices/irq/controller';
 import { SystemController } from './devices/system/controller';
+import { SystemDebugTransmit } from './devices/system/debug_transmit';
 import { Memory } from './memory/memory';
 import type { MachineModelSpec } from '../spec/bmsx/model';
 import {
@@ -37,6 +38,7 @@ export class Machine {
 	public readonly scheduler: DeviceScheduler;
 	public readonly irqController: IrqController;
 	public readonly systemController: SystemController;
+	public readonly systemDebugTransmit: SystemDebugTransmit;
 	public readonly cartridgeController: CartridgeController;
 	public readonly dmaController: DmaController;
 	public readonly geometryController: GeometryController;
@@ -57,6 +59,7 @@ export class Machine {
 		this.executionAddressSpace = new ExecutionAddressSpace(this.memory);
 		this.cpu = new CPU(this.memory, this.irqController, this.executionAddressSpace);
 		this.scheduler = new DeviceScheduler(this.cpu);
+		this.systemDebugTransmit = new SystemDebugTransmit(this.memory);
 		this.audioOutput = new ApuOutputMixer();
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
 		this.cartridgeController.connect(this.memory, this.irqController, this.dmaController);
@@ -112,6 +115,7 @@ export class Machine {
 		this.imgDecController.reset();
 		this.gxGte.reset();
 		this.audioController.reset();
+		this.systemDebugTransmit.reset();
 		this.systemController.reset();
 	}
 

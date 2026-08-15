@@ -47,6 +47,7 @@ MachineState captureMachineState(Machine& machine) {
 	state.irq = machine.irqController.captureState();
 	state.input = machine.inputController.captureState();
 	state.imgDec = machine.imgDecController.captureState();
+	state.systemDebugTransmit = machine.systemDebugTransmit.captureState();
 	state.systemControl = machine.systemController.captureState();
 	return state;
 }
@@ -56,6 +57,7 @@ void restoreMachineState(Machine& machine, const MachineState& state) {
 	machine.gxGpu.restoreState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
+	machine.systemDebugTransmit.restoreState(state.systemDebugTransmit);
 	finishDeviceRestore(machine, state.systemControl);
 }
 
@@ -73,6 +75,7 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 	state.stringPool = machine.cpu.stringPool().captureState();
 	state.input = machine.inputController.captureState();
 	state.imgDec = machine.imgDecController.captureState();
+	state.systemDebugTransmit = machine.systemDebugTransmit.captureState();
 	state.systemControl = machine.systemController.captureState();
 	return state;
 }
@@ -84,6 +87,7 @@ void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
+	machine.systemDebugTransmit.restoreState(state.systemDebugTransmit);
 	finishDeviceRestore(machine, state.systemControl);
 }
 

@@ -458,35 +458,35 @@ void testSystemPrintRegisters() {
 	SystemResetInputSource input;
 	bmsx::Machine machine(memory, input, bmsx::PSX_MACHINE_SPEC);
 	machine.resetDevices();
-	bmsx::SystemController& controller = machine.systemController;
+	bmsx::SystemDebugTransmit& output = machine.systemDebugTransmit;
 
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x68u);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x69u);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
-	require(controller.hostOutputAvailableByteCount() == 3u, "system print flush publishes one complete host line");
-	require(controller.readHostOutputByte() == 0x68u, "host output retains the first byte");
-	require(controller.readHostOutputByte() == 0x69u, "host output retains the second byte");
-	require(controller.readHostOutputByte() == 0x0au, "host output terminates the completed line");
+	require(output.availableByteCount() == 3u, "system print flush publishes one complete host line");
+	require(output.readByte() == 0x68u, "host output retains the first byte");
+	require(output.readByte() == 0x69u, "host output retains the second byte");
+	require(output.readByte() == 0x0au, "host output terminates the completed line");
 	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x69u, "system print character register retains the last written word");
 	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 1u, "system print flush register retains the last written word");
 
-	const bmsx::SystemControllerState state = controller.captureState();
-	controller.reset();
-	controller.restoreState(state);
+	const bmsx::SystemDebugTransmitState state = output.captureState();
+	output.reset();
+	output.restoreState(state);
 	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x69u, "save-state restores the character latch");
 	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH) == 1u, "save-state restores the flush latch");
-	require(controller.hostOutputAvailableByteCount() == 0u, "save-state restore clears non-serialized host output");
+	require(output.availableByteCount() == 0u, "save-state restore clears non-serialized host output");
 
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x20acu);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
-	require(controller.hostOutputAvailableByteCount() == 4u, "system print encodes a Unicode codepoint before host transport");
-	require(controller.readHostOutputByte() == 0xe2u, "host output retains UTF-8 byte one");
-	require(controller.readHostOutputByte() == 0x82u, "host output retains UTF-8 byte two");
-	require(controller.readHostOutputByte() == 0xacu, "host output retains UTF-8 byte three");
-	require(controller.readHostOutputByte() == 0x0au, "host UTF-8 output terminates the completed line");
+	require(output.availableByteCount() == 4u, "system print encodes a Unicode codepoint before host transport");
+	require(output.readByte() == 0xe2u, "host output retains UTF-8 byte one");
+	require(output.readByte() == 0x82u, "host output retains UTF-8 byte two");
+	require(output.readByte() == 0xacu, "host output retains UTF-8 byte three");
+	require(output.readByte() == 0x0au, "host UTF-8 output terminates the completed line");
 	require(memory.readMappedU32LE(bmsx::IO_SYS_PRINT_CHAR) == 0x20acu, "system print character latch retains the raw codepoint word");
 
-	controller.reset();
+	output.reset();
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x6fu);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x6bu);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
@@ -494,15 +494,15 @@ void testSystemPrintRegisters() {
 		memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x78u);
 	}
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
-	require(controller.hostOutputAvailableByteCount() == 3u, "host output overflow preserves complete pending lines");
-	require(controller.readHostOutputByte() == 0x6fu, "host output overflow retains the first pending byte");
-	require(controller.readHostOutputByte() == 0x6bu, "host output overflow retains the second pending byte");
-	require(controller.readHostOutputByte() == 0x0au, "host output overflow retains the pending newline");
+	require(output.availableByteCount() == 3u, "host output overflow preserves complete pending lines");
+	require(output.readByte() == 0x6fu, "host output overflow retains the first pending byte");
+	require(output.readByte() == 0x6bu, "host output overflow retains the second pending byte");
+	require(output.readByte() == 0x0au, "host output overflow retains the pending newline");
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x79u);
 	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
-	require(controller.hostOutputAvailableByteCount() == 2u, "host output accepts the line after an overflowed line");
-	require(controller.readHostOutputByte() == 0x79u, "host output retains the line after overflow");
-	require(controller.readHostOutputByte() == 0x0au, "host output terminates the line after overflow");
+	require(output.availableByteCount() == 2u, "host output accepts the line after an overflowed line");
+	require(output.readByte() == 0x79u, "host output retains the line after overflow");
+	require(output.readByte() == 0x0au, "host output terminates the line after overflow");
 }
 
 void testRuntimeSystemRebootBoundary() {

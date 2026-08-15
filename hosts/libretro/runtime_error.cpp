@@ -17,14 +17,14 @@ void flushLibretroSystemOutput(
 	Runtime& runtime,
 	const retro_log_callback& logging
 ) {
-	SystemController& output = runtime.machine.systemController;
-	const u32 byteCount = output.hostOutputAvailableByteCount();
+	SystemDebugTransmit& output = runtime.machine.systemDebugTransmit;
+	const u32 byteCount = output.availableByteCount();
 	if (byteCount == 0u) {
 		return;
 	}
 	std::array<char, SYS_PRINT_BUFFER_BYTES> bytes;
 	for (u32 index = 0u; index < byteCount; ++index) {
-		bytes[index] = static_cast<char>(output.readHostOutputByte());
+		bytes[index] = static_cast<char>(output.readByte());
 	}
 	size_t lineStart = 0u;
 	for (u32 index = 0u; index < byteCount; ++index) {
