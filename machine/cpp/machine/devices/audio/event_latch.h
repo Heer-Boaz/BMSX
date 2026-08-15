@@ -26,9 +26,14 @@ public:
 	void emit(u32 kind, ApuAudioSlot slot, u32 sourceAddr);
 
 private:
+	void mirrorRegisters();
+
 	Memory& m_memory;
 	IrqController& m_irq;
 	u32 m_eventSequence = 0;
+	u32 m_eventKind = APU_EVENT_NONE;
+	u32 m_eventSlot = 0;
+	u32 m_eventSourceAddr = 0;
 };
 
 } // namespace bmsx

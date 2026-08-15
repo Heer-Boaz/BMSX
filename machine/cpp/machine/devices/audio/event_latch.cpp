@@ -11,37 +11,44 @@ ApuEventLatch::ApuEventLatch(Memory& memory, IrqController& irq)
 	, m_irq(irq) {}
 
 void ApuEventLatch::reset() {
-	m_eventSequence = 0;
-	m_memory.writeIoU32(IO_APU_EVENT_KIND, APU_EVENT_NONE);
-	m_memory.writeIoU32(IO_APU_EVENT_SLOT, 0u);
-	m_memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, 0u);
-	m_memory.writeIoU32(IO_APU_EVENT_SEQ, 0u);
+	m_eventSequence = 0u;
+	m_eventKind = APU_EVENT_NONE;
+	m_eventSlot = 0u;
+	m_eventSourceAddr = 0u;
+	mirrorRegisters();
 }
 
 ApuEventLatchState ApuEventLatch::captureState() const {
 	ApuEventLatchState state;
 	state.eventSequence = m_eventSequence;
-	state.eventKind = m_memory.readIoU32(IO_APU_EVENT_KIND);
-	state.eventSlot = m_memory.readIoU32(IO_APU_EVENT_SLOT);
-	state.eventSourceAddr = m_memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR);
+	state.eventKind = m_eventKind;
+	state.eventSlot = m_eventSlot;
+	state.eventSourceAddr = m_eventSourceAddr;
 	return state;
 }
 
 void ApuEventLatch::restoreState(const ApuEventLatchState& state) {
 	m_eventSequence = state.eventSequence;
-	m_memory.writeIoU32(IO_APU_EVENT_KIND, state.eventKind);
-	m_memory.writeIoU32(IO_APU_EVENT_SLOT, state.eventSlot);
-	m_memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
-	m_memory.writeIoU32(IO_APU_EVENT_SEQ, m_eventSequence);
+	m_eventKind = state.eventKind;
+	m_eventSlot = state.eventSlot;
+	m_eventSourceAddr = state.eventSourceAddr;
+	mirrorRegisters();
 }
 
 void ApuEventLatch::emit(u32 kind, ApuAudioSlot slot, u32 sourceAddr) {
 	m_eventSequence += 1u;
-	m_memory.writeIoU32(IO_APU_EVENT_KIND, kind);
-	m_memory.writeIoU32(IO_APU_EVENT_SLOT, slot);
-	m_memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
-	m_memory.writeIoU32(IO_APU_EVENT_SEQ, m_eventSequence);
+	m_eventKind = kind;
+	m_eventSlot = slot;
+	m_eventSourceAddr = sourceAddr;
+	mirrorRegisters();
 	m_irq.raiseUser(IRQ_APU);
+}
+
+void ApuEventLatch::mirrorRegisters() {
+	m_memory.writeIoU32(IO_APU_EVENT_KIND, m_eventKind);
+	m_memory.writeIoU32(IO_APU_EVENT_SLOT, m_eventSlot);
+	m_memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, m_eventSourceAddr);
+	m_memory.writeIoU32(IO_APU_EVENT_SEQ, m_eventSequence);
 }
 
 } // namespace bmsx

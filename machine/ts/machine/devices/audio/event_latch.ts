@@ -19,6 +19,9 @@ export type ApuEventLatchState = {
 
 export class ApuEventLatch {
 	private eventSequence = 0;
+	private eventKind = APU_EVENT_NONE;
+	private eventSlot = 0;
+	private eventSourceAddr = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -27,35 +30,42 @@ export class ApuEventLatch {
 
 	public reset(): void {
 		this.eventSequence = 0;
-		this.memory.writeIoU32(IO_APU_EVENT_KIND, APU_EVENT_NONE);
-		this.memory.writeIoU32(IO_APU_EVENT_SLOT, 0);
-		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, 0);
-		this.memory.writeIoU32(IO_APU_EVENT_SEQ, 0);
+		this.eventKind = APU_EVENT_NONE;
+		this.eventSlot = 0;
+		this.eventSourceAddr = 0;
+		this.mirrorRegisters();
 	}
 
 	public captureState(): ApuEventLatchState {
 		return {
 			eventSequence: this.eventSequence,
-			eventKind: this.memory.readIoU32(IO_APU_EVENT_KIND),
-			eventSlot: this.memory.readIoU32(IO_APU_EVENT_SLOT),
-			eventSourceAddr: this.memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR),
+			eventKind: this.eventKind,
+			eventSlot: this.eventSlot,
+			eventSourceAddr: this.eventSourceAddr,
 		};
 	}
 
 	public restoreState(state: ApuEventLatchState): void {
 		this.eventSequence = state.eventSequence >>> 0;
-		this.memory.writeIoU32(IO_APU_EVENT_KIND, state.eventKind);
-		this.memory.writeIoU32(IO_APU_EVENT_SLOT, state.eventSlot);
-		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
-		this.memory.writeIoU32(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.eventKind = state.eventKind;
+		this.eventSlot = state.eventSlot;
+		this.eventSourceAddr = state.eventSourceAddr;
+		this.mirrorRegisters();
 	}
 
 	public emit(kind: number, slot: ApuAudioSlot, sourceAddr: number): void {
 		this.eventSequence = (this.eventSequence + 1) >>> 0;
-		this.memory.writeIoU32(IO_APU_EVENT_KIND, kind);
-		this.memory.writeIoU32(IO_APU_EVENT_SLOT, slot);
-		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
-		this.memory.writeIoU32(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.eventKind = kind;
+		this.eventSlot = slot;
+		this.eventSourceAddr = sourceAddr;
+		this.mirrorRegisters();
 		this.irq.raiseUser(IRQ_APU);
+	}
+
+	private mirrorRegisters(): void {
+		this.memory.writeIoU32(IO_APU_EVENT_KIND, this.eventKind);
+		this.memory.writeIoU32(IO_APU_EVENT_SLOT, this.eventSlot);
+		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, this.eventSourceAddr);
+		this.memory.writeIoU32(IO_APU_EVENT_SEQ, this.eventSequence);
 	}
 }

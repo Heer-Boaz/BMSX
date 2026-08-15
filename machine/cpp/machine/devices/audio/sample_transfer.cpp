@@ -24,6 +24,8 @@ void ApuSampleTransfer::reset() {
 	cancelBatch();
 	m_fifo.fill(0u);
 	clearFifo();
+	m_transferAddressWord = 0u;
+	m_transferControlWord = 0u;
 	m_currentAddress = 0u;
 	m_dataLatch = 0u;
 	m_mode = APU_TRANSFER_MODE_STOP;
@@ -71,9 +73,9 @@ auto ApuSampleTransfer::statusBits() const -> u32 {
 
 auto ApuSampleTransfer::captureState(i64 nowCycles) const -> ApuSampleTransferState {
 	ApuSampleTransferState state;
-	state.transferAddressWord = m_memory.readIoU32(IO_APU_TRANSFER_ADDRESS);
+	state.transferAddressWord = m_transferAddressWord;
 	state.transferDataWord = m_dataLatch;
-	state.transferControlWord = m_memory.readIoU32(IO_APU_TRANSFER_CONTROL);
+	state.transferControlWord = m_transferControlWord;
 	state.currentAddress = m_currentAddress;
 	state.fifoWords = m_fifo;
 	state.fifoReadIndex = m_fifoReadIndex;
@@ -91,15 +93,17 @@ void ApuSampleTransfer::restoreState(const ApuSampleTransferState& state, i64 no
 	m_fifoReadIndex = state.fifoReadIndex;
 	m_fifoWriteIndex = state.fifoWriteIndex;
 	m_fifoCount = state.fifoCount;
+	m_transferAddressWord = state.transferAddressWord;
+	m_transferControlWord = state.transferControlWord;
 	m_currentAddress = state.currentAddress;
 	m_dataLatch = state.transferDataWord;
 	m_mode = state.transferControlWord & APU_TRANSFER_MODE_MASK;
 	m_timingCarry = state.timingCarry;
 	m_scheduledWords = state.scheduledWords;
 	m_serviceDeadline = nowCycles + state.scheduledCycles;
-	m_memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, state.transferAddressWord);
+	m_memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, m_transferAddressWord);
 	m_memory.writeIoU32(IO_APU_TRANSFER_DATA, state.transferDataWord);
-	m_memory.writeIoU32(IO_APU_TRANSFER_CONTROL, state.transferControlWord);
+	m_memory.writeIoU32(IO_APU_TRANSFER_CONTROL, m_transferControlWord);
 	updateDmaRequests();
 	if (m_scheduledWords != 0u) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU_TRANSFER, m_serviceDeadline);
@@ -107,6 +111,7 @@ void ApuSampleTransfer::restoreState(const ApuSampleTransferState& state, i64 no
 }
 
 void ApuSampleTransfer::writeAddress(u32 word) {
+	m_transferAddressWord = word;
 	m_currentAddress = word & (APU_SAMPLE_RAM_ADDRESS_MASK & ~(IO_WORD_SIZE - 1u));
 }
 
@@ -146,6 +151,7 @@ void ApuSampleTransfer::writeDmaData(u32 word, bool blockEnd) {
 }
 
 void ApuSampleTransfer::writeControl(u32 word) {
+	m_transferControlWord = word;
 	const u32 mode = word & APU_TRANSFER_MODE_MASK;
 	if (mode != m_mode) {
 		cancelBatch();

@@ -34,6 +34,8 @@ export class ApuSampleTransfer {
 	private fifoReadIndex = 0;
 	private fifoWriteIndex = 0;
 	private fifoCount = 0;
+	private transferAddressWord = 0;
+	private transferControlWord = 0;
 	private currentAddress = 0;
 	private dataLatch = 0;
 	private mode = APU_TRANSFER_MODE_STOP;
@@ -53,6 +55,8 @@ export class ApuSampleTransfer {
 		this.cancelBatch();
 		this.fifoWords.fill(0);
 		this.clearFifo();
+		this.transferAddressWord = 0;
+		this.transferControlWord = 0;
 		this.currentAddress = 0;
 		this.dataLatch = 0;
 		this.mode = APU_TRANSFER_MODE_STOP;
@@ -93,9 +97,9 @@ export class ApuSampleTransfer {
 			fifoReadIndex: this.fifoReadIndex,
 			fifoWriteIndex: this.fifoWriteIndex,
 			fifoCount: this.fifoCount,
-			transferAddressWord: this.memory.readIoU32(IO_APU_TRANSFER_ADDRESS),
+			transferAddressWord: this.transferAddressWord,
 			transferDataWord: this.dataLatch,
-			transferControlWord: this.memory.readIoU32(IO_APU_TRANSFER_CONTROL),
+			transferControlWord: this.transferControlWord,
 			currentAddress: this.currentAddress,
 			timingCarry: this.timingCarry,
 			scheduledWords: this.scheduledWords,
@@ -111,15 +115,17 @@ export class ApuSampleTransfer {
 		this.fifoReadIndex = state.fifoReadIndex;
 		this.fifoWriteIndex = state.fifoWriteIndex;
 		this.fifoCount = state.fifoCount;
+		this.transferAddressWord = state.transferAddressWord;
+		this.transferControlWord = state.transferControlWord;
 		this.currentAddress = state.currentAddress;
 		this.dataLatch = state.transferDataWord;
 		this.mode = state.transferControlWord & APU_TRANSFER_MODE_MASK;
 		this.timingCarry = state.timingCarry;
 		this.scheduledWords = state.scheduledWords;
 		this.scheduledDeadline = nowCycles + state.scheduledCycles;
-		this.memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, state.transferAddressWord);
+		this.memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, this.transferAddressWord);
 		this.memory.writeIoU32(IO_APU_TRANSFER_DATA, state.transferDataWord);
-		this.memory.writeIoU32(IO_APU_TRANSFER_CONTROL, state.transferControlWord);
+		this.memory.writeIoU32(IO_APU_TRANSFER_CONTROL, this.transferControlWord);
 		this.updateDmaRequests();
 		if (this.scheduledWords !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU_TRANSFER, this.scheduledDeadline);
@@ -134,6 +140,7 @@ export class ApuSampleTransfer {
 	}
 
 	public writeAddress(word: number): void {
+		this.transferAddressWord = word;
 		this.currentAddress = word & (APU_SAMPLE_RAM_ADDRESS_MASK & ~3);
 	}
 
@@ -173,6 +180,7 @@ export class ApuSampleTransfer {
 	}
 
 	public writeControl(word: number): void {
+		this.transferControlWord = word;
 		const mode = word & APU_TRANSFER_MODE_MASK;
 		if (mode !== this.mode) {
 			this.cancelBatch();

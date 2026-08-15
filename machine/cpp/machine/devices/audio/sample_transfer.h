@@ -50,6 +50,8 @@ private:
 	u32 m_fifoReadIndex = 0;
 	u32 m_fifoWriteIndex = 0;
 	u32 m_fifoCount = 0;
+	u32 m_transferAddressWord = 0;
+	u32 m_transferControlWord = 0;
 	u32 m_currentAddress = 0;
 	u32 m_dataLatch = 0;
 	u32 m_mode = APU_TRANSFER_MODE_STOP;
