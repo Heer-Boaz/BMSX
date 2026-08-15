@@ -13,16 +13,20 @@ irq = irq_module.dispatch
 require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/player')
-local director_module<const> = require('director')
+local director_module<const> = telemetry_enabled and require('director')
 local irq_mask_register<const>: *word = 0x08000008
 local function init<init>()
 	*irq_mask_register = 0
 	irq_module.register(vblank.irq_mask, vblank.on_irq)
 	stage_module.define_stage_fsm()
-	director_module.define_director_fsm()
+	if telemetry_enabled then
+		director_module.define_director_fsm()
+	end
 	player_module.define_player_fsm()
 	stage_module.register_stage_definition()
-	director_module.register_director_definition()
+	if telemetry_enabled then
+		director_module.register_director_definition()
+	end
 	player_module.register_player_definition()
 	*irq_mask_register = vblank.irq_mask
 end
@@ -33,11 +37,13 @@ function new_game()
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	world:spawn(director_module.director_def_id, {
-		id = director_module.director_instance_id,
-		stage = stage,
-		pos = { x = 0, y = 0, z = 0 },
-	})
+	if telemetry_enabled then
+		world:spawn(director_module.director_def_id, {
+			id = director_module.director_instance_id,
+			stage = stage,
+			pos = { x = 0, y = 0, z = 0 },
+		})
+	end
 	world:spawn(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		player_index = 1,

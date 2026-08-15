@@ -96,6 +96,17 @@ local star_sources<const> = {
 	yellow = image.resolve(assets_star_yellow),
 	blue = image.resolve(assets_star_blue),
 }
+local star_blink_tracks<const> = telemetry_enabled and {
+	{
+		kind = 'event',
+		keys = {
+			{ frame = 0, event = 'star_blink_toggle', direction = 'forward' },
+			{ frame = 1, event = 'star_blink_toggle', direction = 'forward' },
+			{ frame = 2, event = 'star_blink_toggle', direction = 'forward' },
+			{ frame = 3, event = 'star_blink_toggle', direction = 'forward' },
+		},
+	},
+}
 
 local new_rows<const> = function(width, height, default_value)
 	local out<const> = {}
@@ -477,31 +488,37 @@ function stage:update_runtime()
 			if self.tape_head >= self.stop_tape_head or self.left_tile >= max_left_tile then
 				self.scrolling = false
 				smooth_scroll_px = 0
-				self.events:emit('stage_scroll_stop', {
-					left = self.left_tile,
-					head = self.tape_head,
-				})
+				if telemetry_enabled then
+					self.events:emit('stage_scroll_stop', {
+						left = self.left_tile,
+						head = self.tape_head,
+					})
+				end
 			else
 				self.left_tile = self.left_tile + 1
 				self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 				self.tape_head = self.left_tile + self.tile_columns - 1
 				self.tile_steps = self.tile_steps + 1
 				self.scroll_advanced = true
-				self.events:emit('stage_scroll_tile', {
-					left = self.left_tile,
-					head = self.tape_head,
-				})
+				if telemetry_enabled then
+					self.events:emit('stage_scroll_tile', {
+						left = self.left_tile,
+						head = self.tape_head,
+					})
+				end
 			end
 		end
 
-		self.events:emit('stage_scroll_gate', {
-			mode = self.scroll_mode,
-			rot = self.scroll_rotator,
-			bit = self.scroll_gate_bit,
-			adv = self.scroll_advanced,
-			left = self.left_tile,
-			head = self.tape_head,
-		})
+		if telemetry_enabled then
+			self.events:emit('stage_scroll_gate', {
+				mode = self.scroll_mode,
+				rot = self.scroll_rotator,
+				bit = self.scroll_gate_bit,
+				adv = self.scroll_advanced,
+				left = self.left_tile,
+				head = self.tape_head,
+			})
+		end
 	end
 
 	self.total_scroll_px = self.tile_steps * self.tile_size
@@ -573,17 +590,7 @@ local define_stage_fsm<const> = function()
 							frame_duration = stage_star_blink_frame_duration,
 							playback_mode = 'loop',
 							apply = true,
-							tracks = {
-								{
-									kind = 'event',
-									keys = {
-										{ frame = 0, event = 'star_blink_toggle', direction = 'forward' },
-										{ frame = 1, event = 'star_blink_toggle', direction = 'forward' },
-										{ frame = 2, event = 'star_blink_toggle', direction = 'forward' },
-										{ frame = 3, event = 'star_blink_toggle', direction = 'forward' },
-									},
-								},
-							},
+							tracks = star_blink_tracks,
 						},
 						autoplay = true,
 						stop_on_exit = true,
