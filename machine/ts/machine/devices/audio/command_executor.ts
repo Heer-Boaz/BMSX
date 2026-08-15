@@ -1,4 +1,4 @@
-import { IO_APU_SELECTED_SLOT_REG0, IO_APU_SLOT, IO_ARG_STRIDE } from '../../../spec/bmsx/io';
+import { IO_APU_SELECTED_SLOT_REG0, IO_ARG_STRIDE } from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { DeviceStatusLatch } from '../device_status';
@@ -72,6 +72,7 @@ export class ApuCommandExecutor {
 		private readonly selectedSlotLatch: ApuSelectedSlotLatch,
 		private readonly fault: DeviceStatusLatch,
 		private readonly serviceClock: ApuServiceClock,
+		private readonly commandRegisterWords: ApuParameterRegisterWords,
 	) {}
 
 	public drainCommandFifo(): void {
@@ -99,7 +100,7 @@ export class ApuCommandExecutor {
 	public static selectedSlotRegisterReadThunk(context: ApuCommandExecutor, addr: number): number {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.serviceClock.synchronize(nowCycles);
-		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+		const slot = context.commandRegisterWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK;
 		const parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE;
 		return context.slots.registerWord(slot, parameterIndex);
 	}
@@ -107,7 +108,7 @@ export class ApuCommandExecutor {
 	public static selectedSlotRegisterWriteThunk(context: ApuCommandExecutor, addr: number, value: number): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.serviceClock.synchronize(nowCycles);
-		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+		const slot = context.commandRegisterWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK;
 		context.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE, value);
 		context.serviceClock.scheduleNext(nowCycles);
 	}
@@ -188,7 +189,9 @@ export class ApuCommandExecutor {
 				);
 			}
 		}
-		this.selectedSlotLatch.refresh();
+		this.selectedSlotLatch.refresh(
+			this.commandRegisterWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK,
+		);
 	}
 
 	private bindSource(source: ApuAudioSource, cartridgeSlot: number): boolean {

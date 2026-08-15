@@ -6,14 +6,14 @@
 namespace bmsx {
 
 class ApuCommandFifo;
+class ApuCommandLatch;
 class ApuServiceClock;
 class DeviceScheduler;
 class DeviceStatusLatch;
-class Memory;
 
 class ApuCommandIngress final {
 public:
-	ApuCommandIngress(Memory& memory,
+	ApuCommandIngress(ApuCommandLatch& commandLatch,
 		ApuCommandFifo& commandFifo,
 		DeviceStatusLatch& fault,
 		ApuServiceClock& serviceClock,
@@ -22,7 +22,7 @@ public:
 	static void onCommandWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 
 private:
-	Memory& m_memory;
+	ApuCommandLatch& m_commandLatch;
 	ApuCommandFifo& m_commandFifo;
 	DeviceStatusLatch& m_fault;
 	ApuServiceClock& m_serviceClock;

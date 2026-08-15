@@ -4,6 +4,7 @@
 #include "machine/devices/audio/command_executor.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/command_ingress.h"
+#include "machine/devices/audio/command_latch.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
@@ -49,6 +50,7 @@ private:
 	ApuSlotBank m_slots;
 	DeviceStatusLatch m_fault;
 	ApuSelectedSlotLatch m_selectedSlotLatch;
+	ApuCommandLatch m_commandLatch;
 	ApuSampleMemory m_sampleMemory;
 	ApuActiveSlots m_activeSlots;
 	ApuServiceClock m_serviceClock;

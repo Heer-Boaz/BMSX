@@ -13,16 +13,18 @@ ApuActiveSlots::ApuActiveSlots(Memory& memory,
 	ApuOutputMixer& audioOutput,
 	ApuEventLatch& eventLatch,
 	ApuSlotBank& slots,
-	ApuSelectedSlotLatch& selectedSlotLatch)
+	ApuSelectedSlotLatch& selectedSlotLatch,
+	const ApuParameterRegisterWords& commandRegisterWords)
 	: m_memory(memory)
 	, m_audioOutput(audioOutput)
 	, m_eventLatch(eventLatch)
 	, m_slots(slots)
-	, m_selectedSlotLatch(selectedSlotLatch) {}
+	, m_selectedSlotLatch(selectedSlotLatch)
+	, m_commandRegisterWords(commandRegisterWords) {}
 
 void ApuActiveSlots::writeActiveMask() {
 	m_memory.writeIoU32(IO_APU_ACTIVE_MASK, m_slots.activeMask());
-	m_selectedSlotLatch.refresh();
+	m_selectedSlotLatch.refresh(m_commandRegisterWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK);
 }
 
 void ApuActiveSlots::setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {

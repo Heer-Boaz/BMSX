@@ -6,7 +6,9 @@ import type { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuSlotBank } from './slot_bank';
 import {
 	APU_EVENT_SLOT_ENDED,
+	APU_PARAMETER_SLOT_INDEX,
 	APU_SLOT_COUNT,
+	APU_SLOT_INDEX_MASK,
 } from '../../../spec/audio/apu';
 import {
 	APU_SLOT_PHASE_IDLE,
@@ -22,11 +24,14 @@ export class ApuActiveSlots {
 		private readonly eventLatch: ApuEventLatch,
 		private readonly slots: ApuSlotBank,
 		private readonly selectedSlotLatch: ApuSelectedSlotLatch,
+		private readonly commandRegisterWords: ApuParameterRegisterWords,
 	) {}
 
 	public writeActiveMask(): void {
 		this.memory.writeIoU32(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		this.selectedSlotLatch.refresh();
+		this.selectedSlotLatch.refresh(
+			this.commandRegisterWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK,
+		);
 	}
 
 	public setActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords): void {

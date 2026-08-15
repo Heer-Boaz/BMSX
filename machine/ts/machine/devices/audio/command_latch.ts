@@ -3,59 +3,69 @@ import {
 	APU_FILTER_COEFFICIENT_ONE,
 	APU_GAIN_Q12_ONE,
 	APU_GENERATOR_NONE,
+	APU_PARAMETER_FILTER_B0_B1_INDEX,
+	APU_PARAMETER_GAIN_Q12_INDEX,
+	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
+	APU_PARAMETER_GENERATOR_KIND_INDEX,
+	APU_PARAMETER_RATE_STEP_Q16_INDEX,
+	APU_PARAMETER_REGISTER_COUNT,
+	APU_PARAMETER_SLOT_INDEX,
 	APU_RATE_STEP_Q16_ONE,
+	APU_SLOT_INDEX_MASK,
 } from '../../../spec/audio/apu';
 import {
 	IO_APU_CMD,
-	IO_APU_FADE_SAMPLES,
-	IO_APU_FILTER_B0_B1,
-	IO_APU_FILTER_A2,
-	IO_APU_FILTER_CONTROL,
-	IO_APU_FILTER_B2_A1,
-	IO_APU_GAIN_Q12,
-	IO_APU_GENERATOR_DUTY_Q12,
-	IO_APU_GENERATOR_KIND,
-	IO_APU_RATE_STEP_Q16,
-	IO_APU_SLOT,
+	IO_APU_PARAMETER_REGISTER_ADDRS,
 	IO_APU_SOURCE_ADDR,
-	IO_APU_SOURCE_BITS_PER_SAMPLE,
-	IO_APU_SOURCE_BYTES,
-	IO_APU_SOURCE_CHANNELS,
-	IO_APU_SOURCE_DATA_BYTES,
-	IO_APU_SOURCE_DATA_OFFSET,
-	IO_APU_SOURCE_FRAME_COUNT,
-	IO_APU_SOURCE_LOOP_END_SAMPLE,
-	IO_APU_SOURCE_LOOP_START_SAMPLE,
-	IO_APU_SOURCE_SAMPLE_RATE_HZ,
-	IO_APU_START_SAMPLE,
+	IO_ARG_STRIDE,
 } from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
+import type { ApuSelectedSlotLatch } from './selected_slot_latch';
 
-function resetApuCommandLatch(memory: Memory): void {
-	memory.writeIoU32(IO_APU_SOURCE_ADDR, 0);
-	memory.writeIoU32(IO_APU_SOURCE_BYTES, 0);
-	memory.writeIoU32(IO_APU_SOURCE_SAMPLE_RATE_HZ, 0);
-	memory.writeIoU32(IO_APU_SOURCE_CHANNELS, 0);
-	memory.writeIoU32(IO_APU_SOURCE_BITS_PER_SAMPLE, 0);
-	memory.writeIoU32(IO_APU_SOURCE_FRAME_COUNT, 0);
-	memory.writeIoU32(IO_APU_SOURCE_DATA_OFFSET, 0);
-	memory.writeIoU32(IO_APU_SOURCE_DATA_BYTES, 0);
-	memory.writeIoU32(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
-	memory.writeIoU32(IO_APU_SOURCE_LOOP_END_SAMPLE, 0);
-	memory.writeIoU32(IO_APU_SLOT, 0);
-	memory.writeIoU32(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	memory.writeIoU32(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
-	memory.writeIoU32(IO_APU_START_SAMPLE, 0);
-	memory.writeIoU32(IO_APU_FILTER_CONTROL, 0);
-	memory.writeIoU32(IO_APU_FILTER_B0_B1, APU_FILTER_COEFFICIENT_ONE);
-	memory.writeIoU32(IO_APU_FILTER_B2_A1, 0);
-	memory.writeIoU32(IO_APU_FILTER_A2, 0);
-	memory.writeIoU32(IO_APU_FADE_SAMPLES, 0);
-	memory.writeIoU32(IO_APU_GENERATOR_KIND, APU_GENERATOR_NONE);
-	memory.writeIoU32(IO_APU_GENERATOR_DUTY_Q12, APU_GAIN_Q12_ONE >>> 1);
-}
+export class ApuCommandLatch {
+	public readonly registerWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 
-export function clearApuCommandLatch(memory: Memory): void {
-	resetApuCommandLatch(memory);
-	memory.writeIoU32(IO_APU_CMD, APU_CMD_NONE);
+	public constructor(
+		private readonly memory: Memory,
+		private readonly selectedSlotLatch: ApuSelectedSlotLatch,
+	) {
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			memory.mapIoWrite(
+				IO_APU_PARAMETER_REGISTER_ADDRS[index]!,
+				this,
+				ApuCommandLatch.parameterWriteThunk,
+			);
+		}
+	}
+
+	private static parameterWriteThunk(context: ApuCommandLatch, address: number, value: number): void {
+		const index = (address - IO_APU_SOURCE_ADDR) / IO_ARG_STRIDE;
+		context.registerWords[index] = value;
+		if (index === APU_PARAMETER_SLOT_INDEX) {
+			context.selectedSlotLatch.refresh(value & APU_SLOT_INDEX_MASK);
+		}
+	}
+
+	public clear(): void {
+		this.registerWords.fill(0);
+		this.registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX] = APU_RATE_STEP_Q16_ONE;
+		this.registerWords[APU_PARAMETER_GAIN_Q12_INDEX] = APU_GAIN_Q12_ONE;
+		this.registerWords[APU_PARAMETER_FILTER_B0_B1_INDEX] = APU_FILTER_COEFFICIENT_ONE;
+		this.registerWords[APU_PARAMETER_GENERATOR_KIND_INDEX] = APU_GENERATOR_NONE;
+		this.registerWords[APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX] = APU_GAIN_Q12_ONE >>> 1;
+		this.mirrorRegisters();
+	}
+
+	public restore(registerWords: ArrayLike<number>): void {
+		this.registerWords.set(registerWords);
+		this.mirrorRegisters();
+	}
+
+	private mirrorRegisters(): void {
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			this.memory.writeIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, this.registerWords[index]!);
+		}
+		this.memory.writeIoU32(IO_APU_CMD, APU_CMD_NONE);
+		this.selectedSlotLatch.refresh(this.registerWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK);
+	}
 }

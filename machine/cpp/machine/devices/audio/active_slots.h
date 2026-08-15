@@ -17,7 +17,8 @@ public:
 		ApuOutputMixer& audioOutput,
 		ApuEventLatch& eventLatch,
 		ApuSlotBank& slots,
-		ApuSelectedSlotLatch& selectedSlotLatch);
+		ApuSelectedSlotLatch& selectedSlotLatch,
+		const ApuParameterRegisterWords& commandRegisterWords);
 
 	void writeActiveMask();
 	void setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
@@ -32,6 +33,7 @@ private:
 	ApuEventLatch& m_eventLatch;
 	ApuSlotBank& m_slots;
 	ApuSelectedSlotLatch& m_selectedSlotLatch;
+	const ApuParameterRegisterWords& m_commandRegisterWords;
 };
 
 } // namespace bmsx

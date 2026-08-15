@@ -1,7 +1,6 @@
 #pragma once
 
-#include "common/types.h"
-#include "machine/memory/bus_signals.h"
+#include "machine/devices/audio/contracts.h"
 
 namespace bmsx {
 
@@ -13,9 +12,7 @@ class ApuSelectedSlotLatch final {
 public:
 	ApuSelectedSlotLatch(Memory& memory, DeviceStatusLatch& status, ApuSlotBank& slots);
 
-	void reset();
-	void refresh();
-	static void refreshThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	void refresh(ApuAudioSlot slot);
 
 private:
 	Memory& m_memory;

@@ -25,7 +25,8 @@ ApuCommandExecutor::ApuCommandExecutor(Memory& memory,
 	ApuSlotBank& slots,
 	ApuSelectedSlotLatch& selectedSlotLatch,
 	DeviceStatusLatch& fault,
-	ApuServiceClock& serviceClock)
+	ApuServiceClock& serviceClock,
+	const ApuParameterRegisterWords& commandRegisterWords)
 	: m_memory(memory)
 	, m_audioOutput(audioOutput)
 	, m_scheduler(scheduler)
@@ -35,7 +36,8 @@ ApuCommandExecutor::ApuCommandExecutor(Memory& memory,
 	, m_slots(slots)
 	, m_selectedSlotLatch(selectedSlotLatch)
 	, m_fault(fault)
-	, m_serviceClock(serviceClock) {}
+	, m_serviceClock(serviceClock)
+	, m_commandRegisterWords(commandRegisterWords) {}
 
 void ApuCommandExecutor::drainCommandFifo() {
 	while (!m_commandFifo.empty()) {
@@ -62,7 +64,7 @@ u32 ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, M
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
-	const u32 slot = executor.m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+	const u32 slot = executor.m_commandRegisterWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
 	const u32 parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE;
 	return executor.m_slots.registerWord(slot, parameterIndex);
 }
@@ -71,7 +73,7 @@ void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr,
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
-	const u32 slot = executor.m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+	const u32 slot = executor.m_commandRegisterWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
 	executor.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE, value);
 	executor.m_serviceClock.scheduleNext(nowCycles);
 }
@@ -152,7 +154,7 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 			);
 		}
 	}
-	m_selectedSlotLatch.refresh();
+	m_selectedSlotLatch.refresh(m_commandRegisterWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK);
 }
 
 bool ApuCommandExecutor::bindSource(const ApuAudioSource& source, u32 cartridgeSlot) {

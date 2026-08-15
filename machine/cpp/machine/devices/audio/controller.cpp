@@ -1,7 +1,5 @@
 #include "machine/devices/audio/controller.h"
 
-#include "machine/devices/audio/command_latch.h"
-
 #include "spec/bmsx/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -29,16 +27,33 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Dm
 	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
+	, m_commandLatch(memory, m_selectedSlotLatch)
 	, m_sampleMemory(memory)
-	, m_activeSlots(memory, m_audioOutput, m_eventLatch, m_slots, m_selectedSlotLatch)
+	, m_activeSlots(
+		memory,
+		m_audioOutput,
+		m_eventLatch,
+		m_slots,
+		m_selectedSlotLatch,
+		m_commandLatch.registerWords())
 	, m_serviceClock(memory, m_sampleMemory, dma, scheduler, m_commandFifo, m_activeSlots, m_audioOutput)
 	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_serviceClock, scheduler)
-	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler)
+	, m_commandIngress(m_commandLatch, m_commandFifo, m_fault, m_serviceClock, scheduler)
 	, m_queueStatusRegisters(m_commandFifo)
-	, m_commandExecutor(memory, m_audioOutput, scheduler, m_commandFifo, m_sampleMemory, m_activeSlots, m_slots, m_selectedSlotLatch, m_fault, m_serviceClock) {
+	, m_commandExecutor(
+		memory,
+		m_audioOutput,
+		scheduler,
+		m_commandFifo,
+		m_sampleMemory,
+		m_activeSlots,
+		m_slots,
+		m_selectedSlotLatch,
+		m_fault,
+		m_serviceClock,
+		m_commandLatch.registerWords()) {
 	m_memory.mapIoRead(IO_APU_STATUS, &m_statusRegister, &ApuStatusRegister::readThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::onCommandWriteThunk);
-	m_memory.mapIoWrite(IO_APU_SLOT, &m_selectedSlotLatch, &ApuSelectedSlotLatch::refreshThunk);
 	m_memory.mapIoRead(IO_APU_CMD_QUEUED, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_CMD_FREE, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_CMD_CAPACITY, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
@@ -61,9 +76,8 @@ void AudioController::reset() {
 	m_serviceClock.reset(m_scheduler.currentNowCycles());
 	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
-	clearApuCommandLatch(m_memory);
+	m_commandLatch.clear();
 	m_eventLatch.reset();
-	m_selectedSlotLatch.reset();
 	m_activeSlots.writeActiveMask();
 }
 

@@ -8,8 +8,6 @@
 
 namespace bmsx {
 
-class Memory;
-
 struct ApuCommandFifoState {
 	std::array<u32, APU_COMMAND_FIFO_CAPACITY> commands{};
 	std::array<u32, APU_COMMAND_FIFO_REGISTER_WORD_COUNT> registerWords{};
@@ -26,7 +24,7 @@ public:
 	bool empty() const;
 	bool full() const;
 	void reset();
-	void enqueue(u32 command, const Memory& memory);
+	void enqueue(u32 command, const ApuParameterRegisterWords& source);
 	u32 popInto(ApuParameterRegisterWords& target);
 	ApuCommandFifoState captureState() const;
 	void restoreState(const ApuCommandFifoState& state);

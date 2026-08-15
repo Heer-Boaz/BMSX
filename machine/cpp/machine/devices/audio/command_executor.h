@@ -30,7 +30,8 @@ public:
 		ApuSlotBank& slots,
 		ApuSelectedSlotLatch& selectedSlotLatch,
 		DeviceStatusLatch& fault,
-		ApuServiceClock& serviceClock);
+		ApuServiceClock& serviceClock,
+		const ApuParameterRegisterWords& commandRegisterWords);
 
 	void drainCommandFifo();
 	void restoreOutputVoice(const ApuOutputVoiceState& state);
@@ -48,6 +49,7 @@ private:
 	ApuSelectedSlotLatch& m_selectedSlotLatch;
 	DeviceStatusLatch& m_fault;
 	ApuServiceClock& m_serviceClock;
+	const ApuParameterRegisterWords& m_commandRegisterWords;
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 	ApuAudioSource m_source{};

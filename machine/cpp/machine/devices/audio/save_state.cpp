@@ -1,7 +1,6 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/output.h"
 
-#include "spec/bmsx/io.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
@@ -77,9 +76,7 @@ AudioControllerState AudioController::captureState() {
 	const i64 nowCycles = m_scheduler.currentNowCycles();
 	m_serviceClock.synchronize(nowCycles);
 	AudioControllerState state;
-	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		state.registerWords[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
-	}
+	state.registerWords = m_commandLatch.registerWords();
 	state.commandFifo = m_commandFifo.captureState();
 	const ApuEventLatchState event = m_eventLatch.captureState();
 	state.eventSequence = event.eventSequence;
@@ -101,15 +98,13 @@ AudioControllerState AudioController::captureState() {
 
 void AudioController::restoreState(const AudioControllerState& state, int64_t nowCycles) {
 	m_audioOutput.resetPlaybackState();
-	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		m_memory.writeIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index], state.registerWords[index]);
-	}
 	m_commandFifo.restoreState(state.commandFifo);
 	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});
 	m_slots.restore(state.slotPhases, state.slotRegisterWords);
 	m_sampleMemory.restoreState(state.sampleRam);
 	m_serviceClock.restore(state.sampleCarry, state.sampleSequence, state.sampleTransfer, nowCycles);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
+	m_commandLatch.restore(state.registerWords);
 	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
 		m_commandExecutor.restoreOutputVoice(voiceState);

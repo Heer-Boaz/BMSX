@@ -1,8 +1,5 @@
 #include "machine/devices/audio/command_fifo.h"
 
-#include "spec/bmsx/io.h"
-#include "machine/memory/memory.h"
-
 namespace bmsx {
 
 u32 ApuCommandFifo::count() const {
@@ -33,12 +30,12 @@ void ApuCommandFifo::reset() {
 	m_queuedCount = 0u;
 }
 
-void ApuCommandFifo::enqueue(u32 command, const Memory& memory) {
+void ApuCommandFifo::enqueue(u32 command, const ApuParameterRegisterWords& source) {
 	const u32 entry = m_writeIndex;
 	m_commands[entry] = command;
 	const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		m_registerWords[base + index] = memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
+		m_registerWords[base + index] = source[index];
 	}
 	m_writeIndex += 1u;
 	if (m_writeIndex == APU_COMMAND_FIFO_CAPACITY) {

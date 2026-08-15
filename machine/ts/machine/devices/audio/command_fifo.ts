@@ -1,5 +1,3 @@
-import { IO_APU_PARAMETER_REGISTER_ADDRS } from '../../../spec/bmsx/io';
-import type { Memory } from '../../memory/memory';
 import {
 	APU_CMD_NONE,
 	APU_COMMAND_FIFO_CAPACITY,
@@ -51,12 +49,12 @@ export class ApuCommandFifo {
 		this.queuedCount = 0;
 	}
 
-	public enqueue(command: number, memory: Memory): void {
+	public enqueue(command: number, source: ApuParameterRegisterWords): void {
 		const entry = this.writeIndex;
 		this.commands[entry] = command;
 		const base = entry * APU_PARAMETER_REGISTER_COUNT;
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
-			this.registerWords[base + index] = memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!);
+			this.registerWords[base + index] = source[index]!;
 		}
 		this.writeIndex += 1;
 		if (this.writeIndex === APU_COMMAND_FIFO_CAPACITY) {
