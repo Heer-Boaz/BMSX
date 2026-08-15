@@ -99,7 +99,7 @@ function timeline_program.compile(definition)
 		frames = {},
 		length = 0,
 	}
-	program.evaluation_factory = timeline_evaluation_program.compile(program)
+	program.evaluation_factory, program.has_evaluation_work = timeline_evaluation_program.compile(program)
 	if program.duration_ms == nil and subsequences.clip_count > 0 then
 		program.duration_ms = subsequences.duration_ms
 	end

@@ -583,6 +583,28 @@ local update_timed_frames<const> = function(self, owner, delta_time)
 	return false
 end
 
+-- A frame sequence with no evaluation work advances its retained transport
+-- directly. Consumers read the destination frame through value(); no track,
+-- event, binding or sequence work exists to traverse.
+local update_timed_loop_transport<const> = function(self, _owner, delta_time)
+	self.wrapped = false
+	local frame_elapsed<const> = self.frame_elapsed + delta_time
+	local frame_duration<const> = self.frame_duration
+	if frame_elapsed < frame_duration then
+		self.frame_elapsed = frame_elapsed
+		return false
+	end
+	local advanced_frames<const> = frame_elapsed // frame_duration
+	local frame_count<const> = self.last_frame + 1
+	local frame<const> = self.head + advanced_frames
+	self.wrapped = frame >= frame_count
+	self.head = frame % frame_count
+	self.frame_elapsed = frame_elapsed - advanced_frames * frame_duration
+	self.position_ms = self.head * frame_duration
+	self.direction = 1
+	return false
+end
+
 -- Discrete loop playback without authored evaluation callbacks advances one
 -- monotonic range per wrap, not one evaluator call per crossed frame. Sampled
 -- state is written at the destination while event, tag and sequence programs
@@ -654,9 +676,13 @@ local select_updater<const> = function(program, positioned)
 			return update_immediate_frames
 		end
 		if program.playback_mode == playback_loop
-		and not program.requires_frame_sampling
 		and program.length > 0 then
-			return update_timed_loop
+			if not program.has_evaluation_work then
+				return update_timed_loop_transport
+			end
+			if not program.requires_frame_sampling then
+				return update_timed_loop
+			end
 		end
 		return update_timed_frames
 	end

@@ -86,6 +86,7 @@ function evaluation_program.compile(program)
 	if has_evaluation_context then
 		shape = shape | shape_evaluation_context
 	end
+	local has_evaluation_work<const> = shape ~= 0
 	local syntax_values<const> = {
 		has_frame_steps = prepared_tracks.has_frame_steps,
 		has_time_steps = prepared_tracks.has_time_steps,
@@ -112,7 +113,7 @@ function evaluation_program.compile(program)
 	end
 	local factory<const> = factories_by_operands[operand_signature]
 	if factory ~= nil then
-		return factory
+		return factory, has_evaluation_work
 	end
 	local has_position_difference<const> = has_tags
 		or has_position_values
@@ -155,7 +156,7 @@ function evaluation_program.compile(program)
 		evaluation_environment
 	)()
 	factories_by_operands[operand_signature] = compiled_factory
-	return compiled_factory
+	return compiled_factory, has_evaluation_work
 end
 
 return evaluation_program
