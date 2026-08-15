@@ -1,4 +1,5 @@
 local rom_dir<const> = require('cartlib/rom_dir')
+local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_texture<const> = require('cartlib/gx/texture')
 
@@ -217,18 +218,21 @@ function image.resolve(id)
 	local draw_source_rect
 	local draw_affine
 	local draw_quad
+	local blit_span
 	if texture.mode == gp0.texture_mode_palette4 then
 		draw = palette4_draw
 		blit = palette4_blit
 		draw_source_rect = palette4_draw_source_rect
 		draw_affine = palette4_draw_affine
 		draw_quad = palette4_draw_quad
+		blit_span = command_list.palette4_blit_span
 	else
 		draw = direct16_draw
 		blit = direct16_blit
 		draw_source_rect = direct16_draw_source_rect
 		draw_affine = direct16_draw_affine
 		draw_quad = direct16_draw_quad
+		blit_span = command_list.direct16_blit_span
 	end
 	local source<const> = {
 		_texture = texture,
@@ -258,6 +262,7 @@ function image.resolve(id)
 		end
 		source._tiles = tiles
 	else
+		source._blit_span = blit_span
 		source.draw = draw
 		source.blit = blit
 		source.draw_source_rect = draw_source_rect

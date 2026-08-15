@@ -88,7 +88,7 @@ function text_component:render_glyphs(draw, x, y)
 	for i = 1, self.glyph_line_count do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-		local line_length<const> = #line
+		local line_length<const> = line.visible_count
 		if line_length > 0 then
 			local line_x = x
 			if line_x_offsets ~= nil then
@@ -97,11 +97,27 @@ function text_component:render_glyphs(draw, x, y)
 				local line_width<const> = line_widths[i]
 				line_x = x + ((self.center_block_width - line_width) // 2)
 			end
-			local cursor_x = line_x
-			for glyph_index = 1, line_length do
-				local glyph<const> = line[glyph_index]
-				glyph.source:blit(draw, cursor_x, line_y, color)
-				cursor_x = cursor_x + glyph.advance
+			local runs<const> = line.runs
+			for run_index = 1, line.run_count do
+				local run<const> = runs[run_index]
+				if run.first_index > line_length then
+					break
+				end
+				local last_index = run.last_index
+				if last_index > line_length then
+					last_index = line_length
+				end
+				run.blit_span(
+					draw,
+					run.texture,
+					line,
+					line.x_offsets,
+					run.first_index,
+					last_index,
+					line_x,
+					line_y,
+					color
+				)
 			end
 		end
 		if line_offsets == nil then
@@ -121,7 +137,7 @@ function text_component:render(draw, x, y)
 		for i = 1, self.glyph_line_count do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-			local line_length<const> = #line
+			local line_length<const> = line.visible_count
 			if line_length > 0 then
 				local line_x = x
 				if line_x_offsets ~= nil then
@@ -130,11 +146,11 @@ function text_component:render(draw, x, y)
 					local line_width<const> = line_widths[i]
 					line_x = x + ((self.center_block_width - line_width) // 2)
 				end
-				local cursor_x = line_x
+				local x_offsets<const> = line.x_offsets
 				for glyph_index = 1, line_length do
 					local glyph<const> = line[glyph_index]
-					draw:rect(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, background_color)
-					cursor_x = cursor_x + glyph.advance
+					local glyph_x<const> = line_x + x_offsets[glyph_index]
+					draw:rect(glyph_x, line_y, glyph_x + glyph.width, line_y + glyph.height, background_color)
 				end
 			end
 			if line_offsets == nil then

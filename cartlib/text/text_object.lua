@@ -325,7 +325,6 @@ function text_object.initialize(self)
 		offset_y = self.dimensions.top,
 		offset_z = 1,
 	})
-	self.display_glyph_lines = self.text_component.glyph_lines
 	self.displayed_line_widths = self.text_component.layout_line_widths
 	self.text_component.line_widths = self.displayed_line_widths
 	self:add_component(self.text_component)
@@ -493,22 +492,14 @@ function text_object:clear_text()
 end
 
 function text_object:reset_typing_buffer()
-	local glyph_lines<const> = self.display_glyph_lines
 	local line_widths<const> = self.displayed_line_widths
 	for i = 1, #self.full_text_lines do
-		local line = glyph_lines[i]
-		if line == nil then
-			line = {}
-			glyph_lines[i] = line
-		end
-		for glyph_index = 1, #line do
-			line[glyph_index] = nil
-		end
+		self.full_glyph_lines[i].visible_count = 0
 		line_widths[i] = 0
 	end
 	self.current_line_index = 0
 	self.current_char_index = 0
-	self.text_component.glyph_lines = glyph_lines
+	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
 end
@@ -516,6 +507,10 @@ end
 function text_object:apply_full_text()
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
+	for i = 1, #self.full_text_lines do
+		local line<const> = self.full_glyph_lines[i]
+		line.visible_count = line.glyph_count
+	end
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = self.full_text_line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
@@ -532,12 +527,11 @@ function text_object:advance_typing()
 	end
 	local char_index<const> = self.current_char_index + 1
 	local source_glyphs<const> = self.full_glyph_lines[line_index]
-	if char_index <= #source_glyphs then
+	if char_index <= source_glyphs.glyph_count then
 		self.current_line_index = line_index
 		self.current_char_index = char_index
 		local glyph<const> = source_glyphs[char_index]
-		local display_glyphs<const> = self.display_glyph_lines[line_index]
-		display_glyphs[#display_glyphs + 1] = glyph
+		source_glyphs.visible_count = char_index
 		self.displayed_line_widths[line_index] = self.displayed_line_widths[line_index] + glyph.advance
 		return false
 	end
@@ -571,7 +565,7 @@ function text_object:submit_text_background_lines(draw, x, y)
 	local cursor_y = y
 	for i = 1, tc.glyph_line_count do
 		local line<const> = glyphs[i]
-		if #line > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
+		if line.visible_count > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 			local line_x = x
 			local line_width<const> = line_widths[i]
