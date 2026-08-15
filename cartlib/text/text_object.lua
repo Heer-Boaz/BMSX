@@ -556,31 +556,25 @@ function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
 end
 
+-- Text objects own wrapped, left-aligned line geometry. The generic text
+-- component retains optional centered and caller-supplied line layouts; this
+-- path consumes the stronger text-object invariant directly.
 function text_object:submit_text_background_lines(draw, x, y)
 	local tc<const> = self.text_component
 	local glyphs<const> = tc.glyph_lines
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	local skip_logical_line<const> = highlighted_logical_line ~= nil and (highlighted_logical_line + 1) or 0
-	local line_offsets<const> = tc.line_offsets
+	local line_offsets<const> = self.wrapped_line_y_offsets
 	local line_widths<const> = tc.line_widths
 	local background_color<const> = tc.background_color
+	local line_height<const> = tc.font.line_height
 	local wrapped_line_to_logical_line<const> = self.wrapped_line_to_logical_line
-	local cursor_y = y
 	for i = 1, tc.glyph_line_count do
 		local line<const> = glyphs[i]
 		if line.visible_count > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
-			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-			local line_x = x
+			local line_y<const> = y + line_offsets[i]
 			local line_width<const> = line_widths[i]
-			if tc.line_x_offsets ~= nil then
-				line_x = x + tc.line_x_offsets[i]
-			elseif tc.center_block_width ~= nil then
-					line_x = x + ((tc.center_block_width - line_width) // 2)
-			end
-			draw:rect(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, background_color)
-		end
-		if line_offsets == nil then
-			cursor_y = cursor_y + tc.line_height
+			draw:rect(x, line_y, x + line_width, line_y + line_height, background_color)
 		end
 	end
 end
