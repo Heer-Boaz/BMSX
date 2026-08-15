@@ -121,10 +121,10 @@ local target<const> = {
 	tags = {},
 	value = 0,
 }
-function target:add_tag(tag)
+function target:_retain_tag(tag)
 	self.tags[tag] = true
 end
-function target:remove_tag(tag)
+function target:_release_tag(tag)
 	self.tags[tag] = nil
 end
 target.events = events.events_of(target)

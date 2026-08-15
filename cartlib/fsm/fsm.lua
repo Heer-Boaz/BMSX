@@ -196,8 +196,10 @@ local collect_event_list<const> = function(def, list, seen)
 			filters[key] = true
 		end
 	end
-	for _, child in pairs(def.states or {}) do
-		collect_event_list(child, list, seen)
+	local states<const> = def.states
+	local state_ids<const> = def.state_ids
+	for i = 1, def.state_count do
+		collect_event_list(states[state_ids[i]], list, seen)
 	end
 end
 
@@ -301,7 +303,15 @@ function state_definition.new(id, def, root, parent)
 	local transition_guards<const> = def.transition_guards
 	self.can_enter = transition_guards and transition_guards.can_enter
 	self.can_exit = transition_guards and transition_guards.can_exit
-	self.tags = def.tags
+	local tags<const> = def.tags
+	self.tags = tags
+	if tags ~= nil then
+		local tag_lookup<const> = {}
+		for i = 1, #tags do
+			tag_lookup[tags[i]] = true
+		end
+		self.tag_lookup = tag_lookup
+	end
 	self.path_plans = nil
 	self.direct_child_plans = nil
 	self.tag_derivations = nil
@@ -319,16 +329,36 @@ function state_definition.new(id, def, root, parent)
 		end
 	end
 
-	if not self.initial then
-		for key in pairs(self.states) do
-			self.initial = key
-			break
+	-- Compiled definitions own immutable traversal order and tag membership.
+	-- Runtime trees retain these arrays instead of rebuilding topology per object.
+	local states<const> = self.states
+	local state_ids<const> = {}
+	local state_count = 0
+	local concurrent_state_ids
+	local concurrent_state_count = 0
+	for state_id, child in pairs(states) do
+		state_count = state_count + 1
+		state_ids[state_count] = state_id
+		if child.is_concurrent then
+			if concurrent_state_ids == nil then
+				concurrent_state_ids = {}
+			end
+			concurrent_state_count = concurrent_state_count + 1
+			concurrent_state_ids[concurrent_state_count] = state_id
 		end
+	end
+	self.state_ids = state_ids
+	self.state_count = state_count
+	self.concurrent_state_ids = concurrent_state_ids
+	self.concurrent_state_count = concurrent_state_count
+	if not self.initial then
+		self.initial = state_ids[1]
 	end
 	self.has_local_frame_work = self.update ~= nil or #self.input_event_handlers ~= 0
 	self.has_subtree_frame_work = self.has_local_frame_work
 	if not self.has_subtree_frame_work then
-		for _, child in pairs(self.states) do
+		for i = 1, self.state_count do
+			local child<const> = states[state_ids[i]]
 			if child.has_subtree_frame_work then
 				self.has_subtree_frame_work = true
 				break
@@ -346,7 +376,11 @@ function state_definition.new(id, def, root, parent)
 end
 
 assert_rebind_compatible = function(previous, replacement)
-	for state_id, previous_child in pairs(previous.states) do
+	local previous_states<const> = previous.states
+	local previous_state_ids<const> = previous.state_ids
+	for i = 1, previous.state_count do
+		local state_id<const> = previous_state_ids[i]
+		local previous_child<const> = previous_states[state_id]
 		local replacement_child<const> = replacement.states[state_id]
 		if replacement_child == nil then
 			error('cannot rebind state definition "' .. previous.def_id .. '": state "' .. state_id .. '" was removed.')
@@ -356,8 +390,11 @@ assert_rebind_compatible = function(previous, replacement)
 		end
 		assert_rebind_compatible(previous_child, replacement_child)
 	end
-	for state_id, replacement_child in pairs(replacement.states) do
-		if previous.states[state_id] == nil and replacement_child.is_concurrent then
+	local replacement_states<const> = replacement.states
+	local replacement_state_ids<const> = replacement.state_ids
+	for i = 1, replacement.state_count do
+		local state_id<const> = replacement_state_ids[i]
+		if previous_states[state_id] == nil and replacement_states[state_id].is_concurrent then
 			error('cannot rebind state definition "' .. previous.def_id .. '": concurrent state "' .. state_id .. '" was added.')
 		end
 	end
@@ -397,17 +434,6 @@ local resolve_state_key<const> = function(definition, state_id)
 		return hash
 	end
 	return nil
-end
-
-local build_state_tag_lookup<const> = function(tags)
-	if not tags then
-		return nil
-	end
-	local lookup<const> = {}
-	for i = 1, #tags do
-		lookup[tags[i]] = true
-	end
-	return lookup
 end
 
 local build_timeline_bindings<const> = function(owner, definitions)
@@ -463,10 +489,14 @@ function state.new(definition, target, parent)
 	self.data = {}
 	reset_state_data(self.data, definition.data)
 	self.states = {}
-	self.state_ids = {}
-	self.concurrent_states = {}
-	self.state_count = 0
-	self.concurrent_state_count = 0
+	-- Runtime nodes own mutable child instances; their traversal shape remains
+	-- the definition's retained, immutable representation.
+	self.state_ids = definition.state_ids
+	self.state_count = definition.state_count
+	self.concurrent_state_count = definition.concurrent_state_count
+	if self.concurrent_state_count ~= 0 then
+		self.concurrent_states = {}
+	end
 	self.current_id = nil
 	-- Current child state is cached directly so the frame hot path does not keep
 	-- reloading states[self.current_id] from the state map on every recursive step.
@@ -495,14 +525,24 @@ function state.new(definition, target, parent)
 	-- machines instead of re-entering them every frame.
 	self.active_frame_work = false
 	self.tag_list = definition.tags
-	self.tag_lookup = build_state_tag_lookup(definition.tags)
+	self.tag_lookup = definition.tag_lookup
 	self._applied_state_tags = nil
 	self._tag_sync_scratch = nil
 	self._tag_remove_scratch = nil
 	self._active_state_tag_refs = nil
 	self._active_state_tags = nil
 	self.input_bindings = build_input_bindings(target, definition)
-	self:populate_states()
+	local states<const> = self.states
+	local state_ids<const> = self.state_ids
+	for i = 1, self.state_count do
+		local state_id<const> = state_ids[i]
+		states[state_id] = state.new(definition.states[state_id], target, self)
+	end
+	local concurrent_states<const> = self.concurrent_states
+	local concurrent_state_ids<const> = definition.concurrent_state_ids
+	for i = 1, self.concurrent_state_count do
+		concurrent_states[i] = states[concurrent_state_ids[i]]
+	end
 	self:reset(true)
 	return self
 end
@@ -510,6 +550,8 @@ end
 local rebind_definition_tree
 rebind_definition_tree = function(self, definition)
 	local active<const> = self:is_active()
+	local previous_state_ids<const> = self.state_ids
+	local previous_state_count<const> = self.state_count
 	if active then
 		local previous_bindings<const> = self.timeline_bindings
 		if previous_bindings ~= nil then
@@ -534,22 +576,27 @@ rebind_definition_tree = function(self, definition)
 		end
 	end
 	self.tag_list = definition.tags
-	self.tag_lookup = build_state_tag_lookup(definition.tags)
+	self.tag_lookup = definition.tag_lookup
 	self.input_bindings = build_input_bindings(self.target, definition)
 	local states<const> = self.states
-	local state_ids<const> = self.state_ids
-	for i = 1, self.state_count do
-		local state_id<const> = state_ids[i]
+	for i = 1, previous_state_count do
+		local state_id<const> = previous_state_ids[i]
 		rebind_definition_tree(states[state_id], definition.states[state_id])
 	end
-	for state_id, child_definition in pairs(definition.states) do
+	local state_ids<const> = definition.state_ids
+	for i = 1, definition.state_count do
+		local state_id<const> = state_ids[i]
 		if states[state_id] == nil then
-			local child<const> = state.new(child_definition, self.target, self)
-			local index<const> = self.state_count + 1
-			self.state_count = index
-			states[state_id] = child
-			state_ids[index] = state_id
+			states[state_id] = state.new(definition.states[state_id], self.target, self)
 		end
+	end
+	self.state_ids = state_ids
+	self.state_count = definition.state_count
+	self.concurrent_state_count = definition.concurrent_state_count
+	local concurrent_states<const> = self.concurrent_states
+	local concurrent_state_ids<const> = definition.concurrent_state_ids
+	for i = 1, self.concurrent_state_count do
+		concurrent_states[i] = states[concurrent_state_ids[i]]
 	end
 end
 
@@ -1082,7 +1129,11 @@ compile_definition_transitions = function(definition)
 	end
 	definition.input_event_handlers = nil
 	local direct_child_plans
-	for state_id in pairs(definition.states) do
+	local states<const> = definition.states
+	local state_ids<const> = definition.state_ids
+	for i = 1, definition.state_count do
+		local state_id<const> = state_ids[i]
+		local child<const> = states[state_id]
 		if direct_child_plans == nil then
 			direct_child_plans = {}
 		end
@@ -1091,12 +1142,12 @@ compile_definition_transitions = function(definition)
 			up = 0,
 			count = 1,
 			state_id,
-			definition.states[state_id].is_concurrent,
+			child.is_concurrent,
 		}
 	end
 	definition.direct_child_plans = direct_child_plans
-	for _, child in pairs(definition.states) do
-		compile_definition_transitions(child)
+	for i = 1, definition.state_count do
+		compile_definition_transitions(states[state_ids[i]])
 	end
 end
 
@@ -1444,56 +1495,6 @@ function state:refresh_active_frame_work()
 	end
 	self.active_frame_work = subtree_active
 	return subtree_active
-end
-
-function state:populate_states()
-	local sdef<const> = self.definition
-	if not sdef or not sdef.states then
-		self.states = {}
-		self.state_ids = {}
-		self.concurrent_states = {}
-		self.state_count = 0
-		self.concurrent_state_count = 0
-		return
-	end
-	local state_ids<const> = {}
-	for state_id in pairs(sdef.states) do
-		state_ids[#state_ids + 1] = state_id
-	end
-	if #state_ids == 0 then
-		self.states = {}
-		self.state_ids = {}
-		self.concurrent_states = {}
-		self.state_count = 0
-		self.concurrent_state_count = 0
-		return
-	end
-	self.states = {}
-	self.state_ids = {}
-	self.concurrent_states = {}
-	self.state_count = 0
-	self.concurrent_state_count = 0
-	for i = 1, #state_ids do
-		local sdef_id<const> = state_ids[i]
-		local child_def<const> = sdef.states[sdef_id]
-		local child<const> = state.new(child_def, self.target, self)
-		self.states[sdef_id] = child
-		self.state_ids[i] = sdef_id
-		self.state_count = i
-		if child.definition.is_concurrent then
-			local concurrent_index<const> = self.concurrent_state_count + 1
-			self.concurrent_state_count = concurrent_index
-			self.concurrent_states[concurrent_index] = child
-		end
-	end
-	if not self.current_id then
-		self.current_id = state_ids[1]
-	end
-	if self.current_id then
-		self.current_state = self.states[self.current_id]
-	else
-		self.current_state = nil
-	end
 end
 
 function state:reset(reset_tree)
