@@ -1,4 +1,5 @@
 local rom_dir<const> = require('cartlib/rom_dir')
+local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local gx_texture<const> = require('cartlib/gx/texture')
 
@@ -17,11 +18,7 @@ local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
 end
 
-local blit<const> = function(source, draw, x, y, color)
-	draw:textured_blit(
-		source._blit_draw_mode, source._blit_uv_word,
-		x, y, source._size_word, color)
-end
+local blit<const> = command_list.blit
 
 local direct16_draw_source_rect<const> = function(source, draw, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
 	local texture<const> = source._texture

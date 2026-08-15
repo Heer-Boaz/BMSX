@@ -182,23 +182,27 @@ function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color,
 	self.word_count = index + 4
 end
 
--- The ordinary image path admits an unflipped rectangle with its packed size
--- already retained by the image source. Keep that path separate from the
--- transformed rectangle encoder: it must not redo flip selection or repack an
--- immutable image size for every submission.
-function draw_list:textured_blit(draw_mode, uv_word, x, y, size_word, color)
-	self:mode(draw_mode)
-	local index<const> = self.word_count
-	local words<const>: *word = self.words
+-- An admitted image source is itself the ordinary unflipped packet binding.
+-- Write it directly into the batch: there is no image -> draw-list -> mode
+-- redispatch and immutable size, page, CLUT and UV words are never rebuilt.
+function command_list.blit(source, draw, x, y, color)
+	local words<const>: *word = draw.words
+	local index = draw.word_count
+	local draw_mode<const> = source._blit_draw_mode
+	if draw_mode ~= draw.draw_mode then
+		words[index] = gp0.draw_mode | draw_mode
+		index = index + 1
+		draw.draw_mode = draw_mode
+	end
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
 	else
 		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
 	end
 	words[index + 1] = gp0.pair16(x, y)
-	words[index + 2] = uv_word
-	words[index + 3] = size_word
-	self.word_count = index + 4
+	words[index + 2] = source._blit_uv_word
+	words[index + 3] = source._size_word
+	draw.word_count = index + 4
 end
 
 function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
