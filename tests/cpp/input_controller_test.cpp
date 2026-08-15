@@ -21,6 +21,9 @@ public:
 	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot& snapshot) override {
 		fullSampleCount += 1;
 		snapshot.keyWords = keyWords;
+		snapshot.pointerXQ16 = 0x000c8000u;
+		snapshot.pointerYQ16 = 0xfffcc000u;
+		snapshot.pads[0].axesQ16[0] = 0xffff8000u;
 	}
 
 	auto supervisorRequestLineHigh() const -> bool override {
@@ -99,6 +102,12 @@ void testArmedVblankPublishesTheFullSnapshot() {
 	const bmsx::u32 f2WordAddress = bmsx::IO_INP_KEYS + (f2Usage >> 5u) * bmsx::IO_WORD_SIZE;
 	require((harness.memory.readIoU32(f2WordAddress) & (1u << (f2Usage & 31u))) != 0u,
 		"armed VBlank publishes F2 in the raw guest bitmap");
+	require(harness.memory.readIoU32(bmsx::IO_INP_POINTER_X) == 0x000c8000u,
+		"armed VBlank latches the source-port pointer word directly");
+	require(harness.memory.readIoU32(bmsx::IO_INP_POINTER_Y) == 0xfffcc000u,
+		"armed VBlank preserves signed source-port pointer bits");
+	require(harness.memory.readIoU32(bmsx::IO_INP_PADS + bmsx::IO_INP_PAD_LX_OFFSET) == 0xffff8000u,
+		"armed VBlank latches the source-port axis word directly");
 }
 
 } // namespace

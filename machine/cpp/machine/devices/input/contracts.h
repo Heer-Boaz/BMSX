@@ -49,15 +49,15 @@ constexpr int INP_POINTER_BUTTON_FORWARD = 4;
 
 struct InputControllerPadSnapshot {
 	u32 buttons = 0;
-	std::array<f32, INPUT_CONTROLLER_PAD_AXIS_COUNT> axes{}; // sticks in [-1,1], triggers in [0,1]
+	std::array<u32, INPUT_CONTROLLER_PAD_AXIS_COUNT> axesQ16{}; // raw s16.16 words
 };
 
 struct InputControllerSnapshot {
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> keyWords{}; // bit = HID usage pressed
 	u32 pointerButtons = 0;
-	f32 pointerX = 0.0F; // host pointer-space coordinates
-	f32 pointerY = 0.0F;
-	f32 pointerWheel = 0.0F;
+	u32 pointerXQ16 = 0u; // raw s16.16 host pointer-space coordinate
+	u32 pointerYQ16 = 0u;
+	u32 pointerWheelQ16 = 0u;
 	u32 rumbleSupportMask = 0; // bit per pad
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> pads{};
 };

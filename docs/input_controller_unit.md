@@ -67,9 +67,11 @@ Each pad block starts at `sys_inp_pads + pad * inp_pad_stride`.
 
 Cart code writes `inp_ctrl_arm` to `sys_inp_ctrl`, then waits for the VBlank
 IRQ. On the VBlank edge the ICU asks the host input owner to fill one raw
-`InputControllerSnapshot`. The ICU converts that snapshot into MMIO words and
-mirrors the latched registerfile. Reads for the remainder of the frame return
-those stable raw words. There are no computed-on-read action queries.
+`InputControllerSnapshot`. Host adapters have already normalized their physical
+inputs into the snapshot's raw bitmaps and signed 16.16 words. The ICU copies
+those source-port words into its latched registerfile and mirrors them to MMIO.
+Reads for the remainder of the frame return those stable raw words. There are
+no computed-on-read action queries.
 
 Independently of the cart-visible sample latch, every VBlank samples the
 retained supervisor-request line. Host adapters aggregate their physical

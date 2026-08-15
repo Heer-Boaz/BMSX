@@ -41,7 +41,7 @@ export const INP_POINTER_BUTTON_FORWARD = 4;
 
 export type InputControllerPadSnapshot = {
 	buttons: number;
-	axes: Float32Array; // INPUT_CONTROLLER_PAD_AXIS_COUNT floats: sticks in [-1,1], triggers in [0,1]
+	axesQ16: Uint32Array; // INPUT_CONTROLLER_PAD_AXIS_COUNT raw s16.16 words
 };
 
 export type InputControllerPadSnapshots = [
@@ -54,24 +54,24 @@ export type InputControllerPadSnapshots = [
 export type InputControllerSnapshot = {
 	keyWords: Uint32Array; // INPUT_CONTROLLER_KEY_WORD_COUNT words; bit = HID usage pressed
 	pointerButtons: number;
-	pointerX: number; // host pointer-space coordinates
-	pointerY: number;
-	pointerWheel: number;
+	pointerXQ16: number; // raw s16.16 host pointer-space coordinate
+	pointerYQ16: number;
+	pointerWheelQ16: number;
 	rumbleSupportMask: number; // bit per pad
 	pads: InputControllerPadSnapshots;
 };
 
 function createInputControllerPadSnapshot(): InputControllerPadSnapshot {
-	return { buttons: 0, axes: new Float32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT) };
+	return { buttons: 0, axesQ16: new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT) };
 }
 
 export function createInputControllerSnapshot(): InputControllerSnapshot {
 	return {
 		keyWords: new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT),
 		pointerButtons: 0,
-		pointerX: 0,
-		pointerY: 0,
-		pointerWheel: 0,
+		pointerXQ16: 0,
+		pointerYQ16: 0,
+		pointerWheelQ16: 0,
 		rumbleSupportMask: 0,
 		pads: [
 			createInputControllerPadSnapshot(),

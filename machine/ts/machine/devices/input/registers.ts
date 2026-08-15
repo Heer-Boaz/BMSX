@@ -13,7 +13,6 @@ import {
 	IO_INP_POINTER_Y,
 } from '../../../spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
-import { encodeSignedFix16 } from '../../common/numeric';
 import { Memory } from '../../memory/memory';
 import {
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
@@ -89,15 +88,15 @@ export class InputControllerRegisterFile {
 			state.keyWords[i] = snapshot.keyWords[i] >>> 0;
 		}
 		state.pointerButtons = snapshot.pointerButtons >>> 0;
-		state.pointerXQ16 = encodeSignedFix16(snapshot.pointerX);
-		state.pointerYQ16 = encodeSignedFix16(snapshot.pointerY);
-		state.pointerWheelQ16 = encodeSignedFix16(snapshot.pointerWheel);
+		state.pointerXQ16 = snapshot.pointerXQ16 >>> 0;
+		state.pointerYQ16 = snapshot.pointerYQ16 >>> 0;
+		state.pointerWheelQ16 = snapshot.pointerWheelQ16 >>> 0;
 		state.outputStatus = snapshot.rumbleSupportMask >>> 0;
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 			const padSnapshot = snapshot.pads[pad];
 			state.padButtons[pad] = padSnapshot.buttons >>> 0;
 			for (let axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
-				state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis] = encodeSignedFix16(padSnapshot.axes[axis]);
+				state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis] = padSnapshot.axesQ16[axis] >>> 0;
 			}
 		}
 	}

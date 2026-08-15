@@ -3376,9 +3376,10 @@ State owned by ICU:
 
 The runtime VBlank owner enters through the ICU controller edge. The controller
 consumes the arm latch into sample sequence/last-cycle state, asks the host
-input owner to fill one raw `InputControllerSnapshot`, and decodes that snapshot
-into raw MMIO words at the datapath boundary. Later cart reads consume only the
-mirrored register words. Independently of the sample arm, the controller reads
+input owner to fill one raw `InputControllerSnapshot`, and latches its bitmaps
+and signed 16.16 source-port words directly into the raw registerfile. Later
+cart reads consume only the mirrored register words. Independently of the sample
+arm, the controller reads
 the retained supervisor-request line once per VBlank and publishes its rising
 edge to the system controller; only the completed common device fence raises
 NMI. The ICU never decodes HID usages or controller buttons. The ICU does

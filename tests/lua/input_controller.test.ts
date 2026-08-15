@@ -52,13 +52,13 @@ type FakeVibration = {
 function writeSample(snapshot: InputControllerSnapshot, keyWords: Uint32Array): void {
 	snapshot.keyWords.set(keyWords);
 	snapshot.pointerButtons = (1 << INP_POINTER_BUTTON_PRIMARY) | (1 << INP_POINTER_BUTTON_SECONDARY);
-	snapshot.pointerX = 12.5;
-	snapshot.pointerY = -3.25;
-	snapshot.pointerWheel = 1.5;
+	snapshot.pointerXQ16 = encodeSignedFix16(12.5);
+	snapshot.pointerYQ16 = encodeSignedFix16(-3.25);
+	snapshot.pointerWheelQ16 = encodeSignedFix16(1.5);
 	snapshot.rumbleSupportMask = 1 << 2;
 	snapshot.pads[0].buttons = 1 << PAD_A_BIT;
-	snapshot.pads[0].axes[0] = -0.5;
-	snapshot.pads[0].axes[1] = 0.25;
+	snapshot.pads[0].axesQ16[0] = encodeSignedFix16(-0.5);
+	snapshot.pads[0].axesQ16[1] = encodeSignedFix16(0.25);
 }
 
 function createHarness(): {

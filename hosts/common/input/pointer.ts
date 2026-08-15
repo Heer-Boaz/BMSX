@@ -9,6 +9,7 @@ import {
 	INP_POINTER_BUTTON_SECONDARY,
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
+import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
 
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
@@ -49,9 +50,9 @@ export class PointerInput implements PointerInputHandler {
 	private pendingWheel = 0;
 	private pendingWheelTimestamp = 0;
 	private inputControllerButtons = 0;
-	private inputControllerX = 0;
-	private inputControllerY = 0;
-	private inputControllerWheel = 0;
+	private inputControllerXQ16 = 0;
+	private inputControllerYQ16 = 0;
+	private inputControllerWheelQ16 = 0;
 
 	constructor(
 		private readonly clock: HostClock,
@@ -109,7 +110,7 @@ export class PointerInput implements PointerInputHandler {
 			wheel.pressedAtMs = 0;
 			wheel.releasedAtMs = now;
 		}
-		this.inputControllerWheel = wheelDelta;
+		this.inputControllerWheelQ16 = encodeSignedFix16(wheelDelta);
 		this.pendingWheel = 0;
 
 		for (let index = 0; index < POINTER_DEFAULT_CODES.length; index += 1) {
@@ -137,9 +138,9 @@ export class PointerInput implements PointerInputHandler {
 
 	public writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void {
 		snapshot.pointerButtons = (snapshot.pointerButtons | this.inputControllerButtons) >>> 0;
-		snapshot.pointerX = this.inputControllerX;
-		snapshot.pointerY = this.inputControllerY;
-		snapshot.pointerWheel = this.inputControllerWheel;
+		snapshot.pointerXQ16 = this.inputControllerXQ16;
+		snapshot.pointerYQ16 = this.inputControllerYQ16;
+		snapshot.pointerWheelQ16 = this.inputControllerWheelQ16;
 	}
 
 	private rebuildInputControllerState(): void {
@@ -154,14 +155,14 @@ export class PointerInput implements PointerInputHandler {
 		}
 		const position = this.buttonStates['pointer_position'];
 		if (position && position.value2d) {
-			this.inputControllerX = position.value2d[0];
-			this.inputControllerY = position.value2d[1];
+			this.inputControllerXQ16 = encodeSignedFix16(position.value2d[0]);
+			this.inputControllerYQ16 = encodeSignedFix16(position.value2d[1]);
 		} else {
-			this.inputControllerX = 0;
-			this.inputControllerY = 0;
+			this.inputControllerXQ16 = 0;
+			this.inputControllerYQ16 = 0;
 		}
 		const wheel = this.buttonStates['pointer_wheel'];
-		this.inputControllerWheel = wheel ? wheel.value : 0;
+		this.inputControllerWheelQ16 = wheel ? encodeSignedFix16(wheel.value) : 0;
 	}
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
@@ -217,8 +218,8 @@ export class PointerInput implements PointerInputHandler {
 		value2d[1] = y;
 		current.timestamp = timestamp;
 		if (code === 'pointer_position') {
-			this.inputControllerX = x;
-			this.inputControllerY = y;
+			this.inputControllerXQ16 = encodeSignedFix16(x);
+			this.inputControllerYQ16 = encodeSignedFix16(y);
 		}
 
 		this.pendingDeltaX += dx;
@@ -277,9 +278,9 @@ export class PointerInput implements PointerInputHandler {
 			this.pendingWheel = 0;
 			this.pendingWheelTimestamp = 0;
 			this.inputControllerButtons = 0;
-			this.inputControllerX = 0;
-			this.inputControllerY = 0;
-			this.inputControllerWheel = 0;
+			this.inputControllerXQ16 = 0;
+			this.inputControllerYQ16 = 0;
+			this.inputControllerWheelQ16 = 0;
 			return;
 		}
 		resetObject(this.buttonStates, except);

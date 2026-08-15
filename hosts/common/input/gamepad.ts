@@ -7,12 +7,13 @@ import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	type InputControllerPadSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
+import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
 
 export class GamepadInput implements GamepadInputHandler {
 	public readonly gamepadIndex: number;
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
-	private readonly inputControllerAxes = new Float32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
+	private readonly inputControllerAxesQ16 = new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
 	private readonly leftAxis: [number, number] = [0, 0];
 	private readonly rightAxis: [number, number] = [0, 0];
 	private lastPollTime = 0;
@@ -59,7 +60,7 @@ export class GamepadInput implements GamepadInputHandler {
 
 	public writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void {
 		snapshot.buttons = this.inputControllerButtons;
-		snapshot.axes.set(this.inputControllerAxes);
+		snapshot.axesQ16.set(this.inputControllerAxesQ16);
 	}
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
@@ -94,9 +95,9 @@ export class GamepadInput implements GamepadInputHandler {
 			this.inputControllerButtons = down ? ((this.inputControllerButtons | mask) >>> 0) : ((this.inputControllerButtons & ~mask) >>> 0);
 		}
 		if (code === 'lt') {
-			this.inputControllerAxes[4] = down ? value : 0;
+			this.inputControllerAxesQ16[4] = down ? encodeSignedFix16(value) : 0;
 		} else if (code === 'rt') {
-			this.inputControllerAxes[5] = down ? value : 0;
+			this.inputControllerAxesQ16[5] = down ? encodeSignedFix16(value) : 0;
 		}
 	}
 
@@ -130,11 +131,11 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 		state.timestamp = timestamp;
 		if (code === 'ls') {
-			this.inputControllerAxes[0] = x;
-			this.inputControllerAxes[1] = y;
+			this.inputControllerAxesQ16[0] = encodeSignedFix16(x);
+			this.inputControllerAxesQ16[1] = encodeSignedFix16(y);
 		} else if (code === 'rs') {
-			this.inputControllerAxes[2] = x;
-			this.inputControllerAxes[3] = y;
+			this.inputControllerAxesQ16[2] = encodeSignedFix16(x);
+			this.inputControllerAxesQ16[3] = encodeSignedFix16(y);
 		}
 	}
 
@@ -151,7 +152,7 @@ export class GamepadInput implements GamepadInputHandler {
 				delete this.buttonStates[key];
 			}
 			this.inputControllerButtons = 0;
-			this.inputControllerAxes.fill(0);
+			this.inputControllerAxesQ16.fill(0);
 			this.leftAxis[0] = 0;
 			this.leftAxis[1] = 0;
 			this.rightAxis[0] = 0;
@@ -165,7 +166,7 @@ export class GamepadInput implements GamepadInputHandler {
 
 	private rebuildInputControllerState(): void {
 		this.inputControllerButtons = 0;
-		this.inputControllerAxes.fill(0);
+		this.inputControllerAxesQ16.fill(0);
 		for (const code in this.buttonStates) {
 			const state = this.buttonStates[code];
 			if (state.pressed) {
@@ -175,15 +176,14 @@ export class GamepadInput implements GamepadInputHandler {
 				}
 			}
 			if (code === 'ls' && state.value2d) {
-				this.inputControllerAxes[0] = state.value2d[0];
-				this.inputControllerAxes[1] = state.value2d[1];
+				this.inputControllerAxesQ16[0] = encodeSignedFix16(state.value2d[0]);
+				this.inputControllerAxesQ16[1] = encodeSignedFix16(state.value2d[1]);
 			} else if (code === 'rs' && state.value2d) {
-				this.inputControllerAxes[2] = state.value2d[0];
-				this.inputControllerAxes[3] = state.value2d[1];
-			} else if (code === 'lt') {
-				this.inputControllerAxes[4] = state.pressed ? state.value : 0;
-			} else if (code === 'rt') {
-				this.inputControllerAxes[5] = state.pressed ? state.value : 0;
+				this.inputControllerAxesQ16[2] = encodeSignedFix16(state.value2d[0]);
+				this.inputControllerAxesQ16[3] = encodeSignedFix16(state.value2d[1]);
+			} else if (code === 'lt' || code === 'rt') {
+				const axis = code === 'lt' ? 4 : 5;
+				this.inputControllerAxesQ16[axis] = state.pressed ? encodeSignedFix16(state.value) : 0;
 			}
 		}
 	}

@@ -1,5 +1,7 @@
 #include "input.h"
 
+#include "machine/common/numeric.h"
+
 #include <algorithm>
 #include <array>
 
@@ -191,36 +193,36 @@ void LibretroInput::poll(
 			}
 		}
 		gamepad.buttons = buttons;
-		gamepad.axes[0] = normalizeAxis(m_input_state_callback(
+		gamepad.axesQ16[0] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
 			player,
 			RETRO_DEVICE_ANALOG,
 			RETRO_DEVICE_INDEX_ANALOG_LEFT,
-			RETRO_DEVICE_ID_ANALOG_X));
-		gamepad.axes[1] = normalizeAxis(m_input_state_callback(
+			RETRO_DEVICE_ID_ANALOG_X)));
+		gamepad.axesQ16[1] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
 			player,
 			RETRO_DEVICE_ANALOG,
 			RETRO_DEVICE_INDEX_ANALOG_LEFT,
-			RETRO_DEVICE_ID_ANALOG_Y));
-		gamepad.axes[2] = normalizeAxis(m_input_state_callback(
+			RETRO_DEVICE_ID_ANALOG_Y)));
+		gamepad.axesQ16[2] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
 			player,
 			RETRO_DEVICE_ANALOG,
 			RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-			RETRO_DEVICE_ID_ANALOG_X));
-		gamepad.axes[3] = normalizeAxis(m_input_state_callback(
+			RETRO_DEVICE_ID_ANALOG_X)));
+		gamepad.axesQ16[3] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
 			player,
 			RETRO_DEVICE_ANALOG,
 			RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-			RETRO_DEVICE_ID_ANALOG_Y));
-		gamepad.axes[4] =
+			RETRO_DEVICE_ID_ANALOG_Y)));
+		gamepad.axesQ16[4] =
 			(buttons & (1u << static_cast<u32>(
 				InputControllerGamepadButtonBit::LeftTrigger)))
-			? 1.0F
-			: 0.0F;
-		gamepad.axes[5] =
+			? static_cast<u32>(FIX16_ONE)
+			: 0u;
+		gamepad.axesQ16[5] =
 			(buttons & (1u << static_cast<u32>(
 				InputControllerGamepadButtonBit::RightTrigger)))
-			? 1.0F
-			: 0.0F;
+			? static_cast<u32>(FIX16_ONE)
+			: 0u;
 	}
 
 	const i16 mouseDeltaX =
@@ -302,9 +304,11 @@ void LibretroInput::poll(
 			viewportHeight - 1);
 	}
 
-	m_pointer_wheel = static_cast<f32>(
+	m_pointer_x_q16 = encodeSignedFix16(static_cast<f32>(m_pointer_x));
+	m_pointer_y_q16 = encodeSignedFix16(static_cast<f32>(m_pointer_y));
+	m_pointer_wheel_q16 = encodeSignedFix16(static_cast<f32>(
 		static_cast<i32>(mouseWheelDown)
-		- static_cast<i32>(mouseWheelUp));
+		- static_cast<i32>(mouseWheelUp)));
 }
 
 bool LibretroInput::keyboardUsagePressed(u8 usage) const {
@@ -324,9 +328,9 @@ void LibretroInput::sampleInputControllerSnapshot(
 		InputControllerSnapshot& snapshot) {
 	snapshot.keyWords = m_keyboard_usage_words;
 	snapshot.pointerButtons = m_pointer_buttons;
-	snapshot.pointerX = static_cast<f32>(m_pointer_x);
-	snapshot.pointerY = static_cast<f32>(m_pointer_y);
-	snapshot.pointerWheel = m_pointer_wheel;
+	snapshot.pointerXQ16 = m_pointer_x_q16;
+	snapshot.pointerYQ16 = m_pointer_y_q16;
+	snapshot.pointerWheelQ16 = m_pointer_wheel_q16;
 	snapshot.rumbleSupportMask = m_rumble_support_mask;
 	snapshot.pads = m_gamepads;
 }
@@ -439,7 +443,9 @@ void LibretroInput::reset() {
 	m_pointer_buttons = 0u;
 	m_pointer_x = 0;
 	m_pointer_y = 0;
-	m_pointer_wheel = 0.0F;
+	m_pointer_x_q16 = 0u;
+	m_pointer_y_q16 = 0u;
+	m_pointer_wheel_q16 = 0u;
 	m_pointer_position_valid = false;
 	m_host_supervisor_request_high = false;
 	m_keyboard_supervisor_request_high = false;

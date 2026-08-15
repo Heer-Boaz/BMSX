@@ -66,7 +66,9 @@ private:
 	u32 m_pointer_buttons = 0u;
 	i32 m_pointer_x = 0;
 	i32 m_pointer_y = 0;
-	f32 m_pointer_wheel = 0.0F;
+	u32 m_pointer_x_q16 = 0u;
+	u32 m_pointer_y_q16 = 0u;
+	u32 m_pointer_wheel_q16 = 0u;
 	u32 m_rumble_support_mask = 0u;
 	u32 m_active_rumble_mask = 0u;
 	f64 m_current_time_ms = 0.0;

@@ -1,7 +1,6 @@
 #include "machine/devices/input/registers.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/common/numeric.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -27,15 +26,15 @@ void InputControllerRegisterFile::latchSnapshot(const InputControllerSnapshot& s
 		state.keyWords[i] = snapshot.keyWords[i];
 	}
 	state.pointerButtons = snapshot.pointerButtons;
-	state.pointerXQ16 = encodeSignedFix16(snapshot.pointerX);
-	state.pointerYQ16 = encodeSignedFix16(snapshot.pointerY);
-	state.pointerWheelQ16 = encodeSignedFix16(snapshot.pointerWheel);
+	state.pointerXQ16 = snapshot.pointerXQ16;
+	state.pointerYQ16 = snapshot.pointerYQ16;
+	state.pointerWheelQ16 = snapshot.pointerWheelQ16;
 	state.outputStatus = snapshot.rumbleSupportMask;
 	for (int pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 		const InputControllerPadSnapshot& padSnapshot = snapshot.pads[pad];
 		state.padButtons[pad] = padSnapshot.buttons;
 		for (int axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
-			state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis] = encodeSignedFix16(padSnapshot.axes[axis]);
+			state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis] = padSnapshot.axesQ16[axis];
 		}
 	}
 }

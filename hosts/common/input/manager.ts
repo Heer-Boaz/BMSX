@@ -496,9 +496,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
 		this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;
-		snapshot.pointerX = 0;
-		snapshot.pointerY = 0;
-		snapshot.pointerWheel = 0;
+		snapshot.pointerXQ16 = 0;
+		snapshot.pointerYQ16 = 0;
+		snapshot.pointerWheelQ16 = 0;
 		snapshot.rumbleSupportMask = 0;
 		for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
 			this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot);
@@ -525,7 +525,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		const padSnapshot = snapshot.pads[pad];
 		padSnapshot.buttons = 0;
 		for (let axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
-			padSnapshot.axes[axis] = 0;
+			padSnapshot.axesQ16[axis] = 0;
 		}
 		const handler = this.playerInputs[pad].inputHandlers['gamepad'];
 		if (!handler) return;
