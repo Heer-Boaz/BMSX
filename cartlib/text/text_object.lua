@@ -40,7 +40,28 @@ function text_object_component:render(draw, x, y)
 			self.font.line_height,
 			self.background_color)
 	end
-	owner:submit_text_glyph_lines(draw, x, y)
+	local lines<const> = self.glyph_lines
+	local span_binding<const> = self.font.span_binding
+	local blit_span<const> = span_binding.writer
+	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
+	local line_offsets<const> = self.line_offsets
+	local color<const> = self.color
+	for line_index = 1, self.glyph_line_count do
+		local line<const> = lines[line_index]
+		local line_length<const> = line.visible_count
+		if line_length > 0 then
+			blit_span(
+				draw,
+				line,
+				line.x_offsets,
+				1,
+				line_length,
+				x,
+				y + line_offsets[line_index],
+				color,
+				uniform_draw_mode_source)
+		end
+	end
 end
 
 function text_object_component:set_font(font)
@@ -654,32 +675,6 @@ end
 
 function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
-end
-
-function text_object:submit_text_glyph_lines(draw, x, y)
-	local tc<const> = self.text_component
-	local lines<const> = tc.glyph_lines
-	local span_binding<const> = tc.font.span_binding
-	local blit_span<const> = span_binding.writer
-	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
-	local line_offsets<const> = self.wrapped_line_y_offsets
-	local color<const> = tc.color
-	for i = 1, tc.glyph_line_count do
-		local line<const> = lines[i]
-		local line_length<const> = line.visible_count
-		if line_length > 0 then
-			blit_span(
-				draw,
-				line,
-				line.x_offsets,
-				1,
-				line_length,
-				x,
-				y + line_offsets[i],
-				color,
-				uniform_draw_mode_source)
-		end
-	end
 end
 
 function text_object:submit_highlight(draw)
