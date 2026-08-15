@@ -1,4 +1,5 @@
 import {
+	IO_GEO_BASE,
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
 	IO_GEO_CTRL,
@@ -20,6 +21,7 @@ import {
 	IRQ_GEO_DONE,
 	IRQ_GEO_ERROR,
 } from '../../../spec/bmsx/io';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED,
@@ -55,6 +57,22 @@ import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '.
 import { DEVICE_SERVICE_GEO, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 
 const GEO_SERVICE_BATCH_RECORDS = 1;
+const GEO_REGISTER_SRC0 = (IO_GEO_SRC0 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_SRC1 = (IO_GEO_SRC1 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_SRC2 = (IO_GEO_SRC2 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_DST0 = (IO_GEO_DST0 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_DST1 = (IO_GEO_DST1 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_COUNT = (IO_GEO_COUNT - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_CMD = (IO_GEO_CMD - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_CTRL = (IO_GEO_CTRL - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_STATUS = (IO_GEO_STATUS - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_PARAM0 = (IO_GEO_PARAM0 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_PARAM1 = (IO_GEO_PARAM1 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_STRIDE0 = (IO_GEO_STRIDE0 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_STRIDE1 = (IO_GEO_STRIDE1 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_STRIDE2 = (IO_GEO_STRIDE2 - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_PROCESSED = (IO_GEO_PROCESSED - IO_GEO_BASE) / IO_WORD_SIZE;
+const GEO_REGISTER_FAULT = (IO_GEO_FAULT - IO_GEO_BASE) / IO_WORD_SIZE;
 
 function packFault(code: number, recordIndex: number): number {
 	return (((code & GEO_FAULT_CODE_MASK) << GEO_FAULT_CODE_SHIFT) | (recordIndex & GEO_FAULT_RECORD_INDEX_MASK)) >>> 0;
@@ -62,6 +80,7 @@ function packFault(code: number, recordIndex: number): number {
 
 
 export class GeometryController {
+	private readonly registerWords = new Uint32Array(GEOMETRY_CONTROLLER_REGISTER_COUNT);
 	private phase: GeometryControllerPhase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 	private activeJob: GeometryJobState | null = null;
 	private cpuHz = 1;
@@ -82,6 +101,12 @@ export class GeometryController {
 		this.xform2 = new GeometryXform2Unit(memory);
 		this.sat2 = new GeometrySat2Unit(memory);
 		this.overlap2d = new GeometryOverlap2dUnit(memory);
+		for (let address = IO_GEO_SRC0; address <= IO_GEO_COUNT; address += IO_WORD_SIZE) {
+			this.memory.mapIoWrite(address, this, GeometryController.onConfigWrite);
+		}
+		for (let address = IO_GEO_PARAM0; address <= IO_GEO_STRIDE2; address += IO_WORD_SIZE) {
+			this.memory.mapIoWrite(address, this, GeometryController.onConfigWrite);
+		}
 		this.memory.mapIoWrite(IO_GEO_CMD, this, GeometryController.onCommandWrite);
 		this.memory.mapIoWriteReady(IO_GEO_CMD, GeometryController.commandWriteReady);
 		this.memory.mapIoWrite(IO_GEO_CTRL, this, GeometryController.onCtrlRegisterWrite);
@@ -92,19 +117,28 @@ export class GeometryController {
 		return !context.supervisorQuiesceRequested;
 	}
 
+	private static onConfigWrite(context: GeometryController, address: number, value: number): void {
+		context.registerWords[(address - IO_GEO_BASE) / IO_WORD_SIZE] = value;
+	}
+
 	private static onCommandWrite(context: GeometryController, _addr: number, value: number): void {
+		context.registerWords[GEO_REGISTER_CMD] = value;
 		context.onCommandDoorbell(context.scheduler.currentNowCycles(), value);
 	}
 
-	private static onCtrlRegisterWrite(context: GeometryController): void {
-		context.onCtrlWrite(context.scheduler.currentNowCycles());
+	private static onCtrlRegisterWrite(context: GeometryController, _address: number, value: number): void {
+		context.registerWords[GEO_REGISTER_CTRL] = value;
+		context.onCtrlWrite();
 	}
 
 	private static onFaultAckWrite(context: GeometryController, _addr: number, value: number): void {
 		if (value === 0) {
 			return;
 		}
-		const status = context.memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+		const status = context.registerWords[GEO_REGISTER_STATUS]!
+			& ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+		context.registerWords[GEO_REGISTER_STATUS] = status;
+		context.registerWords[GEO_REGISTER_FAULT] = 0;
 		context.memory.writeIoU32(IO_GEO_STATUS, status);
 		context.memory.writeIoU32(IO_GEO_FAULT, 0);
 		context.memory.writeIoU32(IO_GEO_FAULT_ACK, 0);
@@ -207,29 +241,15 @@ export class GeometryController {
 		this.activeJob = null;
 		this.supervisorQuiesceRequested = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeIoU32(IO_GEO_SRC0, 0);
-		this.memory.writeIoU32(IO_GEO_SRC1, 0);
-		this.memory.writeIoU32(IO_GEO_SRC2, 0);
-		this.memory.writeIoU32(IO_GEO_DST0, 0);
-		this.memory.writeIoU32(IO_GEO_DST1, 0);
-		this.memory.writeIoU32(IO_GEO_COUNT, 0);
-		this.memory.writeIoU32(IO_GEO_CMD, 0);
-		this.memory.writeIoU32(IO_GEO_CTRL, 0);
-		this.memory.writeIoU32(IO_GEO_STATUS, 0);
-		this.memory.writeIoU32(IO_GEO_PARAM0, 0);
-		this.memory.writeIoU32(IO_GEO_PARAM1, 0);
-		this.memory.writeIoU32(IO_GEO_STRIDE0, 0);
-		this.memory.writeIoU32(IO_GEO_STRIDE1, 0);
-		this.memory.writeIoU32(IO_GEO_STRIDE2, 0);
-		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
-		this.memory.writeIoU32(IO_GEO_FAULT, 0);
+		this.registerWords.fill(0);
+		this.mirrorRegisters();
 		this.memory.writeIoU32(IO_GEO_FAULT_ACK, 0);
 	}
 
 	public captureState(): GeometryControllerState {
 		const registerWords = new Array<number>(GEOMETRY_CONTROLLER_REGISTER_COUNT);
 		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
-			registerWords[index] = this.memory.readIoU32(IO_GEO_REGISTER_ADDRS[index]!);
+			registerWords[index] = this.registerWords[index]!;
 		}
 		return {
 			phase: this.phase,
@@ -243,14 +263,15 @@ export class GeometryController {
 
 	public restoreState(state: GeometryControllerState, nowCycles: number): void {
 		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
-			this.memory.writeIoU32(IO_GEO_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+			this.registerWords[index] = state.registerWords[index]!;
 		}
+		this.registerWords[GEO_REGISTER_CTRL] = this.registerWords[GEO_REGISTER_CTRL]! & ~GEO_CTRL_ABORT;
+		this.mirrorRegisters();
 		this.phase = state.phase;
 		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
-		this.memory.writeIoU32(IO_GEO_CTRL, this.memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT);
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -273,13 +294,14 @@ export class GeometryController {
 		}
 	}
 
-	public onCtrlWrite(_nowCycles: number): void {
-		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
+	private onCtrlWrite(): void {
+		const ctrl = this.registerWords[GEO_REGISTER_CTRL]!;
 		const abort = (ctrl & GEO_CTRL_ABORT) !== 0;
 		if (!abort) {
 			return;
 		}
-		this.memory.writeIoU32(IO_GEO_CTRL, ctrl & ~GEO_CTRL_ABORT);
+		this.registerWords[GEO_REGISTER_CTRL] = ctrl & ~GEO_CTRL_ABORT;
+		this.memory.writeIoU32(IO_GEO_CTRL, this.registerWords[GEO_REGISTER_CTRL]!);
 		if (
 			this.phase === GEOMETRY_CONTROLLER_PHASE_ERROR ||
 			this.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED
@@ -308,17 +330,17 @@ export class GeometryController {
 	private start(nowCycles: number, command: number): void {
 		const job: GeometryJobState = {
 			cmd: command,
-			src0: this.memory.readIoU32(IO_GEO_SRC0),
-			src1: this.memory.readIoU32(IO_GEO_SRC1),
-			src2: this.memory.readIoU32(IO_GEO_SRC2),
-			dst0: this.memory.readIoU32(IO_GEO_DST0),
-			dst1: this.memory.readIoU32(IO_GEO_DST1),
-			count: this.memory.readIoU32(IO_GEO_COUNT),
-			param0: this.memory.readIoU32(IO_GEO_PARAM0),
-			param1: this.memory.readIoU32(IO_GEO_PARAM1),
-			stride0: this.memory.readIoU32(IO_GEO_STRIDE0),
-			stride1: this.memory.readIoU32(IO_GEO_STRIDE1),
-			stride2: this.memory.readIoU32(IO_GEO_STRIDE2),
+			src0: this.registerWords[GEO_REGISTER_SRC0]!,
+			src1: this.registerWords[GEO_REGISTER_SRC1]!,
+			src2: this.registerWords[GEO_REGISTER_SRC2]!,
+			dst0: this.registerWords[GEO_REGISTER_DST0]!,
+			dst1: this.registerWords[GEO_REGISTER_DST1]!,
+			count: this.registerWords[GEO_REGISTER_COUNT]!,
+			param0: this.registerWords[GEO_REGISTER_PARAM0]!,
+			param1: this.registerWords[GEO_REGISTER_PARAM1]!,
+			stride0: this.registerWords[GEO_REGISTER_STRIDE0]!,
+			stride1: this.registerWords[GEO_REGISTER_STRIDE1]!,
+			stride2: this.registerWords[GEO_REGISTER_STRIDE2]!,
 			processed: 0,
 			resultCount: 0,
 			exactPairCount: 0,
@@ -333,9 +355,7 @@ export class GeometryController {
 				this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 				return;
 		}
-		this.memory.writeIoU32(IO_GEO_STATUS, 0);
-		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
-		this.memory.writeIoU32(IO_GEO_FAULT, 0);
+		this.latchResultRegisters(0, 0, 0);
 		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
 			this.overlap2d.writeSummary(job, 0);
 		}
@@ -347,7 +367,8 @@ export class GeometryController {
 		this.availableWorkUnits = 0;
 		this.activeJob = job;
 		this.phase = GEOMETRY_CONTROLLER_PHASE_BUSY;
-		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_BUSY);
+		this.registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_BUSY;
+		this.memory.writeIoU32(IO_GEO_STATUS, this.registerWords[GEO_REGISTER_STATUS]!);
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -368,7 +389,8 @@ export class GeometryController {
 
 	private completeRecord(job: GeometryJobState): void {
 		job.processed += 1;
-		this.memory.writeIoU32(IO_GEO_PROCESSED, job.processed >>> 0);
+		this.registerWords[GEO_REGISTER_PROCESSED] = job.processed;
+		this.memory.writeIoU32(IO_GEO_PROCESSED, this.registerWords[GEO_REGISTER_PROCESSED]!);
 		if (job.processed >= job.count) {
 			this.finishSuccess(job.processed);
 		}
@@ -380,9 +402,7 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE);
-		this.memory.writeIoU32(IO_GEO_PROCESSED, processed >>> 0);
-		this.memory.writeIoU32(IO_GEO_FAULT, 0);
+		this.latchResultRegisters(GEO_STATUS_DONE, processed, 0);
 		this.irq.raise(IRQ_GEO_DONE);
 		this.notifySupervisorBoundary();
 	}
@@ -393,8 +413,10 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-		this.memory.writeIoU32(IO_GEO_FAULT, packFault(code, recordIndex));
+		this.registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_DONE | GEO_STATUS_ERROR;
+		this.registerWords[GEO_REGISTER_FAULT] = packFault(code, recordIndex);
+		this.memory.writeIoU32(IO_GEO_STATUS, this.registerWords[GEO_REGISTER_STATUS]!);
+		this.memory.writeIoU32(IO_GEO_FAULT, this.registerWords[GEO_REGISTER_FAULT]!);
 		this.irq.raise(IRQ_GEO_ERROR);
 		this.notifySupervisorBoundary();
 	}
@@ -405,10 +427,27 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_REJECTED);
-		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
-		this.memory.writeIoU32(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
+		this.latchResultRegisters(
+			GEO_STATUS_REJECTED,
+			0,
+			packFault(code, GEO_FAULT_RECORD_INDEX_NONE),
+		);
 		this.irq.raise(IRQ_GEO_ERROR);
 		this.notifySupervisorBoundary();
+	}
+
+	private latchResultRegisters(status: number, processed: number, fault: number): void {
+		this.registerWords[GEO_REGISTER_STATUS] = status;
+		this.registerWords[GEO_REGISTER_PROCESSED] = processed;
+		this.registerWords[GEO_REGISTER_FAULT] = fault;
+		this.memory.writeIoU32(IO_GEO_STATUS, this.registerWords[GEO_REGISTER_STATUS]!);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, this.registerWords[GEO_REGISTER_PROCESSED]!);
+		this.memory.writeIoU32(IO_GEO_FAULT, this.registerWords[GEO_REGISTER_FAULT]!);
+	}
+
+	private mirrorRegisters(): void {
+		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
+			this.memory.writeIoU32(IO_GEO_REGISTER_ADDRS[index]!, this.registerWords[index]!);
+		}
 	}
 }

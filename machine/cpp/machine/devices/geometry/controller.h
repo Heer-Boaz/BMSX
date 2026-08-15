@@ -10,6 +10,7 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -33,12 +34,12 @@ public:
 	void reset();
 	GeometryControllerState captureState() const;
 	void restoreState(const GeometryControllerState& state, int64_t nowCycles);
-	void onCtrlWrite(int64_t nowCycles);
 	void beginSupervisorQuiesce();
 	bool supervisorQuiescent() const { return m_phase != GeometryControllerPhase::Busy; }
 	void leaveSupervisorContext();
 
 private:
+	static void onConfigWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	static void onCommandWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	static bool commandWriteReadyThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	static void onCtrlWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
@@ -46,19 +47,23 @@ private:
 
 	using GeoJob = GeometryJobState;
 	void onCommandDoorbell(int64_t nowCycles, uint32_t command);
+	void onCtrlWrite();
 	void start(int64_t nowCycles, uint32_t command);
 	void scheduleNextService(int64_t nowCycles);
 	void onFaultAckWrite(u32 value);
 	void completeRecord(GeoJob& job);
 	void finishSuccess(uint32_t processed);
-	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
+	void finishError(uint32_t code, uint32_t recordIndex);
 	void finishRejected(uint32_t code);
 	void notifySupervisorBoundary();
+	void latchResultRegisters(u32 status, u32 processed, u32 fault);
+	void mirrorRegisters();
 
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
 	uint32_t m_availableWorkUnits = 0;
+	std::array<u32, GEOMETRY_CONTROLLER_REGISTER_COUNT> m_registerWords{};
 	GeometryControllerPhase m_phase = GeometryControllerPhase::Idle;
 	std::optional<GeoJob> m_activeJob;
 	bool m_supervisorQuiesceRequested = false;

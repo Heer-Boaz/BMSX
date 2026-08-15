@@ -127,7 +127,7 @@ function makeMachine(): Machine {
 	return machine;
 }
 
-test('GEO registerfile address bank is bus-owned and matches the device contract', () => {
+test('GEO registerfile address bank matches the device contract', () => {
 	assert.equal(GEOMETRY_CONTROLLER_REGISTER_COUNT, 16);
 	assert.equal(IO_GEO_REGISTER_ADDRS.length, GEOMETRY_CONTROLLER_REGISTER_COUNT);
 	assert.equal(IO_GEO_REGISTER_ADDRS[0], IO_GEO_SRC0);

@@ -6,10 +6,28 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/scheduler/budget.h"
 
+#include <cstddef>
+
 namespace bmsx {
 namespace {
 
 constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
+constexpr std::size_t GEO_REGISTER_SRC0 = (IO_GEO_SRC0 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_SRC1 = (IO_GEO_SRC1 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_SRC2 = (IO_GEO_SRC2 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_DST0 = (IO_GEO_DST0 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_DST1 = (IO_GEO_DST1 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_COUNT = (IO_GEO_COUNT - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_CMD = (IO_GEO_CMD - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_CTRL = (IO_GEO_CTRL - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_STATUS = (IO_GEO_STATUS - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_PARAM0 = (IO_GEO_PARAM0 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_PARAM1 = (IO_GEO_PARAM1 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_STRIDE0 = (IO_GEO_STRIDE0 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_STRIDE1 = (IO_GEO_STRIDE1 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_STRIDE2 = (IO_GEO_STRIDE2 - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_PROCESSED = (IO_GEO_PROCESSED - IO_GEO_BASE) / IO_WORD_SIZE;
+constexpr std::size_t GEO_REGISTER_FAULT = (IO_GEO_FAULT - IO_GEO_BASE) / IO_WORD_SIZE;
 
 uint32_t packFault(uint32_t code, uint32_t recordIndex) {
 	return ((code & GEO_FAULT_CODE_MASK) << GEO_FAULT_CODE_SHIFT) | (recordIndex & GEO_FAULT_RECORD_INDEX_MASK);
@@ -28,6 +46,12 @@ GeometryController::GeometryController(
 	, m_xform2(memory)
 	, m_sat2(memory)
 	, m_overlap2d(memory) {
+	for (uint32_t address = IO_GEO_SRC0; address <= IO_GEO_COUNT; address += IO_WORD_SIZE) {
+		m_memory.mapIoWrite(address, this, &GeometryController::onConfigWriteThunk);
+	}
+	for (uint32_t address = IO_GEO_PARAM0; address <= IO_GEO_STRIDE2; address += IO_WORD_SIZE) {
+		m_memory.mapIoWrite(address, this, &GeometryController::onConfigWriteThunk);
+	}
 	m_memory.mapIoWrite(IO_GEO_CMD, this, &GeometryController::onCommandWriteThunk);
 	m_memory.mapIoWriteReady(IO_GEO_CMD, &GeometryController::commandWriteReadyThunk);
 	m_memory.mapIoWrite(IO_GEO_CTRL, this, &GeometryController::onCtrlWriteThunk);
@@ -38,15 +62,21 @@ bool GeometryController::commandWriteReadyThunk(void* context, uint32_t, MappedB
 	return !static_cast<GeometryController*>(context)->m_supervisorQuiesceRequested;
 }
 
+void GeometryController::onConfigWriteThunk(void* context, uint32_t address, u32 value, MappedBusSignals) {
+	auto* controller = static_cast<GeometryController*>(context);
+	controller->m_registerWords[(address - IO_GEO_BASE) / IO_WORD_SIZE] = value;
+}
+
 void GeometryController::onCommandWriteThunk(void* context, uint32_t, u32 value, MappedBusSignals) {
 	auto* controller = static_cast<GeometryController*>(context);
+	controller->m_registerWords[GEO_REGISTER_CMD] = value;
 	controller->onCommandDoorbell(controller->m_scheduler.currentNowCycles(), value);
 }
 
-// disable-next-line normalized_ast_duplicate_pattern -- device MMIO thunks share callback shape while each device owns its scheduler timing.
-void GeometryController::onCtrlWriteThunk(void* context, uint32_t, u32, MappedBusSignals) {
+void GeometryController::onCtrlWriteThunk(void* context, uint32_t, u32 value, MappedBusSignals) {
 	auto* controller = static_cast<GeometryController*>(context);
-	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
+	controller->m_registerWords[GEO_REGISTER_CTRL] = value;
+	controller->onCtrlWrite();
 }
 
 void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, u32 value, MappedBusSignals) {
@@ -99,22 +129,8 @@ void GeometryController::reset() {
 	m_activeJob.reset();
 	m_supervisorQuiesceRequested = false;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeIoU32(IO_GEO_SRC0, 0);
-	m_memory.writeIoU32(IO_GEO_SRC1, 0);
-	m_memory.writeIoU32(IO_GEO_SRC2, 0);
-	m_memory.writeIoU32(IO_GEO_DST0, 0);
-	m_memory.writeIoU32(IO_GEO_DST1, 0);
-	m_memory.writeIoU32(IO_GEO_COUNT, 0);
-	m_memory.writeIoU32(IO_GEO_CMD, 0);
-	m_memory.writeIoU32(IO_GEO_CTRL, 0u);
-	m_memory.writeIoU32(IO_GEO_STATUS, 0);
-	m_memory.writeIoU32(IO_GEO_PARAM0, 0);
-	m_memory.writeIoU32(IO_GEO_PARAM1, 0);
-	m_memory.writeIoU32(IO_GEO_STRIDE0, 0);
-	m_memory.writeIoU32(IO_GEO_STRIDE1, 0);
-	m_memory.writeIoU32(IO_GEO_STRIDE2, 0);
-	m_memory.writeIoU32(IO_GEO_PROCESSED, 0);
-	m_memory.writeIoU32(IO_GEO_FAULT, 0);
+	m_registerWords.fill(0u);
+	mirrorRegisters();
 	m_memory.writeIoU32(IO_GEO_FAULT_ACK, 0u);
 }
 
@@ -133,13 +149,14 @@ void GeometryController::notifySupervisorBoundary() {
 	}
 }
 
-void GeometryController::onCtrlWrite(int64_t) {
-	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
+void GeometryController::onCtrlWrite() {
+	const uint32_t ctrl = m_registerWords[GEO_REGISTER_CTRL];
 	const bool abort = (ctrl & GEO_CTRL_ABORT) != 0u;
 	if (!abort) {
 		return;
 	}
-	m_memory.writeIoU32(IO_GEO_CTRL, ctrl & ~GEO_CTRL_ABORT);
+	m_registerWords[GEO_REGISTER_CTRL] = ctrl & ~GEO_CTRL_ABORT;
+	m_memory.writeIoU32(IO_GEO_CTRL, m_registerWords[GEO_REGISTER_CTRL]);
 	if (m_phase == GeometryControllerPhase::Error || m_phase == GeometryControllerPhase::Rejected) {
 		return;
 	}
@@ -208,17 +225,17 @@ void GeometryController::onService(int64_t nowCycles) {
 void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	GeoJob job;
 	job.cmd = command;
-	job.src0 = m_memory.readIoU32(IO_GEO_SRC0);
-	job.src1 = m_memory.readIoU32(IO_GEO_SRC1);
-	job.src2 = m_memory.readIoU32(IO_GEO_SRC2);
-	job.dst0 = m_memory.readIoU32(IO_GEO_DST0);
-	job.dst1 = m_memory.readIoU32(IO_GEO_DST1);
-	job.count = m_memory.readIoU32(IO_GEO_COUNT);
-	job.param0 = m_memory.readIoU32(IO_GEO_PARAM0);
-	job.param1 = m_memory.readIoU32(IO_GEO_PARAM1);
-	job.stride0 = m_memory.readIoU32(IO_GEO_STRIDE0);
-	job.stride1 = m_memory.readIoU32(IO_GEO_STRIDE1);
-	job.stride2 = m_memory.readIoU32(IO_GEO_STRIDE2);
+	job.src0 = m_registerWords[GEO_REGISTER_SRC0];
+	job.src1 = m_registerWords[GEO_REGISTER_SRC1];
+	job.src2 = m_registerWords[GEO_REGISTER_SRC2];
+	job.dst0 = m_registerWords[GEO_REGISTER_DST0];
+	job.dst1 = m_registerWords[GEO_REGISTER_DST1];
+	job.count = m_registerWords[GEO_REGISTER_COUNT];
+	job.param0 = m_registerWords[GEO_REGISTER_PARAM0];
+	job.param1 = m_registerWords[GEO_REGISTER_PARAM1];
+	job.stride0 = m_registerWords[GEO_REGISTER_STRIDE0];
+	job.stride1 = m_registerWords[GEO_REGISTER_STRIDE1];
+	job.stride2 = m_registerWords[GEO_REGISTER_STRIDE2];
 	switch (job.cmd) {
 		case IO_CMD_GEO_XFORM2_BATCH:
 		case IO_CMD_GEO_SAT2_BATCH:
@@ -228,9 +245,7 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 			finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 			return;
 	}
-	m_memory.writeIoU32(IO_GEO_STATUS, 0u);
-	m_memory.writeIoU32(IO_GEO_PROCESSED, 0u);
-	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
+	latchResultRegisters(0u, 0u, 0u);
 	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
 		job.resultCount = 0u;
 		job.exactPairCount = 0u;
@@ -245,7 +260,8 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	m_availableWorkUnits = 0;
 	m_activeJob = job;
 	m_phase = GeometryControllerPhase::Busy;
-	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_BUSY);
+	m_registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_BUSY;
+	m_memory.writeIoU32(IO_GEO_STATUS, m_registerWords[GEO_REGISTER_STATUS]);
 	scheduleNextService(nowCycles);
 }
 
@@ -253,7 +269,10 @@ void GeometryController::onFaultAckWrite(u32 value) {
 	if (value == 0u) {
 		return;
 	}
-	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+	const uint32_t status = m_registerWords[GEO_REGISTER_STATUS]
+		& ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+	m_registerWords[GEO_REGISTER_STATUS] = status;
+	m_registerWords[GEO_REGISTER_FAULT] = 0u;
 	m_memory.writeIoU32(IO_GEO_STATUS, status);
 	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
 	m_memory.writeIoU32(IO_GEO_FAULT_ACK, 0u);
@@ -280,7 +299,8 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 
 void GeometryController::completeRecord(GeoJob& job) {
 	job.processed += 1u;
-	m_memory.writeIoU32(IO_GEO_PROCESSED, job.processed);
+	m_registerWords[GEO_REGISTER_PROCESSED] = job.processed;
+	m_memory.writeIoU32(IO_GEO_PROCESSED, m_registerWords[GEO_REGISTER_PROCESSED]);
 	if (job.processed >= job.count) {
 		finishSuccess(job.processed);
 	}
@@ -292,24 +312,22 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE);
-	m_memory.writeIoU32(IO_GEO_PROCESSED, processed);
-	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
+	latchResultRegisters(GEO_STATUS_DONE, processed, 0u);
 	m_irq.raise(IRQ_GEO_DONE);
 	notifySupervisorBoundary();
 }
 
-void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool signalIrq) {
+void GeometryController::finishError(uint32_t code, uint32_t recordIndex) {
 	m_phase = GeometryControllerPhase::Error;
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	m_memory.writeIoU32(IO_GEO_FAULT, packFault(code, recordIndex));
-	if (signalIrq) {
-		m_irq.raise(IRQ_GEO_ERROR);
-	}
+	m_registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_DONE | GEO_STATUS_ERROR;
+	m_registerWords[GEO_REGISTER_FAULT] = packFault(code, recordIndex);
+	m_memory.writeIoU32(IO_GEO_STATUS, m_registerWords[GEO_REGISTER_STATUS]);
+	m_memory.writeIoU32(IO_GEO_FAULT, m_registerWords[GEO_REGISTER_FAULT]);
+	m_irq.raise(IRQ_GEO_ERROR);
 	notifySupervisorBoundary();
 }
 
@@ -319,11 +337,27 @@ void GeometryController::finishRejected(uint32_t code) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_REJECTED);
-	m_memory.writeIoU32(IO_GEO_PROCESSED, 0u);
-	m_memory.writeIoU32(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
+	latchResultRegisters(
+		GEO_STATUS_REJECTED,
+		0u,
+		packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
 	m_irq.raise(IRQ_GEO_ERROR);
 	notifySupervisorBoundary();
+}
+
+void GeometryController::latchResultRegisters(u32 status, u32 processed, u32 fault) {
+	m_registerWords[GEO_REGISTER_STATUS] = status;
+	m_registerWords[GEO_REGISTER_PROCESSED] = processed;
+	m_registerWords[GEO_REGISTER_FAULT] = fault;
+	m_memory.writeIoU32(IO_GEO_STATUS, m_registerWords[GEO_REGISTER_STATUS]);
+	m_memory.writeIoU32(IO_GEO_PROCESSED, m_registerWords[GEO_REGISTER_PROCESSED]);
+	m_memory.writeIoU32(IO_GEO_FAULT, m_registerWords[GEO_REGISTER_FAULT]);
+}
+
+void GeometryController::mirrorRegisters() {
+	for (std::size_t index = 0u; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
+		m_memory.writeIoU32(IO_GEO_REGISTER_ADDRS[index], m_registerWords[index]);
+	}
 }
 
 } // namespace bmsx
