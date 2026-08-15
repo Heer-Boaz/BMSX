@@ -1,6 +1,5 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
@@ -86,16 +85,16 @@ function ui:draw_ui(draw)
 		return
 	end
 	local player<const> = self.player
-	sources.header:draw(draw, 0, 0, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	sources.header:blit(draw, 0, 0, 0xffffffff)
 	for i = 0, (self.hud_health_level - 1) do
-		sources.health_stripe:draw(draw, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y, 0xffffffff)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		sources.weapon_stripe:draw(draw, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y, 0xffffffff)
 	end
 	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
 	if equipped_source ~= nil then
-		equipped_source:draw(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 0xffffffff)
 	end
 end
 

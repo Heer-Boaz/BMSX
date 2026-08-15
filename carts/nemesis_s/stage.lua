@@ -2,7 +2,6 @@ local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
@@ -518,7 +517,7 @@ function stage:draw_star_particles(draw, stars, source, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		source:draw(draw, star.x, star.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		source:blit(draw, star.x, star.y, 0xffffffff)
 	end
 end
 
@@ -539,7 +538,7 @@ function stage:draw(draw)
 		for stage_row = 1, self.tile_rows do
 			local source<const> = self.tile_tape[stage_row][stage_column]
 			if source ~= nil then
-				source:draw(draw, draw_x, (stage_row - 1) * tile_size, 0xffffffff, 0, gp0.draw_mode_blend_half)
+				source:blit(draw, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
 			end
 		end
 	end

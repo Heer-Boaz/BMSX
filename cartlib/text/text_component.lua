@@ -1,5 +1,4 @@
 local font_catalog<const> = require('cartlib/text/font_catalog')
-local gp0<const> = require('cartlib/gx/gp0')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
@@ -101,7 +100,7 @@ function text_component:render_glyphs(draw, x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				glyph.source:draw(draw, cursor_x, line_y, color, 0, gp0.draw_mode_blend_half)
+				glyph.source:blit(draw, cursor_x, line_y, color)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end

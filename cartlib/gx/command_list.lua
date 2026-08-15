@@ -182,6 +182,25 @@ function draw_list:direct16_rect(source_x, source_y, x, y, width, height, color,
 	self.word_count = index + 4
 end
 
+-- The ordinary image path admits an unflipped rectangle with its packed size
+-- already retained by the image source. Keep that path separate from the
+-- transformed rectangle encoder: it must not redo flip selection or repack an
+-- immutable image size for every submission.
+function draw_list:direct16_blit(source_x, source_y, x, y, size_word, color)
+	self:mode(gp0.direct16_draw_mode(source_x, source_y, gp0.draw_mode_blend_half))
+	local index<const> = self.word_count
+	local words<const>: *word = self.words
+	if (color & 0x00ffffff) == 0x00ffffff then
+		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
+	else
+		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
+	end
+	words[index + 1] = gp0.pair16(x, y)
+	words[index + 2] = gp0.uv(source_x, source_y)
+	words[index + 3] = size_word
+	self.word_count = index + 4
+end
+
 function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode, blend_mode)
 	local texture_source_x<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
 	local texture_source_y<const> = (rectangle_flip_mode & gp0.draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
@@ -197,6 +216,21 @@ function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, 
 	words[index + 1] = gp0.pair16(x, y)
 	words[index + 2] = gp0.uv_clut(texture_source_x, texture_source_y, clut_x, clut_y)
 	words[index + 3] = gp0.pair16(width, height)
+	self.word_count = index + 4
+end
+
+function draw_list:palette4_blit(texture_x, clut_x, clut_y, source_x, source_y, x, y, size_word, color)
+	self:mode(gp0.palette4_draw_mode(texture_x, source_x, source_y, gp0.draw_mode_blend_half))
+	local index<const> = self.word_count
+	local words<const>: *word = self.words
+	if (color & 0x00ffffff) == 0x00ffffff then
+		words[index] = gp0.draw_raw_textured_rectangle | 0x00808080
+	else
+		words[index] = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
+	end
+	words[index + 1] = gp0.pair16(x, y)
+	words[index + 2] = gp0.uv_clut(source_x, source_y, clut_x, clut_y)
+	words[index + 3] = size_word
 	self.word_count = index + 4
 end
 

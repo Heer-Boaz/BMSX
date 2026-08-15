@@ -1,4 +1,3 @@
-local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visual_component<const> = require('cartlib/component/visual_component')
 
@@ -33,7 +32,7 @@ function surface_component:draw(draw)
 	local tiles<const> = source._tiles
 	for index = 1, #tiles do
 		local tile<const> = tiles[index]
-		tile:draw(draw, x + tile.offset_x, y + tile.offset_y, self.color, 0, gp0.draw_mode_blend_half)
+		tile:blit(draw, x + tile.offset_x, y + tile.offset_y, self.color)
 	end
 end
 

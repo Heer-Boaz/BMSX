@@ -1,4 +1,3 @@
-local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visual_component<const> = require('cartlib/component/visual_component')
 
@@ -82,7 +81,7 @@ function tile_layer_component:draw(draw)
 	for index = 1, self.tile_count do
 		local source<const> = sources[index]
 		if source then
-			source:draw(draw, target_x, target_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+			source:blit(draw, target_x, target_y, 0xffffffff)
 		end
 		column = column + 1
 		if column == columns then

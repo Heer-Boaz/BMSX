@@ -10,7 +10,7 @@ local fixed_direct16_texture<const> = {
 	y = 0,
 }
 
--- Image resolution selects a texture-mode-specific packet writer once.
+-- Image resolution selects texture-mode-specific packet writers once.
 -- Ordinary image draws never redispatch on mode or scan page tiles; explicitly
 -- producer-split large surfaces are handled by surface_component instead.
 
@@ -19,6 +19,13 @@ local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 	draw:direct16_rect(
 		texture.x + source.source_x, texture.y + source.source_y,
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
+end
+
+local direct16_blit<const> = function(source, draw, x, y, color)
+	local texture<const> = source._texture
+	draw:direct16_blit(
+		texture.x + source.source_x, texture.y + source.source_y,
+		x, y, source._size_word, color)
 end
 
 local direct16_draw_source_rect<const> = function(source, draw, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
@@ -100,6 +107,14 @@ local palette4_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 		texture.x, texture.clut_x, texture.clut_y,
 		source.source_x, texture.y + source.source_y,
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
+end
+
+local palette4_blit<const> = function(source, draw, x, y, color)
+	local texture<const> = source._texture
+	draw:palette4_blit(
+		texture.x, texture.clut_x, texture.clut_y,
+		source.source_x, texture.y + source.source_y,
+		x, y, source._size_word, color)
 end
 
 local palette4_draw_source_rect<const> = function(source, draw, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
@@ -198,22 +213,26 @@ function image.resolve(id)
 		source_y = meta.texture_v
 	end
 	local draw
+	local blit
 	local draw_source_rect
 	local draw_affine
 	local draw_quad
 	if texture.mode == gp0.texture_mode_palette4 then
 		draw = palette4_draw
+		blit = palette4_blit
 		draw_source_rect = palette4_draw_source_rect
 		draw_affine = palette4_draw_affine
 		draw_quad = palette4_draw_quad
 	else
 		draw = direct16_draw
+		blit = direct16_blit
 		draw_source_rect = direct16_draw_source_rect
 		draw_affine = direct16_draw_affine
 		draw_quad = direct16_draw_quad
 	end
 	local source<const> = {
 		_texture = texture,
+		_size_word = meta.width | (meta.height << 16),
 		source_x = source_x,
 		source_y = source_y,
 		width = meta.width,
@@ -230,14 +249,17 @@ function image.resolve(id)
 				source_y = tile.v,
 				width = tile.w,
 				height = tile.h,
+				_size_word = tile.w | (tile.h << 16),
 				offset_x = tile.x,
 				offset_y = tile.y,
 				draw = draw,
+				blit = blit,
 			}
 		end
 		source._tiles = tiles
 	else
 		source.draw = draw
+		source.blit = blit
 		source.draw_source_rect = draw_source_rect
 		source.draw_affine = draw_affine
 		source.draw_quad = draw_quad

@@ -4,7 +4,6 @@ local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
@@ -196,7 +195,7 @@ function player:draw_lasers(draw)
 		end
 		local x = start_x
 		while x < end_x do
-			sources.laser:draw(draw, x, visual_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+			sources.laser:blit(draw, x, visual_y, 0xffffffff)
 			x = x + weapons_laser.tile_width
 		end
 	end
@@ -205,7 +204,7 @@ end
 function player:draw_missiles(draw)
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
-		missile.sprite:draw(draw, missile.x, missile.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		missile.sprite:blit(draw, missile.x, missile.y, 0xffffffff)
 	end
 end
 
@@ -215,7 +214,7 @@ function player:draw_uplasers(draw)
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, weapons_uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, weapons_uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			sources.laser:draw(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+			sources.laser:blit(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y, 0xffffffff)
 		end
 	end
 end
@@ -224,9 +223,9 @@ function player:draw_visual(draw)
 	local option_source<const> = sources.options[self.option_anim_index]
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
-		option_source:draw(draw, option.x, option.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+		option_source:blit(draw, option.x, option.y, 0xffffffff)
 	end
-	self.sprite.source:draw(draw, self.x, self.y, 0xffffffff, 0, gp0.draw_mode_blend_half)
+	self.sprite.source:blit(draw, self.x, self.y, 0xffffffff)
 	self:draw_lasers(draw)
 	self:draw_missiles(draw)
 	self:draw_uplasers(draw)
