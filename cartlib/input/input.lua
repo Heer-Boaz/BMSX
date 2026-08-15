@@ -6,6 +6,7 @@
 local action_parser<const> = require('cartlib/input/action_parser')
 local action_state_program<const> = require('cartlib/input/action_state_program')
 local action_syntax<const> = require('cartlib/input/action_syntax')
+local icu<const> = require('cartlib/input/icu')
 local keys<const> = require('cartlib/input/keys')
 
 local input<const> = {}
@@ -13,10 +14,10 @@ local input<const> = {}
 local source_keyboard<const> = 1
 local source_gamepad<const> = 2
 local source_pointer<const> = 3
-local pointer_buttons<const>: *word = 0x0800008c
-local pointer_position_x_q16<const>: *word = 0x08000090
-local pointer_position_y_q16<const>: *word = 0x08000094
-local pointer_wheel_q16<const>: *word = 0x08000098
+local pointer_buttons<const>: *word = icu.pointer_buttons_address
+local pointer_position_x_q16<const>: *word = icu.pointer_x_q16_address
+local pointer_position_y_q16<const>: *word = icu.pointer_y_q16_address
+local pointer_wheel_q16<const>: *word = icu.pointer_wheel_q16_address
 local gamepad_bits<const> = {
 	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
 	['lb'] = 0x00000004, ['rb'] = 0x00000005, ['lt'] = 0x00000006, ['rt'] = 0x00000007,
@@ -134,7 +135,7 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_keyboard then
 		local usage<const> = keys[button]
 		if usage then
-			state.level_addr = 0x0800006c + ((usage >> 5) << 2)
+			state.level_addr = icu.keyboard_bitmap_address + ((usage >> 5) << 2)
 			state.level_mask = 1 << (usage & 31)
 		end
 		return
@@ -142,19 +143,19 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_gamepad then
 		local bit<const> = gamepad_bits[button]
 		if bit then
-			local pad_base<const> = 0x0800009c + (player.index - 1) * 0x0000001c
-			state.level_addr = pad_base + 0x00000000
+			local pad_base<const> = icu.gamepad_base_address + (player.index - 1) * icu.gamepad_stride
+			state.level_addr = pad_base + icu.gamepad_buttons_offset
 			state.level_mask = 1 << bit
 			if button == 'ls' then
-				state.value_x_addr = pad_base + 0x00000004
-				state.value_y_addr = pad_base + 0x00000008
+				state.value_x_addr = pad_base + icu.gamepad_left_x_q16_offset
+				state.value_y_addr = pad_base + icu.gamepad_left_y_q16_offset
 			elseif button == 'rs' then
-				state.value_x_addr = pad_base + 0x0000000c
-				state.value_y_addr = pad_base + 0x00000010
+				state.value_x_addr = pad_base + icu.gamepad_right_x_q16_offset
+				state.value_y_addr = pad_base + icu.gamepad_right_y_q16_offset
 			elseif button == 'lt' then
-				state.value_addr = pad_base + 0x00000014
+				state.value_addr = pad_base + icu.gamepad_left_trigger_q16_offset
 			elseif button == 'rt' then
-				state.value_addr = pad_base + 0x00000018
+				state.value_addr = pad_base + icu.gamepad_right_trigger_q16_offset
 			end
 		end
 		return
