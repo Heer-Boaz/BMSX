@@ -11,13 +11,17 @@ local argb_to_texture_rgb<const> = function(color)
 end
 
 local pair16<const> = function(first, second)
-	local rounded_first = -(((-first) + 0.5) // 1)
-	local rounded_second = -(((-second) + 0.5) // 1)
+	local rounded_first
 	if first >= 0 then
 		rounded_first = (first + 0.5) // 1
+	else
+		rounded_first = -(((-first) + 0.5) // 1)
 	end
+	local rounded_second
 	if second >= 0 then
 		rounded_second = (second + 0.5) // 1
+	else
+		rounded_second = -(((-second) + 0.5) // 1)
 	end
 	return (rounded_first & 0x0000ffff) | ((rounded_second & 0x0000ffff) << 16)
 end
