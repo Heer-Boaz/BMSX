@@ -2,6 +2,7 @@
 -- Cart Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('cartlib/apu')
+local apu_event<const> = require('cartlib/apu/event')
 local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
@@ -12,9 +13,9 @@ local slot_sfx<const> = 0
 local slot_music_a<const> = 1
 local slot_music_b<const> = 2
 local slot_ui<const> = 3
-local apu_event_kind<const>: *word = 0x0800017c
-local apu_event_slot<const>: *word = 0x08000180
-local apu_event_source_addr<const>: *word = 0x08000184
+local apu_event_kind<const>: *word = apu_event.kind_address
+local apu_event_slot<const>: *word = apu_event.slot_address
+local apu_event_source_addr<const>: *word = apu_event.source_address
 local route_slot<const> = {
 	sfx = slot_sfx,
 	music = slot_music_a,
@@ -700,7 +701,7 @@ local on_apu_irq<const> = function()
 	local slot<const> = *apu_event_slot
 	local source_addr<const> = *apu_event_source_addr
 
-	if kind ~= 0x00000001 then
+	if kind ~= apu_event.kind_slot_ended then
 		return
 	end
 
