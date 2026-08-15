@@ -7,6 +7,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
+local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
@@ -29,7 +30,7 @@ function text_object_component:render(draw, x, y)
 	if self.background_color ~= nil then
 		owner:submit_text_background_lines(draw, x, y)
 	end
-	text_component.render_glyphs(self, draw, x, y)
+	owner:submit_text_glyph_lines(draw, x, y)
 end
 
 function text_object_component:set_font(font)
@@ -612,6 +613,28 @@ function text_object:submit_text_background_lines(draw, x, y)
 			local line_y<const> = y + line_offsets[i]
 			local line_width<const> = line_widths[i]
 			draw:rect(x, line_y, x + line_width, line_y + line_height, background_color)
+		end
+	end
+end
+
+function text_object:submit_text_glyph_lines(draw, x, y)
+	local tc<const> = self.text_component
+	local lines<const> = tc.glyph_lines
+	local line_offsets<const> = self.wrapped_line_y_offsets
+	local color<const> = tc.color
+	for i = 1, tc.glyph_line_count do
+		local line<const> = lines[i]
+		local line_length<const> = line.visible_count
+		if line_length > 0 then
+			command_list.blit_span(
+				draw,
+				line,
+				line.x_offsets,
+				1,
+				line_length,
+				x,
+				y + line_offsets[i],
+				color)
 		end
 	end
 end
