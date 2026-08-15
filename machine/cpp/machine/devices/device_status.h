@@ -21,8 +21,6 @@ public:
 
 	void resetStatus() const;
 	void restore(uint32_t status, uint32_t code, uint32_t detail) const;
-	void clear() const;
-	void acknowledge() const;
 	void setStatusFlag(uint32_t mask, bool active) const;
 	void raise(uint32_t code, uint32_t detail) const;
 	static void acknowledgeWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);

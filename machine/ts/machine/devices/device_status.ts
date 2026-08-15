@@ -43,26 +43,16 @@ export class DeviceStatusLatch {
 		this.memory.writeIoU32(this.registers.ackAddr, 0);
 	}
 
-	public clear(): void {
-		this.code = this.registers.noneCode;
-		this.detail = 0;
-		this.memory.writeIoU32(this.registers.codeAddr, this.code);
-		this.memory.writeIoU32(this.registers.detailAddr, this.detail);
-		this.setStatusFlag(this.registers.faultMask, false);
-	}
-
-	public acknowledge(): void {
-		if (this.memory.readIoU32(this.registers.ackAddr) === 0) {
+	public static acknowledgeWriteThunk(context: DeviceStatusLatch, _address: number, value: number): void {
+		if (value === 0) {
 			return;
 		}
-		this.clear();
-		this.memory.writeIoU32(this.registers.ackAddr, 0);
-	}
-
-	public static acknowledgeWriteThunk(context: DeviceStatusLatch, addr: number, value: number): void {
-		void addr;
-		void value;
-		context.acknowledge();
+		context.code = context.registers.noneCode;
+		context.detail = 0;
+		context.memory.writeIoU32(context.registers.codeAddr, context.code);
+		context.memory.writeIoU32(context.registers.detailAddr, context.detail);
+		context.setStatusFlag(context.registers.faultMask, false);
+		context.memory.writeIoU32(context.registers.ackAddr, 0);
 	}
 
 	public setStatusFlag(mask: number, active: boolean): void {
