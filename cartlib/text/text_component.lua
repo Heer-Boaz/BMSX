@@ -89,7 +89,40 @@ end
 
 function text_component:draw_visual(draw)
 	local obj<const> = self.parent
-	self:render(draw, obj.x + self.offset_x + self.draw_offset_x, obj.y + self.offset_y + self.draw_offset_y)
+	local x<const> = obj.x + self.offset_x + self.draw_offset_x
+	local y<const> = obj.y + self.offset_y + self.draw_offset_y
+	local glyphs<const> = self.glyph_lines
+	local background_color<const> = self.background_color
+	if background_color ~= nil then
+		local cursor_y = y
+		local line_offsets<const> = self.line_offsets
+		local line_widths<const> = self.line_widths or self.layout_line_widths
+		local line_x_offsets<const> = self.line_x_offsets
+		for i = 1, self.glyph_line_count do
+			local line<const> = glyphs[i]
+			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
+			local line_length<const> = line.visible_count
+			if line_length > 0 then
+				local line_x = x
+				if line_x_offsets ~= nil then
+					line_x = x + line_x_offsets[i]
+				elseif self.center_block_width ~= nil then
+					local line_width<const> = line_widths[i]
+					line_x = x + ((self.center_block_width - line_width) // 2)
+				end
+				local x_offsets<const> = line.x_offsets
+				for glyph_index = 1, line_length do
+					local glyph<const> = line[glyph_index]
+					local glyph_x<const> = line_x + x_offsets[glyph_index]
+					draw:rect(glyph_x, line_y, glyph_x + glyph.width, line_y + glyph.height, background_color)
+				end
+			end
+			if line_offsets == nil then
+				cursor_y = cursor_y + self.line_height
+			end
+		end
+	end
+	self:render_glyphs(draw, x, y)
 end
 
 function text_component:render_glyphs(draw, x, y)
@@ -129,41 +162,6 @@ function text_component:render_glyphs(draw, x, y)
 			cursor_y = cursor_y + self.line_height
 		end
 	end
-end
-
-function text_component:render(draw, x, y)
-	local glyphs<const> = self.glyph_lines
-	local background_color<const> = self.background_color
-	if background_color ~= nil then
-		local cursor_y = y
-		local line_offsets<const> = self.line_offsets
-		local line_widths<const> = self.line_widths or self.layout_line_widths
-		local line_x_offsets<const> = self.line_x_offsets
-		for i = 1, self.glyph_line_count do
-			local line<const> = glyphs[i]
-			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-			local line_length<const> = line.visible_count
-			if line_length > 0 then
-				local line_x = x
-				if line_x_offsets ~= nil then
-					line_x = x + line_x_offsets[i]
-				elseif self.center_block_width ~= nil then
-					local line_width<const> = line_widths[i]
-					line_x = x + ((self.center_block_width - line_width) // 2)
-				end
-				local x_offsets<const> = line.x_offsets
-				for glyph_index = 1, line_length do
-					local glyph<const> = line[glyph_index]
-					local glyph_x<const> = line_x + x_offsets[glyph_index]
-					draw:rect(glyph_x, line_y, glyph_x + glyph.width, line_y + glyph.height, background_color)
-				end
-			end
-			if line_offsets == nil then
-				cursor_y = cursor_y + self.line_height
-			end
-		end
-	end
-	self:render_glyphs(draw, x, y)
 end
 
 return text_component

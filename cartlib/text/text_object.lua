@@ -23,8 +23,10 @@ function text_object_component.new(opts)
 	return setmetatable(text_component.new(opts), text_object_component)
 end
 
-function text_object_component:render(draw, x, y)
+function text_object_component:draw_visual(draw)
 	local owner<const> = self.parent
+	local x<const> = owner.x + self.offset_x + self.draw_offset_x
+	local y<const> = owner.y + self.offset_y + self.draw_offset_y
 	owner:submit_highlight(draw)
 	if self.background_color ~= nil then
 		-- Text objects retain their wrapped, left-aligned background line view
@@ -370,7 +372,7 @@ end
 -- to active render views only when glyphs or highlight geometry can emit work.
 local update_text_component_draw_function<const> = function(self)
 	if self._has_visible_glyphs or self.highlight_anim_y ~= nil then
-		self.text_component:set_draw_function(text_component.draw_visual)
+		self.text_component:set_draw_function(text_object_component.draw_visual)
 	else
 		self.text_component:set_draw_function(nil)
 	end
