@@ -105,7 +105,5 @@ export function lintFsmDirectStateHandlerShorthandPattern(
 export const FSM_DELEGATE_HANDLER_KEYS = new Set<string>([
 	'entering_state',
 	'exiting_state',
-	'leaving_state',
-	'tick',
-	'process_input',
+	'update',
 ]);

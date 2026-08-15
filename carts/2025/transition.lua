@@ -304,7 +304,7 @@ function transition.register_states(states)
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.timelines:stop(overgang_timeline_id)
 			self.text_transition:clear_text()
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
@@ -346,7 +346,7 @@ function transition.register_states(states)
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.timelines:stop(overgang_post_fade_in_timeline_id)
 			self.background.surface_component.color = p3_white_color
 			hide_transition_layers(self.transition_visual)
@@ -430,7 +430,7 @@ function transition.register_states(states)
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.timelines:stop(fade_timeline_id)
 			hide_transition_layers(self.transition_visual)
 			self.fade_hold_black = false

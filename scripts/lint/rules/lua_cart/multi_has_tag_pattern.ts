@@ -15,7 +15,7 @@ export function lintSplitNestedIfHasTagPattern(statement: IfStatement, issues: C
 		issues,
 		multiHasTagPatternRule.name,
 		statement,
-		`Nested if-chain splits ${hasTagCheckCount} has_tag checks across multiple statements. This is a forbidden workaround for the multi has_tag rule. Use tag_groups, tag_derivations, or derived_tags instead.`,
+		`Nested if-chain splits ${hasTagCheckCount} has_tag checks across multiple statements. This is a forbidden workaround for the multi has_tag rule. Use tag_derivations instead.`,
 	);
 }
 
@@ -28,6 +28,6 @@ export function lintMultiHasTagPattern(expression: Expression, issues: CartLintI
 		issues,
 		multiHasTagPatternRule.name,
 		expression,
-		`Statement contains ${hasTagCheckCount} has_tag checks. Use tag_groups, tag_derivations, or derived_tags instead.`,
+		`Statement contains ${hasTagCheckCount} has_tag checks. Use tag_derivations instead.`,
 	);
 }

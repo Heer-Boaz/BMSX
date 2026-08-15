@@ -62,14 +62,6 @@ export const FSM_STATE_HANDLER_MAP_KEYS = new Set<string>([
 	'events_once',
 ]);
 
-export const FORBIDDEN_FSM_LEGACY_FIELDS = new Set<string>([
-	'tick',
-	'process_input',
-	'run_checks',
-	'on_frame',
-	'on_end',
-]);
-
 export function lintFsmForbiddenLegacyFieldsPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,

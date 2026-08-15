@@ -575,9 +575,7 @@ local define_stage_fsm<const> = function()
 				end,
 			},
 			running = {
-				update = function(self)
-					self:update_runtime()
-				end,
+				update = stage.update_runtime,
 				timelines = {
 					[ids_stage_star_blink_timeline] = {
 						def = {

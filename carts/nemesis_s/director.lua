@@ -99,9 +99,7 @@ local define_director_fsm<const> = function()
 				end,
 			},
 			running = {
-				update = function(self)
-					self:update_runtime()
-				end,
+				update = director.update_runtime,
 			},
 		},
 	})

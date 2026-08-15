@@ -16,6 +16,6 @@ export function lintTickInputCheckPattern(functionExpression: CartFunctionExpres
 		issues,
 		tickInputCheckPatternRule.name,
 		inputCheck,
-		'Input checks inside tick are forbidden. Use FSM input handlers (player-index based), the FSM process_input handler, or events/timelines instead of polling input in tick.',
+		'Input checks inside update are forbidden. Use FSM input_event_handlers or events/timelines instead of polling input in update.',
 	);
 }

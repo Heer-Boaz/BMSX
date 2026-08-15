@@ -405,7 +405,7 @@ function combat.define_fsm()
 		input_event_handlers = {
 			{ pattern = 'b[jp]', go = '/combat_init' },
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local overlay<const> = self.transition_visual.overlay
 			overlay.visible = false
 			overlay.color = 0
@@ -560,7 +560,7 @@ function combat.define_fsm()
 		input_event_handlers = {
 			{ pattern = 'b[jp]', go = '/combat_round' },
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local monster<const> = self.monster
 			monster.sprite_component.scale_x = 1
 			monster.sprite_component.scale_y = 1
@@ -676,7 +676,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.timelines:stop(combat_hover_timeline_id)
 			self:clear_combat_parallax_transform()
 			refresh_combat_parallax(self)
@@ -731,7 +731,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.combat_hit_slash_frame.slash_active = false
 		end,
 	}
@@ -860,7 +860,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local overlay<const> = self.transition_visual.overlay
@@ -961,7 +961,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local overlay<const> = self.transition_visual.overlay
@@ -1056,7 +1056,7 @@ function combat.define_fsm()
 					end,
 				},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			self.timelines:stop(combat_hover_timeline_id)
 			self.timelines:stop(combat_all_out_prompt_timeline_id)
 			self:clear_combat_parallax_transform()
@@ -1133,7 +1133,7 @@ function combat.define_fsm()
 				go = '/combat_focus',
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local all_out<const> = self.all_out
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
@@ -1362,7 +1362,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		leaving_state = function(self)
+		exiting_state = function(self)
 			local bg<const> = self.background
 			bg.surface_component.color = p3_white_color
 		end,

@@ -74,6 +74,8 @@
 -- 5. FORBIDDEN LEGACY FIELDS.
 --    The cart builder rejects obsolete FSM fields rather than carrying a
 --    compatibility path into runtime definitions:
+--      'leaving_state' — use exiting_state
+--      'derived_tags' and 'tag_groups' — use tag_derivations
 --      'on_frame'     — use timeline apply/value/sample output
 --      'tick'         — use update
 --      'process_input' and 'run_checks' — use input handlers/transitions
@@ -142,7 +144,6 @@ state_definition.__index = state_definition
 local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
 local no_op<const> = 'no_op'
 local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
-local input_eval_modes<const> = { ['first'] = true, ['all'] = true }
 local default_event_filter<const> = {}
 local unfiltered_event_filter<const> = {}
 local transition_no_op<const> = 0
@@ -200,22 +201,6 @@ local collect_event_list<const> = function(def, list, seen)
 	end
 end
 
-local validate_tag_list<const> = function(values, owner_tag, field_name)
-	if type(values) ~= 'table' then
-		error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" must be an array of tags.')
-	end
-	for i = 1, #values do
-		local source_tag<const> = values[i]
-		if type(source_tag) ~= 'string' then
-			error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" contains non-string value at index ' .. tostring(i) .. '.')
-		end
-	end
-	if #values == 0 then
-		error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" cannot be empty.')
-	end
-	return values
-end
-
 -- compile_tag_derivations: parses the raw tag_derivations table from the FSM
 -- definition into an ordered array of compiled rules.  Each rule has:
 --   derived_tag (string): the tag to add/remove on the target.
@@ -230,117 +215,32 @@ local compile_tag_derivations<const> = function(raw)
 	if raw == nil then
 		return nil
 	end
-	if type(raw) ~= 'table' then
-		error('fsm.tag_derivations must be a table.')
-	end
 	local derived_tags<const> = {}
 	for derived_tag in pairs(raw) do
 		derived_tags[#derived_tags + 1] = derived_tag
-	end
-	if #derived_tags == 0 then
-		return nil
 	end
 	table.sort(derived_tags)
 	local compiled<const> = {}
 	for i = 1, #derived_tags do
 		local derived_tag<const> = derived_tags[i]
-		if type(derived_tag) ~= 'string' then
-			error('fsm.tag_derivations contains non-string derived tag key.')
-		end
 		local spec<const> = raw[derived_tag]
-		local rule<const> = {
-			derived_tag = derived_tag,
-			any = nil,
-			all = nil,
-			none = nil,
-		}
-		if type(spec) ~= 'table' then
-			error('tag derivation "' .. tostring(derived_tag) .. '" must be an array or table.')
-		end
+		local rule
 		if spec[1] ~= nil then
-			rule.any = validate_tag_list(spec, derived_tag, 'any')
+			rule = {
+				derived_tag = derived_tag,
+				any = spec,
+			}
 		else
-			if spec.any ~= nil then
-				rule.any = validate_tag_list(spec.any, derived_tag, 'any')
-			end
-			if spec.all ~= nil then
-				rule.all = validate_tag_list(spec.all, derived_tag, 'all')
-			end
-			if spec.none ~= nil then
-				rule.none = validate_tag_list(spec.none, derived_tag, 'none')
-			end
-		end
-		if rule.any == nil and rule.all == nil and rule.none == nil then
-			error('tag derivation "' .. tostring(derived_tag) .. '" must define an array, or an "any"/"all"/"none" array.')
+			rule = {
+				derived_tag = derived_tag,
+				any = spec.any,
+				all = spec.all,
+				none = spec.none,
+			}
 		end
 		compiled[#compiled + 1] = rule
 	end
 	return compiled
-end
-
-local validate_optional_state_function<const> = function(def_id, field_name, value)
-	if value ~= nil and type(value) ~= 'function' then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '" must be a function, but got ' .. type(value) .. '.'
-		)
-	end
-end
-
-local validate_transition_spec<const> = function(def_id, field_name, spec)
-	if spec == nil then
-		return
-	end
-	local kind<const> = type(spec)
-	if kind == 'string' then
-		return
-	end
-	if kind == 'function' then
-		return
-	end
-	if kind ~= 'table' then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '" must be a string, function, or transition table, but got ' .. kind .. '.'
-		)
-	end
-	local go<const> = spec.go
-	if go == nil then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '.go" is required.'
-		)
-	end
-	local go_kind<const> = type(go)
-	if go_kind == 'string' then
-		return
-	end
-	if go_kind ~= 'function' then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '.go" must be a string or function, but got ' .. go_kind .. '.'
-		)
-	end
-end
-
-local validate_transition_spec_map<const> = function(def_id, field_name, map)
-	if map == nil then
-		return
-	end
-	if type(map) ~= 'table' then
-		error(
-			'state definition "' .. tostring(def_id)
-				.. '" field "' .. tostring(field_name)
-				.. '" must be a table, but got ' .. type(map) .. '.'
-		)
-	end
-	for key, spec in pairs(map) do
-		validate_transition_spec(def_id, field_name .. '[' .. tostring(key) .. ']', spec)
-	end
 end
 
 local compile_timeline_definitions<const> = function(definitions)
@@ -367,38 +267,22 @@ function state_definition.new(id, def, root, parent)
 	self.id = id
 	self.parent = parent
 	self.root = root or self
-	self.def_id = def and def.def_id or make_def_id(id, parent)
-	self.data = def and def.data or {}
+	self.def_id = def.def_id or make_def_id(id, parent)
+	self.data = def.data or {}
 	self.states = {}
-	self.initial = def and def.initial
+	self.initial = def.initial
 	self.on = {}
-	if def and def.on then
+	if def.on then
 		for k, v in pairs(def.on) do
 			self.on[k] = v
 		end
 	end
-	if def and def.tick ~= nil then
-		error('state definition "' .. tostring(self.def_id) .. '" field "tick" is not supported. Use "update".')
-	end
-	if def and def.process_input ~= nil then
-		error('state definition "' .. tostring(self.def_id) .. '" field "process_input" is not supported.')
-	end
-	if def and def.run_checks ~= nil then
-		error('state definition "' .. tostring(self.def_id) .. '" field "run_checks" is not supported.')
-	end
-	self.update = def and def.update
-	self.entering_state = def and def.entering_state
-	self.exiting_state = def and (def.exiting_state or def.leaving_state)
-	local input_event_handlers<const> = def and def.input_event_handlers or {}
-	self.is_concurrent = def and def.is_concurrent or false
-	local input_eval<const> = def and def.input_eval
-	if input_eval ~= nil and not input_eval_modes[input_eval] then
-		error(
-			'state definition "' .. tostring(self.def_id)
-				.. '" has invalid input_eval "' .. tostring(input_eval)
-				.. '". expected "first" or "all", but got ' .. type(input_eval) .. '.'
-		)
-	end
+	self.update = def.update
+	self.entering_state = def.entering_state
+	self.exiting_state = def.exiting_state
+	local input_event_handlers<const> = def.input_event_handlers or {}
+	self.is_concurrent = def.is_concurrent or false
+	local input_eval<const> = def.input_eval
 	if input_eval ~= nil then
 		self.input_eval_first = input_eval == 'first'
 	elseif parent then
@@ -406,36 +290,26 @@ function state_definition.new(id, def, root, parent)
 	else
 		self.input_eval_first = false
 	end
-	validate_optional_state_function(self.def_id, 'update', self.update)
-	validate_optional_state_function(self.def_id, 'entering_state', self.entering_state)
-	validate_optional_state_function(self.def_id, 'exiting_state', self.exiting_state)
-	validate_transition_spec_map(self.def_id, 'on', self.on)
-	for i = 1, #input_event_handlers do
-		validate_transition_spec(self.def_id, 'input_event_handlers[' .. i .. ']', input_event_handlers[i])
-	end
 	self.on = compile_event_handlers(self.on)
 	self.input_event_handlers = input_event_handlers
 	self.input_handler_count = #input_event_handlers
 	self.input_patterns = nil
 	self.input_transition_kinds = nil
 	self.input_transitions = nil
-	self.event_list = def and def.event_list
-	self.timelines = compile_timeline_definitions(def and def.timelines)
-	local transition_guards<const> = def and def.transition_guards
+	self.event_list = def.event_list
+	self.timelines = compile_timeline_definitions(def.timelines)
+	local transition_guards<const> = def.transition_guards
 	self.can_enter = transition_guards and transition_guards.can_enter
 	self.can_exit = transition_guards and transition_guards.can_exit
-	validate_optional_state_function(self.def_id, 'transition_guards.can_enter', self.can_enter)
-	validate_optional_state_function(self.def_id, 'transition_guards.can_exit', self.can_exit)
-	self.tags = def and def.tags
+	self.tags = def.tags
 	self.path_plans = nil
 	self.direct_child_plans = nil
 	self.tag_derivations = nil
 	if self.root == self then
-		local raw_tag_derivations<const> = def and (def.tag_derivations or def.derived_tags or def.tag_groups)
-		self.tag_derivations = compile_tag_derivations(raw_tag_derivations)
+		self.tag_derivations = compile_tag_derivations(def.tag_derivations)
 	end
 
-	if def and def.states then
+	if def.states then
 		for state_id, state_def in pairs(def.states) do
 			local child<const> = state_definition.new(state_id, state_def, self.root, self)
 			self.states[state_id] = child
@@ -553,9 +427,6 @@ end
 
 local resolve_state_key<const> = function(definition, state_id)
 	local states<const> = definition.states
-	if not states then
-		error('state "' .. definition.id .. '" does not define substates.')
-	end
 	if states[state_id] then
 		return state_id
 	end
@@ -587,9 +458,6 @@ local build_timeline_bindings<const> = function(owner, definitions)
 	end
 	local bindings<const> = {}
 	for key, config in pairs(definitions) do
-		if config.def ~= nil and type(config.def) ~= 'table' then
-			error('timeline "' .. tostring(key) .. '" field "def" must be a table.')
-		end
 		local id<const> = config.id or key
 		local definition<const> = config.def
 		if definition then

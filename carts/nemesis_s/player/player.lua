@@ -717,9 +717,7 @@ local define_player_fsm<const> = function()
 				end,
 				},
 				flying = {
-					update = function(self)
-						self:update_runtime()
-					end,
+					update = player.update_runtime,
 					input_event_handlers = {
 					{
 						pattern = 'left[jp]',

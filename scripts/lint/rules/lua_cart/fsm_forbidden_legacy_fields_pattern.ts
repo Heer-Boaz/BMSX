@@ -1,11 +1,21 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { FORBIDDEN_FSM_LEGACY_FIELDS } from './impl/support/fsm_transitions';
 import { getTableFieldKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
 export const fsmForbiddenLegacyFieldsPatternRule = defineLintRule('cart', 'fsm_forbidden_legacy_fields_pattern');
+
+const forbiddenFsmLegacyFieldReplacements: Readonly<Record<string, string>> = {
+	leaving_state: 'Use "exiting_state".',
+	derived_tags: 'Use "tag_derivations".',
+	tag_groups: 'Use "tag_derivations".',
+	tick: 'Use state "update".',
+	process_input: 'Use "input_event_handlers".',
+	run_checks: 'Use "input_event_handlers".',
+	on_frame: 'Use timeline definition "apply" or a value/sample track.',
+	on_end: 'Use timeline binding "on_finished" for terminal completion.',
+};
 
 export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issues: CartLintIssue[]): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
@@ -13,13 +23,8 @@ export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issu
 	}
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
-		if (key && FORBIDDEN_FSM_LEGACY_FIELDS.has(key)) {
-			let replacement = 'Use state "update" and "input_event_handlers" only.';
-			if (key === 'on_frame') {
-				replacement = 'Use timeline definition "apply" or a value/sample track.';
-			} else if (key === 'on_end') {
-				replacement = 'Use timeline binding "on_finished" for terminal completion.';
-			}
+		const replacement = key && forbiddenFsmLegacyFieldReplacements[key];
+		if (replacement) {
 			pushIssue(
 				issues,
 				fsmForbiddenLegacyFieldsPatternRule.name,
