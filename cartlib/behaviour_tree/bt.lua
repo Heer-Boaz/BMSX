@@ -1,10 +1,11 @@
--- Behaviour tree nodes. Root nodes are immutable definitions shared by every
--- component instance; per-object node state lives on the component blackboard.
+-- Behaviour-tree authoring nodes. The library compiles each immutable authored
+-- tree into one shared evaluator program; per-object node state lives on the
+-- component blackboard.
+
+local contract<const> = require('cartlib/behaviour_tree/contract')
 
 local behaviour_tree<const> = {}
-local result_running<const> = 1
-local result_success<const> = 2
-local result_failure<const> = 3
+local program_kind<const> = contract.node_kind
 
 local bt_node<const> = {}
 bt_node.__index = bt_node
@@ -14,10 +15,6 @@ function bt_node.new(id, priority)
 	self.id = id
 	self.priority = priority or 0
 	return self
-end
-
-function bt_node:tick(_target, _blackboard)
-	error('behaviour tree node "' .. tostring(self.id) .. '" must implement tick().')
 end
 
 local parametrized_bt_node<const> = {}
@@ -32,6 +29,7 @@ end
 
 local sequence_node<const> = {}
 sequence_node.__index = sequence_node
+sequence_node.program_kind = program_kind.sequence
 setmetatable(sequence_node, { __index = bt_node })
 
 function sequence_node.new(id, children, priority)
@@ -40,18 +38,9 @@ function sequence_node.new(id, children, priority)
 	return self
 end
 
-function sequence_node:tick(target, blackboard)
-	for i = 1, #self.children do
-		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= result_success then
-			return status
-		end
-	end
-	return result_success
-end
-
 local selector_node<const> = {}
 selector_node.__index = selector_node
+selector_node.program_kind = program_kind.selector
 setmetatable(selector_node, { __index = bt_node })
 
 function selector_node.new(id, children, priority)
@@ -60,22 +49,14 @@ function selector_node.new(id, children, priority)
 	return self
 end
 
-function selector_node:tick(target, blackboard)
-	for i = 1, #self.children do
-		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= result_failure then
-			return status
-		end
-	end
-	return result_failure
-end
-
 local parallel_node<const> = {}
 parallel_node.__index = parallel_node
+parallel_node.program_kind = program_kind.parallel_all
 setmetatable(parallel_node, { __index = bt_node })
 
 local parallel_one_node<const> = {}
 parallel_one_node.__index = parallel_one_node
+parallel_one_node.program_kind = program_kind.parallel_one
 setmetatable(parallel_one_node, { __index = bt_node })
 
 local parallel_class_by_policy<const> = {
@@ -90,38 +71,9 @@ function parallel_node.new(id, children, success_policy, priority)
 	return self
 end
 
-function parallel_node:tick(target, blackboard)
-	local any_running
-	for i = 1, #self.children do
-		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= result_success then
-			if status == result_running then
-				any_running = true
-			else
-				return status
-			end
-		end
-	end
-	return any_running and result_running or result_success
-end
-
-function parallel_one_node:tick(target, blackboard)
-	local any_running
-	for i = 1, #self.children do
-		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= result_failure then
-			if status == result_running then
-				any_running = true
-			else
-				return status
-			end
-		end
-	end
-	return any_running and result_running or result_failure
-end
-
 local decorator_node<const> = {}
 decorator_node.__index = decorator_node
+decorator_node.program_kind = program_kind.decorator
 setmetatable(decorator_node, { __index = bt_node })
 
 function decorator_node.new(id, child, decorator_fn, priority)
@@ -131,17 +83,14 @@ function decorator_node.new(id, child, decorator_fn, priority)
 	return self
 end
 
-function decorator_node:tick(target, blackboard)
-	local status<const> = self.child:tick(target, blackboard)
-	return self.decorator(target, blackboard, status)
-end
-
 local condition_node<const> = {}
 condition_node.__index = condition_node
+condition_node.program_kind = program_kind.condition
 setmetatable(condition_node, { __index = parametrized_bt_node })
 
 local negated_condition_node<const> = {}
 negated_condition_node.__index = negated_condition_node
+negated_condition_node.program_kind = program_kind.negated_condition
 setmetatable(negated_condition_node, { __index = parametrized_bt_node })
 
 local condition_class_by_modifier<const> = {
@@ -157,20 +106,14 @@ function condition_node.new(id, condition_fn, modifier, priority, parameters)
 	return self
 end
 
-function condition_node:tick(target, blackboard)
-	return self.condition(target, blackboard, self.parameters) and result_success or result_failure
-end
-
-function negated_condition_node:tick(target, blackboard)
-	return self.condition(target, blackboard, self.parameters) and result_failure or result_success
-end
-
 local composite_condition_node<const> = {}
 composite_condition_node.__index = composite_condition_node
+composite_condition_node.program_kind = program_kind.composite_condition
 setmetatable(composite_condition_node, { __index = parametrized_bt_node })
 
 local composite_or_condition_node<const> = {}
 composite_or_condition_node.__index = composite_or_condition_node
+composite_or_condition_node.program_kind = program_kind.composite_or_condition
 setmetatable(composite_or_condition_node, { __index = parametrized_bt_node })
 
 local composite_condition_class_by_modifier<const> = {
@@ -186,26 +129,9 @@ function composite_condition_node.new(id, conditions, modifier, priority, parame
 	return self
 end
 
-function composite_condition_node:tick(target, blackboard)
-	for i = 1, #self.conditions do
-		if not self.conditions[i](target, blackboard, self.parameters) then
-			return result_failure
-		end
-	end
-	return result_success
-end
-
-function composite_or_condition_node:tick(target, blackboard)
-	for i = 1, #self.conditions do
-		if self.conditions[i](target, blackboard, self.parameters) then
-			return result_success
-		end
-	end
-	return result_failure
-end
-
 local random_selector_node<const> = {}
 random_selector_node.__index = random_selector_node
+random_selector_node.program_kind = program_kind.random_selector
 setmetatable(random_selector_node, { __index = bt_node })
 
 function random_selector_node.new(id, children, property_name, priority)
@@ -215,21 +141,9 @@ function random_selector_node.new(id, children, property_name, priority)
 	return self
 end
 
-function random_selector_node:tick(target, blackboard)
-	local idx = blackboard.node_data[self.current_child_property_name]
-	if idx == nil then
-		idx = math.random(1, #self.children)
-		blackboard.node_data[self.current_child_property_name] = idx
-	end
-	local status<const> = self.children[idx]:tick(target, blackboard)
-	if status ~= result_running then
-		blackboard.node_data[self.current_child_property_name] = nil
-	end
-	return status
-end
-
 local limit_node<const> = {}
 limit_node.__index = limit_node
+limit_node.program_kind = program_kind.limit
 setmetatable(limit_node, { __index = bt_node })
 
 function limit_node.new(id, limit_count, property_name, child, priority)
@@ -240,20 +154,9 @@ function limit_node.new(id, limit_count, property_name, child, priority)
 	return self
 end
 
-function limit_node:tick(target, blackboard)
-	local count<const> = blackboard.node_data[self.count_property_name] or 0
-	if count < self.limit then
-		local status<const> = self.child:tick(target, blackboard)
-		if status ~= result_running then
-			blackboard.node_data[self.count_property_name] = count + 1
-		end
-		return status
-	end
-	return result_failure
-end
-
 local priority_selector_node<const> = {}
 priority_selector_node.__index = priority_selector_node
+priority_selector_node.program_kind = program_kind.selector
 setmetatable(priority_selector_node, { __index = bt_node })
 
 local sort_by_priority_desc<const> = function(a, b)
@@ -269,18 +172,9 @@ function priority_selector_node.new(id, children, priority)
 	return self
 end
 
-function priority_selector_node:tick(target, blackboard)
-	for i = 1, #self.children do
-		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= result_failure then
-			return status
-		end
-	end
-	return result_failure
-end
-
 local wait_node<const> = {}
 wait_node.__index = wait_node
+wait_node.program_kind = program_kind.wait
 setmetatable(wait_node, { __index = bt_node })
 
 function wait_node.new(id, wait_time, property_name, priority)
@@ -290,18 +184,9 @@ function wait_node.new(id, wait_time, property_name, priority)
 	return self
 end
 
-function wait_node:tick(_target, blackboard)
-	local elapsed<const> = blackboard.node_data[self.wait_property_name] or 0
-	if elapsed < self.wait_time then
-		blackboard.node_data[self.wait_property_name] = elapsed + 1
-		return result_running
-	end
-	blackboard.node_data[self.wait_property_name] = nil
-	return result_success
-end
-
 local action_node<const> = {}
 action_node.__index = action_node
+action_node.program_kind = program_kind.action
 setmetatable(action_node, { __index = parametrized_bt_node })
 
 function action_node.new(id, action_fn, priority, parameters)
@@ -310,12 +195,9 @@ function action_node.new(id, action_fn, priority, parameters)
 	return self
 end
 
-function action_node:tick(target, blackboard)
-	return self.action(target, blackboard, self.parameters)
-end
-
 local composite_action_node<const> = {}
 composite_action_node.__index = composite_action_node
+composite_action_node.program_kind = program_kind.composite_action
 setmetatable(composite_action_node, { __index = parametrized_bt_node })
 
 function composite_action_node.new(id, actions, priority, parameters)
@@ -324,25 +206,7 @@ function composite_action_node.new(id, actions, priority, parameters)
 	return self
 end
 
-function composite_action_node:tick(target, blackboard)
-	local outcome
-	for i = 1, #self.actions do
-		local status<const> = self.actions[i]:tick(target, blackboard)
-		if status == result_failure then
-			return status
-		end
-		if status == result_running then
-			outcome = status
-		end
-	end
-	return outcome or result_success
-end
-
-behaviour_tree.result = {
-	running = result_running,
-	success = result_success,
-	failure = result_failure,
-}
+behaviour_tree.result = contract.result
 behaviour_tree.bt_node = bt_node
 behaviour_tree.sequence_node = sequence_node
 behaviour_tree.selector_node = selector_node

@@ -19,7 +19,7 @@ function bt_system:update()
 	local components<const> = self._component_view.components
 	for i = 1, #components do
 		local component<const> = components[i]
-		component.root:tick(component.parent, component)
+		component.evaluate(component.parent, component, component.operand)
 	end
 end
 
