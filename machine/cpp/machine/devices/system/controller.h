@@ -3,6 +3,8 @@
 #include "spec/bmsx/io.h"
 #include "machine/memory/memory.h"
 
+#include <array>
+
 namespace bmsx {
 
 class CPU;
@@ -79,6 +81,7 @@ private:
 	void beginSupervisorLeave();
 	u32 statusWord() const;
 	void writeStatusIo();
+	void writeSupervisorFaultIo();
 
 	Memory& m_memory;
 	CPU& m_cpu;
@@ -94,6 +97,7 @@ private:
 	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
+	std::array<u32, IO_SYS_SUPERVISOR_FAULT_WORD_COUNT> m_supervisorFaultRegisterWords{};
 	i64 m_cpuHz;
 };
 

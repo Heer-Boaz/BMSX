@@ -13,19 +13,23 @@ SystemDebugTransmit::SystemDebugTransmit(Memory& memory)
 
 void SystemDebugTransmit::reset() {
 	clearOutput();
+	m_charWord = 0u;
+	m_flushWord = 0u;
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, 0u);
 	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0u);
 }
 
 auto SystemDebugTransmit::captureState() const -> SystemDebugTransmitState {
 	return {
-		m_memory.readIoU32(IO_SYS_PRINT_CHAR),
-		m_memory.readIoU32(IO_SYS_PRINT_FLUSH),
+		m_charWord,
+		m_flushWord,
 	};
 }
 
 void SystemDebugTransmit::restoreState(const SystemDebugTransmitState& state) {
 	clearOutput();
+	m_charWord = state.charWord;
+	m_flushWord = state.flushWord;
 	m_memory.writeIoU32(IO_SYS_PRINT_CHAR, state.charWord);
 	m_memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.flushWord);
 }
@@ -43,6 +47,7 @@ auto SystemDebugTransmit::readByte() -> u8 {
 }
 
 void SystemDebugTransmit::writeChar([[maybe_unused]] u32 address, u32 value) {
+	m_charWord = value;
 	const u32 byteCount = encodeUtf8Codepoint(value, m_encodingBytes);
 	if (!reserveBytes(byteCount)) {
 		return;
@@ -52,7 +57,8 @@ void SystemDebugTransmit::writeChar([[maybe_unused]] u32 address, u32 value) {
 	}
 }
 
-void SystemDebugTransmit::flushLine([[maybe_unused]] u32 address, [[maybe_unused]] u32 value) {
+void SystemDebugTransmit::flushLine([[maybe_unused]] u32 address, u32 value) {
+	m_flushWord = value;
 	if (reserveBytes(1u)) {
 		appendByte(static_cast<u8>('\n'));
 		m_completeByteCount = m_outputByteCount;

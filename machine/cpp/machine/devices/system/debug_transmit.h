@@ -32,6 +32,8 @@ private:
 	void appendByte(u8 value);
 
 	Memory& m_memory;
+	u32 m_charWord = 0u;
+	u32 m_flushWord = 0u;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_outputBytes{};
 	u32 m_outputReadIndex = 0u;
 	u32 m_outputByteCount = 0u;

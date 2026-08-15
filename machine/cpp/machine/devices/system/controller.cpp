@@ -10,7 +10,19 @@
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/device.h"
 
+#include <cstddef>
+
 namespace bmsx {
+namespace {
+
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_SEQUENCE = 0u;
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_CAUSE = IO_SYS_SUPERVISOR_FAULT_CAUSE_INDEX - IO_SYS_SUPERVISOR_FAULT_SEQUENCE_INDEX;
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_EPC = IO_SYS_SUPERVISOR_FAULT_EPC_INDEX - IO_SYS_SUPERVISOR_FAULT_SEQUENCE_INDEX;
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_BAD_ADDRESS = IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS_INDEX - IO_SYS_SUPERVISOR_FAULT_SEQUENCE_INDEX;
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_LUA_REASON = IO_SYS_SUPERVISOR_FAULT_LUA_REASON_INDEX - IO_SYS_SUPERVISOR_FAULT_SEQUENCE_INDEX;
+constexpr std::size_t SYSTEM_SUPERVISOR_FAULT_REGISTER_DOMAIN = IO_SYS_SUPERVISOR_FAULT_DOMAIN_INDEX - IO_SYS_SUPERVISOR_FAULT_SEQUENCE_INDEX;
+
+} // namespace
 
 SystemController::SystemController(
 	Memory& memory,
@@ -47,14 +59,10 @@ void SystemController::reset() {
 	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
+	m_supervisorFaultRegisterWords.fill(0u);
 	m_audio.setVoiceClockHeld(false, m_scheduler.currentNowCycles());
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, 0u);
+	writeSupervisorFaultIo();
 	writeStatusIo();
 }
 
@@ -185,11 +193,12 @@ void SystemController::activateSupervisorContext() {
 }
 
 void SystemController::enterSupervisorFault() {
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, m_cpu.readCauseWord());
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, m_cpu.readEpcWord());
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, m_cpu.readBadAddressWord());
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, m_cpu.readLuaFaultReasonWord());
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, m_cpu.readExceptionDomainWord());
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_CAUSE] = m_cpu.readCauseWord();
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_EPC] = m_cpu.readEpcWord();
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_BAD_ADDRESS] = m_cpu.readBadAddressWord();
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_LUA_REASON] = m_cpu.readLuaFaultReasonWord();
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_DOMAIN] = m_cpu.readExceptionDomainWord();
+	writeSupervisorFaultIo();
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
 		return;
 	}
@@ -210,10 +219,9 @@ void SystemController::enterSupervisorFault() {
 }
 
 void SystemController::publishSupervisorFault() {
-	m_memory.writeIoU32(
-		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-		m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) + 1u
-	);
+	const u32 sequence = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_SEQUENCE] + 1u;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_SEQUENCE] = sequence;
+	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, sequence);
 }
 
 void SystemController::beginSupervisorLeave() {
@@ -244,12 +252,12 @@ SystemControllerState SystemController::captureState() const {
 	state.supervisorTransitionTarget = m_supervisorTransitionTarget;
 	state.supervisorResumable = m_supervisorResumable;
 	state.supervisorExitRequested = m_supervisorExitRequested;
-	state.supervisorFaultSequenceWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
-	state.supervisorFaultCauseWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE);
-	state.supervisorFaultEpcWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_EPC);
-	state.supervisorFaultBadAddressWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS);
-	state.supervisorFaultLuaReasonWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON);
-	state.supervisorFaultDomainWord = m_memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN);
+	state.supervisorFaultSequenceWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_SEQUENCE];
+	state.supervisorFaultCauseWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_CAUSE];
+	state.supervisorFaultEpcWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_EPC];
+	state.supervisorFaultBadAddressWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_BAD_ADDRESS];
+	state.supervisorFaultLuaReasonWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_LUA_REASON];
+	state.supervisorFaultDomainWord = m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_DOMAIN];
 	return state;
 }
 
@@ -259,17 +267,18 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_supervisorTransitionTarget = state.supervisorTransitionTarget;
 	m_supervisorResumable = state.supervisorResumable;
 	m_supervisorExitRequested = state.supervisorExitRequested;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_SEQUENCE] = state.supervisorFaultSequenceWord;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_CAUSE] = state.supervisorFaultCauseWord;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_EPC] = state.supervisorFaultEpcWord;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_BAD_ADDRESS] = state.supervisorFaultBadAddressWord;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_LUA_REASON] = state.supervisorFaultLuaReasonWord;
+	m_supervisorFaultRegisterWords[SYSTEM_SUPERVISOR_FAULT_REGISTER_DOMAIN] = state.supervisorFaultDomainWord;
 	m_audio.setVoiceClockHeld(
 		m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_USER,
 		m_scheduler.currentNowCycles()
 	);
 	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, state.supervisorFaultSequenceWord);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_CAUSE, state.supervisorFaultCauseWord);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_EPC, state.supervisorFaultEpcWord);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, state.supervisorFaultBadAddressWord);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_LUA_REASON, state.supervisorFaultLuaReasonWord);
-	m_memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_DOMAIN, state.supervisorFaultDomainWord);
+	writeSupervisorFaultIo();
 	writeStatusIo();
 }
 
@@ -297,6 +306,15 @@ u32 SystemController::statusWord() const {
 
 void SystemController::writeStatusIo() {
 	m_memory.writeIoU32(IO_SYS_STATUS, statusWord());
+}
+
+void SystemController::writeSupervisorFaultIo() {
+	for (std::size_t index = 0u; index < m_supervisorFaultRegisterWords.size(); ++index) {
+		m_memory.writeIoU32(
+			IO_SYS_SUPERVISOR_FAULT_SEQUENCE + static_cast<u32>(index) * IO_WORD_SIZE,
+			m_supervisorFaultRegisterWords[index]
+		);
+	}
 }
 
 } // namespace bmsx

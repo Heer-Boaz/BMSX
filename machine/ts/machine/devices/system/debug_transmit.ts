@@ -14,6 +14,8 @@ export type SystemDebugTransmitState = {
 const ASCII_NEWLINE = 10;
 
 export class SystemDebugTransmit {
+	private charWord = 0;
+	private flushWord = 0;
 	private readonly outputBytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 	private outputReadIndex = 0;
 	private outputByteCount = 0;
@@ -28,19 +30,23 @@ export class SystemDebugTransmit {
 
 	public reset(): void {
 		this.clearOutput();
+		this.charWord = 0;
+		this.flushWord = 0;
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, 0);
 		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, 0);
 	}
 
 	public captureState(): SystemDebugTransmitState {
 		return {
-			charWord: this.memory.readIoU32(IO_SYS_PRINT_CHAR),
-			flushWord: this.memory.readIoU32(IO_SYS_PRINT_FLUSH),
+			charWord: this.charWord,
+			flushWord: this.flushWord,
 		};
 	}
 
 	public restoreState(state: SystemDebugTransmitState): void {
 		this.clearOutput();
+		this.charWord = state.charWord;
+		this.flushWord = state.flushWord;
 		this.memory.writeIoU32(IO_SYS_PRINT_CHAR, state.charWord);
 		this.memory.writeIoU32(IO_SYS_PRINT_FLUSH, state.flushWord);
 	}
@@ -58,6 +64,7 @@ export class SystemDebugTransmit {
 	}
 
 	private static writeChar(context: SystemDebugTransmit, _address: number, value: number): void {
+		context.charWord = value;
 		const byteCount = encodeUtf8Codepoint(value, context.encodingBytes);
 		if (!context.reserveBytes(byteCount)) {
 			return;
@@ -67,7 +74,8 @@ export class SystemDebugTransmit {
 		}
 	}
 
-	private static flushLine(context: SystemDebugTransmit): void {
+	private static flushLine(context: SystemDebugTransmit, _address: number, value: number): void {
+		context.flushWord = value;
 		if (context.reserveBytes(1)) {
 			context.appendByte(ASCII_NEWLINE);
 			context.completeByteCount = context.outputByteCount;
