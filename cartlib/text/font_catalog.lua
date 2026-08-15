@@ -26,6 +26,8 @@ local build_resolved_font<const> = function(id, definition)
 	local advances<const> = {}
 	local sources<const> = {}
 	local source_count = 0
+	local uniform_size = true
+	local uniform_size_word
 	for glyph, imgid in pairs(definition.glyphs) do
 		local source<const> = image.resolve(imgid)
 		local codepoint<const> = byte(glyph)
@@ -33,6 +35,11 @@ local build_resolved_font<const> = function(id, definition)
 		advances[codepoint] = source.width + advance_padding
 		source_count = source_count + 1
 		sources[source_count] = source
+		if uniform_size_word == nil then
+			uniform_size_word = source._size_word
+		elseif source._size_word ~= uniform_size_word then
+			uniform_size = false
+		end
 	end
 	local space<const> = items[0x20]
 	if space and not items[0x09] then
@@ -40,11 +47,15 @@ local build_resolved_font<const> = function(id, definition)
 		advances[0x09] = advances[0x20] * 4
 	end
 	local line_glyph<const> = items[0x41] or items[0x61] or items[0x3f]
+	local uniform_writer = command_list.blit_uniform_span
+	if not uniform_size then
+		uniform_writer = command_list.blit_uniform_draw_mode_span
+	end
 	local span_binding<const> = {
 		sources = sources,
 		source_count = source_count,
 		per_source_writer = command_list.blit_span,
-		uniform_writer = command_list.blit_uniform_span,
+		uniform_writer = uniform_writer,
 	}
 	gx_texture.bind_draw_mode_span(span_binding)
 	return {

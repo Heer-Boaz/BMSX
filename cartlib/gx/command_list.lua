@@ -308,10 +308,10 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 	draw.draw_mode = draw_mode
 end
 
--- Uniform spans are admitted by the texture owner only while all retained
--- sources consume one draw-mode word. Relocation updates the representative
--- source before selecting this writer, leaving the packet loop state-free.
-function command_list.blit_uniform_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color, uniform_draw_mode_source)
+-- Fonts with variable glyph dimensions still retain one draw mode per span.
+-- Keep that shape separate so fixed-size fonts do not reload size state for
+-- every packet and variable-size fonts do not gain a per-glyph mode branch.
+function command_list.blit_uniform_draw_mode_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color, uniform_draw_mode_source)
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode<const> = uniform_draw_mode_source._blit_draw_mode
@@ -336,6 +336,40 @@ function command_list.blit_uniform_span(draw, glyphs, x_offsets, first_index, la
 		packet.position = position_y | ((base_x + x_offsets[glyph_index]) & 0x0000ffff)
 		packet.uv = source._blit_uv_word
 		packet.size = source._size_word
+		target = target + textured_rectangle_packet_size
+	end
+	draw.word_count = (target - words) >> 2
+end
+
+-- Uniform font runs retain both draw mode and packet size at admission. Texture
+-- relocation updates the representative source before selecting this writer;
+-- the packet loop therefore consumes only per-glyph position and UV state.
+function command_list.blit_uniform_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color, uniform_draw_mode_source)
+	local words<const>: *word = draw.words
+	local target: *word = words + draw.word_count * sizeof(word)
+	local draw_mode<const> = uniform_draw_mode_source._blit_draw_mode
+	if draw_mode ~= draw.draw_mode then
+		*target = gp0.draw_mode | draw_mode
+		target = target + sizeof(word)
+		draw.draw_mode = draw_mode
+	end
+	local base_position<const> = gp0.pair16(x, y)
+	local base_x<const> = base_position & 0x0000ffff
+	local position_y<const> = base_position & 0xffff0000
+	local size_word<const> = uniform_draw_mode_source._size_word
+	local command
+	if (color & 0x00ffffff) == 0x00ffffff then
+		command = gp0.draw_raw_textured_rectangle | 0x00808080
+	else
+		command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
+	end
+	for glyph_index = first_index, last_index do
+		local source<const> = glyphs[glyph_index]
+		local packet<const>: *gp0_textured_rectangle_packet = target
+		packet.command = command
+		packet.position = position_y | ((base_x + x_offsets[glyph_index]) & 0x0000ffff)
+		packet.uv = source._blit_uv_word
+		packet.size = size_word
 		target = target + textured_rectangle_packet_size
 	end
 	draw.word_count = (target - words) >> 2
