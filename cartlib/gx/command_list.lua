@@ -32,7 +32,14 @@ struct gp0_textured_rectangle_packet
 	size: word
 end
 
+struct gp0_rectangle_packet
+	command: word
+	position: word
+	size: word
+end
+
 local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
+local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
 
 function command_list.submit(draw)
 	dma.wait0_idle()
@@ -129,6 +136,25 @@ end
 
 function draw_list:rect(x0, y0, x1, y1, color)
 	emit_rect_color(self, gp0.draw_rectangle, x0, y0, x1, y1, color)
+end
+
+-- Horizontal rectangle spans retain one origin, height and color while their
+-- producer supplies dense geometry views. The shared command word is encoded
+-- once and the packet cursor advances without per-rectangle method dispatch.
+function draw_list:horizontal_rect_span(indices, count, y_offsets, widths, x, y, height, color)
+	local words<const>: *word = self.words
+	local target: *word = words + self.word_count * sizeof(word)
+	local command<const> = gp0.draw_rectangle | gp0.argb_to_rgb(color)
+	for index = 1, count do
+		local item_index<const> = indices[index]
+		local width<const> = widths[item_index]
+		local packet<const>: *gp0_rectangle_packet = target
+		packet.command = command
+		packet.position = gp0.pair16(x, y + y_offsets[item_index])
+		packet.size = gp0.pair16(width, height)
+		target = target + rectangle_packet_size
+	end
+	self.word_count = (target - words) >> 2
 end
 
 function draw_list:semitransparent_rect(x0, y0, x1, y1, color)

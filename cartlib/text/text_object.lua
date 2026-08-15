@@ -27,7 +27,18 @@ function text_object_component:render(draw, x, y)
 	local owner<const> = self.parent
 	owner:submit_highlight(draw)
 	if self.background_color ~= nil then
-		owner:submit_text_background_lines(draw, x, y)
+		-- Text objects retain their wrapped, left-aligned background line view
+		-- at layout, typing and highlight mutations. The command batch consumes
+		-- that view without rediscovering logical-line state during presentation.
+		draw:horizontal_rect_span(
+			owner._background_line_indices,
+			owner._background_line_count,
+			owner.wrapped_line_y_offsets,
+			self.line_widths,
+			x,
+			y,
+			self.font.line_height,
+			self.background_color)
 	end
 	owner:submit_text_glyph_lines(draw, x, y)
 end
@@ -643,24 +654,6 @@ end
 
 function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
-end
-
--- Text objects own wrapped, left-aligned line geometry and retain the dense
--- background line view at layout, typing and highlight mutations. Presentation
--- consumes that view without rediscovering visibility or logical-line state.
-function text_object:submit_text_background_lines(draw, x, y)
-	local tc<const> = self.text_component
-	local background_line_indices<const> = self._background_line_indices
-	local line_offsets<const> = self.wrapped_line_y_offsets
-	local line_widths<const> = tc.line_widths
-	local background_color<const> = tc.background_color
-	local line_height<const> = tc.font.line_height
-	for index = 1, self._background_line_count do
-		local line_index<const> = background_line_indices[index]
-		local line_y<const> = y + line_offsets[line_index]
-		local line_width<const> = line_widths[line_index]
-		draw:rect(x, line_y, x + line_width, line_y + line_height, background_color)
-	end
 end
 
 function text_object:submit_text_glyph_lines(draw, x, y)
