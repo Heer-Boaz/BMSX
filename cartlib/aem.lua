@@ -48,6 +48,24 @@ local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
 local action_kind_random_uniform<const> = 5
 local action_kind_random_weighted<const> = 6
+local default_modulation<const> = {
+	pitch_delta = 0,
+	pitch_range_min = 0,
+	pitch_range_span = 0,
+	volume_delta = 0,
+	volume_range_min = 0,
+	volume_range_span = 0,
+	start_sample = 0,
+	start_range_min = 0,
+	start_range_span = 0,
+	rate = 1,
+	rate_range_min = 0,
+	rate_range_span = 0,
+	filter_control = 0x00000000,
+	filter_b0_b1 = apu.filter_coefficient_one,
+	filter_b2_a1 = 0x00000000,
+	filter_a2 = 0x00000000,
+}
 
 local actor_key_for_payload<const> = function(payload)
 	if type(payload) == 'table' then
@@ -72,73 +90,33 @@ local resolve_audio<const> = function(audio_cache, audio_id)
 	return audio
 end
 
-local compile_modulation<const> = function(compiled, params)
-	compiled.pitch_delta = params['pitchDelta'] or 0
-	local pitch_range<const> = params['pitchRange']
-	if pitch_range ~= nil then
-		compiled.pitch_range_min = pitch_range[1]
-		compiled.pitch_range_span = pitch_range[2] - pitch_range[1]
-	end
-
-	compiled.volume_delta = params['volumeDelta'] or 0
-	local volume_range<const> = params['volumeRange']
-	if volume_range ~= nil then
-		compiled.volume_range_min = volume_range[1]
-		compiled.volume_range_span = volume_range[2] - volume_range[1]
-	end
-
-	compiled.start_sample = (params.offset or 0) * 0x0000ac44
-	local offset_range<const> = params['offsetRange']
-	if offset_range ~= nil then
-		compiled.start_range_min = offset_range[1] * 0x0000ac44
-		compiled.start_range_span = (offset_range[2] - offset_range[1]) * 0x0000ac44
-	end
-
-	compiled.rate = params['playbackRate'] or 1
-	local rate_range<const> = params['playbackRateRange']
-	if rate_range ~= nil then
-		compiled.rate_range_min = rate_range[1]
-		compiled.rate_range_span = rate_range[2] - rate_range[1]
-	end
-
-	local filter_control<const> = params.filter_control
-	if filter_control ~= nil then
-		compiled.filter_control = filter_control
-		compiled.filter_b0_b1 = params.filter_b0_b1
-		compiled.filter_b2_a1 = params.filter_b2_a1
-		compiled.filter_a2 = params.filter_a2
-	end
-end
-
 local compile_play_action<const> = function(action, audio_cache)
 	local audio<const> = resolve_audio(audio_cache, action.audio_id)
+	local modulation<const> = action.modulation or default_modulation
 	local compiled<const> = {
 		kind = action_kind_play,
 		source = audio.source,
 		priority = action.priority or audio.priority,
 		cooldown_ms = action.cooldown_ms,
-		pitch_delta = 0,
-		pitch_range_min = 0,
-		pitch_range_span = 0,
-		volume_delta = 0,
-		volume_range_min = 0,
-		volume_range_span = 0,
-		start_sample = 0,
-		start_range_min = 0,
-		start_range_span = 0,
-		rate = 1,
-		rate_range_min = 0,
-		rate_range_span = 0,
-		filter_control = 0x00000000,
-		filter_b0_b1 = apu.filter_coefficient_one,
-		filter_b2_a1 = 0x00000000,
-		filter_a2 = 0x00000000,
+		pitch_delta = modulation.pitch_delta,
+		pitch_range_min = modulation.pitch_range_min,
+		pitch_range_span = modulation.pitch_range_span,
+		volume_delta = modulation.volume_delta,
+		volume_range_min = modulation.volume_range_min,
+		volume_range_span = modulation.volume_range_span,
+		start_sample = modulation.start_sample,
+		start_range_min = modulation.start_range_min,
+		start_range_span = modulation.start_range_span,
+		rate = modulation.rate,
+		rate_range_min = modulation.rate_range_min,
+		rate_range_span = modulation.rate_range_span,
+		filter_control = modulation.filter_control,
+		filter_b0_b1 = modulation.filter_b0_b1,
+		filter_b2_a1 = modulation.filter_b2_a1,
+		filter_a2 = modulation.filter_a2,
 	}
 	if action.cooldown_ms ~= nil and action.cooldown_ms > 0 then
 		compiled.cooldown_by_actor = {}
-	end
-	if action.modulation_params ~= nil then
-		compile_modulation(compiled, action.modulation_params)
 	end
 	return compiled
 end

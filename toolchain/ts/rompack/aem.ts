@@ -1,6 +1,9 @@
 import { load as loadYaml } from 'js-yaml';
 
-import { APU_SAMPLE_RATE_HZ } from '../../../machine/ts/spec/audio/apu';
+import {
+	APU_FILTER_COEFFICIENT_ONE,
+	APU_SAMPLE_RATE_HZ,
+} from '../../../machine/ts/spec/audio/apu';
 import {
 	AEM_ACTION_KEYS,
 	AEM_CHANNEL_SET,
@@ -92,7 +95,22 @@ type ModulationParams = {
 	filter?: AudioFilterParams;
 };
 
-type CookedModulationParams = ModulationParams & Partial<AemFilterWords>;
+type ModulationRange = readonly [number, number];
+
+type CookedModulation = AemFilterWords & {
+	pitch_delta: number;
+	pitch_range_min: number;
+	pitch_range_span: number;
+	volume_delta: number;
+	volume_range_min: number;
+	volume_range_span: number;
+	start_sample: number;
+	start_range_min: number;
+	start_range_span: number;
+	rate: number;
+	rate_range_min: number;
+	rate_range_span: number;
+};
 
 export type AemValidationDataRecord = {
 	name: string;
@@ -388,20 +406,46 @@ function resolveDataPath(lookup: AemValidationLookup, path: string): unknown {
 	return cursor;
 }
 
+function cookModulation(params: ModulationParams): CookedModulation {
+	const pitchRange = params.pitchRange as ModulationRange | undefined;
+	const volumeRange = params.volumeRange as ModulationRange | undefined;
+	const offsetRange = params.offsetRange as ModulationRange | undefined;
+	const playbackRateRange = params.playbackRateRange as ModulationRange | undefined;
+	const filterWords = params.filter === undefined
+		? {
+			filter_control: 0,
+			filter_b0_b1: APU_FILTER_COEFFICIENT_ONE,
+			filter_b2_a1: 0,
+			filter_a2: 0,
+		}
+		: cookAemFilter(params.filter as AemFilterDefinition);
+	return {
+		pitch_delta: params.pitchDelta ?? 0,
+		pitch_range_min: pitchRange?.[0] ?? 0,
+		pitch_range_span: pitchRange === undefined ? 0 : pitchRange[1] - pitchRange[0],
+		volume_delta: params.volumeDelta ?? 0,
+		volume_range_min: volumeRange?.[0] ?? 0,
+		volume_range_span: volumeRange === undefined ? 0 : volumeRange[1] - volumeRange[0],
+		start_sample: (params.offset ?? 0) * APU_SAMPLE_RATE_HZ,
+		start_range_min: (offsetRange?.[0] ?? 0) * APU_SAMPLE_RATE_HZ,
+		start_range_span: offsetRange === undefined ? 0 : (offsetRange[1] - offsetRange[0]) * APU_SAMPLE_RATE_HZ,
+		rate: params.playbackRate ?? 1,
+		rate_range_min: playbackRateRange?.[0] ?? 0,
+		rate_range_span: playbackRateRange === undefined ? 0 : playbackRateRange[1] - playbackRateRange[0],
+		...filterWords,
+	};
+}
+
 function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup): void {
 	const presetPath = action.modulation_preset as string | undefined;
+	let modulationParams = action.modulation_params as ModulationParams | undefined;
 	if (presetPath !== undefined) {
-		action.modulation_params = { ...(resolveDataPath(lookup, presetPath) as ModulationParams) };
+		modulationParams = resolveDataPath(lookup, presetPath) as ModulationParams;
 		delete action.modulation_preset;
 	}
-	const modulationParams = action.modulation_params as CookedModulationParams | undefined;
-	if (modulationParams?.filter !== undefined) {
-		const filterWords = cookAemFilter(modulationParams.filter as AemFilterDefinition);
-		delete modulationParams.filter;
-		modulationParams.filter_control = filterWords.filter_control;
-		modulationParams.filter_b0_b1 = filterWords.filter_b0_b1;
-		modulationParams.filter_b2_a1 = filterWords.filter_b2_a1;
-		modulationParams.filter_a2 = filterWords.filter_a2;
+	if (modulationParams !== undefined) {
+		action.modulation = cookModulation(modulationParams);
+		delete action.modulation_params;
 	}
 	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
 	if (sequence !== undefined) {

@@ -7,8 +7,16 @@ import {
 	buildAemValidationLookup,
 } from '../../toolchain/ts/rompack/aem';
 
-test('AEM production cooks filters into exact packed Q14 APU register words', () => {
+test('AEM production lowers modulation to runtime fields and packed Q14 filter words', () => {
 	const preset = {
+		pitchDelta: 2,
+		pitchRange: [-0.5, 0.5],
+		volumeDelta: -3,
+		volumeRange: [-1, 2],
+		offset: 0.25,
+		offsetRange: [0.25, 0.5],
+		playbackRate: 1.25,
+		playbackRateRange: [-0.25, 0.5],
 		filter: {
 			type: 'lowpass',
 			frequency: 1000,
@@ -42,14 +50,35 @@ test('AEM production cooks filters into exact packed Q14 APU register words', ()
 	const action = (eventMap.filtered as {
 		rules: Array<{ go: Record<string, unknown> }>;
 	}).rules[0]!.go;
-	assert.deepEqual(action.modulation_params, {
+	assert.deepEqual(action.modulation, {
+		pitch_delta: 2,
+		pitch_range_min: -0.5,
+		pitch_range_span: 1,
+		volume_delta: -3,
+		volume_range_min: -1,
+		volume_range_span: 3,
+		start_sample: 11025,
+		start_range_min: 11025,
+		start_range_span: 11025,
+		rate: 1.25,
+		rate_range_min: -0.25,
+		rate_range_span: 0.75,
 		filter_control: 0x00000001,
 		filter_b0_b1: 0x0097004b,
 		filter_b2_a1: 0x8cdc004b,
 		filter_a2: 0x00003452,
 	});
 	assert.equal(action.modulation_preset, undefined);
+	assert.equal(action.modulation_params, undefined);
 	assert.deepEqual(preset, {
+		pitchDelta: 2,
+		pitchRange: [-0.5, 0.5],
+		volumeDelta: -3,
+		volumeRange: [-1, 2],
+		offset: 0.25,
+		offsetRange: [0.25, 0.5],
+		playbackRate: 1.25,
+		playbackRateRange: [-0.25, 0.5],
 		filter: {
 			type: 'lowpass',
 			frequency: 1000,
