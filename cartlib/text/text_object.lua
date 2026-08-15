@@ -530,9 +530,12 @@ function text_object:advance_typing()
 	if char_index <= source_glyphs.glyph_count then
 		self.current_line_index = line_index
 		self.current_char_index = char_index
-		local glyph<const> = source_glyphs[char_index]
 		source_glyphs.visible_count = char_index
-		self.displayed_line_widths[line_index] = self.displayed_line_widths[line_index] + glyph.advance
+		if char_index < source_glyphs.glyph_count then
+			self.displayed_line_widths[line_index] = source_glyphs.x_offsets[char_index + 1]
+		else
+			self.displayed_line_widths[line_index] = self.full_text_line_widths[line_index]
+		end
 		return false
 	end
 	self.current_line_index = line_index + 1

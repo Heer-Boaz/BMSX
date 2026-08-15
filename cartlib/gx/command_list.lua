@@ -260,7 +260,7 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 		command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
 	end
 	for glyph_index = first_index, last_index do
-		local source<const> = glyphs[glyph_index].source
+		local source<const> = glyphs[glyph_index]
 		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
 			*target = gp0.draw_mode | next_draw_mode
