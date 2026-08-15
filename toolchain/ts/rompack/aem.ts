@@ -112,6 +112,67 @@ type CookedModulation = AemFilterWords & {
 	rate_range_span: number;
 };
 
+type CookedPlayAction = {
+	kind: 'play';
+	audio_id: string;
+	priority?: number;
+	cooldown_ms?: number;
+	modulation?: CookedModulation;
+};
+
+type CookedStopMusicAction = {
+	kind: 'stop_music';
+	fade_samples: number;
+};
+
+type CookedSequenceAction = {
+	kind: 'sequence';
+	actions: CookedAction[];
+};
+
+type CookedRandomUniformAction = {
+	kind: 'random_uniform';
+	actions: CookedAction[];
+	avoid_repeat: boolean;
+};
+
+type CookedRandomWeightedAction = {
+	kind: 'random_weighted';
+	actions: CookedAction[];
+	avoid_repeat: boolean;
+	weights: number[];
+	weight_total: number;
+};
+
+type CookedMusicTransitionAction = {
+	kind: 'music_transition';
+	target_audio_id: string;
+	stinger_audio_id?: string;
+	fade_samples: number;
+	crossfade_samples: number;
+	wait_for_current: boolean;
+	start_at_loop_start: boolean;
+	start_fresh: boolean;
+};
+
+type CookedAction = CookedPlayAction
+	| CookedStopMusicAction
+	| CookedSequenceAction
+	| CookedRandomUniformAction
+	| CookedRandomWeightedAction
+	| CookedMusicTransitionAction;
+
+type CookedAemRule = {
+	when?: unknown;
+	action: CookedAction;
+};
+
+export type CookedAemEvent = {
+	channel: string;
+	queued: boolean;
+	rules: CookedAemRule[];
+};
+
 export type AemValidationDataRecord = {
 	name: string;
 	value: unknown;
@@ -436,67 +497,129 @@ function cookModulation(params: ModulationParams): CookedModulation {
 	};
 }
 
-function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup): void {
-	const presetPath = action.modulation_preset as string | undefined;
-	let modulationParams = action.modulation_params as ModulationParams | undefined;
-	if (presetPath !== undefined) {
-		modulationParams = resolveDataPath(lookup, presetPath) as ModulationParams;
-		delete action.modulation_preset;
-	}
-	if (modulationParams !== undefined) {
-		action.modulation = cookModulation(modulationParams);
-		delete action.modulation_params;
-	}
-	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
-	if (sequence !== undefined) {
-		for (let index = 0; index < sequence.length; index += 1) {
-			cookAction(sequence[index]!, lookup);
+function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup): CookedAction {
+	if (action.audio_id !== undefined) {
+		const cooked: CookedPlayAction = {
+			kind: 'play',
+			audio_id: action.audio_id as string,
+		};
+		if (action.priority !== undefined) {
+			cooked.priority = action.priority as number;
 		}
-	}
-	const oneOf = action.one_of as Array<Record<string, unknown>> | undefined;
-	if (oneOf !== undefined) {
-		for (let index = 0; index < oneOf.length; index += 1) {
-			cookAction(oneOf[index]!, lookup);
+		if (action.cooldown_ms !== undefined) {
+			cooked.cooldown_ms = action.cooldown_ms as number;
 		}
 
+		const presetPath = action.modulation_preset as string | undefined;
+		let modulationParams = action.modulation_params as ModulationParams | undefined;
+		if (presetPath !== undefined) {
+			modulationParams = resolveDataPath(lookup, presetPath) as ModulationParams;
+		}
+		if (modulationParams !== undefined) {
+			cooked.modulation = cookModulation(modulationParams);
+		}
+		return cooked;
+	}
+
+	const stopMusic = action.stop_music as { fade_ms?: number } | undefined;
+	if (stopMusic !== undefined) {
+		return {
+			kind: 'stop_music',
+			fade_samples: (stopMusic.fade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
+		};
+	}
+
+	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
+	if (sequence !== undefined) {
+		const actions: CookedAction[] = new Array(sequence.length);
+		for (let index = 0; index < sequence.length; index += 1) {
+			actions[index] = cookAction(sequence[index]!, lookup);
+		}
+		return { kind: 'sequence', actions };
+	}
+
+	const oneOf = action.one_of as Array<Record<string, unknown>> | undefined;
+	if (oneOf !== undefined) {
 		const weighted = usesWeightedSelection(action, oneOf);
-		delete action.pick;
 		if (weighted) {
 			// The cart consumes a dense positive-weight pool. Disabled authoring
 			// choices and selection totals never reach the event dispatch path.
-			const choices: Array<Record<string, unknown>> = [];
+			const actions: CookedAction[] = [];
 			const weights: number[] = [];
 			let weightTotal = 0;
 			for (let index = 0; index < oneOf.length; index += 1) {
 				const choice = oneOf[index]!;
 				const weight = (choice.weight as number | undefined) ?? 1;
-				delete choice.weight;
 				if (weight > 0) {
-					choices.push(choice);
+					actions.push(cookAction(choice, lookup));
 					weights.push(weight);
 					weightTotal += weight;
 				}
 			}
-			action.one_of = choices;
-			action.weights = weights;
-			action.weight_total = weightTotal;
-			return;
+			return {
+				kind: 'random_weighted',
+				actions,
+				avoid_repeat: action.avoid_repeat === true,
+				weights,
+				weight_total: weightTotal,
+			};
 		}
 
+		const actions: CookedAction[] = new Array(oneOf.length);
 		for (let index = 0; index < oneOf.length; index += 1) {
-			delete oneOf[index]!.weight;
+			actions[index] = cookAction(oneOf[index]!, lookup);
 		}
+		return {
+			kind: 'random_uniform',
+			actions,
+			avoid_repeat: action.avoid_repeat === true,
+		};
 	}
+
+	const transition = action.music_transition as NonNullable<MusicTransitionSpec['music_transition']>;
+	const sync = transition.sync;
+	const stinger = typeof sync === 'object' ? sync : undefined;
+	const cooked: CookedMusicTransitionAction = {
+		kind: 'music_transition',
+		target_audio_id: (stinger?.return_to ?? transition.audio_id)!,
+		fade_samples: (transition.fade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
+		crossfade_samples: (transition.crossfade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
+		wait_for_current: sync === 'loop',
+		start_at_loop_start: transition.start_at_loop_start === true,
+		start_fresh: transition.start_fresh === true,
+	};
+	if (stinger !== undefined) {
+		cooked.stinger_audio_id = stinger.stinger!;
+	}
+	return cooked;
 }
 
-export function buildAemEventMap(document: AemDocument, lookup: AemValidationLookup): Record<string, unknown> {
-	const eventMap = document.events;
-	const eventNames = Object.keys(eventMap);
+export function buildAemEventMap(document: AemDocument, lookup: AemValidationLookup): Record<string, CookedAemEvent> {
+	const sourceEvents = document.events;
+	const eventMap: Record<string, CookedAemEvent> = {};
+	const eventNames = Object.keys(sourceEvents);
 	for (let eventIndex = 0; eventIndex < eventNames.length; eventIndex += 1) {
-		const event = eventMap[eventNames[eventIndex]!] as { rules: Array<{ go: Record<string, unknown> }> };
-		for (let ruleIndex = 0; ruleIndex < event.rules.length; ruleIndex += 1) {
-			cookAction(event.rules[ruleIndex]!.go, lookup);
+		const eventName = eventNames[eventIndex]!;
+		const sourceEvent = sourceEvents[eventName] as {
+			channel: string;
+			policy?: string;
+			rules: Array<{ when?: unknown; go: Record<string, unknown> }>;
+		};
+		const sourceRules = sourceEvent.rules;
+		const rules: CookedAemRule[] = new Array(sourceRules.length);
+		for (let ruleIndex = 0; ruleIndex < sourceRules.length; ruleIndex += 1) {
+			const sourceRule = sourceRules[ruleIndex]!;
+			const rule: CookedAemRule = { action: cookAction(sourceRule.go, lookup) };
+			if (sourceRule.when !== undefined) {
+				rule.when = sourceRule.when;
+			}
+			rules[ruleIndex] = rule;
 		}
+		eventMap[eventName] = {
+			channel: sourceEvent.channel,
+			queued: sourceEvent.policy === 'queue',
+			rules,
+		};
 	}
 	return eventMap;
 }

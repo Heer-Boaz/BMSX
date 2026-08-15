@@ -47,6 +47,11 @@ local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
 local action_kind_random_uniform<const> = 5
 local action_kind_random_weighted<const> = 6
+local source_action_play<const> = 'play'
+local source_action_stop_music<const> = 'stop_music'
+local source_action_sequence<const> = 'sequence'
+local source_action_random_uniform<const> = 'random_uniform'
+local source_action_random_weighted<const> = 'random_weighted'
 local emitter_state_metatable<const> = { __mode = 'k' }
 local default_modulation<const> = {
 	pitch_delta = 0,
@@ -114,16 +119,10 @@ local compile_play_action<const> = function(action, audio_cache)
 	return compiled
 end
 
-local compile_music_transition<const> = function(transition, audio_cache)
-	local sync<const> = transition.sync
-	local target_id = transition.audio_id
-	local has_stinger<const> = sync ~= nil and type(sync) ~= 'string'
-	if has_stinger then
-		target_id = sync.return_to or target_id
-	end
-	local target<const> = resolve_audio(audio_cache, target_id)
+local compile_music_transition<const> = function(action, audio_cache)
+	local target<const> = resolve_audio(audio_cache, action.target_audio_id)
 	local start_sample = 0
-	if transition.start_at_loop_start then
+	if action.start_at_loop_start then
 		start_sample = target.source.loop_start_sample
 	end
 	local compiled<const> = {
@@ -131,13 +130,14 @@ local compile_music_transition<const> = function(transition, audio_cache)
 		target_source = target.source,
 		target_priority = target.priority,
 		start_sample = start_sample,
-		fade_samples = apu.ms_to_samples(transition.fade_ms or 0),
-		crossfade_samples = apu.ms_to_samples(transition.crossfade_ms or 0),
-		wait_for_current = sync == 'loop',
-		start_fresh = transition.start_fresh or false,
+		fade_samples = action.fade_samples,
+		crossfade_samples = action.crossfade_samples,
+		wait_for_current = action.wait_for_current,
+		start_fresh = action.start_fresh,
 	}
-	if has_stinger then
-		local stinger<const> = resolve_audio(audio_cache, sync.stinger)
+	local stinger_audio_id<const> = action.stinger_audio_id
+	if stinger_audio_id ~= nil then
+		local stinger<const> = resolve_audio(audio_cache, stinger_audio_id)
 		compiled.stinger_source = stinger.source
 		compiled.stinger_priority = stinger.priority
 		compiled.stinger_slot = stinger.slot
@@ -147,17 +147,18 @@ end
 
 local compile_action
 compile_action = function(action, audio_cache)
-	if action.audio_id ~= nil then
+	local kind<const> = action.kind
+	if kind == source_action_play then
 		return compile_play_action(action, audio_cache)
 	end
-	if action.stop_music ~= nil then
+	if kind == source_action_stop_music then
 		return {
 			kind = action_kind_stop_music,
-			fade_samples = apu.ms_to_samples(action.stop_music.fade_ms or 0),
+			fade_samples = action.fade_samples,
 		}
 	end
-	if action.sequence ~= nil then
-		local source_actions<const> = action.sequence
+	if kind == source_action_sequence then
+		local source_actions<const> = action.actions
 		local actions<const> = {}
 		for i = 1, #source_actions do
 			actions[i] = compile_action(source_actions[i], audio_cache)
@@ -167,19 +168,18 @@ compile_action = function(action, audio_cache)
 			actions = actions,
 		}
 	end
-	if action.one_of ~= nil then
-		local source_actions<const> = action.one_of
+	if kind == source_action_random_uniform or kind == source_action_random_weighted then
+		local source_actions<const> = action.actions
 		local actions<const> = {}
 		for i = 1, #source_actions do
 			actions[i] = compile_action(source_actions[i], audio_cache)
 		end
-		local weights<const> = action.weights
 		local compiled<const> = {
-			kind = weights == nil and action_kind_random_uniform or action_kind_random_weighted,
+			kind = kind == source_action_random_uniform and action_kind_random_uniform or action_kind_random_weighted,
 			actions = actions,
 		}
-		if weights ~= nil then
-			compiled.weights = weights
+		if kind == source_action_random_weighted then
+			compiled.weights = action.weights
 			compiled.weight_total = action.weight_total
 		end
 		if action.avoid_repeat then
@@ -187,7 +187,7 @@ compile_action = function(action, audio_cache)
 		end
 		return compiled
 	end
-	return compile_music_transition(action.music_transition, audio_cache)
+	return compile_music_transition(action, audio_cache)
 end
 
 local compile_rules<const> = function(rules, audio_cache)
@@ -196,7 +196,7 @@ local compile_rules<const> = function(rules, audio_cache)
 		local rule<const> = rules[i]
 		compiled[i] = {
 			predicate = compile_matcher(rule.when),
-			action = compile_action(rule.go, audio_cache),
+			action = compile_action(rule.action, audio_cache),
 		}
 	end
 	return compiled
@@ -245,13 +245,13 @@ local merge_events<const> = function(event_maps)
 		if not cur then
 			merged[event_name] = {
 				slot = slot,
-				queued = entry.policy == 'queue',
+				queued = entry.queued,
 				rules = compiled_rules,
 			}
 			return
 		end
 		cur.slot = slot
-		cur.queued = entry.policy == 'queue'
+		cur.queued = entry.queued
 		local old_count<const> = #cur.rules
 		local new_count<const> = #compiled_rules
 		for i = old_count, 1, -1 do

@@ -48,8 +48,9 @@ test('AEM production lowers modulation to runtime fields and packed Q14 filter w
 
 	const eventMap = buildAemEventMap(document, lookup);
 	const action = (eventMap.filtered as {
-		rules: Array<{ go: Record<string, unknown> }>;
-	}).rules[0]!.go;
+		rules: Array<{ action: Record<string, unknown> }>;
+	}).rules[0]!.action;
+	assert.equal(action.kind, 'play');
 	assert.deepEqual(action.modulation, {
 		pitch_delta: 2,
 		pitch_range_min: -0.5,
@@ -68,8 +69,6 @@ test('AEM production lowers modulation to runtime fields and packed Q14 filter w
 		filter_b2_a1: 0x8cdc004b,
 		filter_a2: 0x00003452,
 	});
-	assert.equal(action.modulation_preset, undefined);
-	assert.equal(action.modulation_params, undefined);
 	assert.deepEqual(preset, {
 		pitchDelta: 2,
 		pitchRange: [-0.5, 0.5],

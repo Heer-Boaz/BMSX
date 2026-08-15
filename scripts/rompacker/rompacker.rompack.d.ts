@@ -6,6 +6,7 @@ import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { NativeGxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
 import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { AssetType } from '../../machine/ts/rompack/toc';
+import type { CookedAemEvent } from '../../toolchain/ts/rompack/aem';
 
 export type RomPackerMode = 'rompack' | 'bios';
 
@@ -71,7 +72,7 @@ export interface DataResource extends BaseResource<'data'> {
 export interface AemResource extends BaseResource<'aem'> {
 	id: number;
 	datatype: 'json' | 'yaml';
-	eventMap?: Record<string, unknown>;
+	eventMap?: Record<string, CookedAemEvent>;
 }
 
 export interface ModelResource extends BaseResource<'model'> {
