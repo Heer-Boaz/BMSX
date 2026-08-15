@@ -25,6 +25,7 @@ import { lintBranchUninitializedLocalPattern } from '../lint/rules/lua_cart/bran
 import { lintBtIdLabelPattern } from '../lint/rules/lua_cart/bt_id_label_pattern';
 import { lintBuiltinRecreationPattern } from '../lint/rules/lua_cart/builtin_recreation_pattern';
 import { lintComparisonWrapperGetterPattern } from '../lint/rules/lua_cart/comparison_wrapper_getter_pattern';
+import { lintConsecutiveDuplicateStatementPattern } from '../lint/rules/lua_cart/consecutive_duplicate_statement_pattern';
 import { lintContiguousMultiEmitPattern } from '../lint/rules/lua_cart/contiguous_multi_emit_pattern';
 import { lintCrossFileLocalGlobalConstantPattern } from '../lint/rules/lua_cart/cross_file_local_global_constant_pattern';
 import { lintCrossObjectStateEventRelayPattern } from '../lint/rules/lua_cart/cross_object_state_event_relay_pattern';
@@ -584,6 +585,7 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 				continue;
 			}
 			const chunk = parsed.path;
+			lintConsecutiveDuplicateStatementPattern(chunk.body, tokens, issues);
 			const moduleCalls = analyzeRequireAliases(chunk.body, issues);
 			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 			lintSplitLocalTableInitPattern(chunk.body, issues);
