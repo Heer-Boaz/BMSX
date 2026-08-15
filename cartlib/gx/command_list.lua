@@ -239,12 +239,16 @@ function draw_list:palette4_rect(texture_x, clut_x, clut_y, source_x, source_y, 
 end
 
 -- Resolved image sources carry placement-dependent draw-mode and UV words.
--- Consecutive layouts consume those retained words directly while keeping
--- packet color, storage and current draw mode local to one submission.
+-- Text layout retains their dense source view and integral x offsets. Round the
+-- translated span origin once; adding an integral glyph offset preserves the
+-- exact GP0 coordinate word without repeating coordinate conversion per glyph.
 function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index, x, y, color)
 	local words<const>: *word = draw.words
 	local target: *word = words + draw.word_count * sizeof(word)
 	local draw_mode = draw.draw_mode
+	local base_position<const> = gp0.pair16(x, y)
+	local base_x<const> = base_position & 0x0000ffff
+	local position_y<const> = base_position & 0xffff0000
 	local command
 	if (color & 0x00ffffff) == 0x00ffffff then
 		command = gp0.draw_raw_textured_rectangle | 0x00808080
@@ -252,8 +256,7 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 		command = gp0.draw_textured_rectangle | gp0.argb_to_texture_rgb(color)
 	end
 	for glyph_index = first_index, last_index do
-		local glyph<const> = glyphs[glyph_index]
-		local source<const> = glyph.source
+		local source<const> = glyphs[glyph_index].source
 		local next_draw_mode<const> = source._blit_draw_mode
 		if next_draw_mode ~= draw_mode then
 			*target = gp0.draw_mode | next_draw_mode
@@ -262,7 +265,7 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 		end
 		local packet<const>: *gp0_textured_rectangle_packet = target
 		packet.command = command
-		packet.position = gp0.pair16(x + x_offsets[glyph_index], y)
+		packet.position = position_y | ((base_x + x_offsets[glyph_index]) & 0x0000ffff)
 		packet.uv = source._blit_uv_word
 		packet.size = source._size_word
 		target = target + textured_rectangle_packet_size
