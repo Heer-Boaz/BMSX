@@ -5,6 +5,13 @@ require('constants')
 
 local room_spawner<const> = {}
 
+function room_spawner.mark_all_for_disposal()
+	local room_objects<const> = registry:entries('rs')
+	for i = #room_objects, 1, -1 do
+		room_objects[i]:mark_for_disposal()
+	end
+end
+
 local spawn_rocks<const> = function(room)
 	for i = 1, #room.rocks do
 		local def<const> = room.rocks[i]

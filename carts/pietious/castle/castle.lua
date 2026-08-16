@@ -519,11 +519,59 @@ function castle:should_restart_daemon_appearance_after_death()
 	return false
 end
 
-function castle:resolve_death()
+function castle:begin_death_restart()
 	if self:has_tag(castle_tags.seal_dissolving) then
 		self:finish_seal_dissolution()
 	end
-	self.events:emit('death_resolved', { restart_daemon = self:should_restart_daemon_appearance_after_death() })
+
+	if self:should_restart_daemon_appearance_after_death() then
+		self.death_restart_switch = nil
+		return
+	end
+
+	local room<const> = self.room
+	local world_number<const> = room.world_number
+	local from_room_number<const> = self.current_room_number
+	local switch
+	if world_number == 0 then
+		switch = create_room_switch(from_room_number, castle_map.start_room_number, 'death')
+		switch.map_id = 0
+		switch.map_x = 5
+		switch.map_y = 12
+		switch.spawn_x = player_start_x
+		switch.spawn_y = player_start_y
+		switch.spawn_facing = 1
+	else
+		local transition<const> = castle_map.world_transitions_by_number[world_number]
+		switch = create_room_switch(from_room_number, transition.world_room_number, 'death')
+		switch.map_id = world_number
+		switch.map_x = transition.world_map_x
+		switch.map_y = transition.world_map_y
+		switch.spawn_x = transition.world_spawn_x
+		switch.spawn_y = transition.world_spawn_y
+		switch.spawn_facing = transition.world_spawn_facing
+	end
+
+	self.death_restart_switch = switch
+	room_spawner.mark_all_for_disposal()
+end
+
+function castle:finish_death_restart()
+	local switch<const> = self.death_restart_switch
+	if switch == nil then
+		self.room.player:restart_after_death()
+		return true
+	end
+
+	self.death_restart_switch = nil
+	local room<const> = self.room
+	room:load_room(switch.to_room_number)
+	self:commit_room_switch(switch, switch.map_id, switch.map_x, switch.map_y, false)
+	local player<const> = room.player
+	player:apply_spawn_position(switch)
+	player:restart_after_death()
+	player:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
+	return false
 end
 
 function castle:is_current_room_boss_encounter_active()
@@ -822,14 +870,6 @@ local define_castle_fsm<const> = function()
 					if self.room_enter_pending then
 						self:emit_room_enter()
 					end
-				end,
-			},
-			-- director emits this when the player has died; castle resolves internal
-			-- state (seal tags) and replies with 'death_resolved' { restart_daemon = bool }.
-			['player.death_resolve'] = {
-				emitter = 'd',
-				go = function(self)
-					self:resolve_death()
 				end,
 			},
 		},

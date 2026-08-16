@@ -44,13 +44,6 @@
 --    boundary (for example shrine text lines or the world number shown on a
 --    banner) is stored on self.
 --
--- 6. REQUEST / REPLY.
---    For interactions that require a round-trip (player death → castle
---    evaluates restart_daemon → reply), director emits a request event
---    (e.g. 'player.death_resolve') and waits via `on` for the reply
---    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
---    IS the waiting mechanism.
-
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -71,8 +64,10 @@ local banner_castle_show_event<const> = 'd.bc.s'
 local room_switch_passthrough_dirs<const> = {
 	world_enter = true,
 	halo = true,
+	death = true,
 }
 local room_switch_wait_timeline_id<const> = 'director.wait.room_switch'
+local death_restart_timeline_id<const> = 'director.wait.death_restart'
 local title_start_wait_timeline_id<const> = 'director.wait.title_start'
 local item_screen_open_timeline_id<const> = 'director.wait.item.open'
 local item_screen_close_timeline_id<const> = 'director.wait.item.close'
@@ -182,6 +177,13 @@ function director:finish_castle_halo_banner_transition()
 	return '/room'
 end
 
+function director:finish_death_restart()
+	if self.castle:finish_death_restart() then
+		return '/daemon_appearance_post_death'
+	end
+	return '/room'
+end
+
 function director:begin_world_transition()
 	self:set_active_space('main')
 	self.events:emit('world_transition')
@@ -252,7 +254,6 @@ end
 --   'f1'                    — item screen opened (audio-only).
 --
 -- REQUEST/REPLY:
---   'player.death_resolve'         → castle → reply 'death_resolved'
 --   'player.shrine_overlay_exit'   → player → reply 'shrine_exit_done'
 --   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
 --   'player.world_emerge'          → player (begins emergence animation)
@@ -345,6 +346,13 @@ local define_director_fsm<const> = function()
 			[room_switch_wait_timeline_id] = {
 				def = {
 					frames = timeline.range(flow_room_switch_wait_frames),
+					playback_mode = 'once',
+				},
+				autoplay = false,
+			},
+			[death_restart_timeline_id] = {
+				def = {
+					frames = timeline.range(flow_room_transition_frames),
 					playback_mode = 'once',
 				},
 				autoplay = false,
@@ -933,26 +941,24 @@ local define_director_fsm<const> = function()
 					on = { ['victory_dance_done'] = '/room' },
 				},
 				death = {
-					entering_state = function(self) self:enter_transition('death') end,
-					on = { ['death_done'] = '/death_resolve' },
+					on = { ['death_done'] = '/death_restart' },
 				},
-				-- REQUEST/REPLY pattern: emit 'player.death_resolve' → castle
-				-- subscribes, evaluates game state, replies with 'death_resolved'
-				-- carrying { restart_daemon = bool }.  Director WAITS in this FSM
-				-- state — the state IS the waiting mechanism.  No polling needed.
-				-- On reply: navigate to daemon_appearance_post_death or /room.
-				death_resolve = {
-					entering_state = function(self)
-						self.events:emit('player.death_resolve')
-					end,
-					on = {
-						['death_resolved'] = function(self, _state, event)
-							if event.restart_daemon then
-								return '/daemon_appearance_post_death'
-							end
-							return '/room'
-						end,
+				death_restart = {
+					timelines = {
+						[death_restart_timeline_id] = {
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+							on_finished = director.finish_death_restart,
+						},
 					},
+					entering_state = function(self)
+						self:enter_transition('death')
+						self.castle:begin_death_restart()
+					end,
 				},
 		},
 	})

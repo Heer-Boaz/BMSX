@@ -567,12 +567,13 @@ function player:apply_presentation_state()
 	self.sword_sprite.flip_h = flip_h
 end
 
-function player:respawn()
-	self.director.events:emit('death_done')
-	self:cancel_sword()
+function player:restart_after_death()
+	self.health = self.max_health
+	self:emit_health_changed()
+	self.death_timer = 0
 	self:reset_hit_invulnerability_sequence()
-	self:reset_fall_substate_sequence()
 	self.events:emit('respawn')
+	self:apply_presentation_state()
 end
 
 function player:update_facing_from_horizontal_input()
@@ -2582,7 +2583,7 @@ function player:update_dying()
 	if self.death_timer < damage_death_frames then
 		return
 	end
-	self:respawn()
+	self.director.events:emit('death_done')
 end
 
 function player:update_common_frame()
