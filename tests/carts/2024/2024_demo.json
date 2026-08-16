@@ -1,0 +1,1187 @@
+[
+	{
+		"description": "completed introduction",
+		"frame": 240,
+		"capture": true
+	},
+	{
+		"description": "start quiz down",
+		"frame": 250,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": true,
+			"value": 1,
+			"timestamp": 5000,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "start quiz up",
+		"frame": 252,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": false,
+			"value": 0,
+			"timestamp": 5040,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 1 film portrait",
+		"frame": 480,
+		"capture": true
+	},
+	{
+		"description": "question 2 down",
+		"frame": 490,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 9800,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 2 up",
+		"frame": 492,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 9840,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 2 retains film portrait",
+		"frame": 730,
+		"capture": true
+	},
+	{
+		"description": "answer question 2 with A down",
+		"frame": 740,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": true,
+			"value": 1,
+			"timestamp": 14800,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "answer question 2 with A up",
+		"frame": 742,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": false,
+			"value": 0,
+			"timestamp": 14840,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "answer reaction and goed portrait",
+		"frame": 1000,
+		"capture": true
+	},
+	{
+		"description": "continue to question 3 down",
+		"frame": 1010,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": true,
+			"value": 1,
+			"timestamp": 20200,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "continue to question 3 up",
+		"frame": 1012,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": false,
+			"value": 0,
+			"timestamp": 20240,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 3 hmm portrait",
+		"frame": 1250,
+		"capture": true
+	},
+	{
+		"description": "question 4 down",
+		"frame": 1260,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25200,
+			"pressId": 5,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 4 up",
+		"frame": 1262,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25240,
+			"pressId": 5,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 5 down",
+		"frame": 1264,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25280,
+			"pressId": 6,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 5 up",
+		"frame": 1266,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25320,
+			"pressId": 6,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 6 down",
+		"frame": 1268,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25360,
+			"pressId": 7,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 6 up",
+		"frame": 1270,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25400,
+			"pressId": 7,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 7 down",
+		"frame": 1272,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25440,
+			"pressId": 8,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 7 up",
+		"frame": 1274,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25480,
+			"pressId": 8,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 8 down",
+		"frame": 1276,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25520,
+			"pressId": 9,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 8 up",
+		"frame": 1278,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25560,
+			"pressId": 9,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 9 down",
+		"frame": 1280,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25600,
+			"pressId": 10,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 9 up",
+		"frame": 1282,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25640,
+			"pressId": 10,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 10 down",
+		"frame": 1284,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25680,
+			"pressId": 11,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 10 up",
+		"frame": 1286,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25720,
+			"pressId": 11,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 11 down",
+		"frame": 1288,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25760,
+			"pressId": 12,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 11 up",
+		"frame": 1290,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25800,
+			"pressId": 12,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 12 down",
+		"frame": 1292,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 25840,
+			"pressId": 13,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 12 up",
+		"frame": 1294,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 25880,
+			"pressId": 13,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 12 sport portrait",
+		"frame": 1600,
+		"capture": true
+	},
+	{
+		"description": "answer question 12 with B down",
+		"frame": 1610,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyB",
+			"down": true,
+			"value": 1,
+			"timestamp": 32200,
+			"pressId": 14,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "answer question 12 with B up",
+		"frame": 1612,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyB",
+			"down": false,
+			"value": 0,
+			"timestamp": 32240,
+			"pressId": 14,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 12 reaction and goed portrait",
+		"frame": 1900,
+		"capture": true
+	},
+	{
+		"description": "continue to question 13 down",
+		"frame": 1910,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": true,
+			"value": 1,
+			"timestamp": 38200,
+			"pressId": 15,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "continue to question 13 up",
+		"frame": 1912,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyA",
+			"down": false,
+			"value": 0,
+			"timestamp": 38240,
+			"pressId": 15,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 14 down",
+		"frame": 1920,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38400,
+			"pressId": 16,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 14 up",
+		"frame": 1922,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38440,
+			"pressId": 16,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 15 down",
+		"frame": 1924,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38480,
+			"pressId": 17,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 15 up",
+		"frame": 1926,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38520,
+			"pressId": 17,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 16 down",
+		"frame": 1928,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38560,
+			"pressId": 18,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 16 up",
+		"frame": 1930,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38600,
+			"pressId": 18,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 17 down",
+		"frame": 1932,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38640,
+			"pressId": 19,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 17 up",
+		"frame": 1934,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38680,
+			"pressId": 19,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 18 down",
+		"frame": 1936,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38720,
+			"pressId": 20,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 18 up",
+		"frame": 1938,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38760,
+			"pressId": 20,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 19 down",
+		"frame": 1940,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38800,
+			"pressId": 21,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 19 up",
+		"frame": 1942,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38840,
+			"pressId": 21,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 20 down",
+		"frame": 1944,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38880,
+			"pressId": 22,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 20 up",
+		"frame": 1946,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 38920,
+			"pressId": 22,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 21 down",
+		"frame": 1948,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 38960,
+			"pressId": 23,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 21 up",
+		"frame": 1950,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39000,
+			"pressId": 23,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 22 down",
+		"frame": 1952,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39040,
+			"pressId": 24,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 22 up",
+		"frame": 1954,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39080,
+			"pressId": 24,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 23 down",
+		"frame": 1956,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39120,
+			"pressId": 25,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 23 up",
+		"frame": 1958,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39160,
+			"pressId": 25,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 24 down",
+		"frame": 1960,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39200,
+			"pressId": 26,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 24 up",
+		"frame": 1962,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39240,
+			"pressId": 26,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 25 down",
+		"frame": 1964,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39280,
+			"pressId": 27,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 25 up",
+		"frame": 1966,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39320,
+			"pressId": 27,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 26 down",
+		"frame": 1968,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39360,
+			"pressId": 28,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 26 up",
+		"frame": 1970,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39400,
+			"pressId": 28,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 27 down",
+		"frame": 1972,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 39440,
+			"pressId": 29,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 27 up",
+		"frame": 1974,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 39480,
+			"pressId": 29,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "question 27",
+		"frame": 2300,
+		"capture": true
+	},
+	{
+		"description": "finish quiz down",
+		"frame": 2310,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 46200,
+			"pressId": 30,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "finish quiz up",
+		"frame": 2312,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 46240,
+			"pressId": 30,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "completed quiz and klaar portrait",
+		"frame": 2900,
+		"capture": true
+	}
+]
