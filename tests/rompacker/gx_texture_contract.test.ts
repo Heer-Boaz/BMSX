@@ -401,6 +401,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			['tty/console', 'return { write = function() end, end_line = function() end }'],
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
+			['string/utf8', readFileSync('machine/bios/string/utf8.lua', 'utf8')],
 		] as const;
 		const systemExecutableSources: RomAsset[] = [{
 			type: 'lua',

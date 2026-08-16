@@ -1,4 +1,4 @@
-local char<const> = require('string/base').char
+local char<const> = __bmsx_string_char
 local table_lib<const> = require('table')
 local concat<const> = table_lib.concat
 local unpack<const> = table_lib.unpack
