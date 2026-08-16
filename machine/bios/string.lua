@@ -1,6 +1,8 @@
 local set_string_index<const> = __bmsx_set_string_index
 local string<const> = require('string/base')
 
+string.from_utf8 = require('string/utf8').decode
+
 local pattern<const> = require('string/pattern')
 string.find = pattern.find
 string.match = pattern.match

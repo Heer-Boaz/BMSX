@@ -1,8 +1,7 @@
 local bin<const> = {}
 local read_u32le<const> = require('cartlib/memory').read_u32le
 local decode_float<const> = require('string/float/decode')
-local string_lib<const> = string
-local table_lib<const> = table
+local from_utf8<const> = string.from_utf8
 
 local tag_null<const> = 0
 local tag_true<const> = 1
@@ -61,25 +60,9 @@ local read_string<const> = function(reader)
 	if length == 0 then
 		return ''
 	end
-	local out<const> = {}
-	local chunk<const> = {}
-	local chunk_len = 0
-	local source: *u8 = reader.pos
-	local finish<const> = source + length
-	while source < finish do
-		chunk_len = chunk_len + 1
-		chunk[chunk_len] = *source
-		source = source + 1
-		if chunk_len == 256 then
-			out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
-			chunk_len = 0
-		end
-	end
-	reader.pos = finish
-	if chunk_len > 0 then
-		out[#out + 1] = string_lib.char(table_lib.unpack(chunk, 1, chunk_len))
-	end
-	return table_lib.concat(out)
+	local source<const>: *u8 = reader.pos
+	reader.pos = source + length
+	return from_utf8(source, length)
 end
 
 local read_prop_names<const> = function(reader)

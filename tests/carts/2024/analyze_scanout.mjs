@@ -32,6 +32,8 @@ const glyphNames = {
 	'(': 'Letter_HaakjeOpen',
 	')': 'Letter_HaakjeSluit',
 	'+': 'Letter_Question',
+	'ĳ': 'Letter_IJ',
+	'Ĳ': 'Letter_IJ',
 };
 
 for (let digit = 0; digit <= 9; digit += 1) {
