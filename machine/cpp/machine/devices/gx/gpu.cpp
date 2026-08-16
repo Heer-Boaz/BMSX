@@ -580,17 +580,6 @@ bool GxGpu::acceptGp0Word(u32 word) {
 		if (gxGpuGp0OpcodeIsNop(opcode)) {
 			return true;
 		}
-		switch (opcode) {
-		case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
-			m_drawingAreaTopLeftWord = word & GX_GPU_DRAWING_AREA_MASK;
-			return true;
-		case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
-			m_drawingAreaBottomRightWord = word & GX_GPU_DRAWING_AREA_MASK;
-			return true;
-		case GX_GPU_GP0_DRAWING_OFFSET:
-			m_drawingOffsetWord = word & GX_GPU_DRAWING_OFFSET_MASK;
-			return true;
-		}
 	}
 	if (m_gp0Fifo.full()) {
 		return false;
@@ -787,6 +776,18 @@ void GxGpu::executeGp0Command(i64 commandStartCycle) {
 		break;
 	case GX_GPU_GP0_TEXTURE_WINDOW:
 		m_textureWindowWord = m_gp0CommandWords[0] & GX_GPU_TEXTURE_WINDOW_MASK;
+		beginCommandCompletion(1, m_commandBuffer.commandCount, commandStartCycle);
+		break;
+	case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
+		m_drawingAreaTopLeftWord = m_gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
+		beginCommandCompletion(1, m_commandBuffer.commandCount, commandStartCycle);
+		break;
+	case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
+		m_drawingAreaBottomRightWord = m_gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
+		beginCommandCompletion(1, m_commandBuffer.commandCount, commandStartCycle);
+		break;
+	case GX_GPU_GP0_DRAWING_OFFSET:
+		m_drawingOffsetWord = m_gp0CommandWords[0] & GX_GPU_DRAWING_OFFSET_MASK;
 		beginCommandCompletion(1, m_commandBuffer.commandCount, commandStartCycle);
 		break;
 	case GX_GPU_GP0_MASK_BIT:

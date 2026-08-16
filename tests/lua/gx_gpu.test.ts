@@ -1355,7 +1355,7 @@ test('GX-GPU command timing gates GPUSTAT idle and the VBLANK execution frontier
 	assert.equal(commands.presentCommandCount, 1);
 });
 
-test('GX-GPU ingress bypasses the physical FIFO only at command boundaries', () => {
+test('GX-GPU ingress bypasses only NOPs and executes drawing state in FIFO order', () => {
 	const { memory, gpu, scheduler } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
 
@@ -1378,21 +1378,29 @@ test('GX-GPU ingress bypasses the physical FIFO only at command boundaries', () 
 	gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24) | 0x00054321);
 	gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24) | 0x00023456);
 	gpu.writeGp0((GX_GPU_GP0_DRAWING_OFFSET << 24) | 0x00345678);
-	const bypassedState = gpu.captureState();
-	assert.equal(bypassedState.gp0FifoWords.length, 3);
-	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0x00054321 & GX_GPU_DRAWING_AREA_MASK);
-	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0x00023456 & GX_GPU_DRAWING_AREA_MASK);
-	assert.equal(gpu.readDrawingOffsetWord(), 0x00345678 & GX_GPU_DRAWING_OFFSET_MASK);
+	const queuedState = gpu.captureState();
+	assert.equal(queuedState.gp0FifoWords.length, 6);
+	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0);
+	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
+	assert.equal(gpu.readDrawingOffsetWord(), 0);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 	assert.equal(scheduler.nextDeadline(), 29);
-	for (let index = 3; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1) {
+	for (let index = 6; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1) {
 		gpu.writeGp0(0x03000000 | index);
 	}
 
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
-	scheduler.advanceTo(29);
-	gpu.onService(29);
+	runGpuAtNextDeadline(gpu, scheduler);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
+	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0);
+	runGpuAtNextDeadline(gpu, scheduler);
+	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0x00054321 & GX_GPU_DRAWING_AREA_MASK);
+	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
+	runGpuAtNextDeadline(gpu, scheduler);
+	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0x00023456 & GX_GPU_DRAWING_AREA_MASK);
+	assert.equal(gpu.readDrawingOffsetWord(), 0);
+	runGpuAtNextDeadline(gpu, scheduler);
+	assert.equal(gpu.readDrawingOffsetWord(), 0x00345678 & GX_GPU_DRAWING_OFFSET_MASK);
 });
 
 test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {

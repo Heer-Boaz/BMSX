@@ -845,7 +845,7 @@ void testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier() {
 	require(commands.presentCommandCount == 1u, "GX-GPU VBLANK publishes the completed fill");
 }
 
-void testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries() {
+void testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder() {
 	GpuHarness harness;
 	stopPcrtc(harness);
 
@@ -868,21 +868,29 @@ void testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries() {
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00054321u);
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x00023456u);
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_OFFSET << 24u) | 0x00345678u);
-	const bmsx::GxGpuState bypassedState = harness.gpu.captureState();
-	require(bypassedState.gp0FifoWords.size() == 3u, "GX-GPU NOP and drawing-register sidebands do not occupy FIFO slots");
-	require(harness.gpu.readDrawingAreaTopLeftWord() == (0x00054321u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E3 overtakes queued raster packets");
-	require(harness.gpu.readDrawingAreaBottomRightWord() == (0x00023456u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E4 overtakes queued raster packets");
-	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU E5 overtakes queued raster packets");
-	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU ingress sidebands preserve physical FIFO capacity");
-	require(harness.scheduler.nextDeadline() == 29, "GX-GPU ingress sidebands do not add command time");
-	for (size_t index = 3u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
+	const bmsx::GxGpuState queuedState = harness.gpu.captureState();
+	require(queuedState.gp0FifoWords.size() == 6u, "GX-GPU drawing-state commands occupy FIFO slots");
+	require(harness.gpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU E3 remains behind queued raster packets");
+	require(harness.gpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU E4 remains behind queued raster packets");
+	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU E5 remains behind queued raster packets");
+	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU queued drawing state leaves remaining FIFO capacity");
+	require(harness.scheduler.nextDeadline() == 29, "GX-GPU queued drawing state does not overtake the active deadline");
+	for (size_t index = 6u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
 		harness.gpu.writeGp0(0x03000000u | static_cast<uint32_t>(index));
 	}
 
 	require(!harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU lowers GP0 MMIO write-ready at FIFO capacity");
-	harness.scheduler.advanceTo(29);
-	harness.gpu.onService(29);
+	runGpuAtNextDeadline(harness);
 	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU raises GP0 MMIO write-ready at command completion");
+	require(harness.gpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU keeps E3 queued while the next raster packet executes");
+	runGpuAtNextDeadline(harness);
+	require(harness.gpu.readDrawingAreaTopLeftWord() == (0x00054321u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU executes E3 after prior raster packets");
+	require(harness.gpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU keeps E4 ordered behind E3");
+	runGpuAtNextDeadline(harness);
+	require(harness.gpu.readDrawingAreaBottomRightWord() == (0x00023456u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU executes E4 after E3");
+	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU keeps E5 ordered behind E4");
+	runGpuAtNextDeadline(harness);
+	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU executes E5 after E4");
 }
 
 void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
@@ -4466,7 +4474,7 @@ int main() {
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
-	testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries();
+	testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();

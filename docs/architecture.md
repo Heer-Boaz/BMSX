@@ -2698,10 +2698,10 @@ time.
 The ingress sequencer tracks fixed packets, CPU-to-VRAM headers and payload
 length, and mono/Gouraud polyline vertex phase before deciding whether an
 accepted word reaches the FIFO. At a proven command boundary GP0(00h),
-GP0(04h--1Eh), GP0(E0h), and GP0(E7h--EFh) are discarded as physical NOPs, while
-GP0(E3h--E5h) write the drawing-area and drawing-offset register latches
-directly. These words consume neither FIFO capacity nor execution time and can
-take effect while older raster packets remain queued. Fixed parameters, image
+GP0(04h--1Eh), GP0(E0h), and GP0(E7h--EFh) are discarded as physical NOPs.
+GP0(E3h--E5h) enter the command FIFO and update the drawing-area and
+drawing-offset register latches at their ordered execution point, so older
+raster packets retain the state that preceded them. Fixed parameters, image
 headers/payload, and polyline payload are opaque; a polyline terminator is still
 stored so the execution-side packet owner consumes the same stream boundary.
 GP0(03h) occupies one FIFO word like other unknown commands.

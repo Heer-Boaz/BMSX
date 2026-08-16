@@ -1060,17 +1060,6 @@ export class GxGpu {
 			if (gxGpuGp0OpcodeIsNop(opcode)) {
 				return true;
 			}
-			switch (opcode) {
-				case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
-					this.drawingAreaTopLeftWord = word & GX_GPU_DRAWING_AREA_MASK;
-					return true;
-				case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
-					this.drawingAreaBottomRightWord = word & GX_GPU_DRAWING_AREA_MASK;
-					return true;
-				case GX_GPU_GP0_DRAWING_OFFSET:
-					this.drawingOffsetWord = word & GX_GPU_DRAWING_OFFSET_MASK;
-					return true;
-			}
 		}
 		if (this.gp0Fifo.full()) {
 			return false;
@@ -1199,6 +1188,18 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP0_TEXTURE_WINDOW:
 				this.textureWindowWord = this.gp0CommandWords[0] & GX_GPU_TEXTURE_WINDOW_MASK;
+				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
+				break;
+			case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
+				this.drawingAreaTopLeftWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
+				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
+				break;
+			case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
+				this.drawingAreaBottomRightWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
+				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
+				break;
+			case GX_GPU_GP0_DRAWING_OFFSET:
+				this.drawingOffsetWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_OFFSET_MASK;
 				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
 				break;
 			case GX_GPU_GP0_MASK_BIT:
