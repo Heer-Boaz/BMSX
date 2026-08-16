@@ -46,7 +46,9 @@ local wrap_text_lines<const> = function(text, max_chars, first_prefix, next_pref
 				end
 				local limit<const> = start_index + available - 1
 				local break_index = 0
-				for index = start_index, limit do
+				-- The separator itself is not part of the emitted line. Inspect the
+				-- next character so a word ending exactly at max_chars still fits.
+				for index = start_index, limit + 1 do
 					if wrap_whitespace_chars[string.sub(logical_line, index, index)] then
 						break_index = index
 					end
