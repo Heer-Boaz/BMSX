@@ -484,7 +484,7 @@ local define_director_fsm<const> = function()
 			world_transition_leave = {
 				entering_state = director.begin_world_transition,
 				on = {
-					['room_switched'] = '/banner_transition/castle_emerge_showing',
+					['room.switched'] = '/banner_transition/castle_emerge_showing',
 				},
 			},
 			world_transition_emerge = {

@@ -49,6 +49,7 @@ end
 function enemy_base.bind_lifecycle(self)
 	self.events:on({
 		event = 'shrine_transition_enter',
+		emitter = 'd',
 		handler = enemy_base.on_space_event,
 	})
 	self.events:on({
