@@ -218,10 +218,6 @@ end
 
 function combat_director:activate_combat_parallax_transform()
 	self.combat_parallax_transform_active = true
-	local monster<const> = self.monster
-	local maya_a<const> = self.maya_a
-	monster.visible = true
-	maya_a.visible = true
 	apply_combat_parallax(self)
 end
 
@@ -235,8 +231,6 @@ function combat_director:clear_combat_parallax_transform()
 	maya_a.sprite_component.draw_offset_y = 0
 	maya_a.sprite_component.draw_scale_x = 1
 	maya_a.sprite_component.draw_scale_y = 1
-	monster.visible = true
-	maya_a.visible = true
 end
 
 function combat_director:push_combat_momentum(side, power)
