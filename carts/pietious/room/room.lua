@@ -507,9 +507,8 @@ local player_water_kind_at_tile<const> = function(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return water_none
 	end
-	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
-		return water_none
-	end
+	-- Player depth follows the water plane. At rest the foot coordinate belongs
+	-- to the submerged support tile, while the body above it remains in water.
 	if ty == water.surface_row then
 		return water_surface
 	end
