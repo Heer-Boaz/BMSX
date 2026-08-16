@@ -1,14 +1,14 @@
 question_heading: 'Vraag %d/%d: '
 intro:
   - Beste Eli,
-  - Welkom bij deze quiz,
+  - Welkom bĳ deze quiz,
   - Een speelse uitdaging,dat is wat dit is.
   - Met vragen over films,sport en spel,
   - Ben je klaar?
   - Dan beginnen we snel!
 complete:
-  - Gefeliciteerd!Je bent geniaal!Jouw diepgaande kennis is fenomenaal!
-  - Dat je zou winnen,daarover twijfelde ik niet,Ondanks de moeilijke vragen van mijn quizmasterpiet!
+  - Gefeliciteerd! Je bent geniaal! Jouw diepgaande kennis is fenomenaal!
+  - Dat je zou winnen,daarover twĳfelde ik niet,ondanks de moeilĳke vragen van mĳn quizmasterpiet!
   - ''
   - ''
   - ''
@@ -19,17 +19,17 @@ complete:
 questions:
   - question: |-
       Welke film kwam eerder uit,
-      een episch verhaal dat kijkers betoverde?
+      een episch verhaal dat kĳkers betoverde?
     imgid: film
     options:
       - A) Samson en Delilah
       - B) Ben-Hur
     reaction_a: |-
       Juist! Samson en Delilah was eerder.
-      Mijn IMDB-pieter hebben dat allang in de archieven vastgelegd.
+      Mĳn IMDB-pieter hebben dat allang in de archieven vastgelegd.
     reaction_b: |-
       Nee,Ben-Hur kwam later uit.
-      Maar beide films blijven meesterwerken,zoals mijn IMDB-piet altijd zegt.
+      Maar beide films blĳven meesterwerken,zoals mĳn IMDB-piet altĳd zegt.
   - question: |-
       Wie speelde de hoofdrol in Samson en Delilah,
       een film vol drama en actie?
@@ -38,7 +38,7 @@ questions:
       - B) Kirk Douglas
     reaction_a: |-
       Juist! Victor Mature was de ster in deze klassieker.
-      Mijn filmrecensiepiet noemt hem een van de groten uit die tijd.
+      Mĳn filmrecensiepiet noemt hem een van de groten uit die tĳd.
     reaction_b: |-
       Nee,Kirk Douglas is groots,dat weet ik wel.
       Maar in deze film speelde Victor Mature de hoofdrol.
@@ -50,18 +50,18 @@ questions:
       - B) Cleopatra en Spartacus
     reaction_a: |-
       Juist! Heston speelde groots in Ben-Hur en The Ten Commandments.
-      Mijn retro-pieten hebben dit vastgelegd in mijn grote boek der klassiekers.
+      Mĳn retro-pieten hebben dit vastgelegd in mĳn grote boek der klassiekers.
     reaction_b: |-
       Een logische keuze,maar helaas niet correct.
-      Mijn retro-piet kan bevestigen dat Heston juist in Ben-Hur en The Ten Commandments schitterde.
+      Mĳn retro-piet kan bevestigen dat Heston juist in Ben-Hur en The Ten Commandments schitterde.
   - question: |-
       Wat betekent de naam van het personage Victor Pivert,
       een karakter uit een bekende komedie?
     options:
       - A) Specht
       - B) Eekhoorn
-    reaction_a: Juist! Pivert betekent 'specht',passend bij zijn scherpe karakter!
-    reaction_b: Eekhoorns zijn leuke dieren (zolang ze geen hondsdolheid hebben)!Toch betekent Pivert 'specht',wat passend is bij zijn scherpe karakter!
+    reaction_a: Juist! Pivert betekent 'specht',passend bĳ zĳn scherpe karakter!
+    reaction_b: Eekhoorns zĳn leuke dieren (zolang ze geen hondsdolheid hebben)! Toch betekent Pivert 'specht',wat passend is bĳ zĳn scherpe karakter!
   - question: |-
       In de film The Longest Day is er een scene waarin de Duitsers vol ongeloof naar de zee staren.
       Wat verrast hen daar ineens?
@@ -70,25 +70,25 @@ questions:
       - B) Een luchtmacht vol vliegtuigen.
     reaction_a: |-
       Juist! De massale vloot aan schepen is een indrukwekkend moment in de film.
-      Mijn kunsthistoriepiet noemt het een meesterlijke weergave van D-Day,die nooit vergeten mag worden.
+      Mĳn kunsthistoriepiet noemt het een meesterlĳke weergave van D-Day,die nooit vergeten mag worden.
     reaction_b: |-
       Nee,een luchtmacht vol vliegtuigen was ook indrukwekkend,
-      maar in deze scene draait het om de schepen die plots de horizon vullen.Bovendien zou het te duur zijn geweest om zo'n scene te maken.
+      maar in deze scene draait het om de schepen die plots de horizon vullen.Bovendien zou het te duur zĳn geweest om zo'n scene te maken.
   - question: |-
-      Welk beroemd klassiek stuk speelde Larry Adler op zijn mondharmonica,
-      een instrument dat zelfs ik bijzonder waardeer?
+      Welk beroemd klassiek stuk speelde Larry Adler op zĳn mondharmonica,
+      een instrument dat zelfs ik bĳzonder waardeer?
     options:
       - A) Het Zwanenmeer
-      - B) De Vijfde Symfonie van Beethoven
+      - B) De Vĳfde Symfonie van Beethoven
     reaction_a: |-
-      Juist! Larry Adler vertolkte Het Zwanenmeer op zijn mondharmonica.
-      Mijn muziekpiet noemt het een meesterlijke prestatie.
+      Juist! Larry Adler vertolkte Het Zwanenmeer op zĳn mondharmonica.
+      Mĳn muziekpiet noemt het een meesterlĳke prestatie.
     reaction_b: |-
       Beethoven is prachtig,dat geef ik toe.
-      Maar Larry Adler speelde Het Zwanenmeer,zoals mijn klassieke muziekpiet weet.
+      Maar Larry Adler speelde Het Zwanenmeer,zoals mĳn klassieke muziekpiet weet.
   - question: |-
       Wat delen de smurfen,
-      die altijd samen werken in harmonie?
+      die altĳd samen werken in harmonie?
     options:
       - A) Alles
       - B) Royalties
@@ -106,101 +106,101 @@ questions:
       - B) Karnemelk
     reaction_a: |-
       Niet slecht,maar toch niet juist.
-      Agatha noemt hem Karnemelk - mijn smurfenpiet moet daar nog steeds om lachen!
+      Agatha noemt hem Karnemelk.Mĳn smurfenpiet moet daar nog steeds om lachen!
     reaction_b: |-
       Juist! Karnemelk is wat ze hem noemt.
       Stiekem vermoed ik dat ze dit met opzet doet.
   - question: |-
-      Wie is de menselijke kapitein in De Snorkels,
+      Wie is de menselĳke kapitein in De Snorkels,
       een tekenfilm vol avonturen onder de zee?
     options:
       - A) Kapitein Ortopeda
       - B) Kapitein Ortega
     reaction_a: |-
       Haha,een creatieve gok,maar helaas fout.
-      Kapitein Ortega is deze man,die ik ken van mijn eeuwenlange ervaring op de zee!
+      Kapitein Ortega is deze man,die ik ken van mĳn eeuwenlange ervaring op de zee!
     reaction_b: |-
-      Precies!Kapitein Ortega is de menselijke kapitein.
-      Mijn tekenfilmpiet en ik vinden deze serie nog steeds fijn!
+      Precies!Kapitein Ortega is de menselĳke kapitein.
+      Mĳn tekenfilmpiet en ik vinden deze serie nog steeds fĳn!
   - question: Wat is Toeter?
     options:
       - A) [Toeter is een snorkel zoals alle anderen.]
       - B) [Toeter is uniek.]
     reaction_a: |-
-      Nee,nee!Toeter is geen snorkel zoals alle anderen.
-      Zelfs mijn kindertekenfilmpiet weet: [Toeter is uniek!]
+      Nee,nee! Toeter is geen snorkel zoals alle anderen.
+      Zelfs mĳn kindertekenfilmpiet weet: [Toeter is uniek!]
     reaction_b: |-
-      Juist! [Toeter is uniek],zoals jij altijd zegt.
-      Dat heb ik met gouden letters in mijn grote Boek der Wijsche Uitspraken geschreven.
-  - question: Welke citaat komt uit de aflevering van Paradijsvogels met de kleurrijke Eli?
+      Juist! [Toeter is uniek],zoals jĳ altĳd zegt.
+      Dat heb ik met gouden letters in mĳn grote Boek der Wĳsche Uitspraken geschreven.
+  - question: Welke citaat komt uit de aflevering van Paradĳsvogels met de kleurrĳke Eli?
     options:
-      - A) [Ik laat mij gewoon verdwalen!]
+      - A) [Ik laat mĳ gewoon verdwalen!]
       - B) [Ik sterf liever niet in de winter,want dat vind ik te koud.]
     reaction_a: |-
-      Juist! Een prachtige uitspraak: [Ik laat mij gewoon verdwalen!]
-      Mijn filosofiepiet vindt dat een van de mooiste citaten.
+      Juist! Een prachtige uitspraak: [Ik laat mĳ gewoon verdwalen!]
+      Mĳn filosofiepiet vindt dat een van de mooiste citaten.
     reaction_b: |-
-      Juist! [Ik sterf liever niet in de winter] is zeer kleurrijk!
-      Mijn natuurpiet noemt Eli een unieke persoonlijkheid.
+      Juist! [Ik sterf liever niet in de winter] is zeer kleurrĳk!
+      Mĳn natuurpiet noemt Eli een unieke persoonlĳkheid.
   - question: |-
       Welke aanval maakte Big Daddy legendarisch,
-      een worstelaar die zijn tegenstanders deed sidderen?
+      een worstelaar die zĳn tegenstanders deed sidderen?
     imgid: sport
     options:
       - A) De 'belly splash'.
       - B) De 'flying elbow smash'.
     reaction_a: |-
-      Juist! De 'belly splash' van Big Daddy was werkelijk indrukwekkend.
-      Mijn showworstelpieten hebben dat meerdere keren bevestigd.
+      Juist! De 'belly splash' van Big Daddy was werkelĳk indrukwekkend.
+      Mĳn showworstelpieten hebben dat meerdere keren bevestigd.
     reaction_b: |-
       Spectaculair,maar niet juist.
-      Big Daddy werd beroemd met de 'belly splash',en mijn showworstelpiet kan dat haarfijn uitleggen.
-  - question: 'Wie zei altijd: [Wil je een koekje,dan krijg je een koekje]?'
+      Big Daddy werd beroemd met de [belly splash],en mĳn showworstelpiet kan dat haarfĳn uitleggen.
+  - question: 'Wie zei altĳd: [Wil je een koekje,dan krĳg je een koekje]?'
     options:
-      - A) Fred Rooijers
+      - A) Fred Rooĳers
       - B) Jack van Gelder
     reaction_a: |-
-      Juist! Fred Rooijers maakte dit citaat beroemd.
-      Zelfs mijn koekjesbakpiet gebruikt het in de pepernotenbakkerij!
+      Juist! Fred Rooĳers maakte dit citaat beroemd.
+      Zelfs mĳn koekjesbakpiet gebruikt het in de pepernotenbakkerĳ!
     reaction_b: |-
       Oh nee,Jack van Gelder heeft veel gezegd,maar dit niet.
-      Mijn citatenpiet weet zeker dat het Fred Rooijers was.Zelfs mijn koekjesbakpiet gebruikt het in de pepernotenbakkerij!
+      Mĳn citatenpiet weet zeker dat het Fred Rooĳers was.Zelfs mĳn koekjesbakpiet gebruikt het in de pepernotenbakkerĳ!
   - question: |-
-      Bij welke club maakte Bobby Charlton naam en faam,
-      waar hij uitgroeide tot een speler van wereldklasse?
+      Bĳ welke club maakte Bobby Charlton naam en faam,
+      waar hĳ uitgroeide tot een speler van wereldklasse?
     options:
       - A) Liverpool
       - B) Manchester United
     reaction_a: |-
       Ach,Liverpool is een prachtige club,dat zal ik nooit ontkennen.
-      Maar ik volg al millennia het voetbal,en weet: Charlton speelde elders met volle erkenning.Mijn voetbalpieten zijn het met mij eens!
+      Maar ik volg al millennia het voetbal,en weet: Charlton speelde elders met volle erkenning.Mĳn voetbalpieten zĳn het met mĳ eens!
     reaction_b: |-
       Juist,precies zoals ik had verwacht!
-      Bij Manchester United werd Bobby Charlton een levende legende.Mijn voetbalpieten,die elk detail kennen,blijven vol lof over zijn meesterlijke spel!
+      Bĳ Manchester United werd Bobby Charlton een levende legende.Mĳn voetbalpieten,die elk detail kennen,blĳven vol lof over zĳn meesterlĳke spel!
   - question: |-
-      Welke prijs won Johan Cruijff in 1974,
-      een onderscheiding die zijn talent onderstreepte?
+      Welke prĳs won Johan Cruĳff in 1974,
+      een onderscheiding die zĳn talent onderstreepte?
     options:
       - A) Europees voetballer van het jaar.
       - B) Wereldbeker beste speler.
     reaction_a: |-
-      Juist! In 1974 werd Johan Cruijff gekroond tot de beste van Europa.
-      Mijn voetbalpieten herinneren zich zijn briljante acties nog goed,alsof het gisteren was!
+      Juist! In 1974 werd Johan Cruĳff gekroond tot de beste van Europa.
+      Mĳn voetbalpieten herinneren zich zĳn briljante acties nog goed,alsof het gisteren was!
     reaction_b: |-
-      Neen,helaas!Cruijff heeft nooit de wereldbeker beste speler gewonnen,maar het was zeker wel terecht geweest!
-      Maar in Europa stond hij dat jaar wel bovenaan!
+      Neen,helaas!Cruĳff heeft nooit de wereldbeker beste speler gewonnen,maar het was zeker wel terecht geweest!
+      Maar in Europa stond hĳ dat jaar wel bovenaan!
   - question: |-
       Waarom speelde Pele nooit in Europa,
-      een plek waar zijn talent zeker had gestraald?
+      een plek waar zĳn talent zeker had gestraald?
     options:
-      - A) Hij bleef trouw aan Brazilie.
-      - B) Hij vond Europese competities te moeilijk.
+      - A) Hĳ bleef trouw aan Brazilie.
+      - B) Hĳ vond Europese competities te moeilĳk.
     reaction_a: |-
-      Juist! Pele bleef trouw aan zijn thuisland.
-      Mijn voetbalpieten piekeren nog steeds over hoe Pele zou hebben gevaren in het Europese voetbalspel.
+      Juist! Pele bleef trouw aan zĳn thuisland.
+      Mĳn voetbalpieten piekeren nog steeds over hoe Pele zou hebben gevaren in het Europese voetbalspel.
     reaction_b: |-
-      Nee,moeilijk vond hij het zeker niet!
-      Zelfs mijn voetbalanalysepiet denkt dat Pele de Europese competities had kunnen domineren,maar zijn hart lag in Brazilie.
+      Nee,moeilĳk vond hĳ het zeker niet!
+      Zelfs mĳn voetbalanalysepiet denkt dat Pele de Europese competities had kunnen domineren,maar zĳn hart lag in Brazilie.
   - question: |-
       Wie was de voetballer die zo hard kon schieten,
       dat zelfs de keeper met bal en al het doel in vloog?
@@ -208,36 +208,36 @@ questions:
       - A) De Zwarte Panter-Eusebio da Silva Ferreira.
       - B) De Majoor-Ferenc Puskas.
     reaction_a: |-
-      Juist! Eusebio,de Zwarte Panter,stond bekend om zijn ongekende kracht.
-      Mijn voetbalpieten hebben zijn schoten geanalyseerd,en zelfs Amerigo zou ze niet hebben kunnen stoppen!
+      Juist! Eusebio,de Zwarte Panter,stond bekend om zĳn ongekende kracht.
+      Mĳn voetbalpieten hebben zĳn schoten geanalyseerd,en zelfs Amerigo zou ze niet hebben kunnen stoppen!
     reaction_b: |-
       Precies!Ferenc Puskas,de Majoor,schoot met precisie en macht.
 
-      Mijn voetbalpieten hebben zijn schoten geanalyseerd,en zelfs Amerigo zou ze niet hebben kunnen stoppen!
+      Mĳn voetbalpieten hebben zĳn schoten geanalyseerd,en zelfs Amerigo zou ze niet hebben kunnen stoppen!
   - question: |-
       Waarom schieten voetballers vaak de bal over het doel,
       een moment dat fans doet zuchten van frustratie?
     options:
-      - A) Omdat het been omhoog beweegt bij het proberen te trappen van de bal.
+      - A) Omdat het been omhoog beweegt bĳ het proberen te trappen van de bal.
       - B) Voetballers doen graag aan kleiduivenschieten.
     reaction_a: |-
       Juist! Een been dat omhoog beweegt is vaak de reden.
-      Mijn spitspiet kan dit feilloos uitleggen in zijn analyses.
+      Mĳn spitspiet kan dit feilloos uitleggen in zĳn analyses.
     reaction_b: |-
-      Haha,kleiduivenschieten!Wat een fantasie!
-      Maar nee,mijn spitspiet weet dat het echt te maken heeft met de beweging van het been.
+      Haha,kleiduivenschieten! Wat een fantasie!
+      Maar nee,mĳn spitspiet weet dat het echt te maken heeft met de beweging van het been.
   - question: |-
       Als een voetballer slechte techniek heeft,
-      ligt dat dan aan zijn benen,of toch aan het hoofd?
+      ligt dat dan aan zĳn benen,of toch aan het hoofd?
     options:
       - A) De benen.
       - B) Het hoofd.
     reaction_a: |-
       Neen! De benen doen wat het hoofd beveelt.
-      Zelfs mijn bewegingswetenschapperpiet weet dat zonder twijfel.
+      Zelfs mĳn bewegingswetenschapperpiet weet dat zonder twĳfel.
     reaction_b: |-
       Juist! Het hoofd stuurt de benen aan,
-      en mijn sportpsychologiepiet zegt dat daar de basis moet staan.
+      en mĳn sportpsychologiepiet zegt dat daar de basis moet staan.
   - question: |-
       Wat is volgens de FIFA de juiste term voor het schieten van de bal,
       zoals het hoort op het hoogste niveau?
@@ -246,88 +246,88 @@ questions:
       - B) Schieeesssssss!!
     reaction_a: |-
       Neen! 'Schieten' is niet de officiele term.
-      Mijn FIFA-piet weet dat de officiele term 'Schieeesssssss!!' is!
+      Mĳn FIFA-piet weet dat de officiele term 'Schieeesssssss!!' is!
     reaction_b: |-
       Juist! 'Schieeesssssss!!' is de formele term voor het schieten van de bal.
-      Daarnaast roept mijn voetbalcommentator-piet het bij elke keer dat we hopen dat iemand eens op doel gaat schieten!
+      Daarnaast roept mĳn voetbalcommentator-piet het bĳ elke keer dat we hopen dat iemand eens op doel gaat schieten!
   - question: |-
       Wat moet er op doelen komen te staan,
-      zodat voetballers eindelijk weten waar ze moeten mikken?
+      zodat voetballers eindelĳk weten waar ze moeten mikken?
     options:
       - A) Een bord met het woord 'doel'.
-      - B) Een bord met een pijl naar de wc.
+      - B) Een bord met een pĳl naar de wc.
     reaction_a: |-
       Juist! Een bord met het woord 'doel' zou helpen.
-      Zelfs mijn spitspieten hebben erover nagedacht,want missen gebeurt te vaak.
+      Zelfs mĳn spitspieten hebben erover nagedacht,want missen gebeurt te vaak.
     reaction_b: |-
-      Neen! Een bord met een pijl naar de wc?Dat zou voor nog meer verwarring zorgen.
-      Mijn spitspieten vinden dat je het maar moet ophouden tot het einde van de wedstrijd!
+      Neen! Een bord met een pĳl naar de wc?Dat zou voor nog meer verwarring zorgen.
+      Mĳn spitspieten vinden dat je het maar moet ophouden tot het einde van de wedstrĳd!
   - question: |-
       Wat kan er gebeuren als je gewoon eens op doel durft te schieten?
-      Een eenvoudige actie,maar met mogelijk grote gevolgen!
+      Een eenvoudige actie,maar met mogelĳk grote gevolgen!
     options:
       - A) Dan kan de bal abgefabgefalscht worden en kan je scoren!
       - B) Dan is er een risico van een counter en een doelpunt tegen.
     reaction_a: |-
       Juist! Als je schiet,kan de bal abgefalscht worden en alsnog het net raken.
-      Mijn aanvalspieten zeggen altijd: wie niet waagt,die niet scoort!
+      Mĳn aanvalspieten zeggen altĳd: wie niet waagt,die niet scoort!
     reaction_b: |-
-      Neen! Bang zijn voor een counter is wat mijn tactiekpiet 'doelloos' noemt.
+      Neen! Bang zĳn voor een counter is wat mĳn tactiekpiet 'doelloos' noemt.
       Het doel is om te scoren,en dat doe je alleen als je durft te schieten!
   - question: |-
       Voetbal ontwikkelt zich constant,
       en nieuwe ideeen over tactiek veranderen het spel.
-      Wat zijn de nieuwste inzichten over het krijgen van tegendoelpunten?
+      Wat zĳn de nieuwste inzichten over het krĳgen van tegendoelpunten?
     options:
       - A) Moderne coaches focussen op een goede verdediging als basis.
       - B) Moderne coaches weten dat je gewoon meer moet scoren dan de tegenstander.
     reaction_a: |-
-      Neen! Een goede verdediging is belangrijk,dat geef ik toe,
-      maar mijn Arno-Slot-piet zegt altijd:als de tegenstander 9 keer scoort en jij scoort er 10,dan win je!
+      Neen! Een goede verdediging is belangrĳk,dat geef ik toe,
+      maar mĳn Arno-Slot-piet zegt altĳd:als de tegenstander 9 keer scoort en jĳ scoort er 10,dan win je!
     reaction_b: |-
       Juist! Moderne coaches weten dat scoren de sleutel is.
-      Mijn Arno-Slot-piet zegt altijd:als de tegenstander 9 keer scoort en jij scoort er 10,dan win je!
+      Mĳn Arno-Slot-piet zegt altĳd:als de tegenstander 9 keer scoort en jĳ scoort er 10,dan win je!
   - question: |-
-      Naar wie spelen de voetballers van Ajax en Oranje altijd de bal,
-      zonder te kijken en tot ergernis van velen?
+      Naar wie spelen de voetballers van Ajax en Oranje altĳd de bal,
+      zonder te kĳken en tot ergernis van velen?
     options:
       - A) Naar voren om daarna op doel te schieten!
       - B) Naar de keeper.
     reaction_a: |-
-      Was het maar waar!Mijn tactiekpiet zou dat toejuichen.
-      Maar nee,zo makkelijk maakt Oranje het zichzelf niet.
+      Was het maar waar!Mĳn tactiekpiet zou dat toejuichen.
+      Maar nee,zo makkelĳk maakt Oranje het zichzelf niet.
     reaction_b: |-
-      Juist! Naar de keeper,zonder te kijken - het blijft frustreren.
-      Zelfs ik,met mijn eeuwige geduld,kan het amper aanzien.
+      Juist! Naar de keeper,zonder te kĳken.Het blĳft frustreren.
+      Zelfs ik,met mĳn eeuwige geduld,kan het amper aanzien.
   - question: |-
-      Hoe proberen Ajax en Oranje altijd te scoren,
+      Hoe proberen Ajax en Oranje altĳd te scoren,
       maar duurt het soms een eeuwigheid voordat het lukt?
     options:
       - A) Door direct op doel te schieten vanaf een grote afstand!
       - B) Door de bal biologisch te behandelen.
     reaction_a: |-
       Een mooie gedachte,maar dat is vaak te ambitieus.
-      Mijn analysepieten zien ze vaker dralen dan direct aanvallen.
+      Mĳn analysepieten zien ze vaker dralen dan direct aanvallen.
     reaction_b: |-
       Biologisch behandelen? Dat klinkt alsof ze pepernoten proberen te bakken!
-      Maar nee,voor scoren helpt het weinig,dat weten wij allang.
+      Maar nee,voor scoren helpt het weinig,dat weten wĳ allang.
   - question: Als een voetballer slecht presteert,wie moet je,volgens gerenommeerde gedragswetenschappers,dan haten?
     options:
       - A) Hem en Koeman.
-      - B) Hem en zijn familie.
+      - B) Hem en zĳn familie.
     reaction_a: |-
       Nee,alleen hem en Koeman?Dat klinkt onvolledig!
-      Mijn gedragswetenschapspieten zeggen altijd: [Je moet ook zijn familie haten!]
+      Mĳn gedragswetenschapspieten zeggen altĳd: [Je moet ook zĳn familie haten!]
     reaction_b: |-
-      Juist! [Ik haat jou en jouw familie!] zeg jij altijd als je boos bent.
-      Mijn gedragswetenschapspieten begrijpen je frustratie volledig en vinden jouw reactie zeer gezond.
+      Juist! [Ik haat jou en jouw familie!] zeg jĳ altĳd als je boos bent.
+      Mĳn gedragswetenschapspieten begrĳpen je frustratie volledig en vinden jouw reactie zeer gezond.
   - question: Hoe zou Louis van Gaal denken over de beste rol van Sinterklaas in het Nederlands Elftal?
     options:
       - A) Spits
       - B) Coach
     reaction_a: |-
-      Precies!Ik,Sinterklaas als spits!Ik weet altijd de keeper te surprisen!
-      Zelfs mijn voetbalanalysepiet zegt dat ik de GOAT ben.
+      Precies!Ik,Sinterklaas als spits!Ik weet altĳd de keeper te surprisen!
+      Zelfs mĳn voetbalanalysepiet zegt dat ik de GOAT ben.
     reaction_b: |-
-      Precies!Ik,Sinterklaas als coach weet altijd een surprise uit mijn hoge mijter te toveren!
-      Mijn voetbalcoachpieten leren elk jaar van mijn onfeilbare (en onnavolgbare) strategieen!
+      Precies!Ik,Sinterklaas als coach weet altĳd een surprise uit mĳn hoge mĳter te toveren!
+      Mĳn voetbalcoachpieten leren elk jaar van mĳn onfeilbare (en onnavolgbare) strategieen!

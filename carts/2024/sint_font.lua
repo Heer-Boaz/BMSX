@@ -18,7 +18,8 @@ local glyphs<const> = {
 	['('] = 'letter_haakjeopen',
 	[')'] = 'letter_haakjesluit',
 	['+'] = 'letter_question',
-	['¡'] = 'letter_ij',
+	['ĳ'] = 'letter_ij',
+	['Ĳ'] = 'letter_ij',
 }
 
 for codepoint = string.byte('0'), string.byte('9') do
