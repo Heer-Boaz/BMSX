@@ -32,6 +32,10 @@ local define_fsm<const> = function()
 	fsm_library.register(portrait_fsm_id, {
 		initial = 'intro',
 		on = {
+			[quiz.intro_presented_event] = {
+				emitter = quiz.controller_instance_id,
+				go = '/intro',
+			},
 			[quiz.question_presented_event] = scoped_question_event,
 			[quiz.answer_presented_event] = {
 				emitter = quiz.controller_instance_id,
