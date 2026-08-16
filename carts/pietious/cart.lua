@@ -57,7 +57,7 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local grant_starting_loadout<const> = function(player, castle)
+local grant_debug_starting_loadout<const> = function(player, castle)
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -69,9 +69,7 @@ local grant_starting_loadout<const> = function(player, castle)
 	player:equip_subweapon('pepernoot')
 	player.weapon_level = hud_weapon_level
 	player:emit_weapon_changed()
-	progression.set(castle, 'staff1destroyed', true)
-	progression.set(castle, 'staff2destroyed', true)
-	progression.set(castle, 'staff3destroyed', true)
+	progression.set(castle, 'debug.world1_stairs', true)
 end
 
 local create_world<const> = function(director_boot_mode)
@@ -87,7 +85,7 @@ local create_world<const> = function(director_boot_mode)
 		pos = { x = player_start_x, y = player_start_y, z = 140 },
 	})
 	room.player = player
-	grant_starting_loadout(player, castle)
+	grant_debug_starting_loadout(player, castle)
 	castle:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
 
 	world:spawn('transition', { id = 'transition', space_id = 'transition', })

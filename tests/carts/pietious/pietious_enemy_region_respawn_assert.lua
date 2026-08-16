@@ -4,7 +4,12 @@ local registry<const> = require('cartlib/registry')
 
 __bmsx_host_test = __bmsx_host_test or {
 	frames = 0,
+	appearance_count = 0,
 }
+
+local record_appearance<const> = function(test)
+	test.appearance_count = test.appearance_count + 1
+end
 
 function __bmsx_host_test.setup()
 	return host.press('Enter', 2)
@@ -26,18 +31,38 @@ function __bmsx_host_test.update()
 	local room<const> = registry:get('room')
 	local phase<const> = test.phase
 	if phase == nil then
+		castle.events:on({
+			event = 'appearance',
+			subscriber = test,
+			handler = record_appearance,
+		})
+		assert(progression.get(castle, 'debug.world1_stairs'), 'starting ladder debug setting is missing')
 		castle:enter_world('world_1')
 		test.phase = 1
 	elseif phase == 1 then
-		castle:switch_room('left', 0, 0)
+		assert(progression.get(castle, 'r109.stairs'), 'starting ladder debug setting did not seed world 1')
+		assert(test.appearance_count == 0, 'starting ladder debug setting emitted the reveal cue')
+		assert(not progression.get(castle, 'staff1destroyed'), 'starting ladder debug setting defeated staff 1')
+		assert(not progression.get(castle, 'staff2destroyed'), 'starting ladder debug setting defeated staff 2')
+		assert(not progression.get(castle, 'staff3destroyed'), 'starting ladder debug setting defeated staff 3')
+		progression.set(castle, 'debug.world1_stairs', false)
+		castle:leave_world_to_castle()
 		test.phase = 2
 	elseif phase == 2 then
-		castle:switch_room('left', 0, 0)
+		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder survived the region boundary')
+		castle:enter_world('world_1')
 		test.phase = 3
 	elseif phase == 3 then
-		castle:switch_room('down', 0, 0)
+		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder appeared without its debug setting')
+		castle:switch_room('left', 0, 0)
 		test.phase = 4
 	elseif phase == 4 then
+		castle:switch_room('left', 0, 0)
+		test.phase = 5
+	elseif phase == 5 then
+		castle:switch_room('down', 0, 0)
+		test.phase = 6
+	elseif phase == 6 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not enter room 106')
 		local enemy_def<const> = room.enemies[1]
 		assert(enemy_def.retain_defeat_in_region, 'room 106 enemy must retain defeat within world 1')
@@ -52,33 +77,34 @@ function __bmsx_host_test.update()
 			room_number = room.room_number,
 		})
 		assert(progression.get(castle, enemy_def.id), 'enemy defeat was not retained in world 1')
-		test.phase = 5
-	elseif phase == 5 then
-		castle:switch_room('up', 0, 0)
-		test.phase = 6
-	elseif phase == 6 then
-		castle:switch_room('down', 0, 0)
 		test.phase = 7
 	elseif phase == 7 then
+		castle:switch_room('up', 0, 0)
+		test.phase = 8
+	elseif phase == 8 then
+		castle:switch_room('down', 0, 0)
+		test.phase = 9
+	elseif phase == 9 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not return to room 106')
 		assert(registry:get(test.enemy_id) == nil, 'enemy respawned during the same world visit')
 		castle:leave_world_to_castle()
 		assert(not progression.get(castle, test.enemy_id), 'enemy defeat survived the world-to-castle boundary')
-		test.phase = 8
-	elseif phase == 8 then
-		castle:enter_world('world_1')
-		test.phase = 9
-	elseif phase == 9 then
-		castle:switch_room('left', 0, 0)
 		test.phase = 10
 	elseif phase == 10 then
-		castle:switch_room('left', 0, 0)
+		castle:enter_world('world_1')
 		test.phase = 11
 	elseif phase == 11 then
-		castle:switch_room('down', 0, 0)
+		castle:switch_room('left', 0, 0)
 		test.phase = 12
 	elseif phase == 12 then
+		castle:switch_room('left', 0, 0)
+		test.phase = 13
+	elseif phase == 13 then
+		castle:switch_room('down', 0, 0)
+		test.phase = 14
+	elseif phase == 14 then
 		assert(registry:get(test.enemy_id) ~= nil, 'enemy did not respawn on the next world visit')
+		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder was already open before the staff encounter')
 		castle.events:emit('room.condition_set', {
 			room_number = 104,
 			condition = 'staff1destroyed',
@@ -92,21 +118,25 @@ function __bmsx_host_test.update()
 			condition = 'staff3destroyed',
 		})
 		assert(progression.get(castle, 'r109.stairs'), 'staff progression did not open the world stairs')
+		assert(test.appearance_count == 1, 'staff progression did not emit one reveal cue')
 		castle:leave_world_to_castle()
-		test.phase = 13
-	elseif phase == 13 then
-		assert(progression.get(castle, 'staff1destroyed'), 'permanent staff progression was reset at the region boundary')
-		castle:enter_world('world_1')
-		test.phase = 14
-	elseif phase == 14 then
-		castle:switch_room('left', 0, 0)
 		test.phase = 15
 	elseif phase == 15 then
-		castle:switch_room('up', 0, 0)
+		assert(not progression.get(castle, 'staff1destroyed'), 'staff 1 defeat survived the region boundary')
+		assert(not progression.get(castle, 'staff2destroyed'), 'staff 2 defeat survived the region boundary')
+		assert(not progression.get(castle, 'staff3destroyed'), 'staff 3 defeat survived the region boundary')
+		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder survived the region boundary')
+		castle:enter_world('world_1')
 		test.phase = 16
 	elseif phase == 16 then
-		castle:switch_room('up', 0, 0)
+		castle:switch_room('left', 0, 0)
 		test.phase = 17
+	elseif phase == 17 then
+		castle:switch_room('up', 0, 0)
+		test.phase = 18
+	elseif phase == 18 then
+		castle:switch_room('up', 0, 0)
+		test.phase = 19
 	else
 		assert(room.room_number == 104, 'staff progression scenario did not enter room 104')
 		local staff_def
@@ -118,7 +148,20 @@ function __bmsx_host_test.update()
 			end
 		end
 		assert(staff_def ~= nil, 'room 104 staff definition is missing')
-		assert(registry:get(staff_def.id) == nil, 'progression-completed staff respawned')
+		assert(registry:get(staff_def.id) ~= nil, 'staff did not respawn on the next world visit')
+		castle.events:emit('room.condition_set', {
+			room_number = 104,
+			condition = 'staff1destroyed',
+		})
+		castle.events:emit('room.condition_set', {
+			room_number = 107,
+			condition = 'staff2destroyed',
+		})
+		castle.events:emit('room.condition_set', {
+			room_number = 110,
+			condition = 'staff3destroyed',
+		})
+		assert(test.appearance_count == 2, 'staff progression did not repeat the reveal cue after reset')
 		return true
 	end
 	return false

@@ -35,7 +35,10 @@ local build_progression_program<const> = function()
 	local condition_name_set<const> = {}
 	local condition_names<const> = {}
 	local world1_marspein_destroyed_keys<const> = {}
-	local region_enemy_reset_actions<const> = {}
+	local region_reset_actions<const> = {
+		{ key = 'cloud_1_destroyed', value = false },
+		{ key = 'r109.stairs', value = false },
+	}
 	local persistent_item_ids<const> = {}
 
 	for _, room_template in pairs(castle_map.room_templates) do
@@ -60,7 +63,7 @@ local build_progression_program<const> = function()
 						{ key = enemy_def.id, value = true },
 					},
 				}
-				region_enemy_reset_actions[#region_enemy_reset_actions + 1] = {
+				region_reset_actions[#region_reset_actions + 1] = {
 					key = enemy_def.id,
 					value = false,
 				}
@@ -68,6 +71,10 @@ local build_progression_program<const> = function()
 			if enemy_def.trigger ~= nil and not condition_name_set[enemy_def.trigger] then
 				condition_name_set[enemy_def.trigger] = true
 				condition_names[#condition_names + 1] = enemy_def.trigger
+				region_reset_actions[#region_reset_actions + 1] = {
+					key = enemy_def.trigger,
+					value = false,
+				}
 			end
 			if room_number == 106 and enemy_def.kind == 'marspeinenaardappel' then
 				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.id
@@ -134,9 +141,24 @@ local build_progression_program<const> = function()
 		},
 	}
 	rules[#rules + 1] = {
-		id = 'room.region_enter.enemy_reset',
+		id = 'room.region_enter.progression_reset',
 		on = 'room.region_enter',
-		set = region_enemy_reset_actions,
+		set = region_reset_actions,
+	}
+	rules[#rules + 1] = {
+		id = 'r109.stairs.debug_seed',
+		on = 'room.region_enter',
+		when_all = {
+			{ key = 'debug.world1_stairs', equals = true },
+		},
+		when_event = {
+			equals = {
+				world_number = 1,
+			},
+		},
+		set = {
+			{ key = 'r109.stairs', value = true },
+		},
 	}
 
 	rules[#rules + 1] = {
@@ -165,6 +187,12 @@ local build_progression_program<const> = function()
 		when_all = stairs_latch_conditions,
 		set = {
 			{ key = 'r109.stairs', value = true },
+		},
+		apply = {
+			{
+				op = 'emit_event',
+				event = 'appearance',
+			},
 		},
 	}
 
@@ -226,25 +254,6 @@ local build_progression_program<const> = function()
 		},
 	}
 
-	rules[#rules + 1] = {
-		id = 'r109.stairs.cue',
-		on = 'room.enter',
-		when_all = {
-			{ key = 'r109.stairs', equals = true },
-		},
-		when_event = {
-			equals = {
-				room_number = 109,
-			},
-		},
-		apply_once = true,
-		apply = {
-			{
-				op = 'emit_event',
-				event = 'appearance',
-			},
-		},
-	}
 	local program<const>, compiled_filters<const> = progression.compile_program({
 		rules = rules,
 		filters = filters,
@@ -607,7 +616,9 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	self:reset_room_encounter_tags()
 	self:sync_world_entrance_states_for_room(room)
 	if previous_world_number ~= room.world_number then
-		self.events:emit('room.region_enter')
+		self.events:emit('room.region_enter', {
+			world_number = room.world_number,
+		})
 	end
 	self:refresh_current_room_customizations()
 	room_spawner.spawn_all_for_room(room)
