@@ -3167,7 +3167,7 @@ local define_player_fsm<const> = function()
 				end,
 			},
 			['enemy.contact_damage'] = function(self, _state, event)
-				-- self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+				self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
 			end,
 			['room.switched'] = function(self)
 				self:set_space('main')
