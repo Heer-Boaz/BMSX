@@ -245,32 +245,12 @@ local build_progression_program<const> = function()
 			},
 		},
 	}
-	rules[#rules + 1] = {
-		id = 'damage.resolved.refresh',
-		on = 'damage.resolved',
-		when_event = {
-			equals = {
-				destroyed = true,
-			},
-		},
-		apply = {
-			{ op = 'refresh_current_room_enemies' },
-		},
-	}
-
 	local program<const>, compiled_filters<const> = progression.compile_program({
 		rules = rules,
 		filters = filters,
 		handlers = {
 			['room.patch_rows'] = function(ctx, command)
 				ctx.room:apply_progression_command(command)
-			end,
-			refresh_current_room_enemies = function(ctx, command, event)
-				local room<const> = ctx.room
-				if event.room_number == ctx.current_room_number then
-					ctx:refresh_current_room_customizations()
-					room_spawner.spawn_all_for_room(room)
-				end
 			end,
 			apply_room_condition = function(ctx, command, event)
 				local room<const> = ctx.room
