@@ -37,6 +37,10 @@ events:
         channel: music
         rules: *room_music_rules
 
+    lithograph_exit_done:
+        channel: music
+        rules: *room_music_rules
+
     title:
         channel: music
         rules:

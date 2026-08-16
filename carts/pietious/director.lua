@@ -245,6 +245,7 @@ end
 --   'title_wait_done'       — startup hold ended; temporary freezes may resume.
 --   'shrine'                — { lines = { ... } } payload.
 --   'lithograph'            — { lines = { ... } } payload.
+--   'lithograph_exit_done'  — room-state payload for restoring room music.
 --   'item'                  — item screen mode.
 --   'halo'                  — halo teleport mode.
 --   'title', 'story', 'ending', 'victory_dance', 'death' — modal modes.
@@ -875,7 +876,13 @@ local define_director_fsm<const> = function()
 								},
 								autoplay = true,
 								stop_on_exit = true,
-								on_finished = '/room',
+								on_finished = function(self)
+									self.events:emit(
+										'lithograph_exit_done',
+										self.castle:create_room_enter_payload(false)
+									)
+									return '/room'
+								end,
 							},
 						},
 					},
