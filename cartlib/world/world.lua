@@ -106,7 +106,9 @@ function world_class.new()
 	self._pending_admissions = {}
 	self._pending_admission_count = 0
 	self._pending_objects = {}
+	self._pending_object_count = 0
 	self._pending_components = {}
+	self._pending_component_count = 0
 	self._pending_component_attaches = {}
 	self._pending_component_attach_count = 0
 	self._pending_component_detaches = {}
@@ -367,7 +369,9 @@ function world_class:_queue_object_reconcile(obj)
 		return
 	end
 	local pending<const> = self._pending_objects
-	pending[#pending + 1] = obj
+	local index<const> = self._pending_object_count + 1
+	self._pending_object_count = index
+	pending[index] = obj
 	obj._object_reconcile_pending = true
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_object
 end
@@ -436,7 +440,9 @@ function world_class:_queue_component_reconcile(comp)
 		return
 	end
 	local pending<const> = self._pending_components
-	pending[#pending + 1] = comp
+	local index<const> = self._pending_component_count + 1
+	self._pending_component_count = index
+	pending[index] = comp
 	comp._component_reconcile_pending = true
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component
 end
@@ -563,22 +569,28 @@ end
 
 function world_class:_flush_components()
 	local pending<const> = self._pending_components
-	for i = 1, #pending do
-		local comp<const> = pending[i]
+	local index = 1
+	while index <= self._pending_component_count do
+		local comp<const> = pending[index]
+		pending[index] = nil
 		comp._component_reconcile_pending = nil
 		self:_reconcile_active_component(comp)
-		pending[i] = nil
+		index = index + 1
 	end
+	self._pending_component_count = 0
 end
 
 function world_class:_flush_objects()
 	local pending<const> = self._pending_objects
-	for i = 1, #pending do
-		local obj<const> = pending[i]
+	local index = 1
+	while index <= self._pending_object_count do
+		local obj<const> = pending[index]
+		pending[index] = nil
 		obj._object_reconcile_pending = nil
 		self:_reconcile_object(obj)
-		pending[i] = nil
+		index = index + 1
 	end
+	self._pending_object_count = 0
 end
 
 function world_class:_flush_tags()
