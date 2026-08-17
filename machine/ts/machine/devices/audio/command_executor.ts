@@ -17,7 +17,9 @@ import type { ApuSampleMemory } from './sample_memory';
 import type { ApuOutputVoiceState } from './save_state';
 import type { ApuSlotBank } from './slot_bank';
 import {
+	APU_CMD_PAUSE_SLOT,
 	APU_CMD_PLAY,
+	APU_CMD_RESUME_SLOT,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_FAULT_BAD_CMD,
@@ -30,6 +32,8 @@ import {
 } from '../../../spec/audio/apu';
 import {
 	APU_SLOT_PHASE_FADING,
+	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PAUSED,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
@@ -95,6 +99,9 @@ export class ApuCommandExecutor {
 			registerWords,
 			state,
 		);
+		if ((this.slots.phase(slot) & APU_SLOT_PHASE_PAUSED) !== 0) {
+			this.audioOutput.pauseSlot(slot);
+		}
 	}
 
 	public static selectedSlotRegisterReadThunk(context: ApuCommandExecutor, addr: number): number {
@@ -123,6 +130,12 @@ export class ApuCommandExecutor {
 				return;
 			case APU_CMD_SET_SLOT_GAIN:
 				this.setSlotGain(registerWords);
+				return;
+			case APU_CMD_PAUSE_SLOT:
+				this.pauseSlot(registerWords);
+				return;
+			case APU_CMD_RESUME_SLOT:
+				this.resumeSlot(registerWords);
 				return;
 			default:
 				this.fault.raise(APU_FAULT_BAD_CMD, command);
@@ -154,12 +167,30 @@ export class ApuCommandExecutor {
 			return;
 		}
 		if (fadeSamples > 0) {
-			this.activeSlots.setPhase(slot, APU_SLOT_PHASE_FADING);
+			this.activeSlots.setPhase(slot, APU_SLOT_PHASE_FADING | (this.slots.phase(slot) & APU_SLOT_PHASE_PAUSED));
 			this.audioOutput.stopSlot(slot, fadeSamples);
 			return;
 		}
 		this.audioOutput.stopSlot(slot);
 		this.activeSlots.stop(slot);
+	}
+
+	private pauseSlot(registerWords: ApuParameterRegisterWords): void {
+		const slot = registerWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK;
+		const phase = this.slots.phase(slot);
+		if (phase !== APU_SLOT_PHASE_IDLE && (phase & APU_SLOT_PHASE_PAUSED) === 0) {
+			this.audioOutput.pauseSlot(slot);
+			this.activeSlots.setPhase(slot, phase | APU_SLOT_PHASE_PAUSED);
+		}
+	}
+
+	private resumeSlot(registerWords: ApuParameterRegisterWords): void {
+		const slot = registerWords[APU_PARAMETER_SLOT_INDEX]! & APU_SLOT_INDEX_MASK;
+		const phase = this.slots.phase(slot);
+		if ((phase & APU_SLOT_PHASE_PAUSED) !== 0) {
+			this.audioOutput.resumeSlot(slot);
+			this.activeSlots.setPhase(slot, phase & ~APU_SLOT_PHASE_PAUSED);
+		}
 	}
 
 	private setSlotGain(registerWords: ApuParameterRegisterWords): void {

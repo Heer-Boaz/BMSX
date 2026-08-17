@@ -25,6 +25,8 @@ export const AEM_ACTION_KEYS: ReadonlySet<string> = new Set([
 	'priority',
 	'cooldown_ms',
 	'stop_music',
+	'pause_music',
+	'resume_music',
 	'sequence',
 	'music_transition',
 	'one_of',
@@ -43,10 +45,13 @@ export const AEM_CHOICE_ACTION_KEYS: ReadonlySet<string> = new Set([
 	'weight',
 ]);
 export const AEM_STOP_MUSIC_ACTION_KEYS: ReadonlySet<string> = new Set(['stop_music']);
+export const AEM_PAUSE_MUSIC_ACTION_KEYS: ReadonlySet<string> = new Set(['pause_music']);
+export const AEM_RESUME_MUSIC_ACTION_KEYS: ReadonlySet<string> = new Set(['resume_music']);
 export const AEM_SEQUENCE_ACTION_KEYS: ReadonlySet<string> = new Set(['sequence']);
 export const AEM_RANDOM_ACTION_KEYS: ReadonlySet<string> = new Set(['one_of', 'pick', 'avoid_repeat']);
 export const AEM_MUSIC_TRANSITION_ACTION_KEYS: ReadonlySet<string> = new Set(['music_transition']);
 export const AEM_STOP_MUSIC_KEYS: ReadonlySet<string> = new Set(['fade_ms']);
+export const AEM_EMPTY_ACTION_KEYS: ReadonlySet<string> = new Set();
 export const AEM_MUSIC_TRANSITION_KEYS: ReadonlySet<string> = new Set([
 	'audio_id',
 	'sync',

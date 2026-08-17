@@ -164,38 +164,34 @@ void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 	supervisorRequestLineHigh = false;
 	input.poll(256, 240, 0.0);
 	require(
-		input.supervisorRequestLineHigh(),
-		"F2 should keep the shared request line high as the host line falls");
+		!input.supervisorRequestLineHigh(),
+		"a cart-visible F2 press must not assert the supervisor-request line");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
 		(snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u]
 			& (1u << (bmsx::HID_USAGE_F2 & 31u))) != 0u,
-		"libretro F2 must remain an ordinary cart-visible HID key while asserting the supervisor line");
+		"libretro F2 must remain an ordinary cart-visible HID key");
 
-	input.postKeyboardEvent(RETROK_F2, false);
 	supervisorRequestLineHigh = true;
 	input.poll(256, 240, 0.0);
 	require(
 		input.supervisorRequestLineHigh(),
-		"the host should keep the shared request line high as F2 falls");
-
-	input.postKeyboardEvent(RETROK_F2, true);
-	supervisorRequestLineHigh = false;
-	input.poll(256, 240, 0.0);
-	require(
-		input.supervisorRequestLineHigh(),
-		"F2 should retain the line through the reverse crossing transition");
+		"the negotiated host line should remain independent of held guest keys");
 
 	input.postKeyboardEvent(RETROK_F2, false);
-	input.poll(256, 240, 0.0);
-	require(
-		!input.supervisorRequestLineHigh(),
-		"releasing F2 should deassert the supervisor-request line");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
 		(snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u]
 			& (1u << (bmsx::HID_USAGE_F2 & 31u))) == 0u,
 		"releasing libretro F2 must clear its ordinary HID key");
+	require(
+		input.supervisorRequestLineHigh(),
+		"guest key release must not lower the negotiated host line");
+	supervisorRequestLineHigh = false;
+	input.poll(256, 240, 0.0);
+	require(
+		!input.supervisorRequestLineHigh(),
+		"lowering the negotiated host line should deassert the supervisor request");
 }
 
 } // namespace

@@ -94,37 +94,34 @@ events:
                       - audio_id: pickupkey
                       - audio_id: danceofjoy
 
-    # Seal breakdown -> daemon appears (music).
-    # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
+    # The director owns the summon phase boundaries. Audio clips do not advance
+    # gameplay; each phase starts its cue immediately at the matching event.
     seal_dissolution:
         channel: music
         rules:
             - go:
                   music_transition:
-                      audio_id: music_daemonappears
-                      sync:
-                          stinger: seal_breakdown
+                      audio_id: seal_breakdown
+                      sync: immediate
+                      start_fresh: true
 
-    # After death in a broken-seal room: restart the daemon-appearance music segment from the start.
     daemon_appearance:
         channel: music
         rules:
-            - when:
-                  equals:
-                      after_death: true
-              go:
+            - go:
                   music_transition:
                       audio_id: music_daemonappears
+                      sync: immediate
                       start_fresh: true
 
-    # Daemon appears -> daemon fight (wait for loop/end of current segment).
     daemon_appearance_done:
         channel: music
         rules:
             - go:
                   music_transition:
                       audio_id: music_daemonfight
-                      sync: loop
+                      sync: immediate
+                      start_fresh: true
 
     # --- SFX routing ---
     jump:
@@ -256,6 +253,20 @@ events:
             - go:
                   audio_id: f1
 
+    pause_entered:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - pause_music: {}
+                      - audio_id: f2
+
+    pause_exited:
+        channel: music
+        rules:
+            - go:
+                  resume_music: {}
+
     select:
         channel: sfx
         rules:
@@ -352,7 +363,3 @@ events:
         rules:
             - go:
                   audio_id: daemonfire
-
-    # Intentionally no SFX hook for daemon_appearance here:
-    # In the original XNA/C++ versions, daemon appearance is driven by the music sequence
-    # (SealBreakDown -> DaemonAppears -> DaemonFight), not a separate "spawn" SFX.

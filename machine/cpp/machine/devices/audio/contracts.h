@@ -15,6 +15,7 @@ using ApuParameterRegisterWords = std::array<uint32_t, APU_PARAMETER_REGISTER_CO
 constexpr uint32_t APU_SLOT_PHASE_IDLE = 0u;
 constexpr uint32_t APU_SLOT_PHASE_PLAYING = 1u;
 constexpr uint32_t APU_SLOT_PHASE_FADING = 2u;
+constexpr uint32_t APU_SLOT_PHASE_PAUSED = 1u << 2u;
 
 struct ApuAudioSource {
 	uint32_t sourceAddr = 0;

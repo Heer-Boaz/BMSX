@@ -116,7 +116,7 @@ ApuOutputState ApuOutputMixer::captureState() const {
 	ApuOutputState state;
 	state.voices.reserve(APU_SLOT_COUNT);
 	for (const VoiceRecord& record : m_voices) {
-		if (record.active) {
+		if (record.resident) {
 			state.voices.push_back(captureApuOutputVoiceState(record));
 		}
 	}

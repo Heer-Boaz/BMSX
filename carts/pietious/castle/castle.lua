@@ -413,7 +413,6 @@ function castle:begin_seal_dissolution()
 	room.seal_dissolve_step = 0
 	room:rebuild_room_tiles()
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:apply_seal_timeline_frame(1)
 	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end
@@ -422,26 +421,14 @@ function castle:apply_seal_timeline_frame(frame)
 	local room<const> = self.room
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
-	if frame >= 32 then
-		if frame < 64 then
-			local progress<const> = frame - 32
-			room_dissolve_step = ((progress * flow_seal_room_dissolve_steps) // 32) + 1
-		else
-			room_dissolve_step = flow_seal_room_dissolve_steps
-		end
-	end
-	if frame >= 64 then
-		local progress = frame - 64
-		if progress > 31 then
-			progress = 31
-		end
-		seal_dissolve_step = ((progress * flow_seal_sprite_dissolve_steps) // 32) + 1
-	end
-	if room_dissolve_step > flow_seal_room_dissolve_steps then
-		room_dissolve_step = flow_seal_room_dissolve_steps
-	end
-	if seal_dissolve_step > flow_seal_sprite_dissolve_steps then
+	local room_phase_start<const> = flow_seal_flash_frames + flow_seal_sprite_dissolve_frames
+	if frame >= room_phase_start then
 		seal_dissolve_step = flow_seal_sprite_dissolve_steps
+		local progress<const> = frame - room_phase_start
+		room_dissolve_step = ((progress * flow_seal_room_dissolve_steps) // flow_seal_room_dissolve_frames) + 1
+	elseif frame >= flow_seal_flash_frames then
+		local progress<const> = frame - flow_seal_flash_frames
+		seal_dissolve_step = ((progress * flow_seal_sprite_dissolve_steps) // flow_seal_sprite_dissolve_frames) + 1
 	end
 	if room.room_dissolve_step ~= room_dissolve_step then
 		room.room_dissolve_step = room_dissolve_step

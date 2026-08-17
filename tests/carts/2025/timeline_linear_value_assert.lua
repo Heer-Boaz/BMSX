@@ -1,4 +1,5 @@
 local timeline_module<const> = require('cartlib/timeline/timeline')
+local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world_object<const> = require('cartlib/world/world_object')
 
@@ -37,9 +38,9 @@ timelines:define('time_linear', {
 })
 timelines:play('time_linear', { target = target })
 assert(target.value == 0 and target.method == timeline_module.update_method.play)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(target.value == 10)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(target.value == 20)
 timelines:seek_time('time_linear', 75)
 assert(target.value == 10 and target.method == timeline_module.update_method.jump)
@@ -85,7 +86,7 @@ timelines:define('frame_linear', {
 timelines:play('frame_linear', { target = frame_target })
 assert(frame_target.nested.value == 0 and frame_target.nested.other == 5)
 assert(frame_target.nested.constant == 7)
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(frame_target.nested.value == 10 and frame_target.nested.other == 6)
 timelines:seek('frame_linear', 3)
 assert(frame_target.nested.value == 30 and frame_target.nested.other == 8)
@@ -114,18 +115,18 @@ timelines:play('built_frame_linear', {
 	target = built_target,
 	params = { frame_count = 5 },
 })
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(built_target.value == 40)
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(built_target.value == 80)
 timelines:stop('built_frame_linear')
 timelines:play('built_frame_linear', {
 	target = built_target,
 	params = { frame_count = 9 },
 })
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(built_target.value == 20)
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(built_target.value == 40)
 timelines:stop('built_frame_linear')
 
@@ -147,9 +148,9 @@ timelines:define('pingpong_linear', {
 	},
 })
 timelines:play('pingpong_linear', { target = pingpong_target })
-timelines:tick_active(125)
+timelines:tick_gameplay(125)
 assert(pingpong_target.value == 75)
-timelines:tick_active(50)
+timelines:tick_gameplay(50)
 assert(pingpong_target.value == 25)
 timelines:stop('pingpong_linear')
 
@@ -186,7 +187,7 @@ timelines:define('nested_linear', {
 	},
 })
 timelines:play('nested_linear', { bindings = { camera = camera } })
-timelines:tick_active(225)
+timelines:tick_gameplay(225)
 assert(camera.value == 25)
 timelines:seek_time('nested_linear', 125)
 assert(camera.value == 25)
@@ -195,43 +196,76 @@ timelines:stop('nested_linear')
 timelines:define('manual_schedule', {
 	frames = timeline_module.range(5),
 	frame_duration = 20,
-	auto_tick = false,
+	clock_source = timeline_clock_source.manual,
 })
 timelines:play('manual_schedule')
 local manual_schedule<const> = timelines:get('manual_schedule')
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(manual_schedule:value() == 0)
 timelines:advance('manual_schedule')
 assert(manual_schedule:value() == 1)
 timelines:define('manual_schedule', {
 	frames = timeline_module.range(5),
 	frame_duration = 20,
-	auto_tick = true,
+	clock_source = timeline_clock_source.gameplay,
 })
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(manual_schedule:value() == 2)
 timelines:define('manual_schedule', {
 	frames = timeline_module.range(5),
 	frame_duration = 20,
-	auto_tick = false,
+	clock_source = timeline_clock_source.manual,
 })
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(manual_schedule:value() == 2)
 timelines:define('manual_schedule', {
 	frames = timeline_module.range(1),
 	continuous = true,
-	auto_tick = true,
+	clock_source = timeline_clock_source.gameplay,
 })
-timelines:tick_active(7)
+timelines:tick_gameplay(7)
 assert(manual_schedule.position_ms == 47)
 timelines:define('manual_schedule', {
 	frames = timeline_module.range(5),
 	frame_duration = 10,
-	auto_tick = true,
+	clock_source = timeline_clock_source.gameplay,
 })
-timelines:tick_active(10)
+timelines:tick_gameplay(10)
 assert(manual_schedule:value() == 3)
 timelines:stop('manual_schedule')
+
+timelines:define('platform_schedule', {
+	frames = timeline_module.range(1),
+	continuous = true,
+	duration_ms = 100,
+	clock_source = timeline_clock_source.platform,
+})
+timelines:define('frame_schedule', {
+	frames = timeline_module.range(1),
+	continuous = true,
+	duration_ms = 100,
+	clock_source = timeline_clock_source.frame,
+})
+timelines:play('platform_schedule')
+timelines:play('frame_schedule')
+timelines:tick_frame(20)
+assert(timelines:get('platform_schedule').position_ms == 0)
+assert(timelines:get('frame_schedule').position_ms == 20)
+timelines:tick_platform(20)
+assert(timelines:get('platform_schedule').position_ms == 20)
+timelines:stop('platform_schedule')
+timelines:stop('frame_schedule')
+
+timelines:define('audio_schedule', {
+	frames = timeline_module.range(1),
+	continuous = true,
+	duration_ms = 100,
+	clock_source = timeline_clock_source.audio,
+})
+timelines:play('audio_schedule')
+timelines:tick_audio(25)
+assert(timelines:get('audio_schedule').position_ms == 25)
+timelines:stop('audio_schedule')
 
 timelines:define('immediate_schedule', {
 	frames = timeline_module.range(3),
@@ -239,7 +273,7 @@ timelines:define('immediate_schedule', {
 	auto_tick = true,
 })
 timelines:play('immediate_schedule')
-timelines:tick_active(20)
+timelines:tick_gameplay(20)
 assert(timelines:get('immediate_schedule'):value() == 1)
 timelines:stop('immediate_schedule')
 

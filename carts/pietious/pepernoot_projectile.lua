@@ -1,14 +1,6 @@
 -- pepernoot_projectile.lua
 -- player thrown projectile (pepernoot) — fires horizontally, disposes on
 -- collision with terrain, room bounds, or enemies.
---
--- FREEZE/UNFREEZE PATTERN (shared with player.lua):
--- Root FSM `on` subscribes to 'seal_dissolution' → transitions to /freeze.
--- The freeze state tags the projectile with 'v.fz' so update_motion() can
--- skip movement (checked via has_tag).  On 'seal_flash_done', freeze does
--- pop_and_transition() to restore the previous state from the history stack.
--- This is the same pattern the player uses — temporary interruption with
--- automatic state restoration.
 
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -21,10 +13,6 @@ local world_object<const> = require('cartlib/world/world_object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
-
-local state_tags<const> = {
-	frozen = 'v.fz',
-}
 
 function pepernoot_projectile:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
@@ -61,9 +49,6 @@ function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
 end
 
 function pepernoot_projectile:update_motion()
-	if self:has_tag(state_tags.frozen) then
-		return
-	end
 	local room<const> = self.room
 	self.x = self.x + (self.direction * secondary_weapon_pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
@@ -89,19 +74,10 @@ local define_pepernoot_projectile_fsm<const> = function()
 				emitter = 'pietolon',
 				go = world_object.mark_for_disposal,
 			},
-			['seal_dissolution'] = '/freeze',
 		},
 		states = {
 			active = {
 				update = pepernoot_projectile.update_motion,
-			},
-			freeze = {
-				tags = { state_tags.frozen },
-				on = {
-					['seal_flash_done'] = function(_self, state)
-						state:pop_and_transition()
-					end,
-				},
 			},
 		},
 	})

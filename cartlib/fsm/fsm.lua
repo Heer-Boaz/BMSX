@@ -136,6 +136,7 @@
 --     restrict to events from a specific source object.
 
 local clear_map<const> = require('cartlib/util/clear_map')
+local clock<const> = require('cartlib/clock')
 local frame_program<const> = require('cartlib/fsm/frame_program')
 local input<const> = require('cartlib/input/input')
 
@@ -271,6 +272,11 @@ function state_definition.new(id, def, root, parent)
 	self.id = id
 	self.parent = parent
 	self.root = root or self
+	if self.root == self then
+		-- Machine input/update work follows its root clock. Event dispatch remains
+		-- immediate, while timelines retain their own independently authored clock.
+		self.clock_source = def.clock_source or clock.gameplay
+	end
 	self.def_id = def.def_id or make_def_id(id, parent)
 	self.data = def.data or {}
 	self.states = {}
@@ -396,6 +402,9 @@ function state_definition.new(id, def, root, parent)
 end
 
 assert_rebind_compatible = function(previous, replacement)
+	if previous.clock_source ~= replacement.clock_source then
+		error('cannot rebind state definition "' .. previous.def_id .. '": clock source changed.')
+	end
 	local previous_states<const> = previous.states
 	local previous_state_ids<const> = previous.state_ids
 	for i = 1, previous.state_count do
@@ -1525,7 +1534,7 @@ function state:refresh_active_frame_work()
 	local previous<const> = self.active_frame_work
 	local active<const> = refresh_active_subtree_frame_work(self)
 	if previous ~= active then
-		self.frame_work_changed(self.frame_work_owner, active)
+		self.frame_work_changed(self.frame_work_owner, self, active)
 	end
 	return active
 end

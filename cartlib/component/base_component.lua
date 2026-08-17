@@ -2,6 +2,7 @@ local event_emitter<const> = require('cartlib/event_emitter')
 
 local base_component<const> = {}
 base_component.__index = base_component
+base_component._tick_clocks = 0
 
 function base_component.new(opts)
 	local self<const> = setmetatable({}, base_component)
@@ -24,15 +25,21 @@ function base_component:set_enabled(enabled)
 	return self
 end
 
--- Tick enablement is independent from component enablement. Event-driven
--- components remain active and subscribed while their frame work is absent;
--- systems consume the world's retained tick view instead of polling those
--- dormant components every frame.
-function base_component:set_tick_enabled(enabled)
-	if self._tick_enabled == enabled then
+-- A component may publish independently scheduled work on more than one
+-- clock. Admission changes reconcile retained clock lanes at the world's
+-- structural barrier; frame loops consume their dense lane directly.
+function base_component:set_tick_clock_enabled(clock_source, enabled)
+	local clocks<const> = self._tick_clocks
+	local updated
+	if enabled then
+		updated = clocks | clock_source
+	else
+		updated = clocks & ~clock_source
+	end
+	if clocks == updated then
 		return self
 	end
-	self._tick_enabled = enabled
+	self._tick_clocks = updated
 	local parent<const> = self.parent
 	if self._attached and parent._world_object_index ~= nil and parent.active then
 		parent.world:reconcile_component(self)

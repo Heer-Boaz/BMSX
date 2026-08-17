@@ -30,13 +30,7 @@
 --    bindings and writes them directly during evaluation. The seal sequence
 --    therefore receives castle as a construction-time binding instead of
 --    broadcasting one synthetic event for every sampled frame.
--- 4. FSM STATE SUB-VARIANTS INSTEAD OF CROSS-STATE FLAGS.
---    When two states differ only by a boolean context value (e.g. after_death
---    in daemon_appearance), two distinct FSM states exist and the decision
---    point navigates to the correct one.  Shared setup lives in a helper
---    method (start_daemon_appearance).  No boolean flags are stored on self.
---
--- 5. SUBSTATES OVER SWITCH FIELDS.
+-- 4. SUBSTATES OVER SWITCH FIELDS.
 --    State-shaping distinctions belong in the FSM, not in pending mode flags
 --    or post-action switches.  World enter/leave, halo return from a world,
 --    world banner, castle banner, and castle-emerge banner are modeled as
@@ -45,10 +39,11 @@
 --    banner) is stored on self.
 --
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local clock<const> = require('cartlib/clock')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/world/prefab')
+local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
@@ -78,17 +73,26 @@ local lithograph_open_timeline_id<const> = 'director.wait.lithograph.open'
 local lithograph_close_timeline_id<const> = 'director.wait.lithograph.close'
 local seal_timeline_id<const> = 'director.seal'
 local daemon_timeline_id<const> = 'director.daemon'
+local sequence_play_options<const> = {
+	rewind = true,
+	snap_to_start = false,
+}
+-- MoG T8003 stores eight fixed (x, y) pairs; the 65-VBlank countdown
+-- addresses them as 1,2,3,4,5,6,7,0,1 at eight-VBlank intervals.
+local daemon_cloud_positions<const> = {
+	152, 96,
+	144, 128,
+	80, 96,
+	64, 64,
+	176, 64,
+	96, 128,
+	128, 96,
+	112, 64,
+	152, 96,
+}
 
 local director<const> = {}
 director.__index = director
-
-local draw_seal_flash<const> = function(component, draw)
-	if not component.parent.seal_flash_on then
-		return
-	end
-	draw:mode(gp0.draw_mode_blend_half)
-	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
-end
 
 local draw_death_curtain<const> = function(component, draw)
 	draw:rect(0, 0, component.parent.death_curtain_width, screen_height, 0xff000000)
@@ -126,7 +130,7 @@ end
 
 function director:ensure_daemon_cloud_pool()
 	local clouds<const> = self.daemon_clouds
-	for i = 1, flow_daemon_cloud_max do
+	for i = 1, flow_daemon_cloud_count do
 		if clouds[i] == nil then
 			clouds[i] = world:spawn('daemon_cloud', {
 				id = 'dc.' .. tostring(i),
@@ -138,24 +142,12 @@ function director:ensure_daemon_cloud_pool()
 	end
 end
 
-function director:spawn_daemon_cloud()
-	local clouds<const> = self.daemon_clouds
-	local start_index<const> = self.daemon_smoke_next
-	for i = 0, flow_daemon_cloud_max - 1 do
-		local index<const> = ((start_index - 1 + i) % flow_daemon_cloud_max) + 1
-		local cloud<const> = clouds[index]
-		if not cloud.visible then
-			cloud:play_once_at(
-				room_tile_origin_x + (math.random(flow_daemon_cloud_spawn_x_min, flow_daemon_cloud_spawn_x_max) * room_tile_size),
-				room_tile_origin_y + (math.random(flow_daemon_cloud_spawn_y_min, flow_daemon_cloud_spawn_y_max) * room_tile_size)
-			)
-			self.daemon_smoke_next = index + 1
-			if self.daemon_smoke_next > flow_daemon_cloud_max then
-				self.daemon_smoke_next = 1
-			end
-			return
-		end
-	end
+function director:spawn_daemon_cloud(index)
+	local position_index<const> = index * 2 - 1
+	self.daemon_clouds[index]:play_once_at(
+		daemon_cloud_positions[position_index],
+		daemon_cloud_positions[position_index + 1]
+	)
 end
 
 function director:despawn_daemon_clouds()
@@ -184,7 +176,7 @@ end
 
 function director:finish_death_restart()
 	if self.castle:finish_death_restart() then
-		return '/daemon_appearance_post_death'
+		return '/daemon_appearance'
 	end
 	return '/room'
 end
@@ -208,30 +200,32 @@ function director:enter_transition(event_name, payload)
 	self.events:emit(event_name, payload)
 end
 
--- Both daemon appearance variants share the same setup; only the after_death flag differs.
--- Use a single helper and navigate to the correct FSM state (daemon_appearance vs
--- daemon_appearance_post_death) instead of storing a cross-state flag on self.
-function director:start_daemon_appearance(after_death)
+function director:start_daemon_appearance()
 	self:set_active_space('main')
 	self:ensure_daemon_cloud_pool()
-	self.daemon_smoke_next = 1
-	if after_death then
-		self.events:emit('daemon_appearance', { after_death = true })
-	else
-		self.events:emit('daemon_appearance')
-	end
+	self.events:emit('daemon_appearance')
+	self.timelines:play(daemon_timeline_id, sequence_play_options)
+end
+
+function director:enter_pause()
+	world:set_gameplay_clock_running(false)
+	self.player:begin_pause_presentation()
+	self.events:emit('pause_entered')
+end
+
+function director:leave_pause()
+	world:set_gameplay_clock_running(true)
+	self.player:finish_pause_presentation()
+	self.events:emit('pause_exited')
 end
 
 function director:ctor()
-	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
-	self.seal_flash_on = false
 	self.death_curtain_width = 0
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
 	local visual<const> = self:get_component(custom_visual_component)
-	visual:set_draw_function(draw_seal_flash)
 	self.visual_component = visual
 	self:ensure_daemon_cloud_pool()
 end
@@ -242,13 +236,9 @@ end
 --                             lithograph, transition) subscribe and self-clear.
 --   'transition'            — director entered transition sub-state. Optional
 --                             { lines = { ... } } payload for banner text.
---   'seal_dissolution'      — starts seal dissolution. Player + projectiles
---                             subscribe to enter /freeze state; they unfreeze
---                             on 'seal_flash_done' (emitted mid-timeline at
---                             frame 32).
---   'seal_flash_done'       — flash phase done; objects may resume.
+--   'seal_dissolution'      — starts the gameplay-suspended flash/dissolve state.
 --   'seal_dissolution_done' — entire dissolution timeline finished.
---   'daemon_appearance'     — optional { after_death = true } payload.
+--   'daemon_appearance'     — begins the fixed daemon-cloud sequence.
 --   'daemon_appearance_done'— daemon cloud timeline ended.
 --   'title_wait'            — post-title MSX startup hold: gameplay space
 --                             still hidden, HUD hidden, gameplay frozen.
@@ -261,32 +251,31 @@ end
 --   'death_screen'          — retained game-over text shown after the curtain.
 --   'title', 'story', 'ending', 'victory_dance' — modal modes.
 --   'f1'                    — item screen opened (audio-only).
+--   'pause_entered'         — room gameplay paused; AEM retains music transport.
+--   'pause_exited'          — pause ended; AEM resumes retained music transport.
 --
 -- REQUEST/REPLY:
 --   'player.shrine_overlay_exit'   → player → reply 'shrine_exit_done'
 --   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
 --   'player.world_emerge'          → player (begins emergence animation)
 local define_director_fsm<const> = function()
-	-- Both daemon states bind the same retained sequence. Sampled cloud output
-	-- belongs to that sequence; only completion remains state-specific.
 	local apply_daemon_frame<const> = function(self, frame_value)
-		local intro_state<const> = (frame_value // 2) + 97
-		if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
-			self:spawn_daemon_cloud()
+		if frame_value <= flow_daemon_cloud_last_spawn_frame
+		and (frame_value % flow_daemon_cloud_spawn_interval_frames) == 0 then
+			self:spawn_daemon_cloud((frame_value // flow_daemon_cloud_spawn_interval_frames) + 1)
 		end
 	end
 	local apply_seal_frame<const> = function(self, frame_value)
-		local intro_state<const> = frame_value + 1
-		self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
-		if self.seal_flash_on then
-			self:add_tag('d.seal.flash')
-		else
+		if frame_value < flow_seal_flash_frames then
+			if (frame_value & 1) == 0 then
+				self:add_tag('d.seal.flash')
+			else
+				self:remove_tag('d.seal.flash')
+			end
+		elseif frame_value == flow_seal_flash_frames then
 			self:remove_tag('d.seal.flash')
 		end
-		self.castle:apply_seal_timeline_frame(intro_state)
-		if intro_state == 32 then
-			self.events:emit('seal_flash_done')
-		end
+		self.castle:apply_seal_timeline_frame(frame_value)
 	end
 	local apply_death_curtain_frame<const> = function(self, frame_value)
 		self.death_curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
@@ -298,15 +287,13 @@ local define_director_fsm<const> = function()
 	end
 
 	fsm_library.register('director', {
-		-- daemon_timeline_id is shared between daemon_appearance and
-		-- daemon_appearance_post_death, so it is registered here at FSM root
-		-- (autoplay = false = registration only). Sample output is compiled into
-		-- the shared definition; each state owns only completion behaviour.
+		clock_source = clock.frame,
 		timelines = {
 			[banner_pre_delay_timeline_id] = {
 				def = {
 					frames = timeline.range(flow_banner_prewait_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 					tracks = {
 						{
 							kind = 'event',
@@ -322,6 +309,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_world_banner_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 					tracks = {
 						{
 							kind = 'event',
@@ -337,6 +325,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_castle_banner_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 					tracks = {
 						{
 							kind = 'event',
@@ -352,6 +341,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_title_start_wait_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 				},
 				autoplay = false,
 			},
@@ -359,6 +349,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_room_switch_wait_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 				},
 				autoplay = false,
 			},
@@ -366,6 +357,7 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_death_curtain_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 					apply = apply_death_curtain_frame,
 				},
 				autoplay = false,
@@ -374,32 +366,21 @@ local define_director_fsm<const> = function()
 				def = {
 					frames = timeline.range(flow_death_screen_frames),
 					playback_mode = 'once',
+					clock_source = timeline_clock_source.frame,
 				},
 				autoplay = false,
 			},
 			[daemon_timeline_id] = {
 				def = {
-					frames = timeline.range(126),
+					frames = timeline.range(flow_daemon_appearance_frames),
 					playback_mode = 'once',
 					apply = apply_daemon_frame,
-					tracks = {
-						{
-							kind = 'tag',
-							name = 'clouds',
-							tag = 'd.daemon.clouds',
-							start = { frame = 0 },
-							['end'] = { frame = 125 },
-						},
-					},
 				},
 				autoplay = false,
 			},
 		},
 		initial = 'boot',
-		-- ROOT ON HANDLERS — global mode-switch triggers.
-		-- These fire regardless of which sub-state the director is in, which is
-		-- exactly how mode transitions work: any game system can request a mode
-		-- change at any time, and the director unconditionally obeys.
+		-- Root handlers own game-flow requests that apply from every director state.
 		on = {
 			['enter_world_start'] = {
 				emitter = 'pietolon',
@@ -443,6 +424,7 @@ local define_director_fsm<const> = function()
 			-- transition overlay clears its banner, etc.
 			room = {
 				entering_state = function(self)
+					world:set_gameplay_clock_running(true)
 					self:despawn_daemon_clouds()
 					self:set_active_space('main')
 					self.events:emit('room')
@@ -463,12 +445,23 @@ local define_director_fsm<const> = function()
 				},
 				input_event_handlers = {
 					{
+						pattern = 'pause[jp]',
+						go = '/pause',
+					},
+					{
 						pattern = 'lb[jp] || rb[jp]',
 						go = function(self)
 							self.events:emit('f1')
 							return '/item_screen'
 						end,
 					},
+				},
+			},
+			pause = {
+				entering_state = director.enter_pause,
+				exiting_state = director.leave_pause,
+				input_event_handlers = {
+					{ pattern = 'pause[jp]', go = '/room' },
 				},
 			},
 			room_switch_wait = {
@@ -502,7 +495,10 @@ local define_director_fsm<const> = function()
 				end,
 			},
 			world_transition_enter = {
-				entering_state = director.begin_world_transition,
+				entering_state = function(self)
+					world:set_gameplay_clock_running(false)
+					self:begin_world_transition()
+				end,
 				on = {
 					['world_banner_requested'] = function(self, _state, event)
 						self.banner_world_number = event.world_number
@@ -511,13 +507,17 @@ local define_director_fsm<const> = function()
 				},
 			},
 			world_transition_leave = {
-				entering_state = director.begin_world_transition,
+				entering_state = function(self)
+					world:set_gameplay_clock_running(false)
+					self:begin_world_transition()
+				end,
 				on = {
 					['room.switched'] = '/banner_transition/castle_emerge_showing',
 				},
 			},
 			world_transition_emerge = {
 				entering_state = function(self)
+					world:set_gameplay_clock_running(false)
 					self:set_active_space('main')
 				end,
 				on = {
@@ -527,49 +527,50 @@ local define_director_fsm<const> = function()
 					},
 				},
 			},
-				-- SHRINE — three-phase compound state (entering → overlay → exiting).
-				-- The shrine transition begins in 'main' space (player walks in),
-				-- switches to 'shrine' space for the overlay text, then back to
-				-- 'main' for the exit animation before returning to room.
-				shrine = {
-					initial = 'entering',
-					states = {
-						entering = {
-							entering_state = function(self)
-								self.events:emit('shrine_transition_enter')
-								self:set_active_space('main')
+			-- SHRINE — three-phase compound state (entering → overlay → exiting).
+			-- The shrine transition begins in 'main' space (player walks in),
+			-- switches to 'shrine' space for the overlay text, then back to
+			-- 'main' for the exit animation before returning to room.
+			shrine = {
+				initial = 'entering',
+				states = {
+					entering = {
+						entering_state = function(self)
+							world:set_gameplay_clock_running(false)
+							self:set_active_space('main')
+						end,
+						on = {
+							['shrine_overlay_requested'] = function(self, _state, event)
+								self.shrine_text_lines = event.lines
+								return '/shrine/overlay'
 							end,
-							on = {
-								['shrine_overlay_requested'] = function(self, _state, event)
-									self.shrine_text_lines = event.lines
-									return '/shrine/overlay'
-								end,
-							},
 						},
-						overlay = {
-							-- Single 'shrine' broadcast carries text lines as payload.
-							-- The shrine overlay reads event.lines in its own handler.
-							entering_state = function(self)
-								local lines<const> = self.shrine_text_lines
-								self.shrine_text_lines = {}
-								self:set_active_space('shrine')
-								self.events:emit('shrine', { lines = lines })
-							end,
-							input_event_handlers = {
-								{ pattern = 'down[jp]', go = '/shrine/exiting' },
-							},
+					},
+					overlay = {
+						-- Single 'shrine' broadcast carries text lines as payload.
+						-- The shrine overlay reads event.lines in its own handler.
+						entering_state = function(self)
+							local lines<const> = self.shrine_text_lines
+							self.shrine_text_lines = {}
+							self:set_active_space('shrine')
+							self.events:emit('shrine', { lines = lines })
+						end,
+						input_event_handlers = {
+							{ pattern = 'down[jp]', go = '/shrine/exiting' },
 						},
-						exiting = {
-							entering_state = function(self)
-								self:set_active_space('main')
-								self.events:emit('player.shrine_overlay_exit')
-							end,
-							on = {
-								['shrine_exit_done'] = '/room',
-							},
+					},
+					exiting = {
+						entering_state = function(self)
+							world:set_gameplay_clock_running(false)
+							self:set_active_space('main')
+							self.events:emit('player.shrine_overlay_exit')
+						end,
+						on = {
+							['shrine_exit_done'] = '/room',
 						},
 					},
 				},
+			},
 			banner_transition = {
 				initial = 'idle',
 				states = {
@@ -787,92 +788,47 @@ local define_director_fsm<const> = function()
 				},
 				tags = { 'd.bt' },
 			},
-			-- SEAL DISSOLUTION — runs a 95-frame timeline that:
-				--   frames 0–31: screen flash phase (white overlay toggles).
-				--     On frame 32: emits 'seal_flash_done' → player + projectiles
-				--     unfreeze (they entered /freeze on 'seal_dissolution').
-				--   frames 31–94: dissolve window (tagged d.seal.dissolve).
-				--   frames 63–94: smoke window (tagged d.seal.smoke).
-				--   on_finished: emits 'seal_dissolution_done' → transitions to daemon_appearance.
-				--
-				-- On entering_state: emits 'seal_dissolution' which is both the
-				-- mode broadcast for renderers and the freeze trigger for player +
-				-- projectiles.  No separate 'seal_breaking' event.
-				seal_dissolution = {
-					timelines = {
-						[seal_timeline_id] = {
-							def = {
-								frames = timeline.range(95),
-								playback_mode = 'once',
-								apply = apply_seal_frame,
-								tracks = {
-									{
-										kind = 'tag',
-										name = 'dissolve',
-										tag = 'd.seal.dissolve',
-										start = { frame = 31 },
-										['end'] = { frame = 94 },
-									},
-									{
-										kind = 'tag',
-										name = 'smoke',
-										tag = 'd.seal.smoke',
-										start = { frame = 63 },
-										['end'] = { frame = 94 },
-									},
-								},
-							},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
+			-- MoG state F stops gameplay for the complete flash and dissolve. The
+			-- authored seal sequence advances on frame time; this remains distinct
+			-- from the game's actual pause state and its player presentation.
+			seal_dissolution = {
+				timelines = {
+					[seal_timeline_id] = {
+						def = {
+							frames = timeline.range(flow_seal_dissolution_frames),
+							playback_mode = 'once',
+							clock_source = timeline_clock_source.frame,
+							apply = apply_seal_frame,
 						},
+						autoplay = false,
+						stop_on_exit = true,
 						on_finished = function(self)
-							self.seal_flash_on = false
 							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
 							return '/daemon_appearance'
 						end,
 					},
-					},
-					tags = { 'd.seal' },
-					entering_state = function(self)
-						self:set_active_space('main')
-						self.seal_flash_on = false
-						self:remove_tag('d.seal.flash')
-						self.events:emit('seal_dissolution')
-					end,
 				},
-			-- Timeline def is at FSM root (shared with daemon_appearance_post_death).
-			-- The definition owns cloud samples; each state owns its completion.
+				entering_state = function(self)
+					self:set_active_space('main')
+					self:remove_tag('d.seal.flash')
+					world:set_gameplay_clock_running(false)
+					self.events:emit('seal_dissolution')
+					self.timelines:play(seal_timeline_id, sequence_play_options)
+				end,
+				exiting_state = function()
+					world:set_gameplay_clock_running(true)
+				end,
+			},
 			daemon_appearance = {
 				timelines = {
 					[daemon_timeline_id] = {
-						autoplay = true,
+						autoplay = false,
 						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
 						on_finished = on_daemon_finished,
 					},
 				},
-				entering_state = function(self)
-					self:start_daemon_appearance(false)
-				end,
-			},
-			-- Same as daemon_appearance but emits after_death=true in the payload.
-			-- Navigated to from death_resolve when restart_daemon is true.
-			daemon_appearance_post_death = {
-				timelines = {
-					[daemon_timeline_id] = {
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
-						on_finished = on_daemon_finished,
-					},
-				},
-				entering_state = function(self)
-					self:start_daemon_appearance(true)
-				end,
+				entering_state = director.start_daemon_appearance,
 			},
 			lithograph = {
 				initial = 'opening',
@@ -883,6 +839,7 @@ local define_director_fsm<const> = function()
 								def = {
 									frames = timeline.range(1),
 									playback_mode = 'once',
+									clock_source = timeline_clock_source.frame,
 								},
 								autoplay = true,
 								stop_on_exit = true,
@@ -901,6 +858,7 @@ local define_director_fsm<const> = function()
 								def = {
 									frames = timeline.range(1),
 									playback_mode = 'once',
+									clock_source = timeline_clock_source.frame,
 								},
 								autoplay = true,
 								stop_on_exit = true,
@@ -979,7 +937,7 @@ local define_director_fsm<const> = function()
 						self.visual_component:set_draw_function(draw_death_curtain)
 					end,
 					exiting_state = function(self)
-						self.visual_component:set_draw_function(draw_seal_flash)
+						self.visual_component:set_draw_function(nil)
 					end,
 				},
 				death_screen = {

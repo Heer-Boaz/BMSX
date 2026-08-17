@@ -171,6 +171,7 @@ void testHostSynchronizationExposesEveryElapsedPalSample() {
 	bmsx::ApuOutputRing& scheduledOutputRing = scheduledOnly.machine.audioController.synchronizeOutput();
 
 	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame);
+	require(hostSynchronized.memory.readIoU32(bmsx::IO_APU_SAMPLE_SEQUENCE) == static_cast<bmsx::u32>(samplesPerPalFrame), "APU sample sequence register should expose the synchronized hardware clock");
 	bmsx::ApuOutputRing& synchronizedOutputRing = hostSynchronized.machine.audioController.synchronizeOutput();
 	require(synchronizedOutputRing.queuedFrames() == static_cast<size_t>(samplesPerPalFrame), "one PAL host boundary should expose every elapsed APU sample");
 	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame * 2);
@@ -644,6 +645,83 @@ void programFilteredSquareVoice(AudioHarness& harness) {
 	harness.audio.onService(0);
 }
 
+void testPauseResumeRetainsVoiceTransportAcrossRestore() {
+	AudioHarness live;
+	auto& liveMemory = live.memory;
+	auto& liveAudio = live.audio;
+	auto& liveScheduler = live.scheduler;
+	writeSquareGeneratorRegisters(live);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	liveAudio.onService(0);
+	liveScheduler.advanceTo(3);
+	liveAudio.onService(3);
+	const bmsx::i64 cursor = liveAudio.captureState().output.voices[0].cursorQ16;
+
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PAUSE_SLOT);
+	liveAudio.onService(3);
+	const bmsx::AudioControllerState paused = liveAudio.captureState();
+	require(paused.slotPhases[1] == (bmsx::APU_SLOT_PHASE_PLAYING | bmsx::APU_SLOT_PHASE_PAUSED),
+		"PAUSE should retain the playing phase and latch the paused phase bit");
+	require(paused.output.voices[0].cursorQ16 == cursor,
+		"PAUSE should retain the exact voice cursor");
+	require(liveMemory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u,
+		"a paused voice should remain resident in the active-slot mask");
+
+	live.output.outputRing.clear();
+	liveScheduler.advanceTo(11);
+	liveAudio.onService(11);
+	const bmsx::AudioControllerState saved = liveAudio.captureState();
+	require(saved.output.voices[0].cursorQ16 == cursor,
+		"the paused voice cursor must not advance with the APU sample clock");
+	require(saved.sampleSequence == 11,
+		"the APU sample clock should continue while a voice is paused");
+	for (int frame = 0; frame < 8; frame += 1) {
+		require(live.output.outputRing.readFramePacked() == 0u,
+			"a paused resident voice should leave the DAC output silent");
+	}
+
+	AudioHarness restored;
+	restored.scheduler.advanceTo(11);
+	restored.audio.restoreState(saved, 11);
+	liveScheduler.advanceTo(15);
+	liveAudio.onService(15);
+	restored.scheduler.advanceTo(15);
+	restored.audio.onService(15);
+	const bmsx::AudioControllerState livePaused = liveAudio.captureState();
+	const bmsx::AudioControllerState restoredPaused = restored.audio.captureState();
+	require(livePaused.output.voices[0].cursorQ16 == cursor
+		&& restoredPaused.output.voices[0].cursorQ16 == cursor,
+		"live and restored paused voices should retain the same cursor");
+	require(restoredPaused.slotPhases == livePaused.slotPhases
+		&& restoredPaused.sampleSequence == livePaused.sampleSequence,
+		"save restore should retain paused slot and sample-clock state");
+
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	liveMemory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_RESUME_SLOT);
+	liveAudio.onService(15);
+	restored.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	restored.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_RESUME_SLOT);
+	restored.audio.onService(15);
+	liveScheduler.advanceTo(19);
+	liveAudio.onService(19);
+	restored.scheduler.advanceTo(19);
+	restored.audio.onService(19);
+	const bmsx::AudioControllerState resumed = liveAudio.captureState();
+	const bmsx::AudioControllerState restoredResumed = restored.audio.captureState();
+	require(resumed.slotPhases[1] == bmsx::APU_SLOT_PHASE_PLAYING,
+		"RESUME should clear only the paused phase bit");
+	require(resumed.output.voices[0].cursorQ16 == cursor + bmsx::APU_RATE_STEP_Q16_ONE,
+		"RESUME should continue from the retained source cursor");
+	require(restoredResumed.output.voices[0].cursorQ16 == resumed.output.voices[0].cursorQ16
+		&& restoredResumed.sampleSequence == resumed.sampleSequence
+		&& restoredResumed.slotPhases == resumed.slotPhases,
+		"restored voice transport should remain exact after RESUME");
+}
+
 void programConstantSquareVoice(AudioHarness& harness, bmsx::ApuAudioSlot slot, bmsx::u32 gainQ12Word) {
 	writeSquareGeneratorRegisters(harness);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, 0u);
@@ -996,6 +1074,7 @@ int main() {
 	testSampleTransferWrongDirectionBlock();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testRawBiquadDatapath();
+	testPauseResumeRetainsVoiceTransportAcrossRestore();
 	testFixedPointMixerVectors();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();

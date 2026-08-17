@@ -3,6 +3,7 @@
 
 local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
 local base_system<const> = require('cartlib/world/base_system')
+local clock<const> = require('cartlib/clock')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 
@@ -11,6 +12,12 @@ local clear_map<const> = require('cartlib/util/clear_map')
 local tile_collision_system<const> = {}
 tile_collision_system.__index = tile_collision_system
 setmetatable(tile_collision_system, { __index = base_system })
+tile_collision_system.tick = {
+	group = tick_group.physics,
+	priority = 45,
+	clock_source = clock.gameplay,
+	method = 'update',
+}
 
 local emit_tilecollision_event<const> = function(owner, component, event_type, phase, collision_key, payload)
 	payload.phase = phase
@@ -21,7 +28,7 @@ local emit_tilecollision_event<const> = function(owner, component, event_type, p
 end
 
 function tile_collision_system.new(world)
-	local self<const> = setmetatable(base_system.new(tick_group.physics, 45), tile_collision_system)
+	local self<const> = setmetatable(base_system.new(tile_collision_system.tick), tile_collision_system)
 	self._component_view = world:active_component_view(tile_collision_component)
 	return self
 end

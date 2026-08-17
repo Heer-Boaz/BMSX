@@ -16,15 +16,18 @@ import {
 	AEM_MUSIC_TRANSITION_ACTION_KEYS,
 	AEM_MODULATION_KEYS,
 	AEM_MUSIC_TRANSITION_KEYS,
+	AEM_PAUSE_MUSIC_ACTION_KEYS,
 	AEM_PLAY_ACTION_KEYS,
 	AEM_POLICY_SET,
 	AEM_RANDOM_ACTION_KEYS,
+	AEM_RESUME_MUSIC_ACTION_KEYS,
 	AEM_RULE_KEYS,
 	AEM_SELECTION_MODE_SET,
 	AEM_SEQUENCE_ACTION_KEYS,
 	AEM_STINGER_SYNC_KEYS,
 	AEM_STOP_MUSIC_ACTION_KEYS,
 	AEM_STOP_MUSIC_KEYS,
+	AEM_EMPTY_ACTION_KEYS,
 	AEM_SYNC_MODE_SET,
 } from './aem_contract';
 import { cookAemFilter, type AemFilterDefinition, type AemFilterWords } from './aem_filter';
@@ -125,6 +128,14 @@ type CookedStopMusicAction = {
 	fade_samples: number;
 };
 
+type CookedPauseMusicAction = {
+	kind: 'pause_music';
+};
+
+type CookedResumeMusicAction = {
+	kind: 'resume_music';
+};
+
 type CookedSequenceAction = {
 	kind: 'sequence';
 	actions: CookedAction[];
@@ -157,6 +168,8 @@ type CookedMusicTransitionAction = {
 
 type CookedAction = CookedPlayAction
 	| CookedStopMusicAction
+	| CookedPauseMusicAction
+	| CookedResumeMusicAction
 	| CookedSequenceAction
 	| CookedRandomUniformAction
 	| CookedRandomWeightedAction
@@ -528,6 +541,12 @@ function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup
 			fade_samples: (stopMusic.fade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
 		};
 	}
+	if (action.pause_music !== undefined) {
+		return { kind: 'pause_music' };
+	}
+	if (action.resume_music !== undefined) {
+		return { kind: 'resume_music' };
+	}
 
 	const sequence = action.sequence as Array<Record<string, unknown>> | undefined;
 	if (sequence !== undefined) {
@@ -715,6 +734,8 @@ function validateActionSpec(
 	const actionObject = action as Record<string, unknown>;
 	let commandCount = 0;
 	if (actionObject.stop_music !== undefined) commandCount += 1;
+	if (actionObject.pause_music !== undefined) commandCount += 1;
+	if (actionObject.resume_music !== undefined) commandCount += 1;
 	if (actionObject.sequence !== undefined) commandCount += 1;
 	if (actionObject.music_transition !== undefined) commandCount += 1;
 	if (actionObject.one_of !== undefined) commandCount += 1;
@@ -722,6 +743,8 @@ function validateActionSpec(
 	let actionKeys = AEM_ACTION_KEYS;
 	if (commandCount === 1) {
 		if (actionObject.stop_music !== undefined) actionKeys = AEM_STOP_MUSIC_ACTION_KEYS;
+		else if (actionObject.pause_music !== undefined) actionKeys = AEM_PAUSE_MUSIC_ACTION_KEYS;
+		else if (actionObject.resume_music !== undefined) actionKeys = AEM_RESUME_MUSIC_ACTION_KEYS;
 		else if (actionObject.sequence !== undefined) actionKeys = AEM_SEQUENCE_ACTION_KEYS;
 		else if (actionObject.music_transition !== undefined) actionKeys = AEM_MUSIC_TRANSITION_ACTION_KEYS;
 		else if (actionObject.one_of !== undefined) actionKeys = AEM_RANDOM_ACTION_KEYS;
@@ -729,7 +752,7 @@ function validateActionSpec(
 	}
 	checkUnknownKeys(actionObject, actionKeys, where, errors);
 	if (commandCount !== 1) {
-		errors.push(`Invalid action command at ${where}: expected exactly one of audio_id, stop_music, sequence, music_transition, one_of`);
+		errors.push(`Invalid action command at ${where}: expected exactly one of audio_id, stop_music, pause_music, resume_music, sequence, music_transition, one_of`);
 	}
 	const stopMusic = actionObject.stop_music;
 	if (stopMusic !== undefined) {
@@ -742,6 +765,24 @@ function validateActionSpec(
 		if (fadeMs !== undefined && (typeof fadeMs !== 'number' || fadeMs < 0)) {
 			errors.push(`Invalid stop_music.fade_ms '${fadeMs}' at ${where}: expected number >= 0`);
 		}
+		return;
+	}
+	const pauseMusic = actionObject.pause_music;
+	if (pauseMusic !== undefined) {
+		if (!pauseMusic || typeof pauseMusic !== 'object' || Array.isArray(pauseMusic)) {
+			errors.push(`Invalid pause_music at ${where}: expected object`);
+			return;
+		}
+		checkUnknownKeys(pauseMusic as Record<string, unknown>, AEM_EMPTY_ACTION_KEYS, `${where}.pause_music`, errors);
+		return;
+	}
+	const resumeMusic = actionObject.resume_music;
+	if (resumeMusic !== undefined) {
+		if (!resumeMusic || typeof resumeMusic !== 'object' || Array.isArray(resumeMusic)) {
+			errors.push(`Invalid resume_music at ${where}: expected object`);
+			return;
+		}
+		checkUnknownKeys(resumeMusic as Record<string, unknown>, AEM_EMPTY_ACTION_KEYS, `${where}.resume_music`, errors);
 		return;
 	}
 	const sequence = actionObject.sequence;

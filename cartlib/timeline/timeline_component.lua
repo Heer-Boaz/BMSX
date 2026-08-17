@@ -1,4 +1,5 @@
 local base_component<const> = require('cartlib/component/base_component')
+local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_program<const> = require('cartlib/timeline/program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
@@ -11,39 +12,60 @@ timeline_component.__index = timeline_component
 timeline_component.unique = true
 setmetatable(timeline_component, { __index = base_component })
 
--- Component enablement and frame scheduling are separate. First auto-tick
--- admission publishes this component to the retained tick view; removing the
--- final entry removes only that tick membership, while the attached component
--- remains active and addressable.
-local reconcile_timeline_schedule<const> = function(self, entry)
+local tick_lane_member_by_clock_source<const> = {
+	[timeline_clock_source.gameplay] = '_gameplay_tick_lane',
+	[timeline_clock_source.frame] = '_frame_tick_lane',
+	[timeline_clock_source.platform] = '_platform_tick_lane',
+	[timeline_clock_source.audio] = '_audio_tick_lane',
+}
+
+local remove_timeline_schedule<const> = function(self, entry)
 	local tick_index<const> = entry.tick_index
-	if entry.playing and entry.program.auto_tick then
-		if tick_index ~= nil then
-			return
-		end
-		local tick_count<const> = self._tick_count + 1
-		self._tick_count = tick_count
-		self._tick_entries[tick_count] = entry
-		entry.tick_index = tick_count
-		if tick_count == 1 then
-			self:set_tick_enabled(true)
-		end
-		return
-	end
 	if tick_index == nil then
 		return
 	end
-	local tick_count<const> = self._tick_count
-	local last_entry<const> = self._tick_entries[tick_count]
-	self._tick_entries[tick_count] = nil
-	self._tick_count = tick_count - 1
+	local lane<const> = entry.tick_lane
+	local tick_count<const> = lane.count
+	local last_entry<const> = lane[tick_count]
+	lane[tick_count] = nil
+	lane.count = tick_count - 1
 	entry.tick_index = nil
+	entry.tick_lane = nil
 	if tick_index < tick_count then
-		self._tick_entries[tick_index] = last_entry
+		lane[tick_index] = last_entry
 		last_entry.tick_index = tick_index
 	end
 	if tick_count == 1 then
-		self:set_tick_enabled(false)
+		self:set_tick_clock_enabled(lane.clock_source, false)
+	end
+end
+
+-- Each playing entry is admitted directly to its program's clock lane. A
+-- component may therefore own gameplay animation and an independently running
+-- modal sequence without either lane inspecting the other on every frame.
+local reconcile_timeline_schedule<const> = function(self, entry)
+	if not entry.playing or not entry.program.auto_tick then
+		remove_timeline_schedule(self, entry)
+		return
+	end
+	local clock_source<const> = entry.program.clock_source
+	local lane_member<const> = tick_lane_member_by_clock_source[clock_source]
+	local lane = self[lane_member]
+	if lane == nil then
+		lane = { clock_source = clock_source, count = 0 }
+		self[lane_member] = lane
+	end
+	if entry.tick_lane == lane then
+		return
+	end
+	remove_timeline_schedule(self, entry)
+	local tick_count<const> = lane.count + 1
+	lane.count = tick_count
+	lane[tick_count] = entry
+	entry.tick_index = tick_count
+	entry.tick_lane = lane
+	if tick_count == 1 then
+		self:set_tick_clock_enabled(clock_source, true)
 	end
 end
 
@@ -87,10 +109,7 @@ end
 
 function timeline_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), timeline_component)
-	self._tick_enabled = false
 	self._entries_by_id = {}
-	self._tick_entries = {}
-	self._tick_count = 0
 	return self
 end
 
@@ -128,6 +147,7 @@ function timeline_component:define(id, definition)
 	local playing<const> = entry.playing
 	if playing then
 		clear_entry_state(entry, self.parent)
+		remove_timeline_schedule(self, entry)
 	end
 	if playing and program.frame_builder ~= nil then
 		program = timeline_frame_program.build(program, entry.params)
@@ -307,16 +327,64 @@ function timeline_component:stop(id)
 	reconcile_timeline_schedule(self, entry)
 end
 
-function timeline_component:tick_active(delta_time)
-	local entries<const> = self._tick_entries
+function timeline_component:tick_gameplay(delta_time)
+	local entries<const> = self._gameplay_tick_lane
 	local owner<const> = self.parent
-	local count = self._tick_count
+	local count = entries.count
 	local index = 1
 	while index <= count do
 		local entry<const> = entries[index]
 		if entry:update(owner, delta_time) then
 			finish_entry(self, entry)
-			count = self._tick_count
+			count = entries.count
+		else
+			index = index + 1
+		end
+	end
+end
+
+function timeline_component:tick_frame(delta_time)
+	local entries<const> = self._frame_tick_lane
+	local owner<const> = self.parent
+	local count = entries.count
+	local index = 1
+	while index <= count do
+		local entry<const> = entries[index]
+		if entry:update(owner, delta_time) then
+			finish_entry(self, entry)
+			count = entries.count
+		else
+			index = index + 1
+		end
+	end
+end
+
+function timeline_component:tick_platform(delta_time)
+	local entries<const> = self._platform_tick_lane
+	local owner<const> = self.parent
+	local count = entries.count
+	local index = 1
+	while index <= count do
+		local entry<const> = entries[index]
+		if entry:update(owner, delta_time) then
+			finish_entry(self, entry)
+			count = entries.count
+		else
+			index = index + 1
+		end
+	end
+end
+
+function timeline_component:tick_audio(delta_time)
+	local entries<const> = self._audio_tick_lane
+	local owner<const> = self.parent
+	local count = entries.count
+	local index = 1
+	while index <= count do
+		local entry<const> = entries[index]
+		if entry:update(owner, delta_time) then
+			finish_entry(self, entry)
+			count = entries.count
 		else
 			index = index + 1
 		end

@@ -44,6 +44,7 @@ import {
 
 type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 	active: boolean;
+	resident: boolean;
 	channels: number;
 	bitsPerSample: number;
 	sourceBytes: Uint8Array;
@@ -81,6 +82,7 @@ export class ApuOutputMixer {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
 			this.voices[slot] = {
 				active: false,
+				resident: false,
 				slot,
 				sourceCartridgeSlot: 0,
 				channels: 0,
@@ -116,7 +118,9 @@ export class ApuOutputMixer {
 
 	public resetPlaybackState(): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.voices[slot]!.active = false;
+			const record = this.voices[slot]!;
+			record.active = false;
+			record.resident = false;
 		}
 		this.outputRing.clear();
 	}
@@ -125,7 +129,7 @@ export class ApuOutputMixer {
 		const voices: ApuOutputVoiceState[] = [];
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
 			const record = this.voices[slot]!;
-			if (record.active) {
+			if (record.resident) {
 				voices.push(captureApuOutputVoiceState(record));
 			}
 		}
@@ -155,6 +159,8 @@ export class ApuOutputMixer {
 		record.fadeError = 0;
 		record.fadeSamplesRemaining = 0;
 		record.fadeSamplesTotal = 0;
+		record.resident = true;
+		record.active = true;
 	}
 
 	public replaceVoiceSource(
@@ -187,6 +193,7 @@ export class ApuOutputMixer {
 		record.filter.reset();
 		this.configureRecordFilter(record, registerWords);
 		restoreApuOutputVoiceState(record, state);
+		record.resident = true;
 		record.active = true;
 	}
 
@@ -222,16 +229,28 @@ export class ApuOutputMixer {
 
 	public stopSlot(slot: ApuAudioSlot, fadeSamples = 0): void {
 		const record = this.voices[slot]!;
-		if (fadeSamples !== 0 && record.active) {
+		if (fadeSamples !== 0 && record.resident) {
 			this.configureFade(record, fadeSamples);
 			return;
 		}
 		record.active = false;
+		record.resident = false;
+	}
+
+	public pauseSlot(slot: ApuAudioSlot): void {
+		this.voices[slot]!.active = false;
+	}
+
+	public resumeSlot(slot: ApuAudioSlot): void {
+		const record = this.voices[slot]!;
+		record.active = record.resident;
 	}
 
 	public stopAllVoices(): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.voices[slot]!.active = false;
+			const record = this.voices[slot]!;
+			record.active = false;
+			record.resident = false;
 		}
 	}
 
@@ -416,6 +435,7 @@ export class ApuOutputMixer {
 			record.fadeSamplesRemaining = fadeRemaining;
 			if (ended) {
 				record.active = false;
+				record.resident = false;
 				endedMask |= 1 << slot;
 			}
 		}
@@ -440,7 +460,6 @@ export class ApuOutputMixer {
 		cursorQ16: number,
 		phaseRemainder: number,
 	): void {
-		record.active = true;
 		record.sourceCartridgeSlot = sourceBytes.cartridgeSlot;
 		record.channels = source.channels;
 		record.bitsPerSample = source.bitsPerSample;

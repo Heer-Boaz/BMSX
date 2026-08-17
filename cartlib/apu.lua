@@ -45,12 +45,14 @@ end
 
 local apu<const> = {}
 local output_sample_rate_hz<const> = 0x0000ac44
+local output_sample_milliseconds<const> = 1000 / output_sample_rate_hz
 local filter_coefficient_one<const> = 0x00004000
 local badp_no_loop<const> = 0xffffffff
 
 local command_registers<const>: *apu_command_registers = 0x08000120
 local transfer_address<const>: *word = 0x080001e8
 local transfer_control<const>: *word = 0x080001f0
+local sample_sequence<const>: *word = 0x0801044c
 local transfer_mode_stop<const> = 0x00000000
 local transfer_mode_dma_write<const> = 0x00000002
 local transfer_mode_dma_read<const> = 0x00000003
@@ -81,6 +83,21 @@ end
 
 function apu.ms_to_samples(ms)
 	return ms * output_sample_rate_hz / 1000
+end
+
+-- The APU publishes the low word of its retained output-sample sequence. Its
+-- wrap period exceeds 27 hours; shorter audio-clock intervals use the unsigned
+-- sample distance and convert once at the timeline-system boundary.
+function apu.sample_sequence()
+	return *sample_sequence
+end
+
+function apu.elapsed_milliseconds(start_sample, current_sample)
+	local elapsed<const> = current_sample - start_sample
+	if elapsed < 0 then
+		return (elapsed + 0x100000000) * output_sample_milliseconds
+	end
+	return elapsed * output_sample_milliseconds
 end
 
 function apu.source(record)
@@ -168,6 +185,16 @@ function apu.set_slot_gain(slot, gain_q12)
 	command_registers->slot = slot
 	command_registers->gain_q12 = gain_q12
 	command_registers->cmd = 0x00000003
+end
+
+function apu.pause_slot(slot)
+	command_registers->slot = slot
+	command_registers->cmd = 0x00000004
+end
+
+function apu.resume_slot(slot)
+	command_registers->slot = slot
+	command_registers->cmd = 0x00000005
 end
 
 return apu

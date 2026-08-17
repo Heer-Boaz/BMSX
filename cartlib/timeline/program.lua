@@ -1,4 +1,5 @@
 local clock<const> = require('cartlib/clock')
+local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_evaluation_program<const> = require('cartlib/timeline/evaluation_program')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_playback<const> = require('cartlib/timeline/playback')
@@ -54,6 +55,10 @@ function timeline_program.compile(definition)
 	if auto_tick == nil then
 		auto_tick = continuous or frame_duration ~= 0
 	end
+	local clock_source<const> = definition.clock_source or timeline_clock_source.gameplay
+	if clock_source == timeline_clock_source.manual then
+		auto_tick = false
+	end
 	local frame_builder
 	if type(frame_source) == 'function' then
 		frame_builder = frame_source
@@ -83,6 +88,7 @@ function timeline_program.compile(definition)
 		playback_mode = playback_mode,
 		continuous = continuous,
 		auto_tick = auto_tick,
+		clock_source = clock_source,
 		duration_ms = definition.duration_ms,
 		binding_ids = binding_ids,
 		binding_index_by_id = binding_index_by_id,

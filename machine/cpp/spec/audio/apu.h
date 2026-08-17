@@ -26,6 +26,8 @@ constexpr u32 APU_CMD_NONE = 0u;
 constexpr u32 APU_CMD_PLAY = 1u;
 constexpr u32 APU_CMD_STOP_SLOT = 2u;
 constexpr u32 APU_CMD_SET_SLOT_GAIN = 3u;
+constexpr u32 APU_CMD_PAUSE_SLOT = 4u;
+constexpr u32 APU_CMD_RESUME_SLOT = 5u;
 
 constexpr u32 APU_SLOT_COUNT = 16u;
 constexpr u32 APU_SLOT_INDEX_MASK = APU_SLOT_COUNT - 1u;

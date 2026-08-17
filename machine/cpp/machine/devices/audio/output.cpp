@@ -31,6 +31,7 @@ ApuOutputMixer::ApuOutputMixer() {
 void ApuOutputMixer::resetPlaybackState() {
 	for (VoiceRecord& record : m_voices) {
 		record.active = false;
+		record.resident = false;
 	}
 	outputRing.clear();
 }
@@ -58,6 +59,8 @@ void ApuOutputMixer::playVoice(
 	record.fadeError = 0u;
 	record.fadeSamplesRemaining = 0u;
 	record.fadeSamplesTotal = 0u;
+	record.resident = true;
+	record.active = true;
 }
 
 void ApuOutputMixer::replaceVoiceSource(
@@ -97,6 +100,7 @@ void ApuOutputMixer::restoreVoice(
 	record.filter.reset();
 	configureRecordFilter(record, registerWords);
 	restoreApuOutputVoiceState(record, state);
+	record.resident = true;
 	record.active = true;
 }
 
@@ -137,16 +141,27 @@ void ApuOutputMixer::writeSlotRegisterWord(
 
 void ApuOutputMixer::stopSlot(ApuAudioSlot slot, u32 fadeSamples) {
 	VoiceRecord& record = m_voices[slot];
-	if (fadeSamples != 0u && record.active) {
+	if (fadeSamples != 0u && record.resident) {
 		configureFade(record, fadeSamples);
 		return;
 	}
 	record.active = false;
+	record.resident = false;
+}
+
+void ApuOutputMixer::pauseSlot(ApuAudioSlot slot) {
+	m_voices[slot].active = false;
+}
+
+void ApuOutputMixer::resumeSlot(ApuAudioSlot slot) {
+	VoiceRecord& record = m_voices[slot];
+	record.active = record.resident;
 }
 
 void ApuOutputMixer::stopAllVoices() {
 	for (VoiceRecord& record : m_voices) {
 		record.active = false;
+		record.resident = false;
 	}
 }
 
@@ -337,6 +352,7 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 		record.fadeSamplesRemaining = fadeRemaining;
 		if (ended) {
 			record.active = false;
+			record.resident = false;
 			endedMask |= 1u << slot;
 		}
 	}
@@ -369,7 +385,6 @@ void ApuOutputMixer::buildVoiceFromData(
 		record.badpSeekTable.byteOffset = 0u;
 		record.badpSeekTable.entryCount = 0u;
 	}
-	record.active = true;
 	record.sourceCartridgeSlot = sourceBytes.cartridgeSlot;
 	record.channels = source.channels;
 	record.bitsPerSample = source.bitsPerSample;

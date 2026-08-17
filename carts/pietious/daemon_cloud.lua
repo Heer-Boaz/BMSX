@@ -9,6 +9,10 @@ local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud
 
 local anim_timeline_id<const> = 'daemon_cloud.anim'
+local anim_play_options<const> = {
+	rewind = true,
+	snap_to_start = true,
+}
 
 function daemon_cloud:ctor()
 	self.visible = false
@@ -19,8 +23,7 @@ function daemon_cloud:play_once_at(x, y)
 	self.y = y
 	self:set_z(23)
 	self.visible = true
-	self:set_imgid('daemon_smoke_small')
-	self.timelines:play(anim_timeline_id, { rewind = true, snap_to_start = true })
+	self.timelines:play(anim_timeline_id, anim_play_options)
 end
 
 function daemon_cloud:stop_and_hide()
@@ -37,10 +40,10 @@ local define_daemon_cloud_fsm<const> = function()
 					[anim_timeline_id] = {
 						def = {
 							frames = timeline.build_frame_sequence({
-								{ value = 'daemon_smoke_small', hold = 16 },
-								{ value = 'daemon_smoke_large', hold = 16 },
-								{ value = 'daemon_smoke_small', hold = 16 },
-								{ value = 'daemon_smoke_large', hold = 16 },
+								{ value = 'daemon_smoke_small', hold = 5 },
+								{ value = 'daemon_smoke_large', hold = 5 },
+								{ value = 'daemon_smoke_small', hold = 5 },
+								{ value = 'daemon_smoke_large', hold = 5 },
 							}),
 							playback_mode = 'once',
 							apply = sprite_object.set_imgid,

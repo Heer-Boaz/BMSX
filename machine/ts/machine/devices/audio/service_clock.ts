@@ -1,4 +1,5 @@
 import {
+	IO_APU_SAMPLE_SEQUENCE,
 	IO_APU_TRANSFER_ADDRESS,
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
@@ -39,11 +40,17 @@ export class ApuServiceClock {
 		private readonly audioOutput: ApuOutputMixer,
 	) {
 		this.sampleTransfer = new ApuSampleTransfer(memory, sampleMemory, dma, scheduler);
+		memory.mapIoRead(IO_APU_SAMPLE_SEQUENCE, this, ApuServiceClock.sampleSequenceReadThunk);
 		memory.mapIoWrite(IO_APU_TRANSFER_ADDRESS, this, ApuServiceClock.transferAddressWriteThunk);
 		memory.mapIoRead(IO_APU_TRANSFER_DATA, this, ApuServiceClock.transferDataReadThunk);
 		memory.mapIoWrite(IO_APU_TRANSFER_DATA, this, ApuServiceClock.transferDataWriteThunk);
 		memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, ApuServiceClock.transferDataWriteReadyThunk);
 		memory.mapIoWrite(IO_APU_TRANSFER_CONTROL, this, ApuServiceClock.transferControlWriteThunk);
+	}
+
+	private static sampleSequenceReadThunk(context: ApuServiceClock): number {
+		context.synchronize(context.scheduler.currentNowCycles());
+		return context.sampleSequence >>> 0;
 	}
 
 	public reset(nowCycles: number): void {

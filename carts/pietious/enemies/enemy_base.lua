@@ -38,29 +38,11 @@ function enemy_base.setup_projectile_boundary(self)
 	}))
 end
 
-function enemy_base.on_space_event(self, event_type)
-	if event_type == 'shrine_transition_enter' then
-		self:set_space('transition')
-	else
-		self:set_space('main')
-	end
-end
-
 function enemy_base.bind_lifecycle(self)
-	self.events:on({
-		event = 'shrine_transition_enter',
-		emitter = 'd',
-		handler = enemy_base.on_space_event,
-	})
 	self.events:on({
 		event = 'world_transition',
 		emitter = 'd',
 		handler = self.mark_for_disposal,
-	})
-	self.events:on({
-		event = 'room',
-		emitter = 'd',
-		handler = enemy_base.on_space_event,
 	})
 
 	if self:get_component(screen_boundary_component) ~= nil then

@@ -22,17 +22,19 @@ local symbols<const> = {
 	systems = generated_symbol('systems'),
 }
 
-local append_group<const> = function(body, system_symbols, first, last, delta_time)
+local append_group<const> = function(body, system_symbols, tick_functions, first, last, delta_time)
 	body[#body + 1] = call_statement(call_expression(
 		reference(symbols.world),
 		{},
 		'_open_mutation_barrier'
 	))
-	for system_index = first, last do
+	for tick_index = first, last do
+		local tick_function<const> = tick_functions[tick_index]
+		local definition<const> = tick_function.definition
 		body[#body + 1] = call_statement(call_expression(
-			reference(system_symbols[system_index]),
+			reference(system_symbols[tick_function.system_index]),
 			{ numeric_literal(delta_time) },
-			'update'
+			definition.method
 		))
 	end
 	body[#body + 1] = if_statement({
@@ -47,7 +49,27 @@ local append_group<const> = function(body, system_symbols, first, last, delta_ti
 	})
 end
 
-function system_schedule_syntax.build(systems, delta_time)
+local build_runner<const> = function(system_symbols, tick_functions, delta_time)
+	local body<const> = {}
+	local first = 1
+	while first <= #tick_functions do
+		local group<const> = tick_functions[first].definition.group
+		local last = first
+		while last < #tick_functions and tick_functions[last + 1].definition.group == group do
+			last = last + 1
+		end
+		append_group(body, system_symbols, tick_functions, first, last, delta_time)
+		first = last + 1
+	end
+	return function_expression({}, block(body))
+end
+
+function system_schedule_syntax.build(
+	systems,
+	update_with_gameplay,
+	update_without_gameplay,
+	delta_time
+)
 	local system_count<const> = #systems
 	local system_symbols<const> = {}
 	local factory_body<const> = {}
@@ -61,26 +83,9 @@ function system_schedule_syntax.build(systems, delta_time)
 		)
 	end
 
-	local runner_body<const> = {}
-	local first_system_index = 1
-	while first_system_index <= system_count do
-		local group<const> = systems[first_system_index].group
-		local last_system_index = first_system_index
-		while last_system_index < system_count
-		and systems[last_system_index + 1].group == group do
-			last_system_index = last_system_index + 1
-		end
-		append_group(
-			runner_body,
-			system_symbols,
-			first_system_index,
-			last_system_index,
-			delta_time
-		)
-		first_system_index = last_system_index + 1
-	end
 	factory_body[#factory_body + 1] = return_statement({
-		function_expression({}, block(runner_body)),
+		build_runner(system_symbols, update_with_gameplay, delta_time),
+		build_runner(system_symbols, update_without_gameplay, delta_time),
 	})
 	return syntax_factory.chunk(block({
 		return_statement({

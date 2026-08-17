@@ -6,7 +6,9 @@ import { test } from 'node:test';
 import { readLE32, writeLE16, writeLE32 } from '../../machine/ts/common/endian';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
+	APU_CMD_PAUSE_SLOT,
 	APU_CMD_PLAY,
+	APU_CMD_RESUME_SLOT,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_EVENT_SLOT_ENDED,
@@ -53,6 +55,7 @@ import {
 import {
 	APU_SLOT_PHASE_FADING,
 	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PAUSED,
 	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import {
@@ -80,6 +83,7 @@ import {
 	IO_APU_GENERATOR_KIND,
 	IO_APU_PARAMETER_REGISTER_ADDRS,
 	IO_APU_RATE_STEP_Q16,
+	IO_APU_SAMPLE_SEQUENCE,
 	IO_APU_STATUS,
 	IO_APU_START_SAMPLE,
 	IO_APU_SOURCE_ADDR,
@@ -196,6 +200,8 @@ function createAudioHarness(): { memory: Memory; audio: AudioController; dma: Dm
 		stopAllVoices: () => {},
 		resetPlaybackState: () => {},
 		stopSlot: () => {},
+		pauseSlot: () => {},
+		resumeSlot: () => {},
 		captureState: (): ApuOutputState => ({ voices: [] }),
 		restoreVoice: () => {},
 		samplesUntilNextEvent: (limit: number) => limit,
@@ -273,6 +279,8 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 			stoppedFadeSamples = fadeSamples;
 			return slotActive;
 		},
+		pauseSlot: () => {},
+		resumeSlot: () => {},
 		captureState: (): ApuOutputState => ({
 			voices: activeVoice === null ? [] : [createFakeOutputVoiceState(activeVoice)],
 		}),
@@ -296,6 +304,8 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_CMD_PLAY, 1);
 	assert.equal(APU_CMD_STOP_SLOT, 2);
 	assert.equal(APU_CMD_SET_SLOT_GAIN, 3);
+	assert.equal(APU_CMD_PAUSE_SLOT, 4);
+	assert.equal(APU_CMD_RESUME_SLOT, 5);
 	assert.equal(APU_SAMPLE_RATE_HZ, 44100);
 	assert.equal(APU_STATUS_FAULT, 1);
 	assert.equal(APU_STATUS_SELECTED_SLOT_ACTIVE, 2);
@@ -306,6 +316,7 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_SLOT_INDEX_MASK, 15);
 	assert.equal(APU_SLOT_PHASE_PLAYING, 1);
 	assert.equal(APU_SLOT_PHASE_FADING, 2);
+	assert.equal(APU_SLOT_PHASE_PAUSED, 4);
 	assert.equal(APU_FAULT_SOURCE_RANGE, 0x0102);
 	assert.equal(APU_FAULT_UNSUPPORTED_FORMAT, 0x0201);
 	assert.equal(APU_FILTER_CONTROL_ENABLE, 1);
@@ -1094,6 +1105,51 @@ test('APU machine clock advances voices and emits END without host pulls', () =>
 	assert.equal(harness.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_APU, IRQ_APU);
 });
 
+test('APU PAUSE and RESUME retain the exact voice transport across save restore', () => {
+	const live = createRealAudioHarness();
+	beginLongPcmVoice(live);
+	advanceRealApu(live, 3);
+	const cursor = live.audio.captureState().output.voices[0]!.cursorQ16;
+
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PAUSE_SLOT);
+	live.audio.onService(3);
+	const paused = live.audio.captureState();
+	assert.equal(paused.slotPhases[1], APU_SLOT_PHASE_PLAYING | APU_SLOT_PHASE_PAUSED);
+	assert.equal(paused.output.voices[0]!.cursorQ16, cursor);
+	assert.equal(live.memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
+
+	live.audioOutput.outputRing.clear();
+	advanceRealApu(live, 11);
+	const saved = live.audio.captureState();
+	assert.equal(saved.output.voices[0]!.cursorQ16, cursor);
+	assert.equal(saved.sampleSequence, 11);
+	for (let frame = 0; frame < 8; frame += 1) {
+		assert.equal(live.audioOutput.outputRing.readFramePacked(), 0);
+	}
+
+	const restored = restoreRealAudioHarness(saved, 11);
+	advanceRealApu(live, 15);
+	advanceRealApu(restored, 15);
+	const livePaused = live.audio.captureState();
+	const restoredPaused = restored.audio.captureState();
+	assert.equal(livePaused.output.voices[0]!.cursorQ16, cursor);
+	assert.deepEqual(restoredPaused, livePaused);
+
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_CMD, APU_CMD_RESUME_SLOT);
+	live.audio.onService(15);
+	restored.memory.writeMappedWord(IO_APU_SLOT, 1);
+	restored.memory.writeMappedWord(IO_APU_CMD, APU_CMD_RESUME_SLOT);
+	restored.audio.onService(15);
+	advanceRealApu(live, 19);
+	advanceRealApu(restored, 19);
+	const resumed = live.audio.captureState();
+	assert.equal(resumed.slotPhases[1], APU_SLOT_PHASE_PLAYING);
+	assert.equal(resumed.output.voices[0]!.cursorQ16, cursor + 4 * APU_RATE_STEP_Q16_ONE);
+	assert.deepEqual(restored.audio.captureState(), resumed);
+});
+
 test('machine capture includes an APU END interrupt materialized at the capture cycle', () => {
 	const runtimeMachine = createAudioMachine();
 	writeValidSourceRegisters(runtimeMachine.memory);
@@ -1146,6 +1202,7 @@ test('APU host synchronization exposes every elapsed PAL sample without changing
 	const scheduledOutputRing = scheduledOnly.audio.synchronizeOutput();
 
 	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame);
+	assert.equal(hostSynchronized.memory.readIoU32(IO_APU_SAMPLE_SEQUENCE), samplesPerPalFrame);
 	const synchronizedOutputRing = hostSynchronized.audio.synchronizeOutput();
 	assert.equal(synchronizedOutputRing.queuedFrames(), samplesPerPalFrame);
 	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame * 2);

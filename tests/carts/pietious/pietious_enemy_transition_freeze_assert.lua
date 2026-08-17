@@ -27,10 +27,37 @@ function __bmsx_host_test.update()
 		if world.active_space_id ~= 'main' then return false end
 		local enemy<const> = registry:get(test.enemy_id)
 		assert(enemy ~= nil, 'enemy missing before shrine')
-		director.events:emit('shrine_transition_enter')
-		assert(enemy.space_id == 'transition', 'shrine event did not freeze enemy; space=' .. tostring(enemy.space_id))
-		director.events:emit('room')
-		assert(enemy.space_id == 'main', 'room did not restore enemy')
+		test.enemy_x = enemy.x
+		test.enemy_y = enemy.y
+		player:begin_entering_shrine({ x = player.x, text_lines = { 'TEST' } })
+		test.phase = 'shrine_enter'
+		return false
+	end
+	if test.phase == 'shrine_enter' then
+		local enemy<const> = registry:get(test.enemy_id)
+		if world.active_space_id == 'main' then
+			assert(not world.gameplay_clock_running,
+				'gameplay clock advanced during shrine entry')
+			assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
+				'enemy moved during shrine entry')
+			return false
+		end
+		assert(world.active_space_id == 'shrine', 'shrine overlay did not become active')
+		assert(not world.gameplay_clock_running,
+			'gameplay clock resumed while the frame-clock shrine controller was active')
+		test.phase = 'shrine_exit'
+		return host.press('ArrowDown', 2)
+	end
+	if test.phase == 'shrine_exit' then
+		if world.active_space_id == 'shrine' then
+			return false
+		end
+		local enemy<const> = registry:get(test.enemy_id)
+		if not world.gameplay_clock_running then
+			assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
+				'enemy moved during shrine exit')
+			return false
+		end
 		director.events:emit('world_transition')
 		assert(registry:get(test.enemy_id) == nil, 'world transition did not retire the previous-room enemy')
 		castle:enter_world('world_1')

@@ -426,9 +426,6 @@ void LibretroInput::postKeyboardEvent(unsigned keycode, bool down) {
 	m_keyboard_usage_words[word] = down
 		? m_keyboard_usage_words[word] | mask
 		: m_keyboard_usage_words[word] & ~mask;
-	if (usage == HID_USAGE_F2) {
-		m_keyboard_supervisor_request_high = down;
-	}
 }
 
 void LibretroInput::reset() {
@@ -448,7 +445,6 @@ void LibretroInput::reset() {
 	m_pointer_wheel_q16 = 0u;
 	m_pointer_position_valid = false;
 	m_host_supervisor_request_high = false;
-	m_keyboard_supervisor_request_high = false;
 }
 
 } // namespace bmsx

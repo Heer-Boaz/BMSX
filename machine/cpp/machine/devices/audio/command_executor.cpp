@@ -58,6 +58,9 @@ void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state) {
 		m_slotRegisterDispatchWords,
 		state
 	);
+	if ((m_slots.phase(slot) & APU_SLOT_PHASE_PAUSED) != 0u) {
+		m_audioOutput.pauseSlot(slot);
+	}
 }
 
 u32 ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusSignals) {
@@ -89,6 +92,12 @@ void ApuCommandExecutor::executeCommand(u32 command, const ApuParameterRegisterW
 		case APU_CMD_SET_SLOT_GAIN:
 			setSlotGain(registerWords);
 			return;
+		case APU_CMD_PAUSE_SLOT:
+			pauseSlot(registerWords);
+			return;
+		case APU_CMD_RESUME_SLOT:
+			resumeSlot(registerWords);
+			return;
 		default:
 			m_fault.raise(APU_FAULT_BAD_CMD, command);
 			return;
@@ -119,12 +128,30 @@ void ApuCommandExecutor::stopSlot(const ApuParameterRegisterWords& registerWords
 		return;
 	}
 	if (fadeSamples > 0u) {
-		m_activeSlots.setPhase(slot, APU_SLOT_PHASE_FADING);
+		m_activeSlots.setPhase(slot, APU_SLOT_PHASE_FADING | (m_slots.phase(slot) & APU_SLOT_PHASE_PAUSED));
 		m_audioOutput.stopSlot(slot, fadeSamples);
 		return;
 	}
 	m_audioOutput.stopSlot(slot);
 	m_activeSlots.stop(slot);
+}
+
+void ApuCommandExecutor::pauseSlot(const ApuParameterRegisterWords& registerWords) {
+	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
+	const ApuSlotPhase phase = m_slots.phase(slot);
+	if (phase != APU_SLOT_PHASE_IDLE && (phase & APU_SLOT_PHASE_PAUSED) == 0u) {
+		m_audioOutput.pauseSlot(slot);
+		m_activeSlots.setPhase(slot, phase | APU_SLOT_PHASE_PAUSED);
+	}
+}
+
+void ApuCommandExecutor::resumeSlot(const ApuParameterRegisterWords& registerWords) {
+	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
+	const ApuSlotPhase phase = m_slots.phase(slot);
+	if ((phase & APU_SLOT_PHASE_PAUSED) != 0u) {
+		m_audioOutput.resumeSlot(slot);
+		m_activeSlots.setPhase(slot, phase & ~APU_SLOT_PHASE_PAUSED);
+	}
 }
 
 void ApuCommandExecutor::setSlotGain(const ApuParameterRegisterWords& registerWords) {

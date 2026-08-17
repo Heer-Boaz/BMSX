@@ -46,12 +46,10 @@
 --    Categories: variant (per-state), group (derived unions), visual
 --    (compound derived tags for sprite selection).
 --
--- 4. FREEZE / UNFREEZE VIA SEAL_DISSOLUTION.
---    When the director emits 'seal_dissolution', the player's root FSM `on`
---    handler transitions to /freeze (which cancels any active sword).
---    On 'seal_flash_done', freeze does `pop_and_transition()` to restore
---    the previous state from the FSM history stack.  This pattern is shared
---    with pepernoot_projectile.
+-- 4. GAMEPLAY TIME DURING SEAL DISSOLUTION.
+--    The director stops the gameplay clock for the complete MSX state-F
+--    sequence. Player state, sword and motion values remain untouched while
+--    the director's frame-clock sequence continues independently.
 --
 -- 5. wrap_state_update() — COMMON FRAME LOGIC.
 --    Every state's update handler is wrapped by wrap_state_update(), which
@@ -78,6 +76,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline<const> = require('cartlib/timeline/timeline')
 local velocity<const> = require('cartlib/velocity')
 local clamp<const> = require('cartlib/util/clamp')
@@ -183,7 +182,17 @@ local player_hit_fall_frames<const> = {
 	{ imgid = 'pietolon_hit_r' },
 }
 local player_sword_end_event<const> = 'sword.end'
+local player_world_enter_timeline_id<const> = 'p.tl.we'
+local player_world_emerge_timeline_id<const> = 'p.tl.wx'
+local player_shrine_enter_timeline_id<const> = 'p.tl.se'
 local player_shrine_exit_timeline_id<const> = 'p.tl.sx'
+local player_pause_wait_timeline_id<const> = 'p.tl.pw'
+local player_pause_animation_timeline_id<const> = 'p.tl.pa'
+local player_pause_offset_x<const> = -2
+local player_pause_offset_y<const> = -8
+local player_pause_animation_play_options<const> = {
+	snap_to_start = false,
+}
 local player_tags<const> = {
 	in_water = 'p.w',
 }
@@ -207,6 +216,13 @@ local stairs_vertical_exit_events<const> = {
 	stairs_end_bottom = true,
 }
 
+local begin_pause_animation<const> = function(self)
+	self.timelines:play(
+		player_pause_animation_timeline_id,
+		player_pause_animation_play_options
+	)
+end
+
 local set_tag_flag<const> = function(owner, tag, enabled)
 	if enabled then
 		owner:add_tag(tag)
@@ -215,19 +231,33 @@ local set_tag_flag<const> = function(owner, tag, enabled)
 	owner:remove_tag(tag)
 end
 
-local build_shrine_exit_transition_frames<const> = function()
+local build_enter_leave_transition_frames<const> = function(
+	first_step,
+	last_step,
+	direction,
+	animation_step_offset
+)
 	local frames<const> = {}
-	for transition_step = world_entrance_enter_world_midpoint_step, world_entrance_enter_world_total_steps do
-		local phase
-		if world_entrance_enter_leave_cycle_steps <= 0 then
-			phase = 0
+	for transition_step = first_step, last_step do
+		local cut
+		if transition_step > world_entrance_enter_world_total_steps then
+			cut = 0
 		else
-			phase = transition_step % world_entrance_enter_leave_cycle_steps
+			local phase_step
+			if transition_step <= world_entrance_enter_world_midpoint_step then
+				phase_step = transition_step
+			else
+				phase_step = world_entrance_enter_world_total_steps - transition_step
+			end
+			cut = direction * phase_step
 		end
+		local animation_phase<const> = (
+			transition_step + animation_step_offset
+		) % world_entrance_enter_leave_cycle_steps
 		frames[#frames + 1] = {
 			transition_step = transition_step,
-			enter_leave_anim_frame = phase < 4 and 0 or 1,
-			to_enter_cut = transition_step - world_entrance_enter_world_total_steps,
+			enter_leave_anim_frame = animation_phase < 4 and 0 or 1,
+			to_enter_cut = cut,
 		}
 	end
 	return frames
@@ -364,11 +394,95 @@ function player:define_runtime_timelines()
 		playback_mode = 'once',
 		auto_tick = false,
 	})
-	self.timelines:define(player_shrine_exit_timeline_id, {
-		frames = build_shrine_exit_transition_frames(),
+	self.timelines:define(player_pause_wait_timeline_id, {
+		frames = timeline.range(flow_pause_seated_frames),
 		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
+	})
+	self.timelines:define(player_pause_animation_timeline_id, {
+		frames = timeline.range(flow_pause_stuck_frame_hold * 2),
+		playback_mode = 'loop',
+		clock_source = timeline_clock_source.frame,
+		tracks = {
+			{
+				kind = 'value',
+				interpolation = 'step',
+				apply = sprite_object.set_imgid,
+				keys = {
+					{ frame = 0, value = 'pietolon_pause_stuck_1' },
+					{ frame = flow_pause_stuck_frame_hold, value = 'pietolon_pause_stuck_2' },
+				},
+			},
+		},
+	})
+	self.timelines:define(player_world_enter_timeline_id, {
+		frames = build_enter_leave_transition_frames(
+			1,
+			world_entrance_enter_world_midpoint_step,
+			1,
+			-1
+		),
+		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
 		apply = true,
 	})
+	self.timelines:define(player_world_emerge_timeline_id, {
+		frames = build_enter_leave_transition_frames(
+			world_entrance_enter_world_midpoint_step + 1,
+			world_entrance_enter_world_total_steps + 1,
+			-1,
+			-1
+		),
+		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
+		apply = true,
+	})
+	self.timelines:define(player_shrine_enter_timeline_id, {
+		frames = build_enter_leave_transition_frames(
+			1,
+			world_entrance_enter_world_total_steps + 1,
+			-1,
+			-1
+		),
+		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
+		apply = true,
+	})
+	self.timelines:define(player_shrine_exit_timeline_id, {
+		frames = build_enter_leave_transition_frames(
+			world_entrance_enter_world_midpoint_step,
+			world_entrance_enter_world_total_steps,
+			-1,
+			0
+		),
+		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
+		apply = true,
+	})
+end
+
+-- The director owns whether gameplay is suspended; the player owns its modal
+-- presentation and frame-clock animation. Movement/FSM state and sword state
+-- remain retained underneath and are rendered again unchanged on resume.
+function player:begin_pause_presentation()
+	self:apply_color(0xffffffff)
+	self.sword_sprite:set_enabled(false)
+	self.sprite_component.scale_x = 1
+	self.sprite_component.scale_y = 1
+	self.sprite_component.flip_h = false
+	self.sprite_component.offset_x = player_pause_offset_x
+	self.sprite_component.offset_y = player_pause_offset_y
+	self.visible = true
+	self:set_imgid('pietolon_pause_seated')
+	self.timelines:play(player_pause_wait_timeline_id, nil, begin_pause_animation)
+end
+
+function player:finish_pause_presentation()
+	self.timelines:stop(player_pause_wait_timeline_id)
+	self.timelines:stop(player_pause_animation_timeline_id)
+	self.sprite_component.offset_x = 0
+	self.sprite_component.offset_y = 0
+	self:apply_presentation_state()
 end
 
 function player:ctor()
@@ -848,32 +962,6 @@ function player:update_enter_leave_anim_frame()
 	else
 		self.enter_leave_anim_frame = 1
 	end
-end
-
-function player:update_enter_leave_cut(direction)
-	local transition_step<const> = self.transition_step
-
-	if transition_step <= 0 then
-		self.to_enter_cut = 0
-		return
-	end
-	if transition_step > world_entrance_enter_world_total_steps then
-		self.to_enter_cut = 0
-		return
-	end
-
-	local phase_step
-	if transition_step <= world_entrance_enter_world_midpoint_step then
-		phase_step = transition_step
-	else
-		phase_step = world_entrance_enter_world_total_steps - transition_step
-	end
-
-	if direction < 0 then
-		self.to_enter_cut = -phase_step
-		return
-	end
-	self.to_enter_cut = phase_step
 end
 
 function player:begin_entering_world(world_entrance)
@@ -2002,42 +2090,6 @@ function player:runcheck_quiet_stairs_controls()
 	end
 end
 
-function player:update_entering_world()
-	self:zero_motion()
-	self.transition_step = self.transition_step + 1
-	self:update_enter_leave_anim_frame()
-	self:update_enter_leave_cut(1)
-	if self.transition_step == world_entrance_enter_world_midpoint_step then
-		self.director:queue_world_banner_transition(castle_map.world_transitions[self.enter_leave_world_target].world_number)
-		self.to_enter_cut = 0
-		self.events:emit('world_entered')
-		return
-	end
-end
-
-function player:update_entering_shrine()
-	self:zero_motion()
-	self.transition_step = self.transition_step + 1
-	self:update_enter_leave_anim_frame()
-	self:update_enter_leave_cut(-1)
-	if self.transition_step > world_entrance_enter_world_total_steps then
-		self.director:open_shrine(self.enter_leave_shrine_text_lines)
-		self.events:emit('shrine_entered')
-		return
-	end
-end
-
-function player:update_emerging_world()
-	self:zero_motion()
-	self.transition_step = self.transition_step + 1
-	self:update_enter_leave_anim_frame()
-	self:update_enter_leave_cut(-1)
-	if self.transition_step > world_entrance_enter_world_total_steps then
-		self.to_enter_cut = 0
-		self.events:emit('world_emerge_done')
-	end
-end
-
 function player:update_quiet()
 	self:zero_motion()
 	if not self:is_support_below_at(self.x, self.y, true) then
@@ -2827,10 +2879,24 @@ local define_player_fsm<const> = function()
 				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
-			on = {
-				['world_entered'] = '/waiting_world_banner',
+			timelines = {
+				[player_world_enter_timeline_id] = {
+					autoplay = true,
+					stop_on_exit = true,
+					play_options = {
+						rewind = true,
+						snap_to_start = false,
+					},
+					on_finished = function(self)
+						self.director:queue_world_banner_transition(
+							castle_map.world_transitions[self.enter_leave_world_target].world_number
+						)
+						self.to_enter_cut = 0
+						return '/waiting_world_banner'
+					end,
+				},
 			},
-			update = player.update_entering_world,
+			entering_state = player.zero_motion,
 		},
 		waiting_world_banner = {
 			tags = {
@@ -2847,7 +2913,6 @@ local define_player_fsm<const> = function()
 					end,
 				},
 			},
-			update = player.zero_motion,
 		},
 		waiting_halo_banner = {
 			tags = {
@@ -2883,10 +2948,22 @@ local define_player_fsm<const> = function()
 				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
-			on = {
-				['world_emerge_done'] = '/quiet',
+			timelines = {
+				[player_world_emerge_timeline_id] = {
+					autoplay = true,
+					stop_on_exit = true,
+					play_options = {
+						rewind = true,
+						snap_to_start = false,
+					},
+					on_finished = function(self)
+						self.to_enter_cut = 0
+						self.events:emit('world_emerge_done')
+						return '/quiet'
+					end,
+				},
 			},
-			update = player.update_emerging_world,
+			entering_state = player.zero_motion,
 		},
 		entering_shrine = {
 			tags = {
@@ -2894,10 +2971,21 @@ local define_player_fsm<const> = function()
 				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
-			on = {
-				['shrine_entered'] = '/waiting_shrine',
+			timelines = {
+				[player_shrine_enter_timeline_id] = {
+					autoplay = true,
+					stop_on_exit = true,
+					play_options = {
+						rewind = true,
+						snap_to_start = false,
+					},
+					on_finished = function(self)
+						self.director:open_shrine(self.enter_leave_shrine_text_lines)
+						return '/waiting_shrine'
+					end,
+				},
 			},
-			update = player.update_entering_shrine,
+			entering_state = player.zero_motion,
 		},
 		waiting_shrine = {
 			tags = {
@@ -2908,7 +2996,6 @@ local define_player_fsm<const> = function()
 			on = {
 				['leave_shrine_overlay'] = '/leaving_shrine',
 			},
-			update = player.zero_motion,
 		},
 		leaving_shrine = {
 			tags = {
@@ -2932,23 +3019,14 @@ local define_player_fsm<const> = function()
 					end,
 				},
 			},
-			update = player.zero_motion,
+			entering_state = player.zero_motion,
 		},
-		-- FREEZE — entered on 'seal_dissolution' from root on handler.
-		-- Cancels any active sword swing, then waits for 'seal_flash_done'.
-		-- On unfreeze: pop_and_transition() restores the previous state from
-		-- the FSM history stack, so the player resumes exactly where they were.
+		-- Title transitions temporarily park the player in its FSM history.
 		freeze = {
 			entering_state = function(self)
 				self:cancel_sword()
 			end,
 			on = {
-				['seal_flash_done'] = {
-					emitter = 'd',
-					go = function(_self, state)
-						state:pop_and_transition()
-					end,
-				},
 				['title_wait_done'] = {
 					emitter = 'd',
 					go = function(_self, state)
@@ -3133,8 +3211,6 @@ local define_player_fsm<const> = function()
 		-- Entries with { emitter = 'd', go = … } filter by director emitter,
 		-- preventing accidental reactions to same-named events from other sources.
 		--
-		-- 'seal_dissolution' → /freeze: entered on seal break, restores via
-		-- pop_and_transition() on 'seal_flash_done' (see freeze state above).
 		on = {
 			[player_actioneffects.command_ids.activate_sword] = function(self)
 				self:activate_sword()
@@ -3177,7 +3253,6 @@ local define_player_fsm<const> = function()
 				emitter = 'd',
 				go = '/freeze',
 			},
-			['seal_dissolution'] = '/freeze',
 		},
 		states = states,
 	})

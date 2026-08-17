@@ -45,6 +45,7 @@ public:
 	[[nodiscard]] auto sampleTransferStatusBits() const -> u32;
 
 private:
+	static u32 readSampleSequenceThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static u32 readTransferDataThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeTransferAddressThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static void writeTransferDataThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);

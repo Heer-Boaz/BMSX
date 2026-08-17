@@ -51,6 +51,7 @@ local mutation_component_detach<const> = 0x20
 local mutation_active_space<const> = 0x40
 local mutation_disposal<const> = 0x80
 local mutation_clear<const> = 0x100
+local mutation_gameplay_clock<const> = 0x200
 local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
@@ -58,6 +59,7 @@ local structural_mutation_mask<const> = mutation_admission
 	| mutation_tag
 	| mutation_component_detach
 	| mutation_active_space
+	| mutation_gameplay_clock
 
 bss cartlib_render_commands: word[render_command_capacity]
 
@@ -117,13 +119,15 @@ function world_class.new()
 	self._active_definition_view_list = {}
 	self._active_component_views_by_class = {}
 	self._active_component_view_list = {}
-	self._active_tick_views_by_class = {}
+	self._active_tick_views_by_clock = {}
 	self._active_tick_view_list = {}
 	self.active_space_id = nil
 	self._active_space = nil
 	self._pending_space_id = nil
+	self._pending_gameplay_clock_running = true
 	self._initial_space_id = nil
 	self._system_manager = system_manager.new(self)
+	self.gameplay_clock_running = true
 	self._mutation_barrier_open = false
 	self._visual_sequence = 0
 	self._visual_revision = 0
@@ -164,7 +168,8 @@ function world_class:_add_space(space_id)
 	end
 	local tick_views<const> = self._active_tick_view_list
 	for view_index = 1, #tick_views do
-		created:register_tick_class(tick_views[view_index].component_class)
+		local view<const> = tick_views[view_index]
+		created:register_tick_class(view.component_class, view.clock_source)
 	end
 	self._spaces[space_id] = created
 	self._space_order[#self._space_order + 1] = space_id
@@ -186,13 +191,16 @@ function world_class:_commit_active_space(space_id)
 	local tick_views<const> = self._active_tick_view_list
 	for view_index = 1, #tick_views do
 		local view<const> = tick_views[view_index]
-		view.components = active_space:tick_bucket(view.component_class)
+		view.components = active_space:tick_bucket(view.component_class, view.clock_source)
 	end
 	self._visual_revision = self._visual_revision + 1
 end
 
 function world_class:configure(world_module)
-	self.update = self._system_manager:configure(world_module.systems)
+	self._update_with_gameplay, self._update_without_gameplay = self._system_manager:configure(
+		world_module.systems
+	)
+	self.update = self._update_with_gameplay
 	local spaces<const> = world_module.spaces
 	for space_index = 1, #spaces do
 		self:_add_space(spaces[space_index])
@@ -228,17 +236,23 @@ function world_class:active_component_view(component_class)
 	return created
 end
 
--- Systems that execute component-owned frame work retain this view. Component
--- lifecycle and tick eligibility are separate: a dormant FSM stays active for
--- event dispatch while it is absent from this dense schedule.
-function world_class:active_tick_view(component_class)
-	local views<const> = self._active_tick_views_by_class
+-- Systems retain one dense component lane for each clock-bound tick function.
+-- Component lifecycle stays independent: dormant FSMs remain subscribed while
+-- absent from gameplay time, and frame-clock sequences remain independently
+-- schedulable.
+function world_class:active_tick_view(component_class, clock_source)
+	local views = self._active_tick_views_by_clock[clock_source]
+	if views == nil then
+		views = {}
+		self._active_tick_views_by_clock[clock_source] = views
+	end
 	local view<const> = views[component_class]
 	if view then
 		return view
 	end
 	local created<const> = {
 		component_class = component_class,
+		clock_source = clock_source,
 		components = empty_object_bucket,
 	}
 	views[component_class] = created
@@ -248,12 +262,40 @@ function world_class:active_tick_view(component_class)
 	local space_order<const> = self._space_order
 	for space_index = 1, #space_order do
 		local partition<const> = spaces[space_order[space_index]]
-		partition:register_tick_class(component_class)
+		partition:register_tick_class(component_class, clock_source)
 	end
 	if self._active_space ~= nil then
-		created.components = self._active_space:tick_bucket(component_class)
+		created.components = self._active_space:tick_bucket(component_class, clock_source)
 	end
 	return created
+end
+
+-- Gameplay suspension changes only the clock schedule. It does not classify
+-- objects, rewrite component state or turn a cinematic into a special pause
+-- mode. Frame-clock tick functions continue on each cart-owned world update.
+function world_class:_commit_gameplay_clock(running)
+	if self.gameplay_clock_running == running then
+		return false
+	end
+	self.gameplay_clock_running = running
+	if running then
+		self.update = self._update_with_gameplay
+	else
+		self.update = self._update_without_gameplay
+	end
+	return true
+end
+
+-- Clock changes requested from scheduled work commit at its tick-group
+-- barrier. The compiled runner then stops before executing work selected by
+-- the schedule it just displaced.
+function world_class:set_gameplay_clock_running(running)
+	if self._mutation_barrier_open then
+		self._pending_gameplay_clock_running = running
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_gameplay_clock
+		return
+	end
+	self:_commit_gameplay_clock(running)
 end
 
 -- Systems bind active definition views once at configuration time.
@@ -720,6 +762,7 @@ function world_class:_flush_structural_mutations()
 	-- Lifecycle hooks may enqueue an earlier mutation kind while a later kind
 	-- commits. Claim each kind before applying it and drain the whole cascade at
 	-- this barrier so no Registry or space index remains stale for another group.
+	local schedule_changed = false
 	repeat
 		if (self._pending_mutation_mask & mutation_admission) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
@@ -751,7 +794,14 @@ function world_class:_flush_structural_mutations()
 			self._pending_space_id = nil
 			self:_commit_active_space(pending_space_id)
 		end
+		if (self._pending_mutation_mask & mutation_gameplay_clock) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_gameplay_clock
+			if self:_commit_gameplay_clock(self._pending_gameplay_clock_running) then
+				schedule_changed = true
+			end
+		end
 	until (self._pending_mutation_mask & structural_mutation_mask) == 0
+	return schedule_changed
 end
 
 function world_class:_commit_mutation_barrier()
@@ -760,8 +810,9 @@ function world_class:_commit_mutation_barrier()
 		self._mutation_barrier_open = false
 		return
 	end
+	local schedule_changed = false
 	if (pending_mutation_mask & structural_mutation_mask) ~= 0 then
-		self:_flush_structural_mutations()
+		schedule_changed = self:_flush_structural_mutations()
 	end
 	self._mutation_barrier_open = false
 	if (self._pending_mutation_mask & mutation_disposal) ~= 0 then
@@ -773,6 +824,7 @@ function world_class:_commit_mutation_barrier()
 		self:_commit_clear()
 		return true
 	end
+	return schedule_changed
 end
 
 function world_class:_rebuild_render_visuals()
@@ -825,6 +877,7 @@ function world_class:_render_double_page()
 end
 
 function world_class:_commit_clear()
+	self:_commit_gameplay_clock(true)
 	self._visual_sequence = 0
 	local objects<const> = self._objects
 	while #objects > 0 do

@@ -29,6 +29,8 @@ void ApuCommandIngress::onCommandWriteThunk(void* context, [[maybe_unused]] u32 
 		case APU_CMD_PLAY:
 		case APU_CMD_STOP_SLOT:
 		case APU_CMD_SET_SLOT_GAIN:
+		case APU_CMD_PAUSE_SLOT:
+		case APU_CMD_RESUME_SLOT:
 			ingress.m_commandFifo.enqueue(command, ingress.m_commandLatch.registerWords());
 			ingress.m_serviceClock.scheduleNext(nowCycles);
 			ingress.m_commandLatch.clear();

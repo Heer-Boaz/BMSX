@@ -48,8 +48,12 @@ local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
 local action_kind_random_uniform<const> = 5
 local action_kind_random_weighted<const> = 6
+local action_kind_pause_music<const> = 7
+local action_kind_resume_music<const> = 8
 local source_action_play<const> = 'play'
 local source_action_stop_music<const> = 'stop_music'
+local source_action_pause_music<const> = 'pause_music'
+local source_action_resume_music<const> = 'resume_music'
 local source_action_sequence<const> = 'sequence'
 local source_action_random_uniform<const> = 'random_uniform'
 local source_action_random_weighted<const> = 'random_weighted'
@@ -157,6 +161,12 @@ compile_action = function(action, audio_cache)
 			kind = action_kind_stop_music,
 			fade_samples = action.fade_samples,
 		}
+	end
+	if kind == source_action_pause_music then
+		return { kind = action_kind_pause_music }
+	end
+	if kind == source_action_resume_music then
+		return { kind = action_kind_resume_music }
 	end
 	if kind == source_action_sequence then
 		local source_actions<const> = action.actions
@@ -619,6 +629,16 @@ dispatch_action = function(entry, action, emitter)
 		*current_music_slot = 0
 		apu.stop_slot(slot_music_a, action.fade_samples)
 		apu.stop_slot(slot_music_b, action.fade_samples)
+		return
+	end
+	if kind == action_kind_pause_music then
+		apu.pause_slot(slot_music_a)
+		apu.pause_slot(slot_music_b)
+		return
+	end
+	if kind == action_kind_resume_music then
+		apu.resume_slot(slot_music_a)
+		apu.resume_slot(slot_music_b)
 		return
 	end
 	if kind == action_kind_sequence then

@@ -1897,18 +1897,20 @@ a hidden fallback VM.
 
 Host input owners drive one dedicated supervisor-request line rather than
 injecting a synthetic keyboard event into the ICU. Browser, headless and native
-libretro keyboard paths map physical `F2` to that line while still publishing
-the ordinary F2 HID bit. Ordinary libretro frontends leave all RetroPad buttons
-as gameplay and drive no supervisor line. The BMSX direct host negotiates the
+libretro keyboard paths publish physical `F2` only as the ordinary cart-visible
+HID bit. The browser reserves `ScrollLock` for its supervisor-request line;
+headless tooling uses the explicit `supervisor-request` host event. Ordinary
+libretro frontends leave all keyboard and RetroPad buttons as gameplay and drive
+no supervisor line. The BMSX direct host negotiates the
 versioned private `BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1`
 callback instead. Its physical Down+Select chord is host control: a partial
 press remains ordinary cart input, but the first poll with both buttons high
 masks both RetroPad bits and raises the dedicated line. The latch keeps both
 buttons masked until both are released, then lowers and rearms the line; focus
 or device loss reaches the same transition through the host's raw zero input
-state. The core never receives a synthetic F2 event. Its libretro input owner
-ORs the negotiated line with the real F2 line before edge publication, so
-overlapping sources cannot produce a false release. A frontend that rejects
+state. The core never receives a synthetic keyboard event and its libretro input
+owner forwards only the negotiated line to the ICU, so guest keyboard
+transitions cannot change the supervisor line. A frontend that rejects
 the private command retains a permanent low host line.
 While the BIOS monitor owns the CPU, it reads the raw ICU USB-HID bitmap,
 performs its own modifier, repeat, and character mapping, and waits on the BIOS

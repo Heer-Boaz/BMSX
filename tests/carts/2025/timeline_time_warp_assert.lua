@@ -139,7 +139,7 @@ timelines:define('root_loop', {
 	end,
 })
 timelines:play('root_loop')
-timelines:tick_active(125)
+timelines:tick_gameplay(125)
 assert(root_loop_count == 1)
 timelines:stop('root_loop')
 
@@ -168,11 +168,11 @@ timelines:define('loop_parent', {
 })
 timelines:play('loop_parent', { bindings = { camera = camera } })
 assert(zero_count == 1 and camera.value == 10)
-timelines:tick_active(225)
+timelines:tick_gameplay(225)
 assert(zero_count == 3 and nested_forward_count == 2)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
 assert(loop_count == 2 and loop_finished_count == 0)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(nested_forward_count == 3 and camera.value == 20 and owner.tags.child_active == nil)
 assert(loop_count == 2 and loop_finished_count == 1)
 
@@ -193,7 +193,7 @@ timelines:define('crossed_finish_parent', {
 	},
 })
 timelines:play('crossed_finish_parent')
-timelines:tick_active(50)
+timelines:tick_gameplay(50)
 assert(crossed_finished_count == 1)
 timelines:seek_time('crossed_finish_parent', 0)
 timelines:seek_time('crossed_finish_parent', 50)
@@ -256,11 +256,11 @@ timelines:define('reverse_loop_parent', {
 })
 timelines:play('reverse_loop_parent', { bindings = { camera = camera } })
 assert(camera.value == 20 and owner.tags.child_active == true)
-timelines:tick_active(225)
+timelines:tick_gameplay(225)
 assert(backward_count == backward_before_reverse + 2)
 assert(nested_backward_count == nested_backward_before_reverse + 3)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(owner.tags.child_active == nil)
 
 local zero_before_pingpong<const> = zero_count
@@ -291,14 +291,14 @@ timelines:define('pingpong_parent', {
 	},
 })
 timelines:play('pingpong_parent', { bindings = { camera = camera } })
-timelines:tick_active(225)
+timelines:tick_gameplay(225)
 assert(zero_count == zero_before_pingpong + 1)
 assert(backward_count == backward_before_pingpong + 1)
 assert(nested_forward_count == nested_forward_before_pingpong + 1)
 assert(nested_backward_count == nested_backward_before_pingpong + 1)
 assert(camera.value == 10 and owner.nested_value == 1 and owner.tags.child_active == true)
 assert(pingpong_turn_count == 2 and pingpong_finished_count == 0)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(nested_forward_count == nested_forward_before_pingpong + 2)
 assert(camera.value == 20 and owner.tags.child_active == nil)
 assert(pingpong_turn_count == 2 and pingpong_finished_count == 1)
@@ -368,11 +368,11 @@ timelines:define('frame_reverse_parent', {
 })
 timelines:play('frame_reverse_parent')
 assert(owner.tags.frame_active == true)
-timelines:tick_active(225)
+timelines:tick_gameplay(225)
 assert(frame_last_count == 2 and frame_backward_count == 2)
 assert(frame_tag_start_count == 2 and frame_tag_end_count == 2)
 assert(owner.tags.frame_active == true)
-timelines:tick_active(25)
+timelines:tick_gameplay(25)
 assert(owner.tags.frame_active == nil)
 
 local zero_before_crossed<const> = zero_count
@@ -392,7 +392,7 @@ timelines:define('crossed_loop_parent', {
 	},
 })
 timelines:play('crossed_loop_parent', { bindings = { camera = camera } })
-timelines:tick_active(250)
+timelines:tick_gameplay(250)
 assert(zero_count == zero_before_crossed + 3)
 assert(nested_forward_count == nested_before_crossed + 2)
 assert(owner.tags.child_active == nil)
@@ -415,7 +415,7 @@ timelines:define('active_source_parent', {
 	},
 })
 timelines:play('active_source_parent', { bindings = { camera = camera } })
-timelines:tick_active(150)
+timelines:tick_gameplay(150)
 assert(zero_count == zero_before_active_source + 1)
 assert(nested_forward_count == nested_before_active_source + 1)
 assert(owner.tags.child_active == nil)

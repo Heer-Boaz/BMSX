@@ -7,6 +7,9 @@ local aem<const> = require('cartlib/aem')
 local collision_2d<const> = require('cartlib/collision/collision_2d')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
+input.push_context(1, 'pietious', {
+	pause = { 'F2' },
+})
 local irq_module<const> = require('cartlib/irq')
 local irq_source<const> = require('cartlib/irq/source')
 irq = irq_module.dispatch
@@ -104,6 +107,7 @@ local create_world<const> = function(director_boot_mode)
 		id = 'd',
 		boot_mode = director_boot_mode,
 		castle = castle,
+		player = player,
 		ui = ui,
 		pos = { z = draw_z_director_effect },
 	})

@@ -4,7 +4,9 @@ import type { ApuCommandLatch } from './command_latch';
 import type { ApuCommandFifo } from './command_fifo';
 import {
 	APU_CMD_NONE,
+	APU_CMD_PAUSE_SLOT,
 	APU_CMD_PLAY,
+	APU_CMD_RESUME_SLOT,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_FAULT_BAD_CMD,
@@ -27,6 +29,8 @@ export class ApuCommandIngress {
 			case APU_CMD_PLAY:
 			case APU_CMD_STOP_SLOT:
 			case APU_CMD_SET_SLOT_GAIN:
+			case APU_CMD_PAUSE_SLOT:
+			case APU_CMD_RESUME_SLOT:
 				context.commandFifo.enqueue(command, context.commandLatch.registerWords);
 				context.serviceClock.scheduleNext(nowCycles);
 				context.commandLatch.clear();

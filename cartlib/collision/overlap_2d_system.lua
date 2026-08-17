@@ -56,6 +56,7 @@
 
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local base_system<const> = require('cartlib/world/base_system')
+local clock<const> = require('cartlib/clock')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 
@@ -66,6 +67,12 @@ local scratch_record_batch<const> = require('cartlib/util/scratch_record_batch')
 local overlap_2d_system<const> = {}
 overlap_2d_system.__index = overlap_2d_system
 setmetatable(overlap_2d_system, { __index = base_system })
+overlap_2d_system.tick = {
+	group = tick_group.physics,
+	priority = 42,
+	clock_source = clock.gameplay,
+	method = 'update',
+}
 
 -- Pair rows and the event payload are system-owned scratch. The two history
 -- maps alternate each frame; released rows return to this system's pool so a
@@ -136,7 +143,7 @@ local retire_previous_pairs<const> = function(overlap, payload, prev_pairs, new_
 end
 
 function overlap_2d_system.new(world)
-	local self<const> = setmetatable(base_system.new(tick_group.physics, 42), overlap_2d_system)
+	local self<const> = setmetatable(base_system.new(overlap_2d_system.tick), overlap_2d_system)
 	self._component_view = world:active_component_view(collider_2d_component)
 	self.prev_pairs = {}
 	self.next_pairs = {}

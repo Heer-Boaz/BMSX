@@ -8,19 +8,32 @@ flow_title_start_blink_tail_frames = 1
 flow_title_start_wait_frames = 32
 flow_room_switch_wait_frames = 6
 flow_item_screen_wait_frames = 6
+-- MoG state 9 retains the seated pose for 0x0258 game updates, then alternates
+-- the two stuck poses every eight updates until F2 resumes the room state.
+flow_pause_seated_frames = 0x0258
+flow_pause_stuck_frame_hold = 8
 -- The MSX game-over wipe clears one 8 px column per VBlank. Pietious advances
 -- gameplay once per two VBlanks, so each curtain frame clears two columns and
 -- retains the original 640 ms duration.
 flow_death_curtain_frames = 16
 flow_death_curtain_columns_per_frame = 2
 flow_death_screen_frames = 50
+-- The MSX summon state flashes for 60 VBlanks, dissolves the seal-pattern
+-- range for 25 VBlanks, then dissolves two background ranges for 25 VBlanks
+-- each. Pietious advances one gameplay frame per two VBlanks.
+flow_seal_flash_frames = 30
+flow_seal_sprite_dissolve_frames = 13
+flow_seal_room_dissolve_frames = 25
+flow_seal_dissolution_frames = flow_seal_flash_frames
+	+ flow_seal_sprite_dissolve_frames
+	+ flow_seal_room_dissolve_frames
 flow_seal_room_dissolve_steps = 7
 flow_seal_sprite_dissolve_steps = 6
-flow_daemon_cloud_max = 8
-flow_daemon_cloud_spawn_x_min = 13
-flow_daemon_cloud_spawn_x_max = 20
-flow_daemon_cloud_spawn_y_min = 6
-flow_daemon_cloud_spawn_y_max = 12
+flow_daemon_cloud_count = 9
+flow_daemon_cloud_spawn_interval_frames = 4
+flow_daemon_cloud_lifetime_frames = 20
+flow_daemon_cloud_last_spawn_frame = (flow_daemon_cloud_count - 1) * flow_daemon_cloud_spawn_interval_frames
+flow_daemon_appearance_frames = flow_daemon_cloud_last_spawn_frame + flow_daemon_cloud_lifetime_frames + 1
 room_width = 256
 room_height = 192
 screen_width = 256

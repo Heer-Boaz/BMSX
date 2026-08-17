@@ -34,6 +34,12 @@ function __bmsx_host_test.update()
 		if world.active_space_id ~= 'main' then
 			return false
 		end
+		if test.room_state == nil then
+			test.room_state = state_machines:bind_state_path('/room')
+		end
+		if not state_machines:matches_state(test.room_state) then
+			return false
+		end
 		test.viewing_state = state_machines:bind_state_path('/lithograph/viewing')
 		director.events:on({
 			event = 'lithograph_exit_done',

@@ -1,4 +1,5 @@
 local base_component<const> = require('cartlib/component/base_component')
+local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')
 local fsm<const> = require('cartlib/fsm/fsm')
 local frame_program<const> = require('cartlib/fsm/frame_program')
@@ -24,29 +25,34 @@ end
 
 local unfiltered_emitter<const> = {}
 local default_emitter<const> = {}
-function fsm_component:machine_frame_work_changed(active)
-	local count
-	if active then
-		count = self._ticking_machine_count + 1
-	else
-		count = self._ticking_machine_count - 1
-	end
-	self._ticking_machine_count = count
-	self:set_tick_enabled(count ~= 0)
+function fsm_component:machine_frame_work_changed(machine, active)
+	local clock_source<const> = machine.definition.clock_source
+	local counts<const> = self._ticking_machine_counts
+	local count<const> = counts[clock_source] + (active and 1 or -1)
+	counts[clock_source] = count
+	self:set_tick_clock_enabled(clock_source, count ~= 0)
 end
 
 function fsm_component.new(opts, machine_ids)
 	local self<const> = setmetatable(base_component.new(opts), fsm_component)
 	self._machines_by_id = {}
 	self._machines = {}
+	self._machines_by_clock = {
+		[clock.gameplay] = {},
+		[clock.frame] = {},
+	}
+	self._ticking_machine_counts = {
+		[clock.gameplay] = 0,
+		[clock.frame] = 0,
+	}
 	self._machine_count = 0
-	self._ticking_machine_count = 0
 	self._started = false
 	self._state_paths = nil
 	for i = 1, #machine_ids do
 		local machine_id<const> = machine_ids[i]
+		local definition<const> = definitions_by_id[machine_id]
 		local machine<const> = state.new(
-			definitions_by_id[machine_id],
+			definition,
 			self.parent,
 			nil,
 			self,
@@ -55,9 +61,15 @@ function fsm_component.new(opts, machine_ids)
 		self._machine_count = i
 		self._machines[i] = machine
 		self._machines_by_id[machine_id] = machine
+		local clock_machines<const> = self._machines_by_clock[definition.clock_source]
+		clock_machines[#clock_machines + 1] = machine
 	end
-	self:set_tick_enabled(self._ticking_machine_count ~= 0)
-	self.update = frame_program.compile_component_runner(self._machines)
+	self.update_gameplay = frame_program.compile_component_runner(
+		self._machines_by_clock[clock.gameplay]
+	)
+	self.update_frame = frame_program.compile_component_runner(
+		self._machines_by_clock[clock.frame]
+	)
 	return self
 end
 

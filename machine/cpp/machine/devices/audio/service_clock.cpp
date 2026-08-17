@@ -28,11 +28,18 @@ ApuServiceClock::ApuServiceClock(
 	, m_dma(dma)
 	, m_sampleTransfer(memory, sampleMemory, dma, scheduler)
 	, m_cpuHz(APU_SAMPLE_RATE_HZ) {
+	memory.mapIoRead(IO_APU_SAMPLE_SEQUENCE, this, &ApuServiceClock::readSampleSequenceThunk);
 	memory.mapIoWrite(IO_APU_TRANSFER_ADDRESS, this, &ApuServiceClock::writeTransferAddressThunk);
 	memory.mapIoRead(IO_APU_TRANSFER_DATA, this, &ApuServiceClock::readTransferDataThunk);
 	memory.mapIoWrite(IO_APU_TRANSFER_DATA, this, &ApuServiceClock::writeTransferDataThunk);
 	memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, &ApuServiceClock::transferDataWriteReadyThunk);
 	memory.mapIoWrite(IO_APU_TRANSFER_CONTROL, this, &ApuServiceClock::writeTransferControlThunk);
+}
+
+u32 ApuServiceClock::readSampleSequenceThunk(void* context, u32, MappedBusSignals) {
+	auto& clock = *static_cast<ApuServiceClock*>(context);
+	clock.synchronize(clock.m_scheduler.currentNowCycles());
+	return static_cast<u32>(clock.m_sampleSequence);
 }
 
 u32 ApuServiceClock::readTransferDataThunk(void* context, u32, MappedBusSignals busSignals) {

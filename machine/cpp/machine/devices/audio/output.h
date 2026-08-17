@@ -49,6 +49,8 @@ public:
 		u32 parameterIndex
 	);
 	void stopSlot(ApuAudioSlot slot, u32 fadeSamples = 0);
+	void pauseSlot(ApuAudioSlot slot);
+	void resumeSlot(ApuAudioSlot slot);
 	void stopAllVoices();
 	[[nodiscard]] auto samplesUntilNextEvent(i64 limit) const -> i64;
 	[[nodiscard]] auto renderMachineFrames(i64 frameCount, i64 startSequence) -> u32;
@@ -58,6 +60,7 @@ private:
 
 	struct VoiceRecord {
 		bool active = false;
+		bool resident = false;
 		ApuAudioSlot slot = 0;
 		u32 sourceCartridgeSlot = 0;
 		u32 channels = 0;

@@ -60,6 +60,8 @@ private:
 	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stopSlot(const ApuParameterRegisterWords& registerWords);
 	void setSlotGain(const ApuParameterRegisterWords& registerWords);
+	void pauseSlot(const ApuParameterRegisterWords& registerWords);
+	void resumeSlot(const ApuParameterRegisterWords& registerWords);
 	void writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word);
 	bool bindSource(const ApuAudioSource& source, u32 cartridgeSlot);
 };

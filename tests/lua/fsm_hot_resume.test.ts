@@ -14,6 +14,7 @@ const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
 	['table', 'machine/bios/table.lua'],
 	['string/base', 'machine/bios/string/base.lua'],
+	['string/utf8', 'machine/bios/string/utf8.lua'],
 	['string/pattern', 'machine/bios/string/pattern.lua'],
 	['compiler/api', 'machine/bios/compiler/api.lua'],
 	['compiler/arena', 'machine/bios/compiler/arena.lua'],
@@ -36,6 +37,7 @@ const CART_MODULE_FILES = [
 	['cartlib/event_emitter', 'cartlib/event_emitter.lua'],
 	['cartlib/component/base_component', 'cartlib/component/base_component.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
+	['cartlib/timeline/clock_source', 'cartlib/timeline/clock_source.lua'],
 	['cartlib/easing', 'cartlib/easing.lua'],
 	['cartlib/timeline/playback', 'cartlib/timeline/playback.lua'],
 	['cartlib/timeline/apply_syntax', 'cartlib/timeline/apply_syntax.lua'],
@@ -188,15 +190,15 @@ state_machines:start()
 local machine<const> = state_machines._machines_by_id.hot_machine
 local idle<const> = machine.states.idle
 local active<const> = machine.states.active
-state_machines:update()
+state_machines.update_gameplay()
 assert(target.value == 1)
 target.events:emit('activate')
 assert(machine.current_id == 'active')
 assert(target.tags.old_active == true)
-timelines:tick_active(1)
+timelines:tick_gameplay(1)
 assert(target.timeline_value == 101)
 local timeline_before<const> = timelines:get('hot_timeline')
-local timeline_entry_before<const> = timelines._tick_entries[1]
+local timeline_entry_before<const> = timelines._gameplay_tick_lane[1]
 local timeline_head_before<const> = timeline_before.head
 local timeline_position_before<const> = timeline_before.position_ms
 
@@ -260,27 +262,27 @@ local history_after<const> = machine:get_history_snapshot()
 assert(#history_after == 1 and history_after[1] == 'idle')
 assert(target.tags.old_active == nil and target.tags.new_active == true)
 assert(timelines:get('hot_timeline') == timeline_before)
-assert(timelines._tick_entries[1] == timeline_entry_before)
+assert(timelines._gameplay_tick_lane[1] == timeline_entry_before)
 assert(timeline_before.head == timeline_head_before and timeline_before.position_ms == timeline_position_before)
-timelines:tick_active(1)
+timelines:tick_gameplay(1)
 assert(target.timeline_value == 1012)
-timelines:tick_active(1)
+timelines:tick_gameplay(1)
 assert(target.timeline_finished == 10)
 assert(state_machines._state_paths == nil)
 local bound_after<const> = state_machines:bind_state_path('/active')
 assert(bound_after ~= bound_before)
 
-state_machines:update()
+state_machines.update_gameplay()
 assert(target.value == 11)
 target.events:emit('deactivate')
 assert(machine.current_id == 'idle' and target.tags.new_idle == true)
 machine:pop_and_transition()
 assert(machine.current_id == 'active')
-state_machines:update()
+state_machines.update_gameplay()
 assert(target.value == 21)
 target.events:emit('bonus')
 assert(machine.current_id == 'bonus')
-state_machines:update()
+state_machines.update_gameplay()
 assert(target.value == 1021)
 target.events:emit('restore')
 assert(machine.current_id == 'active')

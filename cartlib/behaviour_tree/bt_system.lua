@@ -3,14 +3,21 @@
 
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local base_system<const> = require('cartlib/world/base_system')
+local clock<const> = require('cartlib/clock')
 local tick_group<const> = require('cartlib/world/tick_group')
 
 local bt_system<const> = {}
 bt_system.__index = bt_system
 setmetatable(bt_system, { __index = base_system })
+bt_system.tick = {
+	group = tick_group.input,
+	priority = 0,
+	clock_source = clock.gameplay,
+	method = 'update',
+}
 
 function bt_system.new(world)
-	local self<const> = setmetatable(base_system.new(tick_group.input, 0), bt_system)
+	local self<const> = setmetatable(base_system.new(bt_system.tick), bt_system)
 	self._component_view = world:active_component_view(bt_component)
 	return self
 end

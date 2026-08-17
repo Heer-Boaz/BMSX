@@ -130,7 +130,7 @@ class GamepadDevice implements HostGamepadDevice {
 	}
 }
 
-const SUPERVISOR_REQUEST_KEY_CODE = 'F2';
+const SUPERVISOR_REQUEST_KEY_CODE = 'ScrollLock';
 
 export class BrowserInputHub implements InputSource {
 	private sink: InputEventSink;
@@ -204,7 +204,8 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	private onKeyDown = (event: KeyboardEvent) => {
-		const captured = this.keyboardCapture && this.keyboardCapture(event.code);
+		const captured = event.code === SUPERVISOR_REQUEST_KEY_CODE
+			|| (this.keyboardCapture && this.keyboardCapture(event.code));
 		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -219,12 +220,14 @@ export class BrowserInputHub implements InputSource {
 		this.activeKeyPressIds.set(event.code, pressId);
 		if (event.code === SUPERVISOR_REQUEST_KEY_CODE) {
 			this.sink.setSupervisorRequestLine(true);
+			return;
 		}
 		this.sink.inputButton('keyboard:0', event.code, true, 1, now, pressId);
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {
-		const captured = this.keyboardCapture && this.keyboardCapture(event.code);
+		const captured = event.code === SUPERVISOR_REQUEST_KEY_CODE
+			|| (this.keyboardCapture && this.keyboardCapture(event.code));
 		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -238,8 +241,11 @@ export class BrowserInputHub implements InputSource {
 			pressId = this.nextPressId++;
 		}
 		this.activeKeyPressIds.delete(event.code);
-		if (wasPressed && event.code === SUPERVISOR_REQUEST_KEY_CODE) {
-			this.sink.setSupervisorRequestLine(false);
+		if (event.code === SUPERVISOR_REQUEST_KEY_CODE) {
+			if (wasPressed) {
+				this.sink.setSupervisorRequestLine(false);
+			}
+			return;
 		}
 		this.sink.inputButton('keyboard:0', event.code, false, 0, now, pressId);
 	};

@@ -19,6 +19,8 @@ export const APU_CMD_NONE = 0;
 export const APU_CMD_PLAY = 1;
 export const APU_CMD_STOP_SLOT = 2;
 export const APU_CMD_SET_SLOT_GAIN = 3;
+export const APU_CMD_PAUSE_SLOT = 4;
+export const APU_CMD_RESUME_SLOT = 5;
 
 export const APU_SLOT_COUNT = 16;
 export const APU_SLOT_INDEX_MASK = APU_SLOT_COUNT - 1;
