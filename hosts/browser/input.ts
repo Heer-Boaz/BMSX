@@ -130,8 +130,6 @@ class GamepadDevice implements HostGamepadDevice {
 	}
 }
 
-const SUPERVISOR_REQUEST_KEY_CODE = 'ScrollLock';
-
 export class BrowserInputHub implements InputSource {
 	private sink: InputEventSink;
 	private readonly devicesList: InputDevice[];
@@ -145,7 +143,12 @@ export class BrowserInputHub implements InputSource {
 	private readonly activePointerButtons: number[] = [];
 	private readonly activePointerPressIds: number[] = [];
 
-	constructor(surface: HTMLElement, clock: HostClock, onscreenGamepad: BrowserOnscreenGamepad) {
+	constructor(
+		surface: HTMLElement,
+		clock: HostClock,
+		onscreenGamepad: BrowserOnscreenGamepad,
+		private readonly supervisorRequestKeyCode: string,
+	) {
 		this.clock = clock;
 		this.onscreenGamepad = onscreenGamepad;
 		this.devicesList = [
@@ -204,7 +207,7 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	private onKeyDown = (event: KeyboardEvent) => {
-		const captured = event.code === SUPERVISOR_REQUEST_KEY_CODE
+		const captured = event.code === this.supervisorRequestKeyCode
 			|| (this.keyboardCapture && this.keyboardCapture(event.code));
 		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
@@ -218,7 +221,7 @@ export class BrowserInputHub implements InputSource {
 		const now = this.clock.now();
 		const pressId = this.nextPressId++;
 		this.activeKeyPressIds.set(event.code, pressId);
-		if (event.code === SUPERVISOR_REQUEST_KEY_CODE) {
+		if (event.code === this.supervisorRequestKeyCode) {
 			this.sink.setSupervisorRequestLine(true);
 			return;
 		}
@@ -226,7 +229,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {
-		const captured = event.code === SUPERVISOR_REQUEST_KEY_CODE
+		const captured = event.code === this.supervisorRequestKeyCode
 			|| (this.keyboardCapture && this.keyboardCapture(event.code));
 		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
@@ -241,7 +244,7 @@ export class BrowserInputHub implements InputSource {
 			pressId = this.nextPressId++;
 		}
 		this.activeKeyPressIds.delete(event.code);
-		if (event.code === SUPERVISOR_REQUEST_KEY_CODE) {
+		if (event.code === this.supervisorRequestKeyCode) {
 			if (wasPressed) {
 				this.sink.setSupervisorRequestLine(false);
 			}
@@ -251,7 +254,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private onWindowFocusChange = () => {
-		const supervisorRequestLineHigh = this.activeKeyPressIds.has(SUPERVISOR_REQUEST_KEY_CODE);
+		const supervisorRequestLineHigh = this.activeKeyPressIds.has(this.supervisorRequestKeyCode);
 		this.activeKeyPressIds.clear();
 		this.activePointerIds.length = 0;
 		this.activePointerButtons.length = 0;

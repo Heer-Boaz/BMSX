@@ -18,6 +18,7 @@ import type { GPUBackend } from '../../machine/ts/render/backend/backend';
 const audioState: BootAudioState = {
 	sndcontext: null,
 };
+const supervisorRequestKeyCode = 'ScrollLock';
 
 let bootAnimationComplete = false;
 let startingGamepadIndex = -1;
@@ -64,7 +65,12 @@ export async function prepareBrowserStartup(
 	const onscreenGamepad = enableOnscreenGamepad
 		? new BrowserOnscreenGamepad(gamescreen.ownerDocument, window)
 		: null;
-	const inputHub = new BrowserInputHub(gamescreen, clock, onscreenGamepad);
+	const inputHub = new BrowserInputHub(
+		gamescreen,
+		clock,
+		onscreenGamepad,
+		supervisorRequestKeyCode,
+	);
 	const input = new Input(
 		clock,
 		inputHub,
