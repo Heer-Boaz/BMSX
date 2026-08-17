@@ -5,7 +5,7 @@ local string<const> = require('string')
 local math<const> = require('math')
 local modf<const> = math.modf
 local os<const> = {}
-local time_ms<const>: *word = 0x08010224
+local time_ms<const>: *word = 0x08010228
 
 local seconds_per_day<const> = 86400
 local lua_civil_int_min<const> = -0x80000000

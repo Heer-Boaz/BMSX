@@ -1,4 +1,4 @@
-local time_ms<const>: *word = 0x08010224
+local time_ms<const>: *word = 0x08010228
 
 local function assert_close(actual, expected, label)
 	assert(math.abs(actual - expected) < 0.000001, label)

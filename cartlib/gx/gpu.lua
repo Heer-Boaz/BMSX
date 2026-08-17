@@ -2,8 +2,8 @@ local gp0<const> = require('cartlib/gx/gp0')
 
 local gx_gpu<const> = {}
 
-local gp0_register<const>: *word = 0x08010238
-local gp1<const>: *word = 0x0801023c
+local gp0_register<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
 local gp1_ack_irq<const> = 0x02000000
 
 function gx_gpu.draw_target(origin_word, size_word)

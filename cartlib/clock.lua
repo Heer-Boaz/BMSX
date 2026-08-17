@@ -11,12 +11,12 @@ local gameplay<const> = 0x01
 local frame<const> = 0x02
 
 local milliseconds<const> = function()
-	local time_milliseconds<const>: *word = 0x08010224
+	local time_milliseconds<const>: *word = 0x08010228
 	return *time_milliseconds
 end
 
 local frame_milliseconds<const> = function()
-	local frame_milliseconds_q16<const>: *word = 0x08010228
+	local frame_milliseconds_q16<const>: *word = 0x0801022c
 	return *frame_milliseconds_q16 / 0x00010000
 end
 

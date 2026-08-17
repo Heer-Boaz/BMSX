@@ -1,10 +1,10 @@
 module<const>
 
-local data<const>: *word[32] = 0x08010240
-local control<const>: *word[32] = 0x080102c0
-local command<const>: *word = 0x08010340
-local cycles<const>: *word = 0x08010344
-local plus<const>: *word[10] = 0x08010380
+local data<const>: *word[32] = 0x08010244
+local control<const>: *word[32] = 0x080102c4
+local command<const>: *word = 0x08010344
+local cycles<const>: *word = 0x08010348
+local plus<const>: *word[10] = 0x08010384
 
 local pack_i16_pair<const> = function(lo, hi)
 	return (lo & 0x0000ffff) + (hi & 0x0000ffff) * 0x00010000

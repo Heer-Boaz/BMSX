@@ -50,7 +50,7 @@ is not a design source or a compatibility route for any of them.
 #### GTE+ VMAD3 datapath
 
 GTE+ revision 1 adds one raw ten-word MMIO register block at
-`IO_GX_GTE_PLUS_BASE` (`0x08010380`). It is adjacent machine hardware, not an
+`IO_GX_GTE_PLUS_BASE` (`0x08010384`). It is adjacent machine hardware, not an
 alternate view of the 32 PSX data registers, 32 PSX control registers or the PSX
 command port.
 
@@ -1585,10 +1585,10 @@ Bus fault registers:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `BUS_FAULT_CODE` | `0x08010204` | Sticky fault code for the first visible bus fault. |
-| `BUS_FAULT_ADDR` | `0x08010208` | Address captured with the sticky bus fault. |
-| `BUS_FAULT_ACCESS` | `0x0801020c` | Access flags captured with the sticky bus fault. |
-| `BUS_FAULT_ACK` | `0x08010210` | Write nonzero to clear the sticky bus fault. |
+| `BUS_FAULT_CODE` | `0x08010208` | Sticky fault code for the first visible bus fault. |
+| `BUS_FAULT_ADDR` | `0x0801020c` | Address captured with the sticky bus fault. |
+| `BUS_FAULT_ACCESS` | `0x08010210` | Access flags captured with the sticky bus fault. |
+| `BUS_FAULT_ACK` | `0x08010214` | Write nonzero to clear the sticky bus fault. |
 
 Bus fault code values:
 
@@ -1715,9 +1715,9 @@ the addresses nor supplies a parallel cart clock.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_TIME_MS` | `0x08010224` | Read low-u32 elapsed whole machine milliseconds. |
-| `SYS_FRAME_MS_Q16` | `0x08010228` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
-| `SYS_CYCLES_PER_FRAME` | `0x08010234` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
+| `SYS_TIME_MS` | `0x08010228` | Read low-u32 elapsed whole machine milliseconds. |
+| `SYS_FRAME_MS_Q16` | `0x0801022c` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
+| `SYS_CYCLES_PER_FRAME` | `0x08010238` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
 
 Cart and firmware console output uses the system debug-transmit device. Like a
 UART subdevice, it owns its register pair, transmit datapath and fixed output
@@ -1958,8 +1958,8 @@ System control is a small privileged registerfile rather than a host callback:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, capture and begin synchronous-fault supervisor entry `0x8`, publish the presented synchronous fault `0x10`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
-| `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
+| `SYS_CONTROL` | `0x0801034c` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, capture and begin synchronous-fault supervisor entry `0x8`, publish the presented synchronous fault `0x10`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
+| `SYS_STATUS` | `0x08010350` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
 These are two independent hardware words, not one shared state enum:
 `SYS_CONTROL` bits are write strobes and `SYS_STATUS` bits are retained status
@@ -1971,12 +1971,12 @@ one read-only raw registerfile:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_SUPERVISOR_FAULT_SEQUENCE` | `0x08010434` | Wrapping publication sequence. |
-| `SYS_SUPERVISOR_FAULT_CAUSE` | `0x08010438` | Captured raw CP0 `CAUSE`. |
-| `SYS_SUPERVISOR_FAULT_EPC` | `0x0801043c` | Captured raw CP0 `EPC`. |
-| `SYS_SUPERVISOR_FAULT_BAD_ADDRESS` | `0x08010440` | Captured raw CP0 `BAD_ADDRESS`. |
-| `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010444` | Captured raw CP0 Lua-fault reason. |
-| `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x08010448` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
+| `SYS_SUPERVISOR_FAULT_SEQUENCE` | `0x08010438` | Wrapping publication sequence. |
+| `SYS_SUPERVISOR_FAULT_CAUSE` | `0x0801043c` | Captured raw CP0 `CAUSE`. |
+| `SYS_SUPERVISOR_FAULT_EPC` | `0x08010440` | Captured raw CP0 `EPC`. |
+| `SYS_SUPERVISOR_FAULT_BAD_ADDRESS` | `0x08010444` | Captured raw CP0 `BAD_ADDRESS`. |
+| `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010448` | Captured raw CP0 Lua-fault reason. |
+| `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x0801044c` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
 
 The `SUPERVISOR_FAULT` command copies the five payload words from CPU latches
 before the firmware changes interrupt or display ownership, but does not yet
@@ -3092,6 +3092,9 @@ CPU-cycle-to-sample carry, and the absolute DAC-sample sequence. It synchronizes
 the voice datapath and sample-transfer datapath to the exact current machine
 cycle before live selected-slot writes, command admission, timing-dependent
 reads, and save-state capture.
+The read-only `APU_SAMPLE_SEQUENCE` word at `0x08000200`, immediately after the
+command-FIFO capacity word in the APU register block, synchronizes that service
+clock and exposes the low 32 bits of the retained DAC-sample sequence.
 Normal service runs are batched to at most 128 samples, but the next service
 deadline is shortened to the first finite-source or fade completion. Slot END
 and its IRQ therefore occur on the exact hardware sample edge without

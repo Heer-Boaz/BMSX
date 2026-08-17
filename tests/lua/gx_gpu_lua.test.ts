@@ -55,10 +55,10 @@ return gx_display.size()
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
-local pmode<const>: *word = 0x08010350
-local smode1_low<const>: *word = 0x080103a8
-local display2_low<const>: *word = 0x08010370
-local display2_high<const>: *word = 0x08010374
+local pmode<const>: *word = 0x08010354
+local smode1_low<const>: *word = 0x080103ac
+local display2_low<const>: *word = 0x08010374
+local display2_high<const>: *word = 0x08010378
 *pmode = 2
 *smode1_low = 0x40200504
 *display2_low = 420 | (40 << 12)

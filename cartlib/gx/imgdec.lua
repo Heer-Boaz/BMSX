@@ -1,11 +1,11 @@
 local dma<const> = require('cartlib/dma')
 
 local imgdec<const> = {}
-local input_word_count<const>: *word = 0x080103f8
-local texture_destination<const>: *word = 0x080103fc
-local texture_size<const>: *word = 0x08010400
-local clut_destination<const>: *word = 0x08010404
-local control<const>: *word = 0x08010408
+local input_word_count<const>: *word = 0x080103fc
+local texture_destination<const>: *word = 0x08010400
+local texture_size<const>: *word = 0x08010404
+local clut_destination<const>: *word = 0x08010408
+local control<const>: *word = 0x0801040c
 local control_start<const> = 0x00000001
 
 function imgdec.upload(source, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination_word)

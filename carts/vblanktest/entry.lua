@@ -5,7 +5,7 @@ gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
 irq = irq_module.dispatch
 
-local gp1_status<const>: *word = 0x0801023c
+local gp1_status<const>: *word = 0x08010240
 local irq_mask_register<const>: *word = 0x08000008
 local input_control_register<const>: *word = 0x08000064
 

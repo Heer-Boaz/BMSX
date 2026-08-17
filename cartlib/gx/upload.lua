@@ -1,5 +1,5 @@
 local upload<const> = {}
-local gp0<const>: *word = 0x08010238
+local gp0<const>: *word = 0x0801023c
 local gp0_cpu_to_vram<const> = 0xa0000000
 
 local rgba8888_to_direct16<const> = function(color)

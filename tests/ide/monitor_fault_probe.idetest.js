@@ -1,7 +1,7 @@
 // Real end-to-end check: an uncaught Lua runtime error becomes a genuine CPU_CAUSE_CODE_TRAP
 // exception handled entirely by firmware (the BIOS monitor), not a host-level crash.
 
-const faultSequenceAddress = 0x08010434;
+const faultSequenceAddress = 0x08010438;
 let faultSequence = 0;
 for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
 	await t.frames(1);

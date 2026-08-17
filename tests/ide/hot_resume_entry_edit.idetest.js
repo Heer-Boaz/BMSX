@@ -198,7 +198,7 @@ t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) ==
 const mediaBeforeNoOpRefresh = sourceState.currentBlua32Media;
 const initCountBeforeBreakpoint = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
 const printCountBeforeBreakpoint = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count'));
-runtime.machine.memory.writeMappedU32LE(0x0801041c, dataOnlySlot);
+runtime.machine.memory.writeMappedU32LE(0x08010420, dataOnlySlot);
 t.assert(
 	runtime.machine.memory.cartridgeController.selectedSlot() === dataOnlySlot,
 	'dual-cart setup did not select the data-only socket',
@@ -323,7 +323,7 @@ t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
 const faultLogStart = t.logMessageCount();
 await t.performHotResume();
 
-const faultSequenceAddress = 0x08010434;
+const faultSequenceAddress = 0x08010438;
 let faultSequence = 0;
 for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
 	await t.frames(1);

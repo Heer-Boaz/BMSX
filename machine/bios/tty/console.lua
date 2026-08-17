@@ -3,8 +3,8 @@ local terminal<const> = require('tty/terminal')
 local byte<const> = __bmsx_string_byte
 local console<const> = {}
 
-local system_print_char<const>: *word = 0x0801022c
-local system_print_flush<const>: *word = 0x08010230
+local system_print_char<const>: *word = 0x08010230
+local system_print_flush<const>: *word = 0x08010234
 local palette_text<const> = terminal.palette_text
 local history_capacity<const> = 8192
 local history_mask<const> = history_capacity - 1

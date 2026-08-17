@@ -13,12 +13,12 @@ bss transfer_result: word[4]
 
 local irq_mask<const>: *word = 0x08000008
 local apu_status<const>: *word = 0x08000178
-local cart_select<const>: *word = 0x0801041c
-local cart_status<const>: *word = 0x08010420
-local slot0_board<const>: *word = 0x08010424
-local slot0_ram_bytes<const>: *word = 0x08010428
-local slot1_board<const>: *word = 0x0801042c
-local slot1_ram_bytes<const>: *word = 0x08010430
+local cart_select<const>: *word = 0x08010420
+local cart_status<const>: *word = 0x08010424
+local slot0_board<const>: *word = 0x08010428
+local slot0_ram_bytes<const>: *word = 0x0801042c
+local slot1_board<const>: *word = 0x08010430
+local slot1_ram_bytes<const>: *word = 0x08010434
 local mailbox_data<const>: *word = 0x30f00000
 local mailbox_control<const>: *word = 0x30f00004
 local mailbox_status<const>: *word = 0x30f00008
