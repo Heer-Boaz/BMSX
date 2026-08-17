@@ -1,6 +1,8 @@
 local world<const> = require('cartlib/world/world')
 local progression<const> = require('cartlib/progression')
 local registry<const> = require('cartlib/registry')
+local castle_map<const> = require('castle/map')
+local combat_damage<const> = require('combat/damage')
 
 __bmsx_host_test = __bmsx_host_test or {
 	frames = 0,
@@ -9,6 +11,34 @@ __bmsx_host_test = __bmsx_host_test or {
 
 local record_appearance<const> = function(test)
 	test.appearance_count = test.appearance_count + 1
+end
+
+local destroy_enemy<const> = function(enemy)
+	enemy.health = 1
+	local result<const> = combat_damage.resolve(enemy, combat_damage.build_weapon_request(
+		enemy,
+		enemy.enemy_kind,
+		{ other_id = 'test.sword' },
+		'sword'
+	))
+	enemy:process_damage_result(result)
+end
+
+local emit_condition_source_destroyed<const> = function(castle, room_number, condition)
+	local enemies<const> = castle_map.room_templates[room_number].enemies
+	for i = 1, #enemies do
+		local enemy<const> = enemies[i]
+		if enemy.destroyed_condition == condition then
+			castle.events:emit('damage.resolved', {
+				target_id = enemy.id,
+				target_kind = enemy.kind,
+				destroyed = true,
+				room_number = room_number,
+			})
+			return
+		end
+	end
+	error('missing destroyed condition source ' .. condition)
 end
 
 function __bmsx_host_test.setup()
@@ -64,18 +94,20 @@ function __bmsx_host_test.update()
 		test.phase = 6
 	elseif phase == 6 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not enter room 106')
-		local enemy_def<const> = room.enemies[1]
+		local enemy_defs<const> = {}
+		for i = 1, #room.enemies do
+			local enemy_def<const> = room.enemies[i]
+			if enemy_def.kind == 'marspeinenaardappel' then
+				enemy_defs[#enemy_defs + 1] = enemy_def
+			end
+		end
+		local enemy_def<const> = enemy_defs[1]
 		assert(enemy_def.retain_defeat_in_region, 'room 106 enemy must retain defeat within world 1')
+		test.room106_enemy_defs = enemy_defs
 		test.enemy_id = enemy_def.id
 		local enemy<const> = registry:get(enemy_def.id)
 		assert(enemy ~= nil, 'room 106 enemy did not spawn')
-		enemy.events:emit('damage.resolved', {
-			status = 'applied',
-			target_id = enemy_def.id,
-			target_kind = enemy_def.kind,
-			destroyed = true,
-			room_number = room.room_number,
-		})
+		destroy_enemy(enemy)
 		assert(progression.get(castle, enemy_def.id), 'enemy defeat was not retained in world 1')
 		test.phase = 7
 	elseif phase == 7 then
@@ -87,8 +119,26 @@ function __bmsx_host_test.update()
 	elseif phase == 9 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not return to room 106')
 		assert(registry:get(test.enemy_id) == nil, 'enemy respawned during the same world visit')
+		test.room106_destroy_index = 2
+		test.phase = 'destroy_room106_enemies'
+	elseif phase == 'destroy_room106_enemies' then
+		local enemy_defs<const> = test.room106_enemy_defs
+		local index<const> = test.room106_destroy_index
+		if index <= #enemy_defs then
+			local enemy<const> = registry:get(enemy_defs[index].id)
+			assert(enemy ~= nil, 'room 106 enemy disappeared before it was defeated')
+			destroy_enemy(enemy)
+			test.room106_destroy_index = index + 1
+			return false
+		end
+		test.phase = 'verify_room106_wall'
+	elseif phase == 'verify_room106_wall' then
+		assert(progression.get(castle, 'r106.wall'), 'room 106 wall condition did not open')
+		assert(#room.wall_instances == 0, 'room 106 collision retained the disappearing wall')
+		assert(test.appearance_count == 1, 'room 106 wall did not emit exactly one reveal cue')
 		castle:leave_world_to_castle()
 		assert(not progression.get(castle, test.enemy_id), 'enemy defeat survived the world-to-castle boundary')
+		assert(not progression.get(castle, 'r106.wall'), 'room 106 wall survived the world-to-castle boundary')
 		test.phase = 10
 	elseif phase == 10 then
 		castle:enter_world('world_1')
@@ -104,21 +154,13 @@ function __bmsx_host_test.update()
 		test.phase = 14
 	elseif phase == 14 then
 		assert(registry:get(test.enemy_id) ~= nil, 'enemy did not respawn on the next world visit')
+		assert(#room.wall_instances == 1, 'room 106 wall did not respawn on the next world visit')
 		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder was already open before the staff encounter')
-		castle.events:emit('room.condition_set', {
-			room_number = 104,
-			condition = 'staff1destroyed',
-		})
-		castle.events:emit('room.condition_set', {
-			room_number = 107,
-			condition = 'staff2destroyed',
-		})
-		castle.events:emit('room.condition_set', {
-			room_number = 110,
-			condition = 'staff3destroyed',
-		})
+		emit_condition_source_destroyed(castle, 104, 'staff1destroyed')
+		emit_condition_source_destroyed(castle, 107, 'staff2destroyed')
+		emit_condition_source_destroyed(castle, 110, 'staff3destroyed')
 		assert(progression.get(castle, 'r109.stairs'), 'staff progression did not open the world stairs')
-		assert(test.appearance_count == 1, 'staff progression did not emit one reveal cue')
+		assert(test.appearance_count == 2, 'staff progression did not emit one reveal cue')
 		castle:leave_world_to_castle()
 		test.phase = 15
 	elseif phase == 15 then
@@ -142,26 +184,17 @@ function __bmsx_host_test.update()
 		local staff_def
 		for i = 1, #room.enemies do
 			local candidate<const> = room.enemies[i]
-			if candidate.trigger == 'staff1destroyed' then
+			if candidate.destroyed_condition == 'staff1destroyed' then
 				staff_def = candidate
 				break
 			end
 		end
 		assert(staff_def ~= nil, 'room 104 staff definition is missing')
 		assert(registry:get(staff_def.id) ~= nil, 'staff did not respawn on the next world visit')
-		castle.events:emit('room.condition_set', {
-			room_number = 104,
-			condition = 'staff1destroyed',
-		})
-		castle.events:emit('room.condition_set', {
-			room_number = 107,
-			condition = 'staff2destroyed',
-		})
-		castle.events:emit('room.condition_set', {
-			room_number = 110,
-			condition = 'staff3destroyed',
-		})
-		assert(test.appearance_count == 2, 'staff progression did not repeat the reveal cue after reset')
+		emit_condition_source_destroyed(castle, 104, 'staff1destroyed')
+		emit_condition_source_destroyed(castle, 107, 'staff2destroyed')
+		emit_condition_source_destroyed(castle, 110, 'staff3destroyed')
+		assert(test.appearance_count == 3, 'staff progression did not repeat the reveal cue after reset')
 		return true
 	end
 	return false

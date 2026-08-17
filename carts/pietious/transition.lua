@@ -7,8 +7,10 @@
 --     the direct lines payload and plays the fade mask timeline. A transition
 --     without banner text carries nil.
 --   transition-mode broadcasts ('halo', 'title', 'story', 'ending',
---     'victory_dance', 'death') — also play the fade mask timeline. The mode
+--     'victory_dance') — also play the fade mask timeline. The mode
 --     broadcast itself is the canonical signal; no second relay event exists.
+--   'death_screen' — shows the retained game-over text on the already closed
+--     curtain without starting a second fade.
 --   'room'             (from 'd') — clears and hides retained banner text.
 --
 -- Banner visibility follows those mode events directly. The retained text
@@ -24,9 +26,13 @@ local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local font_module<const> = require('cartlib/font')
+local game_text_module<const> = require('game_text')
+local game_text<const>: *game_text_record = game_text_module.game_text
 
 local transition<const> = {}
 transition.__index = transition
+local banner_text_y<const> = room_tile_origin_y + (room_tile_size * 9)
+local death_screen_text_y<const> = room_tile_size * 10
 
 local draw_transition_visual<const> = function(_, draw)
 	draw:rect(0, 0, screen_width, screen_height, 0xff000000)
@@ -38,14 +44,13 @@ local transition_mode_events<const> = {
 	'story',
 	'ending',
 	'victory_dance',
-	'death',
 }
 
 function transition:ctor()
 	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
-	text.offset_y = room_tile_origin_y + (room_tile_size * 9)
+	text.offset_y = banner_text_y
 	text:set_offset_z(1)
 	text.visible = false
 	text.center_block_width = screen_width
@@ -62,6 +67,7 @@ local define_transition_fsm<const> = function()
 		['transition'] = {
 			emitter = 'd',
 			go = function(self, _state, lines)
+				self.text_component.offset_y = banner_text_y
 				self.text_component:set_text(lines)
 				self.text_component.visible = lines ~= nil
 				self.timelines:play('transition.timeline', { rewind = true, snap_to_start = true })
@@ -72,6 +78,14 @@ local define_transition_fsm<const> = function()
 			go = function(self)
 				self.text_component:set_text(nil)
 				self.text_component.visible = false
+			end,
+		},
+		['death_screen'] = {
+			emitter = 'd',
+			go = function(self)
+				self.text_component.offset_y = death_screen_text_y
+				self.text_component:set_text(game_text[0].death_screen)
+				self.text_component.visible = true
 			end,
 		},
 	}

@@ -22,20 +22,6 @@ function breakablewall:apply_damage(request)
 	return combat_damage.build_applied_result(request, 1, true, 'destroyed')
 end
 
-function breakablewall:process_damage_result(result)
-	if result.status == 'rejected' then
-		return
-	end
-	if result.destroyed then
-		self.castle.events:emit('room.condition_set', {
-			room_number = result.room_number,
-			condition = self.trigger,
-			play_appearance = true,
-		})
-		return
-	end
-end
-
 function breakablewall:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
 	collider.layer = collision_enemy_layer
@@ -60,7 +46,9 @@ function breakablewall.register()
 					return
 				end
 				local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
-				self:process_damage_result(result)
+				if result.destroyed then
+					self:mark_for_disposal()
+				end
 			end,
 		},
 		states = {
@@ -76,7 +64,6 @@ function breakablewall.register()
 			fsm_component.factory({ 'breakablewall' }),
 		},
 		defaults = {
-			trigger = nil,
 			damage = 0,
 			max_health = 1,
 			health = 1,

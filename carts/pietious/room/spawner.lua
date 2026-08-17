@@ -122,37 +122,61 @@ local spawn_world_entrances<const> = function(room)
 	end
 end
 
-local spawn_items<const> = function(room)
+local sync_item<const> = function(room, def)
 	local castle<const> = room.castle
 	local player<const> = room.player
-	for i = 1, #room.items do
-		local def<const> = room.items[i]
-		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
-		local matches_conditions<const> = progression.matches(castle, def.progression_filter)
-		local already_owned<const> = player.inventory_items[def.item_type]
-
-		local should_spawn<const> = not picked and matches_conditions and not already_owned
-		local existing<const> = registry:get(def.id)
-		if should_spawn then
-			if existing == nil then
-				local obj<const> = world:spawn('world_item', {
-					id = def.id,
-					space_id = 'main',
-					room = room,
-					player = player,
-					pos = { x = def.x, y = def.y, z = 130 },
-					item_id = def.id,
-					item_type = def.item_type,
-					rs_room_number = room.room_number,
-				})
-				obj:add_tag('rs')
-			end
-		else
-			if existing ~= nil then
-				existing:mark_for_disposal()
-			end
+	local picked<const> = progression.get(castle, def.picked_key)
+	local matches_conditions<const> = progression.matches(castle, def.progression_filter)
+	local already_owned<const> = player.inventory_items[def.item_type]
+	local should_spawn<const> = not picked and matches_conditions and not already_owned
+	local existing<const> = registry:get(def.id)
+	if should_spawn then
+		if existing == nil then
+			local obj<const> = world:spawn('world_item', {
+				id = def.id,
+				space_id = 'main',
+				room = room,
+				player = player,
+				pos = { x = def.x, y = def.y, z = 130 },
+				item_id = def.id,
+				item_type = def.item_type,
+				rs_room_number = room.room_number,
+			})
+			obj:add_tag('rs')
 		end
+	elseif existing ~= nil then
+		existing:mark_for_disposal()
 	end
+end
+
+local spawn_items<const> = function(room)
+	local items<const> = room.items
+	for i = 1, #items do
+		sync_item(room, items[i])
+	end
+end
+
+local spawn_enemy<const> = function(room, def)
+	local obj<const> = world:spawn('enemy.' .. def.kind, {
+		id = def.id,
+		space_id = 'main',
+		castle = room.castle,
+		room = room,
+		player = room.player,
+		pos = { x = def.x, y = def.y, z = def.draw_z },
+		damage = def.damage,
+		health = def.health,
+		max_health = def.health,
+		direction = def.direction,
+		speed_x_num = def.speedx,
+		speed_y_num = def.speedy,
+		width_tiles = def.width_tiles,
+		height_tiles = def.height_tiles,
+		tiletype = def.tiletype,
+		rs_room_number = room.room_number,
+	})
+	obj:add_tag('rs')
+	return obj
 end
 
 local spawn_enemies<const> = function(room)
@@ -167,26 +191,7 @@ local spawn_enemies<const> = function(room)
 		local existing = registry:get(def.id)
 		if should_spawn then
 			if existing == nil then
-				existing = world:spawn('enemy.' .. def.kind, {
-					id = def.id,
-					space_id = 'main',
-					castle = castle,
-					room = room,
-					player = room.player,
-					pos = { x = def.x, y = def.y, z = def.draw_z },
-					trigger = def.trigger,
-					damage = def.damage,
-					health = def.health,
-					max_health = def.health,
-					direction = def.direction,
-					speed_x_num = def.speedx,
-					speed_y_num = def.speedy,
-					width_tiles = def.width_tiles,
-					height_tiles = def.height_tiles,
-					tiletype = def.tiletype,
-					rs_room_number = room.room_number,
-				})
-				existing:add_tag('rs')
+				existing = spawn_enemy(room, def)
 			end
 			if def.blocks_room_collision then
 				wall_count = wall_count + 1
@@ -200,6 +205,53 @@ local spawn_enemies<const> = function(room)
 	end
 	for i = wall_count + 1, #walls do
 		walls[i] = nil
+	end
+end
+
+local rebuild_wall_instances<const> = function(room)
+	local walls<const> = room.wall_instances
+	local wall_defs<const> = room.wall_enemies
+	local wall_count = 0
+	for i = 1, #wall_defs do
+		local def<const> = wall_defs[i]
+		if progression.matches(room.castle, def.progression_filter) then
+			local wall<const> = registry:get(def.id)
+			if wall ~= nil then
+				wall_count = wall_count + 1
+				walls[wall_count] = wall
+			end
+		end
+	end
+	for i = wall_count + 1, #walls do
+		walls[i] = nil
+	end
+end
+
+function room_spawner.reconcile_condition(room, condition, source_id)
+	local castle<const> = room.castle
+	local dependency<const> = room.condition_dependencies[condition]
+	local enemies<const> = dependency.enemies
+	for i = 1, #enemies do
+		local def<const> = enemies[i]
+		if def.id ~= source_id then
+			local existing<const> = registry:get(def.id)
+			local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
+			local should_spawn<const> = not defeated and progression.matches(castle, def.progression_filter)
+			if should_spawn then
+				if existing == nil then
+					spawn_enemy(room, def)
+				end
+			elseif existing ~= nil then
+				existing:mark_for_disposal()
+			end
+		end
+	end
+	local items<const> = dependency.items
+	for i = 1, #items do
+		sync_item(room, items[i])
+	end
+	if dependency.affects_walls then
+		rebuild_wall_instances(room)
 	end
 end
 

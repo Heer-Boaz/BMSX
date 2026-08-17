@@ -10,6 +10,15 @@ local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	return delta, accum - delta * speed_den
 end
 
+-- Retains the non-negative fractional word of a fixed-point position. Unlike
+-- consume_axis_accum, signed motion crosses the integer boundary toward
+-- negative infinity, matching addition to a two's-complement fixed-point word.
+local consume_axis_fraction<const> = function(fraction, speed_num, speed_den)
+	local value<const> = fraction + speed_num
+	local delta<const> = value // speed_den
+	return delta, value - delta * speed_den
+end
+
 local move_with_velocity<const> = function(target)
 	local speed_den<const> = target.speed_den
 	if speed_den == 1 then
@@ -29,5 +38,6 @@ end
 
 return {
 	consume_axis_accum = consume_axis_accum,
+	consume_axis_fraction = consume_axis_fraction,
 	move_with_velocity = move_with_velocity,
 }

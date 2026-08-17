@@ -110,7 +110,6 @@ function zakfoe.register()
 		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
-			trigger = nil,
 			damage = 2,
 			max_health = 2,
 			health = 2,dangerous = true,

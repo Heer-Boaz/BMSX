@@ -1010,20 +1010,18 @@ function player:try_start_world_or_shrine_interaction_from_down()
 	return false
 end
 
-function player:get_walk_dx()
+-- Ground movement mirrors the original signed 8.8 position addition. The
+-- retained half-pixel survives direction changes and integer-speed movement.
+function player:compute_walk_step(direction)
+	local speed_num
 	if self:has_tag(player_tags.in_water) then
-		local walk_dx<const>, next_accum<const> = velocity.consume_axis_accum(self.walk_speed_accum, 1, 2)
-		self.walk_speed_accum = next_accum
-		return walk_dx
+		speed_num = physics_walk_speed_water_num
+	elseif self.inventory_items['schoentjes'] then
+		speed_num = physics_walk_speed_schoentjes_num
+	else
+		return direction * physics_walk_speed_px, self.walk_x_fraction
 	end
-	if self.inventory_items['schoentjes'] then
-		self.walk_speed_accum = self.walk_speed_accum + physics_walk_dx_schoentjes_num
-		local walk_dx<const> = self.walk_speed_accum // physics_walk_dx_schoentjes_den
-		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * physics_walk_dx_schoentjes_den)
-		return walk_dx
-	end
-	self.walk_speed_accum = 0
-	return physics_walk_dx
+	return velocity.consume_axis_fraction(self.walk_x_fraction, direction * speed_num, physics_walk_speed_den)
 end
 
 function player:sync_water_state()
@@ -1814,20 +1812,11 @@ function player:get_controlled_fall_dx()
 	return inertia * physics_fall_dx_neutral
 end
 
-function player:reset_walk_animation()
-	self.walk_frame = 0
-	self.walk_distance_accum = 0
-end
-
-function player:advance_walk_animation(distance_px)
-	self.walk_distance_accum = self.walk_distance_accum + distance_px
-	while self.walk_distance_accum >= player_walk_anim_cycle_px do
-		self.walk_distance_accum = self.walk_distance_accum - player_walk_anim_cycle_px
-		if self.walk_frame == 0 then
-			self.walk_frame = 1
-		else
-			self.walk_frame = 0
-		end
+-- The original animation toggles on gameplay tick & 3, independently of the
+-- distance covered by normal walking, the shoes, or water.
+function player:advance_walk_animation()
+	if self.walk_animation_phase == 0 then
+		self.walk_frame = 1 - self.walk_frame
 	end
 end
 
@@ -2013,14 +2002,8 @@ function player:runcheck_quiet_stairs_controls()
 	end
 end
 
-function player:reset_motion_for_transition_lock()
-	self:zero_motion()
-	self.walk_move_dx = 0
-	self.walk_move_collided_x = false
-end
-
 function player:update_entering_world()
-	self:reset_motion_for_transition_lock()
+	self:zero_motion()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
@@ -2033,7 +2016,7 @@ function player:update_entering_world()
 end
 
 function player:update_entering_shrine()
-	self:reset_motion_for_transition_lock()
+	self:zero_motion()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
@@ -2045,7 +2028,7 @@ function player:update_entering_shrine()
 end
 
 function player:update_emerging_world()
-	self:reset_motion_for_transition_lock()
+	self:zero_motion()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
@@ -2071,9 +2054,6 @@ end
 
 function player:update_walking_right()
 	self.facing = 1
-	local walk_dx<const> = self:get_walk_dx()
-	self.walk_move_dx = walk_dx
-	self.walk_move_collided_x = false
 
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
@@ -2083,21 +2063,28 @@ function player:update_walking_right()
 		return
 	end
 
-	local moved_x<const>, collided_x<const> = self:apply_side_probe_horizontal_move(walk_dx)
+	local walk_dx<const>, next_fraction<const> = self:compute_walk_step(1)
+	local moved_x
+	local collided_x
+	if walk_dx == 0 then
+		moved_x = 0
+		collided_x = self.right_wall_collision
+	else
+		moved_x, collided_x = self:apply_side_probe_horizontal_move(walk_dx)
+	end
+	if not collided_x then
+		self.walk_x_fraction = next_fraction
+	end
 	self.last_dx = moved_x
 	self.last_dy = 0
 	self.previous_x_collision = collided_x
 	self.previous_y_collision = false
-	self.walk_move_collided_x = collided_x
-	self:advance_walk_animation(walk_dx)
+	self:advance_walk_animation()
 	self:runcheck_walking_right_controls()
 end
 
 function player:update_walking_left()
 	self.facing = -1
-	local walk_dx<const> = self:get_walk_dx()
-	self.walk_move_dx = -walk_dx
-	self.walk_move_collided_x = false
 
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
@@ -2107,13 +2094,23 @@ function player:update_walking_left()
 		return
 	end
 
-	local moved_x<const>, collided_x<const> = self:apply_side_probe_horizontal_move(-walk_dx)
+	local walk_dx<const>, next_fraction<const> = self:compute_walk_step(-1)
+	local moved_x
+	local collided_x
+	if walk_dx == 0 then
+		moved_x = 0
+		collided_x = self.left_wall_collision
+	else
+		moved_x, collided_x = self:apply_side_probe_horizontal_move(walk_dx)
+	end
+	if not collided_x then
+		self.walk_x_fraction = next_fraction
+	end
 	self.last_dx = moved_x
 	self.last_dy = 0
 	self.previous_x_collision = collided_x
 	self.previous_y_collision = false
-	self.walk_move_collided_x = collided_x
-	self:advance_walk_animation(walk_dx)
+	self:advance_walk_animation()
 	self:runcheck_walking_left_controls()
 end
 
@@ -2591,7 +2588,7 @@ function player:update_common_frame()
 	self:update_water_state()
 
 	if self:has_tag(state_tags.group.transition_lock) then
-		self:reset_motion_for_transition_lock()
+		self:zero_motion()
 		self.grounded = false
 		self:apply_presentation_state()
 		return
@@ -2694,6 +2691,7 @@ local define_player_fsm<const> = function()
 			self:sync_input_state()
 			self:update_collision_state()
 			self:sync_water_state()
+			self.walk_animation_phase = (self.walk_animation_phase + 1) & player_walk_animation_phase_mask
 			if not self:has_tag(state_tags.group.movement_jump) then
 				self.jumping_from_elevator = false
 			end
@@ -2732,9 +2730,6 @@ local define_player_fsm<const> = function()
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet',
 			},
-			entering_state = function(self)
-				self:reset_walk_animation()
-			end,
 			update = player.update_walking_right,
 		},
 		walking_left = {
@@ -2750,9 +2745,6 @@ local define_player_fsm<const> = function()
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet',
 			},
-			entering_state = function(self)
-				self:reset_walk_animation()
-			end,
 			update = player.update_walking_left,
 		},
 		slowdoorpass = {
@@ -2855,7 +2847,7 @@ local define_player_fsm<const> = function()
 					end,
 				},
 			},
-			update = player.reset_motion_for_transition_lock,
+			update = player.zero_motion,
 		},
 		waiting_halo_banner = {
 			tags = {
@@ -2872,7 +2864,7 @@ local define_player_fsm<const> = function()
 					end,
 				},
 			},
-			update = player.reset_motion_for_transition_lock,
+			update = player.zero_motion,
 		},
 		waiting_world_emerge = {
 			tags = {
@@ -2883,7 +2875,7 @@ local define_player_fsm<const> = function()
 			on = {
 				['world_emerge_start'] = '/emerging_world',
 			},
-			update = player.reset_motion_for_transition_lock,
+			update = player.zero_motion,
 		},
 		emerging_world = {
 			tags = {
@@ -2916,7 +2908,7 @@ local define_player_fsm<const> = function()
 			on = {
 				['leave_shrine_overlay'] = '/leaving_shrine',
 			},
-			update = player.reset_motion_for_transition_lock,
+			update = player.zero_motion,
 		},
 		leaving_shrine = {
 			tags = {
@@ -2940,7 +2932,7 @@ local define_player_fsm<const> = function()
 					end,
 				},
 			},
-			update = player.reset_motion_for_transition_lock,
+			update = player.zero_motion,
 		},
 		-- FREEZE — entered on 'seal_dissolution' from root on handler.
 		-- Cancels any active sword swing, then waits for 'seal_flash_done'.
@@ -3235,11 +3227,9 @@ local register_player_definition<const> = function()
 			next_vertical_elevator_id = nil,
 			jumping_from_elevator = false,
 			walk_frame = 0,
-			walk_distance_accum = 0,
-			walk_speed_accum = 0,
+			walk_animation_phase = 0,
+			walk_x_fraction = 0,
 			walk_state = 0,
-			walk_move_dx = 0,
-			walk_move_collided_x = false,
 			stairs_direction = 0,
 			stairs_x = -1,
 			stairs_top_y = player_start_y,

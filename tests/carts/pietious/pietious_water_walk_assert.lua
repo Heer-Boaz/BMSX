@@ -6,7 +6,6 @@ __bmsx_host_test = {
 	frames = 0,
 	phase = 'setup',
 	sample_count = 0,
-	total_dx = 0,
 }
 
 function __bmsx_host_test.setup()
@@ -59,15 +58,18 @@ function __bmsx_host_test.update()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
 		player:cancel_sword()
-		player.inventory_items.schoentjes = false
+		player.inventory_items.schoentjes = true
 		player.x = probe_x
 		player.y = probe_y
 		player.facing = 1
-		player.walk_speed_accum = 0
+		player.walk_x_fraction = 0
+		player.walk_animation_phase = 0
+		player.walk_frame = 0
 		player.state_machines:transition_to('/walking_right')
 		player:sync_water_state()
 		assert(player.water_state == water_body, 'setup did not place player in body water')
 		test.walking_state = player.state_machines:bind_state_path('/walking_right')
+		test.start_x = player.x
 		test.phase = 'sample'
 		return host.down('ArrowRight')
 	end
@@ -77,13 +79,14 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local dx<const> = player.last_dx
-		assert(dx == 0 or dx == 1, 'underwater ground walk moved by ' .. dx .. ' pixels in one frame')
+		assert(dx == 0 or dx == 1, 'underwater ground walk moved by ' .. dx .. ' pixels in one gameplay update')
 		test.sample_count = test.sample_count + 1
-		test.total_dx = test.total_dx + dx
-		if test.sample_count < 4 then
+		if test.sample_count < 8 then
 			return false
 		end
-		assert(test.total_dx == 2, 'underwater ground walk moved ' .. test.total_dx .. ' pixels over four frames')
+		local distance<const> = player.x - test.start_x
+		assert(distance == 2, 'underwater ground walk moved ' .. distance .. ' pixels over four gameplay updates')
+		assert(player.walk_frame == 1, 'underwater walk animation did not advance after four gameplay updates')
 		test.phase = 'release'
 		return host.up('ArrowRight')
 	end

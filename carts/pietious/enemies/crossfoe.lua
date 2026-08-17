@@ -142,7 +142,6 @@ function crossfoe.register()
 		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
-			trigger = nil,
 			damage = 4,
 			max_health = 3,
 			health = 3,

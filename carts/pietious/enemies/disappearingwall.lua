@@ -33,7 +33,6 @@ function disappearingwall.register()
 			tile_layer_component.new,
 		},
 		defaults = {
-			trigger = nil,
 			damage = 0,
 			max_health = 1,
 			health = 1,

@@ -7,7 +7,9 @@ __bmsx_host_test = {
 	frames = 0,
 	phase = 'enter_world',
 	saw_dying_tick = false,
+	saw_curtain = false,
 	saw_transition = false,
+	death_screen_frames = 0,
 }
 
 function __bmsx_host_test.setup()
@@ -19,16 +21,19 @@ function __bmsx_host_test.ready()
 		and registry:get('room') ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
+		and registry:get('transition') ~= nil
+		and registry:get('ui') ~= nil
 end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 240, 'death restart scenario timed out phase=' .. test.phase)
+	assert(test.frames < 600, 'death restart scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
 	local room<const> = registry:get('room')
 	local player<const> = registry:get('pietolon')
+	local director<const> = registry:get('d')
 	if test.phase == 'enter_world' then
 		if world.active_space_id ~= 'main' then
 			return false
@@ -55,6 +60,12 @@ function __bmsx_host_test.update()
 		test.item = item
 		test.dying_state = player.state_machines:bind_state_path('/dying')
 		test.quiet_state = player.state_machines:bind_state_path('/quiet')
+		test.death_curtain_state = director.state_machines:bind_state_path('/death_curtain')
+		test.death_screen_state = director.state_machines:bind_state_path('/death_screen')
+		local ui<const> = registry:get('ui')
+		ui.hud_health_level = 0
+		ui.hud_health_target = 0
+		ui.hud_health_anim_ticks = 1
 		player.health = 0
 		player:start_dying()
 		assert(player.state_machines:matches_state(test.dying_state), 'player did not enter dying state')
@@ -63,32 +74,59 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'dying' then
-		if world.active_space_id == 'main' then
-			assert(player.state_machines:matches_state(test.dying_state),
-				'player left dying before the death animation completed')
-			if player.death_timer > 0 then
-				test.saw_dying_tick = true
-			end
+		assert(world.active_space_id == 'main', 'death animation left gameplay before the curtain')
+		assert(player.state_machines:matches_state(test.dying_state),
+			'player left dying before the death animation completed')
+		if director.state_machines:matches_state(test.death_curtain_state) then
+			test.saw_curtain = true
+			assert(test.saw_dying_tick, 'death animation never advanced in the gameplay space')
+			assert(director.death_curtain_width > 0, 'death curtain opened with zero width')
+			assert(registry:get(test.item_id) == test.item,
+				'death curtain disposed the room before it finished closing')
+			test.last_curtain_width = director.death_curtain_width
+			test.phase = 'curtain'
 			return false
 		end
-		assert(world.active_space_id == 'transition', 'death restart entered an unexpected space')
-		assert(test.saw_dying_tick, 'death animation never advanced in the gameplay space')
+		if player.death_timer > 0 then
+			test.saw_dying_tick = true
+		end
+		return false
+	end
+
+	if test.phase == 'curtain' and world.active_space_id == 'main' then
+		assert(director.state_machines:matches_state(test.death_curtain_state),
+			'death curtain stopped before entering the game-over screen')
+		assert(director.death_curtain_width >= test.last_curtain_width,
+			'death curtain moved backwards while closing')
+		test.last_curtain_width = director.death_curtain_width
+		assert(registry:get(test.item_id) == test.item,
+			'death curtain disposed the room before it finished closing')
+		return false
+	end
+
+	if world.active_space_id == 'transition' then
+		assert(director.state_machines:matches_state(test.death_screen_state),
+			'death restart entered transition space without the game-over screen')
+		assert(test.saw_curtain, 'death restart skipped the closing curtain')
+		assert(director.death_curtain_width == screen_width,
+			'death curtain did not close the complete screen')
+		local transition_screen<const> = registry:get('transition')
+		assert(transition_screen.text_component.visible, 'game-over text is hidden')
+		assert(transition_screen.text_component.text == 'PROBEER HET NOG EENS...',
+			'game-over text differs from the original Pietious screen')
 		test.saw_transition = true
+		test.death_screen_frames = test.death_screen_frames + 1
 		assert(registry:get(test.item_id) == nil,
-			'old room objects survived the death restart disposal barrier')
+			'room object was admitted before the death restart barrier completed')
 		test.phase = 'restart'
 		return false
 	end
 
-	if world.active_space_id ~= 'main' then
-		assert(world.active_space_id == 'transition', 'death restart entered an unexpected space')
-		assert(registry:get(test.item_id) == nil,
-			'room object was admitted before the death restart barrier completed')
-		return false
-	end
-
+	assert(world.active_space_id == 'main', 'death restart entered an unexpected space')
 	local transition<const> = castle_map.world_transitions.world_1
 	assert(test.saw_transition, 'death restart skipped the transition space')
+	assert(test.death_screen_frames >= flow_death_screen_frames,
+		'death restart skipped the game-over screen hold')
 	assert(castle.current_room_number == transition.world_room_number,
 		'death did not return to the current world entrance')
 	assert(room.room_number == transition.world_room_number, 'room state did not reload the world entrance')
@@ -96,6 +134,10 @@ function __bmsx_host_test.update()
 		'player did not respawn at the world entrance')
 	assert(player.facing == transition.world_spawn_facing, 'player respawn facing is wrong')
 	assert(player.health == player.max_health, 'player health was not restored after death')
+	local ui<const> = registry:get('ui')
+	assert(ui.hud_health_level == player.max_health, 'health bar did not snap to restored health')
+	assert(ui.hud_health_target == player.max_health, 'health bar retained a stale target after restart')
+	assert(ui.hud_health_anim_ticks == 0, 'health bar retained animation progress after restart')
 	assert(player.state_machines:matches_state(test.quiet_state), 'player did not return to quiet after death')
 	assert(progression.get(castle, 'staff1destroyed'),
 		'death incorrectly reset defeat retained for the current world visit')

@@ -28,15 +28,27 @@ local set_tag_flag<const> = function(owner, tag, enabled)
 	owner:remove_tag(tag)
 end
 
+local append_condition_reveal<const> = function(commands, condition)
+	local event_name<const> = castle_map.condition_reveal_events[condition]
+	if event_name ~= nil then
+		commands[#commands + 1] = {
+			op = 'emit_event',
+			event = event_name,
+		}
+	end
+end
+
 local build_progression_program<const> = function()
 	local rules<const> = {}
 	local filters<const> = {}
 	local filter_targets<const> = {}
-	local condition_name_set<const> = {}
-	local condition_names<const> = {}
+	local reset_condition_set<const> = {
+		['r106.wall'] = true,
+		['r109.stairs'] = true,
+	}
 	local world1_marspein_destroyed_keys<const> = {}
 	local region_reset_actions<const> = {
-		{ key = 'cloud_1_destroyed', value = false },
+		{ key = 'r106.wall', value = false },
 		{ key = 'r109.stairs', value = false },
 	}
 	local persistent_item_ids<const> = {}
@@ -68,12 +80,39 @@ local build_progression_program<const> = function()
 					value = false,
 				}
 			end
-			if enemy_def.trigger ~= nil and not condition_name_set[enemy_def.trigger] then
-				condition_name_set[enemy_def.trigger] = true
-				condition_names[#condition_names + 1] = enemy_def.trigger
-				region_reset_actions[#region_reset_actions + 1] = {
-					key = enemy_def.trigger,
-					value = false,
+			local destroyed_condition<const> = enemy_def.destroyed_condition
+			if destroyed_condition ~= nil then
+				if not reset_condition_set[destroyed_condition] then
+					reset_condition_set[destroyed_condition] = true
+					region_reset_actions[#region_reset_actions + 1] = {
+						key = destroyed_condition,
+						value = false,
+					}
+				end
+				local apply<const> = {
+					{
+						op = 'reconcile_room_condition',
+						room_number = room_number,
+						condition = destroyed_condition,
+					},
+				}
+				append_condition_reveal(apply, destroyed_condition)
+				rules[#rules + 1] = {
+					id = 'condition.' .. enemy_def.id,
+					on = 'damage.resolved',
+					when_all = {
+						{ key = destroyed_condition, equals = false },
+					},
+					when_event = {
+						equals = {
+							target_id = enemy_def.id,
+							destroyed = true,
+						},
+					},
+					set = {
+						{ key = destroyed_condition, value = true },
+					},
+					apply = apply,
 				}
 			end
 			if room_number == 106 and enemy_def.kind == 'marspeinenaardappel' then
@@ -117,29 +156,8 @@ local build_progression_program<const> = function()
 		}
 	end
 
-	table.sort(condition_names)
-	for i = 1, #condition_names do
-		local condition_name<const> = condition_names[i]
-		rules[#rules + 1] = {
-			id = condition_name,
-			on = 'room.condition_set',
-			when_event = {
-				equals = {
-					condition = condition_name,
-				},
-			},
-			set = {
-				{ key = condition_name, value = true },
-			},
-		}
-	end
-	rules[#rules + 1] = {
-		id = 'room.condition_set.apply',
-		on = 'room.condition_set',
-		apply = {
-			{ op = 'apply_room_condition' },
-		},
-	}
+	local stairs_apply<const> = {}
+	append_condition_reveal(stairs_apply, 'r109.stairs')
 	rules[#rules + 1] = {
 		id = 'room.region_enter.progression_reset',
 		on = 'room.region_enter',
@@ -161,20 +179,6 @@ local build_progression_program<const> = function()
 		},
 	}
 
-	rules[#rules + 1] = {
-		id = 'cloud_1_destroyed',
-		on = 'damage.resolved',
-		when_event = {
-			equals = {
-				target_kind = 'cloud',
-				destroyed = true,
-			},
-		},
-		set = {
-			{ key = 'cloud_1_destroyed', value = true },
-		},
-	}
-
 	local stairs_latch_conditions<const> = {
 		{ key = 'r109.stairs', equals = false },
 		{ key = 'staff1destroyed', equals = true },
@@ -183,17 +187,17 @@ local build_progression_program<const> = function()
 	}
 	rules[#rules + 1] = {
 		id = 'r109.stairs.set',
-		on = 'room.condition_set',
+		on = 'damage.resolved',
 		when_all = stairs_latch_conditions,
+		when_event = {
+			equals = {
+				destroyed = true,
+			},
+		},
 		set = {
 			{ key = 'r109.stairs', value = true },
 		},
-		apply = {
-			{
-				op = 'emit_event',
-				event = 'appearance',
-			},
-		},
+		apply = stairs_apply,
 	}
 
 	local world1_wall_conditions<const> = {
@@ -205,6 +209,14 @@ local build_progression_program<const> = function()
 			equals = true,
 		}
 	end
+	local world1_wall_apply<const> = {
+		{
+			op = 'reconcile_room_condition',
+			room_number = 106,
+			condition = 'r106.wall',
+		},
+	}
+	append_condition_reveal(world1_wall_apply, 'r106.wall')
 	rules[#rules + 1] = {
 		id = 'r106.wall.set',
 		on = 'damage.resolved',
@@ -217,17 +229,7 @@ local build_progression_program<const> = function()
 		set = {
 			{ key = 'r106.wall', value = true },
 		},
-		apply = {
-			{
-				op = 'emit_event',
-				event = 'room.condition_set',
-				payload = {
-					room_number = 106,
-					condition = 'r106.wall',
-					play_appearance = true,
-				},
-			},
-		},
+		apply = world1_wall_apply,
 	}
 
 	rules[#rules + 1] = {
@@ -261,25 +263,14 @@ local build_progression_program<const> = function()
 			['room.patch_rows'] = function(ctx, command)
 				ctx.room:apply_progression_command(command)
 			end,
-			apply_room_condition = function(ctx, command, event)
-				local room<const> = ctx.room
-				if event.room_number ~= ctx.current_room_number then
+			reconcile_room_condition = function(ctx, command, event)
+				if command.room_number ~= ctx.current_room_number then
 					return
 				end
-				ctx:refresh_current_room_customizations()
-				room_spawner.spawn_all_for_room(room)
-				if event.play_appearance then
-					ctx.events:emit('appearance')
-				end
+				room_spawner.reconcile_condition(ctx.room, command.condition, event.target_id)
 			end,
 			emit_event = function(ctx, command)
-				local payload<const> = {}
-				if command.payload ~= nil then
-					for key, value in pairs(command.payload) do
-						payload[key] = value
-					end
-				end
-				ctx.events:emit(command.event, payload)
+				ctx.events:emit(command.event)
 			end,
 		},
 	})

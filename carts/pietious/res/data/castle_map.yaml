@@ -354,6 +354,8 @@
 7:
   type: castle
   subtype: castlered
+  condition_reveal_events:
+    castlewalldestroyed: appearance
   exits:
   - 0
   - 6
@@ -409,7 +411,7 @@
     - 18
     - 8
     hp: 20
-    trigger: castlewalldestroyed
+    destroyed_condition: castlewalldestroyed
     tiletype: frontworld_blue_l
   - type: crossfoe
     condition:
@@ -644,6 +646,8 @@
 13:
   type: castle
   subtype: castlegarden
+  condition_reveal_events:
+    cloud_1_destroyed: appearance
   exits:
   - -1
   - -1
@@ -687,6 +691,7 @@
     x: 16
     y: 10
     direction: right
+    destroyed_condition: cloud_1_destroyed
     retain_defeat_in_region: true
   - type: item
     condition:
@@ -875,7 +880,7 @@
       equals: false
     x: 7
     y: 1
-    trigger: staff1destroyed
+    destroyed_condition: staff1destroyed
     retain_defeat_in_region: true
 105:
   type: world
@@ -924,6 +929,8 @@
   type: world
   subtype: world
   worldnumber: 1
+  condition_reveal_events:
+    r106.wall: appearance
   exits:
   - 105
   - 0
@@ -1023,7 +1030,6 @@
     - 1
     - 15
     - 4
-    trigger: r106.wall
     tiletype: frontworld_l
   - type: lithograph
     x: 10
@@ -1082,7 +1088,7 @@
       equals: false
     x: 15
     y: 15
-    trigger: staff2destroyed
+    destroyed_condition: staff2destroyed
     retain_defeat_in_region: true
   - type: draaideur_blauw
     x: 15
@@ -1151,6 +1157,8 @@
   type: world
   subtype: world
   worldnumber: 1
+  condition_reveal_events:
+    r109.stairs: appearance
   exits:
   - 0
   - 110
@@ -1308,7 +1316,7 @@
       equals: false
     x: 15
     y: 0
-    trigger: staff3destroyed
+    destroyed_condition: staff3destroyed
     retain_defeat_in_region: true
 100:
   type: world

@@ -72,7 +72,6 @@ function marspeinenaardappel.register()
 		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(root.id) },
 		defaults = {
-			trigger = nil,
 			damage = 2,
 			max_health = 1,
 			health = 1,dangerous = true,

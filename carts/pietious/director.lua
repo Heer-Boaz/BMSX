@@ -67,7 +67,8 @@ local room_switch_passthrough_dirs<const> = {
 	death = true,
 }
 local room_switch_wait_timeline_id<const> = 'director.wait.room_switch'
-local death_restart_timeline_id<const> = 'director.wait.death_restart'
+local death_curtain_timeline_id<const> = 'director.death.curtain'
+local death_screen_timeline_id<const> = 'director.death.screen'
 local title_start_wait_timeline_id<const> = 'director.wait.title_start'
 local item_screen_open_timeline_id<const> = 'director.wait.item.open'
 local item_screen_close_timeline_id<const> = 'director.wait.item.close'
@@ -81,12 +82,16 @@ local daemon_timeline_id<const> = 'director.daemon'
 local director<const> = {}
 director.__index = director
 
-local draw_director_visual<const> = function(component, draw)
+local draw_seal_flash<const> = function(component, draw)
 	if not component.parent.seal_flash_on then
 		return
 	end
 	draw:mode(gp0.draw_mode_blend_half)
 	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+end
+
+local draw_death_curtain<const> = function(component, draw)
+	draw:rect(0, 0, component.parent.death_curtain_width, screen_height, 0xff000000)
 end
 
 function director:set_active_space(space_id)
@@ -221,10 +226,13 @@ function director:ctor()
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
+	self.death_curtain_width = 0
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	self:get_component(custom_visual_component):set_draw_function(draw_director_visual)
+	local visual<const> = self:get_component(custom_visual_component)
+	visual:set_draw_function(draw_seal_flash)
+	self.visual_component = visual
 	self:ensure_daemon_cloud_pool()
 end
 
@@ -250,7 +258,8 @@ end
 --   'lithograph_exit_done'  — room-state payload for restoring room music.
 --   'item'                  — item screen mode.
 --   'halo'                  — halo teleport mode.
---   'title', 'story', 'ending', 'victory_dance', 'death' — modal modes.
+--   'death_screen'          — retained game-over text shown after the curtain.
+--   'title', 'story', 'ending', 'victory_dance' — modal modes.
 --   'f1'                    — item screen opened (audio-only).
 --
 -- REQUEST/REPLY:
@@ -278,6 +287,9 @@ local define_director_fsm<const> = function()
 		if intro_state == 32 then
 			self.events:emit('seal_flash_done')
 		end
+	end
+	local apply_death_curtain_frame<const> = function(self, frame_value)
+		self.death_curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
 	end
 	local on_daemon_finished<const> = function(self)
 		self:despawn_daemon_clouds()
@@ -350,9 +362,17 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
-			[death_restart_timeline_id] = {
+			[death_curtain_timeline_id] = {
 				def = {
-					frames = timeline.range(flow_room_transition_frames),
+					frames = timeline.range(flow_death_curtain_frames),
+					playback_mode = 'once',
+					apply = apply_death_curtain_frame,
+				},
+				autoplay = false,
+			},
+			[death_screen_timeline_id] = {
+				def = {
+					frames = timeline.range(flow_death_screen_frames),
 					playback_mode = 'once',
 				},
 				autoplay = false,
@@ -941,11 +961,30 @@ local define_director_fsm<const> = function()
 					on = { ['victory_dance_done'] = '/room' },
 				},
 				death = {
-					on = { ['death_done'] = '/death_restart' },
+					on = { ['death_done'] = '/death_curtain' },
 				},
-				death_restart = {
+				death_curtain = {
 					timelines = {
-						[death_restart_timeline_id] = {
+						[death_curtain_timeline_id] = {
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+							on_finished = '/death_screen',
+						},
+					},
+					entering_state = function(self)
+						self.visual_component:set_draw_function(draw_death_curtain)
+					end,
+					exiting_state = function(self)
+						self.visual_component:set_draw_function(draw_seal_flash)
+					end,
+				},
+				death_screen = {
+					timelines = {
+						[death_screen_timeline_id] = {
 							autoplay = true,
 							stop_on_exit = true,
 							play_options = {
@@ -956,7 +995,7 @@ local define_director_fsm<const> = function()
 						},
 					},
 					entering_state = function(self)
-						self:enter_transition('death')
+						self:enter_transition('death_screen')
 						self.castle:begin_death_restart()
 					end,
 				},

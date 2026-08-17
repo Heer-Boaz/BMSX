@@ -109,12 +109,6 @@ function enemy_base.process_damage_result(self, result)
 	end
 	if result.destroyed then
 		self:spawn_death_effect()
-		if self.trigger ~= nil then
-			self.castle.events:emit('room.condition_set', {
-				room_number = result.room_number,
-				condition = self.trigger,
-			})
-		end
 		self:mark_for_disposal()
 		return
 	end

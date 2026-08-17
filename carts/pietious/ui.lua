@@ -51,6 +51,13 @@ function ui:set_health_target(value)
 	self.hud_health_target = clamp(value // 1, 0, damage_max_health)
 end
 
+function ui:sync_health()
+	local health<const> = clamp(self.player.health // 1, 0, damage_max_health)
+	self.hud_health_level = health
+	self.hud_health_target = health
+	self.hud_health_anim_ticks = 0
+end
+
 function ui:set_weapon_target(value)
 	self.hud_weapon_target = clamp(value // 1, 0, hud_weapon_level)
 end
@@ -58,12 +65,9 @@ end
 function ui:ctor()
 	self:get_component(custom_visual_component):set_draw_function(draw_ui)
 	local player<const> = self.player
-	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
 	self.hud_visible = true
-	self.hud_health_level = health
-	self.hud_health_target = health
-	self.hud_health_anim_ticks = 0
+	self:sync_health()
 	self.hud_weapon_level = weapon
 	self.hud_weapon_target = weapon
 	self.hud_weapon_anim_ticks = 0
@@ -120,6 +124,10 @@ local define_ui_fsm<const> = function()
 				go = function(self, _state, event)
 					self:set_health_target(event.value)
 				end,
+			},
+			['respawn'] = {
+				emitter = 'pietolon',
+				go = ui.sync_health,
 			},
 			['player.weapon_changed'] = {
 				emitter = 'pietolon',

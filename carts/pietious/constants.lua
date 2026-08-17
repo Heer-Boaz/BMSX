@@ -8,6 +8,12 @@ flow_title_start_blink_tail_frames = 1
 flow_title_start_wait_frames = 32
 flow_room_switch_wait_frames = 6
 flow_item_screen_wait_frames = 6
+-- The MSX game-over wipe clears one 8 px column per VBlank. Pietious advances
+-- gameplay once per two VBlanks, so each curtain frame clears two columns and
+-- retains the original 640 ms duration.
+flow_death_curtain_frames = 16
+flow_death_curtain_columns_per_frame = 2
+flow_death_screen_frames = 50
 flow_seal_room_dissolve_steps = 7
 flow_seal_sprite_dissolve_steps = 6
 flow_daemon_cloud_max = 8
@@ -42,7 +48,7 @@ player_width = 16
 player_height = 16
 player_start_x = room_tile_size20
 player_start_y = room_tile_origin_y + room_tile_size9
-player_walk_anim_cycle_px = 8
+player_walk_animation_phase_mask = 0x3
 sword_duration_frames = 4
 sword_ground_body_offset_right = 0
 sword_ground_body_offset_left = 0
@@ -204,9 +210,10 @@ stairs_step_off_right_probe_offset_x = 16
 stairs_step_off_left_probe_offset_x = -1
 stairs_step_off_right_x = 8
 stairs_step_off_left_x = -9
-physics_walk_dx = 2
-physics_walk_dx_schoentjes_num = 5
-physics_walk_dx_schoentjes_den = 2
+physics_walk_speed_den = 2
+physics_walk_speed_px = 2
+physics_walk_speed_schoentjes_num = 5
+physics_walk_speed_water_num = 1
 physics_jump_dx = 2
 physics_fall_dx_neutral = 2
 physics_fall_dx_with_inertia = 3
