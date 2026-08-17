@@ -163,11 +163,6 @@ function director:finish_world_banner_transition()
 	return '/room'
 end
 
-function director:finish_castle_banner_transition()
-	self.banner_world_number = 0
-	return '/room_switch_wait'
-end
-
 function director:finish_castle_halo_banner_transition()
 	self.banner_world_number = 0
 	self.events:emit('halo_banner_done')
@@ -189,7 +184,7 @@ end
 function director:finish_castle_emerge_banner_transition()
 	self.banner_world_number = 0
 	self.events:emit('player.world_emerge')
-	return '/world_transition_emerge'
+	return '/world_transition/emerge'
 end
 
 -- All transition-overlay states share the same two-step pattern: switch to
@@ -204,7 +199,6 @@ function director:start_daemon_appearance()
 	self:set_active_space('main')
 	self:ensure_daemon_cloud_pool()
 	self.events:emit('daemon_appearance')
-	self.timelines:play(daemon_timeline_id, sequence_play_options)
 end
 
 function director:enter_pause()
@@ -384,9 +378,9 @@ local define_director_fsm<const> = function()
 		on = {
 			['enter_world_start'] = {
 				emitter = 'pietolon',
-				go = '/world_transition_enter',
+				go = '/world_transition/enter',
 			},
-			['world_leave_transition_start'] = '/world_transition_leave',
+			['world_leave_transition_start'] = '/world_transition/leave',
 			['enter_shrine_start'] = {
 				emitter = 'pietolon',
 				go = '/shrine',
@@ -424,7 +418,6 @@ local define_director_fsm<const> = function()
 			-- transition overlay clears its banner, etc.
 			room = {
 				entering_state = function(self)
-					world:set_gameplay_clock_running(true)
 					self:despawn_daemon_clouds()
 					self:set_active_space('main')
 					self.events:emit('room')
@@ -478,52 +471,110 @@ local define_director_fsm<const> = function()
 				},
 				entering_state = director.begin_black_wait,
 			},
-			room_switch_wait_visible = {
-				timelines = {
-					[room_switch_wait_timeline_id] = {
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
+			-- World entry and exit retain one suspension lifetime across player
+			-- motion, banner presentation, emergence, and the final visible wait.
+			-- Child-to-child transitions therefore never resume gameplay between
+			-- phases; leaving this compound state releases the clock once.
+			world_transition = {
+				entering_state = function()
+					world:set_gameplay_clock_running(false)
+				end,
+				exiting_state = function()
+					world:set_gameplay_clock_running(true)
+				end,
+				states = {
+					enter = {
+						entering_state = director.begin_world_transition,
+						on = {
+							['world_banner_requested'] = function(self, _state, event)
+								self.banner_world_number = event.world_number
+								return '/world_transition/world_prewait'
+							end,
 						},
-						on_finished = '/room',
 					},
-				},
-				entering_state = function(self)
-					self:set_active_space('main')
-				end,
-			},
-			world_transition_enter = {
-				entering_state = function(self)
-					world:set_gameplay_clock_running(false)
-					self:begin_world_transition()
-				end,
-				on = {
-					['world_banner_requested'] = function(self, _state, event)
-						self.banner_world_number = event.world_number
-						return '/banner_transition/world_prewait'
-					end,
-				},
-			},
-			world_transition_leave = {
-				entering_state = function(self)
-					world:set_gameplay_clock_running(false)
-					self:begin_world_transition()
-				end,
-				on = {
-					['room.switched'] = '/banner_transition/castle_emerge_showing',
-				},
-			},
-			world_transition_emerge = {
-				entering_state = function(self)
-					world:set_gameplay_clock_running(false)
-					self:set_active_space('main')
-				end,
-				on = {
-					['world_emerge_done'] = {
-						emitter = 'pietolon',
-						go = '/room_switch_wait_visible',
+					leave = {
+						entering_state = director.begin_world_transition,
+						on = {
+							['room.switched'] = '/world_transition/castle_emerge_showing',
+						},
+					},
+					world_prewait = {
+						timelines = {
+							[banner_pre_delay_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_finished = '/world_transition/world_showing',
+							},
+						},
+					},
+					world_showing = {
+						on = {
+							[banner_world_show_event] = function(self)
+								self:enter_transition('transition', self:banner_lines('world_banner', self.banner_world_number))
+							end,
+						},
+						timelines = {
+							[banner_world_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_finished = director.finish_world_banner_transition,
+							},
+						},
+						tags = { 'd.bt' },
+					},
+					castle_emerge_showing = {
+						on = {
+							[banner_castle_show_event] = function(self)
+								self:enter_transition('transition', self:banner_lines('castle_banner', 0))
+							end,
+						},
+						timelines = {
+							[banner_castle_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_finished = director.finish_castle_emerge_banner_transition,
+							},
+						},
+						tags = { 'd.bt' },
+					},
+					emerge = {
+						entering_state = function(self)
+							self:set_active_space('main')
+						end,
+						on = {
+							['world_emerge_done'] = {
+								emitter = 'pietolon',
+								go = '/world_transition/room_switch_wait_visible',
+							},
+						},
+					},
+					room_switch_wait_visible = {
+						timelines = {
+							[room_switch_wait_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_finished = '/room',
+							},
+						},
+						entering_state = function(self)
+							self:set_active_space('main')
+						end,
 					},
 				},
 			},
@@ -532,11 +583,16 @@ local define_director_fsm<const> = function()
 			-- switches to 'shrine' space for the overlay text, then back to
 			-- 'main' for the exit animation before returning to room.
 			shrine = {
+				entering_state = function()
+					world:set_gameplay_clock_running(false)
+				end,
+				exiting_state = function()
+					world:set_gameplay_clock_running(true)
+				end,
 				initial = 'entering',
 				states = {
 					entering = {
 						entering_state = function(self)
-							world:set_gameplay_clock_running(false)
 							self:set_active_space('main')
 						end,
 						on = {
@@ -561,102 +617,12 @@ local define_director_fsm<const> = function()
 					},
 					exiting = {
 						entering_state = function(self)
-							world:set_gameplay_clock_running(false)
 							self:set_active_space('main')
 							self.events:emit('player.shrine_overlay_exit')
 						end,
 						on = {
 							['shrine_exit_done'] = '/room',
 						},
-					},
-				},
-			},
-			banner_transition = {
-				initial = 'idle',
-				states = {
-					idle = {},
-					world_prewait = {
-						timelines = {
-							[banner_pre_delay_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_finished = '/banner_transition/world_showing',
-							},
-						},
-					},
-					world_showing = {
-						on = {
-							[banner_world_show_event] = function(self)
-								self:enter_transition('transition', self:banner_lines('world_banner', self.banner_world_number))
-							end,
-						},
-						timelines = {
-							[banner_world_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_finished = director.finish_world_banner_transition,
-							},
-						},
-						tags = { 'd.bt' },
-					},
-					castle_prewait = {
-						timelines = {
-							[banner_pre_delay_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_finished = '/banner_transition/castle_showing',
-							},
-						},
-					},
-					castle_showing = {
-						on = {
-							[banner_castle_show_event] = function(self)
-								self:enter_transition('transition', self:banner_lines('castle_banner', 0))
-							end,
-						},
-						timelines = {
-							[banner_castle_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_finished = director.finish_castle_banner_transition,
-							},
-						},
-						tags = { 'd.bt' },
-					},
-					castle_emerge_showing = {
-						on = {
-							[banner_castle_show_event] = function(self)
-								self:enter_transition('transition', self:banner_lines('castle_banner', 0))
-							end,
-						},
-						timelines = {
-							[banner_castle_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_finished = director.finish_castle_emerge_banner_transition,
-							},
-						},
-						tags = { 'd.bt' },
 					},
 				},
 			},
@@ -800,8 +766,9 @@ local define_director_fsm<const> = function()
 							clock_source = timeline_clock_source.frame,
 							apply = apply_seal_frame,
 						},
-						autoplay = false,
+						autoplay = true,
 						stop_on_exit = true,
+						play_options = sequence_play_options,
 						on_finished = function(self)
 							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
@@ -814,7 +781,6 @@ local define_director_fsm<const> = function()
 					self:remove_tag('d.seal.flash')
 					world:set_gameplay_clock_running(false)
 					self.events:emit('seal_dissolution')
-					self.timelines:play(seal_timeline_id, sequence_play_options)
 				end,
 				exiting_state = function()
 					world:set_gameplay_clock_running(true)
@@ -823,8 +789,9 @@ local define_director_fsm<const> = function()
 			daemon_appearance = {
 				timelines = {
 					[daemon_timeline_id] = {
-						autoplay = false,
+						autoplay = true,
 						stop_on_exit = true,
+						play_options = sequence_play_options,
 						on_finished = on_daemon_finished,
 					},
 				},
