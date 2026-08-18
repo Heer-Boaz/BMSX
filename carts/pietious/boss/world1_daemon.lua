@@ -1,4 +1,5 @@
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
+local behaviour_tree_result<const> = require('cartlib/behaviour_tree/result')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -13,16 +14,26 @@ local world<const> = require('cartlib/world/world')
 local world_object<const> = require('cartlib/world/world_object')
 local combat_damage<const> = require('combat/damage')
 local enemy_base<const> = require('enemies/enemy_base')
-local world1_daemon_tree<const> = require('boss/world1_daemon_tree')
 require('constants')
 
 local world1_daemon<const> = {}
 world1_daemon.__index = world1_daemon
 
+world1_daemon.tree_id = 'enemy_world1_daemon'
+world1_daemon.timeline_id = {
+	prepare_spawn = 'world1_daemon.prepare_spawn',
+	unprepare_spawn = 'world1_daemon.unprepare_spawn',
+	prepare_pounce = 'world1_daemon.prepare_pounce',
+	unprepare_pounce = 'world1_daemon.unprepare_pounce',
+	death = 'world1_daemon.death',
+}
+
 local walk_image_1<const> = 'world1_daemon_walk_1'
 local walk_image_2<const> = 'world1_daemon_walk_2'
 local pounce_image<const> = 'world1_daemon_pounce'
-local timeline_id<const> = world1_daemon_tree.timeline_id
+local timeline_id<const> = world1_daemon.timeline_id
+local bt_running<const> = behaviour_tree_result.running
+local bt_success<const> = behaviour_tree_result.success
 local death_images<const> = {}
 local keep_current_pose<const> = false
 
@@ -220,31 +231,32 @@ function world1_daemon:walk_out_of_room(backward)
 	return false
 end
 
-function world1_daemon:begin_pounce()
+function world1_daemon:execute_pounce()
 	self:set_imgid(pounce_image)
 	self.sprite_component.offset_y = room_tile_size
+	return bt_running
 end
 
-function world1_daemon:pounce_step()
+function world1_daemon:tick_pounce()
 	if self.direction == 'right' then
 		local x<const> = self.x + boss_world1_pounce_step_px
 		if x < boss_world1_pounce_left_x then
 			self.x = x
-			return false
+			return bt_running
 		end
 		self.x = boss_world1_pounce_left_x
 	else
 		local x<const> = self.x - boss_world1_pounce_step_px
 		if x > boss_world1_pounce_right_x then
 			self.x = x
-			return false
+			return bt_running
 		end
 		self.x = boss_world1_pounce_right_x
 	end
 	self:set_imgid(walk_image_1)
 	self.sprite_component.offset_y = 0
 	self.events:emit('daemon.landed')
-	return true
+	return bt_success
 end
 
 function world1_daemon:choose_entrance()
@@ -277,6 +289,7 @@ function world1_daemon:choose_entrance()
 	end
 	self.y = boss_world1_lane_y[lane]
 	self.sprite_component.flip_h = self.direction == 'left'
+	return bt_success
 end
 
 function world1_daemon:spawn_potato(x, y)
@@ -539,7 +552,7 @@ local register_world1_daemon_definition<const> = function()
 		base = enemy_base,
 		components = {
 			new_collider,
-			behaviour_tree_component.factory(world1_daemon_tree.id),
+			behaviour_tree_component.factory(world1_daemon.tree_id),
 			custom_visual_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'world1_daemon' }),
