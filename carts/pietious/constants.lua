@@ -117,6 +117,48 @@ enemy_zak_recovery_steps = 2
 enemy_zak_horizontal_speed_px = 1
 enemy_zak_vertical_speed_start = -1
 enemy_zak_vertical_speed_step = 0.40
+boss_world1_max_health = 60
+boss_world1_contact_damage = 12
+boss_world1_walk_step_ticks = 5
+boss_world1_spawn_duration_ticks = 75
+-- Pietious advances gameplay once per two VBlanks. Adding two 20 ms units per
+-- gameplay tick and firing at fifteen units preserves the XNA boss' 300 ms
+-- burst cadence without fractional runtime time or a drifting rounded period.
+boss_world1_spawn_cadence_units_per_tick = 2
+boss_world1_spawn_cadence_units = 15
+boss_world1_wait_after_spawn_ticks = 3
+boss_world1_wait_before_pounce_ticks = 3
+boss_world1_wait_after_pounce_ticks = 13
+boss_world1_reentry_ticks = 50
+boss_world1_zak_cadence_units = 45
+boss_world1_pounce_step_px = 16
+boss_world1_max_potatoes = 3
+boss_world1_max_zaks = 2
+boss_world1_zak_drop_health_chance_pct = 10
+boss_world1_zak_drop_ammo_chance_pct = 50
+boss_world1_spawn_projectiles_per_burst = 12
+-- Timeline delta remains one 20 ms frame word per gameplay update. A 100 ms
+-- authored frame therefore lasts five Pietious updates, or 200 ms on screen.
+boss_world1_pose_frame_ms = 100
+boss_world1_start_left_x = -96
+boss_world1_start_right_x = 272
+boss_world1_player_side_split_x = 160
+boss_world1_entry_left_x = 16
+boss_world1_entry_right_x = 160
+boss_world1_pounce_left_x = 176
+boss_world1_pounce_right_x = 0
+boss_world1_lane_y = {
+	room_hud_height + 24,
+	room_hud_height + 64,
+	room_hud_height + 104,
+}
+boss_world1_zak_lane_y = {
+	room_hud_height + 40,
+	room_hud_height + 80,
+	room_hud_height + 120,
+}
+boss_world1_key_x = 15 * room_tile_size
+boss_world1_key_y = room_hud_height + (15 * room_tile_size)
 enemy_cross_wait_before_fly_steps = 50
 enemy_cross_turn_steps = 5
 enemy_cross_horizontal_speed_px = 2

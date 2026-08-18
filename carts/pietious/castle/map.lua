@@ -63,6 +63,7 @@ local supported_enemy_kinds<const> = {
 	vlokspawner = true,
 	breakablewall = true,
 	disappearingwall = true,
+	daemon = true,
 }
 
 local wall_enemy_kinds<const> = {
@@ -288,7 +289,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					x = enemy_x,
 					y = enemy_y,
 					direction = object_def.direction,
-					damage = damage_enemy_contact_damage,
+					damage = object_def.damage or damage_enemy_contact_damage,
 					health = object_def.health,
 					speedx = object_def.speedx,
 					speedy = object_def.speedy,

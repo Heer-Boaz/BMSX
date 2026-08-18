@@ -123,6 +123,60 @@ events:
                       sync: immediate
                       start_fresh: true
 
+    daemon.health_half:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_daemonfight_2
+                      sync: immediate
+                      start_fresh: true
+
+    daemon.health_quarter:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_daemonfight_3
+                      sync: immediate
+                      start_fresh: true
+
+    daemon.defeated:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - stop_music:
+                            fade_ms: 0
+                      - audio_id: daemondeath
+
+    daemon.death_complete:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_keyonfloor
+                      sync: immediate
+                      start_fresh: true
+
+    daemon.spawn_burst:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: daemon_spawn2
+
+    daemon.landed:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: daemonlandonfloor
+
+    daemon.minion_appeared:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: appearance
+
     # --- SFX routing ---
     jump:
         channel: sfx
@@ -304,6 +358,13 @@ events:
         channel: sfx
         rules:
             - when:
+                  equals:
+                      status: applied
+                      target_kind: world1_daemon
+                      destroyed: false
+              go:
+                  audio_id: daemondamage
+            - when:
                   and:
                       - equals:
                             status: applied
@@ -313,6 +374,7 @@ events:
                                 target_kind:
                                     - breakablewall
                                     - disappearingwall
+                                    - world1_daemon
               go:
                   audio_id: foeexplosion
             - when:

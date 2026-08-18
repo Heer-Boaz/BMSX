@@ -91,11 +91,13 @@ function zakfoe.bt_tick(self, blackboard)
 	return bt_running
 end
 
-function zakfoe.choose_drop_type(_self)
-	if math.random(100) <= enemy_zak_drop_health_chance_pct then
+function zakfoe.choose_drop_type(self)
+	if self.drop_health_chance_pct > 0
+	and math.random(100) <= self.drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= enemy_zak_drop_ammo_chance_pct then
+	if self.drop_ammo_chance_pct > 0
+	and math.random(100) <= self.drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil
@@ -118,6 +120,8 @@ function zakfoe.register()
 			speed_den = 1,
 			speed_accum_x = 0,
 			speed_accum_y = 0,
+			drop_health_chance_pct = enemy_zak_drop_health_chance_pct,
+			drop_ammo_chance_pct = enemy_zak_drop_ammo_chance_pct,
 			direction = 'right',
 			enemy_kind = 'zakfoe',
 		},

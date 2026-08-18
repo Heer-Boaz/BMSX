@@ -130,6 +130,7 @@ local state_tags<const> = {
 		hit_collision = 'v.hc',
 		hit_recovery = 'v.hr',
 		dying = 'v.d',
+		daemon_defeated = 'v.dd',
 	},
 	group = {
 		stairs = 'g.st',
@@ -3064,6 +3065,23 @@ local define_player_fsm<const> = function()
 			},
 			update = player.update_dying,
 		},
+		daemon_defeated = {
+			tags = {
+				state_tags.variant.daemon_defeated,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
+			},
+			on = {
+				['daemon.death_complete'] = {
+					emitter = false,
+					go = '/quiet',
+				},
+			},
+			entering_state = function(self)
+				self:zero_motion()
+				self:cancel_sword()
+			end,
+		},
 	}
 	for _, state in pairs(states) do
 		local update_handler = state.update
@@ -3074,6 +3092,7 @@ local define_player_fsm<const> = function()
 		state.update = wrap_state_update(update_handler)
 		state.input_event_handlers = input_event_handlers
 	end
+	states.daemon_defeated.input_event_handlers = {}
 
 	-- SWORD CONCURRENT REGION.
 	-- is_concurrent = true means this state machine runs in parallel with the
@@ -3212,6 +3231,10 @@ local define_player_fsm<const> = function()
 		-- preventing accidental reactions to same-named events from other sources.
 		--
 		on = {
+			['daemon.defeated'] = {
+				emitter = false,
+				go = '/daemon_defeated',
+			},
 			[player_actioneffects.command_ids.activate_sword] = function(self)
 				self:activate_sword()
 			end,

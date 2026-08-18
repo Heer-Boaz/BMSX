@@ -381,6 +381,10 @@ local define_director_fsm<const> = function()
 				emitter = 'pietolon',
 				go = '/death',
 			},
+			['daemon.defeated'] = {
+				emitter = false,
+				go = '/daemon_defeated',
+			},
 			['room.switched'] = {
 				emitter = 'pietolon',
 				go = function(self, _state, event)
@@ -442,6 +446,26 @@ local define_director_fsm<const> = function()
 				exiting_state = director.leave_pause,
 				input_event_handlers = {
 					{ pattern = 'pause[jp]', go = '/room' },
+				},
+			},
+			daemon_defeated = {
+				on = {
+					['daemon.death_complete'] = {
+						emitter = false,
+						go = '/daemon_key',
+					},
+				},
+			},
+			daemon_key = {
+				on = {
+					['item.picked'] = {
+						emitter = 'pietolon',
+						go = function(_self, _state, event)
+							if event.item_type == 'keyworld1' then
+								return '/room'
+							end
+						end,
+					},
 				},
 			},
 			room_switch_wait = {
