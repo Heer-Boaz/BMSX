@@ -495,26 +495,27 @@ function track_evaluator.compile_values(program, sample_tracks)
 		end
 	end
 	local syntax_values<const> = {
-			has_frame_steps = has_frame_steps,
-			has_time_steps = has_time_steps,
-			has_scalar_channels = has_scalar_channels,
-			has_scalar_frame_channels = has_scalar_frame_channels,
-			has_scalar_time_channels = has_scalar_time_channels,
-			has_sample_tracks = has_sample_tracks,
-			value_has_evaluation_context = value_has_evaluation_context,
-			has_primary_sample_binding = has_primary_sample_binding,
-			has_secondary_sample_binding = has_secondary_sample_binding,
-			has_wave_tracks = has_wave_tracks,
-			has_sample_params = has_sample_params,
-			has_pingpong_tracks = has_pingpong_tracks,
-			has_sin_tracks = has_sin_tracks,
-			sample_flag = sample_flag,
-			wrapped_flag = wrapped_flag,
-			reset_step_flags = reset_step_flags,
-			sample_tracks = sample_tracks,
-			sample_functions = sample_functions,
-			tau = tau,
-		}
+		has_frame_steps = has_frame_steps,
+		has_time_steps = has_time_steps,
+		step_has_evaluation_callbacks = program.step_has_evaluation_callbacks,
+		has_scalar_channels = has_scalar_channels,
+		has_scalar_frame_channels = has_scalar_frame_channels,
+		has_scalar_time_channels = has_scalar_time_channels,
+		has_sample_tracks = has_sample_tracks,
+		value_has_evaluation_context = value_has_evaluation_context,
+		has_primary_sample_binding = has_primary_sample_binding,
+		has_secondary_sample_binding = has_secondary_sample_binding,
+		has_wave_tracks = has_wave_tracks,
+		has_sample_params = has_sample_params,
+		has_pingpong_tracks = has_pingpong_tracks,
+		has_sin_tracks = has_sin_tracks,
+		sample_flag = sample_flag,
+		wrapped_flag = wrapped_flag,
+		reset_step_flags = reset_step_flags,
+		sample_tracks = sample_tracks,
+		sample_functions = sample_functions,
+		tau = tau,
+	}
 	syntax_values.play_value_operands = value_runner_signature.compile(syntax_values, false)
 	if has_frame_steps or has_time_steps then
 		syntax_values.position_value_operands = value_runner_signature.compile(syntax_values, true)

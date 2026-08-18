@@ -281,7 +281,11 @@ local emit_value_runner<const> = function(
 	position,
 	sample_function_symbols
 )
-	if values.has_frame_steps or values.has_time_steps then
+	if values.step_has_evaluation_callbacks
+	or (
+		values.has_sample_params
+		and (values.has_frame_steps or values.has_time_steps)
+	) then
 		statements[#statements + 1] = local_statement(
 			reference(runner_symbols.params),
 			member_expression(reference(runner_symbols.entry), 'params'),

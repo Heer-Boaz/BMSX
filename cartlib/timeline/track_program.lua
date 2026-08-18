@@ -55,6 +55,7 @@ local empty_prepared<const> = {
 	value_runner_factory = nil,
 	has_frame_steps = false,
 	has_time_steps = false,
+	step_has_evaluation_callbacks = false,
 	play_event_shape = 0,
 	seek_event_shape = 0,
 	scrub_event_shape = 0,
@@ -165,6 +166,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	local scalar_defs<const> = {}
 	local has_frame_steps = false
 	local has_time_steps = false
+	local step_has_evaluation_callbacks = false
 	local play_event_shape = 0
 	local seek_event_shape = 0
 	local scrub_event_shape = 0
@@ -231,6 +233,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			if interpolation == 'step' then
 				if track.apply ~= nil then
 					has_evaluation_callbacks = true
+					step_has_evaluation_callbacks = true
 				end
 				step_defs[#step_defs + 1] = {
 					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index),
@@ -264,6 +267,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
 	prepared.has_time_steps = has_time_steps
+	prepared.step_has_evaluation_callbacks = step_has_evaluation_callbacks
 	prepared.play_event_shape = play_event_shape
 	prepared.seek_event_shape = seek_event_shape
 	prepared.scrub_event_shape = scrub_event_shape

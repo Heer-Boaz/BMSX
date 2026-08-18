@@ -69,18 +69,30 @@ local flag_set_expression<const> = function(flag, runner_symbols)
 	)
 end
 
+-- Property-path steps compile to two-operand appliers. Callback steps alone
+-- carry cart parameters and the authored evaluation record across the runner
+-- boundary.
+local append_callback_arguments<const> = function(arguments, values, runner_symbols)
+	if values.step_has_evaluation_callbacks then
+		arguments[#arguments + 1] = reference(runner_symbols.params)
+		arguments[#arguments + 1] = reference(runner_symbols.evaluation)
+	end
+	return arguments
+end
+
 local emit_position_frame_steps<const> = function(statements, values, runner_symbols)
 	statements[#statements + 1] = if_statement({
 		if_clause(
 			flag_set_expression(values.sample_flag, runner_symbols),
 			block({
-				call_statement(call_expression(reference(step_symbols.sample_step_tracks), {
-					reference(runner_symbols.entry),
-					reference(runner_symbols.steps),
-					reference(runner_symbols.frame),
-					reference(runner_symbols.params),
-					reference(runner_symbols.evaluation),
-				})),
+				call_statement(call_expression(
+					reference(step_symbols.sample_step_tracks),
+					append_callback_arguments({
+						reference(runner_symbols.entry),
+						reference(runner_symbols.steps),
+						reference(runner_symbols.frame),
+					}, values, runner_symbols)
+				)),
 			})
 		),
 	})
@@ -117,13 +129,14 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 		if_clause(
 			discontinuity,
 			block({
-				call_statement(call_expression(reference(step_symbols.sample_step_tracks), {
-					reference(runner_symbols.entry),
-					reference(runner_symbols.steps),
-					reference(runner_symbols.frame),
-					reference(runner_symbols.params),
-					reference(runner_symbols.evaluation),
-				})),
+				call_statement(call_expression(
+					reference(step_symbols.sample_step_tracks),
+					append_callback_arguments({
+						reference(runner_symbols.entry),
+						reference(runner_symbols.steps),
+						reference(runner_symbols.frame),
+					}, values, runner_symbols)
+				)),
 			})
 		),
 		if_clause(
@@ -133,15 +146,16 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 				numeric_literal(0)
 			),
 			block({
-				call_statement(call_expression(reference(step_symbols.apply_step_bucket), {
-					reference(runner_symbols.entry),
-					index_expression(
-						member_expression(reference(runner_symbols.steps), 'by_frame'),
-						reference(runner_symbols.frame)
-					),
-					reference(runner_symbols.params),
-					reference(runner_symbols.evaluation),
-				})),
+				call_statement(call_expression(
+					reference(step_symbols.apply_step_bucket),
+					append_callback_arguments({
+						reference(runner_symbols.entry),
+						index_expression(
+							member_expression(reference(runner_symbols.steps), 'by_frame'),
+							reference(runner_symbols.frame)
+						),
+					}, values, runner_symbols)
+				)),
 			})
 		),
 		if_clause(
@@ -151,15 +165,16 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 				numeric_literal(0)
 			),
 			block({
-				call_statement(call_expression(reference(step_symbols.apply_step_bucket), {
-					reference(runner_symbols.entry),
-					index_expression(
-						member_expression(reference(runner_symbols.steps), 'reverse_by_frame'),
-						reference(runner_symbols.previous_frame)
-					),
-					reference(runner_symbols.params),
-					reference(runner_symbols.evaluation),
-				})),
+				call_statement(call_expression(
+					reference(step_symbols.apply_step_bucket),
+					append_callback_arguments({
+						reference(runner_symbols.entry),
+						index_expression(
+							member_expression(reference(runner_symbols.steps), 'reverse_by_frame'),
+							reference(runner_symbols.previous_frame)
+						),
+					}, values, runner_symbols)
+				)),
 			})
 		),
 	})
@@ -168,7 +183,7 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 	})
 end
 
-local apply_time_boundary_state_statements<const> = function(runner_symbols)
+local apply_time_boundary_state_statements<const> = function(values, runner_symbols)
 	return {
 		local_statement(
 			reference(step_symbols.state),
@@ -206,12 +221,13 @@ local apply_time_boundary_state_statements<const> = function(runner_symbols)
 					index_expression(reference(step_symbols.keys), reference(step_symbols.index)),
 					true
 				),
-				call_statement(call_expression(member_expression(reference(step_symbols.key), 'apply'), {
-					reference(runner_symbols.entry),
-					member_expression(reference(step_symbols.key), 'value'),
-					reference(runner_symbols.params),
-					reference(runner_symbols.evaluation),
-				})),
+				call_statement(call_expression(
+					member_expression(reference(step_symbols.key), 'apply'),
+					append_callback_arguments({
+						reference(runner_symbols.entry),
+						member_expression(reference(step_symbols.key), 'value'),
+					}, values, runner_symbols)
+				)),
 			})
 		),
 		assignment_statement(
@@ -225,7 +241,7 @@ local apply_time_boundary_state_statements<const> = function(runner_symbols)
 	}
 end
 
-local advance_time_step_statements<const> = function(runner_symbols)
+local advance_time_step_statements<const> = function(values, runner_symbols)
 	return {
 		local_statement(
 			reference(step_symbols.key),
@@ -264,12 +280,13 @@ local advance_time_step_statements<const> = function(runner_symbols)
 							)
 						),
 						block({
-							call_statement(call_expression(member_expression(reference(step_symbols.key), 'apply'), {
-								reference(runner_symbols.entry),
-								member_expression(reference(step_symbols.key), 'value'),
-								reference(runner_symbols.params),
-								reference(runner_symbols.evaluation),
-							})),
+							call_statement(call_expression(
+								member_expression(reference(step_symbols.key), 'apply'),
+								append_callback_arguments({
+									reference(runner_symbols.entry),
+									member_expression(reference(step_symbols.key), 'value'),
+								}, values, runner_symbols)
+							)),
 							assignment_statement(reference(step_symbols.previous_key), reference(step_symbols.key)),
 							assignment_statement(
 								reference(step_symbols.key),
@@ -291,7 +308,7 @@ local advance_time_step_statements<const> = function(runner_symbols)
 	}
 end
 
-local retreat_time_step_statements<const> = function(runner_symbols)
+local retreat_time_step_statements<const> = function(values, runner_symbols)
 	return {
 		local_statement(
 			reference(step_symbols.key),
@@ -345,12 +362,10 @@ local retreat_time_step_statements<const> = function(runner_symbols)
 									block({
 										call_statement(call_expression(
 											member_expression(reference(step_symbols.previous_key), 'apply'),
-											{
+											append_callback_arguments({
 												reference(runner_symbols.entry),
 												member_expression(reference(step_symbols.previous_key), 'value'),
-												reference(runner_symbols.params),
-												reference(runner_symbols.evaluation),
-											}
+											}, values, runner_symbols)
 										)),
 									})
 								),
@@ -381,16 +396,17 @@ local emit_play_time_steps<const> = function(statements, values, runner_symbols)
 	reset_body[#reset_body + 1] = if_statement({
 		if_clause(
 			flag_set_expression(values.wrapped_flag, runner_symbols),
-			block(apply_time_boundary_state_statements(runner_symbols))
+			block(apply_time_boundary_state_statements(values, runner_symbols))
 		),
 		else_clause(block({
-			call_statement(call_expression(reference(step_symbols.sample_time_step_tracks), {
-				reference(runner_symbols.entry),
-				reference(runner_symbols.steps),
-				reference(runner_symbols.time_ms),
-				reference(runner_symbols.params),
-				reference(runner_symbols.evaluation),
-			})),
+			call_statement(call_expression(
+				reference(step_symbols.sample_time_step_tracks),
+				append_callback_arguments({
+					reference(runner_symbols.entry),
+					reference(runner_symbols.steps),
+					reference(runner_symbols.time_ms),
+				}, values, runner_symbols)
+			)),
 		})),
 	})
 	statements[#statements + 1] = if_statement({
@@ -401,7 +417,7 @@ local emit_play_time_steps<const> = function(statements, values, runner_symbols)
 				reference(runner_symbols.time_ms),
 				reference(runner_symbols.previous_time_ms)
 			),
-			block(advance_time_step_statements(runner_symbols))
+			block(advance_time_step_statements(values, runner_symbols))
 		),
 		if_clause(
 			binary_expression(
@@ -409,21 +425,19 @@ local emit_play_time_steps<const> = function(statements, values, runner_symbols)
 				reference(runner_symbols.time_ms),
 				reference(runner_symbols.previous_time_ms)
 			),
-			block(retreat_time_step_statements(runner_symbols))
+			block(retreat_time_step_statements(values, runner_symbols))
 		),
 	})
 end
 
-local emit_position_time_steps<const> = function(statements, runner_symbols)
+local emit_position_time_steps<const> = function(statements, values, runner_symbols)
 	statements[#statements + 1] = call_statement(call_expression(
 		reference(step_symbols.sample_time_step_tracks),
-		{
+		append_callback_arguments({
 			reference(runner_symbols.entry),
 			reference(runner_symbols.steps),
 			reference(runner_symbols.time_ms),
-			reference(runner_symbols.params),
-			reference(runner_symbols.evaluation),
-		}
+		}, values, runner_symbols)
 	))
 end
 
@@ -441,7 +455,7 @@ function step_track_syntax.emit_position(statements, values, runner_symbols)
 		emit_position_frame_steps(statements, values, runner_symbols)
 	end
 	if values.has_time_steps then
-		emit_position_time_steps(statements, runner_symbols)
+		emit_position_time_steps(statements, values, runner_symbols)
 	end
 end
 
