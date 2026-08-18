@@ -144,16 +144,16 @@ function __bmsx_host_test.update()
 			local head<const> = wait.head
 			local elapsed<const> = head - test.wait_head
 			assert(elapsed == 0 or elapsed == 1,
-				'pause seated countdown skipped a gameplay update')
+				'pause seated countdown skipped an authored frame')
 			test.seated_ticks = test.seated_ticks + elapsed
 			test.wait_head = head
 			assert(player.sprite_component.imgid == 'pietolon_pause_seated',
-				'pause left the seated pose before the 600-update boundary')
+				'pause left the seated pose before the 600-VBlank boundary')
 			return false
 		end
 		test.seated_ticks = test.seated_ticks + 1
 		assert(test.seated_ticks == flow_pause_seated_frames,
-			'pause seated pose did not last exactly 600 gameplay updates')
+			'pause seated pose did not match the 600-VBlank duration')
 		local animation<const> = player.timelines:get('p.tl.pa')
 		assert(animation.playing and animation.head == 0,
 			'stuck animation did not begin on its first frame')
@@ -177,26 +177,26 @@ function __bmsx_host_test.update()
 				'stuck animation wrapped at the wrong frame')
 			elapsed = 1
 		end
-		assert(elapsed == 0 or elapsed == 1, 'stuck animation skipped a gameplay update')
+		assert(elapsed == 0 or elapsed == 1, 'stuck animation skipped an authored frame')
 		test.animation_ticks = test.animation_ticks + elapsed
 		test.animation_head = head
 		if head < flow_pause_stuck_frame_hold then
 			assert(player.sprite_component.imgid == 'pietolon_pause_stuck_1',
-				'first stuck pose did not hold for eight gameplay updates')
+				'first stuck pose did not hold for eight VBlanks')
 		else
 			assert(player.sprite_component.imgid == 'pietolon_pause_stuck_2',
-				'second stuck pose did not begin at the eight-update boundary')
+				'second stuck pose did not begin at the eight-VBlank boundary')
 		end
 		if test.animation_ticks == flow_pause_stuck_frame_hold then
 			assert(head == flow_pause_stuck_frame_hold,
-				'second stuck pose began on the wrong animation frame')
+				'second stuck pose did not begin after eight VBlanks')
 			test.saw_second_stuck_pose = true
 		end
 		if test.animation_ticks < flow_pause_stuck_frame_hold * 2 then
 			return false
 		end
 		assert(test.animation_ticks == flow_pause_stuck_frame_hold * 2 and head == 0,
-			'stuck animation did not wrap after sixteen gameplay updates')
+			'stuck animation did not wrap after sixteen VBlanks')
 		assert(test.saw_second_stuck_pose, 'pause never displayed the second stuck pose')
 		test.phase = 'resume'
 		return host.press('F2', 4)

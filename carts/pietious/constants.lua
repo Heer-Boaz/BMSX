@@ -8,10 +8,11 @@ flow_title_start_blink_tail_frames = 1
 flow_title_start_wait_frames = 32
 flow_room_switch_wait_frames = 6
 flow_item_screen_wait_frames = 6
--- MoG state 9 retains the seated pose for 0x0258 game updates, then alternates
--- the two stuck poses every eight updates until F2 resumes the room state.
-flow_pause_seated_frames = 0x0258
-flow_pause_stuck_frame_hold = 8
+-- MoG state 9's TBE26/TBE36 path retains the seated pose for 0x0258 VBlanks,
+-- then alternates the two stuck poses every eight VBlanks. Pietious advances
+-- one authored frame per two VBlanks.
+flow_pause_seated_frames = 0x012c
+flow_pause_stuck_frame_hold = 4
 -- The MSX game-over wipe clears one 8 px column per VBlank. Pietious advances
 -- gameplay once per two VBlanks, so each curtain frame clears two columns and
 -- retains the original 640 ms duration.
