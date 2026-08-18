@@ -151,8 +151,10 @@ function __bmsx_host_test.update()
 		local ui<const> = registry:get('ui')
 		assert(player.inventory_items.keyworld1, 'daemon key was not added to the inventory')
 		assert(player.health == player.max_health, 'daemon key did not restore player health')
-		assert(ui.hud_health_level == player.max_health,
-			'daemon key health restoration animated instead of snapping')
+		assert(ui.hud_health_target == player.max_health,
+			'daemon key health restoration did not reach the HUD target')
+		assert(ui.hud_health_level < player.max_health,
+			'daemon key health restoration skipped the HUD animation')
 		assert(castle.world_boss_defeated[1], 'world 1 daemon defeat was not retained')
 		assert(director.state_machines:matches_state(test.director_room_state), 'director did not return to room state after key pickup')
 		return true

@@ -129,14 +129,6 @@ local define_ui_fsm<const> = function()
 				emitter = 'pietolon',
 				go = ui.sync_health,
 			},
-			['item.picked'] = {
-				emitter = 'pietolon',
-				go = function(self, _state, event)
-					if event.item_type == 'keyworld1' then
-						self:sync_health()
-					end
-				end,
-			},
 			['player.weapon_changed'] = {
 				emitter = 'pietolon',
 				go = function(self, _state, event)
