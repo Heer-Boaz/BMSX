@@ -77,9 +77,10 @@ local sequence_play_options<const> = {
 	rewind = true,
 	snap_to_start = false,
 }
--- MoG T8003 stores eight fixed (x, y) pairs; the 65-VBlank countdown
--- addresses them as 1,2,3,4,5,6,7,0,1 at eight-VBlank intervals.
+-- MoG T7FE7 advances through the eight fixed (x, y) pairs at T8003. Its
+-- containing E600 room state is cleared by PrepareNewRoom before each summon.
 local daemon_cloud_positions<const> = {
+	112, 64,
 	152, 96,
 	144, 128,
 	80, 96,
@@ -87,8 +88,6 @@ local daemon_cloud_positions<const> = {
 	176, 64,
 	96, 128,
 	128, 96,
-	112, 64,
-	152, 96,
 }
 
 local director<const> = {}
@@ -241,10 +240,11 @@ local define_director_fsm<const> = function()
 		if frame_value <= flow_daemon_cloud_last_spawn_frame
 		and (frame_value % flow_daemon_cloud_spawn_interval_frames) == 0 then
 			local index<const> = (frame_value // flow_daemon_cloud_spawn_interval_frames) + 1
-			local position_index<const> = index * 2 - 1
+			local position_index<const> = index & 7
+			local coordinate_index<const> = position_index * 2 + 1
 			self.daemon_clouds[index]:play_once_at(
-				daemon_cloud_positions[position_index],
-				daemon_cloud_positions[position_index + 1]
+				daemon_cloud_positions[coordinate_index],
+				daemon_cloud_positions[coordinate_index + 1]
 			)
 		end
 	end
