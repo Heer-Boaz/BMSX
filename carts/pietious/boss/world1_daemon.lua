@@ -34,6 +34,7 @@ local pounce_image<const> = 'world1_daemon_pounce'
 local timeline_id<const> = world1_daemon.timeline_id
 local bt_running<const> = behaviour_tree_result.running
 local bt_success<const> = behaviour_tree_result.success
+local death_image_count<const> = 8
 local death_images<const> = {}
 local keep_current_pose<const> = false
 
@@ -57,17 +58,17 @@ local unprepare_pounce_frames<const> = {
 	walk_image_2,
 }
 
-local death_frame_sequence<const> = {}
-for stage = 1, 16 do
-	death_frame_sequence[stage] = {
-		value = stage,
-		hold = (stage & 1) == 1 and 3 or 2,
-	}
+local death_stage_keys<const> = {}
+local death_frame = 0
+for stage = 1, death_image_count * 2 do
+	death_stage_keys[stage] = { frame = death_frame, value = stage }
+	death_frame = death_frame + (
+		(stage & 1) == 1
+		and boss_world1_death_odd_stage_frames
+		or boss_world1_death_even_stage_frames
+	)
 end
-death_frame_sequence[17] = {
-	value = 17,
-	hold = 25,
-}
+local death_hidden_frame<const> = death_frame
 local boss_hit_area<const> = {
 	left = 4,
 	top = 4,
@@ -103,12 +104,12 @@ end
 local draw_death_overlay<const> = function(component, draw)
 	local boss<const> = component.parent
 	local stage<const> = boss.death_stage
-	if stage <= 8 then
+	if stage <= death_image_count then
 		draw_death_parity(draw, boss, death_images[stage], 0)
 		return
 	end
-	draw_death_parity(draw, boss, death_images[8], 0)
-	draw_death_parity(draw, boss, death_images[stage - 8], 1)
+	draw_death_parity(draw, boss, death_images[death_image_count], 0)
+	draw_death_parity(draw, boss, death_images[stage - death_image_count], 1)
 end
 
 local dispose_references<const> = function(objects)
@@ -148,8 +149,7 @@ end
 
 function world1_daemon:reset_encounter()
 	local behaviour<const> = self.behaviour
-	behaviour:abort()
-	behaviour:set_enabled(false)
+	behaviour:stop()
 	self.collider:set_enabled(false)
 	self.death_visual:set_draw_function(nil)
 	self:clear_encounter_objects()
@@ -169,7 +169,7 @@ function world1_daemon:activate_encounter()
 	self.dangerous = true
 	self.visible = true
 	self.collider:set_enabled(true)
-	self.behaviour:set_enabled(true)
+	self.behaviour:start()
 end
 
 function world1_daemon:execute_walk()
@@ -440,22 +440,12 @@ function world1_daemon:process_damage_result(result)
 end
 
 function world1_daemon:begin_death()
-	self.behaviour:abort()
-	self.behaviour:set_enabled(false)
+	self.behaviour:stop()
 	self.collider:set_enabled(false)
-	self.dangerous = false
 	self:clear_encounter_objects()
 	self:set_imgid(walk_image_1)
 	self.sprite_component.offset_y = 0
-	self.visible = true
 	self.death_visual:set_draw_function(draw_death_overlay)
-end
-
-function world1_daemon:apply_death_stage(stage)
-	self.death_stage = stage
-	if stage == 17 then
-		self.visible = false
-	end
 end
 
 function world1_daemon:spawn_key()
@@ -520,10 +510,26 @@ local define_world1_daemon_fsm<const> = function()
 			},
 			[timeline_id.death] = {
 				def = {
-					frames = timeline.build_frame_sequence(death_frame_sequence),
+					frames = timeline.range(death_hidden_frame + boss_world1_death_hidden_frames),
 					playback_mode = 'once',
 					clock_source = timeline_clock_source.frame,
-					apply = world1_daemon.apply_death_stage,
+					tracks = {
+						{
+							kind = 'value',
+							interpolation = 'step',
+							path = { 'death_stage' },
+							keys = death_stage_keys,
+						},
+						{
+							kind = 'value',
+							interpolation = 'step',
+							path = { 'visible' },
+							keys = {
+								{ frame = 0, value = true },
+								{ frame = death_hidden_frame, value = false },
+							},
+						},
+					},
 				},
 				autoplay = false,
 			},
@@ -569,7 +575,7 @@ local define_world1_daemon_fsm<const> = function()
 end
 
 local register_world1_daemon_definition<const> = function()
-	for index = 1, 8 do
+	for index = 1, death_image_count do
 		death_images[index] = image.resolve('world1_daemon_death_' .. tostring(index))
 	end
 	prefab.define({

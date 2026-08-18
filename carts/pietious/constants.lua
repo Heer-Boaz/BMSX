@@ -137,6 +137,9 @@ boss_world1_max_zaks = 2
 boss_world1_zak_drop_health_chance_pct = 10
 boss_world1_zak_drop_ammo_chance_pct = 50
 boss_world1_spawn_projectiles_per_burst = 12
+boss_world1_death_odd_stage_frames = 3
+boss_world1_death_even_stage_frames = 2
+boss_world1_death_hidden_frames = 25
 -- Timeline delta remains one 20 ms frame word per gameplay update. A 100 ms
 -- authored frame therefore lasts five Pietious updates, or 200 ms on screen.
 boss_world1_pose_frame_ms = 100

@@ -59,6 +59,20 @@ function bt_component:abort()
 	self._execution_request_pending = false
 end
 
+-- Tree lifecycle is distinct from generic component scheduling. Stopping
+-- aborts active tasks and services before withdrawing future scheduler
+-- admission; its blackboard remains available for the next start.
+function bt_component:stop()
+	self:abort()
+	return base_component.set_enabled(self, false)
+end
+
+-- stop() leaves execution at the root, so starting only republishes the
+-- component to the retained BT view.
+function bt_component:start()
+	return base_component.set_enabled(self, true)
+end
+
 function bt_component:on_detach()
 	self:abort()
 end
