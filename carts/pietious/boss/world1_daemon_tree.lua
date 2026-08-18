@@ -13,19 +13,6 @@ world1_daemon_tree.timeline_id = world1_daemon.timeline_id
 
 function world1_daemon_tree.register()
 	local timeline_id<const> = world1_daemon_tree.timeline_id
-	local move_in<const> = {
-		type = 'task',
-		execute = world1_daemon.execute_walk,
-		tick = world1_daemon.tick_walk_into_room,
-		interval_ticks = boss_world1_walk_step_ticks,
-	}
-	local move_out_forward<const> = {
-		type = 'task',
-		execute = world1_daemon.execute_walk,
-		tick = world1_daemon.tick_walk_out_of_room,
-		interval_ticks = boss_world1_walk_step_ticks,
-		parameters = false,
-	}
 	local move_out_backward<const> = {
 		type = 'task',
 		execute = world1_daemon.execute_walk,
@@ -56,7 +43,7 @@ function world1_daemon_tree.register()
 			},
 		},
 	}
-	local pounce_attack<const> = {
+	local pounce_and_exit<const> = {
 		type = 'sequence',
 		children = {
 			{
@@ -80,13 +67,13 @@ function world1_daemon_tree.register()
 				type = 'timeline',
 				timeline_id = timeline_id.unprepare_pounce,
 			},
-		},
-	}
-	local pounce_and_exit<const> = {
-		type = 'sequence',
-		children = {
-			pounce_attack,
-			move_out_forward,
+			{
+				type = 'task',
+				execute = world1_daemon.execute_walk,
+				tick = world1_daemon.tick_walk_out_of_room,
+				interval_ticks = boss_world1_walk_step_ticks,
+				parameters = false,
+			},
 		},
 	}
 	local spawn_and_follow_up<const> = {
@@ -113,64 +100,6 @@ function world1_daemon_tree.register()
 			},
 		},
 	}
-	local pounce_without_spawn<const> = {
-		type = 'sequence',
-		children = {
-			{
-				type = 'add_blackboard',
-				key = 'no_spawn_run_count',
-				value = 1,
-			},
-			pounce_and_exit,
-		},
-	}
-	local exit_backward_without_spawn<const> = {
-		type = 'sequence',
-		children = {
-			{
-				type = 'add_blackboard',
-				key = 'no_spawn_run_count',
-				value = 1,
-			},
-			move_out_backward,
-		},
-	}
-	local later_run<const> = {
-		type = 'selector',
-		children = {
-			{
-				type = 'sequence',
-				decorators = {
-					{
-						type = 'blackboard',
-						key = 'no_spawn_run_count',
-						operation = 'greater_or_equal',
-						value = 1,
-					},
-				},
-				children = {
-					spawn_and_follow_up,
-				},
-			},
-			{
-				type = 'weighted_random_selector',
-				choices = {
-					{
-						weight = 6,
-						child = spawn_and_follow_up,
-					},
-					{
-						weight = 3,
-						child = pounce_without_spawn,
-					},
-					{
-						weight = 1,
-						child = exit_backward_without_spawn,
-					},
-				},
-			},
-		},
-	}
 	behaviour_tree_library.register(world1_daemon_tree.id, {
 		blackboard = {
 			{
@@ -185,7 +114,12 @@ function world1_daemon_tree.register()
 		root = {
 			type = 'sequence',
 			children = {
-				move_in,
+				{
+					type = 'task',
+					execute = world1_daemon.execute_walk,
+					tick = world1_daemon.tick_walk_into_room,
+					interval_ticks = boss_world1_walk_step_ticks,
+				},
 				{
 					type = 'selector',
 					children = {
@@ -204,7 +138,62 @@ function world1_daemon_tree.register()
 								pounce_and_exit,
 							},
 						},
-						later_run,
+						{
+							type = 'selector',
+							children = {
+								{
+									type = 'sequence',
+									decorators = {
+										{
+											type = 'blackboard',
+											key = 'no_spawn_run_count',
+											operation = 'greater_or_equal',
+											value = 1,
+										},
+									},
+									children = {
+										spawn_and_follow_up,
+									},
+								},
+								{
+									type = 'weighted_random_selector',
+									choices = {
+										{
+											weight = 6,
+											child = spawn_and_follow_up,
+										},
+										{
+											weight = 3,
+											child = {
+												type = 'sequence',
+												children = {
+													{
+														type = 'add_blackboard',
+														key = 'no_spawn_run_count',
+														value = 1,
+													},
+													pounce_and_exit,
+												},
+											},
+										},
+										{
+											weight = 1,
+											child = {
+												type = 'sequence',
+												children = {
+													{
+														type = 'add_blackboard',
+														key = 'no_spawn_run_count',
+														value = 1,
+													},
+													move_out_backward,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 				{
