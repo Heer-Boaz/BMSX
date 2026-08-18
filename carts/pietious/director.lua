@@ -128,31 +128,9 @@ function director:open_shrine(text_lines)
 	self.events:emit('shrine_overlay_requested', { lines = text_lines })
 end
 
-function director:ensure_daemon_cloud_pool()
+function director:stop_daemon_clouds()
 	local clouds<const> = self.daemon_clouds
 	for i = 1, flow_daemon_cloud_count do
-		if clouds[i] == nil then
-			clouds[i] = world:spawn('daemon_cloud', {
-				id = 'dc.' .. tostring(i),
-				space_id = 'main',
-				pos = { x = 0, y = 0, z = 23 },
-			})
-		end
-		clouds[i]:stop_and_hide()
-	end
-end
-
-function director:spawn_daemon_cloud(index)
-	local position_index<const> = index * 2 - 1
-	self.daemon_clouds[index]:play_once_at(
-		daemon_cloud_positions[position_index],
-		daemon_cloud_positions[position_index + 1]
-	)
-end
-
-function director:despawn_daemon_clouds()
-	local clouds<const> = self.daemon_clouds
-	for i = 1, #clouds do
 		clouds[i]:stop_and_hide()
 	end
 end
@@ -197,7 +175,6 @@ end
 
 function director:start_daemon_appearance()
 	self:set_active_space('main')
-	self:ensure_daemon_cloud_pool()
 	self.events:emit('daemon_appearance')
 end
 
@@ -214,14 +191,21 @@ function director:leave_pause()
 end
 
 function director:ctor()
-	self.daemon_clouds = {}
+	local clouds<const> = {}
+	self.daemon_clouds = clouds
 	self.death_curtain_width = 0
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
 	local visual<const> = self:get_component(custom_visual_component)
 	self.visual_component = visual
-	self:ensure_daemon_cloud_pool()
+	for i = 1, flow_daemon_cloud_count do
+		clouds[i] = world:spawn('daemon_cloud', {
+			id = 'dc.' .. tostring(i),
+			space_id = 'main',
+			pos = { x = 0, y = 0, z = 23 },
+		})
+	end
 end
 
 -- BROADCAST EVENT CATALOGUE — authoritative list of events emitted by director.
@@ -256,7 +240,12 @@ local define_director_fsm<const> = function()
 	local apply_daemon_frame<const> = function(self, frame_value)
 		if frame_value <= flow_daemon_cloud_last_spawn_frame
 		and (frame_value % flow_daemon_cloud_spawn_interval_frames) == 0 then
-			self:spawn_daemon_cloud((frame_value // flow_daemon_cloud_spawn_interval_frames) + 1)
+			local index<const> = (frame_value // flow_daemon_cloud_spawn_interval_frames) + 1
+			local position_index<const> = index * 2 - 1
+			self.daemon_clouds[index]:play_once_at(
+				daemon_cloud_positions[position_index],
+				daemon_cloud_positions[position_index + 1]
+			)
 		end
 	end
 	local apply_seal_frame<const> = function(self, frame_value)
@@ -275,7 +264,6 @@ local define_director_fsm<const> = function()
 		self.death_curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
 	end
 	local on_daemon_finished<const> = function(self)
-		self:despawn_daemon_clouds()
 		self.events:emit('daemon_appearance_done')
 		return '/room'
 	end
@@ -418,7 +406,6 @@ local define_director_fsm<const> = function()
 			-- transition overlay clears its banner, etc.
 			room = {
 				entering_state = function(self)
-					self:despawn_daemon_clouds()
 					self:set_active_space('main')
 					self.events:emit('room')
 				end,
@@ -796,6 +783,7 @@ local define_director_fsm<const> = function()
 					},
 				},
 				entering_state = director.start_daemon_appearance,
+				exiting_state = director.stop_daemon_clouds,
 			},
 			lithograph = {
 				initial = 'opening',
