@@ -150,8 +150,6 @@ function world1_daemon:reset_encounter()
 	local node_data<const> = behaviour.node_data
 	node_data.first_run = true
 	node_data.no_spawn_run_count = 0
-	node_data.arrival_action = nil
-	node_data.spawn_followup = nil
 	self:set_imgid(walk_image_1)
 	self.sprite_component.offset_y = 0
 end

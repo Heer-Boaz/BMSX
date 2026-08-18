@@ -1,4 +1,4 @@
-local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
+local bt_result<const> = require('cartlib/behaviour_tree/result')
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
@@ -11,7 +11,7 @@ local spawn_projectile<const> = {}
 spawn_projectile.__index = spawn_projectile
 
 local tree_id<const> = 'enemy_world1_daemon_spawn'
-local bt_running<const> = behaviour_tree.result.running
+local bt_running<const> = bt_result.running
 local projectile_images<const> = {
 	'world1_daemon_spawn_cadeau',
 	'world1_daemon_spawn_letter',
@@ -48,9 +48,10 @@ function spawn_projectile.choose_drop_type(_self)
 end
 
 function spawn_projectile.register()
-	behaviour_tree_library.register(
-		behaviour_tree.action_node.new(tree_id, spawn_projectile.update)
-	)
+	behaviour_tree_library.register(tree_id, {
+		type = 'action',
+		action = spawn_projectile.update,
+	})
 	prefab.define({
 		def_id = 'enemy.daemon_spawn',
 		class = spawn_projectile,

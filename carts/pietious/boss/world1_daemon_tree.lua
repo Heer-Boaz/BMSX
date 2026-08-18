@@ -1,20 +1,13 @@
-local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
+local bt_result<const> = require('cartlib/behaviour_tree/result')
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 require('constants')
 
--- The authored tree owns encounter decisions and phase composition. Its leaves
--- are bounded tasks (walk, pose timeline, spawn window, pounce and re-entry
--- support); none of them contains a second hidden boss state machine.
+-- The definition owns encounter decisions and phase composition. Its leaves
+-- are bounded tasks (walk, spawn window, pounce and re-entry support); none of
+-- them contains a second hidden boss state machine.
 local world1_daemon_tree<const> = {}
-local result<const> = behaviour_tree.result
-local bt_running<const> = result.running
-local bt_success<const> = result.success
-
-local arrival_spawn<const> = 1
-local arrival_pounce<const> = 2
-local arrival_move_backward<const> = 3
-local followup_pounce<const> = 1
-local followup_move_backward<const> = 2
+local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 
 world1_daemon_tree.id = 'enemy_world1_daemon'
 world1_daemon_tree.timeline_id = {
@@ -23,38 +16,6 @@ world1_daemon_tree.timeline_id = {
 	prepare_pounce = 'world1_daemon.prepare_pounce',
 	unprepare_pounce = 'world1_daemon.unprepare_pounce',
 	death = 'world1_daemon.death',
-}
-
-local timeline_play_options<const> = {
-	rewind = true,
-	snap_to_start = true,
-}
-
-local timeline_finished<const> = function(_owner, task_state)
-	task_state.complete = true
-end
-
-local timeline_on_start<const> = function(task_state, target, _blackboard, timeline_id)
-	task_state.complete = false
-	target.timelines:play(timeline_id, timeline_play_options, timeline_finished, task_state)
-	return bt_running
-end
-
-local timeline_on_running<const> = function(task_state)
-	if task_state.complete then
-		return bt_success
-	end
-	return bt_running
-end
-
-local timeline_on_halted<const> = function(_task_state, target, _blackboard, timeline_id)
-	target.timelines:stop(timeline_id)
-end
-
-local timeline_callbacks<const> = {
-	on_start = timeline_on_start,
-	on_running = timeline_on_running,
-	on_halted = timeline_on_halted,
 }
 
 local advance_walk_cadence<const> = function(task_state)
@@ -83,15 +44,6 @@ local move_in_on_running<const> = function(task_state, target)
 	return bt_running
 end
 
-local no_halt_work<const> = function()
-end
-
-local move_in_callbacks<const> = {
-	on_start = move_in_on_start,
-	on_running = move_in_on_running,
-	on_halted = no_halt_work,
-}
-
 local move_out_on_start<const> = function(task_state, target)
 	task_state.ticks = 0
 	target:begin_walk()
@@ -107,12 +59,6 @@ local move_out_on_running<const> = function(task_state, target, _blackboard, bac
 	end
 	return bt_running
 end
-
-local move_out_callbacks<const> = {
-	on_start = move_out_on_start,
-	on_running = move_out_on_running,
-	on_halted = no_halt_work,
-}
 
 local tick_spawn_attack<const> = function(task_state, target)
 	local elapsed_ticks<const> = task_state.elapsed_ticks + 1
@@ -137,12 +83,6 @@ local spawn_attack_on_start<const> = function(task_state, target)
 	return tick_spawn_attack(task_state, target)
 end
 
-local spawn_attack_callbacks<const> = {
-	on_start = spawn_attack_on_start,
-	on_running = tick_spawn_attack,
-	on_halted = no_halt_work,
-}
-
 local pounce_on_start<const> = function(_task_state, target)
 	target:begin_pounce()
 	return bt_running
@@ -154,12 +94,6 @@ local pounce_on_running<const> = function(_task_state, target)
 	end
 	return bt_running
 end
-
-local pounce_callbacks<const> = {
-	on_start = pounce_on_start,
-	on_running = pounce_on_running,
-	on_halted = no_halt_work,
-}
 
 local tick_zak_spawner<const> = function(task_state, target)
 	local cadence<const> = task_state.cadence + boss_world1_spawn_cadence_units_per_tick
@@ -177,48 +111,19 @@ local zak_spawner_on_start<const> = function(task_state, target)
 	return tick_zak_spawner(task_state, target)
 end
 
-local zak_spawner_callbacks<const> = {
-	on_start = zak_spawner_on_start,
-	on_running = tick_zak_spawner,
-	on_halted = no_halt_work,
-}
+local spawn_is_required<const> = function(_target, blackboard)
+	return blackboard.node_data.no_spawn_run_count >= 1
+end
 
-local choose_arrival_action<const> = function(_target, blackboard)
+local reset_no_spawn_run_count<const> = function(_target, blackboard)
+	blackboard.node_data.no_spawn_run_count = 0
+	return bt_success
+end
+
+local record_no_spawn_run<const> = function(_target, blackboard)
 	local node_data<const> = blackboard.node_data
-	if node_data.no_spawn_run_count >= 1 then
-		node_data.arrival_action = arrival_spawn
-		node_data.no_spawn_run_count = 0
-		return bt_success
-	end
-	local roll<const> = math.random(1, 10)
-	if roll <= 6 then
-		node_data.arrival_action = arrival_spawn
-		node_data.no_spawn_run_count = 0
-	elseif roll <= 9 then
-		node_data.arrival_action = arrival_pounce
-		node_data.no_spawn_run_count = node_data.no_spawn_run_count + 1
-	else
-		node_data.arrival_action = arrival_move_backward
-		node_data.no_spawn_run_count = node_data.no_spawn_run_count + 1
-	end
+	node_data.no_spawn_run_count = node_data.no_spawn_run_count + 1
 	return bt_success
-end
-
-local arrival_action_is<const> = function(_target, blackboard, action)
-	return blackboard.node_data.arrival_action == action
-end
-
-local choose_spawn_followup<const> = function(_target, blackboard)
-	if math.random(1, 3) <= 2 then
-		blackboard.node_data.spawn_followup = followup_pounce
-	else
-		blackboard.node_data.spawn_followup = followup_move_backward
-	end
-	return bt_success
-end
-
-local spawn_followup_is<const> = function(_target, blackboard, followup)
-	return blackboard.node_data.spawn_followup == followup
 end
 
 local finish_cycle<const> = function(target, blackboard)
@@ -227,136 +132,198 @@ local finish_cycle<const> = function(target, blackboard)
 	return bt_success
 end
 
-local timeline_action<const> = function(id, timeline_id)
-	return behaviour_tree.stateful_action_node.new(id, timeline_callbacks, 0, timeline_id)
-end
-
-local move_in_action<const> = function(id)
-	return behaviour_tree.stateful_action_node.new(id, move_in_callbacks)
-end
-
-local move_out_action<const> = function(id, backward)
-	return behaviour_tree.stateful_action_node.new(id, move_out_callbacks, 0, backward)
-end
-
-local spawn_attack<const> = function(prefix)
-	local timeline_id<const> = world1_daemon_tree.timeline_id
-	return behaviour_tree.sequence_node.new(prefix, {
-		timeline_action(prefix .. '.prepare', timeline_id.prepare_spawn),
-		behaviour_tree.stateful_action_node.new(prefix .. '.bursts', spawn_attack_callbacks),
-		timeline_action(prefix .. '.unprepare', timeline_id.unprepare_spawn),
-		behaviour_tree.wait_node.new(prefix .. '.wait', boss_world1_wait_after_spawn_ticks),
-	})
-end
-
-local pounce_attack<const> = function(prefix)
-	local timeline_id<const> = world1_daemon_tree.timeline_id
-	return behaviour_tree.sequence_node.new(prefix, {
-		timeline_action(prefix .. '.prepare', timeline_id.prepare_pounce),
-		behaviour_tree.wait_node.new(prefix .. '.wait_before', boss_world1_wait_before_pounce_ticks),
-		behaviour_tree.stateful_action_node.new(prefix .. '.pounce', pounce_callbacks),
-		behaviour_tree.wait_node.new(prefix .. '.wait_after', boss_world1_wait_after_pounce_ticks),
-		timeline_action(prefix .. '.unprepare', timeline_id.unprepare_pounce),
-	})
-end
-
-local pounce_and_exit<const> = function(prefix)
-	return behaviour_tree.sequence_node.new(prefix, {
-		pounce_attack(prefix .. '.attack'),
-		move_out_action(prefix .. '.exit', false),
-	})
-end
-
-local later_run_branch<const> = function()
-	return behaviour_tree.sequence_node.new('world1_daemon.later_run', {
-		behaviour_tree.action_node.new('world1_daemon.later_run.choose', choose_arrival_action),
-		behaviour_tree.selector_node.new('world1_daemon.later_run.action', {
-			behaviour_tree.sequence_node.new('world1_daemon.later_run.spawn', {
-				behaviour_tree.condition_node.new(
-					'world1_daemon.later_run.spawn.condition',
-					arrival_action_is,
-					'NONE',
-					0,
-					arrival_spawn
-				),
-				spawn_attack('world1_daemon.later_run.spawn.attack'),
-				behaviour_tree.action_node.new(
-					'world1_daemon.later_run.spawn.choose_followup',
-					choose_spawn_followup
-				),
-				behaviour_tree.selector_node.new('world1_daemon.later_run.spawn.followup', {
-					behaviour_tree.sequence_node.new('world1_daemon.later_run.spawn.pounce', {
-						behaviour_tree.condition_node.new(
-							'world1_daemon.later_run.spawn.pounce.condition',
-							spawn_followup_is,
-							'NONE',
-							0,
-							followup_pounce
-						),
-						pounce_and_exit('world1_daemon.later_run.spawn.pounce.action'),
-					}),
-					behaviour_tree.sequence_node.new('world1_daemon.later_run.spawn.exit_backward', {
-						behaviour_tree.condition_node.new(
-							'world1_daemon.later_run.spawn.exit_backward.condition',
-							spawn_followup_is,
-							'NONE',
-							0,
-							followup_move_backward
-						),
-						move_out_action('world1_daemon.later_run.spawn.exit_backward.action', true),
-					}),
-				}),
-			}),
-			behaviour_tree.sequence_node.new('world1_daemon.later_run.pounce', {
-				behaviour_tree.condition_node.new(
-					'world1_daemon.later_run.pounce.condition',
-					arrival_action_is,
-					'NONE',
-					0,
-					arrival_pounce
-				),
-				pounce_and_exit('world1_daemon.later_run.pounce.action'),
-			}),
-			behaviour_tree.sequence_node.new('world1_daemon.later_run.exit_backward', {
-				behaviour_tree.condition_node.new(
-					'world1_daemon.later_run.exit_backward.condition',
-					arrival_action_is,
-					'NONE',
-					0,
-					arrival_move_backward
-				),
-				move_out_action('world1_daemon.later_run.exit_backward.action', true),
-			}),
-		}),
-	})
-end
-
 function world1_daemon_tree.register()
-	local root<const> = behaviour_tree.sequence_node.new(world1_daemon_tree.id, {
-		move_in_action('world1_daemon.move_in'),
-		behaviour_tree.selector_node.new('world1_daemon.arrival', {
-			behaviour_tree.sequence_node.new('world1_daemon.first_run', {
-				behaviour_tree.condition_node.new(
-					'world1_daemon.first_run.condition',
-					function(_target, blackboard)
-						return blackboard.node_data.first_run
-					end
-				),
-				spawn_attack('world1_daemon.first_run.spawn'),
-				pounce_and_exit('world1_daemon.first_run.pounce'),
-			}),
-			later_run_branch(),
-		}),
-		behaviour_tree.parallel_node.new('world1_daemon.reentry', {
-			behaviour_tree.wait_node.new('world1_daemon.reentry.wait', boss_world1_reentry_ticks),
-			behaviour_tree.stateful_action_node.new(
-				'world1_daemon.reentry.zaks',
-				zak_spawner_callbacks
-			),
-		}, 'ONE'),
-		behaviour_tree.action_node.new('world1_daemon.next_entrance', finish_cycle),
+	local timeline_id<const> = world1_daemon_tree.timeline_id
+	local move_in<const> = {
+		type = 'stateful_action',
+		on_start = move_in_on_start,
+		on_running = move_in_on_running,
+	}
+	local move_out_forward<const> = {
+		type = 'stateful_action',
+		on_start = move_out_on_start,
+		on_running = move_out_on_running,
+		parameters = false,
+	}
+	local move_out_backward<const> = {
+		type = 'stateful_action',
+		on_start = move_out_on_start,
+		on_running = move_out_on_running,
+		parameters = true,
+	}
+	local spawn_attack<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'timeline',
+				timeline_id = timeline_id.prepare_spawn,
+			},
+			{
+				type = 'stateful_action',
+				on_start = spawn_attack_on_start,
+				on_running = tick_spawn_attack,
+			},
+			{
+				type = 'timeline',
+				timeline_id = timeline_id.unprepare_spawn,
+			},
+			{
+				type = 'wait',
+				duration_ticks = boss_world1_wait_after_spawn_ticks,
+			},
+		},
+	}
+	local pounce_attack<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'timeline',
+				timeline_id = timeline_id.prepare_pounce,
+			},
+			{
+				type = 'wait',
+				duration_ticks = boss_world1_wait_before_pounce_ticks,
+			},
+			{
+				type = 'stateful_action',
+				on_start = pounce_on_start,
+				on_running = pounce_on_running,
+			},
+			{
+				type = 'wait',
+				duration_ticks = boss_world1_wait_after_pounce_ticks,
+			},
+			{
+				type = 'timeline',
+				timeline_id = timeline_id.unprepare_pounce,
+			},
+		},
+	}
+	local pounce_and_exit<const> = {
+		type = 'sequence',
+		children = {
+			pounce_attack,
+			move_out_forward,
+		},
+	}
+	local spawn_and_follow_up<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'action',
+				action = reset_no_spawn_run_count,
+			},
+			spawn_attack,
+			{
+				type = 'weighted_random_selector',
+				choices = {
+					{
+						weight = 2,
+						child = pounce_and_exit,
+					},
+					{
+						weight = 1,
+						child = move_out_backward,
+					},
+				},
+			},
+		},
+	}
+	local pounce_without_spawn<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'action',
+				action = record_no_spawn_run,
+			},
+			pounce_and_exit,
+		},
+	}
+	local exit_backward_without_spawn<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'action',
+				action = record_no_spawn_run,
+			},
+			move_out_backward,
+		},
+	}
+	local later_run<const> = {
+		type = 'selector',
+		children = {
+			{
+				type = 'sequence',
+				children = {
+					{
+						type = 'condition',
+						condition = spawn_is_required,
+					},
+					spawn_and_follow_up,
+				},
+			},
+			{
+				type = 'weighted_random_selector',
+				choices = {
+					{
+						weight = 6,
+						child = spawn_and_follow_up,
+					},
+					{
+						weight = 3,
+						child = pounce_without_spawn,
+					},
+					{
+						weight = 1,
+						child = exit_backward_without_spawn,
+					},
+				},
+			},
+		},
+	}
+	behaviour_tree_library.register(world1_daemon_tree.id, {
+		type = 'sequence',
+		children = {
+			move_in,
+			{
+				type = 'selector',
+				children = {
+					{
+						type = 'sequence',
+						children = {
+							{
+								type = 'condition',
+								condition = function(_target, blackboard)
+									return blackboard.node_data.first_run
+								end,
+							},
+							spawn_attack,
+							pounce_and_exit,
+						},
+					},
+					later_run,
+				},
+			},
+			{
+				type = 'parallel_one',
+				children = {
+					{
+						type = 'wait',
+						duration_ticks = boss_world1_reentry_ticks,
+					},
+					{
+						type = 'stateful_action',
+						on_start = zak_spawner_on_start,
+						on_running = tick_zak_spawner,
+					},
+				},
+			},
+			{
+				type = 'action',
+				action = finish_cycle,
+			},
+		},
 	})
-	behaviour_tree_library.register(root)
 end
 
 return world1_daemon_tree

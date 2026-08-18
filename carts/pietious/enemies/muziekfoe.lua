@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 require('constants')
-local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
-local bt_running<const> = behaviour_tree.result.running
+local bt_result<const> = require('cartlib/behaviour_tree/result')
+local bt_running<const> = bt_result.running
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -101,13 +101,16 @@ function muziekfoe.choose_drop_type(_self)
 end
 
 function muziekfoe.register()
-	local root<const> = behaviour_tree.action_node.new('enemy_muziekfoe', muziekfoe.bt_tick)
-	behaviour_tree_library.register(root)
+	local tree_id<const> = 'enemy_muziekfoe'
+	behaviour_tree_library.register(tree_id, {
+		type = 'action',
+		action = muziekfoe.bt_tick,
+	})
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			damage = 4,
 			max_health = 3,

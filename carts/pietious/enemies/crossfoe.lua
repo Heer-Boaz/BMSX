@@ -1,7 +1,7 @@
 local prefab<const> = require('cartlib/world/prefab')
 require('constants')
-local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
-local bt_running<const> = behaviour_tree.result.running
+local bt_result<const> = require('cartlib/behaviour_tree/result')
+local bt_running<const> = bt_result.running
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -134,13 +134,16 @@ function crossfoe.choose_drop_type(_self)
 end
 
 function crossfoe.register()
-	local root<const> = behaviour_tree.action_node.new('enemy_crossfoe', crossfoe.bt_tick)
-	behaviour_tree_library.register(root)
+	local tree_id<const> = 'enemy_crossfoe'
+	behaviour_tree_library.register(tree_id, {
+		type = 'action',
+		action = crossfoe.bt_tick,
+	})
 	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(root.id) },
+		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			damage = 4,
 			max_health = 3,

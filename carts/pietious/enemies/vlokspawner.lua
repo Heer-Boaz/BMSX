@@ -2,8 +2,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
-local behaviour_tree<const> = require('cartlib/behaviour_tree/bt')
-local bt_running<const> = behaviour_tree.result.running
+local bt_result<const> = require('cartlib/behaviour_tree/result')
+local bt_running<const> = bt_result.running
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -48,13 +48,16 @@ end
 vlokspawner.bind = enemy_base.bind_lifecycle
 
 function vlokspawner.register()
-	local root<const> = behaviour_tree.action_node.new('enemy_vlokspawner', vlokspawner.bt_tick)
-	behaviour_tree_library.register(root)
+	local tree_id<const> = 'enemy_vlokspawner'
+	behaviour_tree_library.register(tree_id, {
+		type = 'action',
+		action = vlokspawner.bt_tick,
+	})
 	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		base = sprite_object,
-		components = { bt_component.factory(root.id) },
+		components = { bt_component.factory(tree_id) },
 		defaults = {
 			damage = 0,
 			max_health = 0,

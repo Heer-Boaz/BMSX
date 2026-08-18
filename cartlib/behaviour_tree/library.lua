@@ -4,9 +4,8 @@ local registry<const> = require('cartlib/registry')
 
 local behaviour_tree_library<const> = {}
 
-function behaviour_tree_library.register(root)
-	local program<const> = bt_program.compile(root)
-	local tree_id<const> = program.id
+function behaviour_tree_library.register(tree_id, definition)
+	local program<const> = bt_program.compile(tree_id, definition)
 	bt_component.install_program(program)
 	local components<const> = registry:entries(bt_component)
 	for i = 1, #components do
