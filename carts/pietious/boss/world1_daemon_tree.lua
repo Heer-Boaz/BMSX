@@ -1,22 +1,38 @@
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local world1_daemon_module<const> = require('boss/world1_daemon')
-local world1_daemon_nodes<const> = require('boss/world1_daemon_nodes')
 require('constants')
 
--- This module is the immutable behaviour-tree asset. Boss-specific task-node
--- implementations live beside it in world1_daemon_nodes; the graph only
--- composes those tasks, built-in flow nodes, Blackboard operations and
--- timelines.
+-- The builder keeps the complete immutable behaviour template together.
+-- Domain task methods are referenced directly, just like callbacks in an FSM
+-- definition; cartlib lowers the graph to a retained evaluator at admission.
 local world1_daemon_tree<const> = {}
+local world1_daemon<const> = world1_daemon_module.world1_daemon
 
-world1_daemon_tree.id = world1_daemon_module.world1_daemon.tree_id
-world1_daemon_tree.timeline_id = world1_daemon_module.world1_daemon.timeline_id
+world1_daemon_tree.id = world1_daemon.tree_id
+world1_daemon_tree.timeline_id = world1_daemon.timeline_id
 
 function world1_daemon_tree.register()
 	local timeline_id<const> = world1_daemon_tree.timeline_id
-	local move_in<const> = world1_daemon_nodes.move_in
-	local move_out_forward<const> = world1_daemon_nodes.move_out_forward
-	local move_out_backward<const> = world1_daemon_nodes.move_out_backward
+	local move_in<const> = {
+		type = 'task',
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_into_room,
+		interval_ticks = boss_world1_walk_step_ticks,
+	}
+	local move_out_forward<const> = {
+		type = 'task',
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_out_of_room,
+		interval_ticks = boss_world1_walk_step_ticks,
+		parameters = false,
+	}
+	local move_out_backward<const> = {
+		type = 'task',
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_out_of_room,
+		interval_ticks = boss_world1_walk_step_ticks,
+		parameters = true,
+	}
 	local spawn_attack<const> = {
 		type = 'sequence',
 		children = {
@@ -24,7 +40,12 @@ function world1_daemon_tree.register()
 				type = 'timeline',
 				timeline_id = timeline_id.prepare_spawn,
 			},
-			world1_daemon_nodes.spawn_attack,
+			{
+				type = 'task',
+				node_memory = true,
+				execute = world1_daemon.execute_spawn_attack,
+				tick = world1_daemon.tick_spawn_attack,
+			},
 			{
 				type = 'timeline',
 				timeline_id = timeline_id.unprepare_spawn,
@@ -46,7 +67,11 @@ function world1_daemon_tree.register()
 				type = 'wait',
 				duration_ticks = boss_world1_wait_before_pounce_ticks,
 			},
-			world1_daemon_nodes.pounce,
+			{
+				type = 'task',
+				execute = world1_daemon.execute_pounce,
+				tick = world1_daemon.tick_pounce,
+			},
 			{
 				type = 'wait',
 				duration_ticks = boss_world1_wait_after_pounce_ticks,
@@ -186,7 +211,11 @@ function world1_daemon_tree.register()
 					type = 'wait',
 					duration_ticks = boss_world1_reentry_ticks,
 					services = {
-						world1_daemon_nodes.spawn_zak_service,
+						{
+							interval_ticks = boss_world1_zak_cadence_units
+								/ boss_world1_spawn_cadence_units_per_tick,
+							on_tick = world1_daemon.spawn_zak,
+						},
 					},
 				},
 				{
@@ -194,7 +223,10 @@ function world1_daemon_tree.register()
 					key = 'first_run',
 					value = false,
 				},
-				world1_daemon_nodes.choose_entrance,
+				{
+					type = 'task',
+					execute = world1_daemon.choose_entrance,
+				},
 			},
 		},
 	})

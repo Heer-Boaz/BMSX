@@ -172,10 +172,11 @@ function world1_daemon:activate_encounter()
 	self.behaviour:set_enabled(true)
 end
 
-function world1_daemon:begin_walk()
+function world1_daemon:execute_walk()
 	self.walk_frame = self.sprite_component.imgid == walk_image_2 and 2 or 1
 	self.visible = true
 	self.sprite_component.offset_y = 0
+	return bt_running
 end
 
 function world1_daemon:sample_image_frame(imgid)
@@ -194,27 +195,27 @@ function world1_daemon:advance_walk_frame()
 	end
 end
 
-function world1_daemon:walk_into_room()
+function world1_daemon:tick_walk_into_room()
 	self:advance_walk_frame()
 	if self.direction == 'right' then
 		local x<const> = self.x + room_tile_size
 		if x >= boss_world1_entry_left_x then
 			self.x = boss_world1_entry_left_x
-			return true
+			return bt_success
 		end
 		self.x = x
-		return false
+		return bt_running
 	end
 	local x<const> = self.x - room_tile_size
 	if x <= boss_world1_entry_right_x then
 		self.x = boss_world1_entry_right_x
-		return true
+		return bt_success
 	end
 	self.x = x
-	return false
+	return bt_running
 end
 
-function world1_daemon:walk_out_of_room(backward)
+function world1_daemon:tick_walk_out_of_room(_execution, backward)
 	self:advance_walk_frame()
 	local step<const> = self.direction == 'right' and room_tile_size or -room_tile_size
 	if backward then
@@ -226,9 +227,9 @@ function world1_daemon:walk_out_of_room(backward)
 		self.x = -1000
 		self.y = -1000
 		self.visible = false
-		return true
+		return bt_success
 	end
-	return false
+	return bt_running
 end
 
 function world1_daemon:execute_pounce()
@@ -290,6 +291,31 @@ function world1_daemon:choose_entrance()
 	self.y = boss_world1_lane_y[lane]
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_success
+end
+
+function world1_daemon:tick_spawn_attack(node_memory)
+	local elapsed_ticks<const> = node_memory.elapsed_ticks + 1
+	local cadence<const> = node_memory.cadence + boss_world1_spawn_cadence_units_per_tick
+	node_memory.elapsed_ticks = elapsed_ticks
+	if cadence >= boss_world1_spawn_cadence_units then
+		node_memory.cadence = cadence - boss_world1_spawn_cadence_units
+		local burst_count<const> = node_memory.burst_count
+		self:spawn_attack_burst(burst_count)
+		node_memory.burst_count = burst_count + 1
+	else
+		node_memory.cadence = cadence
+	end
+	if elapsed_ticks >= boss_world1_spawn_duration_ticks then
+		return bt_success
+	end
+	return bt_running
+end
+
+function world1_daemon:execute_spawn_attack(node_memory)
+	node_memory.elapsed_ticks = 0
+	node_memory.cadence = 0
+	node_memory.burst_count = 0
+	return self:tick_spawn_attack(node_memory)
 end
 
 function world1_daemon:spawn_potato(x, y)

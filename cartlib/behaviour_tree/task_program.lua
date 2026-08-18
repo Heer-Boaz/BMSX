@@ -5,7 +5,9 @@ local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 -- Tasks are immutable program records. Only tasks that declare node_memory
 -- allocate a per-agent table; stateless ticking tasks remain a direct evaluator
 -- call. Latent tasks retain one activity slot so branch abortion can distinguish
--- an executing task from an already completed task.
+-- an executing task from an already completed task. An authored interval is
+-- lowered into a dedicated countdown evaluator; skipped updates do not enter
+-- the cart callback and do not allocate task memory.
 --
 -- Stateless callbacks receive (target, execution, parameters). A task with
 -- node_memory receives (target, node_memory, execution, parameters).
@@ -67,7 +69,15 @@ local compile_ticking_task<const> = function(layout, tick, abort, parameters, us
 	end, nil, reset
 end
 
-local compile_latent_task<const> = function(layout, execute, tick, abort, parameters, uses_node_memory)
+local compile_latent_task<const> = function(
+	layout,
+	execute,
+	tick,
+	abort,
+	parameters,
+	uses_node_memory,
+	interval_ticks
+)
 	local memory_slot
 	if uses_node_memory then
 		memory_slot = allocate_node_memory(layout)
@@ -95,6 +105,59 @@ local compile_latent_task<const> = function(layout, execute, tick, abort, parame
 			end
 		end
 		reset = reset_without_memory
+	end
+	if interval_ticks ~= nil then
+		local remaining_slot<const> = allocate_slot(layout)
+		if uses_node_memory then
+			return function(target, execution)
+				local execution_state<const> = execution._execution_state
+				local status
+				if execution_state[active_slot] then
+					local remaining<const> = execution_state[remaining_slot] - 1
+					if remaining > 0 then
+						execution_state[remaining_slot] = remaining
+						return result_running
+					end
+					execution_state[remaining_slot] = interval_ticks
+					status = tick(target, execution_state[memory_slot], execution, parameters)
+				else
+					status = execute(target, execution_state[memory_slot], execution, parameters)
+					if status == result_running then
+						execution_state[remaining_slot] = interval_ticks
+					end
+				end
+				if status == result_running then
+					execution_state[active_slot] = true
+				else
+					execution_state[active_slot] = nil
+				end
+				return status
+			end, nil, reset
+		end
+		return function(target, execution)
+			local execution_state<const> = execution._execution_state
+			local status
+			if execution_state[active_slot] then
+				local remaining<const> = execution_state[remaining_slot] - 1
+				if remaining > 0 then
+					execution_state[remaining_slot] = remaining
+					return result_running
+				end
+				execution_state[remaining_slot] = interval_ticks
+				status = tick(target, execution, parameters)
+			else
+				status = execute(target, execution, parameters)
+				if status == result_running then
+					execution_state[remaining_slot] = interval_ticks
+				end
+			end
+			if status == result_running then
+				execution_state[active_slot] = true
+			else
+				execution_state[active_slot] = nil
+			end
+			return status
+		end, nil, reset
 	end
 	if uses_node_memory then
 		return function(target, execution)
@@ -140,7 +203,15 @@ function task_program.compile(node, layout)
 	if execute == nil then
 		return compile_ticking_task(layout, tick, node.abort, node.parameters, node.node_memory)
 	end
-	return compile_latent_task(layout, execute, tick, node.abort, node.parameters, node.node_memory)
+	return compile_latent_task(
+		layout,
+		execute,
+		tick,
+		node.abort,
+		node.parameters,
+		node.node_memory,
+		node.interval_ticks
+	)
 end
 
 function task_program.compile_timeline(node, layout)
@@ -150,7 +221,8 @@ function task_program.compile_timeline(node, layout)
 		timeline_task.tick,
 		timeline_task.abort,
 		node,
-		true
+		true,
+		nil
 	)
 end
 
