@@ -6,7 +6,6 @@ local result<const> = require('cartlib/behaviour_tree/result')
 
 local blackboard_program<const> = {}
 local result_success<const> = result.success
-local result_failure<const> = result.failure
 local compile_test_by_operation<const> = {}
 
 compile_test_by_operation.equal = function(slot, value)
@@ -57,7 +56,7 @@ compile_test_by_operation.is_not_set = function(slot)
 	end
 end
 
-local compile_test<const> = function(definition, layout)
+function blackboard_program.compile_test(definition, layout)
 	local slot<const> = layout.blackboard_layout.slots_by_key[definition.key]
 	return compile_test_by_operation[definition.operation](slot, definition.value)
 end
@@ -80,53 +79,6 @@ function blackboard_program.compile_add(node, layout)
 		blackboard:_set_slot(slot, values[slot] + value)
 		return result_success
 	end
-end
-
-function blackboard_program.compile_decorators(definitions, layout, evaluate, operand, reset)
-	local count<const> = #definitions
-	local tests<const> = {}
-	for index = 1, count do
-		tests[index] = compile_test(definitions[index], layout)
-	end
-	if count == 1 then
-		local test<const> = tests[1]
-		if reset == nil then
-			return function(target, execution)
-				if test(execution.blackboard._values) then
-					return evaluate(target, execution, operand)
-				end
-				return result_failure
-			end
-		end
-		return function(target, execution)
-			if test(execution.blackboard._values) then
-				return evaluate(target, execution, operand)
-			end
-			reset(target, execution, execution._execution_state)
-			return result_failure
-		end, nil, reset
-	end
-	if reset == nil then
-		return function(target, execution)
-			local values<const> = execution.blackboard._values
-			for index = 1, count do
-				if not tests[index](values) then
-					return result_failure
-				end
-			end
-			return evaluate(target, execution, operand)
-		end
-	end
-	return function(target, execution)
-		local values<const> = execution.blackboard._values
-		for index = 1, count do
-			if not tests[index](values) then
-				reset(target, execution, execution._execution_state)
-				return result_failure
-			end
-		end
-		return evaluate(target, execution, operand)
-	end, nil, reset
 end
 
 return blackboard_program

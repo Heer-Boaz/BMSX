@@ -1,6 +1,7 @@
 -- Compiler-owned execution storage layout. Composite cursors, task activity,
--- Service scheduling and per-agent node-memory records share one dense state
--- table; authored definitions never observe these numeric slots.
+-- Service scheduling, observer state and per-agent node-memory records share
+-- one dense state table; authored definitions never observe these numeric
+-- slots.
 
 local execution_layout<const> = {}
 
@@ -15,8 +16,12 @@ end
 function execution_layout.new(blackboard_layout)
 	return {
 		state_slot_count = 0,
+		execution_index_count = 0,
+		flag_slots = {},
 		record_slots = {},
 		blackboard_layout = blackboard_layout,
+		blackboard_observers_by_slot = {},
+		execution_requests = {},
 	}
 end
 
@@ -32,6 +37,19 @@ function execution_layout.allocate_slots(layout, count)
 	return first_slot
 end
 
+function execution_layout.allocate_flag(layout)
+	local slot<const> = execution_layout.allocate_slot(layout)
+	local flag_slots<const> = layout.flag_slots
+	flag_slots[#flag_slots + 1] = slot
+	return slot
+end
+
+function execution_layout.allocate_execution_index(layout)
+	local execution_index<const> = layout.execution_index_count + 1
+	layout.execution_index_count = execution_index
+	return execution_index
+end
+
 function execution_layout.allocate_node_memory(layout)
 	local slot<const> = execution_layout.allocate_slot(layout)
 	local record_slots<const> = layout.record_slots
@@ -43,13 +61,18 @@ function execution_layout.compile_state_factory(layout)
 	if layout.state_slot_count == 0 then
 		return create_no_state
 	end
+	local flag_slots<const> = layout.flag_slots
+	local flag_count<const> = #flag_slots
 	local record_slots<const> = layout.record_slots
 	local record_count<const> = #record_slots
-	if record_count == 0 then
+	if flag_count == 0 and record_count == 0 then
 		return create_plain_state
 	end
 	return function()
 		local state<const> = {}
+		for index = 1, flag_count do
+			state[flag_slots[index]] = false
+		end
 		for index = 1, record_count do
 			state[record_slots[index]] = {}
 		end

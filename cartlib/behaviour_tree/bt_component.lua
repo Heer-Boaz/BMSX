@@ -36,11 +36,12 @@ function bt_component:rebind_program(program)
 			blackboard_instance = blackboard.new()
 			self.blackboard = blackboard_instance
 		end
-		blackboard_instance:rebind(blackboard_layout)
+		blackboard_instance:rebind(blackboard_layout, self)
 	end
 	self.evaluate = program.evaluate
 	self.operand = program.operand
 	self.reset = program.reset
+	self._execution_request_pending = false
 	-- A program replacement restarts task/service memory while the blackboard
 	-- remaps retained values by semantic key. Runtime slot numbers belong only
 	-- to the installed program and never become cart-visible state keys.
@@ -54,6 +55,7 @@ function bt_component:abort()
 	if reset ~= nil then
 		reset(self.parent, self, self._execution_state)
 	end
+	self._execution_request_pending = false
 end
 
 function bt_component:on_detach()

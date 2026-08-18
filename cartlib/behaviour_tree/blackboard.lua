@@ -7,6 +7,21 @@ local blackboard<const> = {}
 local blackboard_instance<const> = {}
 blackboard_instance.__index = blackboard_instance
 
+local set_slot<const> = function(self, slot, value)
+	self._values[slot] = value
+end
+
+local set_observed_slot<const> = function(self, slot, value)
+	local values<const> = self._values
+	if values[slot] ~= value then
+		values[slot] = value
+		local notify<const> = self._notifications[slot]
+		if notify ~= nil then
+			notify(self._execution, values)
+		end
+	end
+end
+
 function blackboard.compile(entries)
 	local keys<const> = {}
 	local slots_by_key<const> = {}
@@ -29,10 +44,12 @@ function blackboard.new()
 	return setmetatable({
 		_layout = nil,
 		_values = nil,
+		_notifications = nil,
+		_execution = nil,
 	}, blackboard_instance)
 end
 
-function blackboard_instance:rebind(layout)
+function blackboard_instance:rebind(layout, execution)
 	local previous_layout<const> = self._layout
 	local previous_values<const> = self._values
 	local keys<const> = layout.keys
@@ -56,6 +73,13 @@ function blackboard_instance:rebind(layout)
 	end
 	self._layout = layout
 	self._values = values
+	self._notifications = layout.notifications
+	self._execution = execution
+	if layout.notifications == nil then
+		self._set_slot = set_slot
+	else
+		self._set_slot = set_observed_slot
+	end
 end
 
 function blackboard_instance:get(key)
@@ -64,10 +88,6 @@ end
 
 function blackboard_instance:set(key, value)
 	self:_set_slot(self._layout.slots_by_key[key], value)
-end
-
-function blackboard_instance:_set_slot(slot, value)
-	self._values[slot] = value
 end
 
 return blackboard
