@@ -15,7 +15,7 @@ function paperfoe:ctor()
 	enemy_base.setup_projectile_boundary(self)
 end
 
-function paperfoe.bt_tick(self, _blackboard)
+function paperfoe.bt_tick(self, _execution)
 	velocity.move_with_velocity(self)
 	return bt_running
 end
@@ -27,8 +27,10 @@ end
 function paperfoe.register()
 	local tree_id<const> = 'enemy_paperfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = paperfoe.bt_tick,
+		root = {
+			type = 'task',
+			tick = paperfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.paperfoe',

@@ -49,8 +49,10 @@ end
 
 function spawn_projectile.register()
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = spawn_projectile.update,
+		root = {
+			type = 'task',
+			tick = spawn_projectile.update,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.daemon_spawn',

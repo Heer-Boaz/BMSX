@@ -146,10 +146,9 @@ function world1_daemon:reset_encounter()
 	self.dangerous = false
 	self.visible = false
 	self.death_stage = 1
-	self.spawn_burst_count = 0
-	local node_data<const> = behaviour.node_data
-	node_data.first_run = true
-	node_data.no_spawn_run_count = 0
+	local blackboard<const> = behaviour.blackboard
+	blackboard:set('first_run', true)
+	blackboard:set('no_spawn_run_count', 0)
 	self:set_imgid(walk_image_1)
 	self.sprite_component.offset_y = 0
 end
@@ -280,10 +279,6 @@ function world1_daemon:choose_entrance()
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
-function world1_daemon:begin_spawn_attack()
-	self.spawn_burst_count = 0
-end
-
 function world1_daemon:spawn_potato(x, y)
 	for index = 1, boss_world1_max_potatoes do
 		local existing<const> = self.potatoes[index]
@@ -306,7 +301,7 @@ function world1_daemon:spawn_potato(x, y)
 	end
 end
 
-function world1_daemon:spawn_attack_burst()
+function world1_daemon:spawn_attack_burst(burst_count)
 	local projectiles<const> = self.spawn_projectiles
 	local write_index = 1
 	for read_index = 1, #projectiles do
@@ -343,11 +338,9 @@ function world1_daemon:spawn_attack_burst()
 		projectiles[#projectiles + 1] = projectile
 	end
 
-	local burst_count<const> = self.spawn_burst_count
 	if (burst_count % 3) == 0 then
 		self:spawn_potato(x, y)
 	end
-	self.spawn_burst_count = burst_count + 1
 	self.events:emit('daemon.spawn_burst')
 end
 

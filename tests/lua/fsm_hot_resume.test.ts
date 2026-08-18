@@ -72,7 +72,12 @@ const CART_MODULE_FILES = [
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsm_component', 'cartlib/fsm/fsm_component.lua'],
 	['cartlib/behaviour_tree/result', 'cartlib/behaviour_tree/result.lua'],
+	['cartlib/behaviour_tree/blackboard', 'cartlib/behaviour_tree/blackboard.lua'],
+	['cartlib/behaviour_tree/execution_layout', 'cartlib/behaviour_tree/execution_layout.lua'],
 	['cartlib/behaviour_tree/timeline_task', 'cartlib/behaviour_tree/timeline_task.lua'],
+	['cartlib/behaviour_tree/task_program', 'cartlib/behaviour_tree/task_program.lua'],
+	['cartlib/behaviour_tree/blackboard_program', 'cartlib/behaviour_tree/blackboard_program.lua'],
+	['cartlib/behaviour_tree/service_program', 'cartlib/behaviour_tree/service_program.lua'],
 	['cartlib/behaviour_tree/program', 'cartlib/behaviour_tree/program.lua'],
 	['cartlib/behaviour_tree/bt_component', 'cartlib/behaviour_tree/bt_component.lua'],
 	['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/library.lua'],
@@ -314,13 +319,20 @@ assert(machine.definition == published_definition)
 local future_state_machines<const> = make_fsm({ parent = target })
 assert(future_state_machines._machines_by_id.hot_machine.definition == published_definition)
 
-local old_action<const> = function(_, blackboard)
-	blackboard.node_data.ticks = (blackboard.node_data.ticks or 0) + 1
+local old_action<const> = function(_, execution)
+	local blackboard<const> = execution.blackboard
+	blackboard:set('ticks', blackboard:get('ticks') + 1)
 	return 'SUCCESS'
 end
 behaviour_tree_library.register('enemy_hot', {
-	type = 'action',
-	action = old_action,
+	blackboard = {
+		{ key = 'ticks', initial_value = 0 },
+		{ key = 'retained', initial_value = 0 },
+	},
+	root = {
+		type = 'task',
+		execute = old_action,
+	},
 })
 local make_old_tree<const> = behaviour_tree_component.factory('enemy_hot')
 local behaviour_tree_instance<const> = make_old_tree({ parent = target })
@@ -328,28 +340,35 @@ behaviour_tree_instance.id = 'hot_target_bt'
 registry:register(behaviour_tree_instance)
 registry:index(behaviour_tree_instance, behaviour_tree_component)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
-local node_data<const> = behaviour_tree_instance.node_data
-node_data.retained = 91
+local blackboard<const> = behaviour_tree_instance.blackboard
+blackboard:set('retained', 91)
 
-local new_action<const> = function(_, blackboard)
-	blackboard.node_data.ticks = blackboard.node_data.ticks + 10
+local new_action<const> = function(_, execution)
+	local active_blackboard<const> = execution.blackboard
+	active_blackboard:set('ticks', active_blackboard:get('ticks') + 10)
 	return 'SUCCESS'
 end
 behaviour_tree_library.register('enemy_hot', {
-	type = 'action',
-	action = new_action,
+	blackboard = {
+		{ key = 'retained', initial_value = 0 },
+		{ key = 'ticks', initial_value = 0 },
+	},
+	root = {
+		type = 'task',
+		execute = new_action,
+	},
 })
 assert(behaviour_tree_instance.evaluate == new_action)
-assert(behaviour_tree_instance.node_data == node_data and node_data.retained == 91)
+assert(behaviour_tree_instance.blackboard == blackboard and blackboard:get('retained') == 91)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
 local future_tree<const> = make_old_tree({ parent = target })
 assert(future_tree.evaluate == new_action)
 
-return target.value, active_data.retained, node_data.ticks, node_data.retained,
+return target.value, active_data.retained, blackboard:get('ticks'), blackboard:get('retained'),
 	machine.current_id == 'active', target.tags.new_active, target.tags.old_active
 `;
 
-test('cartlib FSM and behaviour-tree instances rebind compiled definitions without resetting runtime state', () => {
+test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
 	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) => {
 		const source = readFileSync(file, 'utf8');
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };

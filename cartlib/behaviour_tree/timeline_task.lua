@@ -4,29 +4,29 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- task, while subtree abortion stops the playback it admitted.
 local timeline_task<const> = {}
 
-local timeline_finished<const> = function(_owner, task_state)
-	task_state.complete = true
+local timeline_finished<const> = function(_owner, node_memory)
+	node_memory.complete = true
 end
 
-function timeline_task.on_start(task_state, target, _blackboard, definition)
-	task_state.complete = false
+function timeline_task.execute(target, node_memory, _execution, definition)
+	node_memory.complete = false
 	target.timelines:play(
 		definition.timeline_id,
 		definition.play_options,
 		timeline_finished,
-		task_state
+		node_memory
 	)
 	return result.running
 end
 
-function timeline_task.on_running(task_state)
-	if task_state.complete then
+function timeline_task.tick(_target, node_memory)
+	if node_memory.complete then
 		return result.success
 	end
 	return result.running
 end
 
-function timeline_task.on_halted(_task_state, target, _blackboard, definition)
+function timeline_task.abort(target, _node_memory, _execution, definition)
 	target.timelines:stop(definition.timeline_id)
 end
 

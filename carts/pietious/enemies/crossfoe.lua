@@ -41,19 +41,18 @@ function crossfoe:ctor()
 	apply_spin_visual(self)
 end
 
-function crossfoe.bt_tick_waiting(self, blackboard)
+function crossfoe.bt_tick_waiting(self, node_memory)
 	local player<const> = self.player
-	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
-	local wait_ticks = node.cross_wait_ticks or enemy_cross_wait_before_fly_steps
+	local wait_ticks = node_memory.cross_wait_ticks or enemy_cross_wait_before_fly_steps
 	wait_ticks = wait_ticks - 1
 	if wait_ticks > 0 then
-		node.cross_wait_ticks = wait_ticks
+		node_memory.cross_wait_ticks = wait_ticks
 		return bt_running
 	end
 
-	node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
-	node.cross_turn_ticks = enemy_cross_turn_steps
+	node_memory.cross_wait_ticks = enemy_cross_wait_before_fly_steps
+	node_memory.cross_turn_ticks = enemy_cross_turn_steps
 	if player.x < self.x then
 		self.cross_state = 'flying_left'
 	else
@@ -65,9 +64,8 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	return bt_running
 end
 
-function crossfoe.bt_tick_flying(self, blackboard)
+function crossfoe.bt_tick_flying(self, node_memory)
 	local player<const> = self.player
-	local node<const> = blackboard.node_data
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
 	local next_x<const> = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
@@ -82,18 +80,18 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
 		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
-		node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
-		node.cross_turn_ticks = enemy_cross_turn_steps
+		node_memory.cross_wait_ticks = enemy_cross_wait_before_fly_steps
+		node_memory.cross_turn_ticks = enemy_cross_turn_steps
 		self.castle.events:emit('crossland')
 		return bt_running
 	end
 
 	self.x = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
 
-	local turn_ticks = node.cross_turn_ticks or enemy_cross_turn_steps
+	local turn_ticks = node_memory.cross_turn_ticks or enemy_cross_turn_steps
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
-		node.cross_turn_ticks = turn_ticks
+		node_memory.cross_turn_ticks = turn_ticks
 		return bt_running
 	end
 
@@ -112,15 +110,15 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		self.x = self.x + 4
 	end
 	apply_spin_visual(self)
-	node.cross_turn_ticks = turn_ticks
+	node_memory.cross_turn_ticks = turn_ticks
 	return bt_running
 end
 
-function crossfoe.bt_tick(self, blackboard)
+function crossfoe.bt_tick(self, node_memory)
 	if self.cross_state == 'waiting' then
-		return crossfoe.bt_tick_waiting(self, blackboard)
+		return crossfoe.bt_tick_waiting(self, node_memory)
 	end
-	return crossfoe.bt_tick_flying(self, blackboard)
+	return crossfoe.bt_tick_flying(self, node_memory)
 end
 
 function crossfoe.choose_drop_type(_self)
@@ -136,8 +134,11 @@ end
 function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = crossfoe.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = crossfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.crossfoe',

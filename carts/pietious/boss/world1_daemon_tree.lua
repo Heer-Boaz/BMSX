@@ -18,24 +18,24 @@ world1_daemon_tree.timeline_id = {
 	death = 'world1_daemon.death',
 }
 
-local advance_walk_cadence<const> = function(task_state)
-	local ticks<const> = task_state.ticks + 1
+local advance_walk_cadence<const> = function(node_memory)
+	local ticks<const> = node_memory.ticks + 1
 	if ticks < boss_world1_walk_step_ticks then
-		task_state.ticks = ticks
+		node_memory.ticks = ticks
 		return false
 	end
-	task_state.ticks = 0
+	node_memory.ticks = 0
 	return true
 end
 
-local move_in_on_start<const> = function(task_state, target)
-	task_state.ticks = 0
+local move_in_execute<const> = function(target, node_memory)
+	node_memory.ticks = 0
 	target:begin_walk()
 	return bt_running
 end
 
-local move_in_on_running<const> = function(task_state, target)
-	if not advance_walk_cadence(task_state) then
+local move_in_tick<const> = function(target, node_memory)
+	if not advance_walk_cadence(node_memory) then
 		return bt_running
 	end
 	if target:walk_into_room() then
@@ -44,14 +44,14 @@ local move_in_on_running<const> = function(task_state, target)
 	return bt_running
 end
 
-local move_out_on_start<const> = function(task_state, target)
-	task_state.ticks = 0
+local move_out_execute<const> = function(target, node_memory)
+	node_memory.ticks = 0
 	target:begin_walk()
 	return bt_running
 end
 
-local move_out_on_running<const> = function(task_state, target, _blackboard, backward)
-	if not advance_walk_cadence(task_state) then
+local move_out_tick<const> = function(target, node_memory, _execution, backward)
+	if not advance_walk_cadence(node_memory) then
 		return bt_running
 	end
 	if target:walk_out_of_room(backward) then
@@ -60,15 +60,17 @@ local move_out_on_running<const> = function(task_state, target, _blackboard, bac
 	return bt_running
 end
 
-local tick_spawn_attack<const> = function(task_state, target)
-	local elapsed_ticks<const> = task_state.elapsed_ticks + 1
-	local cadence<const> = task_state.cadence + boss_world1_spawn_cadence_units_per_tick
-	task_state.elapsed_ticks = elapsed_ticks
+local spawn_attack_tick<const> = function(target, node_memory)
+	local elapsed_ticks<const> = node_memory.elapsed_ticks + 1
+	local cadence<const> = node_memory.cadence + boss_world1_spawn_cadence_units_per_tick
+	node_memory.elapsed_ticks = elapsed_ticks
 	if cadence >= boss_world1_spawn_cadence_units then
-		task_state.cadence = cadence - boss_world1_spawn_cadence_units
-		target:spawn_attack_burst()
+		node_memory.cadence = cadence - boss_world1_spawn_cadence_units
+		local burst_count<const> = node_memory.burst_count
+		target:spawn_attack_burst(burst_count)
+		node_memory.burst_count = burst_count + 1
 	else
-		task_state.cadence = cadence
+		node_memory.cadence = cadence
 	end
 	if elapsed_ticks >= boss_world1_spawn_duration_ticks then
 		return bt_success
@@ -76,58 +78,30 @@ local tick_spawn_attack<const> = function(task_state, target)
 	return bt_running
 end
 
-local spawn_attack_on_start<const> = function(task_state, target)
-	task_state.elapsed_ticks = 0
-	task_state.cadence = 0
-	target:begin_spawn_attack()
-	return tick_spawn_attack(task_state, target)
+local spawn_attack_execute<const> = function(target, node_memory)
+	node_memory.elapsed_ticks = 0
+	node_memory.cadence = 0
+	node_memory.burst_count = 0
+	return spawn_attack_tick(target, node_memory)
 end
 
-local pounce_on_start<const> = function(_task_state, target)
+local pounce_execute<const> = function(target)
 	target:begin_pounce()
 	return bt_running
 end
 
-local pounce_on_running<const> = function(_task_state, target)
+local pounce_tick<const> = function(target)
 	if target:pounce_step() then
 		return bt_success
 	end
 	return bt_running
 end
 
-local tick_zak_spawner<const> = function(task_state, target)
-	local cadence<const> = task_state.cadence + boss_world1_spawn_cadence_units_per_tick
-	if cadence >= boss_world1_zak_cadence_units then
-		task_state.cadence = cadence - boss_world1_zak_cadence_units
-		target:spawn_zak()
-	else
-		task_state.cadence = cadence
-	end
-	return bt_running
+local spawn_zak_service<const> = function(target)
+	target:spawn_zak()
 end
 
-local zak_spawner_on_start<const> = function(task_state, target)
-	task_state.cadence = 0
-	return tick_zak_spawner(task_state, target)
-end
-
-local spawn_is_required<const> = function(_target, blackboard)
-	return blackboard.node_data.no_spawn_run_count >= 1
-end
-
-local reset_no_spawn_run_count<const> = function(_target, blackboard)
-	blackboard.node_data.no_spawn_run_count = 0
-	return bt_success
-end
-
-local record_no_spawn_run<const> = function(_target, blackboard)
-	local node_data<const> = blackboard.node_data
-	node_data.no_spawn_run_count = node_data.no_spawn_run_count + 1
-	return bt_success
-end
-
-local finish_cycle<const> = function(target, blackboard)
-	blackboard.node_data.first_run = false
+local choose_next_entrance<const> = function(target)
 	target:choose_entrance()
 	return bt_success
 end
@@ -135,20 +109,23 @@ end
 function world1_daemon_tree.register()
 	local timeline_id<const> = world1_daemon_tree.timeline_id
 	local move_in<const> = {
-		type = 'stateful_action',
-		on_start = move_in_on_start,
-		on_running = move_in_on_running,
+		type = 'task',
+		node_memory = true,
+		execute = move_in_execute,
+		tick = move_in_tick,
 	}
 	local move_out_forward<const> = {
-		type = 'stateful_action',
-		on_start = move_out_on_start,
-		on_running = move_out_on_running,
+		type = 'task',
+		node_memory = true,
+		execute = move_out_execute,
+		tick = move_out_tick,
 		parameters = false,
 	}
 	local move_out_backward<const> = {
-		type = 'stateful_action',
-		on_start = move_out_on_start,
-		on_running = move_out_on_running,
+		type = 'task',
+		node_memory = true,
+		execute = move_out_execute,
+		tick = move_out_tick,
 		parameters = true,
 	}
 	local spawn_attack<const> = {
@@ -159,9 +136,10 @@ function world1_daemon_tree.register()
 				timeline_id = timeline_id.prepare_spawn,
 			},
 			{
-				type = 'stateful_action',
-				on_start = spawn_attack_on_start,
-				on_running = tick_spawn_attack,
+				type = 'task',
+				node_memory = true,
+				execute = spawn_attack_execute,
+				tick = spawn_attack_tick,
 			},
 			{
 				type = 'timeline',
@@ -185,9 +163,9 @@ function world1_daemon_tree.register()
 				duration_ticks = boss_world1_wait_before_pounce_ticks,
 			},
 			{
-				type = 'stateful_action',
-				on_start = pounce_on_start,
-				on_running = pounce_on_running,
+				type = 'task',
+				execute = pounce_execute,
+				tick = pounce_tick,
 			},
 			{
 				type = 'wait',
@@ -210,8 +188,9 @@ function world1_daemon_tree.register()
 		type = 'sequence',
 		children = {
 			{
-				type = 'action',
-				action = reset_no_spawn_run_count,
+				type = 'set_blackboard',
+				key = 'no_spawn_run_count',
+				value = 0,
 			},
 			spawn_attack,
 			{
@@ -233,8 +212,9 @@ function world1_daemon_tree.register()
 		type = 'sequence',
 		children = {
 			{
-				type = 'action',
-				action = record_no_spawn_run,
+				type = 'add_blackboard',
+				key = 'no_spawn_run_count',
+				value = 1,
 			},
 			pounce_and_exit,
 		},
@@ -243,8 +223,9 @@ function world1_daemon_tree.register()
 		type = 'sequence',
 		children = {
 			{
-				type = 'action',
-				action = record_no_spawn_run,
+				type = 'add_blackboard',
+				key = 'no_spawn_run_count',
+				value = 1,
 			},
 			move_out_backward,
 		},
@@ -254,11 +235,15 @@ function world1_daemon_tree.register()
 		children = {
 			{
 				type = 'sequence',
-				children = {
+				decorators = {
 					{
-						type = 'condition',
-						condition = spawn_is_required,
+						type = 'blackboard',
+						key = 'no_spawn_run_count',
+						operation = 'greater_or_equal',
+						value = 1,
 					},
+				},
+				children = {
 					spawn_and_follow_up,
 				},
 			},
@@ -282,45 +267,61 @@ function world1_daemon_tree.register()
 		},
 	}
 	behaviour_tree_library.register(world1_daemon_tree.id, {
-		type = 'sequence',
-		children = {
-			move_in,
+		blackboard = {
 			{
-				type = 'selector',
-				children = {
-					{
-						type = 'sequence',
-						children = {
-							{
-								type = 'condition',
-								condition = function(_target, blackboard)
-									return blackboard.node_data.first_run
-								end,
+				key = 'first_run',
+				initial_value = true,
+			},
+			{
+				key = 'no_spawn_run_count',
+				initial_value = 0,
+			},
+		},
+		root = {
+			type = 'sequence',
+			children = {
+				move_in,
+				{
+					type = 'selector',
+					children = {
+						{
+							type = 'sequence',
+							decorators = {
+								{
+									type = 'blackboard',
+									key = 'first_run',
+									operation = 'equal',
+									value = true,
+								},
 							},
-							spawn_attack,
-							pounce_and_exit,
+							children = {
+								spawn_attack,
+								pounce_and_exit,
+							},
+						},
+						later_run,
+					},
+				},
+				{
+					type = 'wait',
+					duration_ticks = boss_world1_reentry_ticks,
+					services = {
+						{
+							interval_ticks = boss_world1_zak_cadence_units
+								/ boss_world1_spawn_cadence_units_per_tick,
+							on_tick = spawn_zak_service,
 						},
 					},
-					later_run,
 				},
-			},
-			{
-				type = 'parallel_one',
-				children = {
-					{
-						type = 'wait',
-						duration_ticks = boss_world1_reentry_ticks,
-					},
-					{
-						type = 'stateful_action',
-						on_start = zak_spawner_on_start,
-						on_running = tick_zak_spawner,
-					},
+				{
+					type = 'set_blackboard',
+					key = 'first_run',
+					value = false,
 				},
-			},
-			{
-				type = 'action',
-				action = finish_cycle,
+				{
+					type = 'task',
+					execute = choose_next_entrance,
+				},
 			},
 		},
 	})

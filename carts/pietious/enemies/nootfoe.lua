@@ -27,7 +27,7 @@ function nootfoe:ctor()
 	enemy_base.setup_projectile_boundary(self)
 end
 
-function nootfoe.bt_tick(self, _blackboard)
+function nootfoe.bt_tick(self, _execution)
 	velocity.move_with_velocity(self)
 	return bt_running
 end
@@ -39,8 +39,10 @@ end
 function nootfoe.register()
 	local tree_id<const> = 'enemy_nootfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = nootfoe.bt_tick,
+		root = {
+			type = 'task',
+			tick = nootfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.nootfoe',

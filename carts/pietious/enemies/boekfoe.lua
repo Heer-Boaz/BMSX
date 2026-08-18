@@ -16,27 +16,26 @@ function boekfoe:ctor()
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
-function boekfoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.node_data
+function boekfoe.bt_tick(self, node_memory)
 	if self.boek_state == 'closed' then
-		local closed_ticks = node.boek_state_ticks or enemy_boek_wait_open_steps
+		local closed_ticks = node_memory.boek_state_ticks or enemy_boek_wait_open_steps
 		closed_ticks = closed_ticks - 1
 		if closed_ticks > 0 then
-			node.boek_state_ticks = closed_ticks
+			node_memory.boek_state_ticks = closed_ticks
 			return bt_running
 		end
 		self.boek_state = 'open'
 		self:set_imgid('boekfoe_open')
 		self.sprite_component.flip_h = self.direction == 'left'
-		node.boek_state_ticks = enemy_boek_wait_close_steps
-		node.boek_spawn_ticks = enemy_boek_spawn_paper_steps
+		node_memory.boek_state_ticks = enemy_boek_wait_close_steps
+		node_memory.boek_spawn_ticks = enemy_boek_spawn_paper_steps
 		return bt_running
 	end
 
-	local open_ticks = node.boek_state_ticks or enemy_boek_wait_close_steps
+	local open_ticks = node_memory.boek_state_ticks or enemy_boek_wait_close_steps
 	open_ticks = open_ticks - 1
 
-	local spawn_ticks = node.boek_spawn_ticks or enemy_boek_spawn_paper_steps
+	local spawn_ticks = node_memory.boek_spawn_ticks or enemy_boek_spawn_paper_steps
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then
@@ -65,13 +64,13 @@ function boekfoe.bt_tick(self, blackboard)
 		self.boek_state = 'closed'
 		self:set_imgid('boekfoe_closed')
 		self.sprite_component.flip_h = self.direction == 'left'
-		node.boek_state_ticks = enemy_boek_wait_open_steps
-		node.boek_spawn_ticks = nil
+		node_memory.boek_state_ticks = enemy_boek_wait_open_steps
+		node_memory.boek_spawn_ticks = nil
 		return bt_running
 	end
 
-	node.boek_state_ticks = open_ticks
-	node.boek_spawn_ticks = spawn_ticks
+	node_memory.boek_state_ticks = open_ticks
+	node_memory.boek_spawn_ticks = spawn_ticks
 	return bt_running
 end
 
@@ -88,8 +87,11 @@ end
 function boekfoe.register()
 	local tree_id<const> = 'enemy_boekfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = boekfoe.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = boekfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.boekfoe',

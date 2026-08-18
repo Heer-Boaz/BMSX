@@ -15,11 +15,11 @@ function vlokspawner:ctor()
 	self.visible = false
 end
 
-function vlokspawner.bt_tick(self, blackboard)
-	local spawn_ticks = blackboard.node_data.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
+function vlokspawner.bt_tick(self, node_memory)
+	local spawn_ticks = node_memory.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
-		blackboard.node_data.vlok_spawn_ticks = spawn_ticks
+		node_memory.vlok_spawn_ticks = spawn_ticks
 		return bt_running
 	end
 
@@ -41,7 +41,7 @@ function vlokspawner.bt_tick(self, blackboard)
 			z = 140,
 		},
 	})
-	blackboard.node_data.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
+	node_memory.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
 	return bt_running
 end
 
@@ -50,8 +50,11 @@ vlokspawner.bind = enemy_base.bind_lifecycle
 function vlokspawner.register()
 	local tree_id<const> = 'enemy_vlokspawner'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = vlokspawner.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = vlokspawner.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.vlokspawner',

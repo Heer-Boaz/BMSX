@@ -27,8 +27,7 @@ function cloud:ctor()
 	self:set_imgid('cloud_1')
 end
 
-function cloud.bt_tick(self, blackboard)
-	local node<const> = blackboard.node_data
+function cloud.bt_tick(self, node_memory)
 	local room<const> = self.room
 	if self.cloud_anim_frame == 2 then
 		self:set_imgid('cloud_2')
@@ -36,7 +35,7 @@ function cloud.bt_tick(self, blackboard)
 		self:set_imgid('cloud_1')
 	end
 
-	local anim_ticks = node.cloud_anim_ticks or enemy_cloud_anim_switch_steps
+	local anim_ticks = node_memory.cloud_anim_ticks or enemy_cloud_anim_switch_steps
 	anim_ticks = anim_ticks - 1
 	if anim_ticks <= 0 then
 		if self.cloud_anim_frame == 1 then
@@ -46,19 +45,19 @@ function cloud.bt_tick(self, blackboard)
 		end
 		anim_ticks = enemy_cloud_anim_switch_steps
 	end
-	node.cloud_anim_ticks = anim_ticks
+	node_memory.cloud_anim_ticks = anim_ticks
 
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
-	local move_accum = node.cloud_move_accum or 0
+	local move_accum = node_memory.cloud_move_accum or 0
 	move_accum = move_accum + enemy_cloud_horizontal_speed_num
 	while move_accum >= enemy_cloud_horizontal_speed_den do
 		self.x = self.x + dir_modifier
 		move_accum = move_accum - enemy_cloud_horizontal_speed_den
 	end
-	node.cloud_move_accum = move_accum
+	node_memory.cloud_move_accum = move_accum
 
-	local wave_accum<const> = node.cloud_wave_accum or 0
-	local wave_phase = node.cloud_wave_phase_millirad or 0
+	local wave_accum<const> = node_memory.cloud_wave_accum or 0
+	local wave_phase = node_memory.cloud_wave_phase_millirad or 0
 	local wave_speed_num = 0
 	if wave_phase >= cloud_wave_pos_start_millirad and wave_phase < cloud_wave_pos_end_millirad then
 		if wave_phase >= cloud_wave_peak_start_millirad and wave_phase < cloud_wave_peak_end_millirad then
@@ -79,8 +78,8 @@ function cloud.bt_tick(self, blackboard)
 	if wave_phase >= full_circle_milliradians then
 		wave_phase = wave_phase - full_circle_milliradians
 	end
-	node.cloud_wave_accum = next_wave_accum
-	node.cloud_wave_phase_millirad = wave_phase
+	node_memory.cloud_wave_accum = next_wave_accum
+	node_memory.cloud_wave_phase_millirad = wave_phase
 
 	if self.direction == 'left' then
 		if self.x < 0 then
@@ -92,7 +91,7 @@ function cloud.bt_tick(self, blackboard)
 		end
 	end
 
-	local vlok_ticks = node.cloud_vlok_ticks or enemy_cloud_spawn_vlok_steps
+	local vlok_ticks = node_memory.cloud_vlok_ticks or enemy_cloud_spawn_vlok_steps
 	vlok_ticks = vlok_ticks - 1
 	if vlok_ticks <= 0 then
 		for i = 1, 3 do
@@ -121,7 +120,7 @@ function cloud.bt_tick(self, blackboard)
 		end
 		vlok_ticks = enemy_cloud_spawn_vlok_steps
 	end
-	node.cloud_vlok_ticks = vlok_ticks
+	node_memory.cloud_vlok_ticks = vlok_ticks
 	return bt_running
 end
 
@@ -132,8 +131,11 @@ end
 function cloud.register()
 	local tree_id<const> = 'enemy_cloud'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = cloud.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = cloud.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.cloud',

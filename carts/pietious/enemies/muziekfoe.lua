@@ -34,16 +34,15 @@ function muziekfoe:ctor()
 	self:set_imgid('muziekfoe')
 end
 
-function muziekfoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.node_data
+function muziekfoe.bt_tick(self, node_memory)
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
-	local move_accum = node.muziek_move_accum or 0
+	local move_accum = node_memory.muziek_move_accum or 0
 	move_accum = move_accum + enemy_muziek_horizontal_speed_num
 	while move_accum >= enemy_muziek_horizontal_speed_den do
 		self.x = self.x + dir_modifier
 		move_accum = move_accum - enemy_muziek_horizontal_speed_den
 	end
-	node.muziek_move_accum = move_accum
+	node_memory.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
 		local rm<const> = self.room
@@ -57,7 +56,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		end
 	end
 
-	local noot_ticks = node.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
+	local noot_ticks = node_memory.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
 		local player<const> = self.player
@@ -86,7 +85,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		})
 		noot_ticks = enemy_muziek_spawn_noot_steps
 	end
-	node.muziek_noot_ticks = noot_ticks
+	node_memory.muziek_noot_ticks = noot_ticks
 	return bt_running
 end
 
@@ -103,8 +102,11 @@ end
 function muziekfoe.register()
 	local tree_id<const> = 'enemy_muziekfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = muziekfoe.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = muziekfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.muziekfoe',

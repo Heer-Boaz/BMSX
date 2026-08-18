@@ -19,31 +19,30 @@ function stafffoe:ctor()
 	self:set_imgid('stafffoe')
 end
 
-function stafffoe.bt_tick(self, blackboard)
-	local node<const> = blackboard.node_data
+function stafffoe.bt_tick(self, node_memory)
 	if self.staff_state == 'default' then
-		local wait_ticks = node.staff_wait_ticks or enemy_staff_wait_before_spawn_state_steps
+		local wait_ticks = node_memory.staff_wait_ticks or enemy_staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1
 		if wait_ticks > 0 then
-			node.staff_wait_ticks = wait_ticks
+			node_memory.staff_wait_ticks = wait_ticks
 			return bt_running
 		end
 		self.staff_state = 'spawning'
 		self.staff_spawn_count = 0
-		node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
+		node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 		return bt_running
 	end
 
 	if self.staff_spawn_count >= enemy_staff_spawn_burst_count then
 		self.staff_state = 'default'
-		node.staff_wait_ticks = enemy_staff_wait_before_spawn_state_steps
+		node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_state_steps
 		return bt_running
 	end
 
-	local spawn_wait = node.staff_wait_ticks or enemy_staff_wait_before_spawn_steps
+	local spawn_wait = node_memory.staff_wait_ticks or enemy_staff_wait_before_spawn_steps
 	spawn_wait = spawn_wait - 1
 	if spawn_wait > 0 then
-		node.staff_wait_ticks = spawn_wait
+		node_memory.staff_wait_ticks = spawn_wait
 		return bt_running
 	end
 
@@ -74,7 +73,7 @@ function stafffoe.bt_tick(self, blackboard)
 	end
 	self.castle.events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
-	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
+	node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 	return bt_running
 end
 
@@ -85,8 +84,11 @@ end
 function stafffoe.register()
 	local tree_id<const> = 'enemy_stafffoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = stafffoe.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = stafffoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.stafffoe',

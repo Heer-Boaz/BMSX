@@ -60,12 +60,12 @@ local player_triggered_takeoff<const> = function(self, player)
 	return overlap_y and player_right < enemy_left
 end
 
-local start_flying<const> = function(self, blackboard)
+local start_flying<const> = function(self, node_memory)
 	set_takeoff_heading(self)
 	self.mijter_state = 'flying'
 	self:change_sprite_on_direction()
-	blackboard.node_data.mijter_takeoff_ticks = math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
-	blackboard.node_data.mijter_turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
+	node_memory.mijter_takeoff_ticks = math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
+	node_memory.mijter_turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 	self.events:emit('takeoff')
 	return bt_running
 end
@@ -122,37 +122,37 @@ function mijterfoe.change_sprite_on_direction(self)
 	self.sprite_component.flip_v = flip_v
 end
 
-function mijterfoe.bt_tick_waiting(self, blackboard)
-	local entry_lock<const> = blackboard.node_data.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
+function mijterfoe.bt_tick_waiting(self, node_memory)
+	local entry_lock<const> = node_memory.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
 	if entry_lock > 0 then
-		blackboard.node_data.mijter_entry_lock_ticks = entry_lock - 1
+		node_memory.mijter_entry_lock_ticks = entry_lock - 1
 		return bt_running
 	end
-	blackboard.node_data.mijter_entry_lock_ticks = 0
+	node_memory.mijter_entry_lock_ticks = 0
 
 	local player<const> = self.player
 	if player_triggered_takeoff(self, player) then
-		return start_flying(self, blackboard)
+		return start_flying(self, node_memory)
 	end
 
-	local takeoff_ticks = blackboard.node_data.mijter_takeoff_ticks or math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
+	local takeoff_ticks = node_memory.mijter_takeoff_ticks or math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
 	takeoff_ticks = takeoff_ticks - 1
 	if takeoff_ticks > 0 then
-		blackboard.node_data.mijter_takeoff_ticks = takeoff_ticks
+		node_memory.mijter_takeoff_ticks = takeoff_ticks
 		return bt_running
 	end
-	return start_flying(self, blackboard)
+	return start_flying(self, node_memory)
 end
 
-function mijterfoe.bt_tick_flying(self, blackboard)
-	local turn_ticks = blackboard.node_data.mijter_turn_ticks or math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
+function mijterfoe.bt_tick_flying(self, node_memory)
+	local turn_ticks = node_memory.mijter_turn_ticks or math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 	turn_ticks = turn_ticks - 1
 	if turn_ticks <= 0 then
 		new_random_direction(self)
 		turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 		self:change_sprite_on_direction()
 	end
-	blackboard.node_data.mijter_turn_ticks = turn_ticks
+	node_memory.mijter_turn_ticks = turn_ticks
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
@@ -171,11 +171,11 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 	return bt_running
 end
 
-function mijterfoe.bt_tick(self, blackboard)
+function mijterfoe.bt_tick(self, node_memory)
 	if self.mijter_state == 'waiting' then
-		return mijterfoe.bt_tick_waiting(self, blackboard)
+		return mijterfoe.bt_tick_waiting(self, node_memory)
 	end
-	return mijterfoe.bt_tick_flying(self, blackboard)
+	return mijterfoe.bt_tick_flying(self, node_memory)
 end
 
 function mijterfoe.choose_drop_type(_self)
@@ -191,8 +191,11 @@ end
 function mijterfoe.register()
 	local tree_id<const> = 'enemy_mijterfoe'
 	behaviour_tree_library.register(tree_id, {
-		type = 'action',
-		action = mijterfoe.bt_tick,
+		root = {
+			type = 'task',
+			node_memory = true,
+			tick = mijterfoe.bt_tick,
+		},
 	})
 	prefab.define({
 		def_id = 'enemy.mijterfoe',

@@ -1,4 +1,5 @@
 local base_component<const> = require('cartlib/component/base_component')
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 
 local bt_component<const> = {}
 bt_component.__index = bt_component
@@ -14,7 +15,6 @@ function bt_component.new(opts, tree_id)
 	local self<const> = setmetatable(base_component.new(opts), bt_component)
 	local program<const> = programs_by_id[tree_id]
 	self.tree_id = tree_id
-	self.node_data = {}
 	self:rebind_program(program)
 	return self
 end
@@ -27,12 +27,23 @@ end
 
 function bt_component:rebind_program(program)
 	self:abort()
+	local blackboard_layout<const> = program.blackboard_layout
+	if blackboard_layout == nil then
+		self.blackboard = nil
+	else
+		local blackboard_instance = self.blackboard
+		if blackboard_instance == nil then
+			blackboard_instance = blackboard.new()
+			self.blackboard = blackboard_instance
+		end
+		blackboard_instance:rebind(blackboard_layout)
+	end
 	self.evaluate = program.evaluate
 	self.operand = program.operand
 	self.reset = program.reset
-	-- A program replacement restarts evaluator-owned progress while retaining
-	-- action-owned blackboard data. Runtime slot numbers belong only to the
-	-- installed program and never become cart-visible state keys.
+	-- A program replacement restarts task/service memory while the blackboard
+	-- remaps retained values by semantic key. Runtime slot numbers belong only
+	-- to the installed program and never become cart-visible state keys.
 	self._execution_state = program.create_execution_state()
 end
 

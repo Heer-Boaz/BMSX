@@ -1,0 +1,60 @@
+-- Compiler-owned execution storage layout. Composite cursors, task activity,
+-- Service scheduling and per-agent node-memory records share one dense state
+-- table; authored definitions never observe these numeric slots.
+
+local execution_layout<const> = {}
+
+local create_no_state<const> = function()
+	return nil
+end
+
+local create_plain_state<const> = function()
+	return {}
+end
+
+function execution_layout.new(blackboard_layout)
+	return {
+		state_slot_count = 0,
+		record_slots = {},
+		blackboard_layout = blackboard_layout,
+	}
+end
+
+function execution_layout.allocate_slot(layout)
+	local slot<const> = layout.state_slot_count + 1
+	layout.state_slot_count = slot
+	return slot
+end
+
+function execution_layout.allocate_slots(layout, count)
+	local first_slot<const> = layout.state_slot_count + 1
+	layout.state_slot_count = layout.state_slot_count + count
+	return first_slot
+end
+
+function execution_layout.allocate_node_memory(layout)
+	local slot<const> = execution_layout.allocate_slot(layout)
+	local record_slots<const> = layout.record_slots
+	record_slots[#record_slots + 1] = slot
+	return slot
+end
+
+function execution_layout.compile_state_factory(layout)
+	if layout.state_slot_count == 0 then
+		return create_no_state
+	end
+	local record_slots<const> = layout.record_slots
+	local record_count<const> = #record_slots
+	if record_count == 0 then
+		return create_plain_state
+	end
+	return function()
+		local state<const> = {}
+		for index = 1, record_count do
+			state[record_slots[index]] = {}
+		end
+		return state
+	end
+end
+
+return execution_layout

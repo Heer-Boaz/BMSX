@@ -1,12 +1,17 @@
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
+local blackboard_program<const> = require('cartlib/behaviour_tree/blackboard_program')
+local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local result<const> = require('cartlib/behaviour_tree/result')
-local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
+local service_program<const> = require('cartlib/behaviour_tree/service_program')
+local task_program<const> = require('cartlib/behaviour_tree/task_program')
 
 -- Admission-only lowering. Standard sequence/selector programs retain their
 -- running child; reactive variants explicitly restart and abort displaced
--- subtree state. Parallel programs retain terminal children. Stateful actions
--- receive one component-owned state table; halt behavior is specialized while
--- compiling the definition. The frame path allocates nothing and never
--- interprets authored definitions or resolves state property names.
+-- subtree state. Parallel programs retain terminal children. Tasks requesting
+-- node memory receive one component-owned state table; services retain their
+-- branch-scoped scheduling state; blackboard selectors resolve to dense slots.
+-- Abort behavior is specialized while compiling the definition. The frame
+-- path allocates nothing and never interprets definitions or resolves keys.
 
 local program<const> = {}
 local result_running<const> = result.running
@@ -15,17 +20,8 @@ local result_failure<const> = result.failure
 local compile_by_type<const> = {}
 local compile_node
 
-local allocate_state_slot<const> = function(context)
-	local slot<const> = context.state_slot_count + 1
-	context.state_slot_count = slot
-	return slot
-end
-
-local allocate_state_slots<const> = function(context, count)
-	local first_slot<const> = context.state_slot_count + 1
-	context.state_slot_count = context.state_slot_count + count
-	return first_slot
-end
+local allocate_state_slot<const> = execution_layout.allocate_slot
+local allocate_state_slots<const> = execution_layout.allocate_slots
 
 local return_success<const> = function()
 	return result_success
@@ -33,25 +29,6 @@ end
 
 local return_failure<const> = function()
 	return result_failure
-end
-
-local create_no_execution_state<const> = function()
-	return nil
-end
-
-local create_plain_execution_state<const> = function()
-	return {}
-end
-
-local compile_task_state_factory<const> = function(task_state_slots)
-	local task_state_count<const> = #task_state_slots
-	return function()
-		local execution_state<const> = {}
-		for index = 1, task_state_count do
-			execution_state[task_state_slots[index]] = {}
-		end
-		return execution_state
-	end
 end
 
 local compile_subtree_resetter<const> = function(resetters, resetter_count)
@@ -69,20 +46,20 @@ local compile_subtree_resetter<const> = function(resetters, resetter_count)
 	if active_count == 1 then
 		return active[1]
 	end
-	return function(target, blackboard, execution_state)
+	return function(target, execution, execution_state)
 		for index = 1, active_count do
-			active[index](target, blackboard, execution_state)
+			active[index](target, execution, execution_state)
 		end
 	end
 end
 
-local compile_children<const> = function(children, context)
+local compile_children<const> = function(children, layout)
 	local child_count<const> = #children
 	local evaluators<const> = {}
 	local operands<const> = {}
 	local resetters<const> = {}
 	for index = 1, child_count do
-		local evaluate<const>, operand<const>, reset<const> = compile_node(children[index], context)
+		local evaluate<const>, operand<const>, reset<const> = compile_node(children[index], layout)
 		evaluators[index] = evaluate
 		operands[index] = operand
 		resetters[index] = reset or false
@@ -90,30 +67,30 @@ local compile_children<const> = function(children, context)
 	return evaluators, operands, resetters, child_count
 end
 
-compile_by_type.sequence = function(node, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, context)
+compile_by_type.sequence = function(node, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, layout)
 	if child_count == 0 then
 		return return_success
 	end
 	if child_count == 1 then
 		return evaluators[1], operands[1], resetters[1]
 	end
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(target, blackboard, execution_state)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(target, blackboard, execution_state)
+				reset_child(target, execution, execution_state)
 			end
 		end
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local child_index = execution_state[state_slot] or 1
 		while child_index <= child_count do
-			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_success then
 				if status == result_running then
 					execution_state[state_slot] = child_index
@@ -129,30 +106,30 @@ compile_by_type.sequence = function(node, context)
 	end, nil, reset
 end
 
-compile_by_type.selector = function(node, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, context)
+compile_by_type.selector = function(node, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, layout)
 	if child_count == 0 then
 		return return_failure
 	end
 	if child_count == 1 then
 		return evaluators[1], operands[1], resetters[1]
 	end
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(target, blackboard, execution_state)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(target, blackboard, execution_state)
+				reset_child(target, execution, execution_state)
 			end
 		end
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local child_index = execution_state[state_slot] or 1
 		while child_index <= child_count do
-			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_failure then
 				if status == result_running then
 					execution_state[state_slot] = child_index
@@ -168,8 +145,8 @@ compile_by_type.selector = function(node, context)
 	end, nil, reset
 end
 
-compile_by_type.reactive_sequence = function(node, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, context)
+compile_by_type.reactive_sequence = function(node, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(node.children, layout)
 	if child_count == 0 then
 		return return_success
 	end
@@ -178,9 +155,9 @@ compile_by_type.reactive_sequence = function(node, context)
 	end
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
 	if reset_children == nil then
-		return function(target, blackboard)
+		return function(target, execution)
 			for child_index = 1, child_count do
-				local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+				local status<const> = evaluators[child_index](target, execution, operands[child_index])
 				if status ~= result_success then
 					return status
 				end
@@ -188,19 +165,19 @@ compile_by_type.reactive_sequence = function(node, context)
 			return result_success
 		end
 	end
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(target, blackboard, execution_state)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
 		execution_state[state_slot] = nil
-		reset_children(target, blackboard, execution_state)
+		reset_children(target, execution, execution_state)
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local previous_child_index<const> = execution_state[state_slot]
 		for child_index = 1, child_count do
-			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_success then
 				if previous_child_index ~= nil and previous_child_index ~= child_index then
-					resetters[previous_child_index](target, blackboard, execution_state)
+					resetters[previous_child_index](target, execution, execution_state)
 				end
 				if status == result_running and resetters[child_index] then
 					execution_state[state_slot] = child_index
@@ -215,8 +192,8 @@ compile_by_type.reactive_sequence = function(node, context)
 	end, nil, reset
 end
 
-local compile_reactive_selector<const> = function(children, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, context)
+local compile_reactive_selector<const> = function(children, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
 	if child_count == 0 then
 		return return_failure
 	end
@@ -225,9 +202,9 @@ local compile_reactive_selector<const> = function(children, context)
 	end
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
 	if reset_children == nil then
-		return function(target, blackboard)
+		return function(target, execution)
 			for child_index = 1, child_count do
-				local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+				local status<const> = evaluators[child_index](target, execution, operands[child_index])
 				if status ~= result_failure then
 					return status
 				end
@@ -235,19 +212,19 @@ local compile_reactive_selector<const> = function(children, context)
 			return result_failure
 		end
 	end
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(target, blackboard, execution_state)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
 		execution_state[state_slot] = nil
-		reset_children(target, blackboard, execution_state)
+		reset_children(target, execution, execution_state)
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local previous_child_index<const> = execution_state[state_slot]
 		for child_index = 1, child_count do
-			local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_failure then
 				if previous_child_index ~= nil and previous_child_index ~= child_index then
-					resetters[previous_child_index](target, blackboard, execution_state)
+					resetters[previous_child_index](target, execution, execution_state)
 				end
 				if status == result_running and resetters[child_index] then
 					execution_state[state_slot] = child_index
@@ -262,15 +239,15 @@ local compile_reactive_selector<const> = function(children, context)
 	end, nil, reset
 end
 
-compile_by_type.reactive_selector = function(node, context)
-	return compile_reactive_selector(node.children, context)
+compile_by_type.reactive_selector = function(node, layout)
+	return compile_reactive_selector(node.children, layout)
 end
 
 local sort_by_priority_desc<const> = function(a, b)
 	return a.priority > b.priority
 end
 
-compile_by_type.priority_selector = function(node, context)
+compile_by_type.priority_selector = function(node, layout)
 	local children<const> = node.children
 	local child_count<const> = #children
 	local ordered_children<const> = {}
@@ -280,41 +257,41 @@ compile_by_type.priority_selector = function(node, context)
 	if child_count > 1 then
 		table.sort(ordered_children, sort_by_priority_desc)
 	end
-	return compile_reactive_selector(ordered_children, context)
+	return compile_reactive_selector(ordered_children, layout)
 end
 
-local compile_parallel_all<const> = function(children, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, context)
+local compile_parallel_all<const> = function(children, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
 	if child_count == 0 then
 		return return_success
 	end
 	if child_count == 1 then
 		return evaluators[1], operands[1], resetters[1]
 	end
-	local first_state_slot<const> = allocate_state_slots(context, child_count)
+	local first_state_slot<const> = allocate_state_slots(layout, child_count)
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(target, blackboard, execution_state)
+	local reset<const> = function(target, execution, execution_state)
 		for child_index = 1, child_count do
 			execution_state[first_state_slot + child_index - 1] = nil
 		end
 		if reset_children ~= nil then
-			reset_children(target, blackboard, execution_state)
+			reset_children(target, execution, execution_state)
 		end
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local any_running
 		for child_index = 1, child_count do
 			local state_slot<const> = first_state_slot + child_index - 1
 			local status = execution_state[state_slot]
 			if status == nil then
-				status = evaluators[child_index](target, blackboard, operands[child_index])
+				status = evaluators[child_index](target, execution, operands[child_index])
 			end
 			if status ~= result_success then
 				if status == result_running then
 					any_running = true
 				else
-					reset(target, blackboard, execution_state)
+					reset(target, execution, execution_state)
 					return status
 				end
 			else
@@ -324,43 +301,43 @@ local compile_parallel_all<const> = function(children, context)
 		if any_running then
 			return result_running
 		end
-		reset(target, blackboard, execution_state)
+		reset(target, execution, execution_state)
 		return result_success
 	end, nil, reset
 end
 
-local compile_parallel_one<const> = function(children, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, context)
+local compile_parallel_one<const> = function(children, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
 	if child_count == 0 then
 		return return_failure
 	end
 	if child_count == 1 then
 		return evaluators[1], operands[1], resetters[1]
 	end
-	local first_state_slot<const> = allocate_state_slots(context, child_count)
+	local first_state_slot<const> = allocate_state_slots(layout, child_count)
 	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(target, blackboard, execution_state)
+	local reset<const> = function(target, execution, execution_state)
 		for child_index = 1, child_count do
 			execution_state[first_state_slot + child_index - 1] = nil
 		end
 		if reset_children ~= nil then
-			reset_children(target, blackboard, execution_state)
+			reset_children(target, execution, execution_state)
 		end
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local any_running
 		for child_index = 1, child_count do
 			local state_slot<const> = first_state_slot + child_index - 1
 			local status = execution_state[state_slot]
 			if status == nil then
-				status = evaluators[child_index](target, blackboard, operands[child_index])
+				status = evaluators[child_index](target, execution, operands[child_index])
 			end
 			if status ~= result_failure then
 				if status == result_running then
 					any_running = true
 				else
-					reset(target, blackboard, execution_state)
+					reset(target, execution, execution_state)
 					return status
 				end
 			else
@@ -370,31 +347,31 @@ local compile_parallel_one<const> = function(children, context)
 		if any_running then
 			return result_running
 		end
-		reset(target, blackboard, execution_state)
+		reset(target, execution, execution_state)
 		return result_failure
 	end, nil, reset
 end
 
-compile_by_type.parallel_all = function(node, context)
-	return compile_parallel_all(node.children, context)
+compile_by_type.parallel_all = function(node, layout)
+	return compile_parallel_all(node.children, layout)
 end
 
-compile_by_type.parallel_one = function(node, context)
-	return compile_parallel_one(node.children, context)
+compile_by_type.parallel_one = function(node, layout)
+	return compile_parallel_one(node.children, layout)
 end
 
-compile_by_type.decorator = function(node, context)
-	local evaluate<const>, operand<const>, reset<const> = compile_node(node.child, context)
+compile_by_type.decorator = function(node, layout)
+	local evaluate<const>, operand<const>, reset<const> = compile_node(node.child, layout)
 	local decorate<const> = node.decorator
 	if not reset then
-		return function(target, blackboard)
-			return decorate(target, blackboard, evaluate(target, blackboard, operand))
+		return function(target, execution)
+			return decorate(target, execution, evaluate(target, execution, operand))
 		end
 	end
-	return function(target, blackboard)
-		local status<const> = decorate(target, blackboard, evaluate(target, blackboard, operand))
+	return function(target, execution)
+		local status<const> = decorate(target, execution, evaluate(target, execution, operand))
 		if status ~= result_running then
-			reset(target, blackboard, blackboard._execution_state)
+			reset(target, execution, execution._execution_state)
 		end
 		return status
 	end, nil, reset
@@ -403,16 +380,16 @@ end
 compile_by_type.condition = function(node)
 	local condition<const> = node.condition
 	local parameters<const> = node.parameters
-	return function(target, blackboard)
-		return condition(target, blackboard, parameters) and result_success or result_failure
+	return function(target, execution)
+		return condition(target, execution, parameters) and result_success or result_failure
 	end
 end
 
 compile_by_type.negated_condition = function(node)
 	local condition<const> = node.condition
 	local parameters<const> = node.parameters
-	return function(target, blackboard)
-		return condition(target, blackboard, parameters) and result_failure or result_success
+	return function(target, execution)
+		return condition(target, execution, parameters) and result_failure or result_success
 	end
 end
 
@@ -420,9 +397,9 @@ compile_by_type.composite_condition = function(node)
 	local conditions<const> = node.conditions
 	local condition_count<const> = #conditions
 	local parameters<const> = node.parameters
-	return function(target, blackboard)
+	return function(target, execution)
 		for index = 1, condition_count do
-			if not conditions[index](target, blackboard, parameters) then
+			if not conditions[index](target, execution, parameters) then
 				return result_failure
 			end
 		end
@@ -434,9 +411,9 @@ compile_by_type.composite_or_condition = function(node)
 	local conditions<const> = node.conditions
 	local condition_count<const> = #conditions
 	local parameters<const> = node.parameters
-	return function(target, blackboard)
+	return function(target, execution)
 		for index = 1, condition_count do
-			if conditions[index](target, blackboard, parameters) then
+			if conditions[index](target, execution, parameters) then
 				return result_success
 			end
 		end
@@ -444,33 +421,33 @@ compile_by_type.composite_or_condition = function(node)
 	end
 end
 
-local compile_random_children<const> = function(children, context)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, context)
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(target, blackboard, execution_state)
+local compile_random_children<const> = function(children, layout)
+	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
 		local child_index<const> = execution_state[state_slot]
 		execution_state[state_slot] = nil
 		if child_index ~= nil then
 			local reset_child<const> = resetters[child_index]
 			if reset_child then
-				reset_child(target, blackboard, execution_state)
+				reset_child(target, execution, execution_state)
 			end
 		end
 	end
 	return evaluators, operands, child_count, state_slot, reset
 end
 
-compile_by_type.random_selector = function(node, context)
+compile_by_type.random_selector = function(node, layout)
 	local evaluators<const>, operands<const>, child_count<const>, state_slot<const>, reset<const> =
-		compile_random_children(node.children, context)
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+		compile_random_children(node.children, layout)
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local child_index = execution_state[state_slot]
 		if child_index == nil then
 			child_index = math.random(1, child_count)
 			execution_state[state_slot] = child_index
 		end
-		local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+		local status<const> = evaluators[child_index](target, execution, operands[child_index])
 		if status ~= result_running then
 			execution_state[state_slot] = nil
 		end
@@ -478,7 +455,7 @@ compile_by_type.random_selector = function(node, context)
 	end, nil, reset
 end
 
-compile_by_type.weighted_random_selector = function(node, context)
+compile_by_type.weighted_random_selector = function(node, layout)
 	local choices<const> = node.choices
 	local child_count<const> = #choices
 	local children<const> = {}
@@ -491,9 +468,9 @@ compile_by_type.weighted_random_selector = function(node, context)
 		cumulative_weights[index] = total_weight
 	end
 	local evaluators<const>, operands<const>, _<const>, state_slot<const>, reset<const> =
-		compile_random_children(children, context)
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+		compile_random_children(children, layout)
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local child_index = execution_state[state_slot]
 		if child_index == nil then
 			local roll<const> = math.random(1, total_weight)
@@ -503,7 +480,7 @@ compile_by_type.weighted_random_selector = function(node, context)
 			end
 			execution_state[state_slot] = child_index
 		end
-		local status<const> = evaluators[child_index](target, blackboard, operands[child_index])
+		local status<const> = evaluators[child_index](target, execution, operands[child_index])
 		if status ~= result_running then
 			execution_state[state_slot] = nil
 		end
@@ -511,15 +488,15 @@ compile_by_type.weighted_random_selector = function(node, context)
 	end, nil, reset
 end
 
-compile_by_type.limit = function(node, context)
-	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, context)
+compile_by_type.limit = function(node, layout)
+	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
 	local limit<const> = node.limit
-	local state_slot<const> = allocate_state_slot(context)
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	local state_slot<const> = allocate_state_slot(layout)
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
 		local count<const> = execution_state[state_slot] or 0
 		if count < limit then
-			local status<const> = evaluate(target, blackboard, operand)
+			local status<const> = evaluate(target, execution, operand)
 			if status ~= result_running then
 				execution_state[state_slot] = count + 1
 			end
@@ -529,14 +506,14 @@ compile_by_type.limit = function(node, context)
 	end, nil, reset_child
 end
 
-compile_by_type.wait = function(node, context)
+compile_by_type.wait = function(node, layout)
 	local duration_ticks<const> = node.duration_ticks
-	local state_slot<const> = allocate_state_slot(context)
-	local reset<const> = function(_target, _blackboard, execution_state)
+	local state_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(_target, _execution, execution_state)
 		execution_state[state_slot] = nil
 	end
-	return function(_target, blackboard)
-		local execution_state<const> = blackboard._execution_state
+	return function(_target, execution)
+		local execution_state<const> = execution._execution_state
 		local elapsed<const> = execution_state[state_slot] or 0
 		if elapsed < duration_ticks then
 			execution_state[state_slot] = elapsed + 1
@@ -547,101 +524,43 @@ compile_by_type.wait = function(node, context)
 	end, nil, reset
 end
 
-compile_by_type.action = function(node)
-	return node.action, node.parameters
-end
+compile_by_type.task = task_program.compile
+compile_by_type.timeline = task_program.compile_timeline
 
-local compile_stateful_action<const> = function(context, on_start, on_running, on_halted, parameters)
-	local state_slot<const> = allocate_state_slot(context)
-	local task_state_slots<const> = context.task_state_slots
-	task_state_slots[#task_state_slots + 1] = state_slot
-	local running_slot<const> = allocate_state_slot(context)
-	local reset
-	if on_halted ~= nil then
-		local reset_with_halt<const> = function(target, blackboard, execution_state)
-			if execution_state[running_slot] then
-				execution_state[running_slot] = nil
-				on_halted(execution_state[state_slot], target, blackboard, parameters)
-			end
-		end
-		reset = reset_with_halt
-	else
-		local reset_without_halt<const> = function(_target, _blackboard, execution_state)
-			execution_state[running_slot] = nil
-		end
-		reset = reset_without_halt
+compile_by_type.set_blackboard = blackboard_program.compile_set
+compile_by_type.add_blackboard = blackboard_program.compile_add
+
+compile_node = function(node, layout)
+	local evaluate, operand, reset = compile_by_type[node.type](node, layout)
+	local services<const> = node.services
+	if services ~= nil then
+		evaluate, operand, reset = service_program.compile(services, layout, evaluate, operand, reset)
 	end
-	return function(target, blackboard)
-		local execution_state<const> = blackboard._execution_state
-		local task_state<const> = execution_state[state_slot]
-		local status
-		if execution_state[running_slot] then
-			status = on_running(task_state, target, blackboard, parameters)
-		else
-			status = on_start(task_state, target, blackboard, parameters)
-		end
-		if status == result_running then
-			execution_state[running_slot] = true
-		else
-			execution_state[running_slot] = nil
-		end
-		return status
-	end, nil, reset
-end
-
-compile_by_type.stateful_action = function(node, context)
-	return compile_stateful_action(
-		context,
-		node.on_start,
-		node.on_running,
-		node.on_halted,
-		node.parameters
-	)
-end
-
-compile_by_type.timeline = function(node, context)
-	return compile_stateful_action(
-		context,
-		timeline_task.on_start,
-		timeline_task.on_running,
-		timeline_task.on_halted,
-		node
-	)
-end
-
-compile_by_type.composite_action = function(node, context)
-	return compile_parallel_all(node.actions, context)
-end
-
-compile_node = function(node, context)
-	return compile_by_type[node.type](node, context)
+	local decorators<const> = node.decorators
+	if decorators ~= nil then
+		evaluate, operand, reset = blackboard_program.compile_decorators(decorators, layout, evaluate, operand, reset)
+	end
+	return evaluate, operand, reset
 end
 
 -- Authored definitions are admission input. The retained program contains
 -- only the evaluator graph, immutable operands, its reset path and a factory
--- for component-owned evaluator slots and stateful-action records.
+-- for component-owned evaluator slots and node-memory records.
 function program.compile(tree_id, definition)
-	local context<const> = {
-		state_slot_count = 0,
-		task_state_slots = {},
-	}
-	local evaluate<const>, operand<const>, reset<const> = compile_node(definition, context)
-	local state_slot_count<const> = context.state_slot_count
-	local task_state_slots<const> = context.task_state_slots
-	local create_execution_state
-	if state_slot_count == 0 then
-		create_execution_state = create_no_execution_state
-	elseif #task_state_slots == 0 then
-		create_execution_state = create_plain_execution_state
-	else
-		create_execution_state = compile_task_state_factory(task_state_slots)
+	local blackboard_definition<const> = definition.blackboard
+	local blackboard_layout
+	if blackboard_definition ~= nil then
+		blackboard_layout = blackboard.compile(blackboard_definition)
 	end
+	local layout<const> = execution_layout.new(blackboard_layout)
+	local evaluate<const>, operand<const>, reset<const> = compile_node(definition.root, layout)
 	return {
 		id = tree_id,
+		blackboard_layout = blackboard_layout,
 		evaluate = evaluate,
 		operand = operand,
 		reset = reset,
-		create_execution_state = create_execution_state,
+		create_execution_state = execution_layout.compile_state_factory(layout),
 	}
 end
 
