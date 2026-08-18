@@ -10,8 +10,9 @@ local task_program<const> = require('cartlib/behaviour_tree/task_program')
 -- child; Blackboard observers enqueue branch execution requests instead of
 -- rescanning reactive composites every frame. Parallel programs retain
 -- terminal children. Tasks requesting node memory receive one component-owned
--- state table; services retain their branch-scoped scheduling state. The frame
--- path allocates nothing and never interprets definitions or resolves keys.
+-- state table; active Services occupy a preallocated component-owned lane and
+-- run before queued flow changes. The frame path allocates nothing and never
+-- interprets definitions or resolves keys.
 
 local program<const> = {}
 local result_running<const> = result.running
@@ -542,19 +543,43 @@ function program.compile(tree_id, definition)
 	local layout<const> = execution_layout.new(blackboard_layout)
 	local evaluate, operand, reset<const> = compile_node(definition.root, layout)
 	local notifications<const>, process_execution_requests<const> = observer_program.compile_runtime(layout)
+	local tick_active_services<const> = service_program.compile_runtime(layout)
 	if blackboard_layout ~= nil then
 		blackboard_layout.notifications = notifications
 	end
-	if process_execution_requests ~= nil then
+	if tick_active_services ~= nil and process_execution_requests ~= nil then
 		local evaluate_root<const> = evaluate
 		local root_operand<const> = operand
-		evaluate = function(target, execution)
+		local evaluate_with_services_and_requests<const> = function(target, execution)
+			tick_active_services(target, execution)
 			if execution._execution_request_pending then
 				execution._execution_request_pending = false
 				process_execution_requests(target, execution, execution._execution_state)
 			end
 			return evaluate_root(target, execution, root_operand)
 		end
+		evaluate = evaluate_with_services_and_requests
+		operand = nil
+	elseif tick_active_services ~= nil then
+		local evaluate_root<const> = evaluate
+		local root_operand<const> = operand
+		local evaluate_with_services<const> = function(target, execution)
+			tick_active_services(target, execution)
+			return evaluate_root(target, execution, root_operand)
+		end
+		evaluate = evaluate_with_services
+		operand = nil
+	elseif process_execution_requests ~= nil then
+		local evaluate_root<const> = evaluate
+		local root_operand<const> = operand
+		local evaluate_with_requests<const> = function(target, execution)
+			if execution._execution_request_pending then
+				execution._execution_request_pending = false
+				process_execution_requests(target, execution, execution._execution_state)
+			end
+			return evaluate_root(target, execution, root_operand)
+		end
+		evaluate = evaluate_with_requests
 		operand = nil
 	end
 	return {

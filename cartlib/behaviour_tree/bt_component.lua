@@ -45,7 +45,8 @@ function bt_component:rebind_program(program)
 	-- A program replacement restarts task/service memory while the blackboard
 	-- remaps retained values by semantic key. Runtime slot numbers belong only
 	-- to the installed program and never become cart-visible state keys.
-	self._execution_state = program.create_execution_state()
+	self._execution_state, self._active_services = program.create_execution_state()
+	self._active_service_count = 0
 end
 
 -- Aborting a tree clears compiler-owned execution paths and halts every

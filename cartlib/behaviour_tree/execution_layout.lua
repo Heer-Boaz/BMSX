@@ -1,7 +1,8 @@
 -- Compiler-owned execution storage layout. Composite cursors, task activity,
 -- Service scheduling, observer state and per-agent node-memory records share
--- one dense state table; authored definitions never observe these numeric
--- slots.
+-- one dense state table. Tickable Services additionally receive a retained,
+-- preallocated active lane owned by the execution component; authored
+-- definitions never observe either representation.
 
 local execution_layout<const> = {}
 
@@ -19,6 +20,7 @@ function execution_layout.new(blackboard_layout)
 		execution_index_count = 0,
 		flag_slots = {},
 		record_slots = {},
+		service_count = 0,
 		blackboard_layout = blackboard_layout,
 		blackboard_observers_by_slot = {},
 		execution_requests = {},
@@ -58,25 +60,39 @@ function execution_layout.allocate_node_memory(layout)
 end
 
 function execution_layout.compile_state_factory(layout)
+	local create_state
 	if layout.state_slot_count == 0 then
-		return create_no_state
+		create_state = create_no_state
+	else
+		local flag_slots<const> = layout.flag_slots
+		local flag_count<const> = #flag_slots
+		local record_slots<const> = layout.record_slots
+		local record_count<const> = #record_slots
+		if flag_count == 0 and record_count == 0 then
+			create_state = create_plain_state
+		else
+			create_state = function()
+				local state<const> = {}
+				for index = 1, flag_count do
+					state[flag_slots[index]] = false
+				end
+				for index = 1, record_count do
+					state[record_slots[index]] = {}
+				end
+				return state
+			end
+		end
 	end
-	local flag_slots<const> = layout.flag_slots
-	local flag_count<const> = #flag_slots
-	local record_slots<const> = layout.record_slots
-	local record_count<const> = #record_slots
-	if flag_count == 0 and record_count == 0 then
-		return create_plain_state
+	local service_count<const> = layout.service_count
+	if service_count == 0 then
+		return create_state
 	end
 	return function()
-		local state<const> = {}
-		for index = 1, flag_count do
-			state[flag_slots[index]] = false
+		local active_services<const> = {}
+		for index = 1, service_count do
+			active_services[index] = false
 		end
-		for index = 1, record_count do
-			state[record_slots[index]] = {}
-		end
-		return state
+		return create_state(), active_services
 	end
 end
 

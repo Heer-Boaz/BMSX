@@ -2,16 +2,33 @@ local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout
 local result<const> = require('cartlib/behaviour_tree/result')
 
 -- Services are immutable auxiliary nodes attached to a task or composite. The
--- execution component owns their active bit, interval accumulator and optional
--- node memory. Search start precedes become-relevant; active Services tick
--- before their branch, matching UE's ordering without an active-node list.
+-- execution component owns their activity, interval accumulator, optional node
+-- memory and a preallocated dense lane of active tick callbacks. That lane is
+-- advanced before Blackboard execution requests and the tree evaluator. A
+-- branch transition changes the retained lane; recursive subtree traversal is
+-- not used as a Service scheduler.
 -- Stateless callbacks receive (target, execution, ...); callbacks on a Service
 -- with node_memory receive (target, node_memory, execution, ...).
 
 local service_program<const> = {}
 local result_running<const> = result.running
 local allocate_slot<const> = execution_layout.allocate_slot
+local allocate_flag<const> = execution_layout.allocate_flag
 local allocate_node_memory<const> = execution_layout.allocate_node_memory
+
+local remove_active_service<const> = function(execution, tick)
+	local active_services<const> = execution._active_services
+	local active_service_count<const> = execution._active_service_count
+	local position = 1
+	while active_services[position] ~= tick do
+		position = position + 1
+	end
+	for index = position, active_service_count - 1 do
+		active_services[index] = active_services[index + 1]
+	end
+	active_services[active_service_count] = false
+	execution._active_service_count = active_service_count - 1
+end
 
 local compile_service<const> = function(definition, layout)
 	local on_search_start<const> = definition.on_search_start
@@ -27,13 +44,13 @@ local compile_service<const> = function(definition, layout)
 	if uses_node_memory then
 		memory_slot = allocate_node_memory(layout)
 	end
-	local update
+	local tick
 	local remaining_slot
 	local elapsed_slot
 	if on_tick ~= nil then
 		remaining_slot = allocate_slot(layout)
 		elapsed_slot = allocate_slot(layout)
-		update = function(target, execution)
+		tick = function(target, execution)
 			local execution_state<const> = execution._execution_state
 			local remaining<const> = execution_state[remaining_slot] - 1
 			local elapsed<const> = execution_state[elapsed_slot] + 1
@@ -52,6 +69,7 @@ local compile_service<const> = function(definition, layout)
 				on_tick(target, execution, elapsed, parameters)
 			end
 		end
+		layout.service_count = layout.service_count + 1
 	end
 	local start<const> = function(target, execution)
 		local execution_state<const> = execution._execution_state
@@ -85,9 +103,20 @@ local compile_service<const> = function(definition, layout)
 				on_become_relevant(target, execution, parameters)
 			end
 		end
+		if tick ~= nil then
+			local active_service_count<const> = execution._active_service_count + 1
+			execution._active_service_count = active_service_count
+			execution._active_services[active_service_count] = tick
+			-- A newly admitted Service consumes the current tree tick once,
+			-- just like an auxiliary node added by a completed UE search.
+			tick(target, execution)
+		end
 	end
 	local stop
-	if on_cease_relevant ~= nil then
+	if tick == nil then
+		if on_cease_relevant == nil then
+			return start
+		end
 		if uses_node_memory then
 			local stop_with_memory<const> = function(target, execution)
 				on_cease_relevant(
@@ -104,32 +133,49 @@ local compile_service<const> = function(definition, layout)
 			end
 			stop = stop_without_memory
 		end
+		return start, stop
 	end
-	return start, update, stop
+	if on_cease_relevant == nil then
+		local stop_without_callback<const> = function(_target, execution)
+			remove_active_service(execution, tick)
+		end
+		stop = stop_without_callback
+	elseif uses_node_memory then
+		local stop_with_memory<const> = function(target, execution)
+			remove_active_service(execution, tick)
+			on_cease_relevant(
+				target,
+				execution._execution_state[memory_slot],
+				execution,
+				parameters
+			)
+		end
+		stop = stop_with_memory
+	else
+		local stop_without_memory<const> = function(target, execution)
+			remove_active_service(execution, tick)
+			on_cease_relevant(target, execution, parameters)
+		end
+		stop = stop_without_memory
+	end
+	return start, stop
 end
 
 function service_program.compile(definitions, layout, evaluate, operand, reset_child)
 	local service_count<const> = #definitions
 	local starts<const> = {}
-	local updates<const> = {}
 	local stops<const> = {}
-	local update_count = 0
 	local stop_count = 0
 	for index = 1, service_count do
-		local start<const>, update<const>, stop<const> = compile_service(definitions[index], layout)
+		local start<const>, stop<const> = compile_service(definitions[index], layout)
 		starts[index] = start
-		if update ~= nil then
-			update_count = update_count + 1
-			updates[update_count] = update
-		end
 		if stop ~= nil then
 			stop_count = stop_count + 1
 			stops[stop_count] = stop
 		end
 	end
-	local active_slot<const> = allocate_slot(layout)
+	local active_slot<const> = allocate_flag(layout)
 	local start_services
-	local update_services
 	local stop_services
 	if service_count == 1 then
 		start_services = starts[1]
@@ -137,15 +183,6 @@ function service_program.compile(definitions, layout, evaluate, operand, reset_c
 		start_services = function(target, execution)
 			for index = 1, service_count do
 				starts[index](target, execution)
-			end
-		end
-	end
-	if update_count == 1 then
-		update_services = updates[1]
-	elseif update_count > 1 then
-		update_services = function(target, execution)
-			for index = 1, update_count do
-				updates[index](target, execution)
 			end
 		end
 	end
@@ -160,7 +197,7 @@ function service_program.compile(definitions, layout, evaluate, operand, reset_c
 	end
 	local reset<const> = function(target, execution, execution_state)
 		if execution_state[active_slot] then
-			execution_state[active_slot] = nil
+			execution_state[active_slot] = false
 			if stop_services ~= nil then
 				stop_services(target, execution)
 			end
@@ -169,33 +206,32 @@ function service_program.compile(definitions, layout, evaluate, operand, reset_c
 			reset_child(target, execution, execution_state)
 		end
 	end
-	if update_services == nil then
-		return function(target, execution)
-			local execution_state<const> = execution._execution_state
-			if not execution_state[active_slot] then
-				execution_state[active_slot] = true
-				start_services(target, execution)
-			end
-			local status<const> = evaluate(target, execution, operand)
-			if status ~= result_running then
-				reset(target, execution, execution_state)
-			end
-			return status
-		end, nil, reset
-	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
 		if not execution_state[active_slot] then
 			execution_state[active_slot] = true
 			start_services(target, execution)
 		end
-		update_services(target, execution)
 		local status<const> = evaluate(target, execution, operand)
 		if status ~= result_running then
 			reset(target, execution, execution_state)
 		end
 		return status
 	end, nil, reset
+end
+
+function service_program.compile_runtime(layout)
+	local service_count<const> = layout.service_count
+	if service_count == 0 then
+		return nil
+	end
+	return function(target, execution)
+		local active_services<const> = execution._active_services
+		local active_service_count<const> = execution._active_service_count
+		for index = 1, active_service_count do
+			active_services[index](target, execution)
+		end
+	end
 end
 
 return service_program
