@@ -156,7 +156,8 @@ function muziekfoe.register()
 		defaults = {
 			damage = 4,
 			max_health = 3,
-			health = 3,dangerous = true,
+			health = 3,
+			dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,

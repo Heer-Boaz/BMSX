@@ -208,7 +208,8 @@ function mijterfoe.register()
 		defaults = {
 			damage = 2,
 			max_health = 1,
-			health = 1,dangerous = true,
+			health = 1,
+			dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,
