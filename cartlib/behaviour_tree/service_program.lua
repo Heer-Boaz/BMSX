@@ -1,5 +1,4 @@
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
-local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local result<const> = require('cartlib/behaviour_tree/result')
 
 -- Services are immutable auxiliary nodes attached to a task or composite. The
@@ -38,10 +37,6 @@ local remove_active_service<const> = function(execution, tick)
 end
 
 local compile_service<const> = function(definition, layout)
-	local key_selectors<const> = definition.blackboard_key_selectors
-	if key_selectors ~= nil then
-		blackboard.resolve_key_selectors(key_selectors, layout.blackboard_layout)
-	end
 	local on_search_start<const> = definition.on_search_start
 	local on_become_relevant<const> = definition.on_become_relevant
 	local on_tick<const> = definition.on_tick

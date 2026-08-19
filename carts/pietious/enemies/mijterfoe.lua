@@ -11,7 +11,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
-local direction_ticks_key<const> = blackboard.key_selector('direction_ticks')
+local direction_ticks_key<const> = blackboard.key('direction_ticks', 0)
 
 -- The original Bat's sixteen signed Q8.8 flight vectors, decoded from the
 -- tables at 0x7e49 and 0x7e69 and multiplied by the enemy's speed factor 2.
@@ -184,17 +184,13 @@ function mijterfoe.register()
 	local tree_id<const> = 'enemy_mijterfoe'
 	behaviour_tree_library.register(tree_id, {
 		blackboard = {
-			{
-				key = 'direction_ticks',
-				initial_value = 0,
-			},
+			direction_ticks_key,
 		},
 		root = {
 			type = 'sequence',
 			children = {
 				{
 					type = 'task',
-					blackboard_key_selectors = { direction_ticks_key },
 					execute = mijterfoe.initialize_direction_cycle,
 				},
 				{
@@ -204,7 +200,6 @@ function mijterfoe.register()
 						children = {
 							{
 								type = 'task',
-								blackboard_key_selectors = { direction_ticks_key },
 								node_memory = true,
 								execute = mijterfoe.execute_seek_ceiling,
 								tick = mijterfoe.tick_seek_ceiling,
@@ -223,7 +218,6 @@ function mijterfoe.register()
 							},
 							{
 								type = 'task',
-								blackboard_key_selectors = { direction_ticks_key },
 								node_memory = true,
 								execute = mijterfoe.execute_free_flight,
 								tick = mijterfoe.tick_free_flight,

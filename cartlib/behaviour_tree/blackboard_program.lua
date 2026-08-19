@@ -1,3 +1,4 @@
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local result<const> = require('cartlib/behaviour_tree/result')
 
 -- Blackboard key names and operations are resolved while a tree is admitted.
@@ -6,6 +7,7 @@ local result<const> = require('cartlib/behaviour_tree/result')
 
 local blackboard_program<const> = {}
 local result_success<const> = result.success
+local resolved_slot_index<const> = blackboard.resolved_slot_index
 local compile_test_by_operation<const> = {}
 
 compile_test_by_operation.equal = function(slot, value)
@@ -56,13 +58,13 @@ compile_test_by_operation.is_not_set = function(slot)
 	end
 end
 
-function blackboard_program.compile_test(definition, layout)
-	local slot<const> = layout.blackboard_layout.slots_by_key[definition.key]
+function blackboard_program.compile_test(definition, _layout)
+	local slot<const> = definition.key[resolved_slot_index]
 	return compile_test_by_operation[definition.operation](slot, definition.value)
 end
 
-function blackboard_program.compile_set(node, layout)
-	local slot<const> = layout.blackboard_layout.slots_by_key[node.key]
+function blackboard_program.compile_set(node, _layout)
+	local slot<const> = node.key[resolved_slot_index]
 	local value<const> = node.value
 	return function(_target, execution)
 		execution.blackboard:_set_slot(slot, value)
@@ -70,13 +72,13 @@ function blackboard_program.compile_set(node, layout)
 	end
 end
 
-function blackboard_program.compile_add(node, layout)
-	local slot<const> = layout.blackboard_layout.slots_by_key[node.key]
+function blackboard_program.compile_add(node, _layout)
+	local slot<const> = node.key[resolved_slot_index]
 	local value<const> = node.value
 	return function(_target, execution)
-		local blackboard<const> = execution.blackboard
-		local values<const> = blackboard._values
-		blackboard:_set_slot(slot, values[slot] + value)
+		local board<const> = execution.blackboard
+		local values<const> = board._values
+		board:_set_slot(slot, values[slot] + value)
 		return result_success
 	end
 end

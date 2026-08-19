@@ -1,4 +1,5 @@
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local world1_daemon_module<const> = require('boss/world1_daemon')
 require('constants')
 
@@ -10,6 +11,8 @@ local world1_daemon<const> = world1_daemon_module.world1_daemon
 
 world1_daemon_tree.id = world1_daemon.tree_id
 world1_daemon_tree.timeline_id = world1_daemon.timeline_id
+local first_run_key<const> = blackboard.key('first_run', true)
+local no_spawn_run_count_key<const> = blackboard.key('no_spawn_run_count', 0)
 
 function world1_daemon_tree.register()
 	local timeline_id<const> = world1_daemon_tree.timeline_id
@@ -95,7 +98,7 @@ function world1_daemon_tree.register()
 		children = {
 			{
 				type = 'set_blackboard',
-				key = 'no_spawn_run_count',
+				key = no_spawn_run_count_key,
 				value = 0,
 			},
 			spawn_attack,
@@ -116,14 +119,8 @@ function world1_daemon_tree.register()
 	}
 	behaviour_tree_library.register(world1_daemon_tree.id, {
 		blackboard = {
-			{
-				key = 'first_run',
-				initial_value = true,
-			},
-			{
-				key = 'no_spawn_run_count',
-				initial_value = 0,
-			},
+			first_run_key,
+			no_spawn_run_count_key,
 		},
 		root = {
 			type = 'sequence',
@@ -142,7 +139,7 @@ function world1_daemon_tree.register()
 							decorators = {
 								{
 									type = 'blackboard',
-									key = 'first_run',
+									key = first_run_key,
 									operation = 'equal',
 									value = true,
 								},
@@ -160,7 +157,7 @@ function world1_daemon_tree.register()
 									decorators = {
 										{
 											type = 'blackboard',
-											key = 'no_spawn_run_count',
+											key = no_spawn_run_count_key,
 											operation = 'greater_or_equal',
 											value = 1,
 										},
@@ -183,7 +180,7 @@ function world1_daemon_tree.register()
 												children = {
 													{
 														type = 'add_blackboard',
-														key = 'no_spawn_run_count',
+														key = no_spawn_run_count_key,
 														value = 1,
 													},
 													pounce_and_exit,
@@ -197,7 +194,7 @@ function world1_daemon_tree.register()
 												children = {
 													{
 														type = 'add_blackboard',
-														key = 'no_spawn_run_count',
+														key = no_spawn_run_count_key,
 														value = 1,
 													},
 													move_out_backward,
@@ -225,7 +222,7 @@ function world1_daemon_tree.register()
 				},
 				{
 					type = 'set_blackboard',
-					key = 'first_run',
+					key = first_run_key,
 					value = false,
 				},
 				{

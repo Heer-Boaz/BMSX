@@ -6,8 +6,8 @@
 local blackboard<const> = {}
 local blackboard_instance<const> = {}
 blackboard_instance.__index = blackboard_instance
-local selector_name<const> = 1
-local selector_slot<const> = 2
+local key_slot<const> = 1
+blackboard.resolved_slot_index = key_slot
 
 local set_slot<const> = function(self, slot, value)
 	self._values[slot] = value
@@ -30,10 +30,11 @@ function blackboard.compile(entries)
 	local initial_values<const> = {}
 	for index = 1, #entries do
 		local entry<const> = entries[index]
-		local key<const> = entry.key
+		local key<const> = entry.name
 		keys[index] = key
 		slots_by_key[key] = index
 		initial_values[index] = entry.initial_value
+		entry[key_slot] = index
 	end
 	return {
 		keys = keys,
@@ -42,19 +43,15 @@ function blackboard.compile(entries)
 	}
 end
 
--- A key selector retains its semantic name for program admission and its dense
--- slot for execution. Behaviour nodes declare the selectors they own; program
--- compilation resolves them once, as UE resolves FBlackboardKeySelector fields
--- when a behaviour-tree asset is initialized.
-function blackboard.key_selector(key)
-	return { key }
-end
-
-function blackboard.resolve_key_selectors(selectors, layout)
-	for index = 1, #selectors do
-		local selector<const> = selectors[index]
-		selector[selector_slot] = layout.slots_by_key[selector[selector_name]]
-	end
+-- A key retains its semantic name for program replacement and receives its
+-- dense slot when its blackboard asset is admitted. Cart callbacks capture the
+-- same descriptor used by the declarative tree, matching UE's selected-name /
+-- resolved-key-id split without separate per-node registration tables.
+function blackboard.key(name, initial_value)
+	return {
+		name = name,
+		initial_value = initial_value,
+	}
 end
 
 function blackboard.new()
@@ -108,11 +105,11 @@ function blackboard_instance:reset()
 end
 
 function blackboard_instance:get(selector)
-	return self._values[selector[selector_slot]]
+	return self._values[selector[key_slot]]
 end
 
 function blackboard_instance:set(selector, value)
-	self:_set_slot(selector[selector_slot], value)
+	self:_set_slot(selector[key_slot], value)
 end
 
 return blackboard

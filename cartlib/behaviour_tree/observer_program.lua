@@ -1,3 +1,4 @@
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local blackboard_program<const> = require('cartlib/behaviour_tree/blackboard_program')
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local result<const> = require('cartlib/behaviour_tree/result')
@@ -14,6 +15,7 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- `notify_observer` accepts `result_change` (the default) or `value_change`.
 
 local observer_program<const> = {}
+local resolved_slot_index<const> = blackboard.resolved_slot_index
 local result_running<const> = result.running
 local result_failure<const> = result.failure
 local allocate_slot<const> = execution_layout.allocate_slot
@@ -113,7 +115,7 @@ function observer_program.compile_decorators(
 				notify_mode_name = 'result_change'
 			end
 			local notify_mode<const> = notify_modes[notify_mode_name]
-			local slot<const> = layout.blackboard_layout.slots_by_key[definition.key]
+			local slot<const> = definition.key[resolved_slot_index]
 			local observed = observed_by_slot[slot]
 			if observed == nil then
 				observed = { false, false, false }
