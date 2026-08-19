@@ -215,20 +215,31 @@ function world1_daemon:tick_walk_into_room()
 	return bt_running
 end
 
-function world1_daemon:tick_walk_out_of_room(_execution, backward)
+function world1_daemon:tick_walk_forward_out_of_room()
 	self:advance_walk_frame()
 	local step<const> = self.direction == 'right' and room_tile_size or -room_tile_size
-	if backward then
-		self.x = self.x - step
-	else
-		self.x = self.x + step
-	end
-	if self.x > room_width or self.x < -(10 * room_tile_size) then
+	local x<const> = self.x + step
+	if x > room_width or x < -(10 * room_tile_size) then
 		self.x = -1000
 		self.y = -1000
 		self.visible = false
 		return bt_success
 	end
+	self.x = x
+	return bt_running
+end
+
+function world1_daemon:tick_walk_backward_out_of_room()
+	self:advance_walk_frame()
+	local step<const> = self.direction == 'right' and room_tile_size or -room_tile_size
+	local x<const> = self.x - step
+	if x > room_width or x < -(10 * room_tile_size) then
+		self.x = -1000
+		self.y = -1000
+		self.visible = false
+		return bt_success
+	end
+	self.x = x
 	return bt_running
 end
 

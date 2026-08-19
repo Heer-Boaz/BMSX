@@ -9,29 +9,30 @@ local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 -- lowered into a dedicated countdown evaluator; skipped updates do not enter
 -- the cart callback and do not allocate task memory.
 --
--- Stateless callbacks receive (target, execution, parameters). A task with
--- node_memory receives (target, node_memory, execution, parameters).
+-- Stateless callbacks receive (target, execution). A task with node_memory
+-- receives (target, node_memory, execution). Authored task identity is carried
+-- by the callback itself rather than an untyped runtime parameter operand.
 
 local task_program<const> = {}
 local result_running<const> = result.running
 local allocate_slot<const> = execution_layout.allocate_slot
 local allocate_node_memory<const> = execution_layout.allocate_node_memory
 
-local compile_ticking_task<const> = function(layout, tick, abort, parameters, uses_node_memory)
+local compile_ticking_task<const> = function(layout, tick, abort, uses_node_memory)
 	if not uses_node_memory and abort == nil then
-		return tick, parameters
+		return tick
 	end
 	local memory_slot
 	local evaluate
 	if uses_node_memory then
 		memory_slot = allocate_node_memory(layout)
 		local evaluate_with_memory<const> = function(target, execution)
-			return tick(target, execution._execution_state[memory_slot], execution, parameters)
+			return tick(target, execution._execution_state[memory_slot], execution)
 		end
 		evaluate = evaluate_with_memory
 	else
 		local evaluate_without_memory<const> = function(target, execution)
-			return tick(target, execution, parameters)
+			return tick(target, execution)
 		end
 		evaluate = evaluate_without_memory
 	end
@@ -44,7 +45,7 @@ local compile_ticking_task<const> = function(layout, tick, abort, parameters, us
 		local reset_with_memory<const> = function(target, execution, execution_state)
 			if execution_state[active_slot] then
 				execution_state[active_slot] = nil
-				abort(target, execution_state[memory_slot], execution, parameters)
+				abort(target, execution_state[memory_slot], execution)
 			end
 		end
 		reset = reset_with_memory
@@ -52,7 +53,7 @@ local compile_ticking_task<const> = function(layout, tick, abort, parameters, us
 		local reset_without_memory<const> = function(target, execution, execution_state)
 			if execution_state[active_slot] then
 				execution_state[active_slot] = nil
-				abort(target, execution, parameters)
+				abort(target, execution)
 			end
 		end
 		reset = reset_without_memory
@@ -74,7 +75,6 @@ local compile_latent_task<const> = function(
 	execute,
 	tick,
 	abort,
-	parameters,
 	uses_node_memory,
 	interval_ticks
 )
@@ -93,7 +93,7 @@ local compile_latent_task<const> = function(
 		local reset_with_memory<const> = function(target, execution, execution_state)
 			if execution_state[active_slot] then
 				execution_state[active_slot] = nil
-				abort(target, execution_state[memory_slot], execution, parameters)
+				abort(target, execution_state[memory_slot], execution)
 			end
 		end
 		reset = reset_with_memory
@@ -101,7 +101,7 @@ local compile_latent_task<const> = function(
 		local reset_without_memory<const> = function(target, execution, execution_state)
 			if execution_state[active_slot] then
 				execution_state[active_slot] = nil
-				abort(target, execution, parameters)
+				abort(target, execution)
 			end
 		end
 		reset = reset_without_memory
@@ -119,9 +119,9 @@ local compile_latent_task<const> = function(
 						return result_running
 					end
 					execution_state[remaining_slot] = interval_ticks
-					status = tick(target, execution_state[memory_slot], execution, parameters)
+					status = tick(target, execution_state[memory_slot], execution)
 				else
-					status = execute(target, execution_state[memory_slot], execution, parameters)
+					status = execute(target, execution_state[memory_slot], execution)
 					if status == result_running then
 						execution_state[remaining_slot] = interval_ticks
 					end
@@ -144,9 +144,9 @@ local compile_latent_task<const> = function(
 					return result_running
 				end
 				execution_state[remaining_slot] = interval_ticks
-				status = tick(target, execution, parameters)
+				status = tick(target, execution)
 			else
-				status = execute(target, execution, parameters)
+				status = execute(target, execution)
 				if status == result_running then
 					execution_state[remaining_slot] = interval_ticks
 				end
@@ -165,9 +165,9 @@ local compile_latent_task<const> = function(
 			local memory<const> = execution_state[memory_slot]
 			local status
 			if execution_state[active_slot] then
-				status = tick(target, memory, execution, parameters)
+				status = tick(target, memory, execution)
 			else
-				status = execute(target, memory, execution, parameters)
+				status = execute(target, memory, execution)
 			end
 			if status == result_running then
 				execution_state[active_slot] = true
@@ -181,9 +181,9 @@ local compile_latent_task<const> = function(
 		local execution_state<const> = execution._execution_state
 		local status
 		if execution_state[active_slot] then
-			status = tick(target, execution, parameters)
+			status = tick(target, execution)
 		else
-			status = execute(target, execution, parameters)
+			status = execute(target, execution)
 		end
 		if status == result_running then
 			execution_state[active_slot] = true
@@ -197,33 +197,47 @@ end
 function task_program.compile(node, layout)
 	local tick<const> = node.tick
 	if tick == nil then
-		return node.execute, node.parameters
+		return node.execute
 	end
 	local execute<const> = node.execute
 	if execute == nil then
-		return compile_ticking_task(layout, tick, node.abort, node.parameters, node.node_memory)
+		return compile_ticking_task(layout, tick, node.abort, node.node_memory)
 	end
 	return compile_latent_task(
 		layout,
 		execute,
 		tick,
 		node.abort,
-		node.parameters,
 		node.node_memory,
 		node.interval_ticks
 	)
 end
 
 function task_program.compile_timeline(node, layout)
-	return compile_latent_task(
-		layout,
-		timeline_task.execute,
-		timeline_task.tick,
-		timeline_task.abort,
-		node,
-		true,
-		nil
-	)
+	local memory_slot<const> = allocate_node_memory(layout)
+	local active_slot<const> = allocate_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
+		if execution_state[active_slot] then
+			execution_state[active_slot] = nil
+			timeline_task.abort(target, execution_state[memory_slot], execution, node)
+		end
+	end
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
+		local memory<const> = execution_state[memory_slot]
+		local status
+		if execution_state[active_slot] then
+			status = timeline_task.tick(target, memory, execution)
+		else
+			status = timeline_task.execute(target, memory, execution, node)
+		end
+		if status == result_running then
+			execution_state[active_slot] = true
+		else
+			execution_state[active_slot] = nil
+		end
+		return status
+	end, nil, reset
 end
 
 return task_program

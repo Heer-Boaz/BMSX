@@ -7,8 +7,9 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- advanced before Blackboard execution requests and the tree evaluator. A
 -- branch transition changes the retained lane; recursive subtree traversal is
 -- not used as a Service scheduler.
--- Stateless callbacks receive (target, execution, ...); callbacks on a Service
--- with node_memory receive (target, node_memory, execution, ...).
+-- Stateless callbacks receive (target, execution, elapsed_ticks); callbacks on
+-- a Service with node_memory receive
+-- (target, node_memory, execution, elapsed_ticks).
 
 local service_program<const> = {}
 local result_running<const> = result.running
@@ -35,7 +36,6 @@ local compile_service<const> = function(definition, layout)
 	local on_become_relevant<const> = definition.on_become_relevant
 	local on_tick<const> = definition.on_tick
 	local on_cease_relevant<const> = definition.on_cease_relevant
-	local parameters<const> = definition.parameters
 	local interval_ticks<const> = definition.interval_ticks
 	local tick_on_search_start<const> = definition.tick_on_search_start
 	local restart_timer_on_each_activation<const> = definition.restart_timer_on_each_activation
@@ -64,9 +64,9 @@ local compile_service<const> = function(definition, layout)
 			execution_state[remaining_slot] = remaining + interval_ticks
 			execution_state[elapsed_slot] = 0
 			if uses_node_memory then
-				on_tick(target, execution_state[memory_slot], execution, elapsed, parameters)
+				on_tick(target, execution_state[memory_slot], execution, elapsed)
 			else
-				on_tick(target, execution, elapsed, parameters)
+				on_tick(target, execution, elapsed)
 			end
 		end
 		layout.service_count = layout.service_count + 1
@@ -82,25 +82,25 @@ local compile_service<const> = function(definition, layout)
 		end
 		if on_search_start ~= nil then
 			if uses_node_memory then
-				on_search_start(target, execution_state[memory_slot], execution, parameters)
+				on_search_start(target, execution_state[memory_slot], execution)
 			else
-				on_search_start(target, execution, parameters)
+				on_search_start(target, execution)
 			end
 		end
 		if tick_on_search_start then
 			if uses_node_memory then
-				on_tick(target, execution_state[memory_slot], execution, 0, parameters)
+				on_tick(target, execution_state[memory_slot], execution, 0)
 			else
-				on_tick(target, execution, 0, parameters)
+				on_tick(target, execution, 0)
 			end
 			execution_state[remaining_slot] = interval_ticks
 			execution_state[elapsed_slot] = 0
 		end
 		if on_become_relevant ~= nil then
 			if uses_node_memory then
-				on_become_relevant(target, execution_state[memory_slot], execution, parameters)
+				on_become_relevant(target, execution_state[memory_slot], execution)
 			else
-				on_become_relevant(target, execution, parameters)
+				on_become_relevant(target, execution)
 			end
 		end
 		if tick ~= nil then
@@ -122,14 +122,13 @@ local compile_service<const> = function(definition, layout)
 				on_cease_relevant(
 					target,
 					execution._execution_state[memory_slot],
-					execution,
-					parameters
+					execution
 				)
 			end
 			stop = stop_with_memory
 		else
 			local stop_without_memory<const> = function(target, execution)
-				on_cease_relevant(target, execution, parameters)
+				on_cease_relevant(target, execution)
 			end
 			stop = stop_without_memory
 		end
@@ -146,15 +145,14 @@ local compile_service<const> = function(definition, layout)
 			on_cease_relevant(
 				target,
 				execution._execution_state[memory_slot],
-				execution,
-				parameters
+				execution
 			)
 		end
 		stop = stop_with_memory
 	else
 		local stop_without_memory<const> = function(target, execution)
 			remove_active_service(execution, tick)
-			on_cease_relevant(target, execution, parameters)
+			on_cease_relevant(target, execution)
 		end
 		stop = stop_without_memory
 	end

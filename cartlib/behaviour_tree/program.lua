@@ -361,27 +361,24 @@ end
 
 compile_by_type.condition = function(node)
 	local condition<const> = node.condition
-	local parameters<const> = node.parameters
 	return function(target, execution)
-		return condition(target, execution, parameters) and result_success or result_failure
+		return condition(target, execution) and result_success or result_failure
 	end
 end
 
 compile_by_type.negated_condition = function(node)
 	local condition<const> = node.condition
-	local parameters<const> = node.parameters
 	return function(target, execution)
-		return condition(target, execution, parameters) and result_failure or result_success
+		return condition(target, execution) and result_failure or result_success
 	end
 end
 
 compile_by_type.composite_condition = function(node)
 	local conditions<const> = node.conditions
 	local condition_count<const> = #conditions
-	local parameters<const> = node.parameters
 	return function(target, execution)
 		for index = 1, condition_count do
-			if not conditions[index](target, execution, parameters) then
+			if not conditions[index](target, execution) then
 				return result_failure
 			end
 		end
@@ -392,10 +389,9 @@ end
 compile_by_type.composite_or_condition = function(node)
 	local conditions<const> = node.conditions
 	local condition_count<const> = #conditions
-	local parameters<const> = node.parameters
 	return function(target, execution)
 		for index = 1, condition_count do
-			if conditions[index](target, execution, parameters) then
+			if conditions[index](target, execution) then
 				return result_success
 			end
 		end

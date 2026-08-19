@@ -16,9 +16,8 @@ function world1_daemon_tree.register()
 	local move_out_backward<const> = {
 		type = 'task',
 		execute = world1_daemon.execute_walk,
-		tick = world1_daemon.tick_walk_out_of_room,
+		tick = world1_daemon.tick_walk_backward_out_of_room,
 		interval_ticks = boss_world1_walk_step_ticks,
-		parameters = true,
 	}
 	local spawn_attack<const> = {
 		type = 'sequence',
@@ -70,9 +69,8 @@ function world1_daemon_tree.register()
 			{
 				type = 'task',
 				execute = world1_daemon.execute_walk,
-				tick = world1_daemon.tick_walk_out_of_room,
+				tick = world1_daemon.tick_walk_forward_out_of_room,
 				interval_ticks = boss_world1_walk_step_ticks,
-				parameters = false,
 			},
 		},
 	}
