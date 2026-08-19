@@ -13,6 +13,7 @@ zakfoe.__index = zakfoe
 
 function zakfoe:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
+	self.movement:set_collision_world(self.room)
 	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
@@ -31,10 +32,9 @@ function zakfoe.tick_jump(self, node_memory)
 	self.y = self.y + node_memory.vertical_speed
 	node_memory.vertical_speed = node_memory.vertical_speed + enemy_zak_vertical_speed_step
 
-	local rm<const> = self.room
 	local movement<const> = self.movement
-	if movement:move_x(rm, enemy_zak_horizontal_speed_px * direction_mod) ~= 0
-	or not movement:has_support_ahead(rm, direction_mod, room_tile_half, room_tile_size) then
+	if movement:move_x(enemy_zak_horizontal_speed_px * direction_mod) ~= 0
+	or not movement:has_support_ahead(direction_mod, room_tile_half, room_tile_size) then
 		self.direction = direction_mod < 0 and 'right' or 'left'
 	end
 

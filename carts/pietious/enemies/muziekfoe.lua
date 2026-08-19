@@ -35,6 +35,7 @@ end
 -- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function muziekfoe:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
+	self.movement:set_collision_world(self.room)
 	self:set_imgid('muziekfoe')
 end
 
@@ -51,7 +52,7 @@ function muziekfoe.tick_move(self, node_memory)
 		enemy_muziek_horizontal_speed_den
 	)
 	node_memory.move_accum = move_accum
-	if self.movement:move_x(self.room, move_x * dir_modifier) ~= 0 then
+	if self.movement:move_x(move_x * dir_modifier) ~= 0 then
 		self.direction = self.direction == 'left' and 'right' or 'left'
 	end
 	return bt_running

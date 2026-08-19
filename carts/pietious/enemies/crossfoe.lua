@@ -74,6 +74,7 @@ end
 
 function crossfoe:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
+	self.movement:set_collision_world(self.room)
 	self.cross_spin_direction = 'down'
 	apply_spin_state(self)
 end
@@ -110,20 +111,19 @@ end
 
 function crossfoe.tick_flight(self, node_memory)
 	local player<const> = self.player
-	local rm<const> = self.room
 	local direction_mod<const> = node_memory.direction_mod
 
 	if (direction_mod < 0 and self.x < (player.x - player.width))
 		or (direction_mod > 0 and self.x > (player.x + (player.width * 2)))
 	then
 		self.cross_spin_direction = 'down'
-		self.movement:move_x(rm, -(room_tile_size * direction_mod))
+		self.movement:move_x(-(room_tile_size * direction_mod))
 		apply_spin_state(self)
 		self.castle.events:emit('crossland')
 		return bt_success
 	end
 
-	if self.movement:move_x(rm, enemy_cross_horizontal_speed_px * direction_mod) ~= 0 then
+	if self.movement:move_x(enemy_cross_horizontal_speed_px * direction_mod) ~= 0 then
 		self.cross_spin_direction = 'down'
 		apply_spin_state(self)
 		self.castle.events:emit('crossland')

@@ -18,13 +18,14 @@ marspeinenaardappel.__index = marspeinenaardappel
 -- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function marspeinenaardappel:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
+	self.movement:set_collision_world(self.room)
 	self:set_imgid('marspeinenaardappel')
 end
 
 function marspeinenaardappel.move_and_bounce(self)
 	local speed_x<const> = self.speed_x_num
 	local speed_y<const> = self.speed_y_num
-	local contacts<const> = self.movement:move(self.room, speed_x, speed_y)
+	local contacts<const> = self.movement:move(speed_x, speed_y)
 	if (contacts & horizontal_contacts) ~= 0 then
 		self.speed_x_num = -speed_x
 	end

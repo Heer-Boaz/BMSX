@@ -169,26 +169,37 @@ function kinematic_movement_component:set_local_bounds(left, top, right, bottom)
 	self.local_bottom = bottom
 end
 
-function kinematic_movement_component:move_x(collision_world, delta_x)
+-- UE MovementComponent binds its UpdatedComponent once and reaches collision
+-- through that component's World. Here parent is already the updated object;
+-- cart composition binds its tile collision world once, before steady movement.
+function kinematic_movement_component:set_collision_world(collision_world)
+	self.collision_world = collision_world
+end
+
+function kinematic_movement_component:move_x(delta_x)
+	local collision_world<const> = self.collision_world
 	local contacts<const> = sweep_x(self, collision_world, delta_x)
 	self.contacts = contacts
 	return contacts
 end
 
-function kinematic_movement_component:move_y(collision_world, delta_y)
+function kinematic_movement_component:move_y(delta_y)
+	local collision_world<const> = self.collision_world
 	local contacts<const> = sweep_y(self, collision_world, delta_y)
 	self.contacts = contacts
 	return contacts
 end
 
-function kinematic_movement_component:move(collision_world, delta_x, delta_y)
+function kinematic_movement_component:move(delta_x, delta_y)
+	local collision_world<const> = self.collision_world
 	local contacts<const> = sweep_x(self, collision_world, delta_x)
 		| sweep_y(self, collision_world, delta_y)
 	self.contacts = contacts
 	return contacts
 end
 
-function kinematic_movement_component:has_support_ahead(collision_world, direction_x, ahead, below)
+function kinematic_movement_component:has_support_ahead(direction_x, ahead, below)
+	local collision_world<const> = self.collision_world
 	local parent<const> = self.parent
 	local world_x
 	if direction_x < 0 then
