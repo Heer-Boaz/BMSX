@@ -223,10 +223,6 @@ function mijterfoe.register()
 								execute = mijterfoe.execute_free_flight,
 								tick = mijterfoe.tick_free_flight,
 							},
-							{
-								type = 'wait',
-								duration_ticks = 1,
-							},
 						},
 					},
 				},

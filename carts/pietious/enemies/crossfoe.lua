@@ -168,10 +168,6 @@ function crossfoe.register()
 						execute = crossfoe.execute_flight,
 						tick = crossfoe.tick_flight,
 					},
-					{
-						type = 'wait',
-						duration_ticks = 1,
-					},
 				},
 			},
 		},

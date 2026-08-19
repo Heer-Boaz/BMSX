@@ -138,7 +138,7 @@ function muziekfoe.register()
 									},
 									{
 										type = 'wait',
-										duration_ticks = enemy_muziek_spawn_noot_steps,
+										duration_ticks = enemy_muziek_spawn_noot_steps - 1,
 									},
 								},
 							},

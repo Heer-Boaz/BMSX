@@ -151,7 +151,7 @@ function cloud.register()
 									},
 									{
 										type = 'wait',
-										duration_ticks = enemy_cloud_anim_switch_steps,
+										duration_ticks = enemy_cloud_anim_switch_steps - 1,
 									},
 								},
 							},
@@ -182,7 +182,7 @@ function cloud.register()
 									},
 									{
 										type = 'wait',
-										duration_ticks = enemy_cloud_spawn_vlok_steps,
+										duration_ticks = enemy_cloud_spawn_vlok_steps - 1,
 									},
 								},
 							},

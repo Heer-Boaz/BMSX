@@ -479,10 +479,10 @@ compile_by_type.weighted_random_selector = function(node, layout)
 end
 
 -- A Loop is authored flow control, not an enemy-local counter hidden inside a
--- task. Successful iterations reset the child before immediately entering the
--- next search, matching the loop/repeat decorators used by production BT
--- runtimes. A missing count is an intentional infinite loop; its authored
--- child must eventually return running, just like any other latent BT branch.
+-- task. Finite loops may complete several synchronous iterations in one tree
+-- update. An infinite loop starts at most one iteration per update, matching
+-- the search-id boundary used by UE behaviour trees and guaranteeing that a
+-- synchronous child cannot monopolize the game thread.
 compile_by_type.loop = function(node, layout)
 	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
 	local count<const> = node.count
@@ -493,18 +493,17 @@ compile_by_type.loop = function(node, layout)
 			end
 		end
 		return function(target, execution)
-			while true do
-				local status<const> = evaluate(target, execution, operand)
-				if status ~= result_success then
-					if status == result_failure and reset_child ~= nil then
-						reset_child(target, execution, execution._execution_state)
-					end
-					return status
-				end
-				if reset_child ~= nil then
-					reset_child(target, execution, execution._execution_state)
-				end
+			local status<const> = evaluate(target, execution, operand)
+			if status == result_running then
+				return result_running
 			end
+			if reset_child ~= nil then
+				reset_child(target, execution, execution._execution_state)
+			end
+			if status == result_failure then
+				return result_failure
+			end
+			return result_running
 		end, nil, reset
 	end
 

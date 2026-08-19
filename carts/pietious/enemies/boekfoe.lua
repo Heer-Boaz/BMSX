@@ -83,7 +83,7 @@ function boekfoe.register()
 								children = {
 									{
 										type = 'wait',
-										duration_ticks = enemy_boek_spawn_paper_steps,
+										duration_ticks = enemy_boek_spawn_paper_steps - 1,
 									},
 									{
 										type = 'task',
