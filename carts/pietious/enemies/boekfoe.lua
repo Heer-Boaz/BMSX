@@ -2,7 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
-local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -11,67 +11,42 @@ local boekfoe<const> = {}
 boekfoe.__index = boekfoe
 
 function boekfoe:ctor()
-	self.boek_state = 'closed'
 	self:set_imgid('boekfoe_closed')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
-function boekfoe.bt_tick(self, node_memory)
-	if self.boek_state == 'closed' then
-		local closed_ticks = node_memory.boek_state_ticks or enemy_boek_wait_open_steps
-		closed_ticks = closed_ticks - 1
-		if closed_ticks > 0 then
-			node_memory.boek_state_ticks = closed_ticks
-			return bt_running
-		end
-		self.boek_state = 'open'
-		self:set_imgid('boekfoe_open')
-		self.sprite_component.flip_h = self.direction == 'left'
-		node_memory.boek_state_ticks = enemy_boek_wait_close_steps
-		node_memory.boek_spawn_ticks = enemy_boek_spawn_paper_steps
-		return bt_running
-	end
+function boekfoe.open_cover(self)
+	self:set_imgid('boekfoe_open')
+	self.sprite_component.flip_h = self.direction == 'left'
+	return bt_success
+end
 
-	local open_ticks = node_memory.boek_state_ticks or enemy_boek_wait_close_steps
-	open_ticks = open_ticks - 1
+function boekfoe.spawn_paper(self)
+	local y_speed_num<const> = math.random(-5, 4)
+	self.castle.events:emit('paperspawn')
+	world:spawn('enemy.paperfoe', {
+		castle = self.castle,
+		room = self.room,
+		player = self.player,
+		direction = self.direction == 'left' and 'left' or 'right',
+		speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
+		speed_y_num = y_speed_num,
+		speed_den = 5,
+		speed_accum_x = 0,
+		speed_accum_y = 0,
+		pos = {
+			x = self.x,
+			y = self.y,
+			z = 140,
+		},
+	})
+	return bt_success
+end
 
-	local spawn_ticks = node_memory.boek_spawn_ticks or enemy_boek_spawn_paper_steps
-	spawn_ticks = spawn_ticks - 1
-
-	if spawn_ticks <= 0 then
-		local y_speed_num<const> = math.random(-5, 4)
-		self.castle.events:emit('paperspawn')
-		world:spawn('enemy.paperfoe', {
-			castle = self.castle,
-			room = self.room,
-			player = self.player,
-			direction = self.direction == 'left' and 'left' or 'right',
-			speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
-			speed_y_num = y_speed_num,
-			speed_den = 5,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
-			pos = {
-				x = self.x,
-				y = self.y,
-				z = 140,
-			},
-		})
-		spawn_ticks = enemy_boek_spawn_paper_steps
-	end
-
-	if open_ticks <= 0 then
-		self.boek_state = 'closed'
-		self:set_imgid('boekfoe_closed')
-		self.sprite_component.flip_h = self.direction == 'left'
-		node_memory.boek_state_ticks = enemy_boek_wait_open_steps
-		node_memory.boek_spawn_ticks = nil
-		return bt_running
-	end
-
-	node_memory.boek_state_ticks = open_ticks
-	node_memory.boek_spawn_ticks = spawn_ticks
-	return bt_running
+function boekfoe.close_cover(self)
+	self:set_imgid('boekfoe_closed')
+	self.sprite_component.flip_h = self.direction == 'left'
+	return bt_success
 end
 
 function boekfoe.choose_drop_type(_self)
@@ -88,9 +63,46 @@ function boekfoe.register()
 	local tree_id<const> = 'enemy_boekfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = boekfoe.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_boek_wait_open_steps - 1,
+				},
+				{
+					type = 'task',
+					execute = boekfoe.open_cover,
+				},
+				{
+					type = 'parallel_one',
+					children = {
+						{
+							type = 'loop',
+							child = {
+								type = 'sequence',
+								children = {
+									{
+										type = 'wait',
+										duration_ticks = enemy_boek_spawn_paper_steps,
+									},
+									{
+										type = 'task',
+										execute = boekfoe.spawn_paper,
+									},
+								},
+							},
+						},
+						{
+							type = 'wait',
+							duration_ticks = enemy_boek_wait_close_steps,
+						},
+					},
+				},
+				{
+					type = 'task',
+					execute = boekfoe.close_cover,
+				},
+			},
 		},
 	})
 	prefab.define({

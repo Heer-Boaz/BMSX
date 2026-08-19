@@ -2,7 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
-local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -13,39 +13,7 @@ stafffoe.__index = stafffoe
 local staff_shot_speed_x<const> = { 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -11, -6, 0, 6, 11, 15 }
 local staff_shot_speed_y<const> = { 0, 6, 11, 15, 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -11, -6 }
 
-function stafffoe:ctor()
-	self.staff_state = 'default'
-	self.staff_spawn_count = 0
-	self:set_imgid('stafffoe')
-end
-
-function stafffoe.bt_tick(self, node_memory)
-	if self.staff_state == 'default' then
-		local wait_ticks = node_memory.staff_wait_ticks or enemy_staff_wait_before_spawn_state_steps
-		wait_ticks = wait_ticks - 1
-		if wait_ticks > 0 then
-			node_memory.staff_wait_ticks = wait_ticks
-			return bt_running
-		end
-		self.staff_state = 'spawning'
-		self.staff_spawn_count = 0
-		node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
-		return bt_running
-	end
-
-	if self.staff_spawn_count >= enemy_staff_spawn_burst_count then
-		self.staff_state = 'default'
-		node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_state_steps
-		return bt_running
-	end
-
-	local spawn_wait = node_memory.staff_wait_ticks or enemy_staff_wait_before_spawn_steps
-	spawn_wait = spawn_wait - 1
-	if spawn_wait > 0 then
-		node_memory.staff_wait_ticks = spawn_wait
-		return bt_running
-	end
-
+function stafffoe.spawn_burst(self)
 	local player<const> = self.player
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
@@ -72,9 +40,7 @@ function stafffoe.bt_tick(self, node_memory)
 		})
 	end
 	self.castle.events:emit('staffspawn')
-	self.staff_spawn_count = self.staff_spawn_count + 1
-	node_memory.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
-	return bt_running
+	return bt_success
 end
 
 function stafffoe.choose_drop_type(_self)
@@ -85,9 +51,34 @@ function stafffoe.register()
 	local tree_id<const> = 'enemy_stafffoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = stafffoe.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_staff_wait_before_spawn_state_steps - 1,
+				},
+				{
+					type = 'loop',
+					count = enemy_staff_spawn_burst_count,
+					child = {
+						type = 'sequence',
+						children = {
+							{
+								type = 'wait',
+								duration_ticks = enemy_staff_wait_before_spawn_steps,
+							},
+							{
+								type = 'task',
+								execute = stafffoe.spawn_burst,
+							},
+						},
+					},
+				},
+				{
+					type = 'wait',
+					duration_ticks = 1,
+				},
+			},
 		},
 	})
 	prefab.define({
@@ -96,6 +87,7 @@ function stafffoe.register()
 		base = enemy_base,
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
+			imgid = 'stafffoe',
 			damage = 4,
 			max_health = 10,
 			health = 10,dangerous = true,

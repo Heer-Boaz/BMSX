@@ -3,7 +3,7 @@ local sprite_object<const> = require('cartlib/sprite')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
-local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -15,14 +15,7 @@ function vlokspawner:ctor()
 	self.visible = false
 end
 
-function vlokspawner.bt_tick(self, node_memory)
-	local spawn_ticks = node_memory.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
-	spawn_ticks = spawn_ticks - 1
-	if spawn_ticks > 0 then
-		node_memory.vlok_spawn_ticks = spawn_ticks
-		return bt_running
-	end
-
+function vlokspawner.spawn_vlok(self)
 	local room<const> = self.room
 	local random_x<const> = math.random(-5, 4)
 	world:spawn('enemy.vlokfoe', {
@@ -41,8 +34,7 @@ function vlokspawner.bt_tick(self, node_memory)
 			z = 140,
 		},
 	})
-	node_memory.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
-	return bt_running
+	return bt_success
 end
 
 vlokspawner.bind = enemy_base.bind_lifecycle
@@ -51,9 +43,17 @@ function vlokspawner.register()
 	local tree_id<const> = 'enemy_vlokspawner'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = vlokspawner.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_vlokspawner_spawn_steps - 1,
+				},
+				{
+					type = 'task',
+					execute = vlokspawner.spawn_vlok,
+				},
+			},
 		},
 	})
 	prefab.define({

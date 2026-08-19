@@ -1,9 +1,11 @@
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
+local velocity<const> = require('cartlib/velocity')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -34,59 +36,66 @@ function muziekfoe:ctor()
 	self:set_imgid('muziekfoe')
 end
 
-function muziekfoe.bt_tick(self, node_memory)
-	local dir_modifier<const> = self.direction == 'left' and -1 or 1
-	local move_accum = node_memory.muziek_move_accum or 0
-	move_accum = move_accum + enemy_muziek_horizontal_speed_num
-	while move_accum >= enemy_muziek_horizontal_speed_den do
-		self.x = self.x + dir_modifier
-		move_accum = move_accum - enemy_muziek_horizontal_speed_den
-	end
-	node_memory.muziek_move_accum = move_accum
+function muziekfoe.execute_move(self, node_memory)
+	node_memory.move_accum = 0
+	return muziekfoe.tick_move(self, node_memory)
+end
 
+function muziekfoe.tick_move(self, node_memory)
+	local dir_modifier<const> = self.direction == 'left' and -1 or 1
+	local move_x<const>, move_accum<const> = velocity.consume_axis_accum(
+		node_memory.move_accum,
+		enemy_muziek_horizontal_speed_num,
+		enemy_muziek_horizontal_speed_den
+	)
+	node_memory.move_accum = move_accum
+	self.x = self.x + (move_x * dir_modifier)
+
+	local rm<const> = self.room
 	if self.direction == 'left' then
-		local rm<const> = self.room
 		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, collision_flags_solid_mask) then
 			self.direction = 'right'
 		end
 	else
-		local rm<const> = self.room
 		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, collision_flags_solid_mask) then
 			self.direction = 'left'
 		end
 	end
-
-	local noot_ticks = node_memory.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
-	noot_ticks = noot_ticks - 1
-	if noot_ticks <= 0 then
-		local player<const> = self.player
-		local source_x<const> = self.x + 12
-		local source_y<const> = self.y + 8
-		local target_x<const> = player.x
-		local target_y<const> = player.y + player.height
-		local delta_scale<const> = 8
-		local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
-		local delta_divisor<const> = math.random(1, 2)
-		world:spawn('enemy.nootfoe', {
-			castle = self.castle,
-			room = self.room,
-			player = player,
-			direction = delta_x < 0 and 'left' or 'right',
-			speed_x_num = delta_x,
-			speed_y_num = delta_y,
-			speed_den = delta_scale * delta_divisor,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
-			pos = {
-				x = self.x + 12,
-				y = self.y,
-				z = 140,
-			},
-		})
-		noot_ticks = enemy_muziek_spawn_noot_steps
-	end
-	node_memory.muziek_noot_ticks = noot_ticks
 	return bt_running
+end
+
+function muziekfoe.spawn_note(self)
+	local player<const> = self.player
+	local source_x<const> = self.x + 12
+	local source_y<const> = self.y + 8
+	local target_x<const> = player.x
+	local target_y<const> = player.y + player.height
+	local delta_scale<const> = 8
+	local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(
+		source_x,
+		source_y,
+		target_x,
+		target_y,
+		delta_scale
+	)
+	local delta_divisor<const> = math.random(1, 2)
+	world:spawn('enemy.nootfoe', {
+		castle = self.castle,
+		room = self.room,
+		player = player,
+		direction = delta_x < 0 and 'left' or 'right',
+		speed_x_num = delta_x,
+		speed_y_num = delta_y,
+		speed_den = delta_scale * delta_divisor,
+		speed_accum_x = 0,
+		speed_accum_y = 0,
+		pos = {
+			x = self.x + 12,
+			y = self.y,
+			z = 140,
+		},
+	})
+	return bt_success
 end
 
 function muziekfoe.choose_drop_type(_self)
@@ -103,9 +112,40 @@ function muziekfoe.register()
 	local tree_id<const> = 'enemy_muziekfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = muziekfoe.bt_tick,
+			type = 'parallel_all',
+			children = {
+				{
+					type = 'task',
+					node_memory = true,
+					execute = muziekfoe.execute_move,
+					tick = muziekfoe.tick_move,
+				},
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'wait',
+							duration_ticks = enemy_muziek_spawn_noot_steps - 1,
+						},
+						{
+							type = 'loop',
+							child = {
+								type = 'sequence',
+								children = {
+									{
+										type = 'task',
+										execute = muziekfoe.spawn_note,
+									},
+									{
+										type = 'wait',
+										duration_ticks = enemy_muziek_spawn_noot_steps,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 	prefab.define({
