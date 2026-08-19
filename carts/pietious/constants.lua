@@ -124,13 +124,13 @@ boss_world1_spawn_duration_ticks = 75
 -- Pietious advances gameplay once per two VBlanks. Adding two 20 ms units per
 -- gameplay tick and firing at fifteen units preserves the XNA boss' 300 ms
 -- burst cadence without fractional runtime time or a drifting rounded period.
-boss_world1_spawn_cadence_units_per_tick = 2
-boss_world1_spawn_cadence_units = 15
+boss_world1_time_units_per_tick = 2
+boss_world1_spawn_interval_units = 15
 boss_world1_wait_after_spawn_ticks = 3
 boss_world1_wait_before_pounce_ticks = 3
 boss_world1_wait_after_pounce_ticks = 13
 boss_world1_reentry_ticks = 50
-boss_world1_zak_cadence_units = 45
+boss_world1_zak_interval_units = 45
 boss_world1_pounce_step_px = 16
 boss_world1_max_potatoes = 3
 boss_world1_max_zaks = 2

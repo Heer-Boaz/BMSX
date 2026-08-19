@@ -27,10 +27,26 @@ function world1_daemon_tree.register()
 				timeline_id = timeline_id.prepare_spawn,
 			},
 			{
-				type = 'task',
-				node_memory = true,
-				execute = world1_daemon.execute_spawn_attack,
-				tick = world1_daemon.tick_spawn_attack,
+				type = 'wait',
+				duration_ticks = boss_world1_spawn_duration_ticks,
+				services = {
+					{
+						interval = {
+							period_units = boss_world1_spawn_interval_units,
+							units_per_tick = boss_world1_time_units_per_tick,
+						},
+						node_memory = true,
+						restart_timer_on_each_activation = true,
+						on_become_relevant = function(_target, node_memory)
+							node_memory.burst_count = 0
+						end,
+						on_tick = function(target, node_memory)
+							local burst_count<const> = node_memory.burst_count
+							target:spawn_attack_burst(burst_count)
+							node_memory.burst_count = burst_count + 1
+						end,
+					},
+				},
 			},
 			{
 				type = 'timeline',
@@ -199,8 +215,10 @@ function world1_daemon_tree.register()
 					duration_ticks = boss_world1_reentry_ticks,
 					services = {
 						{
-							interval_ticks = boss_world1_zak_cadence_units
-								/ boss_world1_spawn_cadence_units_per_tick,
+							interval = {
+								period_units = boss_world1_zak_interval_units,
+								units_per_tick = boss_world1_time_units_per_tick,
+							},
 							on_tick = world1_daemon.spawn_zak,
 						},
 					},

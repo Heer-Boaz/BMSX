@@ -304,31 +304,6 @@ function world1_daemon:choose_entrance()
 	return bt_success
 end
 
-function world1_daemon:tick_spawn_attack(node_memory)
-	local elapsed_ticks<const> = node_memory.elapsed_ticks + 1
-	local cadence<const> = node_memory.cadence + boss_world1_spawn_cadence_units_per_tick
-	node_memory.elapsed_ticks = elapsed_ticks
-	if cadence >= boss_world1_spawn_cadence_units then
-		node_memory.cadence = cadence - boss_world1_spawn_cadence_units
-		local burst_count<const> = node_memory.burst_count
-		self:spawn_attack_burst(burst_count)
-		node_memory.burst_count = burst_count + 1
-	else
-		node_memory.cadence = cadence
-	end
-	if elapsed_ticks >= boss_world1_spawn_duration_ticks then
-		return bt_success
-	end
-	return bt_running
-end
-
-function world1_daemon:execute_spawn_attack(node_memory)
-	node_memory.elapsed_ticks = 0
-	node_memory.cadence = 0
-	node_memory.burst_count = 0
-	return self:tick_spawn_attack(node_memory)
-end
-
 function world1_daemon:spawn_potato(x, y)
 	for index = 1, boss_world1_max_potatoes do
 		local existing<const> = self.potatoes[index]

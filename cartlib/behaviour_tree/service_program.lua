@@ -2,11 +2,16 @@ local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout
 local result<const> = require('cartlib/behaviour_tree/result')
 
 -- Services are immutable auxiliary nodes attached to a task or composite. The
--- execution component owns their activity, interval accumulator, optional node
--- memory and a preallocated dense lane of active tick callbacks. That lane is
--- advanced before Blackboard execution requests and the tree evaluator. A
--- branch transition changes the retained lane; recursive subtree traversal is
--- not used as a Service scheduler.
+-- execution component owns their activity, integer cadence accumulator,
+-- optional node memory and a preallocated dense lane of active tick callbacks.
+-- That lane is advanced before Blackboard execution requests and the tree
+-- evaluator. A branch transition changes the retained lane; recursive subtree
+-- traversal is not used as a Service scheduler.
+--
+-- An authored interval carries a period and the amount of timebase units
+-- advanced by one behaviour-tree tick. Admission retains both integers; the
+-- runtime uses a remainder accumulator to preserve non-integral tick periods
+-- without floating-point scheduler state or drift.
 -- Stateless callbacks receive (target, execution, elapsed_ticks); callbacks on
 -- a Service with node_memory receive
 -- (target, node_memory, execution, elapsed_ticks).
@@ -36,7 +41,6 @@ local compile_service<const> = function(definition, layout)
 	local on_become_relevant<const> = definition.on_become_relevant
 	local on_tick<const> = definition.on_tick
 	local on_cease_relevant<const> = definition.on_cease_relevant
-	local interval_ticks<const> = definition.interval_ticks
 	local tick_on_search_start<const> = definition.tick_on_search_start
 	local restart_timer_on_each_activation<const> = definition.restart_timer_on_each_activation
 	local uses_node_memory<const> = definition.node_memory
@@ -45,23 +49,24 @@ local compile_service<const> = function(definition, layout)
 		memory_slot = allocate_node_memory(layout)
 	end
 	local tick
-	local remaining_slot
+	local phase_slot
 	local elapsed_slot
 	if on_tick ~= nil then
-		remaining_slot = allocate_slot(layout)
+		local interval<const> = definition.interval
+		local period_units<const> = interval.period_units
+		local units_per_tick<const> = interval.units_per_tick
+		phase_slot = allocate_slot(layout)
 		elapsed_slot = allocate_slot(layout)
 		tick = function(target, execution)
 			local execution_state<const> = execution._execution_state
-			local remaining<const> = execution_state[remaining_slot] - 1
+			local phase<const> = execution_state[phase_slot] + units_per_tick
 			local elapsed<const> = execution_state[elapsed_slot] + 1
-			if remaining > 0 then
-				execution_state[remaining_slot] = remaining
+			if phase < period_units then
+				execution_state[phase_slot] = phase
 				execution_state[elapsed_slot] = elapsed
 				return
 			end
-			-- Carrying the fractional remainder preserves an interval between
-			-- two 50 Hz ticks without changing its long-term cadence.
-			execution_state[remaining_slot] = remaining + interval_ticks
+			execution_state[phase_slot] = phase - period_units
 			execution_state[elapsed_slot] = 0
 			if uses_node_memory then
 				on_tick(target, execution_state[memory_slot], execution, elapsed)
@@ -74,9 +79,8 @@ local compile_service<const> = function(definition, layout)
 	local start<const> = function(target, execution)
 		local execution_state<const> = execution._execution_state
 		if on_tick ~= nil then
-			local remaining<const> = execution_state[remaining_slot]
-			if restart_timer_on_each_activation or remaining == nil or remaining <= 0 then
-				execution_state[remaining_slot] = interval_ticks
+			if restart_timer_on_each_activation or execution_state[phase_slot] == nil then
+				execution_state[phase_slot] = 0
 				execution_state[elapsed_slot] = 0
 			end
 		end
@@ -93,7 +97,7 @@ local compile_service<const> = function(definition, layout)
 			else
 				on_tick(target, execution, 0)
 			end
-			execution_state[remaining_slot] = interval_ticks
+			execution_state[phase_slot] = 0
 			execution_state[elapsed_slot] = 0
 		end
 		if on_become_relevant ~= nil then
