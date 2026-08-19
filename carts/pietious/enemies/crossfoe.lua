@@ -10,35 +10,69 @@ local enemy_base<const> = require('enemies/enemy_base')
 local crossfoe<const> = {}
 crossfoe.__index = crossfoe
 
-local apply_spin_visual<const> = function(self)
+local upright_probe_x<const> = 4
+local upright_probe_y<const> = 2
+local upright_hit_bottom<const> = 22
+local turned_probe_x<const> = 2
+local turned_probe_y<const> = 4
+
+local apply_spin_state<const> = function(self)
 	local imgid
 	local flip_h
 	local flip_v
+	local collision_probe_x
+	local collision_probe_y
 	if self.cross_spin_direction == 'left' then
 		imgid = 'crossfoe_turned'
 		flip_h = false
 		flip_v = false
+		collision_probe_x = turned_probe_x
+		collision_probe_y = turned_probe_y
 	elseif self.cross_spin_direction == 'right' then
 		imgid = 'crossfoe_turned'
 		flip_h = true
 		flip_v = false
+		collision_probe_x = turned_probe_x
+		collision_probe_y = turned_probe_y
 	elseif self.cross_spin_direction == 'up' then
 		imgid = 'crossfoe'
 		flip_h = false
 		flip_v = true
+		collision_probe_x = upright_probe_x
+		collision_probe_y = upright_probe_y
 	else
 		imgid = 'crossfoe'
 		flip_h = false
 		flip_v = false
+		collision_probe_x = upright_probe_x
+		collision_probe_y = upright_probe_y
 	end
 	self:set_imgid(imgid)
 	self.sprite_component.flip_h = flip_h
 	self.sprite_component.flip_v = flip_v
+	self.collision_probe_x = collision_probe_x
+	self.collision_probe_y = collision_probe_y
 end
 
 function crossfoe:ctor()
 	self.cross_spin_direction = 'down'
-	apply_spin_visual(self)
+	apply_spin_state(self)
+end
+
+function crossfoe.await_takeoff(self, node_memory)
+	local player<const> = self.player
+	if player.y + player.height >= self.y
+	and player.y <= self.y + upright_hit_bottom then
+		local elapsed_ticks<const> = node_memory.elapsed_ticks or 0
+		if elapsed_ticks < enemy_cross_wait_before_fly_steps then
+			node_memory.elapsed_ticks = elapsed_ticks + 1
+			return bt_running
+		end
+		node_memory.elapsed_ticks = 0
+		return bt_success
+	end
+	node_memory.elapsed_ticks = 0
+	return bt_running
 end
 
 function crossfoe.execute_flight(self, node_memory)
@@ -50,25 +84,29 @@ function crossfoe.execute_flight(self, node_memory)
 	end
 	node_memory.turn_ticks = enemy_cross_turn_steps
 	self.cross_spin_direction = 'left'
-	apply_spin_visual(self)
+	apply_spin_state(self)
 	self.castle.events:emit('cross')
 	return bt_running
 end
 
 function crossfoe.tick_flight(self, node_memory)
 	local player<const> = self.player
+	local rm<const> = self.room
 	local direction_mod<const> = node_memory.direction_mod
-	local next_x<const> = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
-	local next_left<const> = next_x
-	local next_right<const> = next_x + self.sx
 
 	if (direction_mod < 0 and self.x < (player.x - player.width))
 		or (direction_mod > 0 and self.x > (player.x + (player.width * 2)))
-		or next_left < 0
-		or next_right > self.room.world_width
+		or rm:has_collision_flags_at_world(
+			self.x + self.collision_probe_x,
+			self.y + self.collision_probe_y,
+			collision_flags_solid_mask
+		)
+		or self.x < 0
+		or self.x + self.sx > rm.world_width
 	then
 		self.cross_spin_direction = 'down'
-		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
+		self.x = self.x - (room_tile_size * direction_mod)
+		apply_spin_state(self)
 		self.castle.events:emit('crossland')
 		return bt_success
 	end
@@ -96,14 +134,9 @@ function crossfoe.tick_flight(self, node_memory)
 		self.cross_spin_direction = 'down'
 		self.x = self.x + 4
 	end
-	apply_spin_visual(self)
+	apply_spin_state(self)
 	node_memory.turn_ticks = turn_ticks
 	return bt_running
-end
-
-function crossfoe.finish_landing(self)
-	apply_spin_visual(self)
-	return bt_success
 end
 
 function crossfoe.choose_drop_type(_self)
@@ -120,36 +153,24 @@ function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'sequence',
-			children = {
-				{
-					type = 'wait',
-					duration_ticks = enemy_cross_wait_before_fly_steps - 1,
-				},
-				{
-					type = 'loop',
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'task',
-								node_memory = true,
-								execute = crossfoe.execute_flight,
-								tick = crossfoe.tick_flight,
-							},
-							{
-								type = 'wait',
-								duration_ticks = 1,
-							},
-							{
-								type = 'task',
-								execute = crossfoe.finish_landing,
-							},
-							{
-								type = 'wait',
-								duration_ticks = enemy_cross_wait_before_fly_steps - 1,
-							},
-						},
+			type = 'loop',
+			child = {
+				type = 'sequence',
+				children = {
+					{
+						type = 'task',
+						node_memory = true,
+						tick = crossfoe.await_takeoff,
+					},
+					{
+						type = 'task',
+						node_memory = true,
+						execute = crossfoe.execute_flight,
+						tick = crossfoe.tick_flight,
+					},
+					{
+						type = 'wait',
+						duration_ticks = 1,
 					},
 				},
 			},

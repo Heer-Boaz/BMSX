@@ -109,7 +109,8 @@ function zakfoe.register()
 		defaults = {
 			damage = 2,
 			max_health = 2,
-			health = 2,dangerous = true,
+			health = 2,
+			dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,
