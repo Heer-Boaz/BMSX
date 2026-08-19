@@ -86,6 +86,7 @@ events:
     victory_dance:
         channel: sfx
         policy: queue
+        on_finished: victory_dance_done
         rules:
             - go:
                   sequence:

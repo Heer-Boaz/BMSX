@@ -3,12 +3,22 @@
 
 local apu<const> = require('cartlib/apu')
 local apu_event<const> = require('cartlib/apu/event')
+local base_system<const> = require('cartlib/world/base_system')
 local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
 local rom_dir<const> = require('cartlib/rom_dir')
+local tick_group<const> = require('cartlib/world/tick_group')
 
 local aem<const> = {}
+aem.__index = aem
+setmetatable(aem, { __index = base_system })
+aem.tick = {
+	group = tick_group.input,
+	priority = -100,
+	clock_source = clock.frame,
+	method = 'update',
+}
 local slot_sfx<const> = 0
 local slot_music_a<const> = 1
 local slot_music_b<const> = 2
@@ -26,6 +36,9 @@ local route_slot<const> = {
 -- cart RAM. Tables retain authored event programs and only those prepared plays
 -- that are actually queued behind an active slot; an admitted play that can
 -- start now writes the APU command without constructing a transient play record.
+-- Optional on_finished state follows that admitted play until the APU publishes
+-- its physical completion. Replacement and explicit stop discard it instead of
+-- presenting cancellation as natural playback completion.
 local events
 bss music_request_seq: word
 bss current_music_source_addr: word
@@ -41,6 +54,12 @@ bss slot_active_priority: word[4]
 local slot_play_queue
 local slot_queue_head
 local slot_queue_tail
+local slot_finished_event
+local slot_finished_emitter
+local finished_event_queue
+local finished_emitter_queue
+local finished_queue_head
+local finished_queue_tail
 
 local action_kind_play<const> = 1
 local action_kind_stop_music<const> = 2
@@ -257,12 +276,14 @@ local merge_events<const> = function(event_maps)
 			merged[event_name] = {
 				slot = slot,
 				queued = entry.queued,
+				on_finished = entry.on_finished,
 				rules = compiled_rules,
 			}
 			return
 		end
 		cur.slot = slot
 		cur.queued = entry.queued
+		cur.on_finished = entry.on_finished
 		local old_count<const> = #cur.rules
 		local new_count<const> = #compiled_rules
 		for i = old_count, 1, -1 do
@@ -324,6 +345,12 @@ local reset_slot_state<const> = function()
 		[slot_music_b] = 0,
 		[slot_ui] = 0,
 	}
+	slot_finished_event = {}
+	slot_finished_emitter = {}
+	finished_event_queue = {}
+	finished_emitter_queue = {}
+	finished_queue_head = 1
+	finished_queue_tail = 0
 end
 
 local has_queued_play<const> = function(slot)
@@ -343,13 +370,27 @@ local slot_is_busy<const> = function(slot)
 	return slot_active_source_addr[slot] ~= 0
 end
 
-local mark_slot_active<const> = function(slot, source_addr, priority)
+local mark_slot_active<const> = function(slot, source_addr, priority, finished_event, emitter)
 	slot_active_source_addr[slot] = source_addr
 	slot_active_priority[slot] = priority
+	slot_finished_event[slot] = finished_event
+	slot_finished_emitter[slot] = emitter
 end
 
 local slot_source_matches<const> = function(slot, source_addr)
 	return slot_active_source_addr[slot] == source_addr
+end
+
+local clear_slot_active<const> = function(slot)
+	slot_active_source_addr[slot] = 0
+	slot_active_priority[slot] = 0
+	slot_finished_event[slot] = nil
+	slot_finished_emitter[slot] = nil
+end
+
+local discard_slot_completion<const> = function(slot)
+	slot_finished_event[slot] = nil
+	slot_finished_emitter[slot] = nil
 end
 
 local enqueue_prepared_play<const> = function(play)
@@ -377,7 +418,13 @@ local dequeue_prepared_play<const> = function(slot)
 end
 
 local run_prepared_play<const> = function(play)
-	mark_slot_active(play.slot, play.source.source_addr, play.priority)
+	mark_slot_active(
+		play.slot,
+		play.source.source_addr,
+		play.priority,
+		play.finished_event,
+		play.finished_emitter
+	)
 	apu.play(
 		play.source,
 		play.slot,
@@ -402,8 +449,7 @@ local complete_slot_play<const> = function(slot, source_addr, drain_queue)
 	if not slot_source_matches(slot, source_addr) then
 		return false
 	end
-	slot_active_source_addr[slot] = 0
-	slot_active_priority[slot] = 0
+	clear_slot_active(slot)
 	if drain_queue then
 		play_next_queued(slot)
 	end
@@ -421,11 +467,13 @@ local submit_play<const> = function(
 	filter_control,
 	filter_b0_b1,
 	filter_b2_a1,
-	filter_a2
+	filter_a2,
+	finished_event,
+	finished_emitter
 )
 	if queued then
 		if slot_is_busy(slot) or has_queued_play(slot) then
-			enqueue_prepared_play({
+			local play<const> = {
 				source = source,
 				slot = slot,
 				priority = priority,
@@ -436,7 +484,12 @@ local submit_play<const> = function(
 				filter_b0_b1 = filter_b0_b1,
 				filter_b2_a1 = filter_b2_a1,
 				filter_a2 = filter_a2,
-			})
+			}
+			if finished_event ~= nil then
+				play.finished_event = finished_event
+				play.finished_emitter = finished_emitter
+			end
+			enqueue_prepared_play(play)
 			return
 		end
 	else
@@ -445,7 +498,7 @@ local submit_play<const> = function(
 		end
 		clear_slot_queue(slot)
 	end
-	mark_slot_active(slot, source.source_addr, priority)
+	mark_slot_active(slot, source.source_addr, priority, finished_event, finished_emitter)
 	apu.play(
 		source,
 		slot,
@@ -459,7 +512,7 @@ local submit_play<const> = function(
 	)
 end
 
-local dispatch_audio_play<const> = function(entry, action, emitter)
+local dispatch_audio_play<const> = function(entry, action, emitter, finished_event)
 	if not apply_cooldown(action, emitter) then
 		return
 	end
@@ -500,7 +553,9 @@ local dispatch_audio_play<const> = function(entry, action, emitter)
 		action.filter_control,
 		action.filter_b0_b1,
 		action.filter_b2_a1,
-		action.filter_a2
+		action.filter_a2,
+		finished_event,
+		emitter
 	)
 end
 
@@ -525,11 +580,18 @@ end
 
 local begin_music_request<const> = function()
 	*music_request_seq = *music_request_seq + 1
-	if *stinger_source_addr ~= 0 then
-		apu.stop_slot(*stinger_slot, 0)
+	local cancelled_stinger_slot
+	if *stinger_source_addr ~= 0
+	and slot_source_matches(*stinger_slot, *stinger_source_addr) then
+		cancelled_stinger_slot = *stinger_slot
+		apu.stop_slot(cancelled_stinger_slot, 0)
+		clear_slot_active(cancelled_stinger_slot)
 	end
 	clear_slot_queue(slot_music_a)
 	clear_slot_queue(slot_music_b)
+	if cancelled_stinger_slot ~= nil then
+		play_next_queued(cancelled_stinger_slot)
+	end
 	clear_stinger()
 	clear_pending_music()
 	return *music_request_seq
@@ -543,7 +605,7 @@ local play_music_now<const> = function(transition, gain_q12, slot)
 	local source<const> = transition.target_source
 	*current_music_source_addr = source.source_addr
 	*current_music_slot = target_slot
-	mark_slot_active(target_slot, source.source_addr, transition.target_priority)
+	mark_slot_active(target_slot, source.source_addr, transition.target_priority, nil, nil)
 	apu.play(
 		source,
 		target_slot,
@@ -572,6 +634,7 @@ local play_transition_apu<const> = function(transition)
 	if crossfade_samples > 0 and *current_music_source_addr ~= 0 then
 		local old_slot<const> = *current_music_slot
 		local new_slot<const> = alternate_music_slot()
+		discard_slot_completion(old_slot)
 		apu.stop_slot(old_slot, crossfade_samples)
 		play_music_now(transition, 0x00001000, new_slot)
 		return
@@ -580,12 +643,15 @@ local play_transition_apu<const> = function(transition)
 	local fade_samples<const> = transition.fade_samples
 	if fade_samples > 0 and *current_music_source_addr ~= 0 then
 		queue_music_after_current(*music_request_seq, transition)
+		discard_slot_completion(*current_music_slot)
 		apu.stop_slot(*current_music_slot, fade_samples)
 		return
 	end
 
 	if *current_music_source_addr ~= 0 then
-		apu.stop_slot(*current_music_slot, 0)
+		local slot<const> = *current_music_slot
+		apu.stop_slot(slot, 0)
+		clear_slot_active(slot)
 	end
 	play_music_now(transition)
 end
@@ -601,7 +667,9 @@ local dispatch_music_transition<const> = function(transition)
 	end
 	if stinger_source ~= nil then
 		if *current_music_source_addr ~= 0 then
-			apu.stop_slot(*current_music_slot, 0)
+			local slot<const> = *current_music_slot
+			apu.stop_slot(slot, 0)
+			clear_slot_active(slot)
 		end
 		*current_music_source_addr = 0
 		*current_music_slot = 0
@@ -609,7 +677,7 @@ local dispatch_music_transition<const> = function(transition)
 		*stinger_source_addr = stinger_source.source_addr
 		*stinger_slot = transition.stinger_slot
 		stinger_music_transition = transition
-		mark_slot_active(*stinger_slot, *stinger_source_addr, transition.stinger_priority)
+		mark_slot_active(*stinger_slot, *stinger_source_addr, transition.stinger_priority, nil, nil)
 		apu.play_plain(stinger_source, *stinger_slot)
 		return
 	end
@@ -617,18 +685,24 @@ local dispatch_music_transition<const> = function(transition)
 end
 
 local dispatch_action
-dispatch_action = function(entry, action, emitter)
+dispatch_action = function(entry, action, emitter, finished_event)
 	local kind<const> = action.kind
 	if kind == action_kind_play then
-		dispatch_audio_play(entry, action, emitter)
+		dispatch_audio_play(entry, action, emitter, finished_event)
 		return
 	end
 	if kind == action_kind_stop_music then
 		begin_music_request()
 		*current_music_source_addr = 0
 		*current_music_slot = 0
+		discard_slot_completion(slot_music_a)
+		discard_slot_completion(slot_music_b)
 		apu.stop_slot(slot_music_a, action.fade_samples)
 		apu.stop_slot(slot_music_b, action.fade_samples)
+		if action.fade_samples == 0 then
+			clear_slot_active(slot_music_a)
+			clear_slot_active(slot_music_b)
+		end
 		return
 	end
 	if kind == action_kind_pause_music then
@@ -643,9 +717,11 @@ dispatch_action = function(entry, action, emitter)
 	end
 	if kind == action_kind_sequence then
 		local actions<const> = action.actions
-		for i = 1, #actions do
-			dispatch_action(entry, actions[i], emitter)
+		local last_index<const> = #actions
+		for i = 1, last_index - 1 do
+			dispatch_action(entry, actions[i], emitter, nil)
 		end
+		dispatch_action(entry, actions[last_index], emitter, finished_event)
 		return
 	end
 	if kind == action_kind_random_uniform then
@@ -656,7 +732,7 @@ dispatch_action = function(entry, action, emitter)
 		if last_picks then
 			last_picks[emitter] = index
 		end
-		dispatch_action(entry, actions[index], emitter)
+		dispatch_action(entry, actions[index], emitter, finished_event)
 		return
 	end
 	if kind == action_kind_random_weighted then
@@ -667,7 +743,7 @@ dispatch_action = function(entry, action, emitter)
 		if last_picks then
 			last_picks[emitter] = index
 		end
-		dispatch_action(entry, actions[index], emitter)
+		dispatch_action(entry, actions[index], emitter, finished_event)
 		return
 	end
 	dispatch_music_transition(action)
@@ -682,7 +758,7 @@ local handle_event<const> = function(_subscriber, event_type, emitter, payload)
 	for i = 1, #rules do
 		local rule<const> = rules[i]
 		if rule.predicate(payload) then
-			dispatch_action(entry, rule.action, emitter)
+			dispatch_action(entry, rule.action, emitter, entry.on_finished)
 			return
 		end
 	end
@@ -725,36 +801,71 @@ local on_apu_irq<const> = function()
 		return
 	end
 
+	local finished_event<const> = slot_finished_event[slot]
+	local finished_emitter<const> = slot_finished_emitter[slot]
+	local completed
 	if *stinger_source_addr == source_addr
 		and *stinger_slot == slot
 		and *stinger_seq == *music_request_seq then
 		local transition<const> = stinger_music_transition
-		complete_slot_play(slot, source_addr, slot ~= *current_music_slot)
+		completed = complete_slot_play(slot, source_addr, slot ~= *current_music_slot)
 		clear_stinger()
 		play_transition_apu(transition)
-		return
+	elseif slot ~= *current_music_slot or *current_music_source_addr ~= source_addr then
+		completed = complete_slot_play(slot, source_addr, true)
+	else
+		completed = complete_slot_play(slot, source_addr, false)
+		*current_music_source_addr = 0
+		*current_music_slot = 0
+		if *pending_music_seq == *music_request_seq and pending_music_transition ~= nil then
+			local transition<const> = pending_music_transition
+			clear_pending_music()
+			play_music_now(transition)
+		else
+			play_next_queued(slot)
+		end
 	end
+	if completed and finished_event ~= nil then
+		local tail<const> = finished_queue_tail + 1
+		finished_queue_tail = tail
+		finished_event_queue[tail] = finished_event
+		finished_emitter_queue[tail] = finished_emitter
+	end
+end
 
-	if slot ~= *current_music_slot then
-		complete_slot_play(slot, source_addr, true)
-		return
-	end
+-- The IRQ path retires physical slot state only. Semantic callbacks cross onto
+-- the frame schedule before gameplay work, mirroring UE AudioComponent's
+-- audio-thread-to-game-thread completion handoff without allocating per event.
+function aem.new()
+	return setmetatable(base_system.new(aem.tick), aem)
+end
 
-	if *current_music_source_addr ~= source_addr then
-		complete_slot_play(slot, source_addr, true)
+function aem:update()
+	local tail<const> = finished_queue_tail
+	if finished_queue_head > tail then
 		return
 	end
+	for index = finished_queue_head, tail do
+		local emitter<const> = finished_emitter_queue[index]
+		event_emitter:emit(finished_event_queue[index], emitter, nil, emitter.id)
+		finished_event_queue[index] = nil
+		finished_emitter_queue[index] = nil
+	end
+	finished_queue_head = 1
+	finished_queue_tail = 0
+end
 
-	complete_slot_play(slot, source_addr, false)
-	*current_music_source_addr = 0
-	*current_music_slot = 0
-	if *pending_music_seq == *music_request_seq and pending_music_transition ~= nil then
-		local transition<const> = pending_music_transition
-		clear_pending_music()
-		play_music_now(transition)
-		return
+function aem:clear()
+	for index = finished_queue_head, finished_queue_tail do
+		finished_event_queue[index] = nil
+		finished_emitter_queue[index] = nil
 	end
-	play_next_queued(slot)
+	finished_queue_head = 1
+	finished_queue_tail = 0
+	for slot = slot_sfx, slot_ui do
+		discard_slot_completion(slot)
+		clear_slot_queue(slot)
+	end
 end
 
 rebind()

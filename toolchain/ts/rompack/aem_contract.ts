@@ -15,7 +15,7 @@ export const AEM_FILTER_TYPE_SET: ReadonlySet<string> = new Set(AEM_FILTER_TYPES
 export const AEM_SELECTION_MODE_SET: ReadonlySet<string> = new Set(AEM_SELECTION_MODES);
 
 export const AEM_DOCUMENT_KEYS: ReadonlySet<string> = new Set(['events']);
-export const AEM_EVENT_KEYS: ReadonlySet<string> = new Set(['channel', 'policy', 'rules']);
+export const AEM_EVENT_KEYS: ReadonlySet<string> = new Set(['channel', 'policy', 'on_finished', 'rules']);
 export const AEM_RULE_KEYS: ReadonlySet<string> = new Set(['when', 'go']);
 export const AEM_MATCHER_KEYS: ReadonlySet<string> = new Set(['equals', 'any_of', 'in', 'has_tag', 'and', 'or', 'not']);
 export const AEM_ACTION_KEYS: ReadonlySet<string> = new Set([

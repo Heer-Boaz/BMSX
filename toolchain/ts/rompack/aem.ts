@@ -183,6 +183,7 @@ type CookedAemRule = {
 export type CookedAemEvent = {
 	channel: string;
 	queued: boolean;
+	on_finished?: string;
 	rules: CookedAemRule[];
 };
 
@@ -622,6 +623,7 @@ export function buildAemEventMap(document: AemDocument, lookup: AemValidationLoo
 		const sourceEvent = sourceEvents[eventName] as {
 			channel: string;
 			policy?: string;
+			on_finished?: string;
 			rules: Array<{ when?: unknown; go: Record<string, unknown> }>;
 		};
 		const sourceRules = sourceEvent.rules;
@@ -634,13 +636,37 @@ export function buildAemEventMap(document: AemDocument, lookup: AemValidationLoo
 			}
 			rules[ruleIndex] = rule;
 		}
-		eventMap[eventName] = {
+		const event: CookedAemEvent = {
 			channel: sourceEvent.channel,
 			queued: sourceEvent.policy === 'queue',
 			rules,
 		};
+		if (sourceEvent.on_finished !== undefined) {
+			event.on_finished = sourceEvent.on_finished;
+		}
+		eventMap[eventName] = event;
 	}
 	return eventMap;
+}
+
+function actionTerminatesInPlayback(action: Record<string, unknown>): boolean {
+	if (action.audio_id !== undefined) {
+		return true;
+	}
+	const sequence = action.sequence;
+	if (Array.isArray(sequence)) {
+		return actionTerminatesInPlayback(sequence[sequence.length - 1] as Record<string, unknown>);
+	}
+	const choices = action.one_of;
+	if (Array.isArray(choices)) {
+		for (let index = 0; index < choices.length; index += 1) {
+			if (!actionTerminatesInPlayback(choices[index] as Record<string, unknown>)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return false;
 }
 
 function checkAction(
@@ -921,6 +947,7 @@ function validateRules(
 	errors: string[],
 	warnings: string[],
 	musicTransitionsWithFallback: Set<string>,
+	requiresNaturalCompletion: boolean,
 ): void {
 	const eventLabel = `${file}${eventName ? `:${eventName}` : ''}`;
 	if (!Array.isArray(rules)) {
@@ -939,7 +966,13 @@ function validateRules(
 		}
 		checkUnknownKeys(rule as Record<string, unknown>, AEM_RULE_KEYS, `${eventLabel}#rule${index}`, errors);
 		validateMatcher((rule as { when?: unknown }).when, `${eventLabel}#rule${index}.when`, errors);
+		const actionErrorCount = errors.length;
 		validateActionSpec(rule.go, file, eventName, index, lookup, errors, warnings, musicTransitionsWithFallback);
+		if (requiresNaturalCompletion
+			&& errors.length === actionErrorCount
+			&& !actionTerminatesInPlayback(rule.go as Record<string, unknown>)) {
+			errors.push(`Invalid on_finished at ${eventLabel}#rule${index}: the selected action must terminate in an audio playback`);
+		}
 	}
 }
 
@@ -962,11 +995,25 @@ function validateEventDefinition(
 	}
 	const eventObject = eventDefinition as Record<string, unknown>;
 	validateEventMeta(eventObject, fileTag, eventName, errors);
+	const onFinished = eventObject.on_finished;
+	const hasNaturalCompletion = typeof onFinished === 'string' && onFinished.length > 0;
+	if (onFinished !== undefined && !hasNaturalCompletion) {
+		errors.push(`Invalid on_finished '${String(onFinished)}' at ${fileTag}:${eventName}: expected a non-empty event name`);
+	}
 	if (!Array.isArray(eventObject.rules)) {
 		errors.push(`Event '${eventName ?? '<root>'}' in ${fileTag} is missing a 'rules' array.`);
 		return;
 	}
-	validateRules(eventObject.rules as AudioEventRule[], fileTag, eventName, lookup, errors, warnings, musicTransitionsWithFallback);
+	validateRules(
+		eventObject.rules as AudioEventRule[],
+		fileTag,
+		eventName,
+		lookup,
+		errors,
+		warnings,
+		musicTransitionsWithFallback,
+		hasNaturalCompletion,
+	);
 }
 
 export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, fileTag: string): AemValidationResult {

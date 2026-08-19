@@ -1,3 +1,4 @@
+local aem<const> = require('cartlib/aem')
 local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
 local elevator_system<const> = require('elevator/system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
@@ -22,6 +23,7 @@ return {
 	},
 	systems = {
 		input_system,
+		aem,
 		bt_system,
 		velocity_system,
 		input_actioneffect_system,
