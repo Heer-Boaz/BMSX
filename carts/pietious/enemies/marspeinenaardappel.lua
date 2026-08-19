@@ -14,7 +14,7 @@ function marspeinenaardappel:ctor()
 	self:set_imgid('marspeinenaardappel')
 end
 
-function marspeinenaardappel.bt_tick(self, _execution)
+function marspeinenaardappel.move_and_bounce(self)
 	local speed_x<const> = self.speed_x_num
 	local speed_y<const> = self.speed_y_num
 	local rm<const> = self.room
@@ -70,7 +70,7 @@ function marspeinenaardappel.register()
 	behaviour_tree_library.register(tree_id, {
 		root = {
 			type = 'task',
-			tick = marspeinenaardappel.bt_tick,
+			tick = marspeinenaardappel.move_and_bounce,
 		},
 	})
 	prefab.define({

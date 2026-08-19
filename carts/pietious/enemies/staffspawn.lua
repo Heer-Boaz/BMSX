@@ -1,9 +1,5 @@
 local prefab<const> = require('cartlib/world/prefab')
-local velocity<const> = require('cartlib/velocity')
-local bt_result<const> = require('cartlib/behaviour_tree/result')
-local bt_running<const> = bt_result.running
-local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
-local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local velocity_component<const> = require('cartlib/physics/velocity_component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local staffspawn<const> = {}
@@ -15,28 +11,16 @@ function staffspawn:ctor()
 	enemy_base.setup_projectile_boundary(self)
 end
 
-function staffspawn.bt_tick(self, _execution)
-	velocity.move_with_velocity(self)
-	return bt_running
-end
-
 function staffspawn.choose_drop_type(_self, _random_percent_hit)
 	return nil
 end
 
 function staffspawn.register()
-	local tree_id<const> = 'enemy_staffspawn'
-	behaviour_tree_library.register(tree_id, {
-		root = {
-			type = 'task',
-			tick = staffspawn.bt_tick,
-		},
-	})
 	prefab.define({
 		def_id = 'enemy.staffspawn',
 		class = staffspawn,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
+		components = { enemy_base.new_collider, velocity_component.new },
 		defaults = {
 			damage = 2,
 			max_health = 1,
