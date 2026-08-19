@@ -8,6 +8,7 @@ local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local kinematic_movement_component<const> = require('cartlib/physics/kinematic_movement_component')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 
@@ -33,6 +34,7 @@ end
 
 -- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function muziekfoe:ctor()
+	self.movement = self:get_component(kinematic_movement_component)
 	self:set_imgid('muziekfoe')
 end
 
@@ -49,17 +51,8 @@ function muziekfoe.tick_move(self, node_memory)
 		enemy_muziek_horizontal_speed_den
 	)
 	node_memory.move_accum = move_accum
-	self.x = self.x + (move_x * dir_modifier)
-
-	local rm<const> = self.room
-	if self.direction == 'left' then
-		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, collision_flags_solid_mask) then
-			self.direction = 'right'
-		end
-	else
-		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, collision_flags_solid_mask) then
-			self.direction = 'left'
-		end
+	if self.movement:move_x(self.room, move_x * dir_modifier) ~= 0 then
+		self.direction = self.direction == 'left' and 'right' or 'left'
 	end
 	return bt_running
 end
@@ -152,7 +145,22 @@ function muziekfoe.register()
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
+		components = {
+			enemy_base.new_collider,
+			kinematic_movement_component.factory({
+				local_left = 0,
+				local_top = 0,
+				local_right = 24,
+				local_bottom = 16,
+				world_left = 0,
+				world_top = room_hud_height,
+				world_right = room_width,
+				world_bottom = room_height,
+				collision_mask = collision_flags_solid_mask,
+				include_elevators = true,
+			}),
+			bt_component.factory(tree_id),
+		},
 		defaults = {
 			damage = 4,
 			max_health = 3,

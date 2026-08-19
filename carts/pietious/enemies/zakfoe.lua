@@ -5,12 +5,14 @@ local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local kinematic_movement_component<const> = require('cartlib/physics/kinematic_movement_component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local zakfoe<const> = {}
 zakfoe.__index = zakfoe
 
 function zakfoe:ctor()
+	self.movement = self:get_component(kinematic_movement_component)
 	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
@@ -26,23 +28,14 @@ end
 
 function zakfoe.tick_jump(self, node_memory)
 	local direction_mod<const> = self.direction == 'right' and 1 or -1
-	self.x = self.x + (enemy_zak_horizontal_speed_px * direction_mod)
 	self.y = self.y + node_memory.vertical_speed
 	node_memory.vertical_speed = node_memory.vertical_speed + enemy_zak_vertical_speed_step
 
 	local rm<const> = self.room
-	if self.direction == 'left' then
-		if self.x < 0
-			or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
-			or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
-		then
-			self.direction = 'right'
-		end
-	elseif self.x + 14 >= rm.world_width
-		or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
-		or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
-	then
-		self.direction = 'left'
+	local movement<const> = self.movement
+	if movement:move_x(rm, enemy_zak_horizontal_speed_px * direction_mod) ~= 0
+	or not movement:has_support_ahead(rm, direction_mod, room_tile_half, room_tile_size) then
+		self.direction = direction_mod < 0 and 'right' or 'left'
 	end
 
 	local remaining_ticks<const> = node_memory.remaining_ticks - 1
@@ -105,7 +98,22 @@ function zakfoe.register()
 		def_id = 'enemy.zakfoe',
 		class = zakfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
+		components = {
+			enemy_base.new_collider,
+			kinematic_movement_component.factory({
+				local_left = 2,
+				local_top = 2,
+				local_right = 14,
+				local_bottom = 14,
+				world_left = 0,
+				world_top = room_hud_height,
+				world_right = room_width,
+				world_bottom = room_height,
+				collision_mask = collision_flags_solid_mask,
+				include_elevators = true,
+			}),
+			bt_component.factory(tree_id),
+		},
 		defaults = {
 			damage = 2,
 			max_health = 2,

@@ -5,56 +5,75 @@ local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local kinematic_movement_component<const> = require('cartlib/physics/kinematic_movement_component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local crossfoe<const> = {}
 crossfoe.__index = crossfoe
 
-local upright_probe_x<const> = 4
-local upright_probe_y<const> = 2
-local upright_hit_bottom<const> = 22
-local turned_probe_x<const> = 2
-local turned_probe_y<const> = 4
+local upright_collision_left<const> = 4
+local upright_collision_top<const> = 2
+local upright_collision_right<const> = 12
+local upright_collision_bottom<const> = 22
+local turned_collision_left<const> = 2
+local turned_collision_top<const> = 4
+local turned_collision_right<const> = 22
+local turned_collision_bottom<const> = 12
 
 local apply_spin_state<const> = function(self)
 	local imgid
 	local flip_h
 	local flip_v
-	local collision_probe_x
-	local collision_probe_y
+	local collision_left
+	local collision_top
+	local collision_right
+	local collision_bottom
 	if self.cross_spin_direction == 'left' then
 		imgid = 'crossfoe_turned'
 		flip_h = false
 		flip_v = false
-		collision_probe_x = turned_probe_x
-		collision_probe_y = turned_probe_y
+		collision_left = turned_collision_left
+		collision_top = turned_collision_top
+		collision_right = turned_collision_right
+		collision_bottom = turned_collision_bottom
 	elseif self.cross_spin_direction == 'right' then
 		imgid = 'crossfoe_turned'
 		flip_h = true
 		flip_v = false
-		collision_probe_x = turned_probe_x
-		collision_probe_y = turned_probe_y
+		collision_left = turned_collision_left
+		collision_top = turned_collision_top
+		collision_right = turned_collision_right
+		collision_bottom = turned_collision_bottom
 	elseif self.cross_spin_direction == 'up' then
 		imgid = 'crossfoe'
 		flip_h = false
 		flip_v = true
-		collision_probe_x = upright_probe_x
-		collision_probe_y = upright_probe_y
+		collision_left = upright_collision_left
+		collision_top = upright_collision_top
+		collision_right = upright_collision_right
+		collision_bottom = upright_collision_bottom
 	else
 		imgid = 'crossfoe'
 		flip_h = false
 		flip_v = false
-		collision_probe_x = upright_probe_x
-		collision_probe_y = upright_probe_y
+		collision_left = upright_collision_left
+		collision_top = upright_collision_top
+		collision_right = upright_collision_right
+		collision_bottom = upright_collision_bottom
 	end
 	self:set_imgid(imgid)
 	self.sprite_component.flip_h = flip_h
 	self.sprite_component.flip_v = flip_v
-	self.collision_probe_x = collision_probe_x
-	self.collision_probe_y = collision_probe_y
+	self.movement:set_local_bounds(
+		collision_left,
+		collision_top,
+		collision_right,
+		collision_bottom
+	)
 end
 
 function crossfoe:ctor()
+	self.movement = self:get_component(kinematic_movement_component)
 	self.cross_spin_direction = 'down'
 	apply_spin_state(self)
 end
@@ -62,7 +81,7 @@ end
 function crossfoe.await_takeoff(self, node_memory)
 	local player<const> = self.player
 	if player.y + player.height >= self.y
-	and player.y <= self.y + upright_hit_bottom then
+	and player.y <= self.y + upright_collision_bottom then
 		local elapsed_ticks<const> = node_memory.elapsed_ticks or 0
 		if elapsed_ticks < enemy_cross_wait_before_fly_steps then
 			node_memory.elapsed_ticks = elapsed_ticks + 1
@@ -96,22 +115,20 @@ function crossfoe.tick_flight(self, node_memory)
 
 	if (direction_mod < 0 and self.x < (player.x - player.width))
 		or (direction_mod > 0 and self.x > (player.x + (player.width * 2)))
-		or rm:has_collision_flags_at_world(
-			self.x + self.collision_probe_x,
-			self.y + self.collision_probe_y,
-			collision_flags_solid_mask
-		)
-		or self.x < 0
-		or self.x + self.sx > rm.world_width
 	then
 		self.cross_spin_direction = 'down'
-		self.x = self.x - (room_tile_size * direction_mod)
+		self.movement:move_x(rm, -(room_tile_size * direction_mod))
 		apply_spin_state(self)
 		self.castle.events:emit('crossland')
 		return bt_success
 	end
 
-	self.x = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
+	if self.movement:move_x(rm, enemy_cross_horizontal_speed_px * direction_mod) ~= 0 then
+		self.cross_spin_direction = 'down'
+		apply_spin_state(self)
+		self.castle.events:emit('crossland')
+		return bt_success
+	end
 
 	local turn_ticks = node_memory.turn_ticks
 	turn_ticks = turn_ticks - 1
@@ -176,7 +193,22 @@ function crossfoe.register()
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
+		components = {
+			enemy_base.new_collider,
+			kinematic_movement_component.factory({
+				local_left = upright_collision_left,
+				local_top = upright_collision_top,
+				local_right = upright_collision_right,
+				local_bottom = upright_collision_bottom,
+				world_left = 0,
+				world_top = room_hud_height,
+				world_right = room_width,
+				world_bottom = room_height,
+				collision_mask = collision_flags_solid_mask,
+				include_elevators = true,
+			}),
+			bt_component.factory(tree_id),
+		},
 		defaults = {
 			damage = 4,
 			max_health = 3,
