@@ -172,14 +172,26 @@ compile_by_type.selector = function(node, layout, execution_index)
 		)
 			local requested_child<const> = execution_state[processing_slot]
 			execution_state[processing_slot] = false
-			if requested_child and execution_state[lower_priority_slots[requested_child]] then
+			if requested_child then
 				local active_child<const> = execution_state[state_slot]
-				local reset_child<const> = resetters[active_child]
-				if reset_child then
-					reset_child(target, execution, execution_state)
+				local selected_child
+				for child_index = requested_child, active_child - 1 do
+					local branch<const> = branches[child_index]
+					if branch
+					and execution_state[branch.lower_priority_slot]
+					and branch.condition(execution.blackboard._values) then
+						selected_child = child_index
+						break
+					end
 				end
-				clear_lower_priority(execution_state, requested_child)
-				execution_state[state_slot] = requested_child
+				if selected_child ~= nil then
+					local reset_child<const> = resetters[active_child]
+					if reset_child then
+						reset_child(target, execution, execution_state)
+					end
+					clear_lower_priority(execution_state, selected_child)
+					execution_state[state_slot] = selected_child
+				end
 			end
 		end)
 		return function(target, execution)

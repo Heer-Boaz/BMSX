@@ -8,13 +8,18 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- at the next behaviour-tree update boundary. This mirrors UE's separation
 -- between Blackboard observation and BehaviorTreeComponent flow processing
 -- without a per-frame observer scan or dynamic listener registration.
+-- Result-change requests are resolved against the final Blackboard state at
+-- that boundary; value-change requests retain their authored restart intent.
 -- `observer_aborts` accepts `none`, `self`, `lower_priority` or `both`;
 -- `notify_observer` accepts `result_change` (the default) or `value_change`.
 
 local observer_program<const> = {}
 local result_running<const> = result.running
 local result_failure<const> = result.failure
+local allocate_slot<const> = execution_layout.allocate_slot
 local allocate_flag<const> = execution_layout.allocate_flag
+local self_result_request<const> = 1
+local self_value_request<const> = 2
 
 local abort_modes<const> = {
 	none = { false, false },
@@ -132,14 +137,15 @@ function observer_program.compile_decorators(
 		lower_priority_slot = allocate_flag(layout)
 		branch = {
 			lower_priority_slot = lower_priority_slot,
+			condition = condition,
 			queue_lower_priority = nil,
 		}
 	end
 	local self_request_slot
 	local self_processing_slot
 	if observes_self then
-		self_request_slot = allocate_flag(layout)
-		self_processing_slot = allocate_flag(layout)
+		self_request_slot = allocate_slot(layout)
+		self_processing_slot = allocate_slot(layout)
 	end
 
 	local reset
@@ -178,7 +184,10 @@ function observer_program.compile_decorators(
 			execution_state[self_processing_slot] = execution_state[self_request_slot]
 			execution_state[self_request_slot] = false
 		end, function(target, execution, execution_state)
-			if execution_state[self_processing_slot] then
+			local request<const> = execution_state[self_processing_slot]
+			execution_state[self_processing_slot] = false
+			if request == self_value_request
+			or (request == self_result_request and not condition(execution.blackboard._values)) then
 				reset(target, execution, execution_state)
 			end
 		end)
@@ -194,12 +203,22 @@ function observer_program.compile_decorators(
 			register_blackboard_observer(layout, slot, function(execution, values)
 				local execution_state<const> = execution._execution_state
 				if execution_state[active_slot] then
-					if observes_self_value or observes_self_result and not condition(values) then
-						execution_state[self_request_slot] = true
+					if observes_self_value then
+						execution_state[self_request_slot] = self_value_request
 						execution._execution_request_pending = true
+					elseif observes_self_result
+					and execution_state[self_request_slot] ~= self_value_request then
+						if condition(values) then
+							execution_state[self_request_slot] = false
+						else
+							execution_state[self_request_slot] = self_result_request
+							execution._execution_request_pending = true
+						end
 					end
-				elseif observes_lower and execution_state[lower_priority_slot] and condition(values) then
-					branch.queue_lower_priority(execution)
+				elseif observes_lower and execution_state[lower_priority_slot] then
+					if condition(values) then
+						branch.queue_lower_priority(execution)
+					end
 				end
 			end)
 		end
