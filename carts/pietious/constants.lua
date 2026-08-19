@@ -87,12 +87,19 @@ damage_knockup_px = 2
 damage_enemy_contact_damage = 2
 damage_hit_recovery_frames = 8
 damage_death_frames = 40
-enemy_mijter_wait_takeoff_min_steps = 100
-enemy_mijter_wait_takeoff_max_steps = 200
-enemy_mijter_turn_min_steps = 20
-enemy_mijter_turn_max_steps = 40
-enemy_mijter_room_entry_lock_steps = 2
-enemy_mijter_speed_px = 2
+-- Original Bat state at 0x7d5f-0x7e14: 0x50 hanging updates,
+-- 0x0a takeoff updates, random 0x60..0x7f flight and 0x10..0x1f heading
+-- intervals, with sprite-origin bounds X=0x08..0xe8 and Y=0x28..0xb0.
+enemy_mijter_hang_steps = 80
+enemy_mijter_takeoff_steps = 10
+enemy_mijter_flight_min_steps = 96
+enemy_mijter_flight_max_steps = 127
+enemy_mijter_direction_min_steps = 16
+enemy_mijter_direction_max_steps = 31
+enemy_mijter_min_x = room_tile_size
+enemy_mijter_max_x = room_width - room_tile_size3
+enemy_mijter_min_y = room_hud_height + room_tile_size
+enemy_mijter_max_y = room_height - room_tile_size2
 enemy_boek_wait_open_steps = 100
 enemy_boek_wait_close_steps = 100
 enemy_boek_spawn_paper_steps = 20

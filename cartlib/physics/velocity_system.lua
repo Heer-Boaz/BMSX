@@ -1,4 +1,5 @@
 local velocity<const> = require('cartlib/velocity')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local velocity_component<const> = require('cartlib/physics/velocity_component')
 local base_system<const> = require('cartlib/world/base_system')
 local clock<const> = require('cartlib/clock')
@@ -9,21 +10,33 @@ velocity_system.__index = velocity_system
 setmetatable(velocity_system, { __index = base_system })
 velocity_system.tick = {
 	group = tick_group.input,
-	priority = 5,
+	priority = -5,
 	clock_source = clock.gameplay,
 	method = 'update',
 }
 
 function velocity_system.new(world)
 	local self<const> = setmetatable(base_system.new(velocity_system.tick), velocity_system)
-	self._component_view = world:active_tick_view(velocity_component, clock.gameplay)
+	self._rational_component_view = world:active_tick_view(velocity_component, clock.gameplay)
+	self._fixed_point_component_view = world:active_tick_view(fixed_point_velocity_component, clock.gameplay)
 	return self
 end
 
 function velocity_system:update()
-	local components<const> = self._component_view.components
+	local components<const> = self._rational_component_view.components
 	for index = 1, #components do
 		velocity.move_with_velocity(components[index].parent)
+	end
+	local fixed_point_components<const> = self._fixed_point_component_view.components
+	for index = 1, #fixed_point_components do
+		local component<const> = fixed_point_components[index]
+		local parent<const> = component.parent
+		local x<const> = component.fraction_x + component.velocity_x
+		local y<const> = component.fraction_y + component.velocity_y
+		component.fraction_x = x & 0xff
+		component.fraction_y = y & 0xff
+		parent.x = parent.x + (x >> 8)
+		parent.y = parent.y + (y >> 8)
 	end
 end
 

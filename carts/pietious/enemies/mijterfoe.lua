@@ -5,155 +5,166 @@ local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
 
-local new_random_direction<const> = function(self)
-	local horizontal = 0
-	local vertical = 0
-	while horizontal == 0 and vertical == 0 do
-		horizontal = math.random(-1, 1)
-		vertical = math.random(-1, 1)
-	end
-	self.horizontal_dir_mod = horizontal
-	self.vertical_dir_mod = vertical
+-- The original Bat's sixteen signed Q8.8 flight vectors, decoded from the
+-- tables at 0x7e49 and 0x7e69 and multiplied by the enemy's speed factor 2.
+local velocity_x_by_direction<const> = {
+	512, 442, 362, 256, 0, -256, -362, -442,
+	-512, -442, -362, -256, 0, 256, 362, 442,
+}
+local velocity_y_by_direction<const> = {
+	0, -256, -362, -442, -512, -442, -362, -256,
+	0, 256, 362, 442, 512, 442, 362, 256,
+}
+local visual_index_by_direction<const> = {
+	1, 2, 2, 3, 3, 4, 4, 5,
+	5, 6, 6, 7, 7, 8, 8, 1,
+}
+local direction_visuals<const> = {
+	{ imgid = 'meijter_r', flip_h = false, flip_v = false },
+	{ imgid = 'meijter_dr', flip_h = false, flip_v = true },
+	{ imgid = 'meijter_up', flip_h = false, flip_v = false },
+	{ imgid = 'meijter_dr', flip_h = true, flip_v = true },
+	{ imgid = 'meijter_r', flip_h = true, flip_v = false },
+	{ imgid = 'meijter_dr', flip_h = true, flip_v = false },
+	{ imgid = 'meijter_up', flip_h = false, flip_v = true },
+	{ imgid = 'meijter_dr', flip_h = false, flip_v = false },
+}
+
+local set_direction_sprite<const> = function(self, direction_index)
+	self.direction_index = direction_index
+	local visual<const> = direction_visuals[visual_index_by_direction[direction_index + 1]]
+	self:set_imgid(visual.imgid)
+	local sprite<const> = self.sprite_component
+	sprite.flip_h = visual.flip_h
+	sprite.flip_v = visual.flip_v
 end
 
-local set_takeoff_heading<const> = function(self)
-	if self.direction == 'up' then
-		self.horizontal_dir_mod = 0
-		self.vertical_dir_mod = -1
-	elseif self.direction == 'right' then
-		self.horizontal_dir_mod = 1
-		self.vertical_dir_mod = 0
-	elseif self.direction == 'down' then
-		self.horizontal_dir_mod = 0
-		self.vertical_dir_mod = 1
+local advance_flight_direction<const> = function(self, node_memory)
+	local motion<const> = self.motion
+	local direction_index = self.direction_index
+	local reflected = false
+	local velocity_y<const> = motion.velocity_y
+	if velocity_y >= 0 then
+		if self.y >= enemy_mijter_max_y then
+			motion.velocity_y = -velocity_y
+			direction_index = (-direction_index) & 0x0f
+			reflected = true
+		end
+	elseif self.y < enemy_mijter_min_y then
+		motion.velocity_y = -velocity_y
+		direction_index = (-direction_index) & 0x0f
+		reflected = true
+	end
+
+	local velocity_x<const> = motion.velocity_x
+	if velocity_x >= 0 then
+		if self.x >= enemy_mijter_max_x then
+			motion.velocity_x = -velocity_x
+			direction_index = (8 - direction_index) & 0x0f
+			reflected = true
+		end
+	elseif self.x < enemy_mijter_min_x then
+		motion.velocity_x = -velocity_x
+		direction_index = (8 - direction_index) & 0x0f
+		reflected = true
+	end
+
+	local direction_ticks
+	if reflected then
+		direction_ticks = enemy_mijter_direction_min_steps
+		set_direction_sprite(self, direction_index)
 	else
-		self.horizontal_dir_mod = -1
-		self.vertical_dir_mod = 0
+		direction_ticks = node_memory.direction_ticks
 	end
-end
-
-local player_triggered_takeoff<const> = function(self, player)
-	local player_left<const> = player.x
-	local player_top<const> = player.y
-	local player_right<const> = player.x + player.width
-	local player_bottom<const> = player.y + player.height
-	local enemy_left<const> = self.x + 2
-	local enemy_top<const> = self.y + 2
-	local enemy_right<const> = self.x + 14
-	local enemy_bottom<const> = self.y + 14
-	local overlap_x<const> = player_right >= enemy_left and player_left <= enemy_right
-	local overlap_y<const> = player_bottom >= enemy_top and player_top <= enemy_bottom
-
-	if self.direction == 'up' then
-		return overlap_x and player_top < enemy_top
+	direction_ticks = direction_ticks - 1
+	if direction_ticks == 0 then
+		direction_ticks = math.random(
+			enemy_mijter_direction_min_steps,
+			enemy_mijter_direction_max_steps
+		)
+		direction_index = math.random(16) - 1
+		motion.velocity_x = velocity_x_by_direction[direction_index + 1]
+		motion.velocity_y = velocity_y_by_direction[direction_index + 1]
+		set_direction_sprite(self, direction_index)
 	end
-	if self.direction == 'right' then
-		return overlap_y and player_left > enemy_right
-	end
-	if self.direction == 'down' then
-		return overlap_x and player_top > enemy_bottom
-	end
-	return overlap_y and player_right < enemy_left
+	node_memory.direction_ticks = direction_ticks
 end
 
 function mijterfoe:ctor()
-	self.horizontal_dir_mod = 0
-	self.vertical_dir_mod = 0
-	self:change_sprite_on_direction()
+	self.motion = self:get_component(fixed_point_velocity_component)
+	set_direction_sprite(self, 12)
 end
 
-function mijterfoe.change_sprite_on_direction(self)
-	local imgid
-	local flip_h
-	local flip_v
-	local h<const> = self.horizontal_dir_mod
-	local v<const> = self.vertical_dir_mod
-	if v == -1 and h == 0 then
-		imgid = 'meijter_up'
-		flip_h = false
-		flip_v = false
-	elseif v == -1 and h == 1 then
-		imgid = 'meijter_dr'
-		flip_h = false
-		flip_v = true
-	elseif v == 0 and h == 1 then
-		imgid = 'meijter_r'
-		flip_h = false
-		flip_v = false
-	elseif v == 1 and h == 1 then
-		imgid = 'meijter_dr'
-		flip_h = false
-		flip_v = false
-	elseif v == 1 and h == 0 then
-		imgid = 'meijter_up'
-		flip_h = false
-		flip_v = true
-	elseif v == 1 and h == -1 then
-		imgid = 'meijter_dr'
-		flip_h = true
-		flip_v = false
-	elseif v == 0 and h == -1 then
-		imgid = 'meijter_r'
-		flip_h = true
-		flip_v = false
-	else
-		imgid = 'meijter_dr'
-		flip_h = true
-		flip_v = true
-	end
-	self:set_imgid(imgid)
-	self.sprite_component.flip_h = flip_h
-	self.sprite_component.flip_v = flip_v
+function mijterfoe.initialize_direction_cycle(_self, execution)
+	execution.blackboard:set(
+		'direction_ticks',
+		math.random(enemy_mijter_direction_min_steps, enemy_mijter_direction_max_steps)
+	)
+	return bt_success
 end
 
-function mijterfoe.await_player_takeoff(self)
-	if player_triggered_takeoff(self, self.player) then
+function mijterfoe.execute_seek_ceiling(self, node_memory, execution)
+	node_memory.direction_ticks = execution.blackboard:get('direction_ticks')
+	return mijterfoe.tick_seek_ceiling(self, node_memory)
+end
+
+function mijterfoe.tick_seek_ceiling(self, node_memory)
+	local rm<const> = self.room
+	local x<const> = self.x
+	local y<const> = self.y
+	local tile_x<const>, tile_y<const> = rm:world_to_tile(x, y)
+	local _<const>, ceiling_tile_y<const> = rm:world_to_tile(x, y - 1)
+	if rm:has_collision_flags_at_tile(tile_x, ceiling_tile_y, collision_flags_solid_mask)
+	and rm:has_collision_flags_at_tile(tile_x + 1, ceiling_tile_y, collision_flags_solid_mask)
+	and not rm:has_collision_flags_at_tile(tile_x, tile_y, collision_flags_solid_mask)
+	and not rm:has_collision_flags_at_tile(tile_x + 1, tile_y, collision_flags_solid_mask)
+	and not rm:has_collision_flags_at_tile(tile_x, tile_y + 1, collision_flags_solid_mask)
+	and not rm:has_collision_flags_at_tile(tile_x + 1, tile_y + 1, collision_flags_solid_mask)
+	then
+		local motion<const> = self.motion
+		motion.velocity_x = 0
+		motion.velocity_y = 0
+		set_direction_sprite(self, 12)
 		return bt_success
 	end
+	advance_flight_direction(self, node_memory)
 	return bt_running
 end
 
-function mijterfoe.execute_flight(self, node_memory)
-	set_takeoff_heading(self)
-	self:change_sprite_on_direction()
-	node_memory.next_takeoff_ticks = math.random(
-		enemy_mijter_wait_takeoff_min_steps,
-		enemy_mijter_wait_takeoff_max_steps
+function mijterfoe.begin_takeoff(self)
+	local motion<const> = self.motion
+	motion.velocity_x = 0
+	motion.velocity_y = 256
+	set_direction_sprite(self, 12)
+	return bt_success
+end
+
+function mijterfoe.execute_free_flight(_self, node_memory)
+	node_memory.flight_ticks = math.random(
+		enemy_mijter_flight_min_steps,
+		enemy_mijter_flight_max_steps
 	)
-	node_memory.turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
-	self.events:emit('takeoff')
+	node_memory.direction_ticks = math.random(
+		enemy_mijter_direction_min_steps,
+		enemy_mijter_direction_max_steps
+	)
 	return bt_running
 end
 
-function mijterfoe.tick_flight(self, node_memory)
-	local turn_ticks = node_memory.turn_ticks
-	turn_ticks = turn_ticks - 1
-	if turn_ticks <= 0 then
-		new_random_direction(self)
-		turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
-		self:change_sprite_on_direction()
+function mijterfoe.tick_free_flight(self, node_memory, execution)
+	local flight_ticks<const> = node_memory.flight_ticks - 1
+	if flight_ticks == 0 then
+		execution.blackboard:set('direction_ticks', node_memory.direction_ticks)
+		return bt_success
 	end
-	node_memory.turn_ticks = turn_ticks
-
-	if self.x <= 0 then
-		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= self.room.world_width then
-		self.horizontal_dir_mod = -1
-	end
-	if self.y <= self.room.world_top then
-		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= self.room.world_height then
-		self.vertical_dir_mod = -1
-	end
-
-	self:change_sprite_on_direction()
-	self.x = self.x + (enemy_mijter_speed_px * self.horizontal_dir_mod)
-	self.y = self.y + (enemy_mijter_speed_px * self.vertical_dir_mod)
+	node_memory.flight_ticks = flight_ticks
+	advance_flight_direction(self, node_memory)
 	return bt_running
 end
 
@@ -170,32 +181,54 @@ end
 function mijterfoe.register()
 	local tree_id<const> = 'enemy_mijterfoe'
 	behaviour_tree_library.register(tree_id, {
+		blackboard = {
+			{
+				key = 'direction_ticks',
+				initial_value = 0,
+			},
+		},
 		root = {
 			type = 'sequence',
 			children = {
 				{
-					type = 'wait',
-					duration_ticks = enemy_mijter_room_entry_lock_steps,
+					type = 'task',
+					execute = mijterfoe.initialize_direction_cycle,
 				},
 				{
-					type = 'parallel_one',
-					children = {
-						{
-							type = 'task',
-							tick = mijterfoe.await_player_takeoff,
-						},
-						{
-							type = 'wait',
-							minimum_duration_ticks = enemy_mijter_wait_takeoff_min_steps - 1,
-							maximum_duration_ticks = enemy_mijter_wait_takeoff_max_steps - 1,
+					type = 'loop',
+					child = {
+						type = 'sequence',
+						children = {
+							{
+								type = 'task',
+								node_memory = true,
+								execute = mijterfoe.execute_seek_ceiling,
+								tick = mijterfoe.tick_seek_ceiling,
+							},
+							{
+								type = 'wait',
+								duration_ticks = enemy_mijter_hang_steps,
+							},
+							{
+								type = 'task',
+								execute = mijterfoe.begin_takeoff,
+							},
+							{
+								type = 'wait',
+								duration_ticks = enemy_mijter_takeoff_steps,
+							},
+							{
+								type = 'task',
+								node_memory = true,
+								execute = mijterfoe.execute_free_flight,
+								tick = mijterfoe.tick_free_flight,
+							},
+							{
+								type = 'wait',
+								duration_ticks = 1,
+							},
 						},
 					},
-				},
-				{
-					type = 'task',
-					node_memory = true,
-					execute = mijterfoe.execute_flight,
-					tick = mijterfoe.tick_flight,
 				},
 			},
 		},
@@ -204,18 +237,16 @@ function mijterfoe.register()
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
+		components = {
+			enemy_base.new_collider,
+			fixed_point_velocity_component.new,
+			bt_component.factory(tree_id),
+		},
 		defaults = {
 			damage = 2,
 			max_health = 1,
 			health = 1,
 			dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
-			direction = 'right',
 			enemy_kind = 'mijterfoe',
 		},
 	})
