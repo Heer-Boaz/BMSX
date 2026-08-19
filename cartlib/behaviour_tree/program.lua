@@ -597,6 +597,10 @@ compile_by_type.set_blackboard = blackboard_program.compile_set
 compile_by_type.add_blackboard = blackboard_program.compile_add
 
 compile_node = function(node, layout)
+	local key_selectors<const> = node.blackboard_key_selectors
+	if key_selectors ~= nil then
+		blackboard.resolve_key_selectors(key_selectors, layout.blackboard_layout)
+	end
 	local execution_index<const> = execution_layout.allocate_execution_index(layout)
 	local evaluate, operand, reset = compile_by_type[node.type](node, layout, execution_index)
 	local services<const> = node.services

@@ -6,6 +6,8 @@
 local blackboard<const> = {}
 local blackboard_instance<const> = {}
 blackboard_instance.__index = blackboard_instance
+local selector_name<const> = 1
+local selector_slot<const> = 2
 
 local set_slot<const> = function(self, slot, value)
 	self._values[slot] = value
@@ -38,6 +40,21 @@ function blackboard.compile(entries)
 		slots_by_key = slots_by_key,
 		initial_values = initial_values,
 	}
+end
+
+-- A key selector retains its semantic name for program admission and its dense
+-- slot for execution. Behaviour nodes declare the selectors they own; program
+-- compilation resolves them once, as UE resolves FBlackboardKeySelector fields
+-- when a behaviour-tree asset is initialized.
+function blackboard.key_selector(key)
+	return { key }
+end
+
+function blackboard.resolve_key_selectors(selectors, layout)
+	for index = 1, #selectors do
+		local selector<const> = selectors[index]
+		selector[selector_slot] = layout.slots_by_key[selector[selector_name]]
+	end
 end
 
 function blackboard.new()
@@ -82,12 +99,20 @@ function blackboard_instance:rebind(layout, execution)
 	end
 end
 
-function blackboard_instance:get(key)
-	return self._values[self._layout.slots_by_key[key]]
+function blackboard_instance:reset()
+	local layout<const> = self._layout
+	local initial_values<const> = layout.initial_values
+	for slot = 1, #layout.keys do
+		self:_set_slot(slot, initial_values[slot])
+	end
 end
 
-function blackboard_instance:set(key, value)
-	self:_set_slot(self._layout.slots_by_key[key], value)
+function blackboard_instance:get(selector)
+	return self._values[selector[selector_slot]]
+end
+
+function blackboard_instance:set(selector, value)
+	self:_set_slot(selector[selector_slot], value)
 end
 
 return blackboard

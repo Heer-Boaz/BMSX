@@ -1,5 +1,6 @@
 local prefab<const> = require('cartlib/world/prefab')
 require('constants')
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
@@ -10,6 +11,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
+local direction_ticks_key<const> = blackboard.key_selector('direction_ticks')
 
 -- The original Bat's sixteen signed Q8.8 flight vectors, decoded from the
 -- tables at 0x7e49 and 0x7e69 and multiplied by the enemy's speed factor 2.
@@ -103,14 +105,14 @@ end
 
 function mijterfoe.initialize_direction_cycle(_self, execution)
 	execution.blackboard:set(
-		'direction_ticks',
+		direction_ticks_key,
 		math.random(enemy_mijter_direction_min_steps, enemy_mijter_direction_max_steps)
 	)
 	return bt_success
 end
 
 function mijterfoe.execute_seek_ceiling(self, node_memory, execution)
-	node_memory.direction_ticks = execution.blackboard:get('direction_ticks')
+	node_memory.direction_ticks = execution.blackboard:get(direction_ticks_key)
 	return mijterfoe.tick_seek_ceiling(self, node_memory)
 end
 
@@ -160,7 +162,7 @@ end
 function mijterfoe.tick_free_flight(self, node_memory, execution)
 	local flight_ticks<const> = node_memory.flight_ticks - 1
 	if flight_ticks == 0 then
-		execution.blackboard:set('direction_ticks', node_memory.direction_ticks)
+		execution.blackboard:set(direction_ticks_key, node_memory.direction_ticks)
 		return bt_success
 	end
 	node_memory.flight_ticks = flight_ticks
@@ -192,6 +194,7 @@ function mijterfoe.register()
 			children = {
 				{
 					type = 'task',
+					blackboard_key_selectors = { direction_ticks_key },
 					execute = mijterfoe.initialize_direction_cycle,
 				},
 				{
@@ -201,6 +204,7 @@ function mijterfoe.register()
 						children = {
 							{
 								type = 'task',
+								blackboard_key_selectors = { direction_ticks_key },
 								node_memory = true,
 								execute = mijterfoe.execute_seek_ceiling,
 								tick = mijterfoe.tick_seek_ceiling,
@@ -219,6 +223,7 @@ function mijterfoe.register()
 							},
 							{
 								type = 'task',
+								blackboard_key_selectors = { direction_ticks_key },
 								node_memory = true,
 								execute = mijterfoe.execute_free_flight,
 								tick = mijterfoe.tick_free_flight,

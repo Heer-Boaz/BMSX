@@ -157,9 +157,7 @@ function world1_daemon:reset_encounter()
 	self.dangerous = false
 	self.visible = false
 	self.death_stage = 1
-	local blackboard<const> = behaviour.blackboard
-	blackboard:set('first_run', true)
-	blackboard:set('no_spawn_run_count', 0)
+	behaviour.blackboard:reset()
 	self:set_imgid(walk_image_1)
 	self.sprite_component.offset_y = 0
 end
