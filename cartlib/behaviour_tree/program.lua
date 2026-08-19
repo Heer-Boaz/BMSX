@@ -478,6 +478,66 @@ compile_by_type.weighted_random_selector = function(node, layout)
 	end, nil, reset
 end
 
+-- A Loop is authored flow control, not an enemy-local counter hidden inside a
+-- task. Successful iterations reset the child before immediately entering the
+-- next search, matching the loop/repeat decorators used by production BT
+-- runtimes. A missing count is an intentional infinite loop; its authored
+-- child must eventually return running, just like any other latent BT branch.
+compile_by_type.loop = function(node, layout)
+	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
+	local count<const> = node.count
+	if count == nil then
+		local reset<const> = function(target, execution, execution_state)
+			if reset_child ~= nil then
+				reset_child(target, execution, execution_state)
+			end
+		end
+		return function(target, execution)
+			while true do
+				local status<const> = evaluate(target, execution, operand)
+				if status ~= result_success then
+					if status == result_failure and reset_child ~= nil then
+						reset_child(target, execution, execution._execution_state)
+					end
+					return status
+				end
+				if reset_child ~= nil then
+					reset_child(target, execution, execution._execution_state)
+				end
+			end
+		end, nil, reset
+	end
+
+	local completed_slot<const> = allocate_state_slot(layout)
+	local reset<const> = function(target, execution, execution_state)
+		execution_state[completed_slot] = nil
+		if reset_child ~= nil then
+			reset_child(target, execution, execution_state)
+		end
+	end
+	return function(target, execution)
+		local execution_state<const> = execution._execution_state
+		local completed = execution_state[completed_slot] or 0
+		while completed < count do
+			local status<const> = evaluate(target, execution, operand)
+			if status == result_running then
+				execution_state[completed_slot] = completed
+				return result_running
+			end
+			if reset_child ~= nil then
+				reset_child(target, execution, execution_state)
+			end
+			if status == result_failure then
+				execution_state[completed_slot] = nil
+				return result_failure
+			end
+			completed = completed + 1
+		end
+		execution_state[completed_slot] = nil
+		return result_success
+	end, nil, reset
+end
+
 compile_by_type.limit = function(node, layout)
 	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
 	local limit<const> = node.limit
@@ -501,6 +561,23 @@ compile_by_type.wait = function(node, layout)
 	local state_slot<const> = allocate_state_slot(layout)
 	local reset<const> = function(_target, _execution, execution_state)
 		execution_state[state_slot] = nil
+	end
+	if duration_ticks == nil then
+		local minimum_duration_ticks<const> = node.minimum_duration_ticks
+		local maximum_duration_ticks<const> = node.maximum_duration_ticks
+		return function(_target, execution)
+			local execution_state<const> = execution._execution_state
+			local remaining = execution_state[state_slot]
+			if remaining == nil then
+				remaining = math.random(minimum_duration_ticks, maximum_duration_ticks)
+			end
+			if remaining > 0 then
+				execution_state[state_slot] = remaining - 1
+				return result_running
+			end
+			execution_state[state_slot] = nil
+			return result_success
+		end, nil, reset
 	end
 	return function(_target, execution)
 		local execution_state<const> = execution._execution_state
