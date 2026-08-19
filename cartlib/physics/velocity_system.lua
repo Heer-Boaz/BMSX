@@ -10,13 +10,20 @@ velocity_system.__index = velocity_system
 setmetatable(velocity_system, { __index = base_system })
 velocity_system.tick = {
 	group = tick_group.input,
-	priority = -5,
+	priority = 5,
 	clock_source = clock.gameplay,
 	method = 'update',
+}
+velocity_system.fixed_point_tick = {
+	group = tick_group.input,
+	priority = -5,
+	clock_source = clock.gameplay,
+	method = 'update_fixed_point',
 }
 
 function velocity_system.new(world)
 	local self<const> = setmetatable(base_system.new(velocity_system.tick), velocity_system)
+	self:add_tick_function(velocity_system.fixed_point_tick)
 	self._rational_component_view = world:active_tick_view(velocity_component, clock.gameplay)
 	self._fixed_point_component_view = world:active_tick_view(fixed_point_velocity_component, clock.gameplay)
 	return self
@@ -27,6 +34,13 @@ function velocity_system:update()
 	for index = 1, #components do
 		velocity.move_with_velocity(components[index].parent)
 	end
+end
+
+-- Fixed-point movers advance before their owner logic consumes the new
+-- position, matching MovementComponent's tick-before-owner ordering. The
+-- established rational projectile lane remains after behaviour evaluation;
+-- adding Q8.8 motion must not silently reschedule that existing contract.
+function velocity_system:update_fixed_point()
 	local fixed_point_components<const> = self._fixed_point_component_view.components
 	for index = 1, #fixed_point_components do
 		local component<const> = fixed_point_components[index]
