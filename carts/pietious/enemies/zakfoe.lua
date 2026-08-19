@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -10,84 +11,55 @@ local zakfoe<const> = {}
 zakfoe.__index = zakfoe
 
 function zakfoe:ctor()
-	self.zak_state = 'prepare'
-	self.current_vertical_speed = 0
-	self.zak_ground_y = self.y
 	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
-function zakfoe.bt_tick(self, node_memory)
+function zakfoe.execute_jump(self, node_memory)
+	node_memory.vertical_speed = enemy_zak_vertical_speed_start
+	node_memory.ground_y = self.y
+	node_memory.remaining_ticks = enemy_zak_jump_steps
+	self:set_imgid('zakfoe_jump')
+	self.sprite_component.flip_h = self.direction == 'left'
+	return bt_running
+end
 
-	if self.zak_state == 'prepare' then
-		local prepare_ticks = node_memory.zak_prepare_ticks or enemy_zak_prepare_jump_steps
-		prepare_ticks = prepare_ticks - 1
-		if prepare_ticks > 0 then
-			node_memory.zak_prepare_ticks = prepare_ticks
-			return bt_running
+function zakfoe.tick_jump(self, node_memory)
+	local direction_mod<const> = self.direction == 'right' and 1 or -1
+	self.x = self.x + (enemy_zak_horizontal_speed_px * direction_mod)
+	self.y = self.y + node_memory.vertical_speed
+	node_memory.vertical_speed = node_memory.vertical_speed + enemy_zak_vertical_speed_step
+
+	local rm<const> = self.room
+	if self.direction == 'left' then
+		if self.x < 0
+			or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
+			or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
+		then
+			self.direction = 'right'
 		end
-		node_memory.zak_prepare_ticks = nil
-		self.current_vertical_speed = enemy_zak_vertical_speed_start
-		self.zak_ground_y = self.y
-		self.zak_state = 'jump'
-		node_memory.zak_jump_ticks = enemy_zak_jump_steps
-		self:set_imgid('zakfoe_jump')
-		self.sprite_component.flip_h = self.direction == 'left'
-		return bt_running
+	elseif self.x + 14 >= rm.world_width
+		or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
+		or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
+	then
+		self.direction = 'left'
 	end
 
-	if self.zak_state == 'jump' then
-		local jump_ticks = node_memory.zak_jump_ticks or enemy_zak_jump_steps
-
-		local direction_mod<const> = self.direction == 'right' and 1 or -1
-		self.x = self.x + (enemy_zak_horizontal_speed_px * direction_mod)
-		self.y = self.y + self.current_vertical_speed
-		self.current_vertical_speed = self.current_vertical_speed + enemy_zak_vertical_speed_step
-
-		if self.direction == 'left' then
-			local rm<const> = self.room
-			if self.x < 0
-				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
-				or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
-			then
-				self.direction = 'right'
-			end
-		else
-			local rm<const> = self.room
-			if self.x + 14 >= rm.world_width
-				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
-				or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
-			then
-				self.direction = 'left'
-			end
-		end
-
-		jump_ticks = jump_ticks - 1
-		if jump_ticks > 0 then
-			node_memory.zak_jump_ticks = jump_ticks
-			return bt_running
-		end
-		node_memory.zak_jump_ticks = nil
-		self.y = self.zak_ground_y
-		self.zak_state = 'recovery'
-		self:set_imgid('zakfoe_recover')
-		self.sprite_component.flip_h = self.direction == 'left'
-		node_memory.zak_recovery_ticks = enemy_zak_recovery_steps
+	local remaining_ticks<const> = node_memory.remaining_ticks - 1
+	if remaining_ticks > 0 then
+		node_memory.remaining_ticks = remaining_ticks
 		return bt_running
 	end
+	self.y = node_memory.ground_y
+	self:set_imgid('zakfoe_recover')
+	self.sprite_component.flip_h = self.direction == 'left'
+	return bt_success
+end
 
-	local recovery_ticks = node_memory.zak_recovery_ticks or enemy_zak_recovery_steps
-	recovery_ticks = recovery_ticks - 1
-	if recovery_ticks > 0 then
-		node_memory.zak_recovery_ticks = recovery_ticks
-		return bt_running
-	end
-	node_memory.zak_recovery_ticks = nil
-	self.zak_state = 'prepare'
+function zakfoe.finish_recovery(self)
 	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
-	node_memory.zak_prepare_ticks = enemy_zak_prepare_jump_steps
-	return bt_running
+	return bt_success
 end
 
 function zakfoe.choose_drop_type(self)
@@ -106,9 +78,27 @@ function zakfoe.register()
 	local tree_id<const> = 'enemy_zakfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = zakfoe.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_zak_prepare_jump_steps - 1,
+				},
+				{
+					type = 'task',
+					node_memory = true,
+					execute = zakfoe.execute_jump,
+					tick = zakfoe.tick_jump,
+				},
+				{
+					type = 'wait',
+					duration_ticks = enemy_zak_recovery_steps,
+				},
+				{
+					type = 'task',
+					execute = zakfoe.finish_recovery,
+				},
+			},
 		},
 	})
 	prefab.define({

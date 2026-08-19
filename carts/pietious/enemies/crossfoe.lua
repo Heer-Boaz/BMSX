@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -36,62 +37,48 @@ local apply_spin_visual<const> = function(self)
 end
 
 function crossfoe:ctor()
-	self.cross_state = 'waiting'
 	self.cross_spin_direction = 'down'
 	apply_spin_visual(self)
 end
 
-function crossfoe.bt_tick_waiting(self, node_memory)
+function crossfoe.execute_flight(self, node_memory)
 	local player<const> = self.player
-	apply_spin_visual(self)
-	local wait_ticks = node_memory.cross_wait_ticks or enemy_cross_wait_before_fly_steps
-	wait_ticks = wait_ticks - 1
-	if wait_ticks > 0 then
-		node_memory.cross_wait_ticks = wait_ticks
-		return bt_running
-	end
-
-	node_memory.cross_wait_ticks = enemy_cross_wait_before_fly_steps
-	node_memory.cross_turn_ticks = enemy_cross_turn_steps
 	if player.x < self.x then
-		self.cross_state = 'flying_left'
+		node_memory.direction_mod = -1
 	else
-		self.cross_state = 'flying_right'
+		node_memory.direction_mod = 1
 	end
+	node_memory.turn_ticks = enemy_cross_turn_steps
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
 	self.castle.events:emit('cross')
 	return bt_running
 end
 
-function crossfoe.bt_tick_flying(self, node_memory)
+function crossfoe.tick_flight(self, node_memory)
 	local player<const> = self.player
-	apply_spin_visual(self)
-	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
+	local direction_mod<const> = node_memory.direction_mod
 	local next_x<const> = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
 	local next_left<const> = next_x
 	local next_right<const> = next_x + self.sx
 
-	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
-		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
+	if (direction_mod < 0 and self.x < (player.x - player.width))
+		or (direction_mod > 0 and self.x > (player.x + (player.width * 2)))
 		or next_left < 0
 		or next_right > self.room.world_width
 	then
-		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
 		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
-		node_memory.cross_wait_ticks = enemy_cross_wait_before_fly_steps
-		node_memory.cross_turn_ticks = enemy_cross_turn_steps
 		self.castle.events:emit('crossland')
-		return bt_running
+		return bt_success
 	end
 
 	self.x = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
 
-	local turn_ticks = node_memory.cross_turn_ticks or enemy_cross_turn_steps
+	local turn_ticks = node_memory.turn_ticks
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
-		node_memory.cross_turn_ticks = turn_ticks
+		node_memory.turn_ticks = turn_ticks
 		return bt_running
 	end
 
@@ -110,15 +97,13 @@ function crossfoe.bt_tick_flying(self, node_memory)
 		self.x = self.x + 4
 	end
 	apply_spin_visual(self)
-	node_memory.cross_turn_ticks = turn_ticks
+	node_memory.turn_ticks = turn_ticks
 	return bt_running
 end
 
-function crossfoe.bt_tick(self, node_memory)
-	if self.cross_state == 'waiting' then
-		return crossfoe.bt_tick_waiting(self, node_memory)
-	end
-	return crossfoe.bt_tick_flying(self, node_memory)
+function crossfoe.finish_landing(self)
+	apply_spin_visual(self)
+	return bt_success
 end
 
 function crossfoe.choose_drop_type(_self)
@@ -135,9 +120,39 @@ function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = crossfoe.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_cross_wait_before_fly_steps - 1,
+				},
+				{
+					type = 'loop',
+					child = {
+						type = 'sequence',
+						children = {
+							{
+								type = 'task',
+								node_memory = true,
+								execute = crossfoe.execute_flight,
+								tick = crossfoe.tick_flight,
+							},
+							{
+								type = 'wait',
+								duration_ticks = 1,
+							},
+							{
+								type = 'task',
+								execute = crossfoe.finish_landing,
+							},
+							{
+								type = 'wait',
+								duration_ticks = enemy_cross_wait_before_fly_steps - 1,
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 	prefab.define({

@@ -2,6 +2,7 @@ local prefab<const> = require('cartlib/world/prefab')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
+local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local enemy_base<const> = require('enemies/enemy_base')
@@ -60,21 +61,9 @@ local player_triggered_takeoff<const> = function(self, player)
 	return overlap_y and player_right < enemy_left
 end
 
-local start_flying<const> = function(self, node_memory)
-	set_takeoff_heading(self)
-	self.mijter_state = 'flying'
-	self:change_sprite_on_direction()
-	node_memory.mijter_takeoff_ticks = math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
-	node_memory.mijter_turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
-	self.events:emit('takeoff')
-	return bt_running
-end
-
 function mijterfoe:ctor()
-	self.mijter_state = 'waiting'
 	self.horizontal_dir_mod = 0
 	self.vertical_dir_mod = 0
-	self.mijter_entry_lock_ticks = enemy_mijter_room_entry_lock_steps
 	self:change_sprite_on_direction()
 end
 
@@ -122,37 +111,34 @@ function mijterfoe.change_sprite_on_direction(self)
 	self.sprite_component.flip_v = flip_v
 end
 
-function mijterfoe.bt_tick_waiting(self, node_memory)
-	local entry_lock<const> = node_memory.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
-	if entry_lock > 0 then
-		node_memory.mijter_entry_lock_ticks = entry_lock - 1
-		return bt_running
+function mijterfoe.await_player_takeoff(self)
+	if player_triggered_takeoff(self, self.player) then
+		return bt_success
 	end
-	node_memory.mijter_entry_lock_ticks = 0
-
-	local player<const> = self.player
-	if player_triggered_takeoff(self, player) then
-		return start_flying(self, node_memory)
-	end
-
-	local takeoff_ticks = node_memory.mijter_takeoff_ticks or math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
-	takeoff_ticks = takeoff_ticks - 1
-	if takeoff_ticks > 0 then
-		node_memory.mijter_takeoff_ticks = takeoff_ticks
-		return bt_running
-	end
-	return start_flying(self, node_memory)
+	return bt_running
 end
 
-function mijterfoe.bt_tick_flying(self, node_memory)
-	local turn_ticks = node_memory.mijter_turn_ticks or math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
+function mijterfoe.execute_flight(self, node_memory)
+	set_takeoff_heading(self)
+	self:change_sprite_on_direction()
+	node_memory.next_takeoff_ticks = math.random(
+		enemy_mijter_wait_takeoff_min_steps,
+		enemy_mijter_wait_takeoff_max_steps
+	)
+	node_memory.turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
+	self.events:emit('takeoff')
+	return bt_running
+end
+
+function mijterfoe.tick_flight(self, node_memory)
+	local turn_ticks = node_memory.turn_ticks
 	turn_ticks = turn_ticks - 1
 	if turn_ticks <= 0 then
 		new_random_direction(self)
 		turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 		self:change_sprite_on_direction()
 	end
-	node_memory.mijter_turn_ticks = turn_ticks
+	node_memory.turn_ticks = turn_ticks
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
@@ -171,13 +157,6 @@ function mijterfoe.bt_tick_flying(self, node_memory)
 	return bt_running
 end
 
-function mijterfoe.bt_tick(self, node_memory)
-	if self.mijter_state == 'waiting' then
-		return mijterfoe.bt_tick_waiting(self, node_memory)
-	end
-	return mijterfoe.bt_tick_flying(self, node_memory)
-end
-
 function mijterfoe.choose_drop_type(_self)
 	if math.random(100) <= enemy_mijter_drop_health_chance_pct then
 		return 'life'
@@ -192,9 +171,33 @@ function mijterfoe.register()
 	local tree_id<const> = 'enemy_mijterfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'task',
-			node_memory = true,
-			tick = mijterfoe.bt_tick,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_mijter_room_entry_lock_steps,
+				},
+				{
+					type = 'parallel_one',
+					children = {
+						{
+							type = 'task',
+							tick = mijterfoe.await_player_takeoff,
+						},
+						{
+							type = 'wait',
+							minimum_duration_ticks = enemy_mijter_wait_takeoff_min_steps - 1,
+							maximum_duration_ticks = enemy_mijter_wait_takeoff_max_steps - 1,
+						},
+					},
+				},
+				{
+					type = 'task',
+					node_memory = true,
+					execute = mijterfoe.execute_flight,
+					tick = mijterfoe.tick_flight,
+				},
+			},
 		},
 	})
 	prefab.define({
