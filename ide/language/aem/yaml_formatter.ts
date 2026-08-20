@@ -14,7 +14,7 @@ import {
 	AEM_MUSIC_TRANSITION_KEYS,
 	AEM_RULE_KEYS,
 	AEM_STINGER_SYNC_KEYS,
-	AEM_STOP_MUSIC_KEYS,
+	AEM_STOP_KEYS,
 } from '../../../toolchain/ts/rompack/aem_contract';
 
 const BLOCK_INDENT = 4;
@@ -83,8 +83,8 @@ type ActionSequenceContext = {
 	choice: boolean;
 };
 
-type StopMusicMapContext = {
-	kind: 'stop-music-map';
+type StopMapContext = {
+	kind: 'stop-map';
 	indent: number;
 };
 
@@ -120,7 +120,7 @@ type Context =
 	| ScalarSequenceContext
 	| ActionMapContext
 	| ActionSequenceContext
-	| StopMusicMapContext
+	| StopMapContext
 	| ModulationMapContext
 	| FilterMapContext
 	| MusicTransitionMapContext
@@ -171,8 +171,8 @@ function createActionSequence(itemIndent: number, choice: boolean): ActionSequen
 	return { kind: 'action-seq', itemIndent, choice };
 }
 
-function createStopMusicMap(indent: number): StopMusicMapContext {
-	return { kind: 'stop-music-map', indent };
+function createStopMap(indent: number): StopMapContext {
+	return { kind: 'stop-map', indent };
 }
 
 function createModulationMap(indent: number): ModulationMapContext {
@@ -219,8 +219,8 @@ function buildActionChildContexts(keyLower: string, childIndent: number, choice:
 	if (choice) {
 		return [];
 	}
-	if (keyLower === 'stop_music') {
-		return [createStopMusicMap(childIndent)];
+	if (keyLower === 'stop') {
+		return [createStopMap(childIndent)];
 	}
 	if (keyLower === 'music_transition') {
 		return [createMusicTransitionMap(childIndent)];
@@ -370,8 +370,8 @@ function placeInContext(context: Context, token: LineToken): Placement | null {
 				],
 			};
 		}
-		case 'stop-music-map': {
-			if (token.kind !== 'mapping' || !AEM_STOP_MUSIC_KEYS.has(token.keyLower)) {
+		case 'stop-map': {
+			if (token.kind !== 'mapping' || !AEM_STOP_KEYS.has(token.keyLower)) {
 				return null;
 			}
 			return { indent: context.indent };
