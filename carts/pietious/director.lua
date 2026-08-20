@@ -40,14 +40,19 @@
 --
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local clock<const> = require('cartlib/clock')
+local font<const> = require('cartlib/font')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
+local text_component<const> = require('cartlib/text/text_component')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
+local game_text_module<const> = require('game_text')
 require('constants')
+
+local game_text<const>: *game_text_record = game_text_module.game_text
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
 local banner_world_timeline_id<const> = 'director.banner.world'
@@ -62,7 +67,7 @@ local room_switch_passthrough_dirs<const> = {
 	death = true,
 }
 local room_switch_wait_timeline_id<const> = 'director.wait.room_switch'
-local death_curtain_timeline_id<const> = 'director.death.curtain'
+local curtain_timeline_id<const> = 'director.curtain'
 local death_screen_timeline_id<const> = 'director.death.screen'
 local title_start_wait_timeline_id<const> = 'director.wait.title_start'
 local item_screen_open_timeline_id<const> = 'director.wait.item.open'
@@ -93,8 +98,22 @@ local daemon_cloud_positions<const> = {
 local director<const> = {}
 director.__index = director
 
-local draw_death_curtain<const> = function(component, draw)
-	draw:rect(0, 0, component.parent.death_curtain_width, screen_height, 0xff000000)
+local victory_message_x<const> = room_tile_size
+local victory_message_y<const> = room_tile_size * 8
+local victory_message_width<const> = room_tile_size * 30
+
+local draw_curtain<const> = function(component, draw)
+	draw:rect(0, 0, component.parent.curtain_width, screen_height, 0xff000000)
+end
+
+local draw_victory_message_background<const> = function(_, draw)
+	draw:rect(
+		victory_message_x,
+		victory_message_y,
+		victory_message_x + victory_message_width,
+		victory_message_y + room_tile_size,
+		0xff000000
+	)
 end
 
 function director:set_active_space(space_id)
@@ -189,15 +208,67 @@ function director:leave_pause()
 	self.events:emit('pause_exited')
 end
 
+function director:begin_curtain()
+	self.curtain_width = 0
+	self.visual_component:set_draw_function(draw_curtain)
+end
+
+function director:end_curtain()
+	self.visual_component:set_draw_function(nil)
+	self.curtain_width = 0
+end
+
+function director:begin_victory_dance()
+	self:set_active_space('main')
+	local text<const> = self.text_component
+	text:set_text(game_text[0].victory_message)
+	text.visible = true
+	self.visual_component:set_draw_function(draw_victory_message_background)
+	self.events:emit('victory_dance')
+end
+
+function director:end_victory_dance()
+	self.text_component.visible = false
+	self.visual_component:set_draw_function(nil)
+end
+
+function director:enter_intro()
+	self:set_active_space('intro')
+	self.events:emit('intro')
+end
+
+function director:enter_story()
+	self:set_active_space('narrative')
+	self.events:emit('story')
+end
+
+function director:enter_end_demo()
+	self:set_active_space('end_demo')
+	self.events:emit('end_demo')
+end
+
+function director:enter_epilogue()
+	self:set_active_space('narrative')
+	self.events:emit('epilogue')
+end
+
 function director:ctor()
 	local clouds<const> = {}
 	self.daemon_clouds = clouds
-	self.death_curtain_width = 0
+	self.curtain_width = 0
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
 	local visual<const> = self:get_component(custom_visual_component)
 	self.visual_component = visual
+	local text<const> = self:get_component(text_component)
+	text:set_font(font.get('pietious'))
+	text.color = 0xffffffff
+	text.offset_x = victory_message_x
+	text.offset_y = victory_message_y
+	text:set_offset_z(1)
+	text.visible = false
+	self.text_component = text
 	for i = 1, flow_daemon_cloud_count do
 		clouds[i] = world:spawn('daemon_cloud', {
 			id = 'dc.' .. tostring(i),
@@ -217,16 +288,14 @@ end
 --   'seal_dissolution_done' — entire dissolution timeline finished.
 --   'daemon_appearance'     — begins the fixed daemon-cloud sequence.
 --   'daemon_appearance_done'— daemon cloud timeline ended.
---   'title_wait'            — post-title MSX startup hold: gameplay space
---                             still hidden, HUD hidden, gameplay frozen.
---   'title_wait_done'       — startup hold ended; temporary freezes may resume.
 --   'shrine'                — { lines = { ... } } payload.
 --   'lithograph'            — { lines = { ... } } payload.
 --   'lithograph_exit_done'  — room-state payload for restoring room music.
 --   'item'                  — item screen mode.
 --   'halo'                  — halo teleport mode.
 --   'death_screen'          — retained game-over text shown after the curtain.
---   'title', 'story', 'ending', 'victory_dance' — modal modes.
+--   'intro', 'title', 'story', 'epilogue', 'end_demo', 'victory_dance'
+--                             — modal modes.
 --   'f1'                    — item screen opened (audio-only).
 --   'pause_entered'         — room gameplay paused; AEM retains music transport.
 --   'pause_exited'          — pause ended; AEM resumes retained music transport.
@@ -260,8 +329,8 @@ local define_director_fsm<const> = function()
 		end
 		self.castle:apply_seal_timeline_frame(frame_value)
 	end
-	local apply_death_curtain_frame<const> = function(self, frame_value)
-		self.death_curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
+	local apply_curtain_frame<const> = function(self, frame_value)
+		self.curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
 	end
 	local on_daemon_finished<const> = function(self)
 		self.events:emit('daemon_appearance_done')
@@ -335,12 +404,12 @@ local define_director_fsm<const> = function()
 				},
 				autoplay = false,
 			},
-			[death_curtain_timeline_id] = {
+			[curtain_timeline_id] = {
 				def = {
 					frames = timeline.range(flow_death_curtain_frames),
 					playback_mode = 'once',
 					clock_source = timeline_clock_source.frame,
-					apply = apply_death_curtain_frame,
+					apply = apply_curtain_frame,
 				},
 				autoplay = false,
 			},
@@ -374,9 +443,6 @@ local define_director_fsm<const> = function()
 				go = '/shrine',
 			},
 			['seal_dissolution_start'] = '/seal_dissolution',
-			['story_start'] = '/story',
-			['ending_start'] = '/ending',
-			['victory_dance_start'] = '/victory_dance',
 			['dying'] = {
 				emitter = 'pietolon',
 				go = '/death',
@@ -398,8 +464,8 @@ local define_director_fsm<const> = function()
 		states = {
 			boot = {
 				entering_state = function(self)
-					if self.boot_mode == 'title_screen' then
-						return '/title_screen'
+					if self.boot_mode == 'intro' then
+						return '/intro'
 					end
 					return '/room'
 				end,
@@ -462,7 +528,7 @@ local define_director_fsm<const> = function()
 						emitter = 'pietolon',
 						go = function(_self, _state, event)
 							if event.item_type == 'keyworld1' then
-								return '/room'
+								return '/game_completion/victory_dance'
 							end
 						end,
 					},
@@ -853,89 +919,183 @@ local define_director_fsm<const> = function()
 					},
 				},
 			},
-				title_screen = {
-					entering_state = function(self)
-						self:set_active_space('title')
-						self.events:emit('title')
-					end,
-					on = {
-						['title_screen_done'] = {
-							emitter = 'title_screen',
-							go = '/title_start_wait',
-						},
+			intro = {
+				entering_state = director.enter_intro,
+				on = {
+					['intro_done'] = {
+						emitter = 'intro',
+						go = '/story',
 					},
 				},
-				title_start_wait = {
-					timelines = {
-						[title_start_wait_timeline_id] = {
-							autoplay = true,
-							stop_on_exit = true,
-							play_options = {
-								rewind = true,
-								snap_to_start = true,
+			},
+			story = {
+				entering_state = director.enter_story,
+				on = {
+					['story_done'] = {
+						emitter = 'narrative',
+						go = '/title_screen',
+					},
+				},
+			},
+			title_screen = {
+				entering_state = function(self)
+					self:set_active_space('title')
+					self.events:emit('title')
+				end,
+				on = {
+					['title_screen_done'] = {
+						emitter = 'title_screen',
+						go = '/title_start_wait',
+					},
+				},
+			},
+			title_start_wait = {
+				timelines = {
+					[title_start_wait_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+						on_finished = function(self)
+							self.request_new_game()
+						end,
+					},
+				},
+				entering_state = function(self)
+					self:set_active_space('transition')
+				end,
+			},
+			game_completion = {
+				initial = 'victory_dance',
+				states = {
+					victory_dance = {
+						initial = 'running',
+						entering_state = director.begin_victory_dance,
+						exiting_state = director.end_victory_dance,
+						states = {
+							running = {
+								on = {
+									['victory_dance_visual_done'] = {
+										emitter = 'pietolon',
+										go = '/game_completion/victory_dance/waiting_audio',
+									},
+									['victory_dance_done'] = {
+										emitter = 'd',
+										go = '/game_completion/victory_dance/waiting_visual',
+									},
+								},
 							},
-							on_finished = function(self)
-								self.events:emit('title_wait_done')
-								return '/room'
-							end,
-						},
-					},
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('title_wait')
-					end,
-				},
-				story = {
-					entering_state = function(self) self:enter_transition('story') end,
-					on = { ['story_done'] = '/room' },
-				},
-				ending = {
-					entering_state = function(self) self:enter_transition('ending') end,
-					on = { ['ending_done'] = '/room' },
-				},
-				victory_dance = {
-					entering_state = function(self) self:enter_transition('victory_dance') end,
-					on = { ['victory_dance_done'] = '/room' },
-				},
-				death = {
-					on = { ['death_done'] = '/death_curtain' },
-				},
-				death_curtain = {
-					timelines = {
-						[death_curtain_timeline_id] = {
-							autoplay = true,
-							stop_on_exit = true,
-							play_options = {
-								rewind = true,
-								snap_to_start = true,
+							waiting_audio = {
+								on = {
+									['victory_dance_done'] = {
+										emitter = 'd',
+										go = '/game_completion/room_curtain',
+									},
+								},
 							},
-							on_finished = '/death_screen',
-						},
-					},
-					entering_state = function(self)
-						self.visual_component:set_draw_function(draw_death_curtain)
-					end,
-					exiting_state = function(self)
-						self.visual_component:set_draw_function(nil)
-					end,
-				},
-				death_screen = {
-					timelines = {
-						[death_screen_timeline_id] = {
-							autoplay = true,
-							stop_on_exit = true,
-							play_options = {
-								rewind = true,
-								snap_to_start = true,
+							waiting_visual = {
+								on = {
+									['victory_dance_visual_done'] = {
+										emitter = 'pietolon',
+										go = '/game_completion/room_curtain',
+									},
+								},
 							},
-							on_finished = director.finish_death_restart,
 						},
 					},
-					entering_state = function(self)
-						self:enter_transition('death_screen')
-						self.castle:begin_death_restart()
-					end,
+					room_curtain = {
+						entering_state = function(self)
+							world:set_gameplay_clock_running(false)
+							self:begin_curtain()
+						end,
+						exiting_state = function(self)
+							self:end_curtain()
+							world:set_gameplay_clock_running(true)
+						end,
+						timelines = {
+							[curtain_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = false,
+								},
+								on_finished = '/game_completion/end_demo',
+							},
+						},
+					},
+					end_demo = {
+						entering_state = director.enter_end_demo,
+						on = {
+							['end_demo_done'] = {
+								emitter = 'd',
+								go = '/game_completion/end_demo_curtain',
+							},
+						},
+					},
+					end_demo_curtain = {
+						entering_state = director.begin_curtain,
+						exiting_state = director.end_curtain,
+						timelines = {
+							[curtain_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = false,
+								},
+								on_finished = '/game_completion/epilogue',
+							},
+						},
+					},
+					epilogue = {
+						entering_state = director.enter_epilogue,
+						on = {
+							['epilogue_done'] = {
+								emitter = 'narrative',
+								go = '/title_screen',
+							},
+						},
+					},
 				},
+			},
+			death = {
+				on = { ['death_done'] = '/death_curtain' },
+			},
+			death_curtain = {
+				entering_state = director.begin_curtain,
+				exiting_state = director.end_curtain,
+				timelines = {
+					[curtain_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = false,
+						},
+						on_finished = '/death_screen',
+					},
+				},
+			},
+			death_screen = {
+				timelines = {
+					[death_screen_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+						on_finished = director.finish_death_restart,
+					},
+				},
+				entering_state = function(self)
+					self:enter_transition('death_screen')
+					self.castle:begin_death_restart()
+				end,
+			},
 		},
 	})
 end
@@ -946,6 +1106,7 @@ local register_director_definition<const> = function()
 		class = director,
 		components = {
 			custom_visual_component.new,
+			text_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'director' }),
 		},

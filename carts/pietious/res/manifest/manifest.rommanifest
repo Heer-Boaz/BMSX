@@ -11,8 +11,14 @@ gx_vram_layout:
             clut: { x: 512, y: 448, width: 16, height: 1 }
         boss:
             texture: { x: 512, y: 456, width: 512, height: 64 }
+        cinematic:
+            texture: { x: 0, y: 256, width: 256, height: 192 }
     groups:
         0: { mode: palette4, slots: [sprites], page_local: true }
         1: { mode: direct16, slots: [boss], page_local: true }
+        2: { mode: direct16, slots: [cinematic], page_local: true }
+        3: { mode: direct16, slots: [cinematic], page_local: true }
     working_sets:
         gameplay: [sprites, boss]
+        intro: [sprites, cinematic]
+        end_demo: [sprites, cinematic]

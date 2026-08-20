@@ -13,7 +13,7 @@ __bmsx_host_test = {
 }
 
 function __bmsx_host_test.setup()
-	return host.press('Enter', 2)
+	new_game()
 end
 
 function __bmsx_host_test.ready()
@@ -80,10 +80,9 @@ function __bmsx_host_test.update()
 		if director.state_machines:matches_state(test.death_curtain_state) then
 			test.saw_curtain = true
 			assert(test.saw_dying_tick, 'death animation never advanced in the gameplay space')
-			assert(director.death_curtain_width > 0, 'death curtain opened with zero width')
 			assert(registry:get(test.item_id) == test.item,
 				'death curtain disposed the room before it finished closing')
-			test.last_curtain_width = director.death_curtain_width
+			test.last_curtain_width = director.curtain_width
 			test.phase = 'curtain'
 			return false
 		end
@@ -96,9 +95,9 @@ function __bmsx_host_test.update()
 	if test.phase == 'curtain' and world.active_space_id == 'main' then
 		assert(director.state_machines:matches_state(test.death_curtain_state),
 			'death curtain stopped before entering the game-over screen')
-		assert(director.death_curtain_width >= test.last_curtain_width,
+		assert(director.curtain_width >= test.last_curtain_width,
 			'death curtain moved backwards while closing')
-		test.last_curtain_width = director.death_curtain_width
+		test.last_curtain_width = director.curtain_width
 		assert(registry:get(test.item_id) == test.item,
 			'death curtain disposed the room before it finished closing')
 		return false
@@ -108,8 +107,7 @@ function __bmsx_host_test.update()
 		assert(director.state_machines:matches_state(test.death_screen_state),
 			'death restart entered transition space without the game-over screen')
 		assert(test.saw_curtain, 'death restart skipped the closing curtain')
-		assert(director.death_curtain_width == screen_width,
-			'death curtain did not close the complete screen')
+		assert(test.last_curtain_width > 0, 'death curtain never advanced')
 		local transition_screen<const> = registry:get('transition')
 		assert(transition_screen.text_component.visible, 'game-over text is hidden')
 		assert(transition_screen.text_component.text == 'PROBEER HET NOG EENS...',

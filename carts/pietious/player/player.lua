@@ -131,6 +131,7 @@ local state_tags<const> = {
 		hit_recovery = 'v.hr',
 		dying = 'v.d',
 		daemon_defeated = 'v.dd',
+		victory_dance = 'v.vd',
 	},
 	group = {
 		stairs = 'g.st',
@@ -189,11 +190,15 @@ local player_shrine_enter_timeline_id<const> = 'p.tl.se'
 local player_shrine_exit_timeline_id<const> = 'p.tl.sx'
 local player_pause_wait_timeline_id<const> = 'p.tl.pw'
 local player_pause_animation_timeline_id<const> = 'p.tl.pa'
+local player_victory_dance_timeline_id<const> = 'p.tl.vd'
 local player_pause_offset_x<const> = -2
 local player_pause_offset_y<const> = -8
 local player_pause_animation_play_options<const> = {
 	snap_to_start = false,
 }
+local victory_dance_jump_count<const> = 8
+local victory_dance_jump_frame_count<const> = 20
+local victory_dance_last_frame<const> = victory_dance_jump_count * victory_dance_jump_frame_count - 1
 local player_tags<const> = {
 	in_water = 'p.w',
 }
@@ -222,6 +227,36 @@ local begin_pause_animation<const> = function(self)
 		player_pause_animation_timeline_id,
 		player_pause_animation_play_options
 	)
+end
+
+local build_victory_dance_frames<const> = function()
+	local frames<const> = {}
+	local offset_y = 0
+	for _ = 1, 9 do
+		offset_y = offset_y - room_tile_size
+		frames[#frames + 1] = { offset_y = offset_y }
+	end
+	offset_y = offset_y - room_tile_half
+	frames[#frames + 1] = { offset_y = offset_y }
+	for _ = 1, 9 do
+		offset_y = offset_y + room_tile_size
+		frames[#frames + 1] = { offset_y = offset_y }
+	end
+	frames[#frames + 1] = { offset_y = 0, landed = true }
+	return frames
+end
+
+local apply_victory_dance_frame<const> = function(self, frame, _params, evaluation)
+	self.sprite_component.offset_y = frame.offset_y
+	if not frame.landed then
+		return
+	end
+	if evaluation.frame < victory_dance_last_frame then
+		self.facing = -self.facing
+		self.sprite_component.flip_h = self.facing < 0
+		return
+	end
+	self:set_imgid('pietolon_stand_r')
 end
 
 local set_tag_flag<const> = function(owner, tag, enabled)
@@ -416,6 +451,13 @@ function player:define_runtime_timelines()
 			},
 		},
 	})
+	self.timelines:define(player_victory_dance_timeline_id, {
+		frames = build_victory_dance_frames(),
+		repetitions = victory_dance_jump_count,
+		playback_mode = 'once',
+		clock_source = timeline_clock_source.frame,
+		apply = apply_victory_dance_frame,
+	})
 	self.timelines:define(player_world_enter_timeline_id, {
 		frames = build_enter_leave_transition_frames(
 			1,
@@ -484,6 +526,23 @@ function player:finish_pause_presentation()
 	self.sprite_component.offset_x = 0
 	self.sprite_component.offset_y = 0
 	self:apply_presentation_state()
+end
+
+function player:begin_victory_dance()
+	self:cancel_sword()
+	self:clear_input_state()
+	self:zero_motion()
+	self.sword_sprite:set_enabled(false)
+	self.sprite_component.flip_h = self.facing < 0
+	self:set_imgid('pietolon_jump_r')
+end
+
+function player:finish_victory_dance()
+	self.sprite_component.offset_y = 0
+	self.sprite_component.flip_h = self.facing < 0
+	self:set_imgid('pietolon_stand_r')
+	self.events:emit('victory_dance_visual_done')
+	return '/quiet'
 end
 
 function player:ctor()
@@ -3022,20 +3081,6 @@ local define_player_fsm<const> = function()
 			},
 			entering_state = player.zero_motion,
 		},
-		-- Title transitions temporarily park the player in its FSM history.
-		freeze = {
-			entering_state = function(self)
-				self:cancel_sword()
-			end,
-			on = {
-				['title_wait_done'] = {
-					emitter = 'd',
-					go = function(_self, state)
-						state:pop_and_transition()
-					end,
-				},
-			},
-		},
 		hit_fall = {
 			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
 			on = {
@@ -3082,6 +3127,25 @@ local define_player_fsm<const> = function()
 				self:cancel_sword()
 			end,
 		},
+		victory_dance = {
+			tags = {
+				state_tags.variant.victory_dance,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
+			},
+			entering_state = player.begin_victory_dance,
+			timelines = {
+				[player_victory_dance_timeline_id] = {
+					autoplay = true,
+					stop_on_exit = true,
+					play_options = {
+						rewind = true,
+						snap_to_start = true,
+					},
+					on_finished = player.finish_victory_dance,
+				},
+			},
+		},
 	}
 	for _, state in pairs(states) do
 		local update_handler = state.update
@@ -3093,6 +3157,7 @@ local define_player_fsm<const> = function()
 		state.input_event_handlers = input_event_handlers
 	end
 	states.daemon_defeated.input_event_handlers = {}
+	states.victory_dance.input_event_handlers = {}
 
 	-- SWORD CONCURRENT REGION.
 	-- is_concurrent = true means this state machine runs in parallel with the
@@ -3272,9 +3337,9 @@ local define_player_fsm<const> = function()
 			['halo_wait_start'] = '/waiting_halo_banner',
 			['leave_world_start'] = '/waiting_world_emerge',
 			['enter_shrine_start'] = '/entering_shrine',
-			['title_wait'] = {
+			['victory_dance'] = {
 				emitter = 'd',
-				go = '/freeze',
+				go = '/victory_dance',
 			},
 		},
 		states = states,

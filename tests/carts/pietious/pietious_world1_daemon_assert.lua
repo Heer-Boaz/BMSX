@@ -8,7 +8,7 @@ __bmsx_host_test = {
 }
 
 function __bmsx_host_test.setup()
-	return host.press('Enter', 2)
+	new_game()
 end
 
 function __bmsx_host_test.ready()
@@ -95,10 +95,11 @@ function __bmsx_host_test.update()
 		}
 		test.director_defeated_state = director.state_machines:bind_state_path('/daemon_defeated')
 		test.director_key_state = director.state_machines:bind_state_path('/daemon_key')
-		test.director_room_state = director.state_machines:bind_state_path('/room')
+		test.director_game_completion_state = director.state_machines:bind_state_path('/game_completion')
 		test.daemon_dying_state = daemon.state_machines:bind_state_path('/dying')
 		test.player_defeated_state = player.state_machines:bind_state_path('/daemon_defeated')
 		test.player_quiet_state = player.state_machines:bind_state_path('/quiet')
+		test.player_victory_state = player.state_machines:bind_state_path('/victory_dance')
 		local result<const> = combat_damage.resolve(daemon, request)
 		daemon:process_damage_result(result)
 		assert(daemon.state_machines:matches_state(test.daemon_dying_state), 'daemon did not enter dying state')
@@ -119,6 +120,7 @@ function __bmsx_host_test.update()
 			assert(director.state_machines:matches_state(test.director_key_state), 'director did not enter daemon key state')
 			assert(not daemon.visible, 'daemon remained visible beneath the key')
 			assert(key.item_type == 'keyworld1', 'daemon dropped the wrong key')
+			player.inventory_items.keyworld1 = false
 			player.health = 1
 			player:emit_health_changed()
 			test.key_x = key.x
@@ -145,18 +147,36 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'pickup' then
-		if registry:get('world1_daemon_key') ~= nil then
+		if not player.inventory_items.keyworld1 then
 			return false
 		end
+		local key<const> = registry:get('world1_daemon_key')
+		assert(key ~= nil, 'daemon key disappeared before the victory dance completed')
+		assert(not key.collider.enabled, 'collected daemon key retained its pickup collider')
 		local ui<const> = registry:get('ui')
-		assert(player.inventory_items.keyworld1, 'daemon key was not added to the inventory')
 		assert(player.health == player.max_health, 'daemon key did not restore player health')
 		assert(ui.hud_health_target == player.max_health,
 			'daemon key health restoration did not reach the HUD target')
 		assert(ui.hud_health_level < player.max_health,
 			'daemon key health restoration skipped the HUD animation')
 		assert(castle.world_boss_defeated[1], 'world 1 daemon defeat was not retained')
-		assert(director.state_machines:matches_state(test.director_room_state), 'director did not return to room state after key pickup')
+		assert(director.state_machines:matches_state(test.director_game_completion_state),
+			'director did not enter game completion after key pickup')
+		assert(player.state_machines:matches_state(test.player_victory_state),
+			'player did not enter the victory dance after key pickup')
+		assert(world.gameplay_clock_running, 'victory dance stopped the room simulation unlike the XNA flow')
+		test.phase = 'victory_dance'
+		return false
+	end
+
+	if test.phase == 'victory_dance' then
+		if registry:get('world1_daemon_key') ~= nil then
+			return false
+		end
+		assert(director.state_machines:matches_state(test.director_game_completion_state),
+			'director left game completion before the ending flow')
+		assert(player.state_machines:matches_state(test.player_quiet_state),
+			'player did not leave the victory dance after its eighth landing')
 		return true
 	end
 

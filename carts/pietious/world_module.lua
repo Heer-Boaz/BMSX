@@ -14,6 +14,9 @@ local timeline_system<const> = require('cartlib/timeline/timeline_system')
 return {
 	spaces = {
 		'main',
+		'intro',
+		'narrative',
+		'end_demo',
 		'title',
 		'transition',
 		'shrine',

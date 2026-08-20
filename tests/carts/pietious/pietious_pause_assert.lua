@@ -8,7 +8,7 @@ __bmsx_host_test = {
 }
 
 function __bmsx_host_test.setup()
-	return host.press('Enter', 2)
+	new_game()
 end
 
 function __bmsx_host_test.ready()

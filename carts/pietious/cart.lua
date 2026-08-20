@@ -52,11 +52,15 @@ local castle_module<const> = require('castle/castle')
 local world_entrance_module<const> = require('world/entrance')
 local daemon_cloud_module<const> = require('daemon_cloud')
 local director_module<const> = require('director')
+local end_demo_module<const> = require('end_demo')
+local intro_module<const> = require('intro')
+local narrative_screen_module<const> = require('narrative_screen')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
 local init_epoch = 0
-local pending_title_boot_epoch = -1
+local pending_intro_boot_epoch = -1
+local new_game_requested
 
 local grant_debug_starting_loadout<const> = function(player, castle)
 	player.inventory_items['keyworld1'] = true
@@ -73,6 +77,10 @@ local grant_debug_starting_loadout<const> = function(player, castle)
 	progression.set(castle, 'debug.world1_stairs', true)
 end
 
+local request_new_game<const> = function()
+	new_game_requested = true
+end
+
 local create_world<const> = function(director_boot_mode)
 	world:clear()
 
@@ -87,8 +95,11 @@ local create_world<const> = function(director_boot_mode)
 	})
 	room.player = player
 	grant_debug_starting_loadout(player, castle)
-	castle:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
+	castle:initialize(castle_map.start_room_number, director_boot_mode == 'room')
 
+	world:spawn('intro', { id = 'intro', space_id = 'intro', })
+	world:spawn('narrative_screen', { id = 'narrative', space_id = 'narrative', })
+	world:spawn('end_demo', { id = 'end_demo', space_id = 'end_demo', })
 	world:spawn('transition', { id = 'transition', space_id = 'transition', })
 	world:spawn('shrine', { id = 'shrine', space_id = 'shrine', })
 	world:spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
@@ -104,6 +115,7 @@ local create_world<const> = function(director_boot_mode)
 	local director<const> = world:spawn('director', {
 		id = 'd',
 		boot_mode = director_boot_mode,
+		request_new_game = request_new_game,
 		castle = castle,
 		player = player,
 		ui = ui,
@@ -114,9 +126,10 @@ local create_world<const> = function(director_boot_mode)
 end
 
 function new_game()
-	if pending_title_boot_epoch == init_epoch then
-		pending_title_boot_epoch = init_epoch - 1
-		create_world('title_screen')
+	new_game_requested = false
+	if pending_intro_boot_epoch == init_epoch then
+		pending_intro_boot_epoch = init_epoch - 1
+		create_world('intro')
 		return
 	end
 	create_world('room')
@@ -157,6 +170,9 @@ local function init<init>()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
 	daemon_cloud_module.define_daemon_cloud_fsm()
+	intro_module.define_intro_fsm()
+	narrative_screen_module.define_narrative_screen_fsm()
+	end_demo_module.define_end_demo_fsm()
 	title_screen_module.define_title_screen_fsm()
 	director_module.define_director_fsm()
 	elevator_module.define_elevator_fsm()
@@ -183,10 +199,13 @@ local function init<init>()
 	world_entrance_module.register_world_entrance_definition()
 	world1_daemon_module.register_world1_daemon_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
+	intro_module.register_intro_definition()
+	narrative_screen_module.register_narrative_screen_definition()
+	end_demo_module.register_end_demo_definition()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
 	init_epoch = init_epoch + 1
-	pending_title_boot_epoch = init_epoch
+	pending_intro_boot_epoch = init_epoch
 end
 
 init()
@@ -197,6 +216,9 @@ vblank.wait()
 -- Pietious intentionally advances one gameplay tick across two display frames.
 while true do
 	world:update()
+	if new_game_requested then
+		new_game()
+	end
 
 	vblank.wait()
 	world:render()

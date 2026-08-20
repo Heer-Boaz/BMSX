@@ -19,6 +19,8 @@ flow_pause_stuck_frame_hold = 4
 flow_death_curtain_frames = 16
 flow_death_curtain_columns_per_frame = 2
 flow_death_screen_frames = 50
+flow_narrative_scroll_pixels_num = 2
+flow_narrative_scroll_pixels_den = 5
 -- The MSX summon state flashes for 60 VBlanks, dissolves the seal-pattern
 -- range for 25 VBlanks, then dissolves two background ranges for 25 VBlanks
 -- each. Pietious advances one gameplay frame per two VBlanks.

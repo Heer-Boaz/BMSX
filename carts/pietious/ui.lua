@@ -8,6 +8,13 @@ require('constants')
 
 local ui<const> = {}
 ui.__index = ui
+local hud_hidden_events<const> = {
+	'intro',
+	'story',
+	'epilogue',
+	'end_demo',
+	'title',
+}
 local sources<const> = {
 	header = image.resolve('game_header'),
 	health_stripe = image.resolve('energybar_stripe_blue'),
@@ -104,38 +111,41 @@ function ui:update_hud_animation()
 end
 
 local define_ui_fsm<const> = function()
+	local on<const> = {
+		['room'] = {
+			emitter = 'd',
+			go = '/active',
+		},
+		['victory_dance'] = {
+			emitter = 'd',
+			go = '/active',
+		},
+		['player.health_changed'] = {
+			emitter = 'pietolon',
+			go = function(self, _state, event)
+				self:set_health_target(event.value)
+			end,
+		},
+		['respawn'] = {
+			emitter = 'pietolon',
+			go = ui.sync_health,
+		},
+		['player.weapon_changed'] = {
+			emitter = 'pietolon',
+			go = function(self, _state, event)
+				self:set_weapon_target(event.value)
+			end,
+		},
+	}
+	for i = 1, #hud_hidden_events do
+		on[hud_hidden_events[i]] = {
+			emitter = 'd',
+			go = '/hidden',
+		}
+	end
 	fsm_library.register('ui', {
 		initial = 'active',
-		on = {
-			['room'] = {
-				emitter = 'd',
-				go = '/active',
-			},
-			['title'] = {
-				emitter = 'd',
-				go = '/hidden',
-			},
-			['title_wait'] = {
-				emitter = 'd',
-				go = '/hidden',
-			},
-			['player.health_changed'] = {
-				emitter = 'pietolon',
-				go = function(self, _state, event)
-					self:set_health_target(event.value)
-				end,
-			},
-			['respawn'] = {
-				emitter = 'pietolon',
-				go = ui.sync_health,
-			},
-			['player.weapon_changed'] = {
-				emitter = 'pietolon',
-				go = function(self, _state, event)
-					self:set_weapon_target(event.value)
-				end,
-			},
-		},
+		on = on,
 		states = {
 			active = {
 				entering_state = ui.show_hud,

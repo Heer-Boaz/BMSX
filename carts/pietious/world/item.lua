@@ -10,6 +10,7 @@ world_item.__index = world_item
 
 function world_item:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
+	self.collider = collider
 	collider.layer = collision_pickup_layer
 	collider.mask = collision_pickup_mask
 	self:set_imgid(world_item_sprite[self.item_type])
@@ -17,6 +18,13 @@ end
 
 function world_item:onspawn(_pos)
 	self.x, self.y = self.room:snap_world_to_tile(self.x, self.y)
+end
+
+function world_item:on_collected()
+	if self.rock_drop_id ~= nil then
+		self.room.rock_drops[self.rock_drop_id] = nil
+	end
+	self:mark_for_disposal()
 end
 
 local define_world_item_fsm<const> = function()
@@ -35,10 +43,7 @@ local define_world_item_fsm<const> = function()
 				if not player:collect_item(self.item_type, item_id) then
 					return
 				end
-				if self.rock_drop_id ~= nil then
-					self.room.rock_drops[self.rock_drop_id] = nil
-				end
-				self:mark_for_disposal()
+				self:on_collected()
 			end,
 		},
 		states = {

@@ -14,7 +14,7 @@ local sparkle_timeline_id<const> = 'title_screen.sparkle'
 local start_timeline_id<const> = 'title_screen.start'
 
 local title_exit_events<const> = {
-	'title_wait',
+	'intro',
 	'room',
 	'transition',
 	'halo',
@@ -22,7 +22,8 @@ local title_exit_events<const> = {
 	'item',
 	'lithograph',
 	'story',
-	'ending',
+	'epilogue',
+	'end_demo',
 	'victory_dance',
 	'death',
 	'seal_dissolution',

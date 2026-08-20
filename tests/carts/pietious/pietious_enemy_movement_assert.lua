@@ -15,7 +15,7 @@ local record_cross_landing<const> = function(test)
 end
 
 function __bmsx_host_test.setup()
-	return host.press('Enter', 2)
+	new_game()
 end
 
 function __bmsx_host_test.ready()

@@ -6,9 +6,9 @@
 --   'transition'       (from 'd') — rebuilds the retained banner text from
 --     the direct lines payload and plays the fade mask timeline. A transition
 --     without banner text carries nil.
---   transition-mode broadcasts ('halo', 'title', 'story', 'ending',
---     'victory_dance') — also play the fade mask timeline. The mode
---     broadcast itself is the canonical signal; no second relay event exists.
+--   'halo' — plays the same mask for the halo transition.
+--   modal-mode broadcasts — clear retained banner text without scheduling a
+--     transition that cannot be presented in this object's inactive space.
 --   'death_screen' — shows the retained game-over text on the already closed
 --     curtain without starting a second fade.
 --   'room'             (from 'd') — clears and hides retained banner text.
@@ -38,11 +38,12 @@ local draw_transition_visual<const> = function(_, draw)
 	draw:rect(0, 0, screen_width, screen_height, 0xff000000)
 end
 
-local transition_mode_events<const> = {
-	'halo',
+local modal_mode_events<const> = {
 	'title',
+	'intro',
 	'story',
-	'ending',
+	'epilogue',
+	'end_demo',
 	'victory_dance',
 }
 
@@ -88,15 +89,22 @@ local define_transition_fsm<const> = function()
 				self.text_component.visible = true
 			end,
 		},
-	}
-	for i = 1, #transition_mode_events do
-		local event_name<const> = transition_mode_events[i]
-		on[event_name] = {
+		['halo'] = {
 			emitter = 'd',
 			go = function(self)
 				self.text_component:set_text(nil)
 				self.text_component.visible = false
 				self.timelines:play('transition.timeline', { rewind = true, snap_to_start = true })
+			end,
+		},
+	}
+	for i = 1, #modal_mode_events do
+		local event_name<const> = modal_mode_events[i]
+		on[event_name] = {
+			emitter = 'd',
+			go = function(self)
+				self.text_component:set_text(nil)
+				self.text_component.visible = false
 			end,
 		}
 	end

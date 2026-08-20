@@ -14,10 +14,14 @@ local world<const> = require('cartlib/world/world')
 local world_object<const> = require('cartlib/world/world_object')
 local combat_damage<const> = require('combat/damage')
 local enemy_base<const> = require('enemies/enemy_base')
+local world_item<const> = require('world/item').world_item
 require('constants')
 
 local world1_daemon<const> = {}
 world1_daemon.__index = world1_daemon
+
+local world1_daemon_key<const> = {}
+world1_daemon_key.__index = world1_daemon_key
 
 world1_daemon.tree_id = 'enemy_world1_daemon'
 world1_daemon.timeline_id = {
@@ -122,6 +126,11 @@ local dispose_references<const> = function(objects)
 	end
 end
 
+-- disable-next-line single_line_method_pattern -- the boss key overrides the item collection policy by remaining visible until the victory sequence releases it.
+function world1_daemon_key:on_collected()
+	self.collider:set_enabled(false)
+end
+
 function world1_daemon:ctor()
 	self.behaviour = self:get_component(behaviour_tree_component)
 	self.collider = self:get_component(collider_2d_component)
@@ -140,6 +149,10 @@ function world1_daemon:clear_encounter_objects()
 	dispose_references(self.spawn_projectiles)
 	dispose_references(self.potatoes)
 	dispose_references(self.zaks)
+	self:clear_key()
+end
+
+function world1_daemon:clear_key()
 	local key<const> = self.key
 	if key ~= nil and key.active then
 		key:mark_for_disposal()
@@ -434,7 +447,7 @@ end
 
 function world1_daemon:spawn_key()
 	self.death_visual:set_draw_function(nil)
-	self.key = world:spawn('world_item', {
+	self.key = world:spawn('world1_daemon_key', {
 		id = 'world1_daemon_key',
 		space_id = self.space_id,
 		room = self.room,
@@ -528,6 +541,10 @@ local define_world1_daemon_fsm<const> = function()
 				emitter = 'd',
 				go = '/active',
 			},
+			['victory_dance_visual_done'] = {
+				emitter = 'pietolon',
+				go = world1_daemon.clear_key,
+			},
 			['daemon.defeated'] = '/dying',
 		},
 		states = {
@@ -562,6 +579,15 @@ local register_world1_daemon_definition<const> = function()
 	for index = 1, death_image_count do
 		death_images[index] = image.resolve('world1_daemon_death_' .. tostring(index))
 	end
+	prefab.define({
+		def_id = 'world1_daemon_key',
+		class = world1_daemon_key,
+		base = world_item,
+		components = {
+			collider_2d_component.new_for_sprite,
+			fsm_component.factory({ 'world_item' }),
+		},
+	})
 	prefab.define({
 		def_id = 'enemy.daemon',
 		class = world1_daemon,

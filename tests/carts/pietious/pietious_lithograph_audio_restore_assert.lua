@@ -11,7 +11,7 @@ local record_lithograph_exit<const> = function(test, _event_type, _emitter, payl
 end
 
 function __bmsx_host_test.setup()
-	return host.press('Enter', 2)
+	new_game()
 end
 
 function __bmsx_host_test.ready()
