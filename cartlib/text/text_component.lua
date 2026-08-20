@@ -1,7 +1,9 @@
 local font_catalog<const> = require('cartlib/text/font_catalog')
+local presentation_config<const> = require('bmsx/presentation_config')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
+local page_height<const> = presentation_config.page_size >> 16
 
 local text_component<const> = {}
 text_component.__index = text_component
@@ -19,6 +21,8 @@ function text_component.new(opts)
 	self.line_x_offsets = opts.line_x_offsets
 	self.center_block_width = opts.center_block_width
 	self.text = nil
+	self.static_text_lines = nil
+	self.static_text_line_count = 0
 	self.glyph_lines = {}
 	self.layout_line_widths = {}
 	self.glyph_line_count = 0
@@ -26,48 +30,96 @@ function text_component.new(opts)
 	return self
 end
 
-function text_component:set_text(text)
-	self.text = text
-	if type(text) == 'string' then
-		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
-			text = wrap_text_lines(text, self.wrap_chars)
-		else
-			local glyph_line = self.glyph_lines[1]
-			if glyph_line == nil then
-				glyph_line = {}
-				self.glyph_lines[1] = glyph_line
-			end
-			self.layout_line_widths[1] = font_catalog.write_glyph_line(self.font, text, glyph_line)
-			self.glyph_line_count = 1
-			if #text ~= 0 then
-				self:set_draw_function(text_component.draw_visual)
-			else
-				self:set_draw_function(nil)
-			end
-			return
-		end
-	end
-	local lines<const> = text or empty_text_lines
+local write_lines<const> = function(self, lines, first_index, line_count)
 	local glyph_lines<const> = self.glyph_lines
 	local layout_line_widths<const> = self.layout_line_widths
 	local has_glyphs = false
-	for i = 1, #lines do
+	for i = 1, line_count do
+		local line<const> = lines[first_index + i - 1]
 		local glyph_line = glyph_lines[i]
 		if glyph_line == nil then
 			glyph_line = {}
 			glyph_lines[i] = glyph_line
 		end
-		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, lines[i], glyph_line)
-		if #lines[i] ~= 0 then
+		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, line, glyph_line)
+		if #line ~= 0 then
 			has_glyphs = true
 		end
 	end
-	self.glyph_line_count = #lines
+	self.glyph_line_count = line_count
 	if has_glyphs then
 		self:set_draw_function(text_component.draw_visual)
 	else
 		self:set_draw_function(nil)
 	end
+end
+
+function text_component:set_text(text)
+	self.text = text
+	self.static_text_lines = nil
+	self.static_text_line_count = 0
+	if type(text) == 'string' then
+		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
+			local lines<const> = wrap_text_lines(text, self.wrap_chars)
+			write_lines(self, lines, 1, #lines)
+			return
+		end
+		local glyph_line = self.glyph_lines[1]
+		if glyph_line == nil then
+			glyph_line = {}
+			self.glyph_lines[1] = glyph_line
+		end
+		self.layout_line_widths[1] = font_catalog.write_glyph_line(self.font, text, glyph_line)
+		self.glyph_line_count = 1
+		if #text ~= 0 then
+			self:set_draw_function(text_component.draw_visual)
+		else
+			self:set_draw_function(nil)
+		end
+		return
+	end
+	local lines<const> = text or empty_text_lines
+	write_lines(self, lines, 1, #lines)
+end
+
+-- Static language arrays have no guest table header and retain their authored
+-- zero-based storage directly. The component consumes that representation at
+-- admission instead of making a Lua table copy for long narrative text.
+function text_component:set_static_text(lines, line_count)
+	local source<const>: *string = lines
+	self.text = nil
+	self.static_text_lines = lines
+	self.static_text_line_count = line_count
+	local glyph_lines<const> = self.glyph_lines
+	local layout_line_widths<const> = self.layout_line_widths
+	local has_glyphs = false
+	for i = 1, line_count do
+		local line<const> = source[i - 1]
+		local glyph_line = glyph_lines[i]
+		if glyph_line == nil then
+			glyph_line = {}
+			glyph_lines[i] = glyph_line
+		end
+		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, line, glyph_line)
+		if #line ~= 0 then
+			has_glyphs = true
+		end
+	end
+	self.glyph_line_count = line_count
+	if has_glyphs then
+		self:set_draw_function(text_component.draw_visual)
+	else
+		self:set_draw_function(nil)
+	end
+end
+
+local rebuild_text<const> = function(self)
+	local lines<const> = self.static_text_lines
+	if lines ~= nil then
+		self:set_static_text(lines, self.static_text_line_count)
+		return
+	end
+	self:set_text(self.text)
 end
 
 function text_component:set_font(font)
@@ -76,7 +128,7 @@ function text_component:set_font(font)
 	end
 	self.font = font
 	self.line_height = font.line_height
-	self:set_text(self.text)
+	rebuild_text(self)
 end
 
 function text_component:set_wrap_chars(wrap_chars)
@@ -84,7 +136,7 @@ function text_component:set_wrap_chars(wrap_chars)
 		return
 	end
 	self.wrap_chars = wrap_chars
-	self:set_text(self.text)
+	rebuild_text(self)
 end
 
 function text_component:draw_visual(draw)
@@ -92,13 +144,28 @@ function text_component:draw_visual(draw)
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local glyphs<const> = self.glyph_lines
+	local first_line = 1
+	local last_line = self.glyph_line_count
+	local line_offsets<const> = self.line_offsets
+	if line_offsets == nil then
+		local line_height<const> = self.line_height
+		if y >= page_height or y + last_line * line_height <= 0 then
+			return
+		end
+		if y < 0 then
+			first_line = ((-y) // line_height) + 1
+		end
+		local visible_last<const> = ((page_height - 1 - y) // line_height) + 1
+		if visible_last < last_line then
+			last_line = visible_last
+		end
+	end
 	local background_color<const> = self.background_color
 	if background_color ~= nil then
-		local cursor_y = y
-		local line_offsets<const> = self.line_offsets
+		local cursor_y = y + (first_line - 1) * self.line_height
 		local line_widths<const> = self.line_widths or self.layout_line_widths
 		local line_x_offsets<const> = self.line_x_offsets
-		for i = 1, self.glyph_line_count do
+		for i = first_line, last_line do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 			local line_length<const> = line.visible_count
@@ -122,20 +189,20 @@ function text_component:draw_visual(draw)
 			end
 		end
 	end
-	self:render_glyphs(draw, x, y)
+	self:render_glyphs(draw, x, y, first_line, last_line)
 end
 
-function text_component:render_glyphs(draw, x, y)
+function text_component:render_glyphs(draw, x, y, first_line, last_line)
 	local glyphs<const> = self.glyph_lines
 	local span_binding<const> = self.font.span_binding
 	local blit_span<const> = span_binding.writer
 	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
-	local cursor_y = y
+	local cursor_y = y + (first_line - 1) * self.line_height
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths or self.layout_line_widths
 	local line_x_offsets<const> = self.line_x_offsets
 	local color<const> = self.color
-	for i = 1, self.glyph_line_count do
+	for i = first_line, last_line do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 		local line_length<const> = line.visible_count
