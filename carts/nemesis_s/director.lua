@@ -38,9 +38,7 @@ function director:enter_title()
 	self.events:emit('title')
 end
 
-function director:enter_game_start()
-	self:set_active_space('game_start')
-	world:clear_space('end_demo')
+function director:populate_game_start()
 	self.frame = 0
 	local stage<const> = world:spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
@@ -78,6 +76,12 @@ function director:enter_game_start()
 	self.events:emit('game_start')
 end
 
+function director:enter_game_start()
+	self:set_active_space('game_start')
+	world:clear_space('end_demo')
+	world:unload_space('main', director.populate_game_start, self)
+end
+
 function director:enter_gameplay()
 	self.status_bar:set_space('main')
 	self:set_active_space('main')
@@ -85,9 +89,7 @@ function director:enter_gameplay()
 	self.telemetry_stage_head = self.stage.tape_head
 end
 
-function director:enter_end_demo()
-	self:set_active_space('end_demo')
-	world:clear_space('main')
+function director:populate_end_demo()
 	self.stage = nil
 	self.players = nil
 	self.player_states = nil
@@ -97,6 +99,11 @@ function director:enter_end_demo()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 	self.events:emit('end_demo')
+end
+
+function director:enter_end_demo()
+	self:set_active_space('end_demo')
+	world:unload_space('main', director.populate_end_demo, self)
 end
 
 function director:accept_title_selection(_state, event)

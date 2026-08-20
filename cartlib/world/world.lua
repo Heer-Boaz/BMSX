@@ -57,6 +57,7 @@ local mutation_active_space<const> = 0x40
 local mutation_disposal<const> = 0x80
 local mutation_clear<const> = 0x100
 local mutation_gameplay_clock<const> = 0x200
+local mutation_space_unload<const> = 0x400
 local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
@@ -110,6 +111,9 @@ function world_class.new()
 	self._flushing_disposals = false
 	self._pending_admissions = {}
 	self._pending_admission_count = 0
+	self._pending_space_unload_callbacks = {}
+	self._pending_space_unload_contexts = {}
+	self._pending_space_unload_count = 0
 	self._pending_objects = {}
 	self._pending_object_count = 0
 	self._pending_components = {}
@@ -843,6 +847,20 @@ function world_class:_commit_mutation_barrier()
 		self:_commit_clear()
 		return true
 	end
+	if (self._pending_mutation_mask & mutation_space_unload) ~= 0 then
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_space_unload
+		local callbacks<const> = self._pending_space_unload_callbacks
+		local contexts<const> = self._pending_space_unload_contexts
+		local count<const> = self._pending_space_unload_count
+		self._pending_space_unload_count = 0
+		for index = 1, count do
+			local callback<const> = callbacks[index]
+			local context<const> = contexts[index]
+			callbacks[index] = nil
+			contexts[index] = nil
+			callback(context)
+		end
+	end
 	return schedule_changed
 end
 
@@ -916,7 +934,32 @@ function world_class:clear_space(space_id)
 	end
 end
 
+-- Unloads one space and invokes its retained completion only after every
+-- disposal from the current structural scope has committed. Scene owners use
+-- this boundary to construct the incoming scene without retaining both object
+-- graphs at once.
+function world_class:unload_space(space_id, on_unloaded, context)
+	self:clear_space(space_id)
+	if not self._mutation_barrier_open and not self._flushing_disposals then
+		on_unloaded(context)
+		return
+	end
+	local count<const> = self._pending_space_unload_count + 1
+	self._pending_space_unload_count = count
+	self._pending_space_unload_callbacks[count] = on_unloaded
+	self._pending_space_unload_contexts[count] = context
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_space_unload
+end
+
 function world_class:_commit_clear()
+	local unload_callbacks<const> = self._pending_space_unload_callbacks
+	local unload_contexts<const> = self._pending_space_unload_contexts
+	for index = 1, self._pending_space_unload_count do
+		unload_callbacks[index] = nil
+		unload_contexts[index] = nil
+	end
+	self._pending_space_unload_count = 0
+	self._pending_mutation_mask = self._pending_mutation_mask & ~mutation_space_unload
 	self:_commit_gameplay_clock(true)
 	self._visual_sequence = 0
 	local objects<const> = self._objects
