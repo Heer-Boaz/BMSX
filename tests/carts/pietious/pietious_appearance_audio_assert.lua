@@ -85,10 +85,13 @@ function __bmsx_host_test.update()
 	if test.phase == 'destroy_wall' then
 		assert(registry:get(test.destroyed_cross_id) == nil, 'room 7 peer survived its disposal barrier')
 		local wall<const> = registry:get(test.wall_id)
+		local player<const> = registry:get('pietolon')
 		wall.health = 1
+		player.sword_strike_id = player.sword_strike_id + 1
 		wall.events:emit('overlap.begin', {
 			other_id = 'test.sword',
 			other_collider_local_id = 'sword',
+			phase = 'begin',
 		})
 		assert(progression.get(castle, 'castlewalldestroyed'), 'room 7 wall condition was not retained')
 		test.phase = 'verify_wall'

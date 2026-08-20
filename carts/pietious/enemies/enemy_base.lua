@@ -9,14 +9,10 @@ local screen_boundary_component<const> = require('cartlib/physics/screen_boundar
 local enemy_base<const> = {}
 enemy_base.__index = enemy_base
 setmetatable(enemy_base, { __index = sprite_object })
-local damaging_contact_kinds<const> = {
-	sword = true,
-	projectile = true,
-}
-
 function enemy_base.initialize(self)
 	sprite_object.initialize(self)
 	self.sprite_component:set_offset_z(110)
+	self.last_sword_strike_id = 0
 end
 
 function enemy_base.new_collider(opts)
@@ -63,6 +59,10 @@ function enemy_base.bind(self)
 		event = 'overlap.begin',
 		handler = enemy_base.on_overlap,
 	})
+	self.events:on({
+		event = 'overlap.stay',
+		handler = enemy_base.on_overlap,
+	})
 	enemy_base.bind_lifecycle(self)
 end
 
@@ -96,24 +96,24 @@ function enemy_base.process_damage_result(self, result)
 	end
 end
 
-function enemy_base.on_overlap(self, _event_type, _emitter, event)
+function enemy_base.on_overlap(self, event_type, _emitter, event)
 	local player<const> = self.player
-	local contact_kind<const> = combat_overlap.classify_player_contact(event)
-	if contact_kind == nil then
+	local weapon_kind<const> = combat_overlap.admit_weapon_contact(self, event)
+	if weapon_kind ~= nil then
+		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, weapon_kind))
+		self:process_damage_result(result)
 		return
 	end
-	if damaging_contact_kinds[contact_kind] then
-		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
-		self:process_damage_result(result)
-	end
-	if contact_kind == 'body' and self.dangerous then
+	if event_type == 'overlap.begin'
+	and event.other_collider_local_id == 'body'
+	and self.dangerous then
 		player.events:emit('enemy.contact_damage', {
 			amount = self.damage,
 			source_x = self.x + (self.sx // 2),
 			source_y = self.y + (self.sy // 2),
 			reason = self.enemy_kind,
 			enemy_id = self.id,
-			contact_kind = contact_kind,
+			contact_kind = 'body',
 		})
 	end
 end

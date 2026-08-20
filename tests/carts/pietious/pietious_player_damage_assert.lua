@@ -58,6 +58,7 @@ function __bmsx_host_test.update()
 			other_kind = 'player',
 			other_layer = collision_player_layer,
 			other_collider_local_id = 'body',
+			phase = 'begin',
 		})
 		local hit_health<const> = player.max_health - probe.damage
 		assert(player.health == hit_health, 'enemy contact did not damage the player')
@@ -70,6 +71,7 @@ function __bmsx_host_test.update()
 			other_kind = 'player',
 			other_layer = collision_player_layer,
 			other_collider_local_id = 'body',
+			phase = 'begin',
 		})
 		assert(player.health == hit_health, 'invulnerability admitted a second contact hit')
 		test.hit_health = hit_health
@@ -91,6 +93,7 @@ function __bmsx_host_test.update()
 			other_kind = 'player',
 			other_layer = collision_player_layer,
 			other_collider_local_id = 'body',
+			phase = 'begin',
 		})
 		assert(player.health == test.hit_health - probe.damage,
 			'player did not become hittable after invulnerability expired')

@@ -24,6 +24,7 @@ end
 
 function breakablewall:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
+	self.last_sword_strike_id = 0
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self.sx = self.width_tiles * room_tile_size
@@ -37,19 +38,21 @@ function breakablewall:ctor()
 end
 
 function breakablewall.register()
+	local apply_weapon_contact<const> = function(self, _state, event)
+		local weapon_kind<const> = combat_overlap.admit_weapon_contact(self, event)
+		if weapon_kind == nil then
+			return
+		end
+		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, weapon_kind))
+		if result.destroyed then
+			self:mark_for_disposal()
+		end
+	end
 	fsm_library.register('breakablewall', {
 		initial = 'active',
 		on = {
-			['overlap.begin'] = function(self, _state, event)
-				local contact_kind<const> = combat_overlap.classify_player_contact(event)
-				if contact_kind == nil then
-					return
-				end
-				local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
-				if result.destroyed then
-					self:mark_for_disposal()
-				end
-			end,
+			['overlap.begin'] = apply_weapon_contact,
+			['overlap.stay'] = apply_weapon_contact,
 		},
 		states = {
 			active = {},

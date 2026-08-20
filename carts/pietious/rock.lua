@@ -16,6 +16,7 @@ local rock_break_timeline_id<const> = 'rock.tl.break'
 function rock:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
 	self.collider = collider
+	self.last_sword_strike_id = 0
 	collider.layer = collision_enemy_layer
 	collider.mask = collision_enemy_mask
 	self:set_imgid('stone')
@@ -79,25 +80,27 @@ function rock:begin_break()
 end
 
 local define_rock_fsm<const> = function()
-		fsm_library.register('rock', {
-				initial = 'idle',
+	local apply_weapon_contact<const> = function(self, _state, event)
+		local weapon_kind<const> = combat_overlap.admit_weapon_contact(self, event)
+		if weapon_kind == nil then
+			return
+		end
+		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, weapon_kind))
+		self:process_damage_result(result)
+	end
+	fsm_library.register('rock', {
+		initial = 'idle',
+		on = {
+			['overlap.begin'] = apply_weapon_contact,
+			['overlap.stay'] = apply_weapon_contact,
+		},
+		states = {
+			idle = {
 				on = {
-						['overlap.begin'] = function(self, _state, event)
-								local contact_kind<const> = combat_overlap.classify_player_contact(event)
-								if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
-										return
-								end
-								local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
-								self:process_damage_result(result)
-						end,
+					['break'] = '/breaking',
+					['reset'] = '/idle',
 				},
-				states = {
-						idle = {
-								on = {
-										['break'] = '/breaking',
-										['reset'] = '/idle',
-								},
-						},
+			},
 			breaking = {
 				timelines = {
 					[rock_break_timeline_id] = {

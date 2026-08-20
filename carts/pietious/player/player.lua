@@ -175,6 +175,7 @@ function player:activate_sword()
 	if self.sword_cooldown > 0 then
 		return false
 	end
+	self.sword_strike_id = self.sword_strike_id + 1
 	self.timelines:get('p.seq.s'):set_frame(0)
 	self.events:emit('sword_start')
 	return true
@@ -3488,6 +3489,7 @@ local register_player_definition<const> = function()
 			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
 			sword_cooldown = 0,
+			sword_strike_id = 0,
 		},
 	})
 end
