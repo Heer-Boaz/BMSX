@@ -1064,7 +1064,6 @@ end
 
 function player:start_slow_doorpass()
 	self:cancel_sword()
-	self.slow_doorpass_substate = 0
 	self.events:emit('slowdoorpass_start')
 end
 
@@ -2220,39 +2219,29 @@ function player:update_walking_left()
 	self:runcheck_walking_left_controls()
 end
 
-function player:update_slowdoorpass()
-	if self.slow_doorpass_substate <= 24 then
-		local collided_x = false
-		if self.facing > 0 then
-			collided_x = self.right_wall_collision
-			if not collided_x then
-				self.x = self.x + 1
-			end
-		else
-			collided_x = self.left_wall_collision
-			if not collided_x then
-				self.x = self.x - 1
-			end
-		end
-		self.last_dx = collided_x and 0 or self.facing
-		self.last_dy = 0
-		self.previous_x_collision = collided_x
-		self.previous_y_collision = false
-		if ((self.slow_doorpass_substate // 4) % 2) == 0 then
-			self.walk_frame = 1
-		else
-			self.walk_frame = 0
-		end
+function player:update_slowdoorpass(state)
+	local collided_x = false
+	local dx<const> = self.facing * draaideur_pass_dx
+	if self.facing > 0 then
+		collided_x = self.right_wall_collision
+	else
+		collided_x = self.left_wall_collision
 	end
+	if not collided_x then
+		self.x = self.x + dx
+	end
+	self.last_dx = collided_x and 0 or dx
+	self.last_dy = 0
+	self.previous_x_collision = collided_x
+	self.previous_y_collision = false
+	local slow_doorpass_step<const> = state.data.step + 1
+	state.data.step = slow_doorpass_step
+	self.walk_frame = (slow_doorpass_step // draaideur_walk_pose_steps) & 1
 
-	if self.slow_doorpass_substate >= 24 then
-		self.slow_doorpass_substate = 0
+	if slow_doorpass_step >= draaideur_pass_steps then
 		self.walk_frame = 0
 		self.events:emit('slowdoorpass_done')
-		return
 	end
-
-	self.slow_doorpass_substate = self.slow_doorpass_substate + 1
 end
 
 function player:update_jump_motion()
@@ -2854,12 +2843,13 @@ local define_player_fsm<const> = function()
 			update = player.update_walking_left,
 		},
 		slowdoorpass = {
+			data = { step = 0 },
 			tags = { state_tags.variant.slowdoorpass, state_tags.group.damage_lock },
 			on = {
 				['slowdoorpass_done'] = '/quiet',
 			},
-			entering_state = function(self)
-				self.slow_doorpass_substate = 0
+			entering_state = function(self, state)
+				state.data.step = 0
 				self.walk_frame = 0
 			end,
 			update = player.update_slowdoorpass,
@@ -3402,7 +3392,6 @@ local register_player_definition<const> = function()
 			water_controlled_fall_dx_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
-			slow_doorpass_substate = 0,
 			health = damage_max_health,
 			max_health = damage_max_health,
 			hit_invulnerability_timer = 0,

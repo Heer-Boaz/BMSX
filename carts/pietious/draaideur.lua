@@ -2,6 +2,8 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local timeline<const> = require('cartlib/timeline/timeline')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local sprite_id_by_kind<const> = {
@@ -18,156 +20,161 @@ local sprite_id_by_kind<const> = {
 		open_3 = 'draaideur_2_open_3',
 	},
 }
-local closed_offset_x<const> = 0
+
+local pose<const> = {
+	closed = { sprite = 'closed', offset_x = 0 },
+	open_1 = { sprite = 'open_1', offset_x = -room_tile_half },
+	open_2 = { sprite = 'open_2', offset_x = -room_tile_size },
+	open_3 = { sprite = 'open_3', offset_x = -room_tile_half },
+}
+local opening_leftward_timeline_id<const> = 'draaideur.opening_leftward'
+local opening_rightward_timeline_id<const> = 'draaideur.opening_rightward'
 
 local draaideur<const> = {}
 draaideur.__index = draaideur
 
 function draaideur:touches_player(player, walking_left, walking_right)
 	if walking_left then
-		if rect_overlaps(
+		return rect_overlaps(
 			player.x,
 			player.y,
 			player.width,
 			player.height,
-			self.x + (room_tile_size / 4),
+			self.x + room_tile_unit,
 			self.y,
 			room_tile_size,
-			room_tile_size
-		) then
-			return true
-		end
-		if rect_overlaps(
-			player.x,
-			player.y,
-			player.width,
-			player.height,
-			self.x + (room_tile_size / 4),
-			self.y + room_tile_size,
-			room_tile_size,
-			room_tile_size
-		) then
-			return true
-		end
-		return false
+			room_tile_size2
+		)
 	end
 
 	if not walking_right then
 		return false
 	end
-	if rect_overlaps(
+	return rect_overlaps(
 		player.x,
 		player.y,
 		player.width,
 		player.height,
-		self.x - (room_tile_size / 4),
+		self.x - room_tile_unit,
 		self.y,
 		room_tile_size,
-		room_tile_size
-	) then
-		return true
-	end
-	if rect_overlaps(
-		player.x,
-		player.y,
-		player.width,
-		player.height,
-		self.x - (room_tile_size / 4),
-		self.y + room_tile_size,
-		room_tile_size,
-		room_tile_size
-	) then
-		return true
-	end
-	return false
+		room_tile_size2
+	)
 end
 
-function draaideur:begin_open(player, walking_left, walking_right)
-	if self.kind == 2 and walking_right then
-		self.state = 0
-		return
-	end
-	if self.kind == 3 and walking_left then
-		self.state = 0
-		return
-	end
-
-	self.state = self.state + 1
-	if self.state < 24 then
-		return
-	end
-
-	self.state = -24
-	if player.x > self.x then
-		self.player_was_right = true
-	else
-		self.player_was_right = false
-	end
-	self.castle.events:emit('rotatedoor')
-	player:start_slow_doorpass()
+function draaideur:set_pose(next_pose)
+	self:set_imgid(sprite_id_by_kind[self.kind][next_pose.sprite])
+	self.sprite_component.offset_x = next_pose.offset_x
 end
 
-function draaideur:update_active()
-	if self.state < 0 then
-		self.state = self.state + 1
-		self:sync_sprite()
-		return
-	end
+function draaideur:enter_active(state)
+	state.data.push_steps = 0
+	self.collision_enabled = true
+	self:set_pose(pose.closed)
+end
 
+function draaideur:enter_opening()
+	self.collision_enabled = false
+end
+
+function draaideur:update_active(state)
 	local player<const> = self.player
 	local walking_left<const> = player:has_tag('v.wl')
 	local walking_right<const> = player:has_tag('v.wr')
-	local touches<const> = self:touches_player(player, walking_left, walking_right)
-
-	if not touches then
-		self.state = 0
-		self:sync_sprite()
+	if (self.kind == 2 and walking_right)
+	or (self.kind == 3 and walking_left)
+	or not self:touches_player(player, walking_left, walking_right)
+	then
+		state.data.push_steps = 0
 		return
 	end
 
-	self:begin_open(player, walking_left, walking_right)
-	self:sync_sprite()
+	local push_steps<const> = state.data.push_steps + 1
+	state.data.push_steps = push_steps
+	if push_steps < draaideur_push_steps then
+		return
+	end
+
+	self.castle.events:emit('rotatedoor')
+	player:start_slow_doorpass()
+	if walking_left then
+		return '/opening_leftward'
+	end
+	return '/opening_rightward'
 end
-
-function draaideur:sync_sprite()
-	local sprite_set<const> = sprite_id_by_kind[self.kind]
-	if self.state >= 0 then
-		self:set_imgid(sprite_set.closed)
-		self.sprite_component.offset_x = closed_offset_x
-		return
-	end
-
-	if self.state < -16 then
-		local sprite_id<const> = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
-		self:set_imgid(sprite_id)
-		self.sprite_component.offset_x = -room_tile_half
-		return
-	end
-
-	if self.state < -8 then
-		self:set_imgid(sprite_set.open_2)
-		self.sprite_component.offset_x = -room_tile_size
-		return
-	end
-
-	if not self.player_was_right then
-		self:set_imgid(sprite_set.open_3)
-		self.sprite_component.offset_x = -room_tile_half
-		return
-	end
-
-	self:set_imgid(sprite_set.open_1)
-	self.sprite_component.offset_x = -room_tile_half
-end
-
-draaideur.ctor = draaideur.sync_sprite
 
 local define_draaideur_fsm<const> = function()
 	fsm_library.register('draaideur', {
+		timelines = {
+			[opening_leftward_timeline_id] = {
+				def = {
+					frames = timeline.range(draaideur_pose_steps * 4),
+					playback_mode = 'once',
+					tracks = {
+						{
+							kind = 'value',
+							interpolation = 'step',
+							apply = draaideur.set_pose,
+							keys = {
+								{ frame = 0, value = pose.closed },
+								{ frame = draaideur_pose_steps, value = pose.open_3 },
+								{ frame = draaideur_pose_steps * 2, value = pose.open_2 },
+								{ frame = draaideur_pose_steps * 3, value = pose.open_1 },
+							},
+						},
+					},
+				},
+				autoplay = false,
+			},
+			[opening_rightward_timeline_id] = {
+				def = {
+					frames = timeline.range(draaideur_pose_steps * 4),
+					playback_mode = 'once',
+					tracks = {
+						{
+							kind = 'value',
+							interpolation = 'step',
+							apply = draaideur.set_pose,
+							keys = {
+								{ frame = 0, value = pose.closed },
+								{ frame = draaideur_pose_steps, value = pose.open_1 },
+								{ frame = draaideur_pose_steps * 2, value = pose.open_2 },
+								{ frame = draaideur_pose_steps * 3, value = pose.open_3 },
+							},
+						},
+					},
+				},
+				autoplay = false,
+			},
+		},
 		initial = 'active',
 		states = {
 			active = {
+				data = { push_steps = 0 },
+				entering_state = draaideur.enter_active,
 				update = draaideur.update_active,
+			},
+			opening_leftward = {
+				entering_state = draaideur.enter_opening,
+				timelines = {
+					[opening_leftward_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = false },
+						on_finished = '/active',
+					},
+				},
+			},
+			opening_rightward = {
+				entering_state = draaideur.enter_opening,
+				timelines = {
+					[opening_rightward_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = false },
+						on_finished = '/active',
+					},
+				},
 			},
 		},
 	})
@@ -178,11 +185,10 @@ local register_draaideur_definition<const> = function()
 		def_id = 'draaideur',
 		class = draaideur,
 		base = sprite_object,
-		components = { fsm_component.factory({ 'draaideur' }) },
+		components = { timeline_component.new, fsm_component.factory({ 'draaideur' }) },
 		defaults = {
 			kind = 1,
-			state = 0,
-			player_was_right = false,
+			collision_enabled = true,
 		},
 	})
 end

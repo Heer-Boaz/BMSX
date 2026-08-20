@@ -705,7 +705,7 @@ function room_object:overlaps_active_draaideur(x, y, w, h)
 	local door_height<const> = tile_size * 3
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		if draaideur.state >= 0
+		if draaideur.collision_enabled
 		and rect_overlaps(x, y, w, h, draaideur.x, draaideur.y, tile_size, door_height)
 		then
 			return true
@@ -728,7 +728,7 @@ function room_object:is_active_draaideur_at_tile(tx, ty)
 		if tx == draaideur.tile_x
 		and ty >= draaideur.tile_y
 		and ty <= draaideur.tile_y + 2
-		and draaideur.state >= 0
+		and draaideur.collision_enabled
 		then
 			return true
 		end

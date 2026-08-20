@@ -376,6 +376,14 @@ world_entrance_open_step_frames = 4
 world_entrance_enter_world_midpoint_step = 32
 world_entrance_enter_world_total_steps = 64
 world_entrance_enter_leave_cycle_steps = 8
+-- MoG trap type 4 initializes its push counter to 0x1e VBlanks and advances
+-- each of the four rotating-door poses after six VBlanks. Pietious admits one
+-- gameplay update per two VBlanks, so the authored gameplay counts are halved.
+draaideur_push_steps = 15
+draaideur_pose_steps = 3
+draaideur_pass_steps = 12
+draaideur_pass_dx = 2
+draaideur_walk_pose_steps = 2
 shrine_hit_left_px = room_tile_size
 shrine_hit_top_px = room_tile_size
 shrine_hit_right_px = room_tile_size2
