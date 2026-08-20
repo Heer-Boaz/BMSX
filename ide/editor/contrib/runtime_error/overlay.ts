@@ -41,11 +41,14 @@ function buildRuntimeErrorOverlayDescriptors(
 	descriptors.push({ text: 'Lua Call Stack:', role: 'header' });
 	for (let frameIndex = 0; frameIndex < details.luaStack.length; frameIndex += 1) {
 		const frame = details.luaStack[frameIndex];
-		descriptors.push({
+		const descriptor: RuntimeErrorOverlayLineDescriptor = {
 			text: formatRuntimeStackFrame(frame),
 			role: 'frame',
-			frame,
-		});
+		};
+		if (frame.resource) {
+			descriptor.frame = frame;
+		}
+		descriptors.push(descriptor);
 	}
 	return descriptors;
 }

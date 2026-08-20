@@ -1696,9 +1696,9 @@ function resolveRuntimeLocalChainValue(
 		if (useFaultSnapshot) {
 			const frame = faultFrames[frameIndex];
 			functionIndex = frame.functionIndex;
-			textAddress = frame.textAddress;
+			textAddress = frame.toolingImage.layout.header.textAddress;
 			tracePc = frame.tracePc;
-			image = blua32ToolingImageForDomain(media, frame.executionDomainId);
+			image = frame.toolingImage;
 		} else {
 			const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
 			image = blua32ToolingImageForDomain(media, executionDomainId);
@@ -1709,6 +1709,9 @@ function resolveRuntimeLocalChainValue(
 				image.layout,
 				cpu.readFrameFunctionAddress(frameIndex),
 			);
+			if (functionIndex < 0) {
+				continue;
+			}
 			textAddress = image.layout.header.textAddress;
 			if (frameIndex + 1 < frameDepth) {
 				tracePc = cpu.readFrameCallSitePc(frameIndex + 1);
@@ -1721,7 +1724,7 @@ function resolveRuntimeLocalChainValue(
 					: cpu.readFramePc(frameIndex);
 			}
 		}
-		if (!image || image.symbols === null) {
+		if (!image || functionIndex < 0 || image.symbols === null) {
 			continue;
 		}
 		const symbols = image.symbols;

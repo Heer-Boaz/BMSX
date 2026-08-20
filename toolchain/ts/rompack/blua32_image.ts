@@ -155,8 +155,17 @@ export type Blua32ImageLayout = {
 	textBytes: Uint8Array;
 };
 
+// Runtime-compiled function records are ordinary mapped-memory records rather
+// than members of the linked ROM table. Return -1 when the physical address
+// therefore has no linked function index.
 export function blua32FunctionIndexAtAddress(image: Blua32ImageLayout, functionAddress: number): number {
-	return (functionAddress - image.header.functionTableAddress) / BLUA32_FUNCTION_RECORD_SIZE;
+	const tableOffset = functionAddress - image.header.functionTableAddress;
+	if (tableOffset < 0
+		|| tableOffset >= image.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE
+		|| tableOffset % BLUA32_FUNCTION_RECORD_SIZE !== 0) {
+		return -1;
+	}
+	return tableOffset / BLUA32_FUNCTION_RECORD_SIZE;
 }
 
 const stringDecoder = new TextDecoder('utf-8', { fatal: true });

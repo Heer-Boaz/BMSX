@@ -12,6 +12,7 @@ import {
 } from './error_format';
 import { buildLuaStackFrames, type StackTraceFrame } from './stack_trace';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type {
@@ -42,6 +43,10 @@ import {
 	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
 	IO_SYS_SUPERVISOR_FAULT_EPC,
 } from '../../machine/ts/spec/bmsx/io';
+import {
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
 
 type RuntimeErrorLocation = {
 	resource: ResourceIdentity;
@@ -64,9 +69,11 @@ export type FaultSnapshot = {
 
 export type RuntimeCpuFaultFrame = {
 	readonly executionDomainId: ExecutionDomainId;
+	readonly toolingImage: Blua32ToolingImage;
 	readonly functionAddress: number;
 	readonly functionIndex: number;
-	readonly textAddress: number;
+	readonly codeAddress: number;
+	readonly codeByteCount: number;
 	readonly tracePc: number;
 	readonly registers: readonly SuspendedGuestValue[];
 	readonly upvalues: readonly SuspendedGuestValue[];
@@ -136,14 +143,16 @@ function runtimeLuaErrorLocation(
 	};
 }
 
-function runtimeStackFrameLocation(
-	frame: StackTraceFrame,
-): RuntimeErrorLocation {
-	return {
-		resource: frame.resource,
-		line: frame.line,
-		column: frame.column,
-	};
+function firstSourceStackFrame(
+	frames: ReadonlyArray<StackTraceFrame>,
+): StackTraceFrame | null {
+	for (let index = 0; index < frames.length; index += 1) {
+		const frame = frames[index];
+		if (frame.resource) {
+			return frame;
+		}
+	}
+	return null;
 }
 
 function resolveRuntimeErrorLocation(
@@ -151,8 +160,13 @@ function resolveRuntimeErrorLocation(
 	sources: RuntimeSourceState,
 	error: Error,
 ): RuntimeErrorLocation {
-	if (fault.lastLuaCallStack.length > 0) {
-		return runtimeStackFrameLocation(fault.lastLuaCallStack[0]);
+	const sourceFrame = firstSourceStackFrame(fault.lastLuaCallStack);
+	if (sourceFrame) {
+		return {
+			resource: sourceFrame.resource,
+			line: sourceFrame.line,
+			column: sourceFrame.column,
+		};
 	}
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(sources, sources.activeCartridgeSlot, error);
@@ -223,6 +237,7 @@ function captureRuntimeCpuFaultFrames(
 	lastPc: number,
 ): RuntimeCpuFaultFrame[] {
 	const cpu = runtime.machine.cpu;
+	const memory = runtime.machine.memory;
 	const frames = new Array<RuntimeCpuFaultFrame>(frameDepth);
 	for (let frameIndex = 0; frameIndex < frameDepth; frameIndex += 1) {
 		const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
@@ -232,7 +247,12 @@ function captureRuntimeCpuFaultFrames(
 		}
 		const functionAddress = cpu.readFrameFunctionAddress(frameIndex);
 		const functionIndex = blua32FunctionIndexAtAddress(image.layout, functionAddress);
-		const functionRecord = image.layout.functions[functionIndex];
+		const codeAddress = memory.readMappedU32LE(
+			(functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0,
+		);
+		const codeByteCount = memory.readMappedU32LE(
+			(functionAddress + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0,
+		);
 		const registerCount = cpu.getFrameRegisterCount(frameIndex);
 		const registers = new Array<SuspendedGuestValue>(registerCount);
 		for (let registerIndex = 0; registerIndex < registerCount; registerIndex += 1) {
@@ -245,14 +265,16 @@ function captureRuntimeCpuFaultFrames(
 		}
 		frames[frameIndex] = {
 			executionDomainId,
+			toolingImage: image,
 			functionAddress,
 			functionIndex,
-			textAddress: image.layout.header.textAddress,
+			codeAddress,
+			codeByteCount,
 			tracePc: frameIndex + 1 < frameDepth
 				? cpu.readFrameCallSitePc(frameIndex + 1)
 				: lastExecutionDomainId === executionDomainId
-					&& lastPc >= functionRecord.codeAddress
-					&& lastPc < functionRecord.codeAddress + functionRecord.codeByteCount
+					&& lastPc >= codeAddress
+					&& lastPc < codeAddress + codeByteCount
 					? lastPc
 					: cpu.readFramePc(frameIndex),
 			registers,
@@ -366,7 +388,24 @@ export function recordSupervisorFault(
 			message = `Cause ${formatNumberAsHex(causeWord, 8)}.`;
 			break;
 	}
-	const location = runtimeStackFrameLocation(fault.lastLuaCallStack[0]);
+	const sourceFrame = firstSourceStackFrame(fault.lastLuaCallStack);
+	let location: RuntimeErrorLocation;
+	if (sourceFrame) {
+		location = {
+			resource: sourceFrame.resource,
+			line: sourceFrame.line,
+			column: sourceFrame.column,
+		};
+	} else {
+		location = {
+			resource: {
+				domain: sources.activeCartridgeSlot,
+				path: sources.activeLuaSources.entrySourcePath,
+			},
+			line: 0,
+			column: 0,
+		};
+	}
 	const details = buildRuntimeErrorDetails(fault, sources);
 	const stackText = buildErrorStackString(name, message, details.luaStack);
 	setRuntimeFault(fault, {
@@ -402,19 +441,18 @@ function buildRuntimeErrorDetails(
 		}
 	}
 	if (error instanceof LuaError) {
+		const sourceFrame = firstSourceStackFrame(luaFrames);
 		luaFrames[0] = createLuaErrorStackFrame(
 			sources,
 			error,
 			errorStackFunctionName(callFrames, luaFrames),
-			luaFrames.length > 0
-				? luaFrames[0].resource.domain
-				: sources.activeCartridgeSlot,
+			sourceFrame ? sourceFrame.resource.domain : sources.activeCartridgeSlot,
 		);
 	}
 	if (luaFrames.length > 0) {
 		for (const frame of luaFrames) {
 			const source = frame.source;
-			if (!source || source.length === 0) {
+			if (!source || source.length === 0 || !frame.resource) {
 				continue;
 			}
 			frame.workspacePath = resolveStackFrameWorkspacePath(sources, frame.resource);

@@ -1,5 +1,6 @@
 import {
 	describeBlua32InstructionAtPc,
+	describeMappedBlua32InstructionAtPc,
 	type InstructionOperandDebugInfo,
 } from '../../toolchain/ts/rompack/disassembler';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
@@ -12,9 +13,9 @@ import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import {
 	recordLuaError,
 	recordSupervisorFault,
+	type RuntimeCpuFaultFrame,
 	type RuntimeFaultState,
 } from '../runtime/fault_state';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
 import {
@@ -45,34 +46,48 @@ function formatDebugSourceLine(range: SourceRange): string {
 function logFaultInstruction(
 	logOutput: LogOutput,
 	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
+	runtime: Runtime,
 	session: SuspendedGuestSession,
 ): void {
 	const snapshot = fault.lastCpuFaultSnapshot;
 	const executionDomainId = fault.lastCpuFaultExecutionDomainId;
 	const pc = fault.lastCpuFaultPc;
-	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId);
-	if (!image) {
-		throw new Error('Captured BLua32 fault frame has no tooling image.');
-	}
 	let registers = EMPTY_REGISTER_VALUES;
+	let faultFrame: RuntimeCpuFaultFrame | null = null;
 	for (let frameIndex = snapshot.length - 1; frameIndex >= 0; frameIndex -= 1) {
 		const frame = snapshot[frameIndex];
 		if (frame.executionDomainId !== executionDomainId) {
 			continue;
 		}
-		const functionRecord = image.layout.functions[frame.functionIndex];
-		if (pc >= functionRecord.codeAddress
-			&& pc < functionRecord.codeAddress + functionRecord.codeByteCount) {
+		if (pc >= frame.codeAddress
+			&& pc < frame.codeAddress + frame.codeByteCount) {
+			faultFrame = frame;
 			registers = frame.registers;
 			break;
 		}
 	}
-	const instruction = describeBlua32InstructionAtPc(
-		image.layout,
-		image.symbols,
-		pc,
-	);
+	if (faultFrame === null) {
+		logOutput.log(LogLevel.Error, `\tpc=${formatNumberAsHex(pc, 8)}`);
+		return;
+	}
+	const image = faultFrame.toolingImage;
+	let instruction;
+	if (faultFrame.functionIndex < 0) {
+		const code = new Uint8Array(faultFrame.codeByteCount);
+		runtime.machine.memory.readBytesInto(faultFrame.codeAddress, code, code.length);
+		instruction = describeMappedBlua32InstructionAtPc(
+			image.layout,
+			code,
+			faultFrame.codeAddress,
+			pc,
+		);
+	} else {
+		instruction = describeBlua32InstructionAtPc(
+			image.layout,
+			image.symbols,
+			pc,
+		);
+	}
 	const operandSummary = instruction.operands
 		.map(operand => formatInstructionOperandDebug(session, operand, registers))
 		.join(' ');
@@ -97,7 +112,7 @@ export function handleLuaError(
 	const recorded = recordLuaError(fault, sources, runtime, whatever);
 	if (recorded) {
 		logOutput.log(LogLevel.Error, recorded.stackText);
-		logFaultInstruction(logOutput, fault, sources, session);
+		logFaultInstruction(logOutput, fault, runtime, session);
 	}
 }
 
@@ -118,5 +133,5 @@ export function handleSupervisorFault(
 		+ ` bad=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}`
 		+ ` lua=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_LUA_REASON), 8)}`,
 	);
-	logFaultInstruction(logOutput, fault, sources, session);
+	logFaultInstruction(logOutput, fault, runtime, session);
 }

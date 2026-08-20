@@ -41,6 +41,7 @@ type Blua32DisassemblySource = {
 	image: Blua32ImageLayout;
 	symbols: Blua32SymbolsImage | null;
 	code: Uint8Array;
+	codeAddress: number;
 };
 
 type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'disp' | 'mode';
@@ -451,25 +452,19 @@ const buildInstructionOperands = (
 	}
 };
 
-export const describeBlua32InstructionAtPc = (
-	image: Blua32ImageLayout,
-	symbols: Blua32SymbolsImage | null,
+const describeInstructionAtPc = (
+	source: Blua32DisassemblySource,
 	pc: number,
-	options: DisassemblyOptions = {},
+	options: DisassemblyOptions,
 ): InstructionDebugInfo => {
 	const opts = normalizeOptions({
 		pcRadix: 16,
 		pcPrefix: '0x',
 		...options,
 	});
-	const code = image.bytes.subarray(
-		image.header.textAddress - image.address,
-		image.header.textAddress - image.address + image.header.textByteCount,
-	);
-	const source: Blua32DisassemblySource = { image, symbols, code };
-	const lastPc = image.header.textAddress + image.header.textByteCount - INSTRUCTION_BYTES;
+	const lastPc = source.codeAddress + source.code.length - INSTRUCTION_BYTES;
 	const pcWidth = Math.max(1, lastPc.toString(opts.pcRadix).length);
-	const decoded = decodeInstructionAtPc(code, image.header.textAddress, pc);
+	const decoded = decodeInstructionAtPc(source.code, source.codeAddress, pc);
 	return {
 		pc: decoded.pc,
 		pcText: formatPc(decoded.pc, pcWidth, opts),
@@ -480,6 +475,37 @@ export const describeBlua32InstructionAtPc = (
 		sourceRange: sourceRangeAtPc(source, decoded.pc),
 	};
 };
+
+export const describeBlua32InstructionAtPc = (
+	image: Blua32ImageLayout,
+	symbols: Blua32SymbolsImage | null,
+	pc: number,
+	options: DisassemblyOptions = {},
+): InstructionDebugInfo => {
+	const code = image.bytes.subarray(
+		image.header.textAddress - image.address,
+		image.header.textAddress - image.address + image.header.textByteCount,
+	);
+	return describeInstructionAtPc({
+		image,
+		symbols,
+		code,
+		codeAddress: image.header.textAddress,
+	}, pc, options);
+};
+
+export const describeMappedBlua32InstructionAtPc = (
+	image: Blua32ImageLayout,
+	code: Uint8Array,
+	codeAddress: number,
+	pc: number,
+	options: DisassemblyOptions = {},
+): InstructionDebugInfo => describeInstructionAtPc({
+	image,
+	symbols: null,
+	code,
+	codeAddress,
+}, pc, options);
 
 const formatInstruction = (
 	decoded: DecodedInstruction,

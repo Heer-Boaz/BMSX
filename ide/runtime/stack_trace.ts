@@ -4,11 +4,9 @@ import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import {
 	resolveRuntimeLuaSource,
-	runtimeLuaSourceRegistry,
 	type RuntimeSourceState,
 } from './sources';
 import type { ResourceIdentity } from '../common/resource';
@@ -16,7 +14,7 @@ import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_d
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 
 export type StackTraceFrame = {
-	resource: ResourceIdentity;
+	resource: ResourceIdentity | null;
 	functionName: string;
 	source: string;
 	line: number;
@@ -54,20 +52,31 @@ function resolveLuaFunctionName(
 	functionIndex: number,
 	functionAddress: number,
 ): string {
-	return symbols === null
+	return symbols === null || functionIndex < 0
 		? `function@${functionAddress.toString(16)}`
 		: luaFunctionNameFromId(symbols.metadata.functionIds[functionIndex]);
+}
+
+function buildLuaInstructionStackFrame(
+	functionName: string,
+): StackTraceFrame {
+	return {
+		resource: null,
+		functionName,
+		source: '',
+		line: 0,
+		column: 0,
+		raw: buildLuaFrameRawLabel(functionName, ''),
+	};
 }
 
 function buildLuaSourceStackFrame(
 	sources: RuntimeSourceState,
 	executionDomainId: ExecutionDomainId,
-	range: SourceRange | null,
+	range: SourceRange,
 	functionName: string,
 ): StackTraceFrame {
-	const source = range
-		? range.path
-		: runtimeLuaSourceRegistry(sources, executionDomainId)!.entrySourcePath;
+	const source = range.path;
 	const sourceRecord = resolveRuntimeLuaSource(sources, {
 		domain: executionDomainId,
 		path: source,
@@ -79,8 +88,8 @@ function buildLuaSourceStackFrame(
 		},
 		functionName,
 		source,
-		line: range ? range.start.line : 0,
-		column: range ? range.start.column : 0,
+		line: range.start.line,
+		column: range.start.column,
 		raw: buildLuaFrameRawLabel(functionName, source),
 	};
 }
@@ -89,15 +98,14 @@ export function buildLuaStackFrames(
 	sources: RuntimeSourceState,
 	faultFrames: readonly RuntimeCpuFaultFrame[],
 ): StackTraceFrame[] {
-	const media = sources.currentBlua32Media;
 	const frames: StackTraceFrame[] = [];
 	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
 		const entry = faultFrames[index];
-		const image = blua32ToolingImageForDomain(media, entry.executionDomainId);
-		const symbols = image ? image.symbols : null;
+		const image = entry.toolingImage;
+		const symbols = entry.functionIndex < 0 ? null : image.symbols;
 		const range = symbols === null
 			? null
-			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.tracePc);
+			: blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, entry.tracePc);
 		const physicalFunctionName = resolveLuaFunctionName(
 			symbols,
 			entry.functionIndex,
@@ -106,7 +114,7 @@ export function buildLuaStackFrames(
 		if (symbols !== null && range !== null) {
 			const inlineCallSites = blua32InlineCallSitesAtPc(
 				symbols,
-				entry.textAddress,
+				image.layout.header.textAddress,
 				entry.tracePc,
 			);
 			for (let inlineIndex = inlineCallSites.length - 1; inlineIndex >= 0; inlineIndex -= 1) {
@@ -127,12 +135,7 @@ export function buildLuaStackFrames(
 				physicalFunctionName,
 			));
 		} else {
-			frames.push(buildLuaSourceStackFrame(
-				sources,
-				entry.executionDomainId,
-				range,
-				physicalFunctionName,
-			));
+			frames.push(buildLuaInstructionStackFrame(physicalFunctionName));
 		}
 	}
 	return frames;
