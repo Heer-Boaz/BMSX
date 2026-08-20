@@ -19,11 +19,12 @@ local tick_lane_member_by_clock_source<const> = {
 	[timeline_clock_source.audio] = '_audio_tick_lane',
 }
 
+local scheduled_timeline_count<const> = function(lane)
+	return lane.count - lane.removed_count + lane.pending_count
+end
+
 local remove_timeline_schedule<const> = function(self, entry)
-	local lane<const> = entry.tick_lane
-	if lane == nil then
-		return
-	end
+	local lane = entry.pending_tick_lane
 	local pending_index<const> = entry.pending_tick_index
 	if pending_index ~= nil then
 		local pending_entries<const> = lane.pending_entries
@@ -32,17 +33,30 @@ local remove_timeline_schedule<const> = function(self, entry)
 		pending_entries[pending_count] = nil
 		lane.pending_count = pending_count - 1
 		entry.pending_tick_index = nil
-		entry.tick_lane = nil
+		entry.pending_tick_lane = nil
 		if pending_index < pending_count then
 			pending_entries[pending_index] = last_entry
 			last_entry.pending_tick_index = pending_index
 		end
-		if lane.count == 0 and pending_count == 1 then
+		if scheduled_timeline_count(lane) == 0 then
 			self:set_tick_clock_enabled(lane.clock_source, false)
 		end
 		return
 	end
+	lane = entry.tick_lane
+	if lane == nil then
+		return
+	end
 	local tick_index<const> = entry.tick_index
+	if lane.ticking then
+		lane.removed_count = lane.removed_count + 1
+		entry.tick_index = nil
+		entry.tick_lane = nil
+		if scheduled_timeline_count(lane) == 0 then
+			self:set_tick_clock_enabled(lane.clock_source, false)
+		end
+		return
+	end
 	local tick_count<const> = lane.count
 	local last_entry<const> = lane[tick_count]
 	lane[tick_count] = nil
@@ -53,7 +67,7 @@ local remove_timeline_schedule<const> = function(self, entry)
 		lane[tick_index] = last_entry
 		last_entry.tick_index = tick_index
 	end
-	if tick_count == 1 and lane.pending_count == 0 then
+	if scheduled_timeline_count(lane) == 0 then
 		self:set_tick_clock_enabled(lane.clock_source, false)
 	end
 end
@@ -73,13 +87,14 @@ local reconcile_timeline_schedule<const> = function(self, entry)
 		lane = {
 			clock_source = clock_source,
 			count = 0,
+			removed_count = 0,
 			pending_entries = {},
 			pending_count = 0,
 			ticking = false,
 		}
 		self[lane_member] = lane
 	end
-	if entry.tick_lane == lane then
+	if entry.tick_lane == lane or entry.pending_tick_lane == lane then
 		return
 	end
 	remove_timeline_schedule(self, entry)
@@ -88,14 +103,15 @@ local reconcile_timeline_schedule<const> = function(self, entry)
 		lane.pending_count = pending_count
 		lane.pending_entries[pending_count] = entry
 		entry.pending_tick_index = pending_count
+		entry.pending_tick_lane = lane
 	else
 		local tick_count<const> = lane.count + 1
 		lane.count = tick_count
 		lane[tick_count] = entry
 		entry.tick_index = tick_count
+		entry.tick_lane = lane
 	end
-	entry.tick_lane = lane
-	if lane.count + lane.pending_count == 1 then
+	if scheduled_timeline_count(lane) == 1 then
 		self:set_tick_clock_enabled(clock_source, true)
 	end
 end
@@ -366,32 +382,52 @@ end
 local tick_lane<const> = function(self, entries, delta_time)
 	local owner<const> = self.parent
 	entries.ticking = true
-	local count = entries.count
-	local index = 1
-	while index <= count do
+	local count<const> = entries.count
+	for index = 1, count do
 		local entry<const> = entries[index]
-		if entry:update(owner, delta_time) then
-			finish_entry(self, entry)
-			count = entries.count
-		else
-			index = index + 1
+		-- Active membership is separate from deferred admission. A callback may
+		-- stop an entry that has not consumed this delta yet; its retained slot is
+		-- skipped and compacted once traversal has finished.
+		if entry.tick_lane == entries then
+			if entry:update(owner, delta_time) then
+				finish_entry(self, entry)
+			end
 		end
 	end
 	entries.ticking = false
+	if entries.removed_count ~= 0 then
+		local write_index = 1
+		for read_index = 1, count do
+			local entry<const> = entries[read_index]
+			if entry.tick_lane == entries then
+				entries[write_index] = entry
+				entry.tick_index = write_index
+				write_index = write_index + 1
+			end
+		end
+		for clear_index = write_index, count do
+			entries[clear_index] = nil
+		end
+		entries.count = write_index - 1
+		entries.removed_count = 0
+	end
 	local pending_count<const> = entries.pending_count
 	if pending_count == 0 then
 		return
 	end
 	local pending_entries<const> = entries.pending_entries
+	local active_count<const> = entries.count
 	for pending_index = 1, pending_count do
 		local entry<const> = pending_entries[pending_index]
-		local tick_index<const> = count + pending_index
+		local tick_index<const> = active_count + pending_index
 		entries[tick_index] = entry
 		entry.tick_index = tick_index
 		entry.pending_tick_index = nil
+		entry.pending_tick_lane = nil
+		entry.tick_lane = entries
 		pending_entries[pending_index] = nil
 	end
-	entries.count = count + pending_count
+	entries.count = active_count + pending_count
 	entries.pending_count = 0
 end
 

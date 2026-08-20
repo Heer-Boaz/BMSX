@@ -591,6 +591,49 @@ assert(chain_timelines:get('successor').position_ms == 0,
 chain_timelines:tick_gameplay(20)
 assert(chain_timelines:get('successor').position_ms == 20)
 
+local mutation_owner<const> = setmetatable({ id = 'timeline_lane_mutation_test' }, world_object)
+world_object.initialize(mutation_owner)
+local mutation_timelines<const> = timeline_component.new({ parent = mutation_owner })
+mutation_timelines:on_attach()
+mutation_owner.events:on({
+	event = 'timeline.replace_peer',
+	handler = function()
+		mutation_timelines:stop('peer')
+		mutation_timelines:play('replacement')
+	end,
+})
+mutation_timelines:define('source', {
+	continuous = true,
+	duration_ms = 100,
+	playback_mode = 'once',
+	tracks = {
+		{
+			kind = 'event',
+			keys = {
+				{ time_ms = 20, event = 'timeline.replace_peer', direction = 'forward' },
+			},
+		},
+	},
+})
+mutation_timelines:define('peer', {
+	continuous = true,
+	duration_ms = 100,
+	playback_mode = 'once',
+})
+mutation_timelines:define('replacement', {
+	continuous = true,
+	duration_ms = 100,
+	playback_mode = 'once',
+})
+mutation_timelines:play('source')
+mutation_timelines:play('peer')
+mutation_timelines:tick_gameplay(20)
+assert(not mutation_timelines:get('peer').playing)
+assert(mutation_timelines:get('replacement').position_ms == 0)
+mutation_timelines:tick_gameplay(20)
+assert(mutation_timelines:get('source').position_ms == 40)
+assert(mutation_timelines:get('replacement').position_ms == 20)
+
 	return nil
 end
 
