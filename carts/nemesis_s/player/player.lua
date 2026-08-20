@@ -892,7 +892,8 @@ function player:finish_dying()
 end
 
 function player:on_body_overlap(_state, event)
-	if event.collider_local_id == player_body_collider_id then
+	if event.collider_local_id == player_body_collider_id
+	and event.other_layer ~= collision_pickup_layer then
 		return '/dying'
 	end
 end

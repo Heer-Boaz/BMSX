@@ -471,6 +471,60 @@ function getMappings() {
 			colorKey: { r: 255, g: 0, b: 255 },
 		},
 		{
+			source: 'Foes/Boss/Kerk.bmp',
+			target: 'kerk.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Boss/Bel_klein.bmp',
+			target: 'bel_middle.png',
+		},
+		{
+			source: 'Foes/Boss/Bel2_klein.bmp',
+			target: 'bel_side.png',
+		},
+		{
+			source: 'Foes/Boss/MuziekNootFoe.bmp',
+			target: 'noot.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Misc/Roodje.bmp',
+			target: 'roodje.png',
+		},
+		{
+			source: 'FX/FoeDeath1.bmp',
+			target: 'small_explosion_1.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'FX/FoeDeath2.bmp',
+			target: 'small_explosion_2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'FX/FoeDeath3.bmp',
+			target: 'small_explosion_3.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'FX/FoeDeath4.bmp',
+			target: 'small_explosion_4.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'FX/Explosion1.bmp',
+			target: 'large_explosion_1.png',
+		},
+		{
+			source: 'FX/Explosion2.bmp',
+			target: 'large_explosion_2.png',
+		},
+		{
+			source: 'FX/Explosion3.bmp',
+			target: 'large_explosion_3.png',
+		},
+		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},

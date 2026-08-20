@@ -21,6 +21,13 @@ function fixed_point_velocity_component.new(opts)
 	return self
 end
 
+-- Converts authored pixel velocity once at the fixed-point owner. Runtime
+-- integration continues to consume only signed Q8.8 words.
+function fixed_point_velocity_component:set_velocity_pixels_per_tick(velocity_x, velocity_y)
+	self.velocity_x = math.round(velocity_x * 0x100)
+	self.velocity_y = math.round(velocity_y * 0x100)
+end
+
 -- Retains a direction in signed Q8.8 while making its dominant axis equal to
 -- the requested magnitude. Homing actors calculate this once when they acquire
 -- a target; the velocity system then advances the retained integer datapath

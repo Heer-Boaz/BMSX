@@ -17,6 +17,7 @@ local stage<const> = {}
 stage.__index = stage
 
 local frame_duration_ms<const> = clock.frame_milliseconds()
+local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
 local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
@@ -552,6 +553,30 @@ function stage:build_tape()
 							},
 						},
 					}
+				elseif symbol == 'K' then
+					local kerk_y<const> = stage_y * self.tile_size - kerk_height
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_bel_def,
+						options = {
+							stage = self,
+							pos = {
+								x = playfield_width + 7,
+								y = kerk_y + 80,
+							},
+						},
+					}
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_kerk_def,
+						options = {
+							stage = self,
+							pos = {
+								x = playfield_width,
+								y = kerk_y,
+							},
+						},
+					}
 				end
 			end
 		end
@@ -672,6 +697,11 @@ function stage:update_runtime()
 	self:apply_star_scroll(self.blue_stars, stage_star_scroll_speed)
 end
 
+function stage:resume_scrolling()
+	self.scrolling = true
+	self.events:emit(resume_scrolling_event)
+end
+
 function stage:draw_star_particles(draw, stars, source, hidden)
 	if hidden then
 		return
@@ -730,6 +760,9 @@ end
 local define_stage_fsm<const> = function()
 	fsm_library.register(ids_stage_fsm, {
 		initial = 'boot',
+		on = {
+			[resume_scrolling_event] = '/running/scrolling',
+		},
 		states = {
 			boot = {
 				entering_state = function(self)

@@ -75,3 +75,40 @@ events:
         rules:
             - go:
                   audio_id: player_death
+
+    enemy.bel.ring:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_something_fell
+
+    enemy.bel.armored_hit:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_structure_hit
+                  priority: 8
+
+    enemy.bel.hit:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_boss_hit
+
+    enemy.bel.destroyed:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_core_explosion
+
+    enemy.small.destroyed:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_foe_death
+
+    pickup.powerup:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_roodje
