@@ -29,7 +29,7 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
-const SUPERVISOR_REQUEST_CHORD = ['select', 'down'] as const;
+const SUPERVISOR_REQUEST_CHORD = ['select', 'lb'] as const;
 
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.

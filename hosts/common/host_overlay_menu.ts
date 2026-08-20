@@ -43,8 +43,6 @@ type HostMenuButton = {
 
 const BUTTON_START: HostMenuButton = { gamepad: 'start', keyboard: 'Enter' };
 const BUTTON_SELECT: HostMenuButton = { gamepad: 'select', keyboard: 'Backspace' };
-const BUTTON_LB: HostMenuButton = { gamepad: 'lb', keyboard: 'ShiftLeft' };
-const BUTTON_RB: HostMenuButton = { gamepad: 'rb', keyboard: 'ShiftRight' };
 const BUTTON_UP: HostMenuButton = { gamepad: 'up', keyboard: 'ArrowUp' };
 const BUTTON_DOWN: HostMenuButton = { gamepad: 'down', keyboard: 'ArrowDown' };
 const BUTTON_LEFT: HostMenuButton = { gamepad: 'left', keyboard: 'ArrowLeft' };
@@ -52,7 +50,7 @@ const BUTTON_RIGHT: HostMenuButton = { gamepad: 'right', keyboard: 'ArrowRight' 
 const BUTTON_A: HostMenuButton = { gamepad: 'a', keyboard: 'KeyX' };
 const BUTTON_B: HostMenuButton = { gamepad: 'b', keyboard: 'KeyC' };
 
-const MENU_TOGGLE_BUTTONS = [BUTTON_START, BUTTON_SELECT, BUTTON_LB, BUTTON_RB] as const;
+const MENU_TOGGLE_BUTTONS = [BUTTON_START, BUTTON_SELECT] as const;
 const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_A, BUTTON_B, BUTTON_START] as const;
 
 const TITLE_TEXT = 'CORE OPTIONS';
@@ -330,13 +328,9 @@ export class HostOverlayMenu {
 		const player = this.input.getPlayerInput(1);
 		const startState = readButtonState(player, BUTTON_START);
 		const selectState = readButtonState(player, BUTTON_SELECT);
-		const lbState = readButtonState(player, BUTTON_LB);
-		const rbState = readButtonState(player, BUTTON_RB);
 		const comboEdge = (startState & HostButtonState.Pressed) !== 0
 			&& (selectState & HostButtonState.Pressed) !== 0
-			&& (lbState & HostButtonState.Pressed) !== 0
-			&& (rbState & HostButtonState.Pressed) !== 0
-			&& ((startState | selectState | lbState | rbState) & HostButtonState.JustPressed) !== 0;
+			&& ((startState | selectState) & HostButtonState.JustPressed) !== 0;
 		if (comboEdge) {
 			this.toggle();
 			consumeButtons(player, MENU_TOGGLE_BUTTONS);

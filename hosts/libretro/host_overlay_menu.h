@@ -23,8 +23,6 @@ enum class HostMenuInput : u8 {
 enum class HostMenuButtonId : u8 {
 	Start,
 	Select,
-	LeftBumper,
-	RightBumper,
 	Up,
 	Down,
 	Left,

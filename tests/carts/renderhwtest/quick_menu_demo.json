@@ -43,44 +43,6 @@
 		}
 	},
 	{
-		"description": "quick menu left shoulder down",
-		"frame": 121,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "ShiftLeft",
-			"down": true,
-			"value": 1,
-			"timestamp": 2400,
-			"pressId": 3,
-			"modifiers": {
-				"ctrl": false,
-				"shift": false,
-				"alt": false,
-				"meta": false
-			}
-		}
-	},
-	{
-		"description": "quick menu right shoulder down",
-		"frame": 121,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "ShiftRight",
-			"down": true,
-			"value": 1,
-			"timestamp": 2400,
-			"pressId": 4,
-			"modifiers": {
-				"ctrl": false,
-				"shift": false,
-				"alt": false,
-				"meta": false
-			}
-		}
-	},
-	{
 		"description": "quick menu frame",
 		"frame": 125,
 		"capture": true
@@ -115,44 +77,6 @@
 			"value": 0,
 			"timestamp": 2520,
 			"pressId": 2,
-			"modifiers": {
-				"ctrl": false,
-				"shift": false,
-				"alt": false,
-				"meta": false
-			}
-		}
-	},
-	{
-		"description": "quick menu left shoulder up",
-		"frame": 127,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "ShiftLeft",
-			"down": false,
-			"value": 0,
-			"timestamp": 2520,
-			"pressId": 3,
-			"modifiers": {
-				"ctrl": false,
-				"shift": false,
-				"alt": false,
-				"meta": false
-			}
-		}
-	},
-	{
-		"description": "quick menu right shoulder up",
-		"frame": 127,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "ShiftRight",
-			"down": false,
-			"value": 0,
-			"timestamp": 2520,
-			"pressId": 4,
 			"modifiers": {
 				"ctrl": false,
 				"shift": false,

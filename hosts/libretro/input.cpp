@@ -52,7 +52,7 @@ constexpr std::array<InputControllerGamepadButtonBit, kLibretroButtonCount> kLib
 
 constexpr u32 kSupervisorChordMask =
 	(1u << static_cast<u32>(InputControllerGamepadButtonBit::Select)) |
-	(1u << static_cast<u32>(InputControllerGamepadButtonBit::Down));
+	(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper));
 
 constexpr unsigned kRetroMouseIdX = 0u;
 constexpr unsigned kRetroMouseIdY = 1u;

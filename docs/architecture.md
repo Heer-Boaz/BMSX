@@ -1900,7 +1900,7 @@ injecting a synthetic keyboard event into the ICU. Browser, headless and native
 libretro keyboard paths publish physical `F2` only as the ordinary cart-visible
 HID bit. The browser reserves `ScrollLock` for its supervisor-request line;
 headless tooling uses the explicit `supervisor-request` host event. Common TS
-hosts and the libretro core also own the SNES-compatible Down+Select chord. A
+hosts and the libretro core also own the SNES-compatible Select+L chord. A
 partial press remains ordinary cart input, but the first poll with both buttons
 high masks both controls and raises the dedicated line. The latch keeps both
 controls masked until both are released, then lowers and rearms the line. The

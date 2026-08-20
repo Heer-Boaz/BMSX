@@ -15,20 +15,23 @@ static void require(bool condition, const char* message) {
 }
 
 int main(void) {
-	const uint16_t down = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+	const uint16_t left_shoulder = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
 	const uint16_t select = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 	const uint16_t a = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
-	const uint16_t chord = (uint16_t)(down | select);
+	const uint16_t chord = (uint16_t)(left_shoulder | select);
 	bool request_line_high = false;
 
 	require(
-		bmsx_supervisor_chord_update(&request_line_high, down, chord) == down &&
+		bmsx_supervisor_chord_update(
+			&request_line_high,
+			left_shoulder,
+			chord) == left_shoulder &&
 			!request_line_high,
 		"a partial chord remains ordinary gameplay");
 	require(
 		bmsx_supervisor_chord_update(
 			&request_line_high,
-			(uint16_t)(down | select | a),
+			(uint16_t)(left_shoulder | select | a),
 			chord) == a &&
 			request_line_high,
 		"the completed chord raises the line and consumes only its buttons");
@@ -43,7 +46,7 @@ int main(void) {
 	require(
 		bmsx_supervisor_chord_update(
 			&request_line_high,
-			(uint16_t)(down | select),
+			(uint16_t)(left_shoulder | select),
 			chord) == 0u &&
 			request_line_high,
 		"a rearmed chord raises the supervisor line again");

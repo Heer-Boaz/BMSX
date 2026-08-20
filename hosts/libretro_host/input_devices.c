@@ -23,7 +23,7 @@
 enum {
 	kMaximumInputDevices = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT,
 	kSupervisorChordMask =
-		(1u << RETRO_DEVICE_ID_JOYPAD_DOWN) |
+		(1u << RETRO_DEVICE_ID_JOYPAD_L) |
 		(1u << RETRO_DEVICE_ID_JOYPAD_SELECT),
 	kRetroMouseIdX = 0,
 	kRetroMouseIdY = 1,
@@ -371,7 +371,6 @@ static void finalize_pad_state(uint16_t pad_state) {
 			kSupervisorChordMask);
 	const bool exit_combo_down =
 			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
 			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
 			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (!exit_combo_down) {

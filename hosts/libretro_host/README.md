@@ -87,8 +87,9 @@ Native host builds require SDL2 and provide the SDL video, audio, and input path
 
 ## Host controls
 
-- Down+Select opens or closes the BIOS supervisor terminal. A partial chord
+- Select+Start opens or closes the core-options menu.
+- Select+L opens or closes the BIOS supervisor terminal. A partial chord
   remains normal gameplay; once both buttons are held, the host consumes both
   until they are fully released. The core receives a dedicated supervisor line,
   not a synthetic F2 key.
-- L+R+Start+Select held for two seconds exits the direct host.
+- L+R+Start held for two seconds exits the direct host.

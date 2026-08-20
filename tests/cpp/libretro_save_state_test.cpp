@@ -130,21 +130,21 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.setInputPollCallback(discardInputPoll);
 	input.setInputStateCallback(gamepadInputState);
 
-	const uint32_t downButton = 1u << static_cast<uint32_t>(
-		bmsx::InputControllerGamepadButtonBit::Down);
+	const uint32_t leftShoulderButton = 1u << static_cast<uint32_t>(
+		bmsx::InputControllerGamepadButtonBit::LeftBumper);
 	const uint32_t selectButton = 1u << static_cast<uint32_t>(
 		bmsx::InputControllerGamepadButtonBit::Select);
-	const uint32_t supervisorChordButtons = downButton | selectButton;
+	const uint32_t supervisorChordButtons = leftShoulderButton | selectButton;
 	bmsx::InputControllerSnapshot snapshot;
 
-	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
+	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_L;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
 		"a partial supervisor chord must remain ordinary gameplay");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.pads[0].buttons & downButton) != 0u,
+		(snapshot.pads[0].buttons & leftShoulderButton) != 0u,
 		"a partial supervisor chord must remain cart-visible");
 
 	gamepadState |= 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
