@@ -1,13 +1,11 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local clock<const> = require('cartlib/clock')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
+local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
-local charge_flash<const> = require('enemies/charge_flash')
 local enemy<const> = require('enemies/enemy')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -23,20 +21,28 @@ local animation_images<const> = {
 	assets_schoorsteen_foe_4,
 	assets_schoorsteen_foe_5,
 }
-local flash_sources<const> = {
-	image.resolve(assets_schoorsteen_flash_1),
-	image.resolve(assets_schoorsteen_flash_2),
-}
+local new_flash_animation<const> = sprite_animation_component.factory({
+	frames = {
+		assets_schoorsteen_flash_1,
+		assets_schoorsteen_flash_2,
+	},
+	frame_duration_ms = frame_duration_ms,
+	loop = true,
+	offset_x = schoorsteen_flash_offset_x,
+	offset_y = schoorsteen_flash_offset_y,
+	offset_z = 0,
+	enabled = false,
+})
+local deactivate_flash_animation<const> = function(target)
+	target.flash_animation:deactivate()
+end
 local players_view
 
 function schoorsteen_foe:ctor()
 	self:get_component(collider_2d_component):set_shape_asset(
 		assets.collision_shape_schoorsteen_foe_body_addr
 	)
-	self:get_component(custom_visual_component):set_draw_function(charge_flash)
-	self.flash_sources = flash_sources
-	self.flash_offset_x = schoorsteen_flash_offset_x
-	self.flash_offset_y = schoorsteen_flash_offset_y
+	self.flash_animation = self:get_component(sprite_animation_component)
 end
 
 function schoorsteen_foe:onspawn()
@@ -47,7 +53,7 @@ end
 
 function schoorsteen_foe:enter_idle()
 	self.vulnerable = false
-	self.flash_visible = false
+	self.flash_animation:deactivate()
 	self.animation_frame = 0
 	self.animation_elapsed_ms = 0
 	self:set_imgid(animation_images[1])
@@ -70,8 +76,7 @@ end
 
 function schoorsteen_foe:enter_ready_to_fire()
 	self.vulnerable = true
-	self.flash_visible = true
-	self.flash_frame = 1
+	self.flash_animation:activate()
 	self.animation_frame = 0
 	self.animation_elapsed_ms = 0
 end
@@ -80,7 +85,6 @@ function schoorsteen_foe:update_ready_to_fire()
 	if self:dispose_if_left_of_stage(schoorsteen_foe_width) then
 		return
 	end
-	self.flash_frame = 3 - self.flash_frame
 	local elapsed<const> = self.animation_elapsed_ms + frame_duration_ms
 	if elapsed < schoorsteen_foe_animation_frame_ms then
 		self.animation_elapsed_ms = elapsed
@@ -90,7 +94,6 @@ function schoorsteen_foe:update_ready_to_fire()
 	local frame<const> = self.animation_frame + 1
 	self.animation_frame = frame
 	if frame >= #animation_images then
-		self.flash_visible = false
 		self.ray = world:spawn(ids_schoorsteen_ray_def, {
 			originator = self,
 			pos = {
@@ -104,19 +107,19 @@ function schoorsteen_foe:update_ready_to_fire()
 	self:set_imgid(animation_images[frame + 1])
 end
 
-function schoorsteen_foe:enter_firing()
-	self.phase_elapsed_ms = 0
+function schoorsteen_foe:enter_firing(state)
+	state.data.elapsed_ms = 0
 end
 
-function schoorsteen_foe:update_firing()
+function schoorsteen_foe:update_firing(state)
 	if self:dispose_if_left_of_stage(schoorsteen_foe_width) then
 		return
 	end
-	local elapsed<const> = self.phase_elapsed_ms + frame_duration_ms
+	local elapsed<const> = state.data.elapsed_ms + frame_duration_ms
 	if elapsed >= schoorsteen_foe_cooldown_ms then
 		return '/cooling_down'
 	end
-	self.phase_elapsed_ms = elapsed
+	state.data.elapsed_ms = elapsed
 end
 
 function schoorsteen_foe:ray_disposed()
@@ -165,9 +168,11 @@ local define_fsm<const> = function()
 			},
 			ready_to_fire = {
 				entering_state = schoorsteen_foe.enter_ready_to_fire,
+				exiting_state = deactivate_flash_animation,
 				update = schoorsteen_foe.update_ready_to_fire,
 			},
 			firing = {
+				data = { elapsed_ms = 0 },
 				entering_state = schoorsteen_foe.enter_firing,
 				update = schoorsteen_foe.update_firing,
 			},
@@ -186,7 +191,7 @@ local register_definition<const> = function()
 		base = enemy,
 		components = {
 			enemy.new_collider,
-			custom_visual_component.new,
+			new_flash_animation,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_schoorsteen_foe_fsm }),
 		},
@@ -196,9 +201,6 @@ local register_definition<const> = function()
 			small_fry = false,
 			animation_frame = 0,
 			animation_elapsed_ms = 0,
-			phase_elapsed_ms = 0,
-			flash_frame = 1,
-			flash_visible = false,
 			z = schoorsteen_foe_draw_z,
 		},
 	})

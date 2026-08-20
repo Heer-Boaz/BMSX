@@ -1,8 +1,7 @@
 local clock<const> = require('cartlib/clock')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local image<const> = require('cartlib/gx/image')
+local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
@@ -12,14 +11,12 @@ local schoorsteen_ray<const> = {}
 schoorsteen_ray.__index = schoorsteen_ray
 
 local frame_duration_ms<const> = clock.frame_milliseconds()
-local ray_source<const> = image.resolve(assets_schoorsteen_ray)
-
-local draw_ray<const> = function(component, draw)
-	local owner<const> = component.parent
-	for y = owner.top_y, owner.y - 1, schoorsteen_ray_tile_size do
-		ray_source:blit(draw, owner.x, y)
-	end
-end
+local new_ray_strip<const> = tile_strip_component.factory(
+	assets_schoorsteen_ray,
+	0,
+	-schoorsteen_ray_tile_size,
+	1
+)
 
 function schoorsteen_ray:finish()
 	local originator<const> = self.originator
@@ -38,11 +35,12 @@ function schoorsteen_ray:update_expanding()
 	if self.expansion_step >= schoorsteen_ray_max_steps then
 		return '/contracting'
 	end
-	self.top_y = self.top_y - schoorsteen_ray_growth_tiles * schoorsteen_ray_tile_size
+	self.ray_strip.last_tile = self.ray_strip.last_tile + schoorsteen_ray_growth_tiles
 end
 
 function schoorsteen_ray:update_contracting()
-	if self.y <= self.top_y then
+	local ray_strip<const> = self.ray_strip
+	if ray_strip.first_tile > ray_strip.last_tile then
 		self:finish()
 		return
 	end
@@ -52,16 +50,11 @@ function schoorsteen_ray:update_contracting()
 		return
 	end
 	self.step_elapsed_ms = elapsed - schoorsteen_ray_step_ms
-	self.y = self.y - schoorsteen_ray_growth_tiles * schoorsteen_ray_tile_size
+	ray_strip.first_tile = ray_strip.first_tile + schoorsteen_ray_growth_tiles
 end
 
 function schoorsteen_ray:ctor()
-	self:get_component(custom_visual_component):set_draw_function(draw_ray)
-	self.top_y = 0
-end
-
-function schoorsteen_ray:onspawn()
-	self.top_y = self.y
+	self.ray_strip = self:get_component(tile_strip_component)
 end
 
 local define_fsm<const> = function()
@@ -84,7 +77,7 @@ local register_definition<const> = function()
 		class = schoorsteen_ray,
 		base = world_object,
 		components = {
-			custom_visual_component.new,
+			new_ray_strip,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_schoorsteen_ray_fsm }),
 		},

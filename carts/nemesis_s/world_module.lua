@@ -1,5 +1,6 @@
 local aem<const> = require('cartlib/aem')
 local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
+local sprite_animation_system<const> = require('cartlib/component/sprite_animation_system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
 local input_system<const> = require('cartlib/input/input_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
@@ -18,6 +19,7 @@ return {
 		aem,
 		fsm_system,
 		overlap_2d_system,
+		sprite_animation_system,
 		rook_animation_system,
 		timeline_system,
 	},

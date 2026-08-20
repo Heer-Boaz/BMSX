@@ -687,6 +687,7 @@ local draw_stars<const> = function(component, draw)
 	owner:draw_star_particles(draw, owner.yellow_stars, star_sources.yellow, owner.yellow_blink)
 	owner:draw_star_particles(draw, owner.blue_stars, star_sources.blue, owner.blue_blink)
 end
+local new_star_visual<const> = custom_visual_component.factory(draw_stars)
 
 function stage:is_solid_pixel(screen_x, screen_y)
 	local map_x = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
@@ -723,7 +724,6 @@ function stage:ctor()
 	self.yellow_stars = {}
 	self.blue_stars = {}
 	self.star_visual = self:get_component(custom_visual_component)
-	self.star_visual:set_draw_function(draw_stars)
 	self.stage_tiles = self:get_component(tile_layer_component)
 end
 
@@ -781,7 +781,7 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
-			custom_visual_component.new,
+			new_star_visual,
 			tile_layer_component.new,
 			timeline_component.new,
 			fsm_component.factory({ ids_stage_fsm }),

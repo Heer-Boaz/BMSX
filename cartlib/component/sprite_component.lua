@@ -23,13 +23,12 @@ function sprite_component.new(opts)
 	return self
 end
 
-function sprite_component:set_imgid(imgid)
-	if self.imgid == imgid then
-		return false
-	end
+-- Resolved images stay inside the visual owner. Animation admission resolves
+-- its immutable frame set once and uses this internal binding path; ordinary
+-- cart code continues to publish only imgids through set_imgid().
+function sprite_component:_set_resolved_imgid(imgid, source)
 	self.imgid = imgid
-	if imgid then
-		local source<const> = image.resolve(imgid)
+	if source then
 		self._source = source
 		self.source_width = source.width
 		self.source_height = source.height
@@ -41,6 +40,17 @@ function sprite_component:set_imgid(imgid)
 		self:set_draw_function(nil)
 	end
 	return true
+end
+
+function sprite_component:set_imgid(imgid)
+	if self.imgid == imgid then
+		return false
+	end
+	local source
+	if imgid then
+		source = image.resolve(imgid)
+	end
+	return self:_set_resolved_imgid(imgid, source)
 end
 
 function sprite_component:on_detach()

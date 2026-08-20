@@ -307,6 +307,7 @@ local draw_player_visual<const> = function(component, draw)
 	owner.sprite.source:blit(draw, owner.x, owner.y)
 	owner:draw_projectiles(draw)
 end
+local new_player_visual<const> = custom_visual_component.factory(draw_player_visual)
 
 local collides_at<const> = function(self, x, y)
 	for i = 1, #player_hitcheck_x do
@@ -847,8 +848,6 @@ function player:ctor()
 		attach_projectile_collider(self, missile, collider_base + 2)
 		attach_projectile_collider(self, secondary, collider_base + 3)
 	end
-	local visual<const> = self:get_component(custom_visual_component)
-	visual:set_draw_function(draw_player_visual)
 end
 
 local define_player_fsm<const> = function()
@@ -956,7 +955,7 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		components = {
-			custom_visual_component.new,
+			new_player_visual,
 			timeline_component.new,
 			fsm_component.factory({ ids_player_fsm }),
 			actioneffect_component.factory({ player_actioneffects.effect_ids.fire_salvo }),

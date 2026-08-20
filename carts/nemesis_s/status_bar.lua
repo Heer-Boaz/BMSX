@@ -52,6 +52,7 @@ local draw_status_bar<const> = function(component, draw)
 		sources.ship:blit(draw, ship_x, y)
 	end
 end
+local new_status_bar_visual<const> = custom_visual_component.factory(draw_status_bar)
 
 local select_slot_source<const> = function(row, slot_index)
 	local state<const> = row.player_state
@@ -116,7 +117,6 @@ function status_bar:bind()
 end
 
 function status_bar:ctor()
-	self:get_component(custom_visual_component):set_draw_function(draw_status_bar)
 	local resolved_font<const> = font.get(nemesis_font.font_id)
 	local rows<const> = {}
 	self.rows = rows
@@ -146,7 +146,7 @@ local register_definition<const> = function()
 		def_id = definition_id,
 		class = status_bar,
 		components = {
-			custom_visual_component.new,
+			new_status_bar_visual,
 		},
 		defaults = {
 			id = instance_id,
