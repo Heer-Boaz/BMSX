@@ -22,6 +22,15 @@ local events<const> = {
 local initial_lives<const> = 9
 local no_powerup_slot<const> = 0
 
+local reset_powerup_values<const> = function(self, selected_slot)
+	local levels<const> = self.powerup_levels
+	for slot = 1, #powerup_max_levels do
+		levels[slot] = 0
+	end
+	self.current_powerup_slot = selected_slot
+	self.uplaser_level = 0
+end
+
 function player_state:set_lives(lives)
 	if self.lives == lives then
 		return
@@ -56,13 +65,17 @@ function player_state:activate_selected_powerup()
 end
 
 function player_state:reset_powerups()
-	local levels<const> = self.powerup_levels
-	for slot = 1, #powerup_max_levels do
-		levels[slot] = 0
-	end
-	self.current_powerup_slot = no_powerup_slot
-	self.uplaser_level = 0
+	reset_powerup_values(self, no_powerup_slot)
 	self.events:emit(events.powerups_changed)
+end
+
+function player_state:lose_life()
+	local lives<const> = self.lives - 1
+	self:set_lives(lives)
+	local selected_slot<const> = lives < 0 and no_powerup_slot or powerup_slot.speed
+	reset_powerup_values(self, selected_slot)
+	self.events:emit(events.powerups_changed)
+	return lives
 end
 
 function player_state.new(player_index)

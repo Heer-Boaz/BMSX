@@ -16,6 +16,10 @@ function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
 	director.state_machines:transition_to('/gameplay')
+	local players<const> = director.players
+	for index = 1, #players do
+		players[index].body_collider:set_enabled(false)
+	end
 	test.sint_pops = world:active_definition_view(ids_sint_pop_def)
 end
 

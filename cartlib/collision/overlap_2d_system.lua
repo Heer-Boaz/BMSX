@@ -51,7 +51,7 @@
 --    record after the handler returns.
 --
 -- 3. LAYER / MASK FILTERING
---    A pair is only tested when (a.layer & b.mask) != 0 OR (b.layer & a.mask) != 0.
+--    A pair is only tested when (a.layer & b.mask) != 0 AND (b.layer & a.mask) != 0.
 --    Carts program these raw bitmasks when constructing each collider.
 
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')

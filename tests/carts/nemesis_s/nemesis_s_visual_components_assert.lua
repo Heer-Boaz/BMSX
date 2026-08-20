@@ -61,12 +61,11 @@ function __bmsx_host_test.update()
 		local strip<const> = ray:get_component(tile_strip_component)
 		assert(ray.top_y == nil,
 			'the ray still shadows derived strip geometry on its world object')
-		strip.last_tile = strip.first_tile + sneeuwpop_ray_growth_tiles * 2
-		ray.step_elapsed_ms = sneeuwpop_ray_step_ms
+		ray:apply_expansion_frame(sneeuwpop_ray_max_steps - 1)
 		local x<const> = ray.x
 		local y<const> = ray.y
 		local first_tile<const> = strip.first_tile
-		ray:update_contracting()
+		ray:apply_contraction_frame(1)
 		assert(strip.first_tile == first_tile + sneeuwpop_ray_growth_tiles,
 			'ray contraction did not trim its retained tile range')
 		assert(ray.x == x and ray.y == y,

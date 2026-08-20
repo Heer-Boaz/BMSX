@@ -69,3 +69,9 @@ events:
                       fade_ms: 4000
                       sync:
                           stinger: music_boss_intro
+
+    player.death:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: player_death

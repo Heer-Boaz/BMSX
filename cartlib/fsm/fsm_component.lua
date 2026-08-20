@@ -175,8 +175,11 @@ function fsm_component:start()
 	if self._started then
 		return
 	end
-	bind_machines(self)
 	local list<const> = self._machines
+	for i = 1, self._machine_count do
+		list[i]:resolve_timeline_targets()
+	end
+	bind_machines(self)
 	for i = 1, self._machine_count do
 		list[i]:start()
 	end

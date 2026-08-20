@@ -687,7 +687,7 @@ local draw_stars<const> = function(component, draw)
 	owner:draw_star_particles(draw, owner.yellow_stars, star_sources.yellow, owner.yellow_blink)
 	owner:draw_star_particles(draw, owner.blue_stars, star_sources.blue, owner.blue_blink)
 end
-local new_star_visual<const> = custom_visual_component.factory(draw_stars)
+local new_star_visual<const> = custom_visual_component.factory({ draw = draw_stars })
 
 function stage:is_solid_pixel(screen_x, screen_y)
 	local map_x = ((screen_x + self.total_scroll_px) // self.tile_size) + 1

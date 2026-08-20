@@ -6,14 +6,30 @@ local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component
 setmetatable(collider_2d_component, { __index = base_component })
 
-function collider_2d_component.new(opts)
+local create<const> = function(opts, definition)
 	local self<const> = setmetatable(base_component.new(opts), collider_2d_component)
-	self.layer = opts.layer or 1
-	self.mask = opts.mask or 0xffffffff
-	self.local_area = opts.local_area
-	self.shape_offset_x = opts.shape_offset_x or 0
-	self.shape_offset_y = opts.shape_offset_y or 0
+	self.id_local = definition.id_local or self.id_local
+	self.layer = definition.layer or 1
+	self.mask = definition.mask or 0xffffffff
+	self.local_area = definition.local_area
+	self.shape_offset_x = definition.shape_offset_x or 0
+	self.shape_offset_y = definition.shape_offset_y or 0
+	if definition.enabled ~= nil then
+		self.enabled = definition.enabled
+	end
 	return self
+end
+
+function collider_2d_component.new(opts)
+	return create(opts, opts)
+end
+
+-- Prefab collision policy is immutable definition data. The factory captures
+-- it once while each instance contributes only its parent identity.
+function collider_2d_component.factory(definition)
+	return function(opts)
+		return create(opts, definition)
+	end
 end
 
 -- Sprite-derived collision is explicit prefab composition. The collider keeps
@@ -28,6 +44,14 @@ function collider_2d_component.new_for_sprite(opts)
 	local self<const> = collider_2d_component.new(opts)
 	self:set_sprite(opts.parent:get_component(sprite_component))
 	return self
+end
+
+function collider_2d_component.factory_for_sprite(definition)
+	return function(opts)
+		local self<const> = create(opts, definition)
+		self:set_sprite(opts.parent:get_component(sprite_component))
+		return self
+	end
 end
 
 function collider_2d_component:set_sprite(sprite)

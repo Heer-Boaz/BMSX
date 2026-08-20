@@ -23,6 +23,34 @@ function sprite_component.new(opts)
 	return self
 end
 
+function sprite_component.factory(definition)
+	local imgid<const> = definition.imgid
+	local source<const> = imgid and image.resolve(imgid)
+	local id_local<const> = definition.id_local
+	local enabled<const> = definition.enabled
+	local offset_x<const> = definition.offset_x or 0
+	local offset_y<const> = definition.offset_y or 0
+	local offset_z<const> = definition.offset_z or 0
+	local color<const> = definition.color or 0xffffffff
+	local scale_x<const> = definition.scale_x or 1
+	local scale_y<const> = definition.scale_y or 1
+	return function(opts)
+		local self<const> = sprite_component.new(opts)
+		self.id_local = id_local
+		self.offset_x = offset_x
+		self.offset_y = offset_y
+		self.offset_z = offset_z
+		self.color = color
+		self.scale_x = scale_x
+		self.scale_y = scale_y
+		if enabled ~= nil then
+			self.enabled = enabled
+		end
+		self:_set_resolved_imgid(imgid, source)
+		return self
+	end
+end
+
 -- Resolved images stay inside the visual owner. Animation admission resolves
 -- its immutable frame set once and uses this internal binding path; ordinary
 -- cart code continues to publish only imgids through set_imgid().

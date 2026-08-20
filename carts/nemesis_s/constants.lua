@@ -51,11 +51,17 @@ player_bullet_collision_backtrack = 8
 player_hitcheck_x = { 4, 8, 14, 4, 8, 8 }
 
 player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
+player_respawn_invulnerability_ms = 2000
+player_respawn_blink_ms = 50
 
 collision_player_projectile_layer = 1
 collision_enemy_layer = 2
+collision_player_layer = 4
+collision_enemy_projectile_layer = 8
 collision_player_projectile_mask = collision_enemy_layer
-collision_enemy_mask = collision_player_projectile_layer
+collision_enemy_mask = collision_player_projectile_layer | collision_player_layer
+collision_player_mask = collision_enemy_layer | collision_enemy_projectile_layer
+collision_enemy_projectile_mask = collision_player_layer
 
 sint_pop_group_up = 0
 sint_pop_group_down = 1
@@ -205,6 +211,9 @@ assets_player_2_option_1 = 'option1_p2'
 assets_player_2_option_2 = 'option2_p2'
 assets_player_2_option_3 = 'option3_p2'
 assets_player_2_option_4 = 'option4_p2'
+assets_player_death_1 = 'player_death_1'
+assets_player_death_2 = 'player_death_2'
+assets_player_death_3 = 'player_death_3'
 assets_projectile = 'kogeltje'
 assets_mijter_foe_blue_neutral = 'mijter_foe_blue_neutral'
 assets_mijter_foe_blue_up = 'mijter_foe_blue_up'

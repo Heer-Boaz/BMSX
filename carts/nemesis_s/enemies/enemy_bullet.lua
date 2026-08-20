@@ -1,3 +1,4 @@
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -6,6 +7,12 @@ require('constants')
 
 local enemy_bullet<const> = {}
 enemy_bullet.__index = enemy_bullet
+
+local new_enemy_bullet_collider<const> = collider_2d_component.factory_for_sprite({
+	id_local = 0,
+	layer = collision_enemy_projectile_layer,
+	mask = collision_enemy_projectile_mask,
+})
 
 function enemy_bullet:update_flying()
 	self.x = self.x + self.speed_x
@@ -25,6 +32,12 @@ local define_fsm<const> = function()
 		states = {
 			flying = {
 				update = enemy_bullet.update_flying,
+				on = {
+					['overlap.begin'] = {
+						emitter = false,
+						go = sprite_object.mark_for_disposal,
+					},
+				},
 			},
 		},
 	})
@@ -36,6 +49,7 @@ local register_definition<const> = function()
 		class = enemy_bullet,
 		base = sprite_object,
 		components = {
+			new_enemy_bullet_collider,
 			fsm_component.factory({ ids_enemy_bullet_fsm }),
 		},
 		defaults = {

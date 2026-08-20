@@ -155,9 +155,17 @@ function world_object:_attach_component(comp)
 	comp:on_attach()
 end
 
-function world_object:get_component(component_class)
+function world_object:get_component(component_class, id_local)
 	local list<const> = self._components_by_class[component_class]
-	return list and list[1]
+	if id_local == nil then
+		return list and list[1]
+	end
+	for index = 1, #list do
+		local component<const> = list[index]
+		if component.id_local == id_local then
+			return component
+		end
+	end
 end
 
 function world_object:remove_component(comp)

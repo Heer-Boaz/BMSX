@@ -6,8 +6,11 @@ local collider_2d_component<const> = require('cartlib/collision/collider_2d_comp
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
+local input<const> = require('cartlib/input/input')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local sprite_component<const> = require('cartlib/component/sprite_component')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local player_actioneffects<const> = require('player/actioneffects')
@@ -17,6 +20,41 @@ local player<const> = {}
 player.__index = player
 
 local option_animation_timeline_id<const> = 'player_option_animation'
+local player_death_timeline_id<const> = 'player_death'
+local player_respawn_timeline_id<const> = 'player_respawn'
+local player_body_collider_id<const> = 0
+local player_vessel_visual_id<const> = 'vessel'
+local player_projectile_visual_id<const> = 'projectiles'
+local player_death_visual_id<const> = 'death'
+local player_hit_area<const> = {
+	left = 2,
+	top = 2,
+	right = 14,
+	bottom = 8,
+}
+local new_player_collider<const> = collider_2d_component.factory({
+	id_local = player_body_collider_id,
+	layer = collision_player_layer,
+	mask = collision_player_mask,
+	local_area = player_hit_area,
+})
+local new_death_visual<const> = sprite_component.factory({
+	id_local = player_death_visual_id,
+	imgid = assets_player_death_3,
+	offset_x = -8,
+	offset_z = 1,
+	enabled = false,
+})
+local player_death_frames<const> = timeline.build_frame_sequence({
+	{ value = assets_player_death_3, hold = 3 },
+	{ value = assets_player_death_1, hold = 5 },
+	{ value = assets_player_death_2, hold = 4 },
+	{ value = assets_player_death_3, hold = 4 },
+})
+local player_respawn_frames<const> = {
+	{ visible = true },
+	{ visible = false },
+}
 -- Values are the retained E470-E4F0 projectile type bytes dispatched by the
 -- original ROM's table at ABC2. Zero is the free-slot representation.
 local projectile_type_none<const> = 0
@@ -262,7 +300,8 @@ function player:reset_runtime()
 	end
 end
 
-function player:draw_projectiles(draw)
+local draw_player_projectiles<const> = function(component, draw)
+	local self<const> = component.parent
 	for vessel_id = 1, player_vessel_capacity do
 		local projectile<const> = self.primary_projectiles[vessel_id]
 		if projectile.type ~= projectile_type_none then
@@ -296,8 +335,12 @@ function player:draw_projectiles(draw)
 		end
 	end
 end
+local new_projectile_visual<const> = custom_visual_component.factory({
+	id_local = player_projectile_visual_id,
+	draw = draw_player_projectiles,
+})
 
-local draw_player_visual<const> = function(component, draw)
+local draw_player_vessel<const> = function(component, draw)
 	local owner<const> = component.parent
 	local option_source<const> = owner.visual_sources.options[owner.option_anim_index]
 	for i = 1, #owner.options do
@@ -305,9 +348,11 @@ local draw_player_visual<const> = function(component, draw)
 		option_source:blit(draw, option.x, option.y)
 	end
 	owner.sprite.source:blit(draw, owner.x, owner.y)
-	owner:draw_projectiles(draw)
 end
-local new_player_visual<const> = custom_visual_component.factory(draw_player_visual)
+local new_vessel_visual<const> = custom_visual_component.factory({
+	id_local = player_vessel_visual_id,
+	draw = draw_player_vessel,
+})
 
 local collides_at<const> = function(self, x, y)
 	for i = 1, #player_hitcheck_x do
@@ -322,28 +367,14 @@ local try_move_x<const> = function(self, dx, max_x)
 	if dx == 0 then
 		return
 	end
-	local target_x<const> = clamp(self.x + dx, 0, max_x)
-	if collides_at(self, target_x, self.y) then
-		if telemetry_enabled then
-			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
-		end
-		return
-	end
-	self.x = target_x
+	self.x = clamp(self.x + dx, 0, max_x)
 end
 
 local try_move_y<const> = function(self, dy, max_y)
 	if dy == 0 then
 		return
 	end
-	local target_y<const> = clamp(self.y + dy, 0, max_y)
-	if collides_at(self, self.x, target_y) then
-		if telemetry_enabled then
-			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
-		end
-		return
-	end
-	self.y = target_y
+	self.y = clamp(self.y + dy, 0, max_y)
 end
 
 function player:update_position()
@@ -400,6 +431,8 @@ function player:on_powerups_changed(_event, _source, slot)
 	if slot == powerup_slot_option then
 		append_option(self)
 		place_options_from_history(self)
+	elseif slot == nil then
+		self:initialize_options()
 	end
 end
 
@@ -803,18 +836,71 @@ function player:resolve_projectile_overlap(collider_local_id, enemy)
 end
 
 function player:update_runtime()
+	local player_index<const> = self.player_index
+	self.left_held = input.is_action_pressed(player_index, 'left')
+	self.right_held = input.is_action_pressed(player_index, 'right')
+	self.up_held = input.is_action_pressed(player_index, 'up')
+	self.down_held = input.is_action_pressed(player_index, 'down')
+	self.fire_held = input.is_action_pressed(player_index, 'fire')
+	self.fire_pressed = input.is_action_just_pressed(player_index, 'fire')
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
 		self.actioneffects:try_trigger(player_actioneffects.effect_ids.fire_salvo)
 	end
-	self:update_weapons()
 	self:emit_metric()
-	self.fire_pressed = false
 	self.frame = self.frame + 1
 end
 
+function player:update_flying()
+	self:update_runtime()
+	if collides_at(self, self.x, self.y) then
+		return '/dying'
+	end
+end
+
+function player:enter_flying()
+	self.vessel_visual.visible = true
+	self.body_collider:set_enabled(true)
+end
+
+function player:enter_dying()
+	self.vessel_visual.visible = false
+	self.body_collider:set_enabled(false)
+	self.death_visual:set_enabled(true)
+	self.player_state:lose_life()
+	self.left_held = false
+	self.right_held = false
+	self.up_held = false
+	self.down_held = false
+	self.fire_held = false
+	self.fire_pressed = false
+	self.events:emit('player.death')
+end
+
+function player:finish_dying()
+	self.death_visual:set_enabled(false)
+	if self.player_state.lives < 0 then
+		self.events:emit('player.exhausted')
+		return '/exhausted'
+	end
+	local start<const> = player_starts[self.player_index]
+	self:set_pos(start.x, start.y)
+	self.sprite = self.visual_sources.neutral
+	self:initialize_options()
+	return '/active/respawning'
+end
+
+function player:on_body_overlap(_state, event)
+	if event.collider_local_id == player_body_collider_id then
+		return '/dying'
+	end
+end
+
 function player:ctor()
+	self.vessel_visual = self:get_component(custom_visual_component, player_vessel_visual_id)
+	self.death_visual = self:get_component(sprite_component, player_death_visual_id)
+	self.body_collider = self:get_component(collider_2d_component, player_body_collider_id)
 	self.visual_sources = player_sources[self.player_index]
 	self.powerup_levels = self.player_state.powerup_levels
 	self.primary_projectiles = {}
@@ -857,72 +943,15 @@ local define_player_fsm<const> = function()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
-					return '/flying'
+					return '/active/flying'
 				end,
 			},
-			flying = {
-				update = player.update_runtime,
-				input_event_handlers = {
-					{
-						pattern = 'left[jp]',
-						go = function(self)
-							self.left_held = true
-						end,
-					},
-					{
-						pattern = 'left[jr]',
-						go = function(self)
-							self.left_held = false
-						end,
-					},
-					{
-						pattern = 'right[jp]',
-						go = function(self)
-							self.right_held = true
-						end,
-					},
-					{
-						pattern = 'right[jr]',
-						go = function(self)
-							self.right_held = false
-						end,
-					},
-					{
-						pattern = 'up[jp]',
-						go = function(self)
-							self.up_held = true
-						end,
-					},
-					{
-						pattern = 'up[jr]',
-						go = function(self)
-							self.up_held = false
-						end,
-					},
-					{
-						pattern = 'down[jp]',
-						go = function(self)
-							self.down_held = true
-						end,
-					},
-					{
-						pattern = 'down[jr]',
-						go = function(self)
-							self.down_held = false
-						end,
-					},
-					{
-						pattern = 'fire[jp]',
-						go = function(self)
-							self.fire_held = true
-							self.fire_pressed = true
-						end,
-					},
-					{
-						pattern = 'fire[jr] && fire[r]',
-						go = function(self)
-							self.fire_held = false
-						end,
+			active = {
+				initial = 'flying',
+				on = {
+					['overlap.begin'] = {
+						emitter = false,
+						go = player.on_body_overlap,
 					},
 				},
 				timelines = {
@@ -945,6 +974,49 @@ local define_player_fsm<const> = function()
 						},
 					},
 				},
+				states = {
+					flying = {
+						entering_state = player.enter_flying,
+						update = player.update_flying,
+					},
+					respawning = {
+						update = player.update_runtime,
+						timelines = {
+							[player_respawn_timeline_id] = {
+								def = {
+									frames = player_respawn_frames,
+									repetitions = player_respawn_invulnerability_ms
+										// (player_respawn_blink_ms * 2),
+									frame_duration = player_respawn_blink_ms,
+									playback_mode = 'once',
+									apply = true,
+								},
+								target_path = { 'vessel_visual' },
+								on_finished = '/active/flying',
+							},
+						},
+					},
+				},
+			},
+			dying = {
+				entering_state = player.enter_dying,
+				timelines = {
+					[player_death_timeline_id] = {
+						def = {
+							frames = player_death_frames,
+							frame_duration = 100,
+							playback_mode = 'once',
+							apply = sprite_component.set_imgid,
+						},
+						target_path = { 'death_visual' },
+						on_finished = player.finish_dying,
+					},
+				},
+			},
+			exhausted = {},
+			projectiles = {
+				is_concurrent = true,
+				update = player.update_weapons,
 			},
 		},
 	})
@@ -955,7 +1027,10 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		components = {
-			new_player_visual,
+			new_vessel_visual,
+			new_projectile_visual,
+			new_death_visual,
+			new_player_collider,
 			timeline_component.new,
 			fsm_component.factory({ ids_player_fsm }),
 			actioneffect_component.factory({ player_actioneffects.effect_ids.fire_salvo }),

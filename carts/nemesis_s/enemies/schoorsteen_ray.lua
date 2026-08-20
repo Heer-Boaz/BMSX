@@ -1,8 +1,10 @@
-local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
+local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local prefab<const> = require('cartlib/world/prefab')
+local timeline<const> = require('cartlib/timeline/timeline')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -10,13 +12,21 @@ require('constants')
 local schoorsteen_ray<const> = {}
 schoorsteen_ray.__index = schoorsteen_ray
 
-local frame_duration_ms<const> = clock.frame_milliseconds()
-local new_ray_strip<const> = tile_strip_component.factory(
-	assets_schoorsteen_ray,
-	0,
-	-schoorsteen_ray_tile_size,
-	1
-)
+local schoorsteen_ray_expand_timeline_id<const> = 'nemesis_s.enemy.schoorsteen_ray.expand'
+local schoorsteen_ray_contract_timeline_id<const> = 'nemesis_s.enemy.schoorsteen_ray.contract'
+local new_ray_strip<const> = tile_strip_component.factory({
+	imgid = assets_schoorsteen_ray,
+	step_x = 0,
+	step_y = -schoorsteen_ray_tile_size,
+	first_tile = 1,
+	enabled = false,
+})
+local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
+	id_local = 0,
+	layer = collision_enemy_projectile_layer,
+	mask = collision_enemy_projectile_mask,
+	enabled = false,
+})
 
 function schoorsteen_ray:finish()
 	local originator<const> = self.originator
@@ -24,37 +34,25 @@ function schoorsteen_ray:finish()
 	self:mark_for_disposal()
 end
 
-function schoorsteen_ray:update_expanding()
-	local elapsed<const> = self.step_elapsed_ms + frame_duration_ms
-	if elapsed < schoorsteen_ray_step_ms then
-		self.step_elapsed_ms = elapsed
-		return
-	end
-	self.step_elapsed_ms = elapsed - schoorsteen_ray_step_ms
-	self.expansion_step = self.expansion_step + 1
-	if self.expansion_step >= schoorsteen_ray_max_steps then
-		return '/contracting'
-	end
-	self.ray_strip.last_tile = self.ray_strip.last_tile + schoorsteen_ray_growth_tiles
+function schoorsteen_ray:apply_expansion_frame(frame)
+	local tile_count<const> = frame * schoorsteen_ray_growth_tiles
+	self.ray_strip.last_tile = tile_count
+	local active<const> = tile_count ~= 0
+	self.ray_strip:set_enabled(active)
+	self.ray_collider:set_enabled(active)
 end
 
-function schoorsteen_ray:update_contracting()
-	local ray_strip<const> = self.ray_strip
-	if ray_strip.first_tile > ray_strip.last_tile then
-		self:finish()
-		return
-	end
-	local elapsed<const> = self.step_elapsed_ms + frame_duration_ms
-	if elapsed < schoorsteen_ray_step_ms then
-		self.step_elapsed_ms = elapsed
-		return
-	end
-	self.step_elapsed_ms = elapsed - schoorsteen_ray_step_ms
-	ray_strip.first_tile = ray_strip.first_tile + schoorsteen_ray_growth_tiles
+function schoorsteen_ray:apply_contraction_frame(frame)
+	local tile_count<const> = (schoorsteen_ray_max_steps - 1 - frame) * schoorsteen_ray_growth_tiles
+	self.ray_strip.first_tile = self.ray_strip.last_tile - tile_count + 1
+	local active<const> = tile_count ~= 0
+	self.ray_strip:set_enabled(active)
+	self.ray_collider:set_enabled(active)
 end
 
 function schoorsteen_ray:ctor()
 	self.ray_strip = self:get_component(tile_strip_component)
+	self.ray_collider = self:get_component(tile_strip_collider_2d_component)
 end
 
 local define_fsm<const> = function()
@@ -62,10 +60,30 @@ local define_fsm<const> = function()
 		initial = 'expanding',
 		states = {
 			expanding = {
-				update = schoorsteen_ray.update_expanding,
+				timelines = {
+					[schoorsteen_ray_expand_timeline_id] = {
+						def = {
+							frames = timeline.range(schoorsteen_ray_max_steps),
+							frame_duration = schoorsteen_ray_step_ms,
+							playback_mode = 'once',
+							apply = schoorsteen_ray.apply_expansion_frame,
+						},
+						on_finished = '/contracting',
+					},
+				},
 			},
 			contracting = {
-				update = schoorsteen_ray.update_contracting,
+				timelines = {
+					[schoorsteen_ray_contract_timeline_id] = {
+						def = {
+							frames = timeline.range(schoorsteen_ray_max_steps),
+							frame_duration = schoorsteen_ray_step_ms,
+							playback_mode = 'once',
+							apply = schoorsteen_ray.apply_contraction_frame,
+						},
+						on_finished = schoorsteen_ray.finish,
+					},
+				},
 			},
 		},
 	})
@@ -78,12 +96,12 @@ local register_definition<const> = function()
 		base = world_object,
 		components = {
 			new_ray_strip,
+			new_ray_collider,
 			stage_scroll_follower_component.new,
+			timeline_component.new,
 			fsm_component.factory({ ids_schoorsteen_ray_fsm }),
 		},
 		defaults = {
-			expansion_step = 0,
-			step_elapsed_ms = 0,
 			z = schoorsteen_ray_draw_z,
 		},
 	})

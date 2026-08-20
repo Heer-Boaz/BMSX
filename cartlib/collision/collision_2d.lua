@@ -8,20 +8,35 @@ local irq_source<const> = require('cartlib/irq/source')
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
-local geo_direct_query_scratch_bytes<const> = 0x00000020 * 2 + 0x00000014 * 2 + 0x0000000c + 0x00000024 + 0x00000010
-local geo_direct_shape_base<const> = 0x08040000
-local geo_direct_instance_base<const> = geo_direct_shape_base + 0x00000020 * 2
-local geo_direct_pair_base<const> = geo_direct_instance_base + 0x00000014 * 2
-local geo_direct_result_base<const> = geo_direct_pair_base + 0x0000000c
-local geo_direct_summary_base<const> = geo_direct_result_base + 0x00000024
-local geo_overlap_batch_base<const> = geo_direct_summary_base + 0x00000010
-local geo_overlap_batch_size<const> = 0x00080000 - geo_direct_query_scratch_bytes
+local geo_overlap_scratch_base<const> = 0x08040000
+local geo_overlap_scratch_end<const> = geo_overlap_scratch_base + 0x00080000
+local geo_aabb_shape_bytes<const> = 0x00000020
+local geo_compound_header_bytes<const> = 0x00000020
+local geo_compound_piece_bytes<const> = 0x00000020
+local geo_instance_bytes<const> = 0x00000014
+local geo_pair_bytes<const> = 0x0000000c
+local geo_result_bytes<const> = 0x00000024
+local geo_summary_bytes<const> = 0x00000010
 struct geo_overlap_aabb_shape
 	kind: word
 	data_count: word
 	data_offset: word
 	bounds_offset: word
 	bounds: f32[4]
+end
+
+struct geo_overlap_shape_descriptor
+	kind: word
+	data_count: word
+	data_offset: word
+	bounds_offset: word
+end
+
+struct geo_overlap_bounds
+	left: f32
+	top: f32
+	right: f32
+	bottom: f32
 end
 
 struct geo_overlap_instance
@@ -99,6 +114,37 @@ local raise_geo_fault<const> = function(label)
 	error(string.format('GEO %s failed (fault=%08Xh hex=%08Xh code=%04Xh index=%08Xh)', label, fault_u, fault_u, fault_code, fault_index))
 end
 
+local write_geo_bounds<const> = function(address, left, top, right, bottom)
+	local bounds<const>: *geo_overlap_bounds = address
+	bounds->left = left
+	bounds->top = top
+	bounds->right = right
+	bounds->bottom = bottom
+end
+
+-- GEO scratch is a fixed machine resource. Measure variable compound records
+-- before staging so writes and result records receive disjoint spans. The pass
+-- remains allocation-free; its extra O(n) walk precedes GEO's O(n^2) pair pass.
+local geo_shape_bytes<const> = function(collider)
+	if collider.shape_ref ~= nil or collider.sprite ~= nil then
+		return 0
+	end
+	local strip<const> = collider.tile_strip
+	if strip ~= nil and strip.step_x ~= 0 and strip.step_y ~= 0 then
+		return geo_compound_header_bytes
+			+ (strip.last_tile - strip.first_tile + 1) * geo_compound_piece_bytes
+	end
+	return geo_aabb_shape_bytes
+end
+
+local measure_geo_shape_bytes<const> = function(colliders, collider_count)
+	local byte_count = 0
+	for index = 1, collider_count do
+		byte_count = byte_count + geo_shape_bytes(colliders[index])
+	end
+	return byte_count
+end
+
 local stage_geo_aabb_shape<const> = function(collider, parent, shape_addr)
 	local shape<const>: *geo_overlap_aabb_shape = shape_addr
 	shape->kind = 0x00000001
@@ -117,7 +163,80 @@ local stage_geo_aabb_shape<const> = function(collider, parent, shape_addr)
 		shape->bounds[2] = parent.sx
 		shape->bounds[3] = parent.sy
 	end
-	return shape_addr
+	return shape_addr + geo_aabb_shape_bytes
+end
+
+-- Tile-strip collision consumes the same retained endpoints as rendering.
+-- Contiguous axis-aligned strips collapse to one AABB. Diagonal strips retain
+-- one AABB per tile in a GEO compound so empty space between tiles never hits.
+local stage_geo_tile_strip_shape<const> = function(strip, shape_addr)
+	local first_tile<const> = strip.first_tile
+	local last_tile<const> = strip.last_tile
+	local step_x<const> = strip.step_x
+	local step_y<const> = strip.step_y
+	local tile_width<const> = strip.tile_width
+	local tile_height<const> = strip.tile_height
+	local origin_x<const> = strip.offset_x + strip.draw_offset_x
+	local origin_y<const> = strip.offset_y + strip.draw_offset_y
+	local first_x<const> = origin_x + first_tile * step_x
+	local first_y<const> = origin_y + first_tile * step_y
+	local last_x<const> = origin_x + last_tile * step_x
+	local last_y<const> = origin_y + last_tile * step_y
+	local left = first_x
+	local top = first_y
+	local right = last_x + tile_width
+	local bottom = last_y + tile_height
+	if last_x < first_x then
+		left = last_x
+		right = first_x + tile_width
+	end
+	if last_y < first_y then
+		top = last_y
+		bottom = first_y + tile_height
+	end
+	if step_x == 0 or step_y == 0 then
+		local shape<const>: *geo_overlap_aabb_shape = shape_addr
+		shape->kind = 0x00000001
+		shape->data_count = 0x00000004
+		shape->data_offset = 0x00000010
+		shape->bounds_offset = 0x00000010
+		shape->bounds[0] = left
+		shape->bounds[1] = top
+		shape->bounds[2] = right
+		shape->bounds[3] = bottom
+		return shape_addr + geo_aabb_shape_bytes
+	end
+
+	local tile_count<const> = last_tile - first_tile + 1
+	local shape<const>: *geo_overlap_shape_descriptor = shape_addr
+	shape->kind = 0x00000004
+	shape->data_count = tile_count
+	shape->data_offset = 0x00000020
+	shape->bounds_offset = 0x00000010
+	write_geo_bounds(shape_addr + 0x00000010, left, top, right, bottom)
+	local piece_base<const> = shape_addr + geo_compound_header_bytes
+	local piece_bounds_base<const> = piece_base + tile_count * 0x00000010
+	local tile_x = first_x
+	local tile_y = first_y
+	for piece_index = 0, tile_count - 1 do
+		local piece_addr<const> = piece_base + piece_index * 0x00000010
+		local bounds_addr<const> = piece_bounds_base + piece_index * 0x00000010
+		local piece<const>: *geo_overlap_shape_descriptor = piece_addr
+		piece->kind = 0x00000001
+		piece->data_count = 0x00000004
+		piece->data_offset = bounds_addr - piece_addr
+		piece->bounds_offset = bounds_addr - piece_addr
+		write_geo_bounds(
+			bounds_addr,
+			tile_x,
+			tile_y,
+			tile_x + tile_width,
+			tile_y + tile_height
+		)
+		tile_x = tile_x + step_x
+		tile_y = tile_y + step_y
+	end
+	return piece_bounds_base + tile_count * 0x00000010
 end
 
 local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb_shape_addr)
@@ -133,8 +252,14 @@ local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb
 		shape_ref = select_sprite_shape_ref(collider, sprite)
 		tx = parent.x + sprite.offset_x
 		ty = parent.y + sprite.offset_y
+	elseif collider.tile_strip then
+		shape_ref = aabb_shape_addr
+		aabb_shape_addr = stage_geo_tile_strip_shape(collider.tile_strip, aabb_shape_addr)
+		tx = parent.x
+		ty = parent.y
 	else
-		shape_ref = stage_geo_aabb_shape(collider, parent, aabb_shape_addr)
+		shape_ref = aabb_shape_addr
+		aabb_shape_addr = stage_geo_aabb_shape(collider, parent, aabb_shape_addr)
 		tx = parent.x + collider.shape_offset_x
 		ty = parent.y + collider.shape_offset_y
 	end
@@ -144,6 +269,7 @@ local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb
 	instance->ty = ty
 	instance->layer = collider.layer
 	instance->mask = collider.mask
+	return aabb_shape_addr
 end
 
 local wait_for_geo_completion<const> = function(label)
@@ -271,48 +397,66 @@ end
 init_geo_irq()
 
 function collision_2d.collect_overlaps(colliders, collider_count, pairs)
-	local shape_base<const> = geo_overlap_batch_base
-	local instance_base<const> = shape_base + collider_count * 0x00000020
+	local instance_base<const> = geo_overlap_scratch_base
+	local shape_base<const> = instance_base + collider_count * geo_instance_bytes
+	local shape_end<const> = shape_base + measure_geo_shape_bytes(colliders, collider_count)
+	if shape_end + geo_summary_bytes > geo_overlap_scratch_end then
+		error('GEO overlap scratch capacity exceeded')
+	end
+	local shape_cursor = shape_base
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
 		local instance_index<const> = i - 1
-		stage_geo_overlap_instance(
+		shape_cursor = stage_geo_overlap_instance(
 			collider,
-			instance_base + instance_index * 0x00000014,
-			shape_base + instance_index * 0x00000020
+			instance_base + instance_index * geo_instance_bytes,
+			shape_cursor
 		)
 	end
 	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
-	local scratch_for_results<const> = geo_overlap_batch_size - collider_count * (0x00000020 + 0x00000014) - 0x00000010
-	local scratch_result_capacity<const> = scratch_for_results // 0x00000024
-	local result_capacity<const> = math.min(max_pair_count, scratch_result_capacity)
-	local result_base<const> = instance_base + collider_count * 0x00000014
-	local summary_base<const> = result_base + result_capacity * 0x00000024
+	local scratch_for_results<const> = geo_overlap_scratch_end - shape_end - geo_summary_bytes
+	local scratch_result_capacity<const> = scratch_for_results // geo_result_bytes
+	local result_capacity = max_pair_count
+	if scratch_result_capacity < result_capacity then
+		result_capacity = scratch_result_capacity
+	end
+	local result_base<const> = shape_end
+	local summary_base<const> = result_base + result_capacity * geo_result_bytes
 	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)
 	wait_for_geo_completion('overlap full pass')
 	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
 end
 
 function collision_2d.collides(a, b)
-	stage_geo_overlap_instance(a, geo_direct_instance_base, geo_direct_shape_base)
-	stage_geo_overlap_instance(b, geo_direct_instance_base + 0x00000014, geo_direct_shape_base + 0x00000020)
-	local direct_pair<const>: *geo_overlap_pair = geo_direct_pair_base
+	local instance_base<const> = geo_overlap_scratch_base
+	local shape_base<const> = instance_base + geo_instance_bytes * 2
+	local shape_end<const> = shape_base + geo_shape_bytes(a) + geo_shape_bytes(b)
+	if shape_end + geo_pair_bytes + geo_result_bytes + geo_summary_bytes > geo_overlap_scratch_end then
+		error('GEO direct-overlap scratch capacity exceeded')
+	end
+	local shape_cursor = shape_base
+	shape_cursor = stage_geo_overlap_instance(a, instance_base, shape_cursor)
+	shape_cursor = stage_geo_overlap_instance(b, instance_base + geo_instance_bytes, shape_cursor)
+	local pair_base<const> = shape_end
+	local result_base<const> = pair_base + geo_pair_bytes
+	local summary_base<const> = result_base + geo_result_bytes
+	local direct_pair<const>: *geo_overlap_pair = pair_base
 	direct_pair->instance_a = 0
 	direct_pair->instance_b = 1
 	direct_pair->meta = 1
 	submit_geo_overlap_candidate_batch(
-		geo_direct_instance_base,
-		geo_direct_pair_base,
-		geo_direct_result_base,
-		geo_direct_summary_base,
+		instance_base,
+		pair_base,
+		result_base,
+		summary_base,
 		2,
 		1
 	)
-	local direct_summary<const>: *geo_overlap_summary = geo_direct_summary_base
+	local direct_summary<const>: *geo_overlap_summary = summary_base
 	if direct_summary.result_count == 0 then
 		return nil
 	end
-	local direct_result<const>: *geo_overlap_result = geo_direct_result_base
+	local direct_result<const>: *geo_overlap_result = result_base
 	local contact<const> = direct_query_contact
 	contact.normal.x = direct_result.nx
 	contact.normal.y = direct_result.ny

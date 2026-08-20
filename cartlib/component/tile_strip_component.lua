@@ -25,15 +25,28 @@ end
 -- A tile strip is one straight, inclusive range in tile-index space. The
 -- visual owns both endpoints; gameplay changes the range without duplicating
 -- derived world coordinates or rebuilding draw commands.
-function tile_strip_component.factory(imgid, step_x, step_y, first_tile)
-	local source<const> = image.resolve(imgid)
+function tile_strip_component.factory(definition)
+	local source<const> = image.resolve(definition.imgid)
+	local step_x<const> = definition.step_x
+	local step_y<const> = definition.step_y
+	local first_tile<const> = definition.first_tile
+	local enabled<const> = definition.enabled
+	local offset_x<const> = definition.offset_x or 0
+	local offset_y<const> = definition.offset_y or 0
 	return function(opts)
 		local self<const> = setmetatable(visual_component.new(opts), tile_strip_component)
 		self._source = source
+		self.tile_width = source.width
+		self.tile_height = source.height
 		self.step_x = step_x
 		self.step_y = step_y
 		self.first_tile = first_tile
 		self.last_tile = first_tile - 1
+		self.offset_x = offset_x
+		self.offset_y = offset_y
+		if enabled ~= nil then
+			self.enabled = enabled
+		end
 		self:set_draw_function(tile_strip_component.draw_visual)
 		return self
 	end

@@ -4,6 +4,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
+local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
@@ -13,22 +14,18 @@ require('constants')
 local sneeuwpop<const> = {}
 sneeuwpop.__index = sneeuwpop
 
-local frame_duration_ms<const> = clock.frame_milliseconds()
 local new_flash_animation<const> = sprite_animation_component.factory({
 	frames = {
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = frame_duration_ms,
+	frame_duration_ms = clock.frame_milliseconds(),
 	loop = true,
 	offset_x = sneeuwpop_flash_offset_x,
 	offset_y = sneeuwpop_flash_offset_y,
 	offset_z = 0,
 	enabled = false,
 })
-local deactivate_flash_animation<const> = function(target)
-	target.flash_animation:deactivate()
-end
 
 function sneeuwpop:ctor()
 	self:get_component(collider_2d_component):set_shape_asset(
@@ -38,26 +35,13 @@ function sneeuwpop:ctor()
 end
 
 function sneeuwpop:update_idle()
-	if self:dispose_if_left_of_stage(sneeuwpop_width) or self.x <= 0 then
+	if self.x <= 0 then
 		return
 	end
 	return '/ready_to_fire'
 end
 
-function sneeuwpop:enter_ready_to_fire(state)
-	self.flash_animation:activate()
-	state.data.elapsed_ms = 0
-end
-
-function sneeuwpop:update_ready_to_fire(state)
-	if self:dispose_if_left_of_stage(sneeuwpop_width) then
-		return
-	end
-	local elapsed<const> = state.data.elapsed_ms + frame_duration_ms
-	if elapsed < sneeuwpop_ready_ms then
-		state.data.elapsed_ms = elapsed
-		return
-	end
+function sneeuwpop:fire_ray()
 	self.ray = world:spawn(ids_sneeuwpop_ray_def, {
 		originator = self,
 		pos = {
@@ -69,39 +53,9 @@ function sneeuwpop:update_ready_to_fire(state)
 	return '/firing'
 end
 
-function sneeuwpop:enter_firing(state)
-	state.data.elapsed_ms = 0
-end
-
-function sneeuwpop:update_firing(state)
-	if self:dispose_if_left_of_stage(sneeuwpop_width) then
-		return
-	end
-	local elapsed<const> = state.data.elapsed_ms + frame_duration_ms
-	if elapsed >= sneeuwpop_firing_ms then
-		return '/cooling_down'
-	end
-	state.data.elapsed_ms = elapsed
-end
-
 function sneeuwpop:ray_disposed()
 	self.ray = nil
 	self.state_machines:transition_to('/cooling_down')
-end
-
-function sneeuwpop:enter_cooling_down(state)
-	state.data.elapsed_ms = 0
-end
-
-function sneeuwpop:update_cooling_down(state)
-	if self:dispose_if_left_of_stage(sneeuwpop_width) then
-		return
-	end
-	local elapsed<const> = state.data.elapsed_ms + frame_duration_ms
-	if elapsed >= sneeuwpop_cooldown_ms then
-		return '/idle'
-	end
-	state.data.elapsed_ms = elapsed
 end
 
 function sneeuwpop:on_destroyed(projectile)
@@ -120,25 +74,52 @@ end
 local define_fsm<const> = function()
 	fsm_library.register(ids_sneeuwpop_fsm, {
 		initial = 'idle',
+		update = enemy.update_stage_follower,
 		states = {
 			idle = {
 				update = sneeuwpop.update_idle,
 			},
 			ready_to_fire = {
-				data = { elapsed_ms = 0 },
-				entering_state = sneeuwpop.enter_ready_to_fire,
-				exiting_state = deactivate_flash_animation,
-				update = sneeuwpop.update_ready_to_fire,
+				entering_state = function(self)
+					self.flash_animation:activate()
+				end,
+				exiting_state = function(self)
+					self.flash_animation:deactivate()
+				end,
+				timelines = {
+					ready = {
+						def = {
+							continuous = true,
+							duration_ms = sneeuwpop_ready_ms,
+							playback_mode = 'once',
+						},
+						on_finished = sneeuwpop.fire_ray,
+					},
+				},
 			},
 			firing = {
-				data = { elapsed_ms = 0 },
-				entering_state = sneeuwpop.enter_firing,
-				update = sneeuwpop.update_firing,
+				timelines = {
+					firing = {
+						def = {
+							continuous = true,
+							duration_ms = sneeuwpop_firing_ms,
+							playback_mode = 'once',
+						},
+						on_finished = '/cooling_down',
+					},
+				},
 			},
 			cooling_down = {
-				data = { elapsed_ms = 0 },
-				entering_state = sneeuwpop.enter_cooling_down,
-				update = sneeuwpop.update_cooling_down,
+				timelines = {
+					cooldown = {
+						def = {
+							continuous = true,
+							duration_ms = sneeuwpop_cooldown_ms,
+							playback_mode = 'once',
+						},
+						on_finished = '/idle',
+					},
+				},
 			},
 		},
 	})
@@ -153,12 +134,14 @@ local register_definition<const> = function()
 			enemy.new_collider,
 			new_flash_animation,
 			stage_scroll_follower_component.new,
+			timeline_component.new,
 			fsm_component.factory({ ids_sneeuwpop_fsm }),
 		},
 		defaults = {
 			imgid = assets_sneeuwpop,
 			max_health = sneeuwpop_health,
 			small_fry = false,
+			stage_scroll_width = sneeuwpop_width,
 			z = sneeuwpop_draw_z,
 		},
 	})

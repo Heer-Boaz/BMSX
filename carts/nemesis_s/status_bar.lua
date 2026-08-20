@@ -52,7 +52,7 @@ local draw_status_bar<const> = function(component, draw)
 		sources.ship:blit(draw, ship_x, y)
 	end
 end
-local new_status_bar_visual<const> = custom_visual_component.factory(draw_status_bar)
+local new_status_bar_visual<const> = custom_visual_component.factory({ draw = draw_status_bar })
 
 local select_slot_source<const> = function(row, slot_index)
 	local state<const> = row.player_state

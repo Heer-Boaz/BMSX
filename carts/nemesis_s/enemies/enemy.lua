@@ -43,18 +43,28 @@ function enemy:receive_player_projectile(projectile)
 	return not (self.small_fry and projectile.pierces_small_fry)
 end
 
-function enemy:on_projectile_overlap(_event_type, _emitter, event)
-	local player<const> = registry:get(event.other_id)
-	player:resolve_projectile_overlap(
-		event.other_collider_local_id,
-		self
-	)
+function enemy:on_overlap(_event_type, _emitter, event)
+	if event.other_layer == collision_player_projectile_layer then
+		local player<const> = registry:get(event.other_id)
+		player:resolve_projectile_overlap(
+			event.other_collider_local_id,
+			self
+		)
+		return
+	end
+	if self.small_fry and self.vulnerable then
+		self.health = self.health - 1
+		if self.health <= 0 then
+			self.health = 0
+			self:on_destroyed()
+		end
+	end
 end
 
 function enemy:bind()
 	self.events:on({
 		event = 'overlap.begin',
-		handler = enemy.on_projectile_overlap,
+		handler = enemy.on_overlap,
 	})
 end
 

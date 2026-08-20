@@ -259,6 +259,7 @@ local compile_timeline_definitions<const> = function(definitions)
 			def = definition.def,
 			autoplay = definition.autoplay,
 			stop_on_exit = definition.stop_on_exit,
+			target_path = definition.target_path,
 			play_options = definition.play_options,
 			on_finished = definition.on_finished,
 		}
@@ -476,11 +477,23 @@ local build_timeline_bindings<const> = function(owner, definitions)
 		if definition then
 			owner.timelines:define(id, definition)
 		end
+		local play_options = config.play_options
+		local target_path<const> = config.target_path
+		if target_path ~= nil then
+			local bound_options<const> = {}
+			if play_options ~= nil then
+				for option, value in pairs(play_options) do
+					bound_options[option] = value
+				end
+			end
+			play_options = bound_options
+		end
 		local binding<const> = {
 			id = id,
 			autoplay = config.autoplay == nil or config.autoplay,
 			stop_on_exit = config.stop_on_exit == nil or config.stop_on_exit,
-			play_options = config.play_options,
+			play_options = play_options,
+			target_path = target_path,
 			finished_kind = config.finished_kind,
 			finished_transition = config.finished_transition,
 		}
@@ -590,6 +603,33 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 	return self
 end
 
+-- Timeline object bindings are resolved once after the prefab constructor has
+-- published its component aliases and before any state can autoplay. Runtime
+-- play/seek therefore consumes a retained target directly instead of walking
+-- authored paths in the frame path.
+function state:resolve_timeline_targets()
+	local bindings<const> = self.timeline_bindings
+	if bindings ~= nil then
+		for binding_index = 1, #bindings do
+			local binding<const> = bindings[binding_index]
+			local path<const> = binding.target_path
+			if path ~= nil then
+				local target = self.target
+				for path_index = 1, #path do
+					target = target[path[path_index]]
+				end
+				binding.play_options.target = target
+				binding.target_path = nil
+			end
+		end
+	end
+	local states<const> = self.states
+	local state_ids<const> = self.state_ids
+	for state_index = 1, self.state_count do
+		states[state_ids[state_index]]:resolve_timeline_targets()
+	end
+end
+
 local rebind_definition_tree
 rebind_definition_tree = function(self, definition)
 	local active<const> = self:is_active()
@@ -667,6 +707,7 @@ end
 -- nodes are never reset or reconstructed to rescue incompatible graph edits.
 function state:rebind_definition(definition)
 	rebind_definition_tree(self, definition)
+	self:resolve_timeline_targets()
 	self:refresh_active_frame_work()
 	self:rebuild_active_subtree_tags()
 	self:sync_target_state_tags()

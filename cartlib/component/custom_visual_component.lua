@@ -17,12 +17,25 @@ function custom_visual_component.new(opts)
 	return create(opts, opts.draw)
 end
 
--- Compiles one static prefab constructor. The draw datapath is captured once
--- with the definition instead of being discovered and rebound by every object
--- constructor.
-function custom_visual_component.factory(draw)
+-- Compiles one static prefab constructor. Draw policy and structural defaults
+-- are retained with the definition instead of rediscovered by every object.
+function custom_visual_component.factory(definition)
+	local draw<const> = definition.draw
+	local id_local<const> = definition.id_local
+	local enabled<const> = definition.enabled
+	local offset_x<const> = definition.offset_x or 0
+	local offset_y<const> = definition.offset_y or 0
+	local offset_z<const> = definition.offset_z or 0
 	return function(opts)
-		return create(opts, draw)
+		local self<const> = create(opts, draw)
+		self.id_local = id_local
+		self.offset_x = offset_x
+		self.offset_y = offset_y
+		self.offset_z = offset_z
+		if enabled ~= nil then
+			self.enabled = enabled
+		end
+		return self
 	end
 end
 
