@@ -24,6 +24,10 @@ local sint_pop_group_by_symbol<const> = {
 	p = sint_pop_group_up,
 	['P'] = sint_pop_group_down,
 }
+local mijter_foe_type_by_symbol<const> = {
+	m = mijter_foe_type_blue,
+	['M'] = mijter_foe_type_red,
+}
 
 local non_collision_tile_keys<const> = {
 	none = true,
@@ -479,6 +483,21 @@ function stage:build_tape()
 							pos = {
 								x = machine_game_width + (group_index * sint_pop_width),
 								y = spawn_y,
+							},
+						},
+					}
+				end
+			else
+				local mijter_foe_type<const> = mijter_foe_type_by_symbol[symbol]
+				if mijter_foe_type ~= nil then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_mijter_foe_def,
+						options = {
+							mijter_type = mijter_foe_type,
+							pos = {
+								x = machine_game_width,
+								y = (stage_y - 2) * self.tile_size,
 							},
 						},
 					}

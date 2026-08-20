@@ -350,6 +350,36 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
+			source: 'Foes/MijterFoe1Blue.bmp',
+			target: 'mijter_foe_blue_neutral.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Foes/MijterFoe2Blue.bmp',
+			target: 'mijter_foe_blue_up.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Foes/MijterFoe3Blue.bmp',
+			target: 'mijter_foe_blue_down.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Foes/MijterFoe1.bmp',
+			target: 'mijter_foe_red_neutral.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Foes/MijterFoe2.bmp',
+			target: 'mijter_foe_red_up.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Foes/MijterFoe3.bmp',
+			target: 'mijter_foe_red_down.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},
