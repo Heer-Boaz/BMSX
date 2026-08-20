@@ -298,6 +298,12 @@ function timeline_component:advance(id)
 	return entry
 end
 
+function timeline_component:set_play_rate(id, play_rate)
+	local entry<const> = self._entries_by_id[id]
+	entry:set_play_rate(play_rate)
+	return entry
+end
+
 -- A state binding outlives an individual play() call so manually started
 -- timelines with runtime targets keep the completion owner of the active state.
 -- State exit clears the binding even when playback itself is allowed to continue.
@@ -319,12 +325,16 @@ function timeline_component:play(id, opts, on_finished, finished_context)
 	local params
 	local target
 	local bindings
+	local play_rate = 1
 	if opts ~= nil then
 		rewind = opts.rewind
 		snap = opts.snap_to_start
 		params = opts.params
 		target = opts.target
 		bindings = opts.bindings
+		if opts.play_rate ~= nil then
+			play_rate = opts.play_rate
+		end
 	end
 	if rewind == nil then
 		rewind = true
@@ -362,6 +372,7 @@ function timeline_component:play(id, opts, on_finished, finished_context)
 	if snap and (program.length > 0 or program.continuous) then
 		entry:snap_to_start(owner)
 	end
+	entry:set_play_rate(play_rate)
 	entry.playing = true
 	reconcile_timeline_schedule(self, entry)
 	return entry

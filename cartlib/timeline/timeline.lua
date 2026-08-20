@@ -32,6 +32,23 @@ local sample_range_flags<const> = sample_flag | boundary_none
 local initial_sample_range_flags<const> = sample_range_flags | initial_flag
 local loop_boundary_flags<const> = wrapped_flag | boundary_loop
 
+-- Identity-rate playback keeps the selected transport updater as the entry's
+-- direct hot-path call. A non-identity rate pays one dispatch and multiply on
+-- that playback only; changing the rate never rewrites authored time or seek
+-- coordinates.
+local update_scaled<const> = function(self, owner, delta_time)
+	return self.transport_update(self, owner, delta_time * self.play_rate)
+end
+
+local bind_update<const> = function(self, update)
+	if self.play_rate == 1 then
+		self.update = update
+		return
+	end
+	self.transport_update = update
+	self.update = update_scaled
+end
+
 -- A timeline is the single mutable playback record scheduled by a component or
 -- parent sequence. Its immutable program remains shareable across playbacks;
 -- steady transport operands are retained directly on this datapath.
@@ -296,7 +313,7 @@ end
 
 local update_continuous_unbounded_initial<const> = function(self, owner, delta_time)
 	self.head = 0
-	self.update = update_continuous_unbounded
+	bind_update(self, update_continuous_unbounded)
 	local previous_time_ms<const> = self.position_ms
 	local direction<const> = self.direction
 	local time_ms<const> = previous_time_ms + delta_time * direction
@@ -347,7 +364,7 @@ end
 
 local update_continuous_once_initial<const> = function(self, owner, delta_time)
 	self.head = 0
-	self.update = update_continuous_once
+	bind_update(self, update_continuous_once)
 	local previous_time_ms<const> = self.position_ms
 	local duration_ms<const> = self.duration_ms
 	local time_ms<const> = previous_time_ms + delta_time
@@ -422,7 +439,7 @@ end
 local update_continuous_loop_initial<const> = function(self, owner, delta_time)
 	self.wrapped = false
 	self.head = 0
-	self.update = update_continuous_loop
+	bind_update(self, update_continuous_loop)
 	local previous_frame = timelinestart_index
 	local flags = initial_sample_range_flags
 	local previous_time_ms = self.position_ms
@@ -510,7 +527,7 @@ end
 
 local update_continuous_pingpong_initial<const> = function(self, owner, delta_time)
 	self.head = 0
-	self.update = update_continuous_pingpong
+	bind_update(self, update_continuous_pingpong)
 	local previous_frame = timelinestart_index
 	local flags = initial_sample_range_flags
 	local previous_time_ms = self.position_ms
@@ -720,7 +737,8 @@ function timeline.new(id, program)
 	self.frame_duration = program.frame_duration
 	self.last_frame = program.last_frame
 	self.advance_frame = select_frame_advance(program)
-	self.update = select_updater(program, false)
+	self.play_rate = 1
+	bind_update(self, select_updater(program, false))
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
 	self.position_ms = 0
@@ -737,8 +755,13 @@ function timeline:rebind_program(program)
 	self.frame_duration = program.frame_duration
 	self.last_frame = program.last_frame
 	self.advance_frame = select_frame_advance(program)
-	self.update = select_updater(program, self.head >= 0)
+	bind_update(self, select_updater(program, self.head >= 0))
 	self.wrapped = false
+end
+
+function timeline:set_play_rate(play_rate)
+	self.play_rate = play_rate
+	bind_update(self, select_updater(self.program, self.head >= 0))
 end
 
 function timeline:build(params)
@@ -751,7 +774,7 @@ function timeline:value()
 end
 
 function timeline:rewind()
-	self.update = select_updater(self.program, false)
+	bind_update(self, select_updater(self.program, false))
 	self.head = timelinestart_index
 	self.frame_elapsed = 0
 	self.position_ms = 0
@@ -784,7 +807,7 @@ local move_to<const> = function(self, owner, frame, evaluate)
 		flags = initial_sample_range_flags
 	end
 	self.head = current_frame
-	self.update = select_updater(program, true)
+	bind_update(self, select_updater(program, true))
 	self.frame_elapsed = 0
 	self.position_ms = time_ms
 	self.ended = false
@@ -846,7 +869,7 @@ local move_time<const> = function(self, owner, requested_time_ms, evaluate)
 		direction = -1
 	end
 	self.head = frame
-	self.update = select_updater(program, true)
+	bind_update(self, select_updater(program, true))
 	if program.continuous then
 		self.frame_elapsed = 0
 	else
@@ -891,7 +914,7 @@ function timeline:snap_to_start(owner)
 		flags = initial_sample_range_flags
 	end
 	self.head = 0
-	self.update = select_updater(self.program, true)
+	bind_update(self, select_updater(self.program, true))
 	self.frame_elapsed = 0
 	self.position_ms = 0
 	self.ended = false

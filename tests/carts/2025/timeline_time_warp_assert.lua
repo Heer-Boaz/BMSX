@@ -634,6 +634,36 @@ mutation_timelines:tick_gameplay(20)
 assert(mutation_timelines:get('source').position_ms == 40)
 assert(mutation_timelines:get('replacement').position_ms == 20)
 
+local rate_owner<const> = setmetatable({ id = 'timeline_play_rate_test' }, world_object)
+world_object.initialize(rate_owner)
+local rate_timelines<const> = timeline_component.new({ parent = rate_owner })
+rate_timelines:on_attach()
+rate_timelines:define('scaled', {
+	continuous = true,
+	duration_ms = 100,
+	playback_mode = 'once',
+})
+rate_timelines:play('scaled', {
+	play_rate = 0.5,
+	snap_to_start = false,
+})
+rate_timelines:tick_gameplay(40)
+assert(rate_timelines:get('scaled').position_ms == 20,
+	'non-identity play rate did not scale the scheduled transport delta')
+rate_timelines:set_play_rate('scaled', 2)
+rate_timelines:tick_gameplay(10)
+assert(rate_timelines:get('scaled').position_ms == 40,
+	'dynamic play-rate change did not retain the current source position')
+rate_timelines:seek_time('scaled', 60)
+rate_timelines:tick_gameplay(10)
+assert(rate_timelines:get('scaled').position_ms == 80,
+	'play rate rewrote or discarded an explicit source-time position')
+rate_timelines:stop('scaled')
+rate_timelines:play('scaled')
+rate_timelines:tick_gameplay(10)
+assert(rate_timelines:get('scaled').position_ms == 10,
+	'a later default play inherited the previous playback rate')
+
 	return nil
 end
 
