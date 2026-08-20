@@ -13,19 +13,17 @@ sprite_animation_system.tick = {
 	method = 'update',
 }
 
-local frame_duration_ms<const> = clock.frame_milliseconds()
-
 function sprite_animation_system.new(world)
 	local self<const> = setmetatable(base_system.new(sprite_animation_system.tick), sprite_animation_system)
 	self._component_view = world:active_tick_view(sprite_animation_component, clock.gameplay)
 	return self
 end
 
-function sprite_animation_system:update()
+function sprite_animation_system:update(delta_time)
 	local components<const> = self._component_view.components
 	for component_index = 1, #components do
 		local component<const> = components[component_index]
-		local elapsed<const> = component.elapsed_ms + frame_duration_ms
+		local elapsed<const> = component.elapsed_ms + delta_time
 		local frame_duration<const> = component.frame_duration_ms
 		local elapsed_frames<const> = elapsed // frame_duration
 		if elapsed_frames == 0 then

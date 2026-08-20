@@ -15,7 +15,6 @@ rook_animation_system.tick = {
 	method = 'update',
 }
 
-local frame_duration_ms<const> = clock.frame_milliseconds()
 local images<const> = {
 	assets_rook_1,
 	assets_rook_2,
@@ -30,8 +29,8 @@ function rook_animation_system.new(world)
 	return self
 end
 
-function rook_animation_system:update()
-	local elapsed<const> = self.elapsed_ms + frame_duration_ms
+function rook_animation_system:update(delta_time)
+	local elapsed<const> = self.elapsed_ms + delta_time
 	if elapsed < rook_animation_frame_ms then
 		self.elapsed_ms = elapsed
 		return

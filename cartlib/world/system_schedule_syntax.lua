@@ -26,7 +26,7 @@ local symbols<const> = {
 	systems = generated_symbol('systems'),
 }
 
-local append_group<const> = function(body, system_symbols, tick_functions, first, last, delta_time)
+local append_group<const> = function(body, system_symbols, tick_functions, first, last, update_milliseconds)
 	body[#body + 1] = call_statement(call_expression(
 		reference(symbols.world),
 		{},
@@ -37,7 +37,7 @@ local append_group<const> = function(body, system_symbols, tick_functions, first
 		local definition<const> = tick_function.definition
 		body[#body + 1] = call_statement(call_expression(
 			reference(system_symbols[tick_function.system_index]),
-			{ numeric_literal(delta_time) },
+			{ numeric_literal(update_milliseconds) },
 			definition.method
 		))
 	end
@@ -53,7 +53,7 @@ local append_group<const> = function(body, system_symbols, tick_functions, first
 	})
 end
 
-local build_runner<const> = function(system_symbols, tick_functions, delta_time, advances_gameplay)
+local build_runner<const> = function(system_symbols, tick_functions, update_milliseconds, advances_gameplay)
 	local body<const> = {}
 	if advances_gameplay then
 		body[1] = assignment_statement(
@@ -61,7 +61,7 @@ local build_runner<const> = function(system_symbols, tick_functions, delta_time,
 			binary_expression(
 				syntax.binary_add,
 				member_expression(reference(symbols.world), 'gameplay_time_ms'),
-				numeric_literal(delta_time)
+				numeric_literal(update_milliseconds)
 			)
 		)
 	end
@@ -72,7 +72,7 @@ local build_runner<const> = function(system_symbols, tick_functions, delta_time,
 		while last < #tick_functions and tick_functions[last + 1].definition.group == group do
 			last = last + 1
 		end
-		append_group(body, system_symbols, tick_functions, first, last, delta_time)
+		append_group(body, system_symbols, tick_functions, first, last, update_milliseconds)
 		first = last + 1
 	end
 	return function_expression({}, block(body))
@@ -82,7 +82,7 @@ function system_schedule_syntax.build(
 	systems,
 	update_with_gameplay,
 	update_without_gameplay,
-	delta_time
+	update_milliseconds
 )
 	local system_count<const> = #systems
 	local system_symbols<const> = {}
@@ -98,8 +98,8 @@ function system_schedule_syntax.build(
 	end
 
 	factory_body[#factory_body + 1] = return_statement({
-		build_runner(system_symbols, update_with_gameplay, delta_time, true),
-		build_runner(system_symbols, update_without_gameplay, delta_time, false),
+		build_runner(system_symbols, update_with_gameplay, update_milliseconds, true),
+		build_runner(system_symbols, update_without_gameplay, update_milliseconds, false),
 	})
 	return syntax_factory.chunk(block({
 		return_statement({

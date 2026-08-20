@@ -49,7 +49,7 @@ function timeline_program.compile(definition)
 	end
 	local frame_duration = definition.frame_duration
 	if frame_duration == nil then
-		frame_duration = clock.frame_milliseconds()
+		frame_duration = clock.update_milliseconds()
 	end
 	local auto_tick = definition.auto_tick
 	if auto_tick == nil then

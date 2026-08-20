@@ -66,7 +66,7 @@ function __bmsx_host_test.update()
 		end
 		local elapsed<const> = world.gameplay_time_ms - test.spawn_time_ms
 		assert(elapsed >= rook_generator_initial_wait_ms
-			and elapsed <= rook_generator_initial_wait_ms + clock.frame_milliseconds(),
+			and elapsed <= rook_generator_initial_wait_ms + clock.update_milliseconds(),
 			'RookGenerator changed its initial wait cadence')
 		test.generation_time_ms = world.gameplay_time_ms
 		test.phase = 'burst'
@@ -82,7 +82,7 @@ function __bmsx_host_test.update()
 			end
 			local elapsed<const> = test.spawn_times[spawn_count] - previous_time_ms
 			assert(elapsed >= rook_generator_spawn_interval_ms
-				and elapsed <= rook_generator_spawn_interval_ms + clock.frame_milliseconds(),
+				and elapsed <= rook_generator_spawn_interval_ms + clock.update_milliseconds(),
 				'RookGenerator changed its repeated spawn cadence')
 		end
 		if spawn_count < generator.rook_target_count then
@@ -101,7 +101,7 @@ function __bmsx_host_test.update()
 	local elapsed<const> = world.gameplay_time_ms - test.burst_finished_time_ms
 	assert(elapsed >= rook_generator_min_wait_ms,
 		'RookGenerator repeated before its authored random wait')
-	assert(elapsed <= rook_generator_max_wait_ms + clock.frame_milliseconds(),
+	assert(elapsed <= rook_generator_max_wait_ms + clock.update_milliseconds(),
 		'RookGenerator exceeded its authored random wait')
 	return true
 end

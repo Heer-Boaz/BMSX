@@ -21,17 +21,21 @@ function __bmsx_host_test.setup()
 		players[index].body_collider:set_enabled(false)
 	end
 	test.sint_pops = world:active_definition_view(ids_sint_pop_def)
+	test.gameplay_time_ms = world.gameplay_time_ms
 end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
-	test.frames = test.frames + 1
-	assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
-
 	local stage<const> = registry:get(ids_stage_instance)
 	if world.active_space_id ~= 'main' or stage == nil then
 		return false
 	end
+	if world.gameplay_time_ms == test.gameplay_time_ms then
+		return false
+	end
+	test.gameplay_time_ms = world.gameplay_time_ms
+	test.frames = test.frames + 1
+	assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
 	local sint_pops<const> = test.sint_pops.objects
 
 	if test.phase == 'spawn' then

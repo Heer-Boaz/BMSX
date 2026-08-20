@@ -34,7 +34,7 @@ function system_manager.new(world)
 	}, system_manager)
 end
 
-function system_manager:configure(system_classes)
+function system_manager:configure(system_classes, update_milliseconds)
 	local systems<const> = {}
 	local tick_functions<const> = {}
 	for system_index = 1, #system_classes do
@@ -62,7 +62,7 @@ function system_manager:configure(system_classes)
 			systems,
 			update_with_gameplay,
 			update_without_gameplay,
-			clock.frame_milliseconds()
+			update_milliseconds
 		),
 		'[world.system_schedule]'
 	)()

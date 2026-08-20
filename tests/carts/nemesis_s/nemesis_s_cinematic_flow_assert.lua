@@ -1,4 +1,5 @@
 local registry<const> = require('cartlib/registry')
+local clock<const> = require('cartlib/clock')
 local world<const> = require('cartlib/world/world')
 
 __bmsx_host_test = {
@@ -27,19 +28,40 @@ function __bmsx_host_test.setup()
 	local intro<const> = registry:get('nemesis_s.intro')
 	assert(intro.nicolaas.offset_x == -224 and intro.boaz.offset_x == 256,
 		'intro logos did not start at the XNA tile positions')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 2600)
+	local update_milliseconds<const> = clock.update_milliseconds()
+	local nicolaas_move_end_ms<const> = 2000 + 30 * update_milliseconds
+	local boaz_move_start_ms<const> = nicolaas_move_end_ms + 3000
+	local boaz_move_end_ms<const> = boaz_move_start_ms + 28 * update_milliseconds
+	local blackout_start_ms<const> = boaz_move_end_ms + 6000
+	intro.timelines:advance_time_to(
+		'nemesis_s.intro.presentation',
+		2000 + 18.5 * update_milliseconds
+	)
 	assert(intro.nicolaas.offset_x == -80,
-		'Sinterklaas logo did not retain the fixed 30 Hz XNA movement cadence')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 3000)
+		'Sinterklaas logo did not advance once per Nemesis update: '
+			.. tostring(intro.nicolaas.offset_x) .. ' / ' .. tostring(update_milliseconds))
+	intro.timelines:advance_time_to(
+		'nemesis_s.intro.presentation',
+		nicolaas_move_end_ms + 0.5 * update_milliseconds
+	)
 	assert(intro.nicolaas.offset_x == 16, 'Sinterklaas logo did not finish at XNA tile x=2')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 6160)
+	intro.timelines:advance_time_to(
+		'nemesis_s.intro.presentation',
+		boaz_move_start_ms + 4.5 * update_milliseconds
+	)
 	assert(intro.boaz.offset_x == 224,
-		'Boaz logo did not retain the fixed 30 Hz XNA movement cadence')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 7000)
+		'Boaz logo did not advance once per Nemesis update')
+	intro.timelines:advance_time_to(
+		'nemesis_s.intro.presentation',
+		boaz_move_end_ms + 0.5 * update_milliseconds
+	)
 	assert(intro.boaz.offset_x == 32, 'Boaz logo did not finish at XNA tile x=4')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 12160)
+	intro.timelines:advance_time_to('nemesis_s.intro.presentation', blackout_start_ms - 1)
 	assert(intro.visible, 'intro blackout started before the authored XNA wait elapsed')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 13000)
+	intro.timelines:advance_time_to(
+		'nemesis_s.intro.presentation',
+		blackout_start_ms + 0.5 * update_milliseconds
+	)
 	assert(not intro.visible, 'intro blackout did not hide the logos')
 	intro.events:emit('intro_done')
 	assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to story')

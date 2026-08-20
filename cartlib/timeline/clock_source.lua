@@ -1,7 +1,8 @@
 -- Timeline clock sources are raw retained-lane bits. Gameplay and frame consume
--- the world's fixed update quantum; gameplay can be suspended while frame work
--- remains admitted. Platform follows SYS_TIME_MS, audio follows the APU sample
--- clock, and manual timelines advance only through explicit transport operations.
+-- the world's configured update quantum; gameplay can be suspended while frame
+-- work remains admitted. Platform follows SYS_TIME_MS, audio follows the APU
+-- sample clock, and manual timelines advance only through explicit transport
+-- operations.
 local clock<const> = require('cartlib/clock')
 
 local gameplay<const> = clock.gameplay

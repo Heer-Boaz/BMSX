@@ -206,7 +206,8 @@ end
 
 function world_class:configure(world_module)
 	self._update_with_gameplay, self._update_without_gameplay = self._system_manager:configure(
-		world_module.systems
+		world_module.systems,
+		world_module.update_milliseconds
 	)
 	self.update = self._update_with_gameplay
 	local spaces<const> = world_module.spaces

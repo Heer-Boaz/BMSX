@@ -1,5 +1,6 @@
 local aem<const> = require('cartlib/aem')
 local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
+local clock<const> = require('cartlib/clock')
 local elevator_system<const> = require('elevator/system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
 local input_actioneffect_system<const> = require('cartlib/input/actioneffect/system')
@@ -11,7 +12,10 @@ local velocity_system<const> = require('cartlib/physics/velocity_system')
 local tile_collision_system<const> = require('cartlib/collision/tile_collision_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
 
+local update_interval_vblanks<const> = 2
+
 return {
+	update_milliseconds = clock.configure_update_interval(update_interval_vblanks),
 	spaces = {
 		'main',
 		'intro',

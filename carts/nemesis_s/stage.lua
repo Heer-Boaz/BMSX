@@ -16,7 +16,7 @@ local assets<const> = require('bmsx/assets')
 local stage<const> = {}
 stage.__index = stage
 
-local frame_duration_ms<const> = clock.frame_milliseconds()
+local frame_duration_ms<const> = clock.update_milliseconds()
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }

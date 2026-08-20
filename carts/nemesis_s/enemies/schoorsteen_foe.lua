@@ -34,7 +34,7 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = clock.frame_milliseconds(),
+	frame_duration_ms = clock.update_milliseconds(),
 	loop = true,
 	offset_x = schoorsteen_flash_offset_x,
 	offset_y = schoorsteen_flash_offset_y,

@@ -1,5 +1,6 @@
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
+local clock<const> = require('cartlib/clock')
 local gx_texture<const> = require('cartlib/gx/texture')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_component<const> = require('cartlib/component/sprite_component')
@@ -14,10 +15,9 @@ local intro_instance_id<const> = 'nemesis_s.intro'
 local intro_fsm_id<const> = 'nemesis_s.intro.fsm'
 local intro_timeline_id<const> = 'nemesis_s.intro.presentation'
 local tile_size<const> = 8
--- The source intro advances each logo by one tile per fixed 30 Hz XNA update.
--- BMSX presents at 50 Hz, so the step track repeats presentation frames while
--- retaining that authored movement cadence.
-local move_step_ms<const> = 1000 / 30
+-- Each logo advances one tile per Nemesis gameplay update. Millisecond waits
+-- and the continuous timeline still consume the complete two-VBlank quantum.
+local move_step_ms<const> = clock.update_milliseconds()
 local nicolaas_move_start_ms<const> = 2000
 local nicolaas_start_tile<const> = -28
 local nicolaas_end_tile<const> = 2

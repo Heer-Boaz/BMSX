@@ -25,7 +25,7 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 60, 'Nemesis S Bel encounter scenario timed out')
+	assert(test.frames < 120, 'Nemesis S Bel encounter scenario timed out')
 
 	local stage<const> = registry:get(ids_stage_instance)
 	local player<const> = registry:get('nemesis_s.player.1')

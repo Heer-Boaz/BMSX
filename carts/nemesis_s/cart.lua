@@ -115,4 +115,5 @@ while true do
 	world:update()
 	vblank.wait()
 	world:render()
+	vblank.wait()
 end
