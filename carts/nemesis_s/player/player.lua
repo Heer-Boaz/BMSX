@@ -119,55 +119,72 @@ function player:emit_metric()
 	))
 end
 
-function player:get_vessel_count()
-	return #self.options + 1
+local append_option<const> = function(self)
+	local vessel_id<const> = #self.options + 2
+	self.options[vessel_id - 1] = {
+		vessel_id = vessel_id,
+		x = self.x,
+		y = self.y,
+	}
+	local weapon_slots<const> = self.weapon_slots
+	weapon_slots.bullet[vessel_id] = 0
+	weapon_slots.laser[vessel_id] = 0
+	weapon_slots.missile[vessel_id] = 0
+	weapon_slots.uplaser[vessel_id] = 0
+end
+
+local place_options_from_history<const> = function(self)
+	local options<const> = self.options
+	if #options == 0 then
+		return
+	end
+	local history_index<const> = self.option_history_index
+	local first_history_index = history_index - player_option_history_spacing
+	if first_history_index <= 0 then
+		first_history_index = first_history_index + player_option_history_count
+	end
+	local history_x<const> = self.option_history_x
+	local history_y<const> = self.option_history_y
+	local first<const> = options[1]
+	first.x = history_x[first_history_index]
+	first.y = history_y[first_history_index]
+	if #options == 2 then
+		local second<const> = options[2]
+		second.x = history_x[history_index]
+		second.y = history_y[history_index]
+	end
 end
 
 function player:initialize_options()
 	self.options = {}
-	local option_count<const> = self.powerup_levels[powerup_slot_option]
-	for option_index = 1, option_count do
-		local option<const> = {
-			vessel_id = option_index + 1,
-			target_vessel_id = option_index,
-			x = self.x,
-			y = self.y,
-			target_prev_x = self.x,
-			target_prev_y = self.y,
-			follow_dx = {},
-			follow_dy = {},
-		}
-		for i = 1, player_option_follow_delay do
-			option.follow_dx[i] = 0
-			option.follow_dy[i] = 0
-		end
-		self.options[option_index] = option
+	local history_x<const> = {}
+	local history_y<const> = {}
+	for index = 1, player_option_history_count do
+		history_x[index] = self.x
+		history_y[index] = self.y
+	end
+	self.option_history_x = history_x
+	self.option_history_y = history_y
+	self.option_history_index = 1
+	for _ = 1, self.powerup_levels[powerup_slot_option] do
+		append_option(self)
 	end
 	self.option_anim_index = 1
 end
 
 function player:initialize_weapon_slots()
 	self.weapon_slots = {
-		bullet = {},
-		laser = {},
-		missile = {},
-		uplaser = {},
+		bullet = { 0 },
+		laser = { 0 },
+		missile = { 0 },
+		uplaser = { 0 },
 	}
-	local vessel_count<const> = self:get_vessel_count()
-	for vessel_id = 1, vessel_count do
-		self.weapon_slots.bullet[vessel_id] = 0
-		self.weapon_slots.laser[vessel_id] = 0
-		self.weapon_slots.missile[vessel_id] = 0
-		self.weapon_slots.uplaser[vessel_id] = 0
-	end
 end
 
 function player:reset_runtime()
 	self.frame = 0
 	self.last_dx = 0
 	self.last_dy = 0
-	self.edge_push_dx = 0
-	self.edge_push_dy = 0
 	self.last_speed = 0
 	self.left_held = false
 	self.right_held = false
@@ -176,12 +193,12 @@ function player:reset_runtime()
 	self.fire_held = false
 	self.fire_pressed = false
 	self.sprite = self.visual_sources.neutral
-	self:initialize_options()
 	self.bullets = {}
 	self.lasers = {}
 	self.missiles = {}
 	self.uplasers = {}
 	self:initialize_weapon_slots()
+	self:initialize_options()
 	if telemetry_enabled then
 		self:emit_event(
 			'player_reset',
@@ -278,11 +295,7 @@ local try_move_x<const> = function(self, dx, max_x)
 	if dx == 0 then
 		return
 	end
-	local raw_target_x<const> = self.x + dx
-	local target_x<const> = clamp(raw_target_x, 0, max_x)
-	if target_x ~= raw_target_x then
-		self.edge_push_dx = dx
-	end
+	local target_x<const> = clamp(self.x + dx, 0, max_x)
 	if collides_at(self, target_x, self.y) then
 		if telemetry_enabled then
 			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
@@ -296,11 +309,7 @@ local try_move_y<const> = function(self, dy, max_y)
 	if dy == 0 then
 		return
 	end
-	local raw_target_y<const> = self.y + dy
-	local target_y<const> = clamp(raw_target_y, 0, max_y)
-	if target_y ~= raw_target_y then
-		self.edge_push_dy = dy
-	end
+	local target_y<const> = clamp(self.y + dy, 0, max_y)
 	if collides_at(self, self.x, target_y) then
 		if telemetry_enabled then
 			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
@@ -319,9 +328,6 @@ function player:update_position()
 	local movement_speed<const> = player_base_movement_speed
 		+ player_movement_speed_increase * self.powerup_levels[powerup_slot_speed]
 	self.last_speed = movement_speed
-
-	self.edge_push_dx = 0
-	self.edge_push_dy = 0
 
 	if self.left_held then
 		try_move_x(self, -movement_speed, max_x)
@@ -345,35 +351,37 @@ function player:update_position()
 end
 
 function player:update_options()
-	if self.last_dx == 0 and self.last_dy == 0 and self.edge_push_dx == 0 and self.edge_push_dy == 0 then
+	-- Nemesis 2 retains sixteen player positions in E450-E46F. The write
+	-- cursor advances only when at least one input axis has a direction; the
+	-- first and second options consume the samples eight and sixteen entries
+	-- behind that cursor respectively.
+	if self.left_held == self.right_held and self.up_held == self.down_held then
 		return
 	end
-
-	for i = 1, #self.options do
-		local option<const> = self.options[i]
-		local target_x<const> , target_y<const> = self:get_vessel_snapshot(option.target_vessel_id)
-		local target_dx = target_x - option.target_prev_x
-		local target_dy = target_y - option.target_prev_y
-		if option.target_vessel_id == 1 then
-			if target_dx == 0 and self.edge_push_dx ~= 0 then
-				target_dx = self.edge_push_dx
-			end
-			if target_dy == 0 and self.edge_push_dy ~= 0 then
-				target_dy = self.edge_push_dy
-			end
-		end
-		option.x = option.x + option.follow_dx[1]
-		option.y = option.y + option.follow_dy[1]
-
-		for queue_index = 1, player_option_follow_delay - 1 do
-			option.follow_dx[queue_index] = option.follow_dx[queue_index + 1]
-			option.follow_dy[queue_index] = option.follow_dy[queue_index + 1]
-		end
-		option.follow_dx[player_option_follow_delay] = target_dx
-		option.follow_dy[player_option_follow_delay] = target_dy
-		option.target_prev_x = target_x
-		option.target_prev_y = target_y
+	local history_index = self.option_history_index
+	self.option_history_x[history_index] = self.x
+	self.option_history_y[history_index] = self.y
+	history_index = history_index + 1
+	if history_index > player_option_history_count then
+		history_index = 1
 	end
+	self.option_history_index = history_index
+	place_options_from_history(self)
+end
+
+function player:on_powerups_changed(_event, _source, slot)
+	if slot == powerup_slot_option then
+		append_option(self)
+		place_options_from_history(self)
+	end
+end
+
+function player:bind()
+	self.events:on({
+		event = player_state_module.events.powerups_changed,
+		emitter = self.player_state.id,
+		handler = player.on_powerups_changed,
+	})
 end
 
 function player:refresh_uplaser_dimensions(uplaser)
@@ -503,7 +511,7 @@ function player:spawn_uplaser(vessel_id, level)
 end
 
 function player:fire_weapon_salvo()
-	local vessel_count<const> = self:get_vessel_count()
+	local vessel_count<const> = #self.options + 1
 	local powerup_levels<const> = self.powerup_levels
 	local laser_equipped<const> = powerup_levels[powerup_slot_laser] > 0
 	local missile_equipped<const> = powerup_levels[powerup_slot_missile] > 0
@@ -930,8 +938,6 @@ local register_player_definition<const> = function()
 			frame = 0,
 			last_dx = 0,
 			last_dy = 0,
-			edge_push_dx = 0,
-			edge_push_dy = 0,
 			last_speed = 0,
 			left_held = false,
 			right_held = false,
