@@ -193,9 +193,6 @@ local player_pause_animation_timeline_id<const> = 'p.tl.pa'
 local player_victory_dance_timeline_id<const> = 'p.tl.vd'
 local player_pause_offset_x<const> = -2
 local player_pause_offset_y<const> = -8
-local player_pause_animation_play_options<const> = {
-	snap_to_start = false,
-}
 local victory_dance_jump_count<const> = 8
 local victory_dance_jump_frame_count<const> = 20
 local victory_dance_last_frame<const> = victory_dance_jump_count * victory_dance_jump_frame_count - 1
@@ -223,10 +220,7 @@ local stairs_vertical_exit_events<const> = {
 }
 
 local begin_pause_animation<const> = function(self)
-	self.timelines:play(
-		player_pause_animation_timeline_id,
-		player_pause_animation_play_options
-	)
+	self.timelines:play(player_pause_animation_timeline_id)
 end
 
 local build_victory_dance_frames<const> = function()
