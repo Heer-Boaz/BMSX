@@ -21,6 +21,7 @@ function execution_layout.new(blackboard_layout)
 		flag_slots = {},
 		record_slots = {},
 		service_count = 0,
+		event_driven_task_count = 0,
 		blackboard_layout = blackboard_layout,
 		blackboard_observers_by_slot = {},
 		execution_requests = {},

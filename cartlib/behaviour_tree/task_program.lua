@@ -1,6 +1,5 @@
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local result<const> = require('cartlib/behaviour_tree/result')
-local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 
 -- Tasks are immutable program records. Only tasks that declare node_memory
 -- allocate a per-agent table; stateless ticking tasks remain a direct evaluator
@@ -15,6 +14,7 @@ local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 
 local task_program<const> = {}
 local result_running<const> = result.running
+local result_success<const> = result.success
 local allocate_slot<const> = execution_layout.allocate_slot
 local allocate_node_memory<const> = execution_layout.allocate_node_memory
 
@@ -61,7 +61,7 @@ local compile_ticking_task<const> = function(layout, tick, abort, uses_node_memo
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
 		local status<const> = evaluate(target, execution)
-		if status == result_running then
+		if status < result_success then
 			execution_state[active_slot] = true
 		else
 			execution_state[active_slot] = nil
@@ -122,11 +122,11 @@ local compile_latent_task<const> = function(
 					status = tick(target, execution_state[memory_slot], execution)
 				else
 					status = execute(target, execution_state[memory_slot], execution)
-					if status == result_running then
+					if status < result_success then
 						execution_state[remaining_slot] = interval_ticks
 					end
 				end
-				if status == result_running then
+				if status < result_success then
 					execution_state[active_slot] = true
 				else
 					execution_state[active_slot] = nil
@@ -147,11 +147,11 @@ local compile_latent_task<const> = function(
 				status = tick(target, execution)
 			else
 				status = execute(target, execution)
-				if status == result_running then
+				if status < result_success then
 					execution_state[remaining_slot] = interval_ticks
 				end
 			end
-			if status == result_running then
+			if status < result_success then
 				execution_state[active_slot] = true
 			else
 				execution_state[active_slot] = nil
@@ -169,7 +169,7 @@ local compile_latent_task<const> = function(
 			else
 				status = execute(target, memory, execution)
 			end
-			if status == result_running then
+			if status < result_success then
 				execution_state[active_slot] = true
 			else
 				execution_state[active_slot] = nil
@@ -185,7 +185,7 @@ local compile_latent_task<const> = function(
 		else
 			status = execute(target, execution)
 		end
-		if status == result_running then
+		if status < result_success then
 			execution_state[active_slot] = true
 		else
 			execution_state[active_slot] = nil
@@ -211,33 +211,6 @@ function task_program.compile(node, layout)
 		node.node_memory,
 		node.interval_ticks
 	)
-end
-
-function task_program.compile_timeline(node, layout)
-	local memory_slot<const> = allocate_node_memory(layout)
-	local active_slot<const> = allocate_slot(layout)
-	local reset<const> = function(target, execution, execution_state)
-		if execution_state[active_slot] then
-			execution_state[active_slot] = nil
-			timeline_task.abort(target, execution_state[memory_slot], execution, node)
-		end
-	end
-	return function(target, execution)
-		local execution_state<const> = execution._execution_state
-		local memory<const> = execution_state[memory_slot]
-		local status
-		if execution_state[active_slot] then
-			status = timeline_task.tick(target, memory, execution)
-		else
-			status = timeline_task.execute(target, memory, execution, node)
-		end
-		if status == result_running then
-			execution_state[active_slot] = true
-		else
-			execution_state[active_slot] = nil
-		end
-		return status
-	end, nil, reset
 end
 
 return task_program

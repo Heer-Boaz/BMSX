@@ -5,16 +5,19 @@ local observer_program<const> = require('cartlib/behaviour_tree/observer_program
 local result<const> = require('cartlib/behaviour_tree/result')
 local service_program<const> = require('cartlib/behaviour_tree/service_program')
 local task_program<const> = require('cartlib/behaviour_tree/task_program')
+local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 
 -- Admission-only lowering. Sequence/selector programs retain their running
 -- child; Blackboard observers enqueue branch execution requests instead of
 -- rescanning reactive composites every frame. Parallel programs retain
 -- terminal children. Tasks requesting node memory receive one component-owned
 -- state table; active Services occupy a preallocated component-owned lane and
--- run before queued flow changes. The frame path allocates nothing and never
--- interprets definitions or resolves keys.
+-- run before queued flow changes. Externally completed tasks suspend only the
+-- evaluator; its retained Service lane keeps the component scheduled. The frame
+-- path allocates nothing and never interprets definitions or resolves keys.
 
 local program<const> = {}
+local result_waiting<const> = result.waiting
 local result_running<const> = result.running
 local result_success<const> = result.success
 local result_failure<const> = result.failure
@@ -97,7 +100,7 @@ compile_by_type.sequence = function(node, layout)
 		while child_index <= child_count do
 			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_success then
-				if status == result_running then
+				if status < result_success then
 					execution_state[state_slot] = child_index
 				else
 					execution_state[state_slot] = nil
@@ -204,7 +207,7 @@ compile_by_type.selector = function(node, layout, execution_index)
 				end
 				local status<const> = evaluators[child_index](target, execution, operands[child_index])
 				if status ~= result_failure then
-					if status == result_running then
+					if status < result_success then
 						execution_state[state_slot] = child_index
 					else
 						execution_state[state_slot] = nil
@@ -240,7 +243,7 @@ compile_by_type.selector = function(node, layout, execution_index)
 		while child_index <= child_count do
 			local status<const> = evaluators[child_index](target, execution, operands[child_index])
 			if status ~= result_failure then
-				if status == result_running then
+				if status < result_success then
 					execution_state[state_slot] = child_index
 				else
 					execution_state[state_slot] = nil
@@ -255,6 +258,7 @@ compile_by_type.selector = function(node, layout, execution_index)
 end
 
 local compile_parallel_all<const> = function(children, layout)
+	local event_driven_task_count<const> = layout.event_driven_task_count
 	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
 	if child_count == 0 then
 		return return_success
@@ -272,9 +276,39 @@ local compile_parallel_all<const> = function(children, layout)
 			reset_children(target, execution, execution_state)
 		end
 	end
+	-- Keep ordinary parallel trees on their two-state active path. Only a
+	-- subtree containing an event-driven task pays to merge waiting/running.
+	if layout.event_driven_task_count == event_driven_task_count then
+		return function(target, execution)
+			local execution_state<const> = execution._execution_state
+			local any_running
+			for child_index = 1, child_count do
+				local state_slot<const> = first_state_slot + child_index - 1
+				local status = execution_state[state_slot]
+				if status == nil then
+					status = evaluators[child_index](target, execution, operands[child_index])
+				end
+				if status ~= result_success then
+					if status == result_running then
+						any_running = true
+					else
+						reset(target, execution, execution_state)
+						return status
+					end
+				else
+					execution_state[state_slot] = result_success
+				end
+			end
+			if any_running then
+				return result_running
+			end
+			reset(target, execution, execution_state)
+			return result_success
+		end, nil, reset
+	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
-		local any_running
+		local active_status
 		for child_index = 1, child_count do
 			local state_slot<const> = first_state_slot + child_index - 1
 			local status = execution_state[state_slot]
@@ -282,8 +316,10 @@ local compile_parallel_all<const> = function(children, layout)
 				status = evaluators[child_index](target, execution, operands[child_index])
 			end
 			if status ~= result_success then
-				if status == result_running then
-					any_running = true
+				if status < result_success then
+					if active_status == nil or status > active_status then
+						active_status = status
+					end
 				else
 					reset(target, execution, execution_state)
 					return status
@@ -292,8 +328,8 @@ local compile_parallel_all<const> = function(children, layout)
 				execution_state[state_slot] = result_success
 			end
 		end
-		if any_running then
-			return result_running
+		if active_status ~= nil then
+			return active_status
 		end
 		reset(target, execution, execution_state)
 		return result_success
@@ -301,6 +337,7 @@ local compile_parallel_all<const> = function(children, layout)
 end
 
 local compile_parallel_one<const> = function(children, layout)
+	local event_driven_task_count<const> = layout.event_driven_task_count
 	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
 	if child_count == 0 then
 		return return_failure
@@ -318,9 +355,38 @@ local compile_parallel_one<const> = function(children, layout)
 			reset_children(target, execution, execution_state)
 		end
 	end
+	-- See parallel_all: event-driven status merging is admission-specialized.
+	if layout.event_driven_task_count == event_driven_task_count then
+		return function(target, execution)
+			local execution_state<const> = execution._execution_state
+			local any_running
+			for child_index = 1, child_count do
+				local state_slot<const> = first_state_slot + child_index - 1
+				local status = execution_state[state_slot]
+				if status == nil then
+					status = evaluators[child_index](target, execution, operands[child_index])
+				end
+				if status ~= result_failure then
+					if status == result_running then
+						any_running = true
+					else
+						reset(target, execution, execution_state)
+						return status
+					end
+				else
+					execution_state[state_slot] = result_failure
+				end
+			end
+			if any_running then
+				return result_running
+			end
+			reset(target, execution, execution_state)
+			return result_failure
+		end, nil, reset
+	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
-		local any_running
+		local active_status
 		for child_index = 1, child_count do
 			local state_slot<const> = first_state_slot + child_index - 1
 			local status = execution_state[state_slot]
@@ -328,8 +394,10 @@ local compile_parallel_one<const> = function(children, layout)
 				status = evaluators[child_index](target, execution, operands[child_index])
 			end
 			if status ~= result_failure then
-				if status == result_running then
-					any_running = true
+				if status < result_success then
+					if active_status == nil or status > active_status then
+						active_status = status
+					end
 				else
 					reset(target, execution, execution_state)
 					return status
@@ -338,8 +406,8 @@ local compile_parallel_one<const> = function(children, layout)
 				execution_state[state_slot] = result_failure
 			end
 		end
-		if any_running then
-			return result_running
+		if active_status ~= nil then
+			return active_status
 		end
 		reset(target, execution, execution_state)
 		return result_failure
@@ -359,15 +427,23 @@ compile_by_type.decorator = function(node, layout)
 	local decorate<const> = node.decorator
 	if not reset then
 		return function(target, execution)
-			return decorate(target, execution, evaluate(target, execution, operand))
+			local status<const> = evaluate(target, execution, operand)
+			if status == result_waiting then
+				return status
+			end
+			return decorate(target, execution, status)
 		end
 	end
 	return function(target, execution)
-		local status<const> = decorate(target, execution, evaluate(target, execution, operand))
-		if status ~= result_running then
+		local status<const> = evaluate(target, execution, operand)
+		if status == result_waiting then
+			return status
+		end
+		local decorated<const> = decorate(target, execution, status)
+		if decorated ~= result_running then
 			reset(target, execution, execution._execution_state)
 		end
-		return status
+		return decorated
 	end, nil, reset
 end
 
@@ -438,7 +514,7 @@ compile_by_type.random_selector = function(node, layout)
 			execution_state[state_slot] = child_index
 		end
 		local status<const> = evaluators[child_index](target, execution, operands[child_index])
-		if status ~= result_running then
+		if status >= result_success then
 			execution_state[state_slot] = nil
 		end
 		return status
@@ -471,7 +547,7 @@ compile_by_type.weighted_random_selector = function(node, layout)
 			execution_state[state_slot] = child_index
 		end
 		local status<const> = evaluators[child_index](target, execution, operands[child_index])
-		if status ~= result_running then
+		if status >= result_success then
 			execution_state[state_slot] = nil
 		end
 		return status
@@ -494,8 +570,8 @@ compile_by_type.loop = function(node, layout)
 		end
 		return function(target, execution)
 			local status<const> = evaluate(target, execution, operand)
-			if status == result_running then
-				return result_running
+			if status < result_success then
+				return status
 			end
 			if reset_child ~= nil then
 				reset_child(target, execution, execution._execution_state)
@@ -519,9 +595,9 @@ compile_by_type.loop = function(node, layout)
 		local completed = execution_state[completed_slot] or 0
 		while completed < count do
 			local status<const> = evaluate(target, execution, operand)
-			if status == result_running then
+			if status < result_success then
 				execution_state[completed_slot] = completed
-				return result_running
+				return status
 			end
 			if reset_child ~= nil then
 				reset_child(target, execution, execution_state)
@@ -546,7 +622,7 @@ compile_by_type.limit = function(node, layout)
 		local count<const> = execution_state[state_slot] or 0
 		if count < limit then
 			local status<const> = evaluate(target, execution, operand)
-			if status ~= result_running then
+			if status >= result_success then
 				execution_state[state_slot] = count + 1
 			end
 			return status
@@ -591,7 +667,7 @@ compile_by_type.wait = function(node, layout)
 end
 
 compile_by_type.task = task_program.compile
-compile_by_type.timeline = task_program.compile_timeline
+compile_by_type.timeline = timeline_task.compile
 
 compile_by_type.set_blackboard = blackboard_program.compile_set
 compile_by_type.add_blackboard = blackboard_program.compile_add
@@ -631,7 +707,80 @@ function program.compile(tree_id, definition)
 	if blackboard_layout ~= nil then
 		blackboard_layout.notifications = notifications
 	end
-	if tick_active_services ~= nil and process_execution_requests ~= nil then
+	-- Select one fused root runner at admission. Service, observer and latent
+	-- capabilities never become feature branches on the 50 Hz execution path.
+	if layout.event_driven_task_count > 0 then
+		local evaluate_root<const> = evaluate
+		local root_operand<const> = operand
+		if tick_active_services ~= nil and process_execution_requests ~= nil then
+			local evaluate_waiting_with_services_and_requests<const> = function(target, execution)
+				tick_active_services(target, execution)
+				local request_pending<const> = execution._execution_request_pending
+				if execution._execution_waiting then
+					if not request_pending then
+						return result_waiting
+					end
+					execution._execution_waiting = false
+				end
+				if request_pending then
+					execution._execution_request_pending = false
+					process_execution_requests(target, execution, execution._execution_state)
+				end
+				local status<const> = evaluate_root(target, execution, root_operand)
+				if status == result_waiting then
+					execution:_wait_for_latent_task()
+				end
+				return status
+			end
+			evaluate = evaluate_waiting_with_services_and_requests
+		elseif tick_active_services ~= nil then
+			local evaluate_waiting_with_services<const> = function(target, execution)
+				tick_active_services(target, execution)
+				if execution._execution_waiting then
+					return result_waiting
+				end
+				local status<const> = evaluate_root(target, execution, root_operand)
+				if status == result_waiting then
+					execution:_wait_for_latent_task()
+				end
+				return status
+			end
+			evaluate = evaluate_waiting_with_services
+		elseif process_execution_requests ~= nil then
+			local evaluate_waiting_with_requests<const> = function(target, execution)
+				local request_pending<const> = execution._execution_request_pending
+				if execution._execution_waiting then
+					if not request_pending then
+						return result_waiting
+					end
+					execution._execution_waiting = false
+				end
+				if request_pending then
+					execution._execution_request_pending = false
+					process_execution_requests(target, execution, execution._execution_state)
+				end
+				local status<const> = evaluate_root(target, execution, root_operand)
+				if status == result_waiting then
+					execution:_wait_for_latent_task()
+				end
+				return status
+			end
+			evaluate = evaluate_waiting_with_requests
+		else
+			local evaluate_waiting<const> = function(target, execution)
+				if execution._execution_waiting then
+					return result_waiting
+				end
+				local status<const> = evaluate_root(target, execution, root_operand)
+				if status == result_waiting then
+					execution:_wait_for_latent_task()
+				end
+				return status
+			end
+			evaluate = evaluate_waiting
+		end
+		operand = nil
+	elseif tick_active_services ~= nil and process_execution_requests ~= nil then
 		local evaluate_root<const> = evaluate
 		local root_operand<const> = operand
 		local evaluate_with_services_and_requests<const> = function(target, execution)

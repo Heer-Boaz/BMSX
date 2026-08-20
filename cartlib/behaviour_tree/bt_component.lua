@@ -1,8 +1,10 @@
 local base_component<const> = require('cartlib/component/base_component')
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
+local clock<const> = require('cartlib/clock')
 
 local bt_component<const> = {}
 bt_component.__index = bt_component
+bt_component._tick_clocks = clock.gameplay
 setmetatable(bt_component, { __index = base_component })
 
 local programs_by_id<const> = {}
@@ -42,6 +44,7 @@ function bt_component:rebind_program(program)
 	self.operand = program.operand
 	self.reset = program.reset
 	self._execution_request_pending = false
+	self._execution_waiting = false
 	-- A program replacement restarts task/service memory while the blackboard
 	-- remaps retained values by semantic key. Runtime slot numbers belong only
 	-- to the installed program and never become cart-visible state keys.
@@ -57,6 +60,37 @@ function bt_component:abort()
 		reset(self.parent, self, self._execution_state)
 	end
 	self._execution_request_pending = false
+	self._execution_waiting = false
+	if self.enabled then
+		self:set_tick_clock_enabled(clock.gameplay, true)
+	end
+end
+
+-- Blackboard observers schedule one coalesced flow update. A sleeping latent
+-- tree is readmitted to its gameplay lane; the evaluator applies requests at
+-- the next behaviour-tree boundary rather than mutating the active path here.
+function bt_component:request_execution()
+	self._execution_request_pending = true
+	self:set_tick_clock_enabled(clock.gameplay, true)
+end
+
+-- Latent completion publishes directly into the compiler-owned task slot and
+-- readmits execution. The producer callback is retained by the task program;
+-- no event lookup, listener allocation or frame polling is involved.
+function bt_component:finish_latent_task(status_slot, task_result)
+	self._execution_state[status_slot] = task_result
+	self._execution_waiting = false
+	self:set_tick_clock_enabled(clock.gameplay, true)
+end
+
+-- A tree with only externally completed work leaves the gameplay lane. Active
+-- Services keep their owner scheduled while the evaluator itself remains
+-- dormant, matching the separate auxiliary/task scheduling used by UE.
+function bt_component:_wait_for_latent_task()
+	self._execution_waiting = true
+	if self._active_service_count == 0 and not self._execution_request_pending then
+		self:set_tick_clock_enabled(clock.gameplay, false)
+	end
 end
 
 -- Tree lifecycle is distinct from generic component scheduling. Stopping
@@ -70,6 +104,7 @@ end
 -- stop() leaves execution at the root, so starting only republishes the
 -- component to the retained BT view.
 function bt_component:start()
+	self:set_tick_clock_enabled(clock.gameplay, true)
 	return base_component.set_enabled(self, true)
 end
 

@@ -16,7 +16,7 @@ local result<const> = require('cartlib/behaviour_tree/result')
 
 local observer_program<const> = {}
 local resolved_slot_index<const> = blackboard.resolved_slot_index
-local result_running<const> = result.running
+local result_success<const> = result.success
 local result_failure<const> = result.failure
 local allocate_slot<const> = execution_layout.allocate_slot
 local allocate_flag<const> = execution_layout.allocate_flag
@@ -65,7 +65,7 @@ function observer_program.bind_lower_priority(branch, request_slot, child_index)
 		if not requested_child or child_index < requested_child then
 			execution_state[request_slot] = child_index
 		end
-		execution._execution_request_pending = true
+		execution:request_execution()
 	end
 end
 
@@ -207,14 +207,14 @@ function observer_program.compile_decorators(
 				if execution_state[active_slot] then
 					if observes_self_value then
 						execution_state[self_request_slot] = self_value_request
-						execution._execution_request_pending = true
+						execution:request_execution()
 					elseif observes_self_result
 					and execution_state[self_request_slot] ~= self_value_request then
 						if condition(values) then
 							execution_state[self_request_slot] = false
 						else
 							execution_state[self_request_slot] = self_result_request
-							execution._execution_request_pending = true
+							execution:request_execution()
 						end
 					end
 				elseif observes_lower and execution_state[lower_priority_slot] then
@@ -238,7 +238,7 @@ function observer_program.compile_decorators(
 			end
 		end
 		local status<const> = evaluate_child(target, execution, operand)
-		if status ~= result_running then
+		if status >= result_success then
 			execution_state[active_slot] = false
 			if self_request_slot ~= nil then
 				execution_state[self_request_slot] = false

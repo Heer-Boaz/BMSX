@@ -18,7 +18,7 @@ bt_system.tick = {
 
 function bt_system.new(world)
 	local self<const> = setmetatable(base_system.new(bt_system.tick), bt_system)
-	self._component_view = world:active_component_view(bt_component)
+	self._component_view = world:active_tick_view(bt_component, clock.gameplay)
 	return self
 end
 

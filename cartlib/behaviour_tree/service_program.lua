@@ -17,7 +17,7 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- (target, node_memory, execution, elapsed_ticks).
 
 local service_program<const> = {}
-local result_running<const> = result.running
+local result_success<const> = result.success
 local allocate_slot<const> = execution_layout.allocate_slot
 local allocate_flag<const> = execution_layout.allocate_flag
 local allocate_node_memory<const> = execution_layout.allocate_node_memory
@@ -215,7 +215,7 @@ function service_program.compile(definitions, layout, evaluate, operand, reset_c
 			start_services(target, execution)
 		end
 		local status<const> = evaluate(target, execution, operand)
-		if status ~= result_running then
+		if status >= result_success then
 			reset(target, execution, execution_state)
 		end
 		return status
