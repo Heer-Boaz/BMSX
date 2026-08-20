@@ -7,6 +7,7 @@ local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
+local end_demo_module<const> = require('end_demo')
 local player_module<const> = require('player/player')
 local player_state<const> = require('player/player_state')
 local stage_module<const> = require('stage')
@@ -39,6 +40,7 @@ end
 
 function director:enter_game_start()
 	self:set_active_space('game_start')
+	world:clear_space('end_demo')
 	self.frame = 0
 	local stage<const> = world:spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
@@ -81,6 +83,20 @@ function director:enter_gameplay()
 	self:set_active_space('main')
 	self.frame = 0
 	self.telemetry_stage_head = self.stage.tape_head
+end
+
+function director:enter_end_demo()
+	self:set_active_space('end_demo')
+	world:clear_space('main')
+	self.stage = nil
+	self.players = nil
+	self.player_states = nil
+	self.status_bar = nil
+	world:spawn(end_demo_module.definition_id, {
+		space_id = 'end_demo',
+		pos = { x = 0, y = 0, z = 0 },
+	})
+	self.events:emit('end_demo')
 end
 
 function director:accept_title_selection(_state, event)
@@ -161,6 +177,12 @@ end
 local define_director_fsm<const> = function()
 	local gameplay_state<const> = {
 		entering_state = director.enter_gameplay,
+		on = {
+			['stage.completed'] = {
+				emitter = ids_stage_instance,
+				go = '/end_demo',
+			},
+		},
 	}
 	if telemetry_enabled then
 		gameplay_state.update = director.update_telemetry
@@ -219,6 +241,15 @@ local define_director_fsm<const> = function()
 				},
 			},
 			gameplay = gameplay_state,
+			end_demo = {
+				entering_state = director.enter_end_demo,
+				on = {
+					['end_demo_done'] = {
+						emitter = 'nemesis_s.end_demo',
+						go = '/title',
+					},
+				},
+			},
 		},
 	})
 end

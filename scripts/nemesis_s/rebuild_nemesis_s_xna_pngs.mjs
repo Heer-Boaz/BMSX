@@ -185,6 +185,14 @@ function getMappings() {
 			target: 'story_pilot@atlas=10.png',
 		},
 		{
+			source: 'EndDemo/SintDuim.bmp',
+			target: 'end_demo_sint_duim@atlas=16.png',
+		},
+		{
+			source: 'EndDemo/BoazFoto.bmp',
+			target: 'end_demo_boaz@atlas=17.png',
+		},
+		{
 			source: 'OtherMisc/MainScreen1.bmp',
 			target: 'title_screen_1@atlas=11.png',
 		},

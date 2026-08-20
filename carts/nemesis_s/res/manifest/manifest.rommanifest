@@ -34,6 +34,8 @@ gx_vram_layout:
         13: { mode: direct16, slots: [overlay], page_local: true }
         14: { mode: direct16, slots: [font], page_local: true }
         15: { mode: direct16, slots: [hud], page_local: true }
+        16: { mode: direct16, slots: [screen_a], page_local: true }
+        17: { mode: direct16, slots: [screen_a], page_local: true }
     working_sets:
         stage: [stage]
         intro: [overlay]
@@ -41,3 +43,4 @@ gx_vram_layout:
         title: [title, overlay]
         game_start: [hud, font]
         gameplay: [stage, hud, font]
+        end_demo: [screen_a, font]

@@ -895,6 +895,27 @@ function world_class:_render_double_page()
 	gx_gpu.draw_target(self._draw_page, self._page_size)
 end
 
+-- Removes every object owned by one space through the normal structural
+-- disposal boundary. Space teardown is a lifecycle operation, not an active
+-- query: inactive objects and admissions from the current tick group belong to
+-- the same teardown.
+function world_class:clear_space(space_id)
+	local objects<const> = self._objects
+	for index = #objects, 1, -1 do
+		local obj<const> = objects[index]
+		if obj.space_id == space_id then
+			self:mark_for_disposal(obj)
+		end
+	end
+	local admissions<const> = self._pending_admissions
+	for index = 1, self._pending_admission_count do
+		local obj<const> = admissions[index]
+		if obj.space_id == space_id then
+			self:mark_for_disposal(obj)
+		end
+	end
+end
+
 function world_class:_commit_clear()
 	self:_commit_gameplay_clock(true)
 	self._visual_sequence = 0

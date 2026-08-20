@@ -1,6 +1,22 @@
 local registry<const> = require('cartlib/registry')
 local clock<const> = require('cartlib/clock')
+local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
+
+local apu_slot<const>: *word = 0x08000148
+local selected_apu_source<const>: *word = 0x0800018c
+local end_demo_music_source<const> = rom_dir.audio('music_end_demo').addr
+local end_demo_timeline_id<const> = 'nemesis_s.end_demo.presentation'
+local first_curtain_start_ms<const> = 18240
+local first_curtain_end_ms<const> = 19440
+local second_slide_start_ms<const> = 19640
+local second_curtain_start_ms<const> = 37800
+local end_demo_end_ms<const> = 39000
+
+local read_music_source<const> = function()
+	*apu_slot = 1
+	return *selected_apu_source
+end
 
 __bmsx_host_test = {
 	frames = 0,
@@ -22,6 +38,7 @@ function __bmsx_host_test.setup()
 	test.title_state = director.state_machines:bind_state_path('/title')
 	test.game_start_state = director.state_machines:bind_state_path('/game_start')
 	test.gameplay_state = director.state_machines:bind_state_path('/gameplay')
+	test.end_demo_state = director.state_machines:bind_state_path('/end_demo')
 	assert(director.state_machines:matches_state(test.intro_state), 'Nemesis S did not boot into its intro')
 	assert(world.active_space_id == 'intro', 'intro did not own the active presentation space')
 
@@ -151,11 +168,67 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 120, 'Nemesis S game-start flow timed out')
+	assert(test.frames < 200, 'Nemesis S cinematic flow timed out')
 	local director<const> = registry:get('nemesis_s.director')
 	if test.phase == 'gameplay' then
 		test.gameplay_frames = test.gameplay_frames + 1
-		return test.gameplay_frames == 20
+		if test.gameplay_frames < 20 then
+			return false
+		end
+		local stage<const> = director.stage
+		stage.events:emit('stage.completed')
+		assert(director.state_machines:matches_state(test.end_demo_state),
+			'stage completion did not enter the XNA end demo')
+		assert(world.active_space_id == 'end_demo',
+			'end demo did not own the active presentation space')
+		test.phase = 'end_demo'
+		return false
+	end
+	if test.phase == 'end_demo' then
+		if read_music_source() ~= end_demo_music_source then
+			return false
+		end
+		assert(registry:get(ids_stage_instance) == nil
+			and registry:get('nemesis_s.player.1') == nil
+			and registry:get('nemesis_s.status_bar') == nil,
+			'completed gameplay retained its unloaded space objects')
+		local presentation<const> = registry:get('nemesis_s.end_demo')
+		assert(presentation.sprite_component.imgid == 'end_demo_sint_duim',
+			'end demo did not start on the authored Sint image')
+		assert(presentation.caption.static_text_line_count == 21
+			and presentation.caption.offset_x == 0
+			and presentation.caption.offset_y == 8,
+			'first end-demo caption differs from the XNA layout')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, 240)
+		assert(presentation.caption.glyph_visible_height == nil,
+			'first end-demo caption did not finish its four-row delayed reveal')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_start_ms)
+		assert(presentation.curtain.visible and presentation.curtain_count == 1,
+			'first end-demo curtain did not start on its authored boundary')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_end_ms)
+		assert(not presentation.visible and not presentation.curtain.visible,
+			'end-demo inter-slide gap did not hide the completed slide')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms)
+		assert(presentation.visible
+			and presentation.sprite_component.imgid == 'end_demo_boaz'
+			and presentation.caption.static_text_line_count == 16
+			and presentation.caption.offset_x == 128
+			and presentation.caption.glyph_visible_height == 0,
+			'second end-demo slide differs from the XNA image and caption layout')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms + 160)
+		assert(presentation.caption.glyph_visible_height == nil,
+			'second end-demo caption did not retain its faster XNA reveal')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, second_curtain_start_ms)
+		assert(presentation.curtain.visible and presentation.curtain_count == 1,
+			'second end-demo curtain did not start on its authored boundary')
+		presentation.timelines:advance_time_to(end_demo_timeline_id, end_demo_end_ms - 1)
+		presentation.timelines:tick_frame(1)
+		assert(director.state_machines:matches_state(test.title_state)
+			and world.active_space_id == 'title',
+			'end-demo completion did not return to the title presentation')
+		assert(read_music_source() == end_demo_music_source,
+			'title entry stopped the non-looping XNA end-demo music')
+		return true
 	end
 	if not director.state_machines:matches_state(test.gameplay_state) then
 		assert(director.state_machines:matches_state(test.game_start_state),

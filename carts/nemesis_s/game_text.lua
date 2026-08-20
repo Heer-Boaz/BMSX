@@ -73,7 +73,52 @@ rodata story_9_text: string[6] = {
 	' GAAN DE MUZIEK NIET AFWACHTEN.',
 }
 
+rodata end_demo_sint_text: string[21] = {
+	'REDELIJK WERK,',
+	'PILOOTPIET!!',
+	'',
+	'DR.PIETON IS',
+	'VERSLAGEN EN',
+	'STADSBURG IS',
+	'WEER VEILIG.',
+	'',
+	'DR.PIETON ZAL',
+	'IN DE ZAK',
+	'MEEKOMEN NAAR',
+	'SPANJE OM DAAR',
+	'MIJN KASTEEL',
+	'OP TE RUIMEN..',
+	'',
+	'HIJ ZAL NA DAT',
+	'KARWEITJE WEL',
+	'TWEE KEER DEN-',
+	'KEN VOOR HIJ',
+	'ME OPNIEUW ZAL',
+	'VERRADEN...',
+}
+
+rodata end_demo_boaz_text: string[16] = {
+	'ZO, DAT WAS HET',
+	'DAN ALWEER!',
+	'',
+	'SINTERKLAAS EN',
+	'ZIJN PIETEN ',
+	'HEBBEN VEEL TIJD',
+	'EN ENERGIE',
+	'GESTOPT IN HET',
+	'MAKEN VAN DEZE',
+	'KLASSIEKER.',
+	'',
+	'UITERAARD HEBBEN',
+	'JULLIE ERVAN',
+	'GENOTEN EN WAREN',
+	'JULLIE DIEP',
+	'ONDER DE INDRUK.',
+}
+
 return {
+	end_demo_boaz_text = end_demo_boaz_text,
+	end_demo_sint_text = end_demo_sint_text,
 	story_1_text = story_1_text,
 	story_2_text = story_2_text,
 	story_3_text = story_3_text,

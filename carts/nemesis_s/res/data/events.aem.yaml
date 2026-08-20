@@ -20,12 +20,20 @@ events:
                       audio_id: music_story
                       start_fresh: true
 
-    title:
+    story_done:
         channel: music
         rules:
             - go:
                   stop:
                       fade_ms: 0
+
+    end_demo:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_end_demo
+                      start_fresh: true
 
     title_start:
         channel: music

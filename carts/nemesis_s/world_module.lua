@@ -19,6 +19,7 @@ return {
 		'title',
 		'game_start',
 		'main',
+		'end_demo',
 	},
 	systems = {
 		input_system,

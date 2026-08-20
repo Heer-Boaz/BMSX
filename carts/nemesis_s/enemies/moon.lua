@@ -472,11 +472,6 @@ function moon:explode()
 	return '/dying/wait_for_end_demo'
 end
 
-function moon:finish_encounter()
-	self.events:emit('stage.completed')
-	self:mark_for_disposal()
-end
-
 local define_fsm<const> = function()
 	fsm_library.register(ids_moon_fsm, {
 		initial = 'entering',
@@ -665,7 +660,9 @@ local define_fsm<const> = function()
 									duration_ms = moon_wait_for_end_demo_ms,
 									playback_mode = 'once',
 								},
-								on_finished = moon.finish_encounter,
+								on_finished = function(self)
+									self.stage.events:emit('stage.completed')
+								end,
 							},
 						},
 					},
