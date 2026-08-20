@@ -11,10 +11,13 @@ import {
 	CART_ROM_MAGIC,
 } from '../../machine/ts/spec/bmsx/rom_package';
 import {
+	BLUA32_FIRMWARE_MODULE_PATH,
+	BLUA32_FIRMWARE_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	TEXTURE_BINDINGS_MODULE_PATH,
 	TEXTURE_BINDINGS_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import type {
 	CartridgeIndex,
 	RomAsset,
@@ -148,6 +151,19 @@ test('release BLua32 images do not synthesize editable Lua source records', () =
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
 	assert.equal(registry.path2lua['boot/bootrom.lua'], undefined);
+});
+
+test('system source registry retains the BLua32 compile-time firmware module', () => {
+	const entry = luaEntry('boot', 'boot.lua', 'system', 0);
+	const source = new TestRomSource([entry], {
+		boot: 'module<entry>\nreturn require(\'bmsx/blua32\').instruction_bytes',
+	});
+	const registry = buildLuaSources(source, source, makeIndex([entry]), 'system');
+	const firmware = registry.module2lua[BLUA32_FIRMWARE_MODULE_PATH];
+
+	assert.equal(firmware.source_path, BLUA32_FIRMWARE_SOURCE_PATH);
+	assert.equal(firmware.src, BLUA32_FIRMWARE_MODULE_SOURCE);
+	assert.equal(firmware.generated, true);
 });
 
 test('debug package source boot resolves the persisted texture bindings module', async () => {

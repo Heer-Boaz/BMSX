@@ -1,11 +1,14 @@
 import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
+	BLUA32_FIRMWARE_MODULE_PATH,
+	BLUA32_FIRMWARE_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	ROM_GENERATED_MODULE_PATHS,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import type {
 	CartridgeIndex,
 	RomAsset,
@@ -135,6 +138,19 @@ export function buildLuaSources(
 			generated: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
+		if (payloadId === 'system') {
+			registerLuaSourceRecord(registry, {
+				resid: BLUA32_FIRMWARE_MODULE_PATH,
+				type: 'lua',
+				src: BLUA32_FIRMWARE_MODULE_SOURCE,
+				base_src: BLUA32_FIRMWARE_MODULE_SOURCE,
+				base_update_timestamp: 0,
+				source_path: BLUA32_FIRMWARE_SOURCE_PATH,
+				module_path: BLUA32_FIRMWARE_MODULE_PATH,
+				update_timestamp: 0,
+				generated: true,
+			});
+		}
 	}
 
 	return registry;
