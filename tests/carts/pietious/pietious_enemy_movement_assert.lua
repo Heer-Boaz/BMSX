@@ -140,13 +140,21 @@ function __bmsx_host_test.update()
 	if test.zak_min_x == nil then
 		test.zak_min_x = zak.x
 		test.zak_max_x = zak.x
+		test.zak_direction = zak.direction
 	elseif zak.x < test.zak_min_x then
 		test.zak_min_x = zak.x
 	elseif zak.x > test.zak_max_x then
 		test.zak_max_x = zak.x
 	end
+	if zak.direction ~= test.zak_direction then
+		assert(zak.sprite_component.flip_h == (zak.direction == 'left'),
+			'zak direction changed without updating its visual facing')
+		test.zak_direction = zak.direction
+		test.zak_direction_change_observed = true
+	end
 	test.phase_frames = test.phase_frames + 1
-	if test.zak_max_x - test.zak_min_x >= room_tile_size * 3 then
+	if test.zak_max_x - test.zak_min_x >= room_tile_size * 3
+	and test.zak_direction_change_observed then
 		return true
 	end
 	assert(test.phase_frames < 240, 'zak reversed within one or two platform tiles')

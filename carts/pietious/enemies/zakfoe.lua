@@ -36,6 +36,7 @@ function zakfoe.tick_jump(self, node_memory)
 	if movement:move_x(enemy_zak_horizontal_speed_px * direction_mod) ~= 0
 	or not movement:has_support_ahead(direction_mod, room_tile_half, room_tile_size) then
 		self.direction = direction_mod < 0 and 'right' or 'left'
+		self.sprite_component.flip_h = self.direction == 'left'
 	end
 
 	local remaining_ticks<const> = node_memory.remaining_ticks - 1
