@@ -63,12 +63,7 @@ function new_game()
 		space_id = 'title',
 		pos = { x = 0, y = 0, z = 0 },
 	})
-	local status_bar<const> = world:spawn(status_bar_module.definition_id, {
-		space_id = 'game_start',
-		pos = { x = 0, y = 0, z = 100 },
-	})
 	world:spawn(director_module.director_def_id, {
-		status_bar = status_bar,
 		space_id = 'intro',
 		pos = { x = 0, y = 0, z = 0 },
 	})

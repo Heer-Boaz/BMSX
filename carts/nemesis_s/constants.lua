@@ -18,8 +18,7 @@ machine_game_height = 176
 player_width = 16
 player_height = 10
 player_base_movement_speed = 1
-player_movement_speed_increase = 1
-player_speed_powerups = 0
+player_movement_speed_increase = 0.5
 player_option_follow_delay = 10
 player_max_projectiles = 2
 player_fire_spawn_offset_x = 16
@@ -28,11 +27,6 @@ player_hitcheck_x = { 4, 8, 14, 4, 8, 8 }
 
 player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
 
-loadout_speed_powerups = 1
-loadout_option_count = 4
-loadout_laser_level = 2
-loadout_missile_level = 2
-loadout_uplaser_level = 2
 projectile_width = 6
 projectile_height = 2
 projectile_movement_speed = 6

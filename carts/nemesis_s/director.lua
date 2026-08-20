@@ -8,7 +8,9 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 local player_module<const> = require('player/player')
+local player_state<const> = require('player/player_state')
 local stage_module<const> = require('stage')
+local status_bar_module<const> = require('status_bar')
 
 local director<const> = {}
 director.__index = director
@@ -43,17 +45,30 @@ function director:enter_game_start()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 	self.stage = stage
+	local player_states<const> = {}
+	local players<const> = {}
+	for player_index = 1, self.player_count do
+		player_states[player_index] = player_state.new(player_index)
+	end
+	local status_bar<const> = world:spawn(status_bar_module.definition_id, {
+		space_id = 'game_start',
+		player_states = player_states,
+		pos = { x = 0, y = 0, z = 100 },
+	})
 	for player_index = 1, self.player_count do
 		local start<const> = player_starts[player_index]
-		world:spawn(player_module.player_def_id, {
+		players[player_index] = world:spawn(player_module.player_def_id, {
 			id = start.id,
 			player_index = player_index,
+			player_state = player_states[player_index],
 			space_id = 'main',
 			stage = stage,
 			pos = { x = start.x, y = start.y },
 		})
 	end
-	self.status_bar:reset(self.player_count)
+	self.player_states = player_states
+	self.players = players
+	self.status_bar = status_bar
 	gx_texture.upload('status_powerup_empty')
 	gx_texture.upload('font_a')
 	gx_texture.upload('ground')

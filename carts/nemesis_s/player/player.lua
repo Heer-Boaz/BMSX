@@ -11,6 +11,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local swap_remove<const> = require('cartlib/util/swap_remove')
 require('constants')
 local player_actioneffects<const> = require('player/actioneffects')
+local player_state_module<const> = require('player/player_state')
 
 local player<const> = {}
 player.__index = player
@@ -18,6 +19,11 @@ player.__index = player
 local option_animation_timeline_id<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
+local powerup_slot<const> = player_state_module.powerup_slot
+local powerup_slot_speed<const> = powerup_slot.speed
+local powerup_slot_missile<const> = powerup_slot.missile
+local powerup_slot_laser<const> = powerup_slot.laser
+local powerup_slot_option<const> = powerup_slot.option
 local player_sources<const> = {
 	{
 		neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
@@ -43,6 +49,7 @@ local player_sources<const> = {
 	},
 }
 local weapon_sources<const> = {
+	bullet = image.resolve(assets_projectile),
 	laser = image.resolve(assets_laser),
 	missile_falling = image.resolve(assets_missile1),
 	missile_flying = image.resolve(assets_missile2),
@@ -77,10 +84,11 @@ function player:emit_metric()
 		return
 	end
 	local l0x<const> , l0y<const> = self:get_projectile_snapshot(self.lasers, 1)
+	local b0x<const> , b0y<const> = self:get_projectile_snapshot(self.bullets, 1)
 	local m0x<const> , m0y<const> = self:get_projectile_snapshot(self.missiles, 1)
 	local u0x<const> , u0y<const> = self:get_projectile_snapshot(self.uplasers, 1)
 	print(string.format(
-		'%s|kind=player|f=%d|x=%.3f|y=%.3f|dx=%.3f|dy=%.3f|sprite=%s|speed=%.3f|left=%d|right=%d|up=%d|down=%d|fire=%d|fire_press=%d|options=%d|laser=%d|missile=%d|uplaser=%d|l0x=%.3f|l0y=%.3f|m0x=%.3f|m0y=%.3f|u0x=%.3f|u0y=%.3f',
+		'%s|kind=player|f=%d|x=%.3f|y=%.3f|dx=%.3f|dy=%.3f|sprite=%s|speed=%.3f|left=%d|right=%d|up=%d|down=%d|fire=%d|fire_press=%d|options=%d|bullet=%d|laser=%d|missile=%d|uplaser=%d|b0x=%.3f|b0y=%.3f|l0x=%.3f|l0y=%.3f|m0x=%.3f|m0y=%.3f|u0x=%.3f|u0y=%.3f',
 		telemetry_metric_prefix,
 		self.frame,
 		self.x,
@@ -96,9 +104,12 @@ function player:emit_metric()
 		bool01(self.fire_held),
 		bool01(self.fire_pressed),
 		#self.options,
+		#self.bullets,
 		#self.lasers,
 		#self.missiles,
 		#self.uplasers,
+		b0x,
+		b0y,
 		l0x,
 		l0y,
 		m0x,
@@ -114,7 +125,8 @@ end
 
 function player:initialize_options()
 	self.options = {}
-	for option_index = 1, loadout_option_count do
+	local option_count<const> = self.powerup_levels[powerup_slot_option]
+	for option_index = 1, option_count do
 		local option<const> = {
 			vessel_id = option_index + 1,
 			target_vessel_id = option_index,
@@ -136,12 +148,14 @@ end
 
 function player:initialize_weapon_slots()
 	self.weapon_slots = {
+		bullet = {},
 		laser = {},
 		missile = {},
 		uplaser = {},
 	}
 	local vessel_count<const> = self:get_vessel_count()
 	for vessel_id = 1, vessel_count do
+		self.weapon_slots.bullet[vessel_id] = 0
 		self.weapon_slots.laser[vessel_id] = 0
 		self.weapon_slots.missile[vessel_id] = 0
 		self.weapon_slots.uplaser[vessel_id] = 0
@@ -161,9 +175,9 @@ function player:reset_runtime()
 	self.down_held = false
 	self.fire_held = false
 	self.fire_pressed = false
-	self.speed_powerups = loadout_speed_powerups
 	self.sprite = self.visual_sources.neutral
 	self:initialize_options()
+	self.bullets = {}
 	self.lasers = {}
 	self.missiles = {}
 	self.uplasers = {}
@@ -175,11 +189,11 @@ function player:reset_runtime()
 				'x=%d|y=%d|speed=%d|options=%d|laser=%d|missile=%d|uplaser=%d',
 				self.x,
 				self.y,
-				loadout_speed_powerups,
-				loadout_option_count,
-				loadout_laser_level,
-				loadout_missile_level,
-				loadout_uplaser_level
+				self.powerup_levels[powerup_slot_speed],
+				self.powerup_levels[powerup_slot_option],
+				self.powerup_levels[powerup_slot_laser],
+				self.powerup_levels[powerup_slot_missile],
+				self.player_state.uplaser_level
 			)
 		)
 	end
@@ -212,6 +226,13 @@ function player:draw_lasers(draw)
 	end
 end
 
+function player:draw_bullets(draw)
+	for i = 1, #self.bullets do
+		local bullet<const> = self.bullets[i]
+		weapon_sources.bullet:blit(draw, bullet.x, bullet.y)
+	end
+end
+
 function player:draw_missiles(draw)
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
@@ -238,13 +259,55 @@ local draw_player_visual<const> = function(component, draw)
 		option_source:blit(draw, option.x, option.y)
 	end
 	owner.sprite.source:blit(draw, owner.x, owner.y)
+	owner:draw_bullets(draw)
 	owner:draw_lasers(draw)
 	owner:draw_missiles(draw)
 	owner:draw_uplasers(draw)
 end
 
-function player:get_movement_speed()
-	return player_base_movement_speed + player_movement_speed_increase * self.speed_powerups
+local collides_at<const> = function(self, x, y)
+	for i = 1, #player_hitcheck_x do
+		if self.stage:is_solid_pixel(x + player_hitcheck_x[i], y + player_hitcheck_y[i]) then
+			return true
+		end
+	end
+	return false
+end
+
+local try_move_x<const> = function(self, dx, max_x)
+	if dx == 0 then
+		return
+	end
+	local raw_target_x<const> = self.x + dx
+	local target_x<const> = clamp(raw_target_x, 0, max_x)
+	if target_x ~= raw_target_x then
+		self.edge_push_dx = dx
+	end
+	if collides_at(self, target_x, self.y) then
+		if telemetry_enabled then
+			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
+		end
+		return
+	end
+	self.x = target_x
+end
+
+local try_move_y<const> = function(self, dy, max_y)
+	if dy == 0 then
+		return
+	end
+	local raw_target_y<const> = self.y + dy
+	local target_y<const> = clamp(raw_target_y, 0, max_y)
+	if target_y ~= raw_target_y then
+		self.edge_push_dy = dy
+	end
+	if collides_at(self, self.x, target_y) then
+		if telemetry_enabled then
+			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
+		end
+		return
+	end
+	self.y = target_y
 end
 
 function player:update_position()
@@ -253,67 +316,25 @@ function player:update_position()
 	local max_y<const> = machine_game_height - player_height
 	local previous_x<const> = self.x
 	local previous_y<const> = self.y
-
-	local collides_at<const> = function(x, y)
-		for i = 1, #player_hitcheck_x do
-			if self.stage:is_solid_pixel(x + player_hitcheck_x[i], y + player_hitcheck_y[i]) then
-				return true
-			end
-		end
-		return false
-	end
-
-	local try_move_x<const> = function(dx)
-		if dx == 0 then
-			return
-		end
-		local raw_target_x<const> = self.x + dx
-		local target_x<const> = clamp(raw_target_x, 0, max_x)
-		if target_x ~= raw_target_x then
-			self.edge_push_dx = dx
-		end
-		if collides_at(target_x, self.y) then
-			if telemetry_enabled then
-				self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
-			end
-			return
-		end
-		self.x = target_x
-	end
-
-	local try_move_y<const> = function(dy)
-		if dy == 0 then
-			return
-		end
-		local raw_target_y<const> = self.y + dy
-		local target_y<const> = clamp(raw_target_y, 0, max_y)
-		if target_y ~= raw_target_y then
-			self.edge_push_dy = dy
-		end
-		if collides_at(self.x, target_y) then
-			if telemetry_enabled then
-				self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
-			end
-			return
-		end
-		self.y = target_y
-	end
+	local movement_speed<const> = player_base_movement_speed
+		+ player_movement_speed_increase * self.powerup_levels[powerup_slot_speed]
+	self.last_speed = movement_speed
 
 	self.edge_push_dx = 0
 	self.edge_push_dy = 0
 
 	if self.left_held then
-		try_move_x(-self:get_movement_speed())
+		try_move_x(self, -movement_speed, max_x)
 	end
 	if self.right_held then
-		try_move_x(self:get_movement_speed())
+		try_move_x(self, movement_speed, max_x)
 	end
 
 	if self.up_held then
-		try_move_y(-self:get_movement_speed())
+		try_move_y(self, -movement_speed, max_y)
 		self.sprite = visual_sources.up
 	elseif self.down_held then
-		try_move_y(self:get_movement_speed())
+		try_move_y(self, movement_speed, max_y)
 		self.sprite = visual_sources.down
 	else
 		self.sprite = visual_sources.neutral
@@ -359,6 +380,29 @@ function player:refresh_uplaser_dimensions(uplaser)
 	uplaser.width = uplaser.length_units * weapons_uplaser.length_unit_px
 	uplaser.height = weapons_uplaser.tile_height
 	uplaser.tile_count = uplaser.width / weapons_uplaser.tile_width
+end
+
+function player:spawn_bullet(vessel_id)
+	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+	local bullet<const> = {
+		vessel_id = vessel_id,
+		x = vessel_x + player_fire_spawn_offset_x,
+		y = vessel_y + player_fire_spawn_offset_y,
+	}
+	self.bullets[#self.bullets + 1] = bullet
+	self.weapon_slots.bullet[vessel_id] = self.weapon_slots.bullet[vessel_id] + 1
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_spawn',
+			string.format(
+				'weapon=bullet|vessel=%d|active=%d|x=%.3f|y=%.3f',
+				vessel_id,
+				self.weapon_slots.bullet[vessel_id],
+				bullet.x,
+				bullet.y
+			)
+		)
+	end
 end
 
 function player:spawn_laser(vessel_id)
@@ -414,10 +458,10 @@ function player:spawn_missile(vessel_id)
 	end
 end
 
-function player:spawn_uplaser(vessel_id)
+function player:spawn_uplaser(vessel_id, level)
 	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 	local length_units
-	if loadout_uplaser_level >= 2 then
+	if level >= 2 then
 		length_units = weapons_uplaser.level2_initial_length_units
 	else
 		length_units = weapons_uplaser.level1_length_units
@@ -430,7 +474,7 @@ function player:spawn_uplaser(vessel_id)
 		x = aligned_x,
 		center_x = aligned_x + (initial_width * 0.5),
 		y = vessel_y + weapons_uplaser.spawn_offset_y,
-		level = loadout_uplaser_level,
+		level = level,
 		gate_counter = weapons_uplaser.level2_gate_frames,
 		length_units = length_units,
 		tile_count = 0,
@@ -460,46 +504,95 @@ end
 
 function player:fire_weapon_salvo()
 	local vessel_count<const> = self:get_vessel_count()
+	local powerup_levels<const> = self.powerup_levels
+	local laser_equipped<const> = powerup_levels[powerup_slot_laser] > 0
+	local missile_equipped<const> = powerup_levels[powerup_slot_missile] > 0
+	local uplaser_level<const> = self.player_state.uplaser_level
 	for vessel_id = 1, vessel_count do
-		local laser_slots<const> = self.weapon_slots.laser[vessel_id]
-		if laser_slots < weapons_laser.max_active then
-			self:spawn_laser(vessel_id)
-		elseif telemetry_enabled then
-			self:emit_event(
-				'weapon_blocked',
-				string.format('weapon=laser|vessel=%d|active=%d|max=%d', vessel_id, laser_slots, weapons_laser.max_active)
-			)
+		if missile_equipped then
+			local missile_slots<const> = self.weapon_slots.missile[vessel_id]
+			if missile_slots < weapons_missile_max_active then
+				self:spawn_missile(vessel_id)
+			elseif telemetry_enabled then
+				self:emit_event(
+					'weapon_blocked',
+					string.format(
+						'weapon=missile|vessel=%d|active=%d|max=%d',
+						vessel_id,
+						missile_slots,
+						weapons_missile_max_active
+					)
+				)
+			end
 		end
 
-		local missile_slots<const> = self.weapon_slots.missile[vessel_id]
-		if missile_slots < weapons_missile_max_active then
-			self:spawn_missile(vessel_id)
-		elseif telemetry_enabled then
-			self:emit_event(
-				'weapon_blocked',
-				string.format(
-					'weapon=missile|vessel=%d|active=%d|max=%d',
-					vessel_id,
-					missile_slots,
-					weapons_missile_max_active
+		if laser_equipped then
+			local laser_slots<const> = self.weapon_slots.laser[vessel_id]
+			if laser_slots < weapons_laser.max_active then
+				self:spawn_laser(vessel_id)
+			elseif telemetry_enabled then
+				self:emit_event(
+					'weapon_blocked',
+					string.format(
+						'weapon=laser|vessel=%d|active=%d|max=%d',
+						vessel_id,
+						laser_slots,
+						weapons_laser.max_active
+					)
 				)
-			)
+			end
+		else
+			local bullet_slots<const> = self.weapon_slots.bullet[vessel_id]
+			if bullet_slots < player_max_projectiles then
+				self:spawn_bullet(vessel_id)
+			elseif telemetry_enabled then
+				self:emit_event(
+					'weapon_blocked',
+					string.format(
+						'weapon=bullet|vessel=%d|active=%d|max=%d',
+						vessel_id,
+						bullet_slots,
+						player_max_projectiles
+					)
+				)
+			end
 		end
 
-		local uplaser_slots<const> = self.weapon_slots.uplaser[vessel_id]
-		if uplaser_slots < weapons_uplaser.max_active then
-			self:spawn_uplaser(vessel_id)
-		elseif telemetry_enabled then
-			self:emit_event(
-				'weapon_blocked',
-				string.format(
-					'weapon=uplaser|vessel=%d|active=%d|max=%d',
-					vessel_id,
-					uplaser_slots,
-					weapons_uplaser.max_active
+		if uplaser_level > 0 then
+			local uplaser_slots<const> = self.weapon_slots.uplaser[vessel_id]
+			if uplaser_slots < weapons_uplaser.max_active then
+				self:spawn_uplaser(vessel_id, uplaser_level)
+			elseif telemetry_enabled then
+				self:emit_event(
+					'weapon_blocked',
+					string.format(
+						'weapon=uplaser|vessel=%d|active=%d|max=%d',
+						vessel_id,
+						uplaser_slots,
+						weapons_uplaser.max_active
+					)
 				)
-			)
+			end
 		end
+	end
+end
+
+function player:despawn_bullet(index, reason)
+	local bullet<const> = self.bullets[index]
+	swap_remove(self.bullets, index)
+	self.weapon_slots.bullet[bullet.vessel_id] = self.weapon_slots.bullet[bullet.vessel_id] - 1
+	if telemetry_enabled then
+		self:emit_event(
+			'weapon_despawn',
+			string.format(
+				'weapon=bullet|vessel=%d|active=%d|x=%.3f|y=%.3f|reason=%s',
+				bullet.vessel_id,
+				self.weapon_slots.bullet[bullet.vessel_id],
+				bullet.x,
+				bullet.y,
+				reason
+			)
+		)
 	end
 end
 
@@ -557,6 +650,19 @@ function player:despawn_uplaser(index, reason)
 				reason
 			)
 		)
+	end
+end
+
+function player:update_bullets()
+	local index = #self.bullets
+	while index >= 1 do
+		local bullet<const> = self.bullets[index]
+		bullet.x = bullet.x + projectile_movement_speed
+		if self.stage:is_solid_pixel(bullet.x + projectile_width + 2, bullet.y + projectile_height)
+			or bullet.x >= machine_game_width then
+			self:despawn_bullet(index, 'collision_or_bounds')
+		end
+		index = index - 1
 	end
 end
 
@@ -683,6 +789,7 @@ function player:update_uplasers()
 end
 
 function player:update_weapons()
+	self:update_bullets()
 	self:update_lasers()
 	self:update_missiles()
 	self:update_uplasers()
@@ -702,6 +809,7 @@ end
 
 function player:ctor()
 	self.visual_sources = player_sources[self.player_index]
+	self.powerup_levels = self.player_state.powerup_levels
 	local visual<const> = self:get_component(custom_visual_component)
 	visual:set_draw_function(draw_player_visual)
 end
@@ -831,7 +939,6 @@ local register_player_definition<const> = function()
 			down_held = false,
 			fire_held = false,
 			fire_pressed = false,
-			speed_powerups = loadout_speed_powerups,
 			option_anim_index = 1,
 		},
 	})

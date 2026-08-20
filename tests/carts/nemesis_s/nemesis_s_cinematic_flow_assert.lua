@@ -11,7 +11,6 @@ function __bmsx_host_test.ready()
 		and registry:get('nemesis_s.intro') ~= nil
 		and registry:get('nemesis_s.story') ~= nil
 		and registry:get('nemesis_s.title_screen') ~= nil
-		and registry:get('nemesis_s.status_bar') ~= nil
 end
 
 function __bmsx_host_test.setup()
@@ -91,11 +90,15 @@ function __bmsx_host_test.setup()
 	assert(director.player_count == 2, 'director discarded the selected player count')
 	assert(world.active_space_id == 'game_start', 'game-start wait did not activate its status-only space')
 	local status_bar<const> = registry:get('nemesis_s.status_bar')
-	assert(status_bar.player_count == 2, 'status bar discarded the selected player count')
+	assert(#status_bar.rows == 2, 'status bar discarded the selected player count')
 	assert(status_bar.rows[1].life_text.text == '9' and status_bar.rows[2].life_text.text == '9',
 		'game-start status did not reset both XNA life counters')
-	assert(status_bar.rows[1].current_slot == 0 and status_bar.rows[2].current_slot == 0,
+	local player_states<const> = director.player_states
+	assert(player_states[1].current_powerup_slot == 0 and player_states[2].current_powerup_slot == 0,
 		'game-start status did not reset both power-up selections')
+	assert(status_bar.rows[1].player_state == player_states[1]
+		and status_bar.rows[2].player_state == player_states[2],
+		'status presentation did not bind the retained player states')
 	local player_1<const> = registry:get('nemesis_s.player.1')
 	local player_2<const> = registry:get('nemesis_s.player.2')
 	assert(player_1 ~= nil and player_1.x == 80 and player_1.y == 60,
@@ -104,6 +107,12 @@ function __bmsx_host_test.setup()
 		'selected two-player game did not spawn player 2 at the XNA start')
 	assert(player_1.sprite.imgid == 'metallion_n' and player_2.sprite.imgid == 'metallion_n_p2',
 		'local players did not retain their authored vessel presentation')
+	assert(player_1.player_state == player_states[1] and player_2.player_state == player_states[2],
+		'player pawns did not receive their retained player state')
+	assert(#player_1.options == 0 and #player_2.options == 0,
+		'new players retained the removed debug option loadout')
+	assert(#player_1.bullets == 0 and #player_1.lasers == 0 and #player_1.missiles == 0 and #player_1.uplasers == 0,
+		'new player retained active weapons from the removed debug loadout')
 	test.phase = 'game_start'
 end
 
