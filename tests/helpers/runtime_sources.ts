@@ -59,6 +59,7 @@ function toolingPackage(projectRootPath: string): RomToolingPackage {
 		model: {},
 		data: {},
 		bin: {},
+		collision_shape: {},
 		audioevents: {},
 		project_root_path: projectRootPath,
 		cart_manifest: null,

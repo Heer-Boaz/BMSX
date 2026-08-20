@@ -3,6 +3,7 @@ import {
 	ROM_TOC_ASSET_TYPE_AUDIO,
 	ROM_TOC_ASSET_TYPE_BIN,
 	ROM_TOC_ASSET_TYPE_CODE,
+	ROM_TOC_ASSET_TYPE_COLLISION_SHAPE,
 	ROM_TOC_ASSET_TYPE_DATA,
 	ROM_TOC_ASSET_TYPE_IMAGE,
 	ROM_TOC_ASSET_TYPE_LUA,
@@ -49,7 +50,7 @@ import {
 import { hashAssetId } from './tokens';
 const utf8Decoder = new TextDecoder();
 
-export type AssetType = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type AssetType = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'collision_shape' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type AssetId = string;
 export type RomAssetOp = 'delete';
 
@@ -85,6 +86,7 @@ const ASSET_TYPE_IDS: Record<AssetType, number> = {
 	audio: ROM_TOC_ASSET_TYPE_AUDIO,
 	data: ROM_TOC_ASSET_TYPE_DATA,
 	bin: ROM_TOC_ASSET_TYPE_BIN,
+	collision_shape: ROM_TOC_ASSET_TYPE_COLLISION_SHAPE,
 	romlabel: ROM_TOC_ASSET_TYPE_ROMLABEL,
 	model: ROM_TOC_ASSET_TYPE_MODEL,
 	aem: ROM_TOC_ASSET_TYPE_AEM,
@@ -107,6 +109,7 @@ export function assetTypeFromId(id: number): AssetType {
 		case ROM_TOC_ASSET_TYPE_AUDIO: return 'audio';
 		case ROM_TOC_ASSET_TYPE_DATA: return 'data';
 		case ROM_TOC_ASSET_TYPE_BIN: return 'bin';
+		case ROM_TOC_ASSET_TYPE_COLLISION_SHAPE: return 'collision_shape';
 		case ROM_TOC_ASSET_TYPE_ROMLABEL: return 'romlabel';
 		case ROM_TOC_ASSET_TYPE_MODEL: return 'model';
 		case ROM_TOC_ASSET_TYPE_AEM: return 'aem';

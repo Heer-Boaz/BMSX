@@ -28,7 +28,7 @@ export interface RomPackerOptions {
 	libraryLuaRoots: string[];
 }
 
-export type resourcetype = Exclude<AssetType, 'texture'> | 'atlas';
+export type resourcetype = Exclude<AssetType, 'texture' | 'collision_shape'> | 'atlas' | 'collision_map';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
@@ -94,6 +94,11 @@ export interface BinResource extends BaseResource<'bin'> {
 	id: number;
 }
 
+// Authoring source. One named layer becomes one packed collision_shape asset.
+export interface CollisionMapResource extends BaseResource<'collision_map'> {
+	datatype: 'yaml';
+}
+
 export type Resource =
 	| ImageResource
 	| TextureAtlasResource
@@ -103,4 +108,5 @@ export type Resource =
 	| ModelResource
 	| LuaResource
 	| RomLabelResource
-	| BinResource;
+	| BinResource
+	| CollisionMapResource;

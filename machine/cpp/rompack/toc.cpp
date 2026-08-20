@@ -41,6 +41,7 @@ AssetType assetTypeFromId(u32 id) {
 		case ROM_TOC_ASSET_TYPE_AUDIO: return AssetType::Audio;
 		case ROM_TOC_ASSET_TYPE_DATA: return AssetType::Data;
 		case ROM_TOC_ASSET_TYPE_BIN: return AssetType::Bin;
+		case ROM_TOC_ASSET_TYPE_COLLISION_SHAPE: return AssetType::CollisionShape;
 		case ROM_TOC_ASSET_TYPE_ROMLABEL: return AssetType::Romlabel;
 		case ROM_TOC_ASSET_TYPE_MODEL: return AssetType::Model;
 		case ROM_TOC_ASSET_TYPE_AEM: return AssetType::Aem;

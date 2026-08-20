@@ -123,10 +123,13 @@ end
 local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb_shape_addr)
 	local parent<const> = collider.parent
 	local sprite<const> = collider.sprite
-	local shape_ref
+	local shape_ref = collider.shape_ref
 	local tx
 	local ty
-	if sprite then
+	if shape_ref ~= nil then
+		tx = parent.x + collider.shape_offset_x
+		ty = parent.y + collider.shape_offset_y
+	elseif sprite then
 		shape_ref = select_sprite_shape_ref(collider, sprite)
 		tx = parent.x + sprite.offset_x
 		ty = parent.y + sprite.offset_y

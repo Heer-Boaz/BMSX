@@ -93,6 +93,7 @@ export type RomToolingPackage = {
 	model: Record<AssetId, GLTFModel>;
 	data: Record<AssetId, unknown>;
 	bin: Record<AssetId, RomAsset>;
+	collision_shape: Record<AssetId, RomAsset>;
 	audioevents: Record<AssetId, Record<string, unknown>>;
 	project_root_path: string;
 	cart_manifest: CartManifest | null;

@@ -10,6 +10,7 @@ export const ROM_TOC_ASSET_TYPE_IMAGE = 1;
 export const ROM_TOC_ASSET_TYPE_AUDIO = 2;
 export const ROM_TOC_ASSET_TYPE_DATA = 3;
 export const ROM_TOC_ASSET_TYPE_BIN = 4;
+export const ROM_TOC_ASSET_TYPE_COLLISION_SHAPE = 5;
 export const ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
 export const ROM_TOC_ASSET_TYPE_MODEL = 7;
 export const ROM_TOC_ASSET_TYPE_AEM = 8;

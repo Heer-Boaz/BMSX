@@ -107,10 +107,10 @@ function compareSymbol(
 			if (cppSymbol.kind !== 'enum') return;
 			const semanticLabels = tsSymbol.semanticLabels || cppSymbol.semanticLabels;
 			const tsMembers = tsSymbol.members
-				.map((member) => semanticLabels ? member.name.toLowerCase() : `${member.name}=${member.value}`)
+				.map((member) => semanticLabels ? canonicalSemanticLabel(member.name) : `${member.name}=${member.value}`)
 				.join(',');
 			const cppMembers = cppSymbol.members
-				.map((member) => semanticLabels ? member.name.toLowerCase() : `${member.name}=${member.value}`)
+				.map((member) => semanticLabels ? canonicalSemanticLabel(member.name) : `${member.name}=${member.value}`)
 				.join(',');
 			if (tsMembers !== cppMembers) {
 				errors.push(`${label}: TS enum (${tsMembers}) differs from C++ (${cppMembers})`);
@@ -145,6 +145,12 @@ function compareSymbol(
 			}
 			return;
 	}
+}
+
+function canonicalSemanticLabel(name: string): string {
+	let label = name.replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
+	label = label.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
+	return label.toLowerCase();
 }
 
 function compareShape(

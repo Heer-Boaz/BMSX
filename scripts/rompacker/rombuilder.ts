@@ -84,6 +84,11 @@ import {
 	type Blua32DiagnosticImage,
 	type PackedBlua32DiagnosticSource,
 } from '../../toolchain/ts/rompack/blua32_diagnostics';
+import {
+	convexCollisionPiece,
+	encodeCollisionShapeVariants,
+} from '../../toolchain/ts/rompack/collision_shape_encode';
+import { compileCollisionMap } from './collision_map_compiler';
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
@@ -121,13 +126,6 @@ const { createHash } = require('crypto');
 type ProgressNote = (message: string) => void;
 const ROM_ZERO_FILL_CHUNK = Buffer.alloc(64 * 1024);
 const ADPCM_NO_LOOP = 0xffffffff;
-const GEO_COLLISION_BIN_MAGIC = 0x32443247; // "G2D2" little-endian
-const GEO_COLLISION_BIN_VERSION = 2;
-const GEO_COLLISION_SHAPE_KIND_AABB = 1;
-const GEO_COLLISION_SHAPE_KIND_CONVEX_POLY = 3;
-const GEO_COLLISION_SHAPE_KIND_COMPOUND = 4;
-const GEO_COLLISION_VARIANT_HEADER_WORDS = 8;
-
 type CompleteBoundingBoxPrecalc = BoundingBoxPrecalc & {
 	fliph: RectBounds;
 	flipv: RectBounds;
@@ -397,102 +395,6 @@ function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: numb
 	};
 }
 
-function computePolyBounds(poly: Polygon): RectBounds {
-	let left = poly[0];
-	let top = poly[1];
-	let right = left;
-	let bottom = top;
-	for (let index = 2; index < poly.length; index += 2) {
-		const x = poly[index];
-		const y = poly[index + 1];
-		if (x < left) left = x;
-		if (x > right) right = x;
-		if (y < top) top = y;
-		if (y > bottom) bottom = y;
-	}
-	return { left, top, right, bottom };
-}
-
-function buildCollisionBin(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {
-	const parts: Buffer[] = [];
-	let offset = GEO_COLLISION_VARIANT_HEADER_WORDS * 4;
-
-	const pushBuffer = (buffer: Buffer): number => {
-		const start = offset;
-		parts.push(buffer);
-		offset += buffer.length;
-		return start;
-	};
-
-	const pushBounds = (rect: RectBounds): number => {
-		const buffer = Buffer.alloc(16);
-		buffer.writeFloatLE(rect.left, 0);
-		buffer.writeFloatLE(rect.top, 4);
-		buffer.writeFloatLE(rect.right, 8);
-		buffer.writeFloatLE(rect.bottom, 12);
-		return pushBuffer(buffer);
-	};
-
-	const pushPolygon = (poly: Polygon): number => {
-		const buffer = Buffer.alloc(poly.length * 4);
-		for (let index = 0; index < poly.length; index += 1) {
-			buffer.writeFloatLE(poly[index], index * 4);
-		}
-		return pushBuffer(buffer);
-	};
-
-	const writeDescriptor = (target: Buffer, kind: number, dataCount: number, descStart: number, dataStart: number, boundsStart: number): void => {
-		target.writeUInt32LE(kind >>> 0, 0);
-		target.writeUInt32LE(dataCount >>> 0, 4);
-		target.writeUInt32LE((dataStart - descStart) >>> 0, 8);
-		target.writeUInt32LE((boundsStart - descStart) >>> 0, 12);
-	};
-
-	const encodeVariant = (variantBounds: RectBounds, variantPolys: Polygon[] | undefined): number => {
-		const descriptor = Buffer.alloc(16);
-		const descriptorStart = pushBuffer(descriptor);
-		if (!variantPolys || variantPolys.length === 0) {
-			const boundsStart = pushBounds(variantBounds);
-			writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_AABB, 4, descriptorStart, boundsStart, boundsStart);
-			return descriptorStart;
-		}
-		if (variantPolys.length === 1) {
-			const poly = variantPolys[0];
-			const dataStart = pushPolygon(poly);
-			const boundsStart = pushBounds(computePolyBounds(poly));
-			writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, descriptorStart, dataStart, boundsStart);
-			return descriptorStart;
-		}
-		const pieceTable = Buffer.alloc(variantPolys.length * 16);
-		const pieceTableStart = pushBuffer(pieceTable);
-		for (let polyIndex = 0; polyIndex < variantPolys.length; polyIndex += 1) {
-			const poly = variantPolys[polyIndex];
-			const pieceDescriptorStart = pieceTableStart + polyIndex * 16;
-			const dataStart = pushPolygon(poly);
-			const boundsStart = pushBounds(computePolyBounds(poly));
-			writeDescriptor(pieceTable.subarray(polyIndex * 16, (polyIndex + 1) * 16), GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, pieceDescriptorStart, dataStart, boundsStart);
-		}
-		const boundsStart = pushBounds(variantBounds);
-		writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_COMPOUND, variantPolys.length, descriptorStart, pieceTableStart, boundsStart);
-		return descriptorStart;
-	};
-
-	const originalOffset = encodeVariant(bounds.original, hitpolygons?.original);
-	const fliphOffset = encodeVariant(bounds.fliph, hitpolygons?.fliph);
-	const flipvOffset = encodeVariant(bounds.flipv, hitpolygons?.flipv);
-	const fliphvOffset = encodeVariant(bounds.fliphv, hitpolygons?.fliphv);
-	const header = Buffer.alloc(GEO_COLLISION_VARIANT_HEADER_WORDS * 4);
-	header.writeUInt32LE(GEO_COLLISION_BIN_MAGIC, 0);
-	header.writeUInt32LE(GEO_COLLISION_BIN_VERSION, 4);
-	header.writeUInt32LE(originalOffset >>> 0, 8);
-	header.writeUInt32LE(fliphOffset >>> 0, 12);
-	header.writeUInt32LE(flipvOffset >>> 0, 16);
-	header.writeUInt32LE(fliphvOffset >>> 0, 20);
-	header.writeUInt32LE(0, 24);
-	header.writeUInt32LE(0, 28);
-	return Buffer.concat([header, ...parts]);
-}
-
 function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
 	const img = res.img;
 	if (!img) {
@@ -524,7 +426,24 @@ function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
 		boundingbox,
 		centerpoint,
 		hitpolygons,
-		collisionbin: buildCollisionBin(boundingbox, hitpolygons),
+		collisionbin: Buffer.from(encodeCollisionShapeVariants({
+			original: {
+				bounds: boundingbox.original,
+				pieces: hitpolygons?.original.map(convexCollisionPiece),
+			},
+			fliph: {
+				bounds: boundingbox.fliph,
+				pieces: hitpolygons?.fliph.map(convexCollisionPiece),
+			},
+			flipv: {
+				bounds: boundingbox.flipv,
+				pieces: hitpolygons?.flipv.map(convexCollisionPiece),
+			},
+			fliphv: {
+				bounds: boundingbox.fliphv,
+				pieces: hitpolygons?.fliphv.map(convexCollisionPiece),
+			},
+		})),
 	};
 }
 
@@ -635,8 +554,13 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.yaml':
 		case '.yml':
 			datatype = 'yaml';
-			type = getDataSubtype(name);
-			name = removeExtension(name);
+			if (name.endsWith('.collision')) {
+				type = 'collision_map';
+				name = name.slice(0, -'.collision'.length);
+			} else {
+				type = getDataSubtype(name);
+				name = removeExtension(name);
+			}
 			break;
 		case '.bin':
 			type = 'bin';
@@ -832,10 +756,23 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
 			case 'data':
-			case 'aem': // AEM files are added to the data asset list
-				// For data files, we use the name as is
 				result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype, sourcePath });
 				++dataid;
+				break;
+			case 'aem':
+				result.push({
+					filepath,
+					name,
+					ext,
+					type,
+					id: dataid,
+					datatype: ext === '.json' ? 'json' : 'yaml',
+					sourcePath,
+				});
+				++dataid;
+				break;
+			case 'collision_map':
+				result.push({ filepath, name, ext, type, datatype: 'yaml', sourcePath });
 				break;
 			case 'lua':
 				// For Lua files, we also determine the current datetime to allow the workspace to detect changes and choosing which source to regard as newer
@@ -904,6 +841,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	checkDuplicateIds('model');
 	checkDuplicateIds('bin');
 	checkDuplicateNames('data');
+	checkDuplicateNames('collision_map');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
 	checkDuplicateNames('model');
@@ -943,6 +881,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 			case 'romlabel':
 			case 'atlas':
 			case 'bin':
+			case 'collision_map':
 				return {
 					...meta,
 					buffer,
@@ -1087,8 +1026,6 @@ export async function generateRomAssets(
 					case 'bin':
 						// If the data is a binary file, we can use it as is
 						break;
-					default:
-						throw new Error(`Unknown data type "${res.datatype}" for resource "${resid}"`);
 				}
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
@@ -1101,6 +1038,19 @@ export async function generateRomAssets(
 				// Raw binary asset: emit owner-defined packed bytes as-is for typed struct-array reads.
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
+			case 'collision_map': {
+				const layers = compileCollisionMap(yaml.load(buffer.toString('utf8')), sourcePath);
+				for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+					const layer = layers[layerIndex];
+					romAssets.push({
+						resid: `${resid}.${layer.name}`,
+						type: 'collision_shape',
+						buffer: layer.buffer,
+						source_path: sourcePath,
+					});
+				}
+				break;
+			}
 			case 'model': {
 				const pathInfo = parse(res.filepath);
 				const dir = pathInfo.dir;

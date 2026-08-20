@@ -317,6 +317,9 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingP
 		case 'bin':
 			romPackage.bin[assetKey] = baseAsset;
 			break;
+		case 'collision_shape':
+			romPackage.collision_shape[assetKey] = baseAsset;
+			break;
 		case 'aem': {
 			const u8 = source.getBytes(baseAsset);
 			const audioevents = decodeBinary(u8);
@@ -345,6 +348,7 @@ async function loadRomToolingPackageFromSource(source: RawRomSource, index: Cart
 		model: {},
 		data: {},
 		bin: {},
+		collision_shape: {},
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		cart_manifest: index.cart_manifest,
