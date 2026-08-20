@@ -39,9 +39,38 @@ function __bmsx_host_test.update()
 			pos = { x = 200, y = 112 },
 		})
 		foe:get_component(collider_2d_component):set_enabled(false)
+		test.foe = foe
+		test.jumping_state = foe.state_machines:bind_state_path('/jumping')
+		test.recovering_state = foe.state_machines:bind_state_path('/recovering')
+		test.prepare_state = foe.state_machines:bind_state_path('/prepare_jump')
 		test.spawn_time_ms = world.gameplay_time_ms
 		test.phase = 'before_pause'
 		return false
+	end
+
+	local state_machines<const> = test.foe.state_machines
+	if test.jumping_time_ms == nil and state_machines:matches_state(test.jumping_state) then
+		local elapsed<const> = world.gameplay_time_ms - test.spawn_time_ms
+		assert(elapsed >= zak_foe_prepare_ms
+			and elapsed <= zak_foe_prepare_ms + clock.frame_milliseconds(),
+			'ZakFoe prepare timeline changed its authored cadence')
+		test.jumping_time_ms = world.gameplay_time_ms
+	elseif test.jumping_time_ms ~= nil
+	and test.recovering_time_ms == nil
+	and state_machines:matches_state(test.recovering_state) then
+		local elapsed<const> = world.gameplay_time_ms - test.jumping_time_ms
+		assert(elapsed >= zak_foe_jump_ms
+			and elapsed <= zak_foe_jump_ms + clock.frame_milliseconds(),
+			'ZakFoe jump timeline changed its authored cadence')
+		test.recovering_time_ms = world.gameplay_time_ms
+	elseif test.recovering_time_ms ~= nil
+	and test.recovered_time_ms == nil
+	and state_machines:matches_state(test.prepare_state) then
+		local elapsed<const> = world.gameplay_time_ms - test.recovering_time_ms
+		assert(elapsed >= zak_foe_recovery_ms
+			and elapsed <= zak_foe_recovery_ms + clock.frame_milliseconds(),
+			'ZakFoe recovery timeline changed its authored cadence')
+		test.recovered_time_ms = world.gameplay_time_ms
 	end
 
 	local bullets<const> = test.bullets.objects
@@ -85,6 +114,7 @@ function __bmsx_host_test.update()
 	for index = 1, #bullets do
 		if bullets[index].id ~= test.first_bullet_id then
 			local repeat_delay_ms<const> = world.gameplay_time_ms - test.first_shot_time_ms
+			assert(test.recovered_time_ms ~= nil, 'ZakFoe phase cycle did not complete')
 			assert(repeat_delay_ms >= zak_foe_fire_min_ms,
 				'ZakFoe repeated before the authored random cooldown')
 			assert(repeat_delay_ms <= zak_foe_fire_max_ms + clock.frame_milliseconds(),
