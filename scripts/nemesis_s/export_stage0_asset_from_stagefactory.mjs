@@ -9,6 +9,11 @@ const sourcePath = path.join(
 	'.external/nemesis-s-bdx/UltimateMechSpaceWar/UltimateMechSpaceWar/Models/Stages/StageFactory.cs',
 );
 const outputPath = path.join(workspaceRoot, 'carts/nemesis_s/res/data/nemesis_s_stage.yaml');
+const musicEventBySourceName = {
+	StageIntro: 'stage.music.intro',
+	Stage: 'stage.music.main',
+	Boss: 'stage.music.boss',
+};
 
 function assert(condition, message) {
 	if (!condition) {
@@ -38,7 +43,32 @@ function extractStage0Rows(sourceText) {
 	return rows;
 }
 
-function toYaml(rows) {
+function extractStage0Events(sourceText) {
+	const start = sourceText.indexOf('public static StageEvent[] Stage0Events = {');
+	assert(start >= 0, 'Could not find Stage0Events declaration in StageFactory.cs');
+
+	const end = sourceText.indexOf('};', start);
+	assert(end >= 0, 'Could not find Stage0Events terminator in StageFactory.cs');
+
+	const body = sourceText.slice(start, end);
+	const musicCues = [];
+	for (const match of body.matchAll(/new ChangeMusicStageEvent\((\d+), SoundContent\.Music\.([A-Za-z0-9_]+)\)/g)) {
+		const event = musicEventBySourceName[match[2]];
+		assert(event !== undefined, `Unsupported Stage0 music cue '${match[2]}'.`);
+		musicCues.push({ column: Number(match[1]), event });
+	}
+
+	const scrollStops = [];
+	for (const match of body.matchAll(/new StageStopScrollEvent\((\d+)\)/g)) {
+		scrollStops.push(Number(match[1]));
+	}
+
+	assert(musicCues.length > 0, 'No Stage0 music cues found in StageFactory.cs');
+	assert(scrollStops.length > 0, 'No Stage0 scroll stops found in StageFactory.cs');
+	return { musicCues, scrollStops };
+}
+
+function toYaml(rows, events) {
 	const width = rows[0].length;
 	const out = [];
 
@@ -49,12 +79,12 @@ function toYaml(rows) {
 	out.push('draw_z: 16');
 	out.push(`tile_rows: ${rows.length}`);
 	out.push(`tape_length_tiles: ${width}`);
-	out.push('stop_tape_head: 492');
-	out.push('scroll_mode_pause: 1');
-	out.push('scroll_mode_forced: 2');
-	out.push('scroll_mode_gated: 3');
-	out.push('scroll_mode_default: 3');
-	out.push('scroll_rotator_initial: 1');
+	out.push(`scroll_stop_columns: [${events.scrollStops.join(', ')}]`);
+	out.push('music_cues:');
+	for (let i = 0; i < events.musicCues.length; i += 1) {
+		const cue = events.musicCues[i];
+		out.push(`  - { column: ${cue.column}, event: ${cue.event} }`);
+	}
 	out.push('map_rows:');
 
 	for (let i = 0; i < rows.length; i += 1) {
@@ -69,7 +99,8 @@ function main() {
 	assert(fs.existsSync(sourcePath), `Source file not found: ${sourcePath}`);
 	const sourceText = fs.readFileSync(sourcePath, 'utf8');
 	const rows = extractStage0Rows(sourceText);
-	const yaml = toYaml(rows);
+	const events = extractStage0Events(sourceText);
+	const yaml = toYaml(rows, events);
 	fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 	fs.writeFileSync(outputPath, yaml, 'utf8');
 	console.log(`Exported ${rows.length} stage rows to ${outputPath}`);

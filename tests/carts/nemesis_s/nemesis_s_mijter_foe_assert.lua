@@ -22,7 +22,7 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 500, 'Nemesis S MijterFoe scenario timed out phase=' .. test.phase)
+	assert(test.frames < 700, 'Nemesis S MijterFoe scenario timed out phase=' .. test.phase)
 
 	local stage<const> = registry:get(ids_stage_instance)
 	if world.active_space_id ~= 'main' or stage == nil then
@@ -31,7 +31,6 @@ function __bmsx_host_test.update()
 	local mijter_foes<const> = test.mijter_foes.objects
 
 	if test.phase == 'spawn' then
-		stage.scroll_mode = stage.scroll_mode_forced
 		if stage.tape_head - 1 < 56 then
 			return false
 		end
@@ -40,7 +39,7 @@ function __bmsx_host_test.update()
 		local foe<const> = mijter_foes[1]
 		assert(foe.mijter_type == mijter_foe_type_red, 'uppercase M did not produce the red MijterFoe')
 		assert(foe.sprite_component.imgid == assets_mijter_foe_red_neutral, 'MijterFoe started with the wrong image')
-		assert(foe.x == machine_game_width, 'MijterFoe no longer enters at the right screen edge')
+		assert(foe.x == playfield_width, 'MijterFoe no longer enters at the playfield edge')
 		assert(foe.y == 40, 'MijterFoe no longer uses the XNA row offset')
 		stage.scrolling = false
 		test.previous_x = foe.x

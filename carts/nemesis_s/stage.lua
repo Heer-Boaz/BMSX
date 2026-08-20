@@ -1,5 +1,5 @@
-local rol8<const> = require('cartlib/util/rol8')
 local clamp<const> = require('cartlib/util/clamp')
+local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
@@ -14,6 +14,8 @@ local assets<const> = require('bmsx/assets')
 
 local stage<const> = {}
 stage.__index = stage
+
+local frame_duration_ms<const> = clock.frame_milliseconds()
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
 local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
@@ -405,13 +407,10 @@ function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
 	self.music_cues = stage_data.music_cues
+	self.scroll_stop_columns = stage_data.scroll_stop_columns
+	self.scroll_stop_count = #stage_data.scroll_stop_columns
 	self.star_visual:set_offset_z(stage_data.draw_z)
 	self.stage_tiles:set_offset_z(stage_data.draw_z)
-	self.scroll_mode_pause = stage_data.scroll_mode_pause
-	self.scroll_mode_forced = stage_data.scroll_mode_forced
-	self.scroll_mode_gated = stage_data.scroll_mode_gated
-	self.scroll_mode_default = stage_data.scroll_mode_default
-	self.scroll_rotator_initial = stage_data.scroll_rotator_initial
 end
 
 function stage:advance_music_cues(column)
@@ -448,7 +447,6 @@ function stage:build_tape()
 
 	self.tile_rows = height
 	self.tape_length_tiles = width
-	self.stop_tape_head = stage_data.stop_tape_head
 	local stage_tiles<const> = self.stage_tiles
 	stage_tiles:set_tile_size(self.tile_size)
 	stage_tiles:resize(width * height, width)
@@ -481,7 +479,7 @@ function stage:build_tape()
 							group_id = column,
 							group_type = sint_pop_group,
 							pos = {
-								x = machine_game_width + (group_index * sint_pop_width),
+								x = playfield_width + (group_index * sint_pop_width),
 								y = spawn_y,
 							},
 						},
@@ -496,7 +494,7 @@ function stage:build_tape()
 						options = {
 							mijter_type = mijter_foe_type,
 							pos = {
-								x = machine_game_width,
+								x = playfield_width,
 								y = (stage_y - 2) * self.tile_size,
 							},
 						},
@@ -514,7 +512,7 @@ function stage:apply_star_scroll(stars, step)
 		local star<const> = stars[i]
 		star.x = star.x - step
 		if star.x < 0 then
-			star.x = machine_game_width
+			star.x = playfield_width
 		end
 	end
 end
@@ -527,6 +525,7 @@ function stage:reset_runtime()
 	self.stage_tiles:set_visible_columns(1, self.tile_columns + 2)
 	self.tape_head = self.tile_columns
 	self.music_cue_index = 1
+	self.scroll_stop_index = 1
 	local actor_spawn_index = 1
 	local actor_spawns<const> = self.actor_spawns
 	local actor_spawn_count<const> = self.actor_spawn_count
@@ -538,13 +537,9 @@ function stage:reset_runtime()
 	self.actor_spawn_index = actor_spawn_index
 	self.tile_steps = 0
 	self.total_scroll_px = 0
-	self.total_smooth_scroll_px = 0
+	self.star_scroll_px = 0
+	self.scroll_elapsed_ms = 0
 	self.scrolling = true
-	self.scroll_mode = self.scroll_mode_default
-	self.scroll_rotator = self.scroll_rotator_initial
-	self.scroll_gate_bit = 0
-	self.scroll_advanced = false
-	self.frame = 0
 	reset_star_positions(self.yellow_stars, stars_yellow)
 	reset_star_positions(self.blue_stars, stars_blue)
 	self.yellow_blink = false
@@ -558,72 +553,65 @@ function stage:begin_play()
 	return '/running/scrolling'
 end
 
-function stage:update_runtime()
-	local smooth_scroll_px = 0
-
-	if self.scrolling then
-		local max_left_tile<const> = self.tape_length_tiles - self.tile_columns + 1
-		local should_advance = false
-
-		self.scroll_advanced = false
-		self.scroll_gate_bit = 0
-
-		if self.scroll_mode == self.scroll_mode_forced then
-			should_advance = true
-			smooth_scroll_px = self.tile_size
-		elseif self.scroll_mode == self.scroll_mode_gated then
-			self.scroll_rotator = rol8(self.scroll_rotator)
-			self.scroll_gate_bit = self.scroll_rotator % 2
-			should_advance = self.scroll_gate_bit == 1
-			smooth_scroll_px = self.tile_size / 8
-		end
-
-		if should_advance then
-			if self.tape_head >= self.stop_tape_head or self.left_tile >= max_left_tile then
-				self.scrolling = false
-				smooth_scroll_px = 0
-				if telemetry_enabled then
-					self.events:emit('stage_scroll_stop', {
-						left = self.left_tile,
-						head = self.tape_head,
-					})
-				end
-			else
-				self.left_tile = self.left_tile + 1
-				self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
-				self.tape_head = self.left_tile + self.tile_columns - 1
-				self:advance_music_cues(self.tape_head - 1)
-				self:advance_actor_spawns(self.tape_head - 1)
-				self.tile_steps = self.tile_steps + 1
-				self.scroll_advanced = true
-				if telemetry_enabled then
-					self.events:emit('stage_scroll_tile', {
-						left = self.left_tile,
-						head = self.tape_head,
-					})
-				end
-			end
-		end
-
-		if telemetry_enabled then
-			self.events:emit('stage_scroll_gate', {
-				mode = self.scroll_mode,
-				rot = self.scroll_rotator,
-				bit = self.scroll_gate_bit,
-				adv = self.scroll_advanced,
-				left = self.left_tile,
-				head = self.tape_head,
-			})
-		end
+function stage:advance_tape()
+	local max_left_tile<const> = self.tape_length_tiles - self.tile_columns + 1
+	if self.left_tile >= max_left_tile then
+		self.scrolling = false
+		return
 	end
 
+	self.left_tile = self.left_tile + 1
+	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.tape_head = self.left_tile + self.tile_columns - 1
+	local column<const> = self.tape_head - 1
+	self:advance_music_cues(column)
+	self:advance_actor_spawns(column)
+	self.tile_steps = self.tile_steps + 1
 	self.total_scroll_px = self.tile_steps * self.tile_size
-	self.total_smooth_scroll_px = self.total_smooth_scroll_px + smooth_scroll_px
-	if smooth_scroll_px ~= 0 then
-		self:apply_star_scroll(self.yellow_stars, smooth_scroll_px)
-		self:apply_star_scroll(self.blue_stars, smooth_scroll_px)
+
+	if telemetry_enabled then
+		self.events:emit('stage_scroll_tile', {
+			left = self.left_tile,
+			head = self.tape_head,
+		})
 	end
-	self.frame = self.frame + 1
+
+	local scroll_stop_index<const> = self.scroll_stop_index
+	if scroll_stop_index <= self.scroll_stop_count
+	and column >= self.scroll_stop_columns[scroll_stop_index] then
+		self.scroll_stop_index = scroll_stop_index + 1
+		self.scrolling = false
+	elseif self.left_tile >= max_left_tile then
+		self.scrolling = false
+	end
+	if not self.scrolling and telemetry_enabled then
+		self.events:emit('stage_scroll_stop', {
+			left = self.left_tile,
+			head = self.tape_head,
+		})
+	end
+end
+
+function stage:update_runtime()
+	if not self.scrolling then
+		return '/running/stopped'
+	end
+
+	local elapsed_ms<const> = self.scroll_elapsed_ms + frame_duration_ms
+	if elapsed_ms >= stage_scroll_interval_ms then
+		self.scroll_elapsed_ms = elapsed_ms - stage_scroll_interval_ms
+		self:advance_tape()
+	else
+		self.scroll_elapsed_ms = elapsed_ms
+	end
+
+	if not self.scrolling then
+		return '/running/stopped'
+	end
+
+	self.star_scroll_px = self.star_scroll_px + stage_star_scroll_speed
+	self:apply_star_scroll(self.yellow_stars, stage_star_scroll_speed)
+	self:apply_star_scroll(self.blue_stars, stage_star_scroll_speed)
 end
 
 function stage:draw_star_particles(draw, stars, source, hidden)
@@ -702,6 +690,7 @@ local define_stage_fsm<const> = function()
 					scrolling = {
 						update = stage.update_runtime,
 					},
+					stopped = {},
 				},
 			},
 		},

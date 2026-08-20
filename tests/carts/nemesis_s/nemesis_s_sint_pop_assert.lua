@@ -31,7 +31,6 @@ function __bmsx_host_test.update()
 	local sint_pops<const> = test.sint_pops.objects
 
 	if test.phase == 'spawn' then
-		stage.scroll_mode = stage.scroll_mode_forced
 		if stage.tape_head - 1 < 34 then
 			return false
 		end
@@ -41,7 +40,7 @@ function __bmsx_host_test.update()
 			local sint_pop<const> = sint_pops[index]
 			assert(sint_pop.group_id == 34, 'SintPop group identity no longer follows the marker column')
 			assert(sint_pop.group_type == sint_pop_group_up, 'lowercase p did not produce the upward group')
-			assert(sint_pop.x == machine_game_width + ((index - 1) * sint_pop_width),
+			assert(sint_pop.x == playfield_width + ((index - 1) * sint_pop_width),
 				'SintPop group spacing no longer matches the XNA formation')
 			assert(sint_pop.y == 16, 'SintPop group no longer uses the authored map row')
 		end

@@ -5,12 +5,7 @@ tile_columns: 32
 draw_z: 16
 tile_rows: 22
 tape_length_tiles: 554
-stop_tape_head: 492
-scroll_mode_pause: 1
-scroll_mode_forced: 2
-scroll_mode_gated: 3
-scroll_mode_default: 3
-scroll_rotator_initial: 1
+scroll_stop_columns: [492, 551]
 music_cues:
   - { column: 0, event: stage.music.intro }
   - { column: 138, event: stage.music.main }

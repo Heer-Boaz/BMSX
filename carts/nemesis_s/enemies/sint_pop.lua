@@ -29,7 +29,7 @@ end
 
 function sint_pop:update_move_away_from_player()
 	self.x = self.x + sint_pop_move_away_speed_x
-	if self.x > machine_game_width then
+	if self.x > playfield_width then
 		self:mark_for_disposal()
 	end
 end

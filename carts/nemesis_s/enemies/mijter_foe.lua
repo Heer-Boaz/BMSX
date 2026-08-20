@@ -77,9 +77,9 @@ function mijter_foe:update_attacking_player()
 	self.x = self.x + self.speed_x
 	self.y = self.y + self.speed_y
 	if self.x < -mijter_foe_width
-	or self.x > machine_game_width
+	or self.x > playfield_width
 	or self.y < -mijter_foe_height
-	or self.y > machine_game_height then
+	or self.y > playfield_height then
 		self:mark_for_disposal()
 	end
 end

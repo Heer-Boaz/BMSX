@@ -51,18 +51,18 @@ local reveal_keys<const> = {
 local draw_slide_curtain<const> = function(component, draw)
 	local count<const> = component.parent.curtain_count
 	if count == 8 then
-		draw:rect(0, 0, machine_screen_width, machine_screen_height, 0xff000000)
+		draw:rect(0, 0, presentation_width, presentation_height, 0xff000000)
 		return
 	end
-	for y = 0, machine_screen_height - 1, 8 do
-		draw:rect(0, y, machine_screen_width, y + count, 0xff000000)
+	for y = 0, presentation_height - 1, 8 do
+		draw:rect(0, y, presentation_width, y + count, 0xff000000)
 	end
 end
 
 local draw_venom_curtain<const> = function(component, draw)
 	local owner<const> = component.parent
-	draw:rect(0, 0, machine_screen_width, owner.curtain_end, 0xff000000)
-	draw:rect(0, owner.curtain_start, machine_screen_width, owner.primary_text.offset_y, 0xff000000)
+	draw:rect(0, 0, presentation_width, owner.curtain_end, 0xff000000)
+	draw:rect(0, owner.curtain_start, presentation_width, owner.primary_text.offset_y, 0xff000000)
 end
 
 function story:set_curtain_mode(mode)

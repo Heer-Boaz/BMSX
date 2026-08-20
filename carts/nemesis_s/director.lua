@@ -39,6 +39,7 @@ end
 
 function director:enter_game_start()
 	self:set_active_space('game_start')
+	self.frame = 0
 	local stage<const> = world:spawn(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		space_id = 'main',
@@ -79,6 +80,7 @@ function director:enter_gameplay()
 	self.status_bar:set_space('main')
 	self:set_active_space('main')
 	self.frame = 0
+	self.telemetry_stage_head = self.stage.tape_head
 end
 
 function director:accept_title_selection(_state, event)
@@ -87,23 +89,25 @@ function director:accept_title_selection(_state, event)
 end
 
 function director:update_telemetry()
+	local stage<const> = self.stage
+	local stage_head<const> = stage.tape_head
+	local stage_advanced<const> = stage_head ~= self.telemetry_stage_head
+	self.telemetry_stage_head = stage_head
 	print(string.format(
-		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_mode=%d|stage_rot=%d|stage_gate=%d|stage_adv=%d',
+		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_elapsed_ms=%.3f|stage_adv=%d',
 		telemetry_metric_prefix,
 		self.frame,
-		self.stage.total_smooth_scroll_px % machine_game_width,
-		bool01(self.stage.yellow_blink),
-		bool01(self.stage.blue_blink),
-		#self.stage.yellow_stars,
-		#self.stage.blue_stars,
-		self.stage.left_tile,
-		self.stage.tape_head,
-		self.stage.total_scroll_px,
-		bool01(self.stage.scrolling),
-		self.stage.scroll_mode,
-		self.stage.scroll_rotator,
-		self.stage.scroll_gate_bit,
-		bool01(self.stage.scroll_advanced)
+		stage.star_scroll_px % playfield_width,
+		bool01(stage.yellow_blink),
+		bool01(stage.blue_blink),
+		#stage.yellow_stars,
+		#stage.blue_stars,
+		stage.left_tile,
+		stage_head,
+		stage.total_scroll_px,
+		bool01(stage.scrolling),
+		stage.scroll_elapsed_ms,
+		bool01(stage_advanced)
 	))
 	self.frame = self.frame + 1
 end
@@ -121,8 +125,7 @@ if telemetry_enabled then
 	telemetry_event_handlers = {
 		['star_blink_toggle'] = {
 			emitter = ids_stage_instance,
-			go = function(self)
-				local stage<const> = self.stage
+			go = function(self, _state, _event, stage)
 				self:emit_telemetry_event(
 					'star_blink_toggle',
 					string.format(
@@ -149,23 +152,6 @@ if telemetry_enabled then
 				self:emit_telemetry_event(
 					'stage_scroll_tile',
 					string.format('left=%d|head=%d', event.left, event.head)
-				)
-			end,
-		},
-		['stage_scroll_gate'] = {
-			emitter = ids_stage_instance,
-			go = function(self, _state, event)
-				self:emit_telemetry_event(
-					'stage_scroll_gate',
-					string.format(
-						'mode=%d|rot=%d|bit=%d|adv=%d|left=%d|head=%d',
-						event.mode,
-						event.rot,
-						event.bit,
-						bool01(event.adv),
-						event.left,
-						event.head
-					)
 				)
 			end,
 		},

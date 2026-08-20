@@ -40,9 +40,8 @@ function __bmsx_host_test.update()
 			return false
 		end
 		assert(stage.tape_head - 1 == 31, 'stage boot changed the XNA tape-head origin')
-		stage.scroll_mode = stage.scroll_mode_forced
 		while stage.tape_head - 1 < 138 do
-			stage:update_runtime()
+			stage:advance_tape()
 		end
 		assert(stage.tape_head - 1 == 138, 'main-theme cue crossed the authored XNA column')
 		test.phase = 'main_fade'
@@ -55,7 +54,7 @@ function __bmsx_host_test.update()
 		end
 		local stage<const> = registry:get('nemesis_s.stage')
 		while stage.tape_head - 1 < 480 do
-			stage:update_runtime()
+			stage:advance_tape()
 		end
 		assert(stage.tape_head - 1 == 480, 'boss-theme cue crossed the authored XNA column')
 		test.phase = 'boss_fade'
@@ -75,5 +74,12 @@ function __bmsx_host_test.update()
 		return false
 	end
 	assert(source == boss_source, 'boss stinger did not hand off to the looping boss theme')
+	local stage<const> = registry:get('nemesis_s.stage')
+	while stage.tape_head - 1 < 492 do
+		stage:advance_tape()
+	end
+	assert(stage.tape_head - 1 == 492, 'stage missed the first authored XNA scroll stop')
+	assert(not stage.scrolling, 'stage remained active at the first authored XNA scroll stop')
+	assert(stage.scroll_stop_index == 2, 'stage did not retain the second authored XNA scroll stop')
 	return true
 end

@@ -15,10 +15,10 @@ player_starts = {
 ids_director_def = 'nemesis_s.director'
 ids_director_instance = 'nemesis_s.director'
 ids_director_fsm = 'nemesis_s.director.fsm'
-machine_screen_width = 256
-machine_screen_height = 192
-machine_game_width = 256
-machine_game_height = 176
+presentation_width = 256
+presentation_height = 192
+playfield_width = 256
+playfield_height = 176
 player_width = 16
 player_height = 10
 player_base_movement_speed = 1
@@ -91,6 +91,8 @@ weapons_uplaser = {
 }
 
 stage_asset_id = 'nemesis_s_stage'
+stage_scroll_interval_ms = 250
+stage_star_scroll_speed = 0.625
 stage_star_blink_frame_duration = 15
 stage_star_particle_z = 8
 assets_player_n = 'metallion_n'

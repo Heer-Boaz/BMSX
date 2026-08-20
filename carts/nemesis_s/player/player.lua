@@ -312,8 +312,8 @@ end
 
 function player:update_position()
 	local visual_sources<const> = self.visual_sources
-	local max_x<const> = machine_game_width - player_width
-	local max_y<const> = machine_game_height - player_height
+	local max_x<const> = playfield_width - player_width
+	local max_y<const> = playfield_height - player_height
 	local previous_x<const> = self.x
 	local previous_y<const> = self.y
 	local movement_speed<const> = player_base_movement_speed
@@ -659,7 +659,7 @@ function player:update_bullets()
 		local bullet<const> = self.bullets[index]
 		bullet.x = bullet.x + projectile_movement_speed
 		if self.stage:is_solid_pixel(bullet.x + projectile_width + 2, bullet.y + projectile_height)
-			or bullet.x >= machine_game_width then
+			or bullet.x >= playfield_width then
 			self:despawn_bullet(index, 'collision_or_bounds')
 		end
 		index = index - 1
@@ -684,7 +684,7 @@ function player:update_lasers()
 		end
 
 		local origin_x<const> , origin_y<const> = self:get_vessel_snapshot(laser.vessel_id)
-		if wall_hit_x < 0 and laser.right_x < machine_game_width then
+		if wall_hit_x < 0 and laser.right_x < playfield_width then
 			laser.right_x = laser.right_x + weapons_laser.movement_speed
 			if laser.length_expanded < weapons_laser.max_length_px then
 				laser.right_x = laser.right_x + (origin_x - laser.originator_last_x)
@@ -732,8 +732,8 @@ function player:update_missiles()
 		end
 
 		if self.stage:is_solid_pixel(missile.x + 8, missile.y)
-			or missile.x >= machine_game_width
-			or missile.y >= machine_game_height then
+			or missile.x >= playfield_width
+			or missile.y >= playfield_height then
 			self:despawn_missile(index, 'collision_or_bounds')
 		end
 		index = index - 1

@@ -32,11 +32,6 @@ function approxEqual(a, b, epsilon = 1e-3) {
 	return Math.abs(a - b) <= epsilon;
 }
 
-function rol8(value) {
-	const doubled = value * 2;
-	return doubled >= 256 ? doubled - 255 : doubled;
-}
-
 const content = fs.readFileSync(logPath, 'utf8');
 const lines = content.split(/\r?\n/);
 
@@ -90,7 +85,7 @@ for (let i = 0; i < playerMetrics.length; i += 1) {
 	const y = Number(m.y);
 	expect(x >= 0 && x <= 240, `Player X out of bounds at frame ${m.f}: x=${x} expected [0..240].`);
 	expect(y >= 0 && y <= 166, `Player Y out of bounds at frame ${m.f}: y=${y} expected [0..166].`);
-	expect(Number(m.pc) <= 2, `Projectile count exceeded limit at frame ${m.f}: pc=${m.pc} expected <=2.`);
+	expect(Number(m.bullet) <= 2, `Bullet count exceeded limit at frame ${m.f}: bullet=${m.bullet} expected <=2.`);
 }
 
 const moveRightSamples = playerMetrics.filter((m) => Number(m.right) === 1 && Number(m.left) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
@@ -125,9 +120,9 @@ const neutralSample = first(
 );
 expect(neutralSample !== null, 'Missing neutral sprite sample after vertical input release.');
 
-const fireSpawnEvents = playerEvents.filter((e) => e.name === 'fire_spawn');
-const fireBlockedEvents = playerEvents.filter((e) => e.name === 'fire_blocked');
-const fireDespawnEvents = playerEvents.filter((e) => e.name === 'fire_despawn');
+const fireSpawnEvents = playerEvents.filter((e) => e.name === 'weapon_spawn' && e.weapon === 'bullet');
+const fireBlockedEvents = playerEvents.filter((e) => e.name === 'weapon_blocked' && e.weapon === 'bullet');
+const fireDespawnEvents = playerEvents.filter((e) => e.name === 'weapon_despawn' && e.weapon === 'bullet');
 
 expect(fireSpawnEvents.length >= 3, `Expected at least 3 fire_spawn events, got ${fireSpawnEvents.length}.`);
 expect(fireBlockedEvents.length >= 1, `Expected at least 1 fire_blocked event, got ${fireBlockedEvents.length}.`);
@@ -200,13 +195,13 @@ const projectileDeltas = [];
 for (let i = 0; i < playerMetrics.length - 1; i += 1) {
 	const current = playerMetrics[i];
 	const next = playerMetrics[i + 1];
-	const pc0 = Number(current.pc);
-	const pc1 = Number(next.pc);
+	const pc0 = Number(current.bullet);
+	const pc1 = Number(next.bullet);
 	if (pc0 < 1 || pc1 < 1) {
 		continue;
 	}
-	const x0 = Number(current.p0x);
-	const x1 = Number(next.p0x);
+	const x0 = Number(current.b0x);
+	const x1 = Number(next.b0x);
 	if (x0 < 0 || x1 < 0) {
 		continue;
 	}
@@ -223,33 +218,47 @@ expect(
 );
 
 if (directorMetrics.length > 1) {
-	let quantizedScrollDeltas = 0;
-	let tileStepScrollDeltas = 0;
+	let starMovementSamples = 0;
+	let tileStepSamples = 0;
 	for (let i = 0; i < directorMetrics.length - 1; i += 1) {
-		const current = Number(directorMetrics[i].scroll);
-		const nextRaw = Number(directorMetrics[i + 1].scroll);
-		const nextAdvance = Number(directorMetrics[i + 1].stage_adv);
-		let delta = nextRaw - current;
-		if (delta < 0) {
-			delta += 256;
+		const current = directorMetrics[i];
+		const next = directorMetrics[i + 1];
+		const nextAdvance = Number(next.stage_adv);
+		let starDelta = Number(next.scroll) - Number(current.scroll);
+		if (starDelta < 0) {
+			starDelta += 256;
 		}
-		if (approxEqual(delta, 0, 0.01) || approxEqual(delta, 8, 0.01)) {
-			quantizedScrollDeltas += 1;
-		}
-		if (approxEqual(delta, 8, 0.01)) {
-			tileStepScrollDeltas += 1;
-		}
-		const expectedDelta = nextAdvance === 1 ? 8 : 0;
+		const expectedStarDelta = Number(next.stage_scrolling) === 1 ? 0.625 : 0;
 		expect(
-			approxEqual(delta, expectedDelta, 0.01),
-			`Scroll delta mismatch at frame ${directorMetrics[i + 1].f}: delta=${delta} expected ${expectedDelta} from stage_adv=${nextAdvance}.`,
+			approxEqual(starDelta, expectedStarDelta, 0.01),
+			`Star scroll mismatch at frame ${next.f}: delta=${starDelta} expected ${expectedStarDelta}.`,
+		);
+		if (expectedStarDelta > 0) {
+			starMovementSamples += 1;
+		}
+
+		const headDelta = Number(next.stage_head) - Number(current.stage_head);
+		const stagePixelDelta = Number(next.stage_px) - Number(current.stage_px);
+		const expectedHeadDelta = nextAdvance === 1 ? 1 : 0;
+		const expectedPixelDelta = nextAdvance === 1 ? 8 : 0;
+		expect(
+			headDelta === expectedHeadDelta,
+			`Stage head mismatch at frame ${next.f}: delta=${headDelta} expected ${expectedHeadDelta}.`,
+		);
+		expect(
+			stagePixelDelta === expectedPixelDelta,
+			`Stage pixel mismatch at frame ${next.f}: delta=${stagePixelDelta} expected ${expectedPixelDelta}.`,
+		);
+		if (nextAdvance === 1) {
+			tileStepSamples += 1;
+		}
+		expect(
+			Number(next.stage_elapsed_ms) >= 0 && Number(next.stage_elapsed_ms) < 250,
+			`Stage timer escaped [0, 250) at frame ${next.f}: elapsed=${next.stage_elapsed_ms}.`,
 		);
 	}
-	expect(
-		quantizedScrollDeltas === directorMetrics.length - 1,
-		`Expected fully quantized director scroll deltas (0 or 8). Got ${quantizedScrollDeltas}/${directorMetrics.length - 1}.`,
-	);
-	expect(tileStepScrollDeltas >= 10, `Expected >=10 tile-step scroll deltas of 8px, got ${tileStepScrollDeltas}.`);
+	expect(starMovementSamples >= 100, `Expected >=100 continuous star movement samples, got ${starMovementSamples}.`);
+	expect(tileStepSamples >= 10, `Expected >=10 time-driven tile steps, got ${tileStepSamples}.`);
 
 	const firstDirector = directorMetrics[0];
 	const lastDirector = directorMetrics[directorMetrics.length - 1];
@@ -263,28 +272,6 @@ if (directorMetrics.length > 1) {
 		`Expected stage_px to remain tile-quantized (multiple of 8), got ${lastDirector.stage_px}.`,
 	);
 
-	const gatedMetrics = directorMetrics.filter((m) => Number(m.stage_scrolling) === 1 && Number(m.stage_mode) === 3);
-	expect(gatedMetrics.length >= 16, `Expected >=16 gated stage metrics, got ${gatedMetrics.length}.`);
-	for (let i = 0; i < gatedMetrics.length - 1; i += 1) {
-		const current = Number(gatedMetrics[i].stage_rot);
-		const next = Number(gatedMetrics[i + 1].stage_rot);
-		const expected = rol8(current);
-		expect(
-			next === expected,
-			`Stage rotator mismatch between frames ${gatedMetrics[i].f}->${gatedMetrics[i + 1].f}: next=${next}, expected=${expected}.`,
-		);
-		const nextGate = Number(gatedMetrics[i + 1].stage_gate);
-		const nextAdv = Number(gatedMetrics[i + 1].stage_adv);
-		const expectedGate = next % 2;
-		expect(
-			nextGate === expectedGate,
-			`Stage gate-bit mismatch at frame ${gatedMetrics[i + 1].f}: gate=${nextGate}, expected=${expectedGate}.`,
-		);
-		expect(
-			nextAdv === expectedGate,
-			`Stage advance mismatch at frame ${gatedMetrics[i + 1].f}: adv=${nextAdv}, expected=${expectedGate}.`,
-		);
-	}
 }
 
 const blinkEvents = directorEvents.filter((e) => e.name === 'star_blink_toggle');
@@ -294,12 +281,10 @@ expect(stageTileEvents.length > 0, 'Missing stage_scroll_tile events.');
 for (let i = 0; i < stageTileEvents.length - 1; i += 1) {
 	const frameDelta = Number(stageTileEvents[i + 1].f) - Number(stageTileEvents[i].f);
 	expect(
-		frameDelta === 8,
-		`Expected 8-frame stage tile cadence, got delta=${frameDelta} between frames ${stageTileEvents[i].f} and ${stageTileEvents[i + 1].f}.`,
+		frameDelta === 12 || frameDelta === 13,
+		`Expected a 12/13-frame stage cadence, got delta=${frameDelta} between frames ${stageTileEvents[i].f} and ${stageTileEvents[i + 1].f}.`,
 	);
 }
-const stageGateEvents = directorEvents.filter((e) => e.name === 'stage_scroll_gate');
-expect(stageGateEvents.length > 0, 'Missing stage_scroll_gate events.');
 
 if (failures.length > 0) {
 	console.error('nemesis_s headless analysis failed:');
