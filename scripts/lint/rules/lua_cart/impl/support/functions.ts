@@ -34,6 +34,32 @@ export function getFunctionLeafName(functionName: string): string {
 	return functionName.slice(separatorIndex + 1);
 }
 
+export function matchesMetatableConstructorPattern(functionName: string, functionExpression: CartFunctionExpression): boolean {
+	if (getFunctionLeafName(functionName) !== 'new') {
+		return false;
+	}
+	const separatorIndex = Math.max(functionName.lastIndexOf('.'), functionName.lastIndexOf(':'));
+	if (separatorIndex < 1) {
+		return false;
+	}
+	const className = functionName.slice(0, separatorIndex);
+	const expression = getFunctionSingleReturnExpression(functionExpression);
+	if (
+		expression?.kind !== SyntaxKind.CallExpression
+		|| !isIdentifier(expression.callee, 'setmetatable')
+		|| expression.arguments.length !== 2
+		|| !isIdentifier(expression.arguments[1], className)
+	) {
+		return false;
+	}
+	const baseConstructor = expression.arguments[0];
+	if (baseConstructor.kind !== SyntaxKind.CallExpression || baseConstructor.callee.kind !== SyntaxKind.MemberExpression) {
+		return false;
+	}
+	return baseConstructor.callee.identifier === 'new'
+		&& matchesForwardedArgumentList(baseConstructor.arguments, getFunctionParameterNames(functionExpression));
+}
+
 export function isMethodLikeFunctionDeclaration(statement: FunctionDeclarationStatement): boolean {
 	return statement.name.identifiers.length > 1 || !!statement.name.methodName;
 }

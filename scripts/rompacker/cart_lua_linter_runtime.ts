@@ -66,7 +66,7 @@ import { lintForeignObjectInternalMutationPattern } from '../lint/rules/lua_cart
 import { lintFsmDirectStateHandlerShorthandPattern } from '../lint/rules/lua_cart/impl/support/fsm_core';
 import { lintFsmEventReemitHandlerPattern, lintFsmLifecycleWrapperPattern } from '../lint/rules/lua_cart/impl/support/fsm_events';
 import { lintFsmForbiddenLegacyFieldsPattern, lintFsmProcessInputPollingTransitionPattern, lintFsmRunChecksInputTransitionPattern, lintFsmTickCounterTransitionPattern } from '../lint/rules/lua_cart/impl/support/fsm_transitions';
-import { getFunctionDisplayName, isMethodLikeFunctionDeclaration } from '../lint/rules/lua_cart/impl/support/functions';
+import { getFunctionDisplayName, isMethodLikeFunctionDeclaration, matchesMetatableConstructorPattern } from '../lint/rules/lua_cart/impl/support/functions';
 import { matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
 import { analyzeRequireAliases } from '../lint/rules/lua_cart/impl/support/require_aliases';
 import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/support/runtime_tag';
@@ -324,6 +324,7 @@ export function lintFunctionBody(
 		&& isMethodDeclaration
 		&& !isGetterOrSetter
 		&& !isVisualUpdateLike
+		&& !matchesMetatableConstructorPattern(functionName, functionExpression)
 		&& matchesMeaninglessSingleLineMethodPattern(functionExpression)
 	) {
 		pushIssue(
