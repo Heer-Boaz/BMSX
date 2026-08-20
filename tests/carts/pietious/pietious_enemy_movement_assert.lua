@@ -56,8 +56,38 @@ function __bmsx_host_test.update()
 			subscriber = test,
 			handler = record_cross_landing,
 		})
-		test.phase = 'cross_outside_lane'
+		world:spawn('enemy.marspeinenaardappel', {
+			id = 'probe.marspeinenaardappel',
+			space_id = 'main',
+			castle = castle,
+			room = room,
+			player = player,
+			speed_x_num = 2,
+			speed_y_num = 0,
+			pos = {
+				x = room.world_width - room_tile_size,
+				y = room.world_top + (13 * room_tile_size),
+				z = 110,
+			},
+		})
+		test.phase = 'mars_bounce'
 		test.phase_frames = 0
+		return false
+	end
+
+	if test.phase == 'mars_bounce' then
+		local mars<const> = registry:get('probe.marspeinenaardappel')
+		if mars == nil then
+			return false
+		end
+		local boundary_x<const> = room.world_width - room_tile_size
+		if mars.x == boundary_x then
+			return false
+		end
+		assert(mars.x == boundary_x - 2,
+			'marspeinenaardappel did not reflect from the right room boundary')
+		mars:mark_for_disposal()
+		test.phase = 'cross_outside_lane'
 		return false
 	end
 

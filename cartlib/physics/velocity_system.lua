@@ -1,5 +1,7 @@
 local velocity<const> = require('cartlib/velocity')
+local bouncing_movement_component<const> = require('cartlib/physics/bouncing_movement_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
+local kinematic_movement_component<const> = require('cartlib/physics/kinematic_movement_component')
 local velocity_component<const> = require('cartlib/physics/velocity_component')
 local base_system<const> = require('cartlib/world/base_system')
 local clock<const> = require('cartlib/clock')
@@ -21,15 +23,40 @@ velocity_system.fixed_point_tick = {
 	method = 'update_fixed_point',
 }
 
+local horizontal_contacts<const> = kinematic_movement_component.contact_left
+	| kinematic_movement_component.contact_right
+local vertical_contacts<const> = kinematic_movement_component.contact_up
+	| kinematic_movement_component.contact_down
+local move_kinematic<const> = kinematic_movement_component.move
+
 function velocity_system.new(world)
 	local self<const> = setmetatable(base_system.new(velocity_system.tick), velocity_system)
 	self:add_tick_function(velocity_system.fixed_point_tick)
+	self._bouncing_component_view = world:active_tick_view(
+		bouncing_movement_component,
+		clock.gameplay
+	)
 	self._rational_component_view = world:active_tick_view(velocity_component, clock.gameplay)
 	self._fixed_point_component_view = world:active_tick_view(fixed_point_velocity_component, clock.gameplay)
 	return self
 end
 
 function velocity_system:update()
+	local bouncing_components<const> = self._bouncing_component_view.components
+	for index = 1, #bouncing_components do
+		local component<const> = bouncing_components[index]
+		local parent<const> = component.parent
+		local velocity_x<const> = parent.speed_x_num
+		local velocity_y<const> = parent.speed_y_num
+		local contacts<const> = move_kinematic(component, velocity_x, velocity_y)
+		if (contacts & horizontal_contacts) ~= 0 then
+			parent.speed_x_num = -velocity_x
+		end
+		if (contacts & vertical_contacts) ~= 0 then
+			parent.speed_y_num = -velocity_y
+		end
+	end
+
 	local components<const> = self._rational_component_view.components
 	for index = 1, #components do
 		velocity.move_with_velocity(components[index].parent)
