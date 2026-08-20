@@ -1,14 +1,14 @@
 [
 	{
 		"description": "intro_skip_modifier_press",
-		"frame": 5,
+		"frame": 50,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ControlLeft",
 			"down": true,
 			"value": 1,
-			"timestamp": 100,
+			"timestamp": 1000,
 			"pressId": 1,
 			"modifiers": {
 				"ctrl": true,
@@ -20,14 +20,14 @@
 	},
 	{
 		"description": "intro_skip_press",
-		"frame": 6,
+		"frame": 51,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": true,
 			"value": 1,
-			"timestamp": 120,
+			"timestamp": 1020,
 			"pressId": 2,
 			"modifiers": {
 				"ctrl": true,
@@ -39,14 +39,14 @@
 	},
 	{
 		"description": "intro_skip_release",
-		"frame": 7,
+		"frame": 54,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": false,
 			"value": 0,
-			"timestamp": 140,
+			"timestamp": 1080,
 			"pressId": 2,
 			"modifiers": {
 				"ctrl": true,
@@ -58,14 +58,14 @@
 	},
 	{
 		"description": "intro_skip_modifier_release",
-		"frame": 8,
+		"frame": 55,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ControlLeft",
 			"down": false,
 			"value": 0,
-			"timestamp": 160,
+			"timestamp": 1100,
 			"pressId": 1,
 			"modifiers": {
 				"ctrl": false,
@@ -77,14 +77,14 @@
 	},
 	{
 		"description": "story_skip_press",
-		"frame": 20,
+		"frame": 80,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": true,
 			"value": 1,
-			"timestamp": 400,
+			"timestamp": 1600,
 			"pressId": 3,
 			"modifiers": {
 				"ctrl": false,
@@ -96,14 +96,14 @@
 	},
 	{
 		"description": "story_skip_release",
-		"frame": 21,
+		"frame": 83,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": false,
 			"value": 0,
-			"timestamp": 420,
+			"timestamp": 1660,
 			"pressId": 3,
 			"modifiers": {
 				"ctrl": false,
@@ -115,14 +115,14 @@
 	},
 	{
 		"description": "title_start_press",
-		"frame": 40,
+		"frame": 120,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": true,
 			"value": 1,
-			"timestamp": 800,
+			"timestamp": 2400,
 			"pressId": 4,
 			"modifiers": {
 				"ctrl": false,
@@ -134,14 +134,14 @@
 	},
 	{
 		"description": "title_start_release",
-		"frame": 41,
+		"frame": 123,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "Space",
 			"down": false,
 			"value": 0,
-			"timestamp": 820,
+			"timestamp": 2460,
 			"pressId": 4,
 			"modifiers": {
 				"ctrl": false,
@@ -310,7 +310,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": true,
 			"value": 1,
 			"timestamp": 18000,
@@ -329,7 +329,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": false,
 			"value": 0,
 			"timestamp": 18040,
@@ -348,7 +348,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": true,
 			"value": 1,
 			"timestamp": 18160,
@@ -367,7 +367,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": false,
 			"value": 0,
 			"timestamp": 18200,
@@ -386,7 +386,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": true,
 			"value": 1,
 			"timestamp": 18320,
@@ -405,7 +405,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": false,
 			"value": 0,
 			"timestamp": 18360,
@@ -424,7 +424,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": true,
 			"value": 1,
 			"timestamp": 18800,
@@ -444,7 +444,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": false,
 			"value": 0,
 			"timestamp": 19400,
@@ -463,7 +463,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": true,
 			"value": 1,
 			"timestamp": 19600,
@@ -482,7 +482,7 @@
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
-			"code": "KeyX",
+			"code": "Space",
 			"down": false,
 			"value": 0,
 			"timestamp": 19640,

@@ -18,16 +18,31 @@ player.__index = player
 local option_animation_timeline_id<const> = 'player_option_animation'
 local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
 local missile_state_fall_from_floor<const> = 'fall_from_floor'
-local sources<const> = {
-	player_neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
-	player_up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
-	player_down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
-	options = {
-		image.resolve(assets_option1),
-		image.resolve(assets_option2),
-		image.resolve(assets_option3),
-		image.resolve(assets_option4),
+local player_sources<const> = {
+	{
+		neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
+		up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
+		down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
+		options = {
+			image.resolve(assets_option1),
+			image.resolve(assets_option2),
+			image.resolve(assets_option3),
+			image.resolve(assets_option4),
+		},
 	},
+	{
+		neutral = { imgid = assets_player_2_n, source = image.resolve(assets_player_2_n) },
+		up = { imgid = assets_player_2_u, source = image.resolve(assets_player_2_u) },
+		down = { imgid = assets_player_2_d, source = image.resolve(assets_player_2_d) },
+		options = {
+			image.resolve(assets_player_2_option_1),
+			image.resolve(assets_player_2_option_2),
+			image.resolve(assets_player_2_option_3),
+			image.resolve(assets_player_2_option_4),
+		},
+	},
+}
+local weapon_sources<const> = {
 	laser = image.resolve(assets_laser),
 	missile_falling = image.resolve(assets_missile1),
 	missile_flying = image.resolve(assets_missile2),
@@ -135,8 +150,6 @@ end
 
 function player:reset_runtime()
 	self.frame = 0
-	self.x = player_start_x
-	self.y = player_start_y
 	self.last_dx = 0
 	self.last_dy = 0
 	self.edge_push_dx = 0
@@ -146,11 +159,10 @@ function player:reset_runtime()
 	self.right_held = false
 	self.up_held = false
 	self.down_held = false
-	self.fire_sources = 0
 	self.fire_held = false
 	self.fire_pressed = false
 	self.speed_powerups = loadout_speed_powerups
-	self.sprite = sources.player_neutral
+	self.sprite = self.visual_sources.neutral
 	self:initialize_options()
 	self.lasers = {}
 	self.missiles = {}
@@ -194,7 +206,7 @@ function player:draw_lasers(draw)
 		end
 		local x = start_x
 		while x < end_x do
-			sources.laser:blit(draw, x, visual_y)
+		weapon_sources.laser:blit(draw, x, visual_y)
 			x = x + weapons_laser.tile_width
 		end
 	end
@@ -213,14 +225,14 @@ function player:draw_uplasers(draw)
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, weapons_uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, weapons_uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			sources.laser:blit(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y)
+			weapon_sources.laser:blit(draw, base_x + (tile_index * weapons_uplaser.tile_width), visual_y)
 		end
 	end
 end
 
 local draw_player_visual<const> = function(component, draw)
 	local owner<const> = component.parent
-	local option_source<const> = sources.options[owner.option_anim_index]
+	local option_source<const> = owner.visual_sources.options[owner.option_anim_index]
 	for i = 1, #owner.options do
 		local option<const> = owner.options[i]
 		option_source:blit(draw, option.x, option.y)
@@ -231,26 +243,12 @@ local draw_player_visual<const> = function(component, draw)
 	owner:draw_uplasers(draw)
 end
 
-function player:on_fire_input_pressed()
-	local fire_was_held<const> = self.fire_sources > 0
-	self.fire_sources = self.fire_sources + 1
-	self.fire_held = true
-	if fire_was_held then
-		return
-	end
-	self.fire_pressed = true
-end
-
-function player:on_fire_input_released()
-	self.fire_sources = self.fire_sources - 1
-	self.fire_held = self.fire_sources > 0
-end
-
 function player:get_movement_speed()
 	return player_base_movement_speed + player_movement_speed_increase * self.speed_powerups
 end
 
 function player:update_position()
+	local visual_sources<const> = self.visual_sources
 	local max_x<const> = machine_game_width - player_width
 	local max_y<const> = machine_game_height - player_height
 	local previous_x<const> = self.x
@@ -313,12 +311,12 @@ function player:update_position()
 
 	if self.up_held then
 		try_move_y(-self:get_movement_speed())
-		self.sprite = sources.player_up
+		self.sprite = visual_sources.up
 	elseif self.down_held then
 		try_move_y(self:get_movement_speed())
-		self.sprite = sources.player_down
+		self.sprite = visual_sources.down
 	else
-		self.sprite = sources.player_neutral
+		self.sprite = visual_sources.neutral
 	end
 
 	self.last_dx = self.x - previous_x
@@ -398,7 +396,7 @@ function player:spawn_missile(vessel_id)
 		x = vessel_x + weapons_missile_spawn_offset_x,
 		y = vessel_y + weapons_missile_spawn_offset_y,
 		state = missile_state_fall_from_vessel,
-		sprite = sources.missile_falling,
+		sprite = weapon_sources.missile_falling,
 	}
 	self.missiles[#self.missiles + 1] = missile
 	self.weapon_slots.missile[vessel_id] = self.weapon_slots.missile[vessel_id] + 1
@@ -613,7 +611,7 @@ function player:update_missiles()
 			and (not self.stage:is_solid_pixel(missile.x + 8, missile.y + 6))
 
 		if no_floor_below then
-			missile.sprite = sources.missile_falling
+			missile.sprite = weapon_sources.missile_falling
 			missile.y = missile.y + weapons_missile_movement_speed
 			if self.stage:is_solid_pixel(missile.x + 8, missile.y) then
 				missile.y = missile.y - (weapons_missile_movement_speed * 0.5)
@@ -622,7 +620,7 @@ function player:update_missiles()
 				missile.x = missile.x + (weapons_missile_movement_speed * 0.5)
 			end
 		else
-			missile.sprite = sources.missile_flying
+			missile.sprite = weapon_sources.missile_flying
 			missile.state = missile_state_fall_from_floor
 			missile.x = missile.x + weapons_missile_movement_speed
 		end
@@ -703,6 +701,7 @@ function player:update_runtime()
 end
 
 function player:ctor()
+	self.visual_sources = player_sources[self.player_index]
 	local visual<const> = self:get_component(custom_visual_component)
 	visual:set_draw_function(draw_player_visual)
 end
@@ -716,10 +715,10 @@ local define_player_fsm<const> = function()
 					self:reset_runtime()
 					return '/flying'
 				end,
-				},
-				flying = {
-					update = player.update_runtime,
-					input_event_handlers = {
+			},
+			flying = {
+				update = player.update_runtime,
+				input_event_handlers = {
 					{
 						pattern = 'left[jp]',
 						go = function(self)
@@ -769,42 +768,19 @@ local define_player_fsm<const> = function()
 						end,
 					},
 					{
-						pattern = 'x[jp]',
+						pattern = 'fire[jp]',
 						go = function(self)
-							self:on_fire_input_pressed()
+							self.fire_held = true
+							self.fire_pressed = true
 						end,
 					},
 					{
-						pattern = 'x[jr]',
+						pattern = 'fire[jr] && fire[r]',
 						go = function(self)
-							self:on_fire_input_released()
+							self.fire_held = false
 						end,
 					},
-					{
-						pattern = 'a[jp]',
-						go = function(self)
-							self:on_fire_input_pressed()
-						end,
-					},
-					{
-						pattern = 'a[jr]',
-						go = function(self)
-							self:on_fire_input_released()
-						end,
-					},
-					{
-						pattern = 'b[jp]',
-						go = function(self)
-							self:on_fire_input_pressed()
-						end,
-					},
-					{
-						pattern = 'b[jr]',
-						go = function(self)
-							self:on_fire_input_released()
-						end,
-					},
-					},
+				},
 				timelines = {
 					[option_animation_timeline_id] = {
 						def = {
@@ -842,9 +818,8 @@ local register_player_definition<const> = function()
 		},
 		defaults = {
 			player_index = 1,
+			z = 70,
 			frame = 0,
-			x = player_start_x,
-			y = player_start_y,
 			last_dx = 0,
 			last_dy = 0,
 			edge_push_dx = 0,
@@ -854,11 +829,9 @@ local register_player_definition<const> = function()
 			right_held = false,
 			up_held = false,
 			down_held = false,
-			fire_sources = 0,
 			fire_held = false,
 			fire_pressed = false,
 			speed_powerups = loadout_speed_powerups,
-			sprite = sources.player_neutral,
 			option_anim_index = 1,
 		},
 	})
@@ -869,6 +842,5 @@ return {
 	define_player_fsm = define_player_fsm,
 	register_player_definition = register_player_definition,
 	player_def_id = ids_player_def,
-	player_instance_id = ids_player_instance,
 	player_fsm_id = ids_player_fsm,
 }

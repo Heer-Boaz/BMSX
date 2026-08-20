@@ -7,6 +7,8 @@ local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
+local player_module<const> = require('player/player')
+local stage_module<const> = require('stage')
 
 local director<const> = {}
 director.__index = director
@@ -35,6 +37,22 @@ end
 
 function director:enter_game_start()
 	self:set_active_space('game_start')
+	local stage<const> = world:spawn(stage_module.stage_def_id, {
+		id = stage_module.stage_instance_id,
+		space_id = 'main',
+		pos = { x = 0, y = 0, z = 0 },
+	})
+	self.stage = stage
+	for player_index = 1, self.player_count do
+		local start<const> = player_starts[player_index]
+		world:spawn(player_module.player_def_id, {
+			id = start.id,
+			player_index = player_index,
+			space_id = 'main',
+			stage = stage,
+			pos = { x = start.x, y = start.y },
+		})
+	end
 	self.status_bar:reset(self.player_count)
 	gx_texture.upload('status_powerup_empty')
 	gx_texture.upload('font_a')

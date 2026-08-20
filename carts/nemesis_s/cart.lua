@@ -4,6 +4,21 @@ local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
+input.add_player(2)
+input.push_context(1, 'nemesis_s', {
+	fire = { 'Space' },
+}, {
+	fire = { 'a' },
+})
+input.push_context(2, 'nemesis_s', {
+	up = { 'Numpad5' },
+	right = { 'Numpad3' },
+	down = { 'Numpad2' },
+	left = { 'Numpad1' },
+	fire = { 'ControlLeft' },
+}, {
+	fire = { 'a' },
+})
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -36,18 +51,6 @@ end
 
 function new_game()
 	world:clear()
-	local stage<const> = world:spawn(stage_module.stage_def_id, {
-		id = stage_module.stage_instance_id,
-		space_id = 'main',
-		pos = { x = 0, y = 0, z = 0 },
-	})
-	world:spawn(player_module.player_def_id, {
-		id = player_module.player_instance_id,
-		player_index = 1,
-		space_id = 'main',
-		stage = stage,
-		pos = { x = player_start_x, y = player_start_y, z = 70 },
-	})
 	world:spawn(intro_module.definition_id, {
 		space_id = 'intro',
 		pos = { x = 0, y = 0, z = 0 },
@@ -65,7 +68,6 @@ function new_game()
 		pos = { x = 0, y = 0, z = 100 },
 	})
 	world:spawn(director_module.director_def_id, {
-		stage = stage,
 		status_bar = status_bar,
 		space_id = 'intro',
 		pos = { x = 0, y = 0, z = 0 },

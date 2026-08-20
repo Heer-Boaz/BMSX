@@ -96,6 +96,14 @@ function __bmsx_host_test.setup()
 		'game-start status did not reset both XNA life counters')
 	assert(status_bar.rows[1].current_slot == 0 and status_bar.rows[2].current_slot == 0,
 		'game-start status did not reset both power-up selections')
+	local player_1<const> = registry:get('nemesis_s.player.1')
+	local player_2<const> = registry:get('nemesis_s.player.2')
+	assert(player_1 ~= nil and player_1.x == 80 and player_1.y == 60,
+		'selected game did not spawn player 1 at the XNA start')
+	assert(player_2 ~= nil and player_2.x == 120 and player_2.y == 80,
+		'selected two-player game did not spawn player 2 at the XNA start')
+	assert(player_1.sprite.imgid == 'metallion_n' and player_2.sprite.imgid == 'metallion_n_p2',
+		'local players did not retain their authored vessel presentation')
 	test.phase = 'game_start'
 end
 

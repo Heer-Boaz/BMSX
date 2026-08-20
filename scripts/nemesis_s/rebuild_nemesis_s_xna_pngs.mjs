@@ -285,6 +285,61 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
+			source: 'Player/Option1.bmp',
+			target: 'option1.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option2.bmp',
+			target: 'option2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option3.bmp',
+			target: 'option3.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option4.bmp',
+			target: 'option4.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Metallion_n_P2.bmp',
+			target: 'metallion_n_p2.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Metallion_u_P2.bmp',
+			target: 'metallion_u_p2.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Metallion_d_P2.bmp',
+			target: 'metallion_d_p2.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Option1_P2.bmp',
+			target: 'option1_p2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option2_P2.bmp',
+			target: 'option2_p2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option3_P2.bmp',
+			target: 'option3_p2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Option4_P2.bmp',
+			target: 'option4_p2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
 			source: 'Projectiles/Kogeltje.bmp',
 			target: 'kogeltje.png',
 			colorKey: { r: 0, g: 0, b: 0 },
