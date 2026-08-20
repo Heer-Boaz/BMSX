@@ -44,14 +44,17 @@ export type SingleUseLocalReportKind =
 export type SingleUseLocalBinding = {
 	readonly declaration: IdentifierExpression;
 	readonly reportKind: SingleUseLocalReportKind | null;
+	readonly functionDepth: number;
 	readCount: number;
 	callReadCount: number;
+	capturedRead: boolean;
 };
 
 export type SingleUseLocalContext = {
 	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, SingleUseLocalBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
+	functionDepth: number;
 };
 
 export type ConstLocalBinding = {

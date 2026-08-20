@@ -10,7 +10,7 @@ export function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 		if (binding.reportKind !== null) {
 			const shouldReport = binding.reportKind === 'small_helper'
 				? binding.readCount === 1 && binding.callReadCount === 1
-				: binding.readCount === 1;
+				: binding.readCount === 1 && !binding.capturedRead;
 			if (shouldReport) {
 				pushIssue(
 					context.issues,

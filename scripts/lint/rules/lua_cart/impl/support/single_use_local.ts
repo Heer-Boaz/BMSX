@@ -54,11 +54,8 @@ export function createSingleUseLocalContext(issues: CartLintIssue[]): SingleUseL
 		issues,
 		bindingStacksByName: new Map<string, SingleUseLocalBinding[]>(),
 		scopeStack: [],
+		functionDepth: 0,
 	};
-}
-
-export function enterSingleUseLocalScope(context: SingleUseLocalContext): void {
-	enterBindingScope(context);
 }
 
 export function declareSingleUseLocalBinding(
@@ -70,8 +67,10 @@ export function declareSingleUseLocalBinding(
 	declareBinding(context, declaration, {
 		declaration,
 		reportKind: isTopLevelScope && !declaration.name.startsWith('_') ? reportKind : null,
+		functionDepth: context.functionDepth,
 		readCount: 0,
 		callReadCount: 0,
+		capturedRead: false,
 	});
 }
 
@@ -82,6 +81,9 @@ export function markSingleUseLocalRead(context: SingleUseLocalContext, identifie
 	}
 	const binding = stack[stack.length - 1];
 	binding.readCount += 1;
+	if (binding.functionDepth < context.functionDepth) {
+		binding.capturedRead = true;
+	}
 	if (isCallRead) {
 		binding.callReadCount += 1;
 	}
@@ -106,36 +108,38 @@ export function lintSingleUseLocalInExpression(expression: Expression, context: 
 			lintSingleUseLocalInExpression(expression.left, context);
 			lintSingleUseLocalInExpression(expression.right, context);
 			return;
-			case SyntaxKind.UnaryExpression:
-				lintSingleUseLocalInExpression(expression.operand, context);
-				return;
-			case SyntaxKind.CallExpression:
-				if (expression.callee.kind === SyntaxKind.IdentifierExpression) {
-					markSingleUseLocalRead(context, expression.callee, true);
-				} else {
-					lintSingleUseLocalInExpression(expression.callee, context);
-				}
-				for (const argument of expression.arguments) {
-					lintSingleUseLocalInExpression(argument, context);
-				}
-				return;
-			case SyntaxKind.TableConstructorExpression:
+		case SyntaxKind.UnaryExpression:
+			lintSingleUseLocalInExpression(expression.operand, context);
+			return;
+		case SyntaxKind.CallExpression:
+			if (expression.callee.kind === SyntaxKind.IdentifierExpression) {
+				markSingleUseLocalRead(context, expression.callee, true);
+			} else {
+				lintSingleUseLocalInExpression(expression.callee, context);
+			}
+			for (const argument of expression.arguments) {
+				lintSingleUseLocalInExpression(argument, context);
+			}
+			return;
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
 				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintSingleUseLocalInExpression(field.key, context);
 				}
 				lintSingleUseLocalInExpression(field.value, context);
 			}
-				return;
-			case SyntaxKind.FunctionExpression: {
-				enterSingleUseLocalScope(context);
-				for (const parameter of expression.parameters) {
-					declareSingleUseLocalBinding(context, parameter, null);
-				}
-				lintSingleUseLocalInStatements(expression.body.body, context);
-				leaveSingleUseLocalScope(context);
-				return;
+			return;
+		case SyntaxKind.FunctionExpression: {
+			context.functionDepth += 1;
+			enterBindingScope(context);
+			for (const parameter of expression.parameters) {
+				declareSingleUseLocalBinding(context, parameter, null);
 			}
+			lintSingleUseLocalInStatements(expression.body.body, context);
+			leaveSingleUseLocalScope(context);
+			context.functionDepth -= 1;
+			return;
+		}
 		default:
 			return;
 	}
@@ -165,16 +169,16 @@ export function lintSingleUseLocalInAssignmentTarget(
 export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Statement>, context: SingleUseLocalContext): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-				case SyntaxKind.LocalAssignmentStatement:
-					for (const value of statement.values) {
-						lintSingleUseLocalInExpression(value, context);
-					}
-					for (let index = 0; index < statement.names.length; index += 1) {
-						const value = index < statement.values.length ? statement.values[index] : undefined;
-						const reportKind = resolveSingleUseLocalReportKindForValue(value);
-						declareSingleUseLocalBinding(context, statement.names[index], reportKind);
-					}
-					break;
+			case SyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					lintSingleUseLocalInExpression(value, context);
+				}
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const value = index < statement.values.length ? statement.values[index] : undefined;
+					const reportKind = resolveSingleUseLocalReportKindForValue(value);
+					declareSingleUseLocalBinding(context, statement.names[index], reportKind);
+				}
+				break;
 			case SyntaxKind.AssignmentStatement:
 				for (const right of statement.right) {
 					lintSingleUseLocalInExpression(right, context);
@@ -187,23 +191,27 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 				const localFunction = statement as LocalFunctionStatement;
 				const reportKind = isTrivialSingleUseLocalHelperFunctionExpression(localFunction.functionExpression) ? 'small_helper' : null;
 				declareSingleUseLocalBinding(context, localFunction.name, reportKind);
-				enterSingleUseLocalScope(context);
+				context.functionDepth += 1;
+				enterBindingScope(context);
 				for (const parameter of localFunction.functionExpression.parameters) {
 					declareSingleUseLocalBinding(context, parameter, null);
-					}
-					lintSingleUseLocalInStatements(localFunction.functionExpression.body.body, context);
-					leaveSingleUseLocalScope(context);
-					break;
 				}
-				case SyntaxKind.FunctionDeclarationStatement: {
-					const declaration = statement as FunctionDeclarationStatement;
-					enterSingleUseLocalScope(context);
-					for (const parameter of declaration.functionExpression.parameters) {
-						declareSingleUseLocalBinding(context, parameter, null);
-					}
-					lintSingleUseLocalInStatements(declaration.functionExpression.body.body, context);
-					leaveSingleUseLocalScope(context);
-					break;
+				lintSingleUseLocalInStatements(localFunction.functionExpression.body.body, context);
+				leaveSingleUseLocalScope(context);
+				context.functionDepth -= 1;
+				break;
+			}
+			case SyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as FunctionDeclarationStatement;
+				context.functionDepth += 1;
+				enterBindingScope(context);
+				for (const parameter of declaration.functionExpression.parameters) {
+					declareSingleUseLocalBinding(context, parameter, null);
+				}
+				lintSingleUseLocalInStatements(declaration.functionExpression.body.body, context);
+				leaveSingleUseLocalScope(context);
+				context.functionDepth -= 1;
+				break;
 			}
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -215,45 +223,45 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 					if (clause.condition) {
 						lintSingleUseLocalInExpression(clause.condition, context);
 					}
-					enterSingleUseLocalScope(context);
+					enterBindingScope(context);
 					lintSingleUseLocalInStatements(clause.block.body, context);
 					leaveSingleUseLocalScope(context);
 				}
 				break;
 			case SyntaxKind.WhileStatement:
 				lintSingleUseLocalInExpression(statement.condition, context);
-				enterSingleUseLocalScope(context);
+				enterBindingScope(context);
 				lintSingleUseLocalInStatements(statement.block.body, context);
 				leaveSingleUseLocalScope(context);
 				break;
 			case SyntaxKind.RepeatStatement:
-				enterSingleUseLocalScope(context);
+				enterBindingScope(context);
 				lintSingleUseLocalInStatements(statement.block.body, context);
 				leaveSingleUseLocalScope(context);
 				lintSingleUseLocalInExpression(statement.condition, context);
 				break;
-				case SyntaxKind.ForNumericStatement:
-					lintSingleUseLocalInExpression(statement.start, context);
-					lintSingleUseLocalInExpression(statement.limit, context);
-					lintSingleUseLocalInExpression(statement.step, context);
-					enterSingleUseLocalScope(context);
-					declareSingleUseLocalBinding(context, statement.variable, null);
-					lintSingleUseLocalInStatements(statement.block.body, context);
-					leaveSingleUseLocalScope(context);
-					break;
-				case SyntaxKind.ForGenericStatement:
-					for (const iterator of statement.iterators) {
+			case SyntaxKind.ForNumericStatement:
+				lintSingleUseLocalInExpression(statement.start, context);
+				lintSingleUseLocalInExpression(statement.limit, context);
+				lintSingleUseLocalInExpression(statement.step, context);
+				enterBindingScope(context);
+				declareSingleUseLocalBinding(context, statement.variable, null);
+				lintSingleUseLocalInStatements(statement.block.body, context);
+				leaveSingleUseLocalScope(context);
+				break;
+			case SyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
 					lintSingleUseLocalInExpression(iterator, context);
 				}
-					enterSingleUseLocalScope(context);
-					for (const variable of statement.variables) {
-						declareSingleUseLocalBinding(context, variable, null);
-					}
-					lintSingleUseLocalInStatements(statement.block.body, context);
-					leaveSingleUseLocalScope(context);
-					break;
+				enterBindingScope(context);
+				for (const variable of statement.variables) {
+					declareSingleUseLocalBinding(context, variable, null);
+				}
+				lintSingleUseLocalInStatements(statement.block.body, context);
+				leaveSingleUseLocalScope(context);
+				break;
 			case SyntaxKind.DoStatement:
-				enterSingleUseLocalScope(context);
+				enterBindingScope(context);
 				lintSingleUseLocalInStatements(statement.block.body, context);
 				leaveSingleUseLocalScope(context);
 				break;
@@ -272,7 +280,7 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 
 export function lintSingleUseLocalPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createSingleUseLocalContext(issues);
-	enterSingleUseLocalScope(context);
+	enterBindingScope(context);
 	try {
 		lintSingleUseLocalInStatements(statements, context);
 	} finally {
