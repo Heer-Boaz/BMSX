@@ -1,8 +1,7 @@
 import { CHARACTER_CODES } from '../../../../../common/character_map';
-import { EDITOR_TOGGLE_KEY, ESCAPE_KEY } from '../../../../../common/constants';
+import { ESCAPE_KEY } from '../../../../../common/constants';
 
 export const captureKeys: string[] = [...new Set([
-	EDITOR_TOGGLE_KEY,
 	ESCAPE_KEY,
 	'ArrowUp',
 	'ArrowDown',

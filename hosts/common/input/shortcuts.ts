@@ -1,6 +1,6 @@
 import type { Input } from './manager';
 import { KeyModifier, type PlayerInput } from './player';
-import type { ButtonState } from './models';
+import type { BGamepadButton, ButtonState } from './models';
 
 export type ShortcutDisposer = () => void;
 
@@ -11,9 +11,15 @@ type KeyboardShortcutEntry = {
 	latchKey: string;
 };
 
+type ControlChordEntry = {
+	buttons: readonly BGamepadButton[];
+	handler: () => void;
+	active: boolean;
+};
+
 export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
-	private readonly gamepadChords = new Map<number, Array<{ buttons: string[]; handler: () => void; latchKeys: string[] }>>();
+	private readonly controlChords = new Map<number, ControlChordEntry[]>();
 	private readonly latch = new Map<string, number | null>();
 
 	public constructor(private readonly input: Input) {
@@ -43,37 +49,29 @@ export class GlobalShortcutRegistry {
 		};
 	}
 
-	public registerGamepadChord(playerIndex: number, buttons: readonly string[], handler: () => void): ShortcutDisposer {
-		if (!buttons || buttons.length === 0) {
-			throw new Error('[GlobalShortcutRegistry] Gamepad chord must include at least one button.');
-		}
-		const normalized = buttons.map(button => {
-			if (!button) {
-				throw new Error('[GlobalShortcutRegistry] Invalid gamepad button specified.');
-			}
-			return button;
-		});
-		let entries = this.gamepadChords.get(playerIndex);
+	public registerControlChord(
+		playerIndex: number,
+		buttons: readonly BGamepadButton[],
+		handler: () => void,
+	): ShortcutDisposer {
+		let entries = this.controlChords.get(playerIndex);
 		if (!entries) {
 			entries = [];
-			this.gamepadChords.set(playerIndex, entries);
+			this.controlChords.set(playerIndex, entries);
 		}
-		const latchKeys = normalized.map((button, index) => `gamepad:${playerIndex}:${button}:${index}`);
-		entries.push({ buttons: normalized, handler, latchKeys });
+		const entry: ControlChordEntry = { buttons, handler, active: false };
+		entries.push(entry);
 		return () => {
-			const target = this.gamepadChords.get(playerIndex);
+			const target = this.controlChords.get(playerIndex);
 			if (!target) {
 				return;
 			}
-			const idx = target.findIndex(candidate => candidate.handler === handler && candidate.buttons === normalized);
+			const idx = target.indexOf(entry);
 			if (idx >= 0) {
-				const removed = target.splice(idx, 1)[0];
-				for (let i = 0; i < removed.latchKeys.length; i++) {
-					this.latch.delete(removed.latchKeys[i]);
-				}
+				target.splice(idx, 1);
 			}
 			if (target.length === 0) {
-				this.gamepadChords.delete(playerIndex);
+				this.controlChords.delete(playerIndex);
 			}
 		};
 	}
@@ -101,38 +99,35 @@ export class GlobalShortcutRegistry {
 				}
 			}
 		}
-		const chords = this.gamepadChords.get(player.playerIndex);
-		const gamepad = player.inputHandlers['gamepad'];
+		const chords = this.controlChords.get(player.playerIndex);
 		if (chords) {
 			for (let i = 0; i < chords.length; i++) {
-				this.pollGamepadChord(gamepad, chords[i]);
+				this.pollControlChord(player, chords[i]);
 			}
 		}
 	}
 
-	private pollGamepadChord(gamepad: PlayerInput['inputHandlers']['gamepad'], entry: { buttons: string[]; handler: () => void; latchKeys: string[] }): void {
-		if (!gamepad) {
-			for (let i = 0; i < entry.latchKeys.length; i++) {
-				this.release(entry.latchKeys[i]);
+	private pollControlChord(player: PlayerInput, entry: ControlChordEntry): void {
+		const keyboard = player.inputHandlers['keyboard'];
+		const gamepad = player.inputHandlers['gamepad'];
+		let keyboardPressed = keyboard !== null;
+		let gamepadPressed = gamepad !== null;
+		for (let i = 0; i < entry.buttons.length; i++) {
+			const button = entry.buttons[i];
+			if (keyboardPressed && !keyboard.getButtonState(button).pressed) {
+				keyboardPressed = false;
 			}
+			if (gamepadPressed && !gamepad.getButtonState(button).pressed) {
+				gamepadPressed = false;
+			}
+		}
+		const active = keyboardPressed || gamepadPressed;
+		if (active === entry.active) {
 			return;
 		}
-		let allPressed = true;
-		for (let i = 0; i < entry.buttons.length; i++) {
-			const state = gamepad.getButtonState(entry.buttons[i]);
-			if (!state.pressed) {
-				allPressed = false;
-			}
-			this.release(entry.latchKeys[i], state);
-		}
-		if (!allPressed) {
-			return;
-		}
-		for (let i = 0; i < entry.buttons.length; i++) {
-			if (this.shouldAccept(entry.latchKeys[i], gamepad.getButtonState(entry.buttons[i]))) {
-				entry.handler();
-				return;
-			}
+		entry.active = active;
+		if (active) {
+			entry.handler();
 		}
 	}
 

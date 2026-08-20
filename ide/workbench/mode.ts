@@ -10,7 +10,7 @@ import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
-import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY } from '../common/constants';
+import { EDITOR_TOGGLE_CONTROLS } from '../common/constants';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { api as overlay_api } from '../runtime/overlay_api';
 import {
@@ -88,7 +88,6 @@ export async function initializeIdeFeatures(
 	);
 	seedDefaultLuaBuiltins();
 	updateGamePipelineExts(state.editor, state.overlayRenderer, audioOutput);
-	input.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
 		return state;
@@ -113,19 +112,9 @@ export function registerRuntimeShortcuts(
 	disposeShortcutHandlers(state);
 	const registry = input.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
-	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
-		input.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
-		toggleEditor(
-			state.editor,
-			state.sources,
-			state.overlayRenderer,
-			runtime,
-			audioOutput,
-		);
-	}));
-	disposers.push(registry.registerGamepadChord(
+	disposers.push(registry.registerControlChord(
 		1,
-		EDITOR_TOGGLE_GAMEPAD_BUTTONS,
+		EDITOR_TOGGLE_CONTROLS,
 		() => toggleEditor(
 			state.editor,
 			state.sources,
