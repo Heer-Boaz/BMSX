@@ -123,6 +123,7 @@ local events<const> = require('cartlib/event_emitter')
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/fsm_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 
@@ -320,15 +321,17 @@ assert(machine.definition == published_definition)
 local future_state_machines<const> = make_fsm({ parent = target })
 assert(future_state_machines._machines_by_id.hot_machine.definition == published_definition)
 
+local ticks_key<const> = blackboard.key('ticks', 0)
+local retained_key<const> = blackboard.key('retained', 0)
 local old_action<const> = function(_, execution)
-	local blackboard<const> = execution.blackboard
-	blackboard:set('ticks', blackboard:get('ticks') + 1)
+	local active_blackboard<const> = execution.blackboard
+	active_blackboard:set(ticks_key, active_blackboard:get(ticks_key) + 1)
 	return 'SUCCESS'
 end
 behaviour_tree_library.register('enemy_hot', {
 	blackboard = {
-		{ key = 'ticks', initial_value = 0 },
-		{ key = 'retained', initial_value = 0 },
+		ticks_key,
+		retained_key,
 	},
 	root = {
 		type = 'task',
@@ -341,18 +344,18 @@ behaviour_tree_instance.id = 'hot_target_bt'
 registry:register(behaviour_tree_instance)
 registry:index(behaviour_tree_instance, behaviour_tree_component)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
-local blackboard<const> = behaviour_tree_instance.blackboard
-blackboard:set('retained', 91)
+local blackboard_instance<const> = behaviour_tree_instance.blackboard
+blackboard_instance:set(retained_key, 91)
 
 local new_action<const> = function(_, execution)
 	local active_blackboard<const> = execution.blackboard
-	active_blackboard:set('ticks', active_blackboard:get('ticks') + 10)
+	active_blackboard:set(ticks_key, active_blackboard:get(ticks_key) + 10)
 	return 'SUCCESS'
 end
 behaviour_tree_library.register('enemy_hot', {
 	blackboard = {
-		{ key = 'retained', initial_value = 0 },
-		{ key = 'ticks', initial_value = 0 },
+		retained_key,
+		ticks_key,
 	},
 	root = {
 		type = 'task',
@@ -360,12 +363,12 @@ behaviour_tree_library.register('enemy_hot', {
 	},
 })
 assert(behaviour_tree_instance.evaluate == new_action)
-assert(behaviour_tree_instance.blackboard == blackboard and blackboard:get('retained') == 91)
+assert(behaviour_tree_instance.blackboard == blackboard_instance and blackboard_instance:get(retained_key) == 91)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
 local future_tree<const> = make_old_tree({ parent = target })
 assert(future_tree.evaluate == new_action)
 
-return target.value, active_data.retained, blackboard:get('ticks'), blackboard:get('retained'),
+return target.value, active_data.retained, blackboard_instance:get(ticks_key), blackboard_instance:get(retained_key),
 	machine.current_id == 'active', target.tags.new_active, target.tags.old_active
 `;
 
