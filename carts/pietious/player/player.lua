@@ -261,37 +261,115 @@ local set_tag_flag<const> = function(owner, tag, enabled)
 	owner:remove_tag(tag)
 end
 
-local build_enter_leave_transition_frames<const> = function(
-	first_step,
-	last_step,
-	direction,
-	animation_step_offset
+-- The original MSX consumes four transparent hardware sprites per scanline
+-- before publishing the player sprites. The four-sprite limit therefore masks
+-- the player at the passage boundary as the 8.8 position advances. Pietious
+-- expresses the same retained result as a source region; no cart-local custom
+-- visual or per-pixel render loop is needed.
+local append_transition_frame<const> = function(
+	sequence,
+	visible_rows,
+	hold,
+	keep_bottom
 )
-	local frames<const> = {}
-	for transition_step = first_step, last_step do
-		local cut
-		if transition_step > world_entrance_enter_world_total_steps then
-			cut = 0
-		else
-			local phase_step
-			if transition_step <= world_entrance_enter_world_midpoint_step then
-				phase_step = transition_step
-			else
-				phase_step = world_entrance_enter_world_total_steps - transition_step
-			end
-			cut = direction * phase_step
-		end
-		local animation_phase<const> = (
-			transition_step + animation_step_offset
-		) % world_entrance_enter_leave_cycle_steps
-		frames[#frames + 1] = {
-			transition_step = transition_step,
-			enter_leave_anim_frame = animation_phase < 4 and 0 or 1,
-			to_enter_cut = cut,
-		}
-	end
-	return frames
+	local hidden_rows<const> = player_height - visible_rows
+	sequence[#sequence + 1] = {
+		value = {
+			sprite_component = {
+				region_y = keep_bottom and hidden_rows or 0,
+				region_height = visible_rows,
+				draw_offset_y = keep_bottom and 0 or hidden_rows,
+				visible = visible_rows > 0,
+			},
+		},
+		hold = hold,
+	}
 end
+
+local build_world_enter_frames<const> = function()
+	local sequence<const> = {}
+	local first_frame = 0
+	for visible_rows = player_height - 1, 1, -1 do
+		append_transition_frame(sequence, visible_rows, 2, true)
+		first_frame = first_frame + 2
+	end
+	append_transition_frame(
+		sequence,
+		0,
+		player_world_transition_frames - first_frame,
+		true
+	)
+	return timeline.build_frame_sequence(sequence)
+end
+
+local build_world_emerge_frames<const> = function()
+	local sequence<const> = {}
+	local hidden_frames<const> = player_world_transition_frames - player_height * 2 + 1
+	append_transition_frame(sequence, 0, hidden_frames, true)
+	for visible_rows = 1, player_height - 1 do
+		append_transition_frame(sequence, visible_rows, 2, true)
+	end
+	append_transition_frame(sequence, player_height, 1, true)
+	return timeline.build_frame_sequence(sequence)
+end
+
+local build_shrine_enter_frames<const> = function()
+	local sequence<const> = {}
+	append_transition_frame(sequence, player_height, 1, false)
+	for visible_rows = player_height - 1, 1, -1 do
+		append_transition_frame(sequence, visible_rows, 2, false)
+	end
+	append_transition_frame(sequence, 0, 1, false)
+	return timeline.build_frame_sequence(sequence)
+end
+
+local build_shrine_exit_frames<const> = function()
+	local sequence<const> = {}
+	for visible_rows = 1, player_height do
+		append_transition_frame(sequence, visible_rows, 2, false)
+	end
+	return timeline.build_frame_sequence(sequence)
+end
+
+local player_world_enter_frames<const> = build_world_enter_frames()
+local player_world_emerge_frames<const> = build_world_emerge_frames()
+local player_shrine_enter_frames<const> = build_shrine_enter_frames()
+local player_shrine_exit_frames<const> = build_shrine_exit_frames()
+
+local build_transition_animation_keys<const> = function(frame_count, first_imgid, second_imgid)
+	local keys<const> = {}
+	local imgid = first_imgid
+	for frame = 0, frame_count - 1, player_transition_animation_hold_frames do
+		keys[#keys + 1] = { frame = frame, value = imgid }
+		if imgid == first_imgid then
+			imgid = second_imgid
+		else
+			imgid = first_imgid
+		end
+	end
+	return keys
+end
+
+local world_enter_animation_keys<const> = build_transition_animation_keys(
+	player_world_transition_frames,
+	'pietolon_stairs_up_1',
+	'pietolon_stairs_up_2'
+)
+local world_emerge_animation_keys<const> = build_transition_animation_keys(
+	player_world_transition_frames,
+	'pietolon_stairs_down_1',
+	'pietolon_stairs_down_2'
+)
+local shrine_enter_animation_keys<const> = build_transition_animation_keys(
+	player_shrine_transition_frames,
+	'pietolon_stairs_up_1',
+	'pietolon_stairs_up_2'
+)
+local shrine_exit_animation_keys<const> = build_transition_animation_keys(
+	player_shrine_transition_frames,
+	'pietolon_stairs_down_1',
+	'pietolon_stairs_down_2'
+)
 
 function player:clear_input_state()
 	self.left_held = false
@@ -453,48 +531,60 @@ function player:define_runtime_timelines()
 		apply = apply_victory_dance_frame,
 	})
 	self.timelines:define(player_world_enter_timeline_id, {
-		frames = build_enter_leave_transition_frames(
-			1,
-			world_entrance_enter_world_midpoint_step,
-			1,
-			-1
-		),
+		frames = player_world_enter_frames,
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
 		apply = true,
+		tracks = {
+			{
+				kind = 'value',
+				interpolation = 'step',
+				apply = sprite_object.set_imgid,
+				keys = world_enter_animation_keys,
+			},
+		},
 	})
 	self.timelines:define(player_world_emerge_timeline_id, {
-		frames = build_enter_leave_transition_frames(
-			world_entrance_enter_world_midpoint_step + 1,
-			world_entrance_enter_world_total_steps + 1,
-			-1,
-			-1
-		),
+		frames = player_world_emerge_frames,
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
 		apply = true,
+		tracks = {
+			{
+				kind = 'value',
+				interpolation = 'step',
+				apply = sprite_object.set_imgid,
+				keys = world_emerge_animation_keys,
+			},
+		},
 	})
 	self.timelines:define(player_shrine_enter_timeline_id, {
-		frames = build_enter_leave_transition_frames(
-			1,
-			world_entrance_enter_world_total_steps + 1,
-			-1,
-			-1
-		),
+		frames = player_shrine_enter_frames,
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
 		apply = true,
+		tracks = {
+			{
+				kind = 'value',
+				interpolation = 'step',
+				apply = sprite_object.set_imgid,
+				keys = shrine_enter_animation_keys,
+			},
+		},
 	})
 	self.timelines:define(player_shrine_exit_timeline_id, {
-		frames = build_enter_leave_transition_frames(
-			world_entrance_enter_world_midpoint_step,
-			world_entrance_enter_world_total_steps,
-			-1,
-			0
-		),
+		frames = player_shrine_exit_frames,
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
 		apply = true,
+		tracks = {
+			{
+				kind = 'value',
+				interpolation = 'step',
+				apply = sprite_object.set_imgid,
+				keys = shrine_exit_animation_keys,
+			},
+		},
 	})
 end
 
@@ -626,24 +716,8 @@ function player:apply_presentation_state()
 
 	if self:has_tag(state_tags.group.world_transition) then
 		self:apply_color(0xffffffff)
-		local imgid
-		if self:has_tag(state_tags.group.world_transition_down) then
-			if self.enter_leave_anim_frame == 0 then
-				imgid = 'pietolon_stairs_down_1'
-			else
-				imgid = 'pietolon_stairs_down_2'
-			end
-		else
-			if self.enter_leave_anim_frame == 0 then
-				imgid = 'pietolon_stairs_up_1'
-			else
-				imgid = 'pietolon_stairs_up_2'
-			end
-		end
 		self.sword_sprite:set_enabled(false)
-		self:set_imgid(imgid)
 		self.sprite_component.flip_h = self.facing < 0
-		self.sprite_component.offset_y = self.to_enter_cut
 		self.visible = true
 		return
 	end
@@ -999,23 +1073,11 @@ function player:find_near_open_world_entrance()
 end
 
 function player:reset_enter_leave_animation()
-	self.transition_step = 0
-	self.enter_leave_anim_frame = 0
-	self.to_enter_cut = 0
-	self.sprite_component.offset_y = 0
-end
-
-function player:update_enter_leave_anim_frame()
-	if self.transition_step <= 0 then
-		self.enter_leave_anim_frame = 0
-		return
-	end
-	local phase<const> = (self.transition_step - 1) % 8
-	if phase < 4 then
-		self.enter_leave_anim_frame = 0
-	else
-		self.enter_leave_anim_frame = 1
-	end
+	local sprite<const> = self.sprite_component
+	sprite:clear_region()
+	sprite.offset_y = 0
+	sprite.draw_offset_y = 0
+	sprite.visible = true
 end
 
 function player:begin_entering_world(world_entrance)
@@ -1026,6 +1088,11 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
+	self:set_imgid('pietolon_stairs_up_1')
+	local sprite<const> = self.sprite_component
+	sprite.flip_h = self.facing < 0
+	sprite:set_region(0, 0, player_width, player_height)
+	self.sword_sprite:set_enabled(false)
 	self.events:emit('enter_world_start')
 end
 
@@ -1037,15 +1104,24 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
+	self:set_imgid('pietolon_stairs_up_1')
+	local sprite<const> = self.sprite_component
+	sprite.flip_h = self.facing < 0
+	sprite:set_region(0, 0, player_width, player_height)
+	self.sword_sprite:set_enabled(false)
 	self.events:emit('enter_shrine_start')
 end
 
-function player:begin_world_emerge_from_door_midpoint()
+function player:begin_world_emerge()
 	self:cancel_sword()
 	self:clear_input_state()
-	self.transition_step = world_entrance_enter_world_midpoint_step
-	self:update_enter_leave_anim_frame()
-	self.to_enter_cut = world_entrance_enter_world_midpoint_step
+	self:reset_enter_leave_animation()
+	self:set_imgid('pietolon_stairs_down_1')
+	local sprite<const> = self.sprite_component
+	sprite.flip_h = self.facing < 0
+	sprite:set_region(0, player_height, player_width, 0)
+	sprite.visible = false
+	self.sword_sprite:set_enabled(false)
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('world_emerge_start')
@@ -1099,6 +1175,13 @@ end
 
 function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
+	self:set_imgid('pietolon_stairs_down_1')
+	local sprite<const> = self.sprite_component
+	sprite.flip_h = self.facing < 0
+	sprite:set_region(0, 0, player_width, 0)
+	sprite.draw_offset_y = player_height
+	sprite.visible = false
+	self.sword_sprite:set_enabled(false)
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('leave_shrine_overlay')
 end
@@ -2935,7 +3018,6 @@ local define_player_fsm<const> = function()
 						self.director:queue_world_banner_transition(
 							castle_map.world_transitions[self.enter_leave_world_target].world_number
 						)
-						self.to_enter_cut = 0
 						return '/waiting_world_banner'
 					end,
 				},
@@ -3001,7 +3083,7 @@ local define_player_fsm<const> = function()
 						snap_to_start = false,
 					},
 					on_finished = function(self)
-						self.to_enter_cut = 0
+						self:reset_enter_leave_animation()
 						self.events:emit('world_emerge_done')
 						return '/quiet'
 					end,
@@ -3057,7 +3139,7 @@ local define_player_fsm<const> = function()
 					},
 					on_finished = function(self)
 						local castle<const> = self.castle
-						self.to_enter_cut = 0
+						self:reset_enter_leave_animation()
 						self.director.events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
 						return '/quiet'
 					end,
@@ -3290,7 +3372,7 @@ local define_player_fsm<const> = function()
 			['player.world_emerge'] = {
 				emitter = 'd',
 				go = function(self)
-					self:begin_world_emerge_from_door_midpoint()
+					self:begin_world_emerge()
 				end,
 			},
 			['player.shrine_overlay_exit'] = {
@@ -3400,9 +3482,6 @@ local register_player_definition<const> = function()
 			hit_direction = 0,
 			hit_recovery_timer = 0,
 			death_timer = 0,
-			transition_step = 0,
-			to_enter_cut = 0,
-			enter_leave_anim_frame = 0,
 			enter_leave_world_target = nil,
 			inventory_items = nil,
 			secondary_weapon = nil,

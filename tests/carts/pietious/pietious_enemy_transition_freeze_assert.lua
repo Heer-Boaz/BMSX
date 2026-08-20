@@ -40,11 +40,22 @@ function __bmsx_host_test.update()
 				'gameplay clock advanced during shrine entry')
 			assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
 				'enemy moved during shrine entry')
+			local imgid<const> = player.sprite_component.imgid
+			if imgid == 'pietolon_stairs_up_1' then
+				test.saw_shrine_pose_1 = true
+			elseif imgid == 'pietolon_stairs_up_2' then
+				test.saw_shrine_pose_2 = true
+			end
 			return false
 		end
 		assert(world.active_space_id == 'shrine', 'shrine overlay did not become active')
 		assert(not world.gameplay_clock_running,
 			'gameplay clock resumed while the frame-clock shrine controller was active')
+		assert(test.saw_shrine_pose_1 and test.saw_shrine_pose_2,
+			'frame-clock shrine animation did not advance both player poses')
+		local sprite<const> = player.sprite_component
+		assert(sprite.region_height == 0 and not sprite.visible,
+			'player did not disappear through the shrine scanline mask')
 		test.phase = 'shrine_exit'
 		return host.press('ArrowDown', 2)
 	end
@@ -58,6 +69,9 @@ function __bmsx_host_test.update()
 				'enemy moved during shrine exit')
 			return false
 		end
+		local sprite<const> = player.sprite_component
+		assert(sprite.region_width == nil and sprite.visible,
+			'player did not finish the shrine emergence mask')
 		director.events:emit('world_transition')
 		assert(registry:get(test.enemy_id) == nil, 'world transition did not retire the previous-room enemy')
 		castle:enter_world('world_1')

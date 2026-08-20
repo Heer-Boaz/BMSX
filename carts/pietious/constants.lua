@@ -373,9 +373,12 @@ world_entrance_trigger_x_offset = room_tile_size
 world_entrance_trigger_half_width = 4
 world_entrance_trigger_y_offset = room_tile_size
 world_entrance_open_step_frames = 4
-world_entrance_enter_world_midpoint_step = 32
-world_entrance_enter_world_total_steps = 64
-world_entrance_enter_leave_cycle_steps = 8
+-- MoG moves the player by 0x40 of its 8.8 position word per VBlank. A world
+-- passage lasts 0x80 VBlanks, a shrine passage 0x40, and the ladder pose bit
+-- changes every eight VBlanks. Pietious advances once per two VBlanks.
+player_world_transition_frames = 64
+player_shrine_transition_frames = 32
+player_transition_animation_hold_frames = 4
 -- MoG trap type 4 initializes its push counter to 0x1e VBlanks and advances
 -- each of the four rotating-door poses after six VBlanks. Pietious admits one
 -- gameplay update per two VBlanks, so the authored gameplay counts are halved.

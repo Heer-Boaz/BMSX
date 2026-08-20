@@ -75,6 +75,10 @@ function __bmsx_host_test.update(_frame, _current_music)
 	local castle<const> = registry:get('c')
 	local room<const> = registry:get('room')
 	local player<const> = registry:get('pietolon')
+	local sprite<const> = player.sprite_component
+	if sprite.region_width ~= nil and sprite.region_height == 0 then
+		__bmsx_host_test.saw_hidden_player = true
+	end
 	local feet_y<const> = player.y + player.height
 	local left_x<const> = player.x + 1
 	local right_x<const> = player.x + player.width - 2
@@ -91,6 +95,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 		and player.y == world_transition.world_spawn_y
 		and player.facing == world_transition.world_spawn_facing
 		and player_on_floor
+		and __bmsx_host_test.saw_hidden_player
 
 	if final_outcome then
 		__bmsx_host_test.stable_frames = __bmsx_host_test.stable_frames + 1
@@ -100,7 +105,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 	__bmsx_host_test.stable_frames = 0
 	__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
 	local transition_timeout_frames<const> = (
-		world_entrance_enter_world_total_steps
+		player_world_transition_frames
 		+ flow_banner_prewait_frames
 		+ flow_world_banner_frames
 		+ flow_room_transition_frames
@@ -114,6 +119,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 			.. ' map=' .. tostring(room.map_id) .. ',' .. tostring(room.map_x) .. ',' .. tostring(room.map_y)
 			.. ' player=' .. tostring(player.x) .. ',' .. tostring(player.y) .. ',' .. tostring(player.facing)
 			.. ' expectedPlayer=' .. tostring(world_transition.world_spawn_x) .. ',' .. tostring(world_transition.world_spawn_y) .. ',' .. tostring(world_transition.world_spawn_facing)
-			.. ' onFloor=' .. tostring(player_on_floor))
+			.. ' onFloor=' .. tostring(player_on_floor)
+			.. ' hidden=' .. tostring(__bmsx_host_test.saw_hidden_player))
 	return false
 end

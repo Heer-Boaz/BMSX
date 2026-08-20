@@ -60,7 +60,11 @@ function sprite_component:_set_resolved_imgid(imgid, source)
 		self._source = source
 		self.source_width = source.width
 		self.source_height = source.height
-		self:set_draw_function(sprite_component.draw_visual)
+		if self.region_width ~= nil then
+			self:set_draw_function(sprite_component.draw_region_visual)
+		else
+			self:set_draw_function(sprite_component.draw_visual)
+		end
 	else
 		self._source = nil
 		self.source_width = 0
@@ -79,6 +83,31 @@ function sprite_component:set_imgid(imgid)
 		source = image.resolve(imgid)
 	end
 	return self:_set_resolved_imgid(imgid, source)
+end
+
+-- A sprite region retains raw source coordinates on the visual component and
+-- selects its packet datapath when the region is admitted. Ordinary sprites
+-- keep the direct blit path and pay no per-draw region branch.
+function sprite_component:set_region(x, y, width, height)
+	self.region_x = x
+	self.region_y = y
+	self.region_width = width
+	self.region_height = height
+	if self._source ~= nil then
+		self:set_draw_function(sprite_component.draw_region_visual)
+	end
+	return self
+end
+
+function sprite_component:clear_region()
+	self.region_x = nil
+	self.region_y = nil
+	self.region_width = nil
+	self.region_height = nil
+	if self._source ~= nil then
+		self:set_draw_function(sprite_component.draw_visual)
+	end
+	return self
 end
 
 function sprite_component:on_detach()
@@ -116,6 +145,58 @@ function sprite_component:draw_visual(draw)
 		self.source_width * scale_x, 0.0,
 		0.0, self.source_height * scale_y,
 		flip_flags,
+		color,
+		gp0.draw_mode_blend_half)
+end
+
+function sprite_component:draw_region_visual(draw)
+	local source<const> = self._source
+	local obj<const> = self.parent
+	local x<const> = obj.x + self.offset_x + self.draw_offset_x
+	local y<const> = obj.y + self.offset_y + self.draw_offset_y
+	local source_x<const> = self.region_x
+	local source_y<const> = self.region_y
+	local width<const> = self.region_width
+	local height<const> = self.region_height
+	local scale_x<const> = self.scale_x * self.draw_scale_x
+	local scale_y<const> = self.scale_y * self.draw_scale_y
+	local color<const> = self.color
+	local flip_flags<const> = (self.flip_h and 1 or 0) | (self.flip_v and 2 or 0)
+	if scale_x == 1 and scale_y == 1 then
+		source:draw_source_rect(
+			draw,
+			source_x, source_y,
+			width, height,
+			x, y,
+			color,
+			flip_flags,
+			gp0.draw_mode_blend_half)
+		return
+	end
+	local source_x0 = source_x
+	local source_x1 = source_x + width - 1
+	local source_y0 = source_y
+	local source_y1 = source_y + height - 1
+	if self.flip_h then
+		source_x0 = source_x1
+		source_x1 = source_x
+	end
+	if self.flip_v then
+		source_y0 = source_y1
+		source_y1 = source_y
+	end
+	local right<const> = x + width * scale_x
+	local bottom<const> = y + height * scale_y
+	source:draw_quad(
+		draw,
+		source_x0, source_y0,
+		source_x1, source_y0,
+		source_x0, source_y1,
+		source_x1, source_y1,
+		x, y,
+		right, y,
+		x, bottom,
+		right, bottom,
 		color,
 		gp0.draw_mode_blend_half)
 end
