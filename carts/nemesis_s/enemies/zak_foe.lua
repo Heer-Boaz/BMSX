@@ -40,7 +40,7 @@ function zak_foe:update_stationary()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
-	self.actioneffects:try_trigger(fire_effect_id)
+	self.actioneffects:trigger(fire_effect_id)
 end
 
 function zak_foe:enter_jumping()
@@ -52,7 +52,7 @@ function zak_foe:update_jumping()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
-	self.actioneffects:try_trigger(fire_effect_id)
+	self.actioneffects:trigger(fire_effect_id)
 	self.x = self.x + zak_foe_horizontal_speed * self.direction
 	self.y = self.y + self.vertical_speed
 	self.vertical_speed = self.vertical_speed + zak_foe_vertical_acceleration

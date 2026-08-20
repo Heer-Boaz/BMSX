@@ -825,12 +825,12 @@ function player:update_weapons()
 	end
 end
 
-function player:resolve_projectile_overlap(collider_local_id, enemy)
+function player:resolve_projectile_overlap(collider_local_id, enemy, enemy_collider_local_id)
 	local projectile<const> = self.projectiles_by_collider_local_id[collider_local_id]
 	if projectile.type == projectile_type_none then
 		return
 	end
-	if enemy:receive_player_projectile(projectile) then
+	if enemy:receive_player_projectile(projectile, enemy_collider_local_id) then
 		projectile.despawn(self, projectile, 'enemy_collision')
 	end
 end
@@ -846,7 +846,7 @@ function player:update_runtime()
 	self:update_position()
 	self:update_options()
 	if self.fire_pressed then
-		self.actioneffects:try_trigger(player_actioneffects.effect_ids.fire_salvo)
+		self.actioneffects:trigger(player_actioneffects.effect_ids.fire_salvo)
 	end
 	self:emit_metric()
 	self.frame = self.frame + 1

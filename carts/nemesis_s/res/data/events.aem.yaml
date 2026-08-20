@@ -101,6 +101,47 @@ events:
             - go:
                   audio_id: nemesis2_core_explosion
 
+    enemy.moon.small_ray_fired:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_foe_laser_3
+
+    enemy.moon.death_ray_fired:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_foe_uber_laser
+
+    enemy.moon.armored_hit:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_structure_hit
+                  priority: 8
+
+    enemy.moon.hit:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_boss_hit
+
+    enemy.moon.defeated:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_core_explosion
+
+    enemy.moon.explosion:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - stop:
+                            channel: music
+                            fade_ms: 0
+                      - audio_id: nemesis2_boss_explosion
+
     enemy.small.destroyed:
         channel: sfx
         rules:

@@ -94,7 +94,8 @@ export interface BinResource extends BaseResource<'bin'> {
 	id: number;
 }
 
-// Authoring source. One named layer becomes one packed collision_shape asset.
+// Authoring source. One named layer becomes one packed collision_shape asset;
+// a maps block groups multiple authored poses in the same source file.
 export interface CollisionMapResource extends BaseResource<'collision_map'> {
 	datatype: 'yaml';
 }

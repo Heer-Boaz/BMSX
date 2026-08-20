@@ -15,12 +15,14 @@ function sprite_animation_component.factory(definition)
 	end
 	local frame_duration_ms<const> = definition.frame_duration_ms
 	local loop<const> = definition.loop
+	local id_local<const> = definition.id_local
 	local offset_x<const> = definition.offset_x
 	local offset_y<const> = definition.offset_y
 	local offset_z<const> = definition.offset_z
 	local enabled<const> = definition.enabled
 	return function(opts)
 		local self<const> = setmetatable(sprite_component.new(opts), sprite_animation_component)
+		self.id_local = id_local
 		self.frames = frames
 		self.frame_sources = frame_sources
 		self.frame_count = frame_count

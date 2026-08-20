@@ -71,7 +71,13 @@
 --      timelines = { [my_id] = { ..., on_finished = '/next' } }
 --      timelines = { [my_id] = { ..., on_finished = function(self) ... end } }
 --
--- 5. FORBIDDEN LEGACY FIELDS.
+-- 5. SCOPED ACTION EFFECTS.
+--    A state's `actioneffects` list retains active effects for exactly that
+--    state's lifetime. Periodic effects therefore enter the scheduler once on
+--    state entry and leave once on exit; do not poll state from an update
+--    callback merely to trigger a cooldown-backed action.
+--
+-- 6. FORBIDDEN LEGACY FIELDS.
 --    The cart builder rejects obsolete FSM fields rather than carrying a
 --    compatibility path into runtime definitions:
 --      'leaving_state' — use exiting_state
@@ -82,7 +88,7 @@
 --
 -- RUNTIME MECHANICS — how the FSM runtime works under the hood.
 --
--- 6. COMPOUND STATE AUTO-ENTRY (enter_initial_substate_chain).
+-- 7. COMPOUND STATE AUTO-ENTRY (enter_initial_substate_chain).
 --    When a state with substates is entered (either on transition or on
 --    machine start), the runtime calls enter_initial_substate_chain() which
 --    recursively enters the active child tree: the current main child plus
@@ -92,7 +98,7 @@
 --    /shrine/entering, and that concurrent regions are initialized before the
 --    first update/draw.
 --
--- 7. CONCURRENT REGIONS (is_concurrent = true).
+-- 8. CONCURRENT REGIONS (is_concurrent = true).
 --    A state marked is_concurrent runs in parallel with the main (non-concurrent)
 --    substate.  It has its own state machine lifecycle (entry, update, event
 --    dispatch) but shares the same target object.  When the parent state
@@ -102,7 +108,7 @@
 --    update(), the main child runs first, then concurrent siblings.
 --    Example: player's sword region runs alongside the movement states.
 --
--- 8. TAG DERIVATIONS.
+-- 9. TAG DERIVATIONS.
 --    Tag derivations declared in the FSM root definition are evaluated after
 --    every state transition via sync_target_state_tags().  The runtime:
 --    (a) collects all active state tags from the current state tree (including
@@ -113,13 +119,13 @@
 --    Derivation rules support: any (array = any-of), all, and none operators.
 --    Rules can chain — derived tags can reference other derived tags.
 --
--- 9. CRITICAL SECTIONS AND TRANSITION QUEUES.
+-- 10. CRITICAL SECTIONS AND TRANSITION QUEUES.
 --    During entering_state and exiting_state callbacks, the FSM is in a
 --    critical section.  Any transition request during a critical section is
 --    queued and processed after the section ends.  This prevents re-entrant
 --    state changes that would corrupt the state tree.
 --
--- 10. POP_AND_TRANSITION (history stack).
+-- 11. POP_AND_TRANSITION (history stack).
 --     Each state maintains a bounded history stack (max 10 entries).  When a
 --     state transitions away, the previous state_id is pushed.  Calling
 --     pop_and_transition() restores the most recent state — used for temporary
@@ -127,7 +133,7 @@
 --     previous movement state).  If the local stack is empty, it delegates
 --     to the parent state.
 --
--- 11. EVENT DISPATCH AND BUBBLING.
+-- 12. EVENT DISPATCH AND BUBBLING.
 --     dispatch_event() delivers an event depth-first: current child first,
 --     then concurrent siblings.  If no child handles it, the event bubbles
 --     up to the parent, then grandparent, etc.  Root-level `on` handlers
@@ -309,6 +315,7 @@ function state_definition.new(id, def, root, parent)
 	self.input_transitions = nil
 	self.event_list = def.event_list
 	self.timelines = compile_timeline_definitions(def.timelines)
+	self.actioneffects = def.actioneffects
 	local transition_guards<const> = def.transition_guards
 	self.can_enter = transition_guards and transition_guards.can_enter
 	self.can_exit = transition_guards and transition_guards.can_exit
@@ -555,6 +562,8 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 			timeline_bindings[i].state = self
 		end
 	end
+	self.actioneffect_ids = definition.actioneffects
+	self.actioneffects_active = false
 	if self.root == self then
 		-- The machine root owns whole compiled transition requests. Queuing a
 		-- path plan rather than individual state ids keeps hierarchical paths
@@ -633,6 +642,7 @@ end
 local rebind_definition_tree
 rebind_definition_tree = function(self, definition)
 	local active<const> = self:is_active()
+	local actioneffects_active<const> = self.actioneffects_active
 	local previous_state_ids<const> = self.state_ids
 	local previous_state_count<const> = self.state_count
 	if active then
@@ -646,6 +656,13 @@ rebind_definition_tree = function(self, definition)
 	self.definition = definition
 	self.frame_evaluator = definition.frame_evaluator
 	self.def_id = definition.def_id
+	if actioneffects_active then
+		self:deactivate_actioneffects()
+	end
+	self.actioneffect_ids = definition.actioneffects
+	if actioneffects_active then
+		self:activate_actioneffects()
+	end
 	self.timeline_bindings = build_timeline_bindings(self.target, definition.timelines)
 	local timeline_bindings<const> = self.timeline_bindings
 	if timeline_bindings ~= nil then
@@ -747,6 +764,30 @@ function state:timeline(id)
 	return timeline
 end
 
+function state:activate_actioneffects()
+	local ids<const> = self.actioneffect_ids
+	if ids == nil then
+		return
+	end
+	self.actioneffects_active = true
+	local actioneffects<const> = self.target.actioneffects
+	for i = 1, #ids do
+		actioneffects:activate(ids[i])
+	end
+end
+
+function state:deactivate_actioneffects()
+	if not self.actioneffects_active then
+		return
+	end
+	local ids<const> = self.actioneffect_ids
+	local actioneffects<const> = self.target.actioneffects
+	for i = 1, #ids do
+		actioneffects:deactivate(ids[i])
+	end
+	self.actioneffects_active = false
+end
+
 function state:activate_timelines()
 	local bindings<const> = self.timeline_bindings
 	if not bindings then
@@ -784,6 +825,7 @@ end
 
 function state:enter_child_state(child)
 	local child_def<const> = child.definition
+	child:activate_actioneffects()
 	child:activate_timelines()
 	local enter_child<const> = child_def.entering_state
 	local next_state
@@ -795,6 +837,7 @@ end
 
 function state:start()
 	self:enter_critical_section()
+	self:activate_actioneffects()
 	self:activate_timelines()
 	self:enter_initial_substate_chain()
 	local queue_published<const> = self:leave_critical_section()
@@ -877,8 +920,8 @@ end
 -- transition_to_state: the core state transition operation.
 -- Compiled path requests are queued at the root before reaching this method;
 -- guards are evaluated here before changing the active child.
--- Sequence: exit current state → deactivate timelines → push history →
--- set new current_id → activate timelines → call entering_state →
+-- Sequence: exit current state → release scoped work → push history →
+-- set new current_id → activate scoped work → call entering_state →
 -- if entered state has substates, reset_submachine + enter_initial_substate_chain.
 function state:transition_to_state(state_id)
 	if self.current_id == state_id then
@@ -902,6 +945,7 @@ function state:transition_to_state(state_id)
 	local cur_def<const> = cur.definition
 	cur:add_active_subtree_tags()
 
+	cur:activate_actioneffects()
 	cur:activate_timelines()
 	local enter_handler<const> = cur_def.entering_state
 	local next_state
@@ -933,6 +977,7 @@ function state:exit_active_subtree()
 	if exit_handler then
 		exit_handler(self.target, self)
 	end
+	self:deactivate_actioneffects()
 	self:deactivate_timelines()
 end
 
@@ -1627,6 +1672,7 @@ function state:reset_submachine(reset_tree)
 end
 
 function state:dispose()
+	self:deactivate_actioneffects()
 	self:deactivate_timelines()
 	if self:is_root() then
 		local applied<const> = self._applied_state_tags

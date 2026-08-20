@@ -577,6 +577,18 @@ function stage:build_tape()
 							},
 						},
 					}
+				elseif symbol == "'" then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_moon_def,
+						options = {
+							stage = self,
+							pos = {
+								x = moon_spawn_x,
+								y = moon_spawn_y,
+							},
+						},
+					}
 				end
 			end
 		end

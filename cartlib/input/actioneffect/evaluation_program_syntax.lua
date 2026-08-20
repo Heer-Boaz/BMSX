@@ -34,7 +34,7 @@ local symbols<const> = {
 	bindings = generated_symbol('bindings'),
 	binding = generated_symbol('binding'),
 	operands = generated_symbol('operands'),
-	try_trigger = generated_symbol('try_trigger'),
+	trigger = generated_symbol('trigger'),
 	input_consume = generated_symbol('input_consume'),
 	press = generated_symbol('press'),
 	hold = generated_symbol('hold'),
@@ -92,7 +92,7 @@ end
 
 local emit_effect<const> = function(statements, effect, player_index)
 	if effect.kind == effect_kind.trigger then
-		statements[#statements + 1] = call_statement(call_expression(reference(symbols.try_trigger), {
+		statements[#statements + 1] = call_statement(call_expression(reference(symbols.trigger), {
 			member_expression(reference(symbols.owner), 'actioneffects'),
 			operand_expression(effect.id_operand_index),
 			operand_expression(effect.payload_operand_index),
@@ -389,10 +389,10 @@ local emit_dependency_captures<const> = function(statements, effect_program)
 			true
 		)
 	end
-	if effect_program.environment.try_trigger ~= nil then
+	if effect_program.environment.trigger ~= nil then
 		statements[#statements + 1] = local_statement(
-			reference(symbols.try_trigger),
-			identifier('try_trigger'),
+			reference(symbols.trigger),
+			identifier('trigger'),
 			true
 		)
 	end

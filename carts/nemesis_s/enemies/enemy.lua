@@ -48,7 +48,8 @@ function enemy:on_overlap(_event_type, _emitter, event)
 		local player<const> = registry:get(event.other_id)
 		player:resolve_projectile_overlap(
 			event.other_collider_local_id,
-			self
+			self,
+			event.collider_local_id
 		)
 		return
 	end

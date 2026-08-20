@@ -17,6 +17,9 @@ const mappings = [
 	['Nemesis2_CoreExplostion.wav', 'nemesis2_core_explosion@p=15.wav'],
 	['Nemesis2_FoeDeath.wav', 'nemesis2_foe_death@p=6.wav'],
 	['Nemesis2_Roodje.wav', 'nemesis2_roodje@p=9.wav'],
+	['Nemesis2_FoeLaser3.wav', 'nemesis2_foe_laser_3@p=10.wav'],
+	['Nemesis2_FoeUberLaser.wav', 'nemesis2_foe_uber_laser@p=15.wav'],
+	['Nemesis2_BossExplosion.wav', 'nemesis2_boss_explosion@p=100.wav'],
 ];
 
 fs.mkdirSync(outputDir, { recursive: true });

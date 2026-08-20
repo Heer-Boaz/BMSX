@@ -43,7 +43,7 @@ function rook_generator:update_idle()
 	if self:dispose_if_left_of_stage(rook_generator_width) then
 		return
 	end
-	self.actioneffects:try_trigger(generation_ready_effect_id)
+	self.actioneffects:trigger(generation_ready_effect_id)
 end
 
 function rook_generator:enter_generating()
@@ -57,7 +57,7 @@ function rook_generator:update_generating()
 	if self:dispose_if_left_of_stage(rook_generator_width) or self.x <= -8 then
 		return
 	end
-	self.actioneffects:try_trigger(spawn_rook_effect_id)
+	self.actioneffects:trigger(spawn_rook_effect_id)
 end
 
 function rook_generator:spawn_rook()

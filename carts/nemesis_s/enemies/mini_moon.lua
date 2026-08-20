@@ -1,0 +1,94 @@
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local prefab<const> = require('cartlib/world/prefab')
+local world<const> = require('cartlib/world/world')
+local enemy<const> = require('enemies/enemy')
+require('constants')
+
+local mini_moon<const> = {}
+mini_moon.__index = mini_moon
+
+local hit_area<const> = {
+	left = 0,
+	top = 0,
+	right = mini_moon_width,
+	bottom = mini_moon_height,
+}
+
+function mini_moon:ctor()
+	self:get_component(collider_2d_component).local_area = hit_area
+	self.motion = self:get_component(fixed_point_velocity_component)
+end
+
+function mini_moon:onspawn()
+	if self.red then
+		self:set_imgid(assets_mini_moon_red)
+		self.drop_definition_id = ids_roodje_def
+	end
+	local target<const> = self.target
+	self.motion:set_dominant_axis_velocity(
+		target.x - self.x,
+		target.y - self.y,
+		mini_moon_speed_q8
+	)
+	self.target = nil
+end
+
+function mini_moon:update_flying()
+	if self.x < -mini_moon_width
+	or self.x > playfield_width
+	or self.y < -mini_moon_height
+	or self.y > playfield_height then
+		self:mark_for_disposal()
+	end
+end
+
+function mini_moon:on_destroyed(projectile)
+	world:spawn(ids_small_explosion_def, {
+		stage = self.stage,
+		drop_definition_id = self.drop_definition_id,
+		pos = { x = self.x, y = self.y },
+	})
+	self.events:emit('enemy.small.destroyed')
+	enemy.on_destroyed(self, projectile)
+end
+
+local define_fsm<const> = function()
+	fsm_library.register(ids_mini_moon_fsm, {
+		initial = 'flying',
+		states = {
+			flying = {
+				update = mini_moon.update_flying,
+			},
+		},
+	})
+end
+
+local register_definition<const> = function()
+	prefab.define({
+		def_id = ids_mini_moon_def,
+		class = mini_moon,
+		base = enemy,
+		components = {
+			enemy.new_collider,
+			fixed_point_velocity_component.new,
+			fsm_component.factory({ ids_mini_moon_fsm }),
+		},
+		defaults = {
+			imgid = assets_mini_moon,
+			max_health = mini_moon_health,
+			red = false,
+			small_fry = true,
+			z = mini_moon_draw_z,
+		},
+	})
+end
+
+function mini_moon.register()
+	define_fsm()
+	register_definition()
+end
+
+return mini_moon

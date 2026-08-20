@@ -26,7 +26,7 @@ local compile_effect<const> = function(program, effect, slot)
 			payload = trigger.payload
 		end
 		program.uses_effect_triggers = true
-		program.environment.try_trigger = actioneffect_component.try_trigger
+		program.environment.trigger = actioneffect_component.trigger
 		return {
 			kind = effect_kind.trigger,
 			id_operand_index = add_operand(program, id),

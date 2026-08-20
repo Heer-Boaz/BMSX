@@ -169,19 +169,31 @@ end
 -- Tile-strip collision consumes the same retained endpoints as rendering.
 -- Contiguous axis-aligned strips collapse to one AABB. Diagonal strips retain
 -- one AABB per tile in a GEO compound so empty space between tiles never hits.
-local stage_geo_tile_strip_shape<const> = function(strip, shape_addr)
+local stage_geo_tile_strip_shape<const> = function(collider, shape_addr)
+	local strip<const> = collider.tile_strip
 	local first_tile<const> = strip.first_tile
 	local last_tile<const> = strip.last_tile
 	local step_x<const> = strip.step_x
 	local step_y<const> = strip.step_y
-	local tile_width<const> = strip.tile_width
-	local tile_height<const> = strip.tile_height
+	local tile_left = 0
+	local tile_top = 0
+	local tile_right = strip.tile_width
+	local tile_bottom = strip.tile_height
+	local local_area<const> = collider.local_area
+	if local_area ~= nil then
+		tile_left = local_area.left
+		tile_top = local_area.top
+		tile_right = local_area.right
+		tile_bottom = local_area.bottom
+	end
+	local tile_width<const> = tile_right - tile_left
+	local tile_height<const> = tile_bottom - tile_top
 	local origin_x<const> = strip.offset_x + strip.draw_offset_x
 	local origin_y<const> = strip.offset_y + strip.draw_offset_y
-	local first_x<const> = origin_x + first_tile * step_x
-	local first_y<const> = origin_y + first_tile * step_y
-	local last_x<const> = origin_x + last_tile * step_x
-	local last_y<const> = origin_y + last_tile * step_y
+	local first_x<const> = origin_x + first_tile * step_x + tile_left
+	local first_y<const> = origin_y + first_tile * step_y + tile_top
+	local last_x<const> = origin_x + last_tile * step_x + tile_left
+	local last_y<const> = origin_y + last_tile * step_y + tile_top
 	local left = first_x
 	local top = first_y
 	local right = last_x + tile_width
@@ -254,7 +266,7 @@ local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb
 		ty = parent.y + sprite.offset_y
 	elseif collider.tile_strip then
 		shape_ref = aabb_shape_addr
-		aabb_shape_addr = stage_geo_tile_strip_shape(collider.tile_strip, aabb_shape_addr)
+		aabb_shape_addr = stage_geo_tile_strip_shape(collider, aabb_shape_addr)
 		tx = parent.x
 		ty = parent.y
 	else

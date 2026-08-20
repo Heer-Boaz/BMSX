@@ -30,11 +30,14 @@ function tile_strip_component.factory(definition)
 	local step_x<const> = definition.step_x
 	local step_y<const> = definition.step_y
 	local first_tile<const> = definition.first_tile
+	local id_local<const> = definition.id_local
 	local enabled<const> = definition.enabled
 	local offset_x<const> = definition.offset_x or 0
 	local offset_y<const> = definition.offset_y or 0
+	local offset_z<const> = definition.offset_z or 0
 	return function(opts)
 		local self<const> = setmetatable(visual_component.new(opts), tile_strip_component)
+		self.id_local = id_local
 		self._source = source
 		self.tile_width = source.width
 		self.tile_height = source.height
@@ -44,6 +47,7 @@ function tile_strip_component.factory(definition)
 		self.last_tile = first_tile - 1
 		self.offset_x = offset_x
 		self.offset_y = offset_y
+		self.offset_z = offset_z
 		if enabled ~= nil then
 			self.enabled = enabled
 		end

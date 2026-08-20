@@ -10,11 +10,15 @@ export type CompiledCollisionMapLayer = {
 	buffer: Uint8Array;
 };
 
-type CollisionMapDocument = {
+type CollisionMapHeader = {
 	tile_size: number;
 	layers: Record<string, string>;
-	rows: string[];
 };
+
+type CollisionMapDocument = CollisionMapHeader & (
+	| { rows: string[]; maps?: never }
+	| { rows?: never; maps: Record<string, string[]> }
+);
 
 type CellRect = {
 	left: number;
@@ -22,6 +26,26 @@ type CellRect = {
 	right: number;
 	bottom: number;
 };
+
+function assertRows(rows: unknown, sourcePath: string, mapName?: string): asserts rows is string[] {
+	const subject = mapName === undefined
+		? `Collision map '${sourcePath}'`
+		: `Collision map '${sourcePath}' map '${mapName}'`;
+	if (!Array.isArray(rows) || rows.length === 0) {
+		throw new Error(`${subject} must define rows.`);
+	}
+	const firstRow = rows[0];
+	if (typeof firstRow !== 'string' || firstRow.length === 0) {
+		throw new Error(`${subject} rows may not be empty.`);
+	}
+	const width = firstRow.length;
+	for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+		const row = rows[rowIndex];
+		if (typeof row !== 'string' || row.length !== width) {
+			throw new Error(`${subject} row ${rowIndex + 1} must contain exactly ${width} symbols.`);
+		}
+	}
+}
 
 function assertCollisionMapDocument(source: unknown, sourcePath: string): asserts source is CollisionMapDocument {
 	if (source === null || Array.isArray(source) || typeof source !== 'object') {
@@ -34,17 +58,25 @@ function assertCollisionMapDocument(source: unknown, sourcePath: string): assert
 	if (document.layers === null || Array.isArray(document.layers) || typeof document.layers !== 'object') {
 		throw new Error(`Collision map '${sourcePath}' must define collision layers.`);
 	}
-	if (!Array.isArray(document.rows) || document.rows.length === 0) {
-		throw new Error(`Collision map '${sourcePath}' must define rows.`);
-	}
-	const width = document.rows[0].length;
-	if (width === 0) {
-		throw new Error(`Collision map '${sourcePath}' rows may not be empty.`);
-	}
-	for (let rowIndex = 0; rowIndex < document.rows.length; rowIndex += 1) {
-		const row = document.rows[rowIndex];
-		if (typeof row !== 'string' || row.length !== width) {
-			throw new Error(`Collision map '${sourcePath}' row ${rowIndex + 1} must contain exactly ${width} symbols.`);
+	if (document.rows !== undefined) {
+		if (document.maps !== undefined) {
+			throw new Error(`Collision map '${sourcePath}' must define either rows or maps, not both.`);
+		}
+		assertRows(document.rows, sourcePath);
+	} else {
+		if (document.maps === null || Array.isArray(document.maps) || typeof document.maps !== 'object') {
+			throw new Error(`Collision map '${sourcePath}' must define rows or named maps.`);
+		}
+		const mapNames = Object.keys(document.maps);
+		if (mapNames.length === 0) {
+			throw new Error(`Collision map '${sourcePath}' must define at least one named map.`);
+		}
+		for (let index = 0; index < mapNames.length; index += 1) {
+			const name = mapNames[index];
+			if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+				throw new Error(`Collision map '${sourcePath}' map '${name}' must use snake_case.`);
+			}
+			assertRows(document.maps[name], sourcePath, name);
 		}
 	}
 	const layerNames = Object.keys(document.layers);
@@ -148,26 +180,32 @@ function flipPieces(
 	return result;
 }
 
-export function compileCollisionMap(source: unknown, sourcePath: string): CompiledCollisionMapLayer[] {
-	assertCollisionMapDocument(source, sourcePath);
-	const tileSize = source.tile_size;
-	const width = source.rows[0].length * tileSize;
-	const height = source.rows.length * tileSize;
-	const layerNames = Object.keys(source.layers).sort((left, right) => left.localeCompare(right));
-	const layers = new Array<CompiledCollisionMapLayer>(layerNames.length);
+function compileLayers(
+	rows: readonly string[],
+	tileSize: number,
+	layersByName: Readonly<Record<string, string>>,
+	namePrefix: string,
+	sourcePath: string,
+	output: CompiledCollisionMapLayer[],
+): void {
+	const width = rows[0].length * tileSize;
+	const height = rows.length * tileSize;
+	const layerNames = Object.keys(layersByName).sort((left, right) => left.localeCompare(right));
 	for (let layerIndex = 0; layerIndex < layerNames.length; layerIndex += 1) {
 		const name = layerNames[layerIndex];
-		const rects = collectLayerRects(source.rows, source.layers[name]);
+		const rects = collectLayerRects(rows, layersByName[name]);
 		if (rects.length === 0) {
-			throw new Error(`Collision map '${sourcePath}' layer '${name}' contains no collision tiles.`);
+			throw new Error(
+				`Collision map '${sourcePath}' layer '${namePrefix}${name}' contains no collision tiles.`,
+			);
 		}
 		const bounds = layerBounds(rects, tileSize);
 		const pieces = new Array<AabbCollisionShapePiece>(rects.length);
 		for (let index = 0; index < rects.length; index += 1) {
 			pieces[index] = aabbCollisionPiece(pixelBounds(rects[index], tileSize));
 		}
-		layers[layerIndex] = {
-			name,
+		output.push({
+			name: `${namePrefix}${name}`,
 			buffer: encodeCollisionShapeVariants({
 				original: { bounds, pieces },
 				fliph: {
@@ -183,7 +221,21 @@ export function compileCollisionMap(source: unknown, sourcePath: string): Compil
 					pieces: flipPieces(pieces, width, height, true, true),
 				},
 			}),
-		};
+		});
+	}
+}
+
+export function compileCollisionMap(source: unknown, sourcePath: string): CompiledCollisionMapLayer[] {
+	assertCollisionMapDocument(source, sourcePath);
+	const layers: CompiledCollisionMapLayer[] = [];
+	if (source.rows !== undefined) {
+		compileLayers(source.rows, source.tile_size, source.layers, '', sourcePath, layers);
+		return layers;
+	}
+	const mapNames = Object.keys(source.maps).sort((left, right) => left.localeCompare(right));
+	for (let mapIndex = 0; mapIndex < mapNames.length; mapIndex += 1) {
+		const name = mapNames[mapIndex];
+		compileLayers(source.maps[name], source.tile_size, source.layers, `${name}.`, sourcePath, layers);
 	}
 	return layers;
 }

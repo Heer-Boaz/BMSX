@@ -525,6 +525,40 @@ function getMappings() {
 			target: 'large_explosion_3.png',
 		},
 		{
+			source: 'Foes/Boss/Moon11.bmp',
+			target: 'moon_right.png',
+		},
+		{
+			source: 'Foes/Boss/Moon22.bmp',
+			target: 'moon_down_right.png',
+		},
+		{
+			source: 'Foes/Boss/Moon33.bmp',
+			target: 'moon_up.png',
+		},
+		{
+			source: 'Foes/Boss/Moon44.bmp',
+			target: 'moon_up_right.png',
+		},
+		{
+			source: 'Foes/Boss/Minimoon1.bmp',
+			target: 'mini_moon.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Boss/Minimoon2.bmp',
+			target: 'mini_moon_red.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Boss/RayOfDeath.bmp',
+			target: 'moon_death_ray.png',
+		},
+		{
+			source: 'Foes/Boss/RayOfDeathStart.bmp',
+			target: 'moon_death_ray_start.png',
+		},
+		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},
