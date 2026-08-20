@@ -15,6 +15,8 @@ local upright_collision_left<const> = 4
 local upright_collision_top<const> = 2
 local upright_collision_right<const> = 12
 local upright_collision_bottom<const> = 22
+local upright_support_probe_x<const> = 8
+local upright_support_probe_y<const> = 24
 local turned_collision_left<const> = 2
 local turned_collision_top<const> = 4
 local turned_collision_right<const> = 22
@@ -116,11 +118,19 @@ function crossfoe.tick_flight(self, node_memory)
 	if (direction_mod < 0 and self.x < (player.x - player.width))
 		or (direction_mod > 0 and self.x > (player.x + (player.width * 2)))
 	then
-		self.cross_spin_direction = 'down'
-		self.movement:move_x(-(room_tile_size * direction_mod))
-		apply_spin_state(self)
-		self.castle.events:emit('crossland')
-		return bt_success
+		local landing_delta_x<const> = -(room_tile_size * direction_mod)
+		local landing_x<const> = self.x + landing_delta_x
+		if self.room:has_collision_flags_at_world(
+			landing_x + upright_support_probe_x,
+			self.y + upright_support_probe_y,
+			collision_flags_solid_mask
+		) then
+			self.cross_spin_direction = 'down'
+			self.movement:move_x(landing_delta_x)
+			apply_spin_state(self)
+			self.castle.events:emit('crossland')
+			return bt_success
+		end
 	end
 
 	if self.movement:move_x(enemy_cross_horizontal_speed_px * direction_mod) ~= 0 then
