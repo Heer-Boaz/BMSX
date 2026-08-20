@@ -568,6 +568,29 @@ timelines:scrub_time('event_update_policy', 0)
 assert(play_policy_count == 1 and seek_policy_count == 3 and scrub_policy_count == 3)
 timelines:stop('event_update_policy')
 
+local chain_owner<const> = setmetatable({ id = 'timeline_completion_chain_test' }, world_object)
+world_object.initialize(chain_owner)
+local chain_timelines<const> = timeline_component.new({ parent = chain_owner })
+chain_timelines:on_attach()
+chain_timelines:define('successor', {
+	continuous = true,
+	duration_ms = 40,
+	playback_mode = 'once',
+})
+chain_timelines:define('predecessor', {
+	continuous = true,
+	duration_ms = 20,
+	playback_mode = 'once',
+})
+chain_timelines:play('predecessor', nil, function(target)
+	target.timelines:play('successor')
+end)
+chain_timelines:tick_gameplay(20)
+assert(chain_timelines:get('successor').position_ms == 0,
+	'completion successor consumed its predecessor delta')
+chain_timelines:tick_gameplay(20)
+assert(chain_timelines:get('successor').position_ms == 20)
+
 	return nil
 end
 

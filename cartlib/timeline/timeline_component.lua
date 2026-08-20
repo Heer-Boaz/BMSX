@@ -20,11 +20,29 @@ local tick_lane_member_by_clock_source<const> = {
 }
 
 local remove_timeline_schedule<const> = function(self, entry)
-	local tick_index<const> = entry.tick_index
-	if tick_index == nil then
+	local lane<const> = entry.tick_lane
+	if lane == nil then
 		return
 	end
-	local lane<const> = entry.tick_lane
+	local pending_index<const> = entry.pending_tick_index
+	if pending_index ~= nil then
+		local pending_entries<const> = lane.pending_entries
+		local pending_count<const> = lane.pending_count
+		local last_entry<const> = pending_entries[pending_count]
+		pending_entries[pending_count] = nil
+		lane.pending_count = pending_count - 1
+		entry.pending_tick_index = nil
+		entry.tick_lane = nil
+		if pending_index < pending_count then
+			pending_entries[pending_index] = last_entry
+			last_entry.pending_tick_index = pending_index
+		end
+		if lane.count == 0 and pending_count == 1 then
+			self:set_tick_clock_enabled(lane.clock_source, false)
+		end
+		return
+	end
+	local tick_index<const> = entry.tick_index
 	local tick_count<const> = lane.count
 	local last_entry<const> = lane[tick_count]
 	lane[tick_count] = nil
@@ -35,7 +53,7 @@ local remove_timeline_schedule<const> = function(self, entry)
 		lane[tick_index] = last_entry
 		last_entry.tick_index = tick_index
 	end
-	if tick_count == 1 then
+	if tick_count == 1 and lane.pending_count == 0 then
 		self:set_tick_clock_enabled(lane.clock_source, false)
 	end
 end
@@ -52,19 +70,32 @@ local reconcile_timeline_schedule<const> = function(self, entry)
 	local lane_member<const> = tick_lane_member_by_clock_source[clock_source]
 	local lane = self[lane_member]
 	if lane == nil then
-		lane = { clock_source = clock_source, count = 0 }
+		lane = {
+			clock_source = clock_source,
+			count = 0,
+			pending_entries = {},
+			pending_count = 0,
+			ticking = false,
+		}
 		self[lane_member] = lane
 	end
 	if entry.tick_lane == lane then
 		return
 	end
 	remove_timeline_schedule(self, entry)
-	local tick_count<const> = lane.count + 1
-	lane.count = tick_count
-	lane[tick_count] = entry
-	entry.tick_index = tick_count
+	if lane.ticking then
+		local pending_count<const> = lane.pending_count + 1
+		lane.pending_count = pending_count
+		lane.pending_entries[pending_count] = entry
+		entry.pending_tick_index = pending_count
+	else
+		local tick_count<const> = lane.count + 1
+		lane.count = tick_count
+		lane[tick_count] = entry
+		entry.tick_index = tick_count
+	end
 	entry.tick_lane = lane
-	if tick_count == 1 then
+	if lane.count + lane.pending_count == 1 then
 		self:set_tick_clock_enabled(clock_source, true)
 	end
 end
@@ -327,9 +358,14 @@ function timeline_component:stop(id)
 	reconcile_timeline_schedule(self, entry)
 end
 
-function timeline_component:tick_gameplay(delta_time)
-	local entries<const> = self._gameplay_tick_lane
+-- Playback completion may start another timeline on the same clock lane. The
+-- replacement is admitted after the current lane traversal, just as a queued
+-- animation starts at the next player update instead of consuming the delta
+-- which completed its predecessor. The deferred array is retained per lane;
+-- steady playback performs no allocation and keeps the direct dense loop.
+local tick_lane<const> = function(self, entries, delta_time)
 	local owner<const> = self.parent
+	entries.ticking = true
 	local count = entries.count
 	local index = 1
 	while index <= count do
@@ -341,54 +377,38 @@ function timeline_component:tick_gameplay(delta_time)
 			index = index + 1
 		end
 	end
+	entries.ticking = false
+	local pending_count<const> = entries.pending_count
+	if pending_count == 0 then
+		return
+	end
+	local pending_entries<const> = entries.pending_entries
+	for pending_index = 1, pending_count do
+		local entry<const> = pending_entries[pending_index]
+		local tick_index<const> = count + pending_index
+		entries[tick_index] = entry
+		entry.tick_index = tick_index
+		entry.pending_tick_index = nil
+		pending_entries[pending_index] = nil
+	end
+	entries.count = count + pending_count
+	entries.pending_count = 0
+end
+
+function timeline_component:tick_gameplay(delta_time)
+	tick_lane(self, self._gameplay_tick_lane, delta_time)
 end
 
 function timeline_component:tick_frame(delta_time)
-	local entries<const> = self._frame_tick_lane
-	local owner<const> = self.parent
-	local count = entries.count
-	local index = 1
-	while index <= count do
-		local entry<const> = entries[index]
-		if entry:update(owner, delta_time) then
-			finish_entry(self, entry)
-			count = entries.count
-		else
-			index = index + 1
-		end
-	end
+	tick_lane(self, self._frame_tick_lane, delta_time)
 end
 
 function timeline_component:tick_platform(delta_time)
-	local entries<const> = self._platform_tick_lane
-	local owner<const> = self.parent
-	local count = entries.count
-	local index = 1
-	while index <= count do
-		local entry<const> = entries[index]
-		if entry:update(owner, delta_time) then
-			finish_entry(self, entry)
-			count = entries.count
-		else
-			index = index + 1
-		end
-	end
+	tick_lane(self, self._platform_tick_lane, delta_time)
 end
 
 function timeline_component:tick_audio(delta_time)
-	local entries<const> = self._audio_tick_lane
-	local owner<const> = self.parent
-	local count = entries.count
-	local index = 1
-	while index <= count do
-		local entry<const> = entries[index]
-		if entry:update(owner, delta_time) then
-			finish_entry(self, entry)
-			count = entries.count
-		else
-			index = index + 1
-		end
-	end
+	tick_lane(self, self._audio_tick_lane, delta_time)
 end
 
 return timeline_component
