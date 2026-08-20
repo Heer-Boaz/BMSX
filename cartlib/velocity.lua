@@ -19,6 +19,26 @@ local consume_axis_fraction<const> = function(fraction, speed_num, speed_den)
 	return delta, value - delta * speed_den
 end
 
+-- Scales a direction so its dominant axis has the requested magnitude. This
+-- is the retained movement representation used by sprite-era homing actors:
+-- no square root, normalized vector allocation or per-frame re-targeting.
+local dominant_axis_velocity<const> = function(delta_x, delta_y, magnitude)
+	local abs_x<const> = math.abs(delta_x)
+	local abs_y<const> = math.abs(delta_y)
+	if abs_x == 0 then
+		return 0, delta_y > 0 and magnitude or -magnitude
+	end
+	if abs_y == 0 then
+		return delta_x > 0 and magnitude or -magnitude, 0
+	end
+	if abs_x > abs_y then
+		return delta_x > 0 and magnitude or -magnitude,
+			(delta_y * magnitude) / abs_x
+	end
+	return (delta_x * magnitude) / abs_y,
+		delta_y > 0 and magnitude or -magnitude
+end
+
 local move_with_velocity<const> = function(target)
 	local speed_den<const> = target.speed_den
 	if speed_den == 1 then
@@ -39,5 +59,6 @@ end
 return {
 	consume_axis_accum = consume_axis_accum,
 	consume_axis_fraction = consume_axis_fraction,
+	dominant_axis_velocity = dominant_axis_velocity,
 	move_with_velocity = move_with_velocity,
 }

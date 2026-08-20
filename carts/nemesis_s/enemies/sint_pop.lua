@@ -1,11 +1,22 @@
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local enemy<const> = require('enemies/enemy')
 require('constants')
 
 local sint_pop<const> = {}
 sint_pop.__index = sint_pop
+local hit_area<const> = {
+	left = 0,
+	top = 0,
+	right = 16,
+	bottom = 32,
+}
+
+function sint_pop:ctor()
+	self:get_component(collider_2d_component).local_area = hit_area
+end
 
 function sint_pop:update_move_to_player()
 	self.x = self.x + sint_pop_move_to_player_speed_x
@@ -52,8 +63,9 @@ function sint_pop.register()
 	prefab.define({
 		def_id = ids_sint_pop_def,
 		class = sint_pop,
-		base = sprite_object,
+		base = enemy,
 		components = {
+			enemy.new_collider,
 			fsm_component.factory({ ids_sint_pop_fsm }),
 		},
 		defaults = {
@@ -61,6 +73,8 @@ function sint_pop.register()
 			group_type = sint_pop_group_up,
 			group_id = 0,
 			vertical_speed = 0,
+			max_health = 1,
+			small_fry = true,
 			z = sint_pop_draw_z,
 		},
 	})

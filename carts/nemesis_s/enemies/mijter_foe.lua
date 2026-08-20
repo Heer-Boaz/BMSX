@@ -1,11 +1,12 @@
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
+local enemy<const> = require('enemies/enemy')
 require('constants')
 
-local abs<const> = math.abs
 local mijter_foe<const> = {}
 mijter_foe.__index = mijter_foe
 
@@ -23,6 +24,16 @@ local images_by_type<const> = {
 }
 
 local players_view
+local hit_area<const> = {
+	left = 2,
+	top = 2,
+	right = 24,
+	bottom = 14,
+}
+
+function mijter_foe:ctor()
+	self:get_component(collider_2d_component).local_area = hit_area
+end
 
 function mijter_foe:onspawn()
 	self.images = images_by_type[self.mijter_type]
@@ -50,21 +61,11 @@ function mijter_foe:update_default()
 	end
 	local dx<const> = target.x - self.x
 	local dy<const> = target.y - self.y
-	local abs_dx<const> = abs(dx)
-	local abs_dy<const> = abs(dy)
-	if abs_dx < mijter_foe_axis_epsilon then
-		self.speed_x = 0
-		self.speed_y = dy > 0 and mijter_foe_attack_speed or -mijter_foe_attack_speed
-	elseif abs_dy < mijter_foe_axis_epsilon then
-		self.speed_x = dx > 0 and mijter_foe_attack_speed or -mijter_foe_attack_speed
-		self.speed_y = 0
-	elseif abs_dx > abs_dy then
-		self.speed_x = dx > 0 and mijter_foe_attack_speed or -mijter_foe_attack_speed
-		self.speed_y = (dy / abs_dx) * mijter_foe_attack_speed
-	else
-		self.speed_x = (dx / abs_dy) * mijter_foe_attack_speed
-		self.speed_y = dy > 0 and mijter_foe_attack_speed or -mijter_foe_attack_speed
-	end
+	self.speed_x, self.speed_y = velocity.dominant_axis_velocity(
+		dx,
+		dy,
+		mijter_foe_attack_speed
+	)
 	if self.speed_y > 0 then
 		self:set_imgid(self.images.down)
 	else
@@ -100,8 +101,9 @@ function mijter_foe.register()
 	prefab.define({
 		def_id = ids_mijter_foe_def,
 		class = mijter_foe,
-		base = sprite_object,
+		base = enemy,
 		components = {
+			enemy.new_collider,
 			fsm_component.factory({ ids_mijter_foe_fsm }),
 		},
 		defaults = {
@@ -109,6 +111,8 @@ function mijter_foe.register()
 			mijter_type = mijter_foe_type_blue,
 			speed_x = 0,
 			speed_y = 0,
+			max_health = 1,
+			small_fry = true,
 			z = mijter_foe_draw_z,
 		},
 	})

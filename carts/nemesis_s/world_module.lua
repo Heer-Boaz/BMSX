@@ -1,7 +1,9 @@
 local aem<const> = require('cartlib/aem')
+local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
 local input_system<const> = require('cartlib/input/input_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
+local rook_animation_system<const> = require('enemies/rook_animation_system')
 
 return {
 	spaces = {
@@ -15,6 +17,8 @@ return {
 		input_system,
 		aem,
 		fsm_system,
+		overlap_2d_system,
+		rook_animation_system,
 		timeline_system,
 	},
 }

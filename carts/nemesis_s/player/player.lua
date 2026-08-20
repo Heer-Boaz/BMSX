@@ -2,6 +2,7 @@ local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
@@ -67,6 +68,29 @@ local weapon_sources<const> = {
 	missile_flying = image.resolve(assets_missile2),
 	uplaser = image.resolve(assets_uplaser),
 }
+
+local set_projectile_collider<const> = function(owner, projectile, width, height)
+	local collider<const> = projectile.collider
+	collider.shape_offset_x = projectile.x - owner.x
+	collider.shape_offset_y = projectile.y - owner.y
+	local area<const> = collider.local_area
+	area.right = width
+	area.bottom = height
+end
+
+local attach_projectile_collider<const> = function(owner, projectile, local_id)
+	local collider<const> = collider_2d_component.new({
+		parent = owner,
+		id_local = local_id,
+		enabled = false,
+		layer = collision_player_projectile_layer,
+		mask = collision_player_projectile_mask,
+		local_area = { left = 0, top = 0, right = 0, bottom = 0 },
+	})
+	projectile.collider = collider
+	owner.projectiles_by_collider_local_id[local_id] = projectile
+	owner:add_component(collider)
+end
 
 function player:emit_event(name, extra)
 	if extra ~= nil then
@@ -210,9 +234,15 @@ function player:reset_runtime()
 	self.fire_pressed = false
 	self.sprite = self.visual_sources.neutral
 	for vessel_id = 1, player_vessel_capacity do
-		self.primary_projectiles[vessel_id].type = projectile_type_none
-		self.missile_projectiles[vessel_id].type = projectile_type_none
-		self.secondary_projectiles[vessel_id].type = projectile_type_none
+		local primary<const> = self.primary_projectiles[vessel_id]
+		local missile<const> = self.missile_projectiles[vessel_id]
+		local secondary<const> = self.secondary_projectiles[vessel_id]
+		primary.type = projectile_type_none
+		missile.type = projectile_type_none
+		secondary.type = projectile_type_none
+		primary.collider:set_enabled(false)
+		missile.collider:set_enabled(false)
+		secondary.collider:set_enabled(false)
 	end
 	self:initialize_options()
 	if telemetry_enabled then
@@ -384,8 +414,10 @@ function player:spawn_bullet(vessel_id)
 	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 	local bullet<const> = self.primary_projectiles[vessel_id]
 	bullet.type = projectile_type_bullet
+	bullet.pierces_small_fry = false
 	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
 	bullet.y = (vessel_y + player_bullet_spawn_offset_y) // 1
+	bullet.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -403,12 +435,14 @@ function player:spawn_laser(vessel_id, level)
 	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 	local laser<const> = self.primary_projectiles[vessel_id]
 	laser.type = projectile_type_laser
+	laser.pierces_small_fry = true
 	laser.x = ((vessel_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 		weapons_laser.tile_width
 	laser.y = (vessel_y + weapons_laser.spawn_offset_y) // 1
 	laser.state = laser_state_expand
 	laser.length_tiles = 0
 	laser.expansion_tiles_remaining = weapons_laser.length_tiles_by_level[level]
+	laser.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -428,6 +462,7 @@ function player:spawn_missile(vessel_id, level)
 	local motion<const> = weapons_missile_motion_by_level[level]
 	local missile<const> = self.missile_projectiles[vessel_id]
 	missile.type = projectile_type_missile
+	missile.pierces_small_fry = false
 	missile.x = (vessel_x + weapons_missile_spawn_offset_x) // 1
 	missile.y = (vessel_y + weapons_missile_spawn_offset_y) // 1
 	missile.fraction_x = 0
@@ -436,6 +471,7 @@ function player:spawn_missile(vessel_id, level)
 	missile.fall_velocity_y_q8 = motion.fall_velocity_y_q8
 	missile.surface_velocity_x_q8 = motion.surface_velocity_x_q8
 	missile.sprite = weapon_sources.missile_falling
+	missile.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -454,11 +490,13 @@ function player:spawn_uplaser(vessel_id, level)
 	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 	local uplaser<const> = self.secondary_projectiles[vessel_id]
 	uplaser.type = uplaser_projectile_type_by_level[level]
+	uplaser.pierces_small_fry = true
 	uplaser.x = ((vessel_x + weapons_uplaser.spawn_offset_x) // weapons_uplaser.tile_width) *
 		weapons_uplaser.tile_width
 	uplaser.y = (vessel_y + weapons_uplaser.spawn_offset_y) // 1
 	uplaser.gate_counter = weapons_uplaser.level2_gate_frames
 	uplaser.length_tiles = weapons_uplaser.initial_length_tiles
+	uplaser.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -523,6 +561,7 @@ function player:despawn_primary_projectile(projectile, reason)
 		weapon = 'laser'
 	end
 	projectile.type = projectile_type_none
+	projectile.collider:set_enabled(false)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_despawn',
@@ -540,6 +579,7 @@ end
 
 function player:despawn_missile(missile, reason)
 	missile.type = projectile_type_none
+	missile.collider:set_enabled(false)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_despawn',
@@ -556,6 +596,7 @@ end
 
 function player:despawn_uplaser(uplaser, reason)
 	uplaser.type = projectile_type_none
+	uplaser.collider:set_enabled(false)
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_despawn',
@@ -724,17 +765,39 @@ function player:update_weapons()
 			else
 				self:update_laser(primary)
 			end
+			if primary.type == projectile_type_bullet then
+				set_projectile_collider(self, primary, 6, 2)
+			elseif primary.type == projectile_type_laser then
+				set_projectile_collider(self, primary, primary.length_tiles * weapons_laser.tile_width, 2)
+			end
 		end
 		local uplaser<const> = self.secondary_projectiles[vessel_id]
 		if uplaser.type ~= projectile_type_none then
 			self:update_uplaser(uplaser)
+			if uplaser.type ~= projectile_type_none then
+				set_projectile_collider(self, uplaser, uplaser.length_tiles * weapons_uplaser.tile_width, 8)
+			end
 		end
 	end
 	for vessel_id = 1, player_vessel_capacity do
 		local missile<const> = self.missile_projectiles[vessel_id]
 		if missile.type ~= projectile_type_none then
 			self:update_missile(missile)
+			if missile.type ~= projectile_type_none then
+				local height<const> = missile.sprite == weapon_sources.missile_falling and 8 or 4
+				set_projectile_collider(self, missile, 8, height)
+			end
 		end
+	end
+end
+
+function player:resolve_projectile_overlap(collider_local_id, enemy)
+	local projectile<const> = self.projectiles_by_collider_local_id[collider_local_id]
+	if projectile.type == projectile_type_none then
+		return
+	end
+	if enemy:receive_player_projectile(projectile) then
+		projectile.despawn(self, projectile, 'enemy_collision')
 	end
 end
 
@@ -756,19 +819,33 @@ function player:ctor()
 	self.primary_projectiles = {}
 	self.missile_projectiles = {}
 	self.secondary_projectiles = {}
+	self.projectiles_by_collider_local_id = {}
 	for vessel_id = 1, player_vessel_capacity do
-		self.primary_projectiles[vessel_id] = {
+		local primary<const> = {
 			type = projectile_type_none,
 			vessel_id = vessel_id,
+			damage = 1,
+			despawn = player.despawn_primary_projectile,
 		}
-		self.missile_projectiles[vessel_id] = {
+		local missile<const> = {
 			type = projectile_type_none,
 			vessel_id = vessel_id,
+			damage = 1,
+			despawn = player.despawn_missile,
 		}
-		self.secondary_projectiles[vessel_id] = {
+		local secondary<const> = {
 			type = projectile_type_none,
 			vessel_id = vessel_id,
+			damage = 1,
+			despawn = player.despawn_uplaser,
 		}
+		self.primary_projectiles[vessel_id] = primary
+		self.missile_projectiles[vessel_id] = missile
+		self.secondary_projectiles[vessel_id] = secondary
+		local collider_base<const> = (vessel_id - 1) * 3
+		attach_projectile_collider(self, primary, collider_base + 1)
+		attach_projectile_collider(self, missile, collider_base + 2)
+		attach_projectile_collider(self, secondary, collider_base + 3)
 	end
 	local visual<const> = self:get_component(custom_visual_component)
 	visual:set_draw_function(draw_player_visual)

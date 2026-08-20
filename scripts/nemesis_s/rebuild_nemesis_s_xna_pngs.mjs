@@ -380,6 +380,97 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
+			source: 'Foes/SchoorsteenFoe12.bmp',
+			target: 'schoorsteen_foe_1.png',
+		},
+		{
+			source: 'Foes/SchoorsteenFoe22.bmp',
+			target: 'schoorsteen_foe_2.png',
+		},
+		{
+			source: 'Foes/SchoorsteenFoe32.bmp',
+			target: 'schoorsteen_foe_3.png',
+		},
+		{
+			source: 'Foes/SchoorsteenFoe42.bmp',
+			target: 'schoorsteen_foe_4.png',
+		},
+		{
+			source: 'Foes/SchoorsteenFoe52.bmp',
+			target: 'schoorsteen_foe_5.png',
+		},
+		{
+			source: 'Foes/Schoorsteenflash1.bmp',
+			target: 'schoorsteen_flash_1.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Schoorsteenflash2.bmp',
+			target: 'schoorsteen_flash_2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/SchoorsteenRay.bmp',
+			target: 'schoorsteen_ray.png',
+		},
+		{
+			source: 'Projectiles/Bullet.bmp',
+			target: 'enemy_bullet.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/RookGenerator11.bmp',
+			target: 'rook_generator_open.png',
+		},
+		{
+			source: 'Foes/RookGenerator22.bmp',
+			target: 'rook_generator_closed.png',
+		},
+		{
+			source: 'Foes/Rook1.bmp',
+			target: 'rook_1.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Rook2.bmp',
+			target: 'rook_2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/Rook3.bmp',
+			target: 'rook_3.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/ZakFoe.bmp',
+			target: 'zak_foe_stand.png',
+			colorKey: { r: 255, g: 255, b: 255 },
+		},
+		{
+			source: 'Foes/ZakFoe2.bmp',
+			target: 'zak_foe_jump.png',
+			colorKey: { r: 255, g: 255, b: 255 },
+		},
+		{
+			source: 'Foes/ZakFoe3.bmp',
+			target: 'zak_foe_recover.png',
+			colorKey: { r: 255, g: 255, b: 255 },
+		},
+		{
+			source: 'Foes/Sneeuwpop2.bmp',
+			target: 'sneeuwpop.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Foes/SneeuwpopRay.bmp',
+			target: 'sneeuwpop_ray.png',
+		},
+		{
+			source: 'Foes/SneeuwpopKaput.bmp',
+			target: 'sneeuwpop_destroyed.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},

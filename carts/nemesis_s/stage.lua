@@ -8,6 +8,7 @@ local custom_visual_component<const> = require('cartlib/component/custom_visual_
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
+local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -30,6 +31,7 @@ local mijter_foe_type_by_symbol<const> = {
 	m = mijter_foe_type_blue,
 	['M'] = mijter_foe_type_red,
 }
+local stage_scroll_follower_view
 
 local non_collision_tile_keys<const> = {
 	none = true,
@@ -476,6 +478,7 @@ function stage:build_tape()
 						column = column,
 						definition_id = ids_sint_pop_def,
 						options = {
+							stage = self,
 							group_id = column,
 							group_type = sint_pop_group,
 							pos = {
@@ -492,10 +495,60 @@ function stage:build_tape()
 						column = stage_x - 1,
 						definition_id = ids_mijter_foe_def,
 						options = {
+							stage = self,
 							mijter_type = mijter_foe_type,
 							pos = {
 								x = playfield_width,
 								y = (stage_y - 2) * self.tile_size,
+							},
+						},
+					}
+				elseif symbol == 'S' then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 2,
+						definition_id = ids_schoorsteen_foe_def,
+						options = {
+							stage = self,
+							pos = {
+								x = playfield_width - 3 - self.tile_size,
+								y = (stage_y - 2) * self.tile_size,
+							},
+						},
+					}
+				elseif symbol == 'R' then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_rook_generator_def,
+						options = {
+							stage = self,
+							pos = {
+								x = playfield_width - (self.tile_size * 2),
+								y = (stage_y - 2) * self.tile_size,
+							},
+						},
+					}
+				elseif symbol == 'Z' then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_zak_foe_def,
+						options = {
+							stage = self,
+							direction = zak_foe_direction_left,
+							pos = {
+								x = playfield_width - self.tile_size,
+								y = (stage_y - 2) * self.tile_size,
+							},
+						},
+					}
+				elseif symbol == 'N' then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = ids_sneeuwpop_def,
+						options = {
+							stage = self,
+							pos = {
+								x = playfield_width - self.tile_size,
+								y = (stage_y - 7) * self.tile_size,
 							},
 						},
 					}
@@ -565,6 +618,11 @@ function stage:advance_tape()
 	self.tape_head = self.left_tile + self.tile_columns - 1
 	local column<const> = self.tape_head - 1
 	self:advance_music_cues(column)
+	local followers<const> = stage_scroll_follower_view.components
+	for follower_index = 1, #followers do
+		local follower<const> = followers[follower_index]
+		follower.parent.x = follower.parent.x - self.tile_size
+	end
 	self:advance_actor_spawns(column)
 	self.tile_steps = self.tile_steps + 1
 	self.total_scroll_px = self.tile_steps * self.tile_size
@@ -718,6 +776,7 @@ local define_stage_fsm<const> = function()
 end
 
 local register_stage_definition<const> = function()
+	stage_scroll_follower_view = world:active_component_view(stage_scroll_follower_component)
 	prefab.define({
 		def_id = ids_stage_def,
 		class = stage,

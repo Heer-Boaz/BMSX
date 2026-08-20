@@ -1,0 +1,6 @@
+tile_size: 8
+layers:
+  body: "#"
+rows:
+  - ".##."
+  - "####"
