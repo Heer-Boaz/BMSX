@@ -25,8 +25,8 @@ import {
 	AEM_SELECTION_MODE_SET,
 	AEM_SEQUENCE_ACTION_KEYS,
 	AEM_STINGER_SYNC_KEYS,
-	AEM_STOP_MUSIC_ACTION_KEYS,
-	AEM_STOP_MUSIC_KEYS,
+	AEM_STOP_ACTION_KEYS,
+	AEM_STOP_KEYS,
 	AEM_EMPTY_ACTION_KEYS,
 	AEM_SYNC_MODE_SET,
 } from './aem_contract';
@@ -123,9 +123,10 @@ type CookedPlayAction = {
 	modulation?: CookedModulation;
 };
 
-type CookedStopMusicAction = {
-	kind: 'stop_music';
+type CookedStopAction = {
+	kind: 'stop';
 	fade_samples: number;
+	channel?: string;
 };
 
 type CookedPauseMusicAction = {
@@ -167,7 +168,7 @@ type CookedMusicTransitionAction = {
 };
 
 type CookedAction = CookedPlayAction
-	| CookedStopMusicAction
+	| CookedStopAction
 	| CookedPauseMusicAction
 	| CookedResumeMusicAction
 	| CookedSequenceAction
@@ -535,12 +536,16 @@ function cookAction(action: Record<string, unknown>, lookup: AemValidationLookup
 		return cooked;
 	}
 
-	const stopMusic = action.stop_music as { fade_ms?: number } | undefined;
-	if (stopMusic !== undefined) {
-		return {
-			kind: 'stop_music',
-			fade_samples: (stopMusic.fade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
+	const stop = action.stop as { channel?: string; fade_ms?: number } | undefined;
+	if (stop !== undefined) {
+		const cooked: CookedStopAction = {
+			kind: 'stop',
+			fade_samples: (stop.fade_ms ?? 0) * APU_SAMPLE_RATE_HZ / 1000,
 		};
+		if (stop.channel !== undefined) {
+			cooked.channel = stop.channel;
+		}
+		return cooked;
 	}
 	if (action.pause_music !== undefined) {
 		return { kind: 'pause_music' };
@@ -649,18 +654,18 @@ export function buildAemEventMap(document: AemDocument, lookup: AemValidationLoo
 	return eventMap;
 }
 
-function actionTerminatesInPlayback(action: Record<string, unknown>): boolean {
-	if (action.audio_id !== undefined) {
+function actionHasCompletionBoundary(action: Record<string, unknown>): boolean {
+	if (action.audio_id !== undefined || action.stop !== undefined) {
 		return true;
 	}
 	const sequence = action.sequence;
 	if (Array.isArray(sequence)) {
-		return actionTerminatesInPlayback(sequence[sequence.length - 1] as Record<string, unknown>);
+		return actionHasCompletionBoundary(sequence[sequence.length - 1] as Record<string, unknown>);
 	}
 	const choices = action.one_of;
 	if (Array.isArray(choices)) {
 		for (let index = 0; index < choices.length; index += 1) {
-			if (!actionTerminatesInPlayback(choices[index] as Record<string, unknown>)) {
+			if (!actionHasCompletionBoundary(choices[index] as Record<string, unknown>)) {
 				return false;
 			}
 		}
@@ -759,7 +764,7 @@ function validateActionSpec(
 	}
 	const actionObject = action as Record<string, unknown>;
 	let commandCount = 0;
-	if (actionObject.stop_music !== undefined) commandCount += 1;
+	if (actionObject.stop !== undefined) commandCount += 1;
 	if (actionObject.pause_music !== undefined) commandCount += 1;
 	if (actionObject.resume_music !== undefined) commandCount += 1;
 	if (actionObject.sequence !== undefined) commandCount += 1;
@@ -768,7 +773,7 @@ function validateActionSpec(
 	if (actionObject.audio_id !== undefined) commandCount += 1;
 	let actionKeys = AEM_ACTION_KEYS;
 	if (commandCount === 1) {
-		if (actionObject.stop_music !== undefined) actionKeys = AEM_STOP_MUSIC_ACTION_KEYS;
+		if (actionObject.stop !== undefined) actionKeys = AEM_STOP_ACTION_KEYS;
 		else if (actionObject.pause_music !== undefined) actionKeys = AEM_PAUSE_MUSIC_ACTION_KEYS;
 		else if (actionObject.resume_music !== undefined) actionKeys = AEM_RESUME_MUSIC_ACTION_KEYS;
 		else if (actionObject.sequence !== undefined) actionKeys = AEM_SEQUENCE_ACTION_KEYS;
@@ -778,18 +783,22 @@ function validateActionSpec(
 	}
 	checkUnknownKeys(actionObject, actionKeys, where, errors);
 	if (commandCount !== 1) {
-		errors.push(`Invalid action command at ${where}: expected exactly one of audio_id, stop_music, pause_music, resume_music, sequence, music_transition, one_of`);
+		errors.push(`Invalid action command at ${where}: expected exactly one of audio_id, stop, pause_music, resume_music, sequence, music_transition, one_of`);
 	}
-	const stopMusic = actionObject.stop_music;
-	if (stopMusic !== undefined) {
-		if (!stopMusic || typeof stopMusic !== 'object' || Array.isArray(stopMusic)) {
-			errors.push(`Invalid stop_music at ${where}: expected object`);
+	const stop = actionObject.stop;
+	if (stop !== undefined) {
+		if (!stop || typeof stop !== 'object' || Array.isArray(stop)) {
+			errors.push(`Invalid stop at ${where}: expected object`);
 			return;
 		}
-		checkUnknownKeys(stopMusic as Record<string, unknown>, AEM_STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
-		const fadeMs = (stopMusic as { fade_ms?: unknown }).fade_ms;
+		checkUnknownKeys(stop as Record<string, unknown>, AEM_STOP_KEYS, `${where}.stop`, errors);
+		const channel = (stop as { channel?: unknown }).channel;
+		if (channel !== undefined && (typeof channel !== 'string' || !AEM_CHANNEL_SET.has(channel))) {
+			errors.push(`Invalid stop.channel '${channel}' at ${where}: expected one of ${Array.from(AEM_CHANNEL_SET).join(', ')}`);
+		}
+		const fadeMs = (stop as { fade_ms?: unknown }).fade_ms;
 		if (fadeMs !== undefined && (typeof fadeMs !== 'number' || fadeMs < 0)) {
-			errors.push(`Invalid stop_music.fade_ms '${fadeMs}' at ${where}: expected number >= 0`);
+			errors.push(`Invalid stop.fade_ms '${fadeMs}' at ${where}: expected number >= 0`);
 		}
 		return;
 	}
@@ -970,8 +979,8 @@ function validateRules(
 		validateActionSpec(rule.go, file, eventName, index, lookup, errors, warnings, musicTransitionsWithFallback);
 		if (requiresNaturalCompletion
 			&& errors.length === actionErrorCount
-			&& !actionTerminatesInPlayback(rule.go as Record<string, unknown>)) {
-			errors.push(`Invalid on_finished at ${eventLabel}#rule${index}: the selected action must terminate in an audio playback`);
+			&& !actionHasCompletionBoundary(rule.go as Record<string, unknown>)) {
+			errors.push(`Invalid on_finished at ${eventLabel}#rule${index}: the selected action has no physical completion boundary`);
 		}
 	}
 }

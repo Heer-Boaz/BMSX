@@ -39,14 +39,22 @@ local route_slot<const> = {
 -- that are actually queued behind an active slot; an admitted play that can
 -- start now writes the APU command without constructing a transient play record.
 -- Optional on_finished state follows that admitted play until the APU publishes
--- its physical completion. Replacement and explicit stop discard it instead of
--- presenting cancellation as natural playback completion.
+-- its physical completion. Replacement and explicit stop discard the playback
+-- callback; a stop action with its own on_finished instead owns the completion
+-- of every physical slot retained by that route.
 local events
 bss music_request_seq: word
 bss current_music_source_addr: word
 bss current_music_slot: word
 bss pending_music_seq: word
 local pending_music_transition
+bss stop_request_seq: word
+bss pending_stop_seq: word[4]
+bss pending_stop_remaining: word[4]
+bss slot_stop_seq: word[4]
+bss slot_stop_route: word[4]
+local pending_stop_finished_event<const> = {}
+local pending_stop_emitter<const> = {}
 bss stinger_seq: word
 bss stinger_source_addr: word
 bss stinger_slot: word
@@ -64,7 +72,7 @@ local finished_queue_head
 local finished_queue_tail
 
 local action_kind_play<const> = 1
-local action_kind_stop_music<const> = 2
+local action_kind_stop<const> = 2
 local action_kind_sequence<const> = 3
 local action_kind_music_transition<const> = 4
 local action_kind_random_uniform<const> = 5
@@ -72,7 +80,7 @@ local action_kind_random_weighted<const> = 6
 local action_kind_pause_music<const> = 7
 local action_kind_resume_music<const> = 8
 local source_action_play<const> = 'play'
-local source_action_stop_music<const> = 'stop_music'
+local source_action_stop<const> = 'stop'
 local source_action_pause_music<const> = 'pause_music'
 local source_action_resume_music<const> = 'resume_music'
 local source_action_sequence<const> = 'sequence'
@@ -172,16 +180,23 @@ local compile_music_transition<const> = function(action, audio_cache)
 end
 
 local compile_action
-compile_action = function(action, audio_cache)
+compile_action = function(action, audio_cache, default_route)
 	local kind<const> = action.kind
 	if kind == source_action_play then
 		return compile_play_action(action, audio_cache)
 	end
-	if kind == source_action_stop_music then
-		return {
-			kind = action_kind_stop_music,
+	if kind == source_action_stop then
+		local route = default_route
+		local channel<const> = action.channel
+		if channel ~= nil then
+			route = route_slot[channel]
+		end
+		local compiled<const> = {
+			kind = action_kind_stop,
 			fade_samples = action.fade_samples,
+			route = route,
 		}
+		return compiled
 	end
 	if kind == source_action_pause_music then
 		return { kind = action_kind_pause_music }
@@ -193,7 +208,7 @@ compile_action = function(action, audio_cache)
 		local source_actions<const> = action.actions
 		local actions<const> = {}
 		for i = 1, #source_actions do
-			actions[i] = compile_action(source_actions[i], audio_cache)
+			actions[i] = compile_action(source_actions[i], audio_cache, default_route)
 		end
 		return {
 			kind = action_kind_sequence,
@@ -204,7 +219,7 @@ compile_action = function(action, audio_cache)
 		local source_actions<const> = action.actions
 		local actions<const> = {}
 		for i = 1, #source_actions do
-			actions[i] = compile_action(source_actions[i], audio_cache)
+			actions[i] = compile_action(source_actions[i], audio_cache, default_route)
 		end
 		local compiled<const> = {
 			kind = kind == source_action_random_uniform and action_kind_random_uniform or action_kind_random_weighted,
@@ -222,13 +237,13 @@ compile_action = function(action, audio_cache)
 	return compile_music_transition(action, audio_cache)
 end
 
-local compile_rules<const> = function(rules, audio_cache)
+local compile_rules<const> = function(rules, audio_cache, default_route)
 	local compiled<const> = {}
 	for i = 1, #rules do
 		local rule<const> = rules[i]
 		compiled[i] = {
 			predicate = compile_matcher(rule.when),
-			action = compile_action(rule.action, audio_cache),
+			action = compile_action(rule.action, audio_cache, default_route),
 		}
 	end
 	return compiled
@@ -272,7 +287,7 @@ local merge_events<const> = function(event_maps)
 
 	local add_or_merge<const> = function(event_name, entry)
 		local slot<const> = route_slot[entry.channel]
-		local compiled_rules<const> = compile_rules(entry.rules, audio_cache)
+		local compiled_rules<const> = compile_rules(entry.rules, audio_cache, slot)
 		local cur<const> = merged[event_name]
 		if not cur then
 			merged[event_name] = {
@@ -395,6 +410,32 @@ local discard_slot_completion<const> = function(slot)
 	slot_finished_emitter[slot] = nil
 end
 
+local clear_pending_stop<const> = function(route)
+	pending_stop_seq[route] = 0
+	pending_stop_remaining[route] = 0
+	pending_stop_finished_event[route] = nil
+	pending_stop_emitter[route] = nil
+	if route == slot_music_a then
+		slot_stop_seq[slot_music_a] = 0
+		slot_stop_seq[slot_music_b] = 0
+		return
+	end
+	slot_stop_seq[route] = 0
+end
+
+local clear_all_pending_stops<const> = function()
+	clear_pending_stop(slot_sfx)
+	clear_pending_stop(slot_music_a)
+	clear_pending_stop(slot_ui)
+end
+
+local enqueue_finished_event<const> = function(finished_event, emitter)
+	local tail<const> = finished_queue_tail + 1
+	finished_queue_tail = tail
+	finished_event_queue[tail] = finished_event
+	finished_emitter_queue[tail] = emitter
+end
+
 local enqueue_prepared_play<const> = function(play)
 	local slot<const> = play.slot
 	local tail<const> = slot_queue_tail[slot] + 1
@@ -498,6 +539,7 @@ local submit_play<const> = function(
 		if slot_is_busy(slot) and priority < slot_active_priority[slot] then
 			return
 		end
+		clear_pending_stop(slot)
 		clear_slot_queue(slot)
 	end
 	mark_slot_active(slot, source.source_addr, priority, finished_event, finished_emitter)
@@ -596,6 +638,7 @@ local begin_music_request<const> = function()
 	end
 	clear_stinger()
 	clear_pending_music()
+	clear_pending_stop(slot_music_a)
 	return *music_request_seq
 end
 
@@ -693,17 +736,62 @@ dispatch_action = function(entry, action, emitter, finished_event)
 		dispatch_audio_play(entry, action, emitter, finished_event)
 		return
 	end
-	if kind == action_kind_stop_music then
-		begin_music_request()
-		*current_music_source_addr = 0
-		*current_music_slot = 0
-		discard_slot_completion(slot_music_a)
-		discard_slot_completion(slot_music_b)
-		apu.stop_slot(slot_music_a, action.fade_samples)
-		apu.stop_slot(slot_music_b, action.fade_samples)
-		if action.fade_samples == 0 then
-			clear_slot_active(slot_music_a)
-			clear_slot_active(slot_music_b)
+	if kind == action_kind_stop then
+		local route<const> = action.route
+		*stop_request_seq = *stop_request_seq + 1
+		local request_seq<const> = *stop_request_seq
+		if route == slot_music_a then
+			begin_music_request()
+			*current_music_source_addr = 0
+			*current_music_slot = 0
+			discard_slot_completion(slot_music_a)
+			discard_slot_completion(slot_music_b)
+		else
+			clear_pending_stop(route)
+			clear_slot_queue(route)
+			discard_slot_completion(route)
+		end
+		local fade_samples<const> = action.fade_samples
+		local stopped_slot_count = 0
+		if finished_event ~= nil and fade_samples > 0 then
+			if route == slot_music_a then
+				if slot_is_busy(slot_music_a) then
+					stopped_slot_count = stopped_slot_count + 1
+					slot_stop_seq[slot_music_a] = request_seq
+					slot_stop_route[slot_music_a] = route
+				end
+				if slot_is_busy(slot_music_b) then
+					stopped_slot_count = stopped_slot_count + 1
+					slot_stop_seq[slot_music_b] = request_seq
+					slot_stop_route[slot_music_b] = route
+				end
+			elseif slot_is_busy(route) then
+				stopped_slot_count = 1
+				slot_stop_seq[route] = request_seq
+				slot_stop_route[route] = route
+			end
+			if stopped_slot_count > 0 then
+				pending_stop_seq[route] = request_seq
+				pending_stop_remaining[route] = stopped_slot_count
+				pending_stop_finished_event[route] = finished_event
+				pending_stop_emitter[route] = emitter
+			end
+		end
+		if route == slot_music_a then
+			apu.stop_slot(slot_music_a, fade_samples)
+			apu.stop_slot(slot_music_b, fade_samples)
+			if fade_samples == 0 then
+				clear_slot_active(slot_music_a)
+				clear_slot_active(slot_music_b)
+			end
+		else
+			apu.stop_slot(route, fade_samples)
+			if fade_samples == 0 then
+				clear_slot_active(route)
+			end
+		end
+		if finished_event ~= nil and stopped_slot_count == 0 then
+			enqueue_finished_event(finished_event, emitter)
 		end
 		return
 	end
@@ -768,10 +856,12 @@ end
 
 local reset_audio_state<const> = function()
 	*music_request_seq = 0
+	*stop_request_seq = 0
 	*current_music_source_addr = 0
 	*current_music_slot = 0
 	reset_slot_state()
 	clear_pending_music()
+	clear_all_pending_stops()
 	clear_stinger()
 end
 
@@ -805,6 +895,8 @@ local on_apu_irq<const> = function()
 
 	local finished_event<const> = slot_finished_event[slot]
 	local finished_emitter<const> = slot_finished_emitter[slot]
+	local stop_seq<const> = slot_stop_seq[slot]
+	local stop_route<const> = slot_stop_route[slot]
 	local completed
 	if *stinger_source_addr == source_addr
 		and *stinger_slot == slot
@@ -827,11 +919,22 @@ local on_apu_irq<const> = function()
 			play_next_queued(slot)
 		end
 	end
+	if completed and stop_seq ~= 0 then
+		slot_stop_seq[slot] = 0
+		if stop_seq == pending_stop_seq[stop_route] then
+			local remaining<const> = pending_stop_remaining[stop_route] - 1
+			pending_stop_remaining[stop_route] = remaining
+			if remaining == 0 then
+				enqueue_finished_event(
+					pending_stop_finished_event[stop_route],
+					pending_stop_emitter[stop_route]
+				)
+				clear_pending_stop(stop_route)
+			end
+		end
+	end
 	if completed and finished_event ~= nil then
-		local tail<const> = finished_queue_tail + 1
-		finished_queue_tail = tail
-		finished_event_queue[tail] = finished_event
-		finished_emitter_queue[tail] = finished_emitter
+		enqueue_finished_event(finished_event, finished_emitter)
 	end
 end
 
@@ -873,6 +976,7 @@ function aem:clear()
 		discard_slot_completion(slot)
 		clear_slot_queue(slot)
 	end
+	clear_all_pending_stops()
 end
 
 rebind()

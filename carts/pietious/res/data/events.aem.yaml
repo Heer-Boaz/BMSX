@@ -45,7 +45,7 @@ events:
         channel: music
         rules:
             - go:
-                  stop_music:
+                  stop:
                       fade_ms: 0
 
     story:
@@ -90,7 +90,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: pickupkey
                       - audio_id: danceofjoy
@@ -147,7 +148,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: daemondeath
 
@@ -214,7 +216,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: dying
 
@@ -223,7 +226,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: enterleave
 
@@ -232,7 +236,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: enterleave
 
@@ -240,7 +245,7 @@ events:
         channel: music
         rules:
             - go:
-                  stop_music:
+                  stop:
                       fade_ms: 0
 
     leave_shrine_overlay:
@@ -254,7 +259,8 @@ events:
         rules:
             - go:
                   sequence:
-                      - stop_music:
+                      - stop:
+                            channel: music
                             fade_ms: 0
                       - audio_id: enterleave
 
@@ -352,7 +358,7 @@ events:
         channel: music
         rules:
             - go:
-                  stop_music:
+                  stop:
                       fade_ms: 2480
 
     damage.resolved:
