@@ -39,6 +39,7 @@ local symbols<const> = {
 	press = generated_symbol('press'),
 	hold = generated_symbol('hold'),
 	release = generated_symbol('release'),
+	combo = generated_symbol('combo'),
 	latch = generated_symbol('latch'),
 	armed = generated_symbol('armed'),
 	matched = generated_symbol('matched'),
@@ -72,6 +73,12 @@ local input_slots<const> = {
 		result = symbols.release,
 		effect_start = 'release_effect_start',
 		effect_end = 'release_effect_end',
+	},
+	{
+		member = 'combo',
+		result = symbols.combo,
+		effect_start = 'combo_effect_start',
+		effect_end = 'combo_effect_end',
 	},
 }
 
@@ -249,6 +256,7 @@ local emit_binding_body<const> = function(statements, values, binding, binding_i
 	emit_input(statements, values, binding, binding_index, input_slots[1])
 	emit_input(statements, values, binding, binding_index, input_slots[2])
 	emit_input(statements, values, binding, binding_index, input_slots[3])
+	emit_input(statements, values, binding, binding_index, input_slots[4])
 	local custom<const> = binding.custom
 	for custom_index = 1, #custom do
 		local source_custom<const> = index_expression(
@@ -366,6 +374,9 @@ local emit_input_locals<const> = function(statements, program)
 	end
 	if program.release_binding_count > 0 then
 		statements[#statements + 1] = local_statement(reference(symbols.release), nil, false)
+	end
+	if program.has_combo then
+		statements[#statements + 1] = local_statement(reference(symbols.combo), nil, false)
 	end
 	if program.max_custom_count > 0 then
 		statements[#statements + 1] = local_statement(

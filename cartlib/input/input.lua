@@ -686,6 +686,54 @@ function input.bind(player_index, pattern)
 	return evaluate
 end
 
+-- Ordered action combos retain only the current step. Each step and optional
+-- cancellation action is an ordinary compiled PlayerInput expression, so the
+-- combo stays above physical mappings and shares their sampled button states.
+-- Completion lasts one evaluation and resets the combo, matching an explicit
+-- input trigger rather than publishing a second input event stream.
+function input.bind_combo(player_index, definition)
+	local source_steps<const> = definition.steps
+	local steps<const> = {}
+	for index = 1, #source_steps do
+		steps[index] = input.bind(player_index, source_steps[index])
+	end
+	local step_count<const> = #steps
+	local step_index = 1
+	local cancel<const> = definition.cancel and input.bind(player_index, definition.cancel)
+	local reset_combo<const> = function()
+		step_index = 1
+	end
+	if cancel == nil then
+		local evaluate_without_cancel<const> = function()
+			if not steps[step_index]() then
+				return false
+			end
+			if step_index == step_count then
+				step_index = 1
+				return true
+			end
+			step_index = step_index + 1
+			return false
+		end
+		return evaluate_without_cancel, reset_combo
+	end
+	local evaluate_with_cancel<const> = function()
+		if steps[step_index]() then
+			if step_index == step_count then
+				step_index = 1
+				return true
+			end
+			step_index = step_index + 1
+			return false
+		end
+		if cancel() then
+			step_index = 1
+		end
+		return false
+	end
+	return evaluate_with_cancel, reset_combo
+end
+
 function input.is_action_pressed(player_index, action)
 	local player<const> = players[player_index]
 	local state<const> = evaluate_player_action_state(player, action, requirement_pressed)

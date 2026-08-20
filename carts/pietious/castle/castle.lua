@@ -342,6 +342,8 @@ function castle:sync_current_room_seal_instance()
 		seal_instance = world:spawn('seal', {
 			id = seal.id,
 			space_id = world.active_space_id,
+			player_index = room.player.player_index,
+			command = seal.text,
 			pos = { x = seal.x, y = seal.y, z = 23 },
 		})
 		self.seal_instance = seal_instance

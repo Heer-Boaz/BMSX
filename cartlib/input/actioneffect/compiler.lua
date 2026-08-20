@@ -63,6 +63,11 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 	if on.release ~= nil then
 		release = input.bind(player_index, on.release)
 	end
+	local combo
+	local combo_reset
+	if on.combo ~= nil then
+		combo, combo_reset = input.bind_combo(player_index, on.combo)
+	end
 	local custom = no_custom_bindings
 	local custom_source<const> = on.custom
 	if custom_source ~= nil and #custom_source > 0 then
@@ -84,6 +89,8 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 	local hold_effect_end<const> = append_effects(effects, binding_effects.hold)
 	local release_effect_start<const> = #effects + 1
 	local release_effect_end<const> = append_effects(effects, binding_effects.release)
+	local combo_effect_start<const> = #effects + 1
+	local combo_effect_end<const> = append_effects(effects, binding_effects.combo)
 	return {
 		order = source_index,
 		priority = priority,
@@ -91,12 +98,16 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 		press = press,
 		hold = hold,
 		release = release,
+		combo = combo,
+		combo_reset = combo_reset,
 		press_effect_start = press_effect_start,
 		press_effect_end = press_effect_end,
 		hold_effect_start = hold_effect_start,
 		hold_effect_end = hold_effect_end,
 		release_effect_start = release_effect_start,
 		release_effect_end = release_effect_end,
+		combo_effect_start = combo_effect_start,
+		combo_effect_end = combo_effect_end,
 		custom = custom,
 	}
 end
@@ -115,8 +126,10 @@ function compiler.compile_program(owner, program)
 	local effects<const> = {}
 	local max_custom_count = 0
 	local release_binding_count = 0
+	local combo_resets<const> = {}
 	local has_press
 	local has_hold
+	local has_combo
 	for i = 1, #source do
 		local binding<const> = compile_binding(owner, player_index, source[i], i, effects)
 		bindings[i] = binding
@@ -129,6 +142,10 @@ function compiler.compile_program(owner, program)
 		if binding.release ~= nil then
 			release_binding_count = release_binding_count + 1
 		end
+		if binding.combo ~= nil then
+			has_combo = true
+			combo_resets[#combo_resets + 1] = binding.combo_reset
+		end
 		local custom_count<const> = #binding.custom
 		if custom_count > max_custom_count then
 			max_custom_count = custom_count
@@ -140,7 +157,9 @@ function compiler.compile_program(owner, program)
 		stop_after_match = program.eval == nil or program.eval == 'first',
 		has_press = has_press,
 		has_hold = has_hold,
+		has_combo = has_combo,
 		release_binding_count = release_binding_count,
+		combo_resets = combo_resets,
 		max_custom_count = max_custom_count,
 	}
 	local evaluate<const>, uses_effect_triggers<const>, queued_event_capacity<const>, queued_command_capacity<const>
@@ -158,6 +177,9 @@ function compiler.compile_program(owner, program)
 		binding.hold_effect_end = nil
 		binding.release_effect_start = nil
 		binding.release_effect_end = nil
+		binding.combo_effect_start = nil
+		binding.combo_effect_end = nil
+		binding.combo_reset = nil
 		local custom<const> = binding.custom
 		for custom_index = 1, #custom do
 			custom[custom_index].effect_start = nil

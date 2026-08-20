@@ -42,6 +42,10 @@ function input_actioneffect_component:on_activate()
 		end
 		self.last_frame = 0
 	end
+	local combo_resets<const> = program.combo_resets
+	for i = 1, #combo_resets do
+		combo_resets[i]()
+	end
 	if program.max_custom_count > 0 then
 		local custom_matches<const> = self.custom_matches
 		for i = 1, program.max_custom_count do

@@ -85,7 +85,7 @@ function __bmsx_host_test.update()
 		test.enemy_y = enemy.y
 		test.projectile_x = projectile.x
 		test.projectile_y = projectile.y
-		director.events:emit('seal_dissolution_start')
+		director.events:emit('seal.incantation_completed')
 		test.phase = 'pause_commit'
 		return false
 	end

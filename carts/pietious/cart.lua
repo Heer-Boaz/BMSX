@@ -7,6 +7,38 @@ local input<const> = require('cartlib/input/input')
 input.add_player(1)
 input.push_context(1, 'pietious', {
 	pause = { 'F2' },
+	seal_a = { 'KeyA' },
+	seal_b = { 'KeyB' },
+	seal_c = { 'KeyC' },
+	seal_d = { 'KeyD' },
+	seal_e = { 'KeyE' },
+	seal_f = { 'KeyF' },
+	seal_g = { 'KeyG' },
+	seal_h = { 'KeyH' },
+	seal_i = { 'KeyI' },
+	seal_j = { 'KeyJ' },
+	seal_k = { 'KeyK' },
+	seal_l = { 'KeyL' },
+	seal_m = { 'KeyM' },
+	seal_n = { 'KeyN' },
+	seal_o = { 'KeyO' },
+	seal_p = { 'KeyP' },
+	seal_q = { 'KeyQ' },
+	seal_r = { 'KeyR' },
+	seal_s = { 'KeyS' },
+	seal_t = { 'KeyT' },
+	seal_u = { 'KeyU' },
+	seal_v = { 'KeyV' },
+	seal_w = { 'KeyW' },
+	seal_x = { 'KeyX' },
+	seal_y = { 'KeyY' },
+	seal_z = { 'KeyZ' },
+	seal_character = {
+		'KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE', 'KeyF', 'KeyG',
+		'KeyH', 'KeyI', 'KeyJ', 'KeyK', 'KeyL', 'KeyM', 'KeyN',
+		'KeyO', 'KeyP', 'KeyQ', 'KeyR', 'KeyS', 'KeyT', 'KeyU',
+		'KeyV', 'KeyW', 'KeyX', 'KeyY', 'KeyZ',
+	},
 })
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')

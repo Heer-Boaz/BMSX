@@ -85,6 +85,7 @@ local compile_effects<const> = function(bindings, source)
 		compile_effect_range(program, source, binding.press_effect_start, binding.press_effect_end, 'press')
 		compile_effect_range(program, source, binding.hold_effect_start, binding.hold_effect_end, 'hold')
 		compile_effect_range(program, source, binding.release_effect_start, binding.release_effect_end, 'release')
+		compile_effect_range(program, source, binding.combo_effect_start, binding.combo_effect_end, 'combo')
 		local custom<const> = binding.custom
 		for custom_index = 1, #custom do
 			local entry<const> = custom[custom_index]

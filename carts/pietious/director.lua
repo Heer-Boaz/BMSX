@@ -284,6 +284,7 @@ end
 --                             lithograph, transition) subscribe and self-clear.
 --   'transition'            — director entered transition sub-state. Optional
 --                             { lines = { ... } } payload for banner text.
+--   'seal.incantation_completed' — requests the gameplay-suspended seal sequence.
 --   'seal_dissolution'      — starts the gameplay-suspended flash/dissolve state.
 --   'seal_dissolution_done' — entire dissolution timeline finished.
 --   'daemon_appearance'     — begins the fixed daemon-cloud sequence.
@@ -442,7 +443,10 @@ local define_director_fsm<const> = function()
 				emitter = 'pietolon',
 				go = '/shrine',
 			},
-			['seal_dissolution_start'] = '/seal_dissolution',
+			['seal.incantation_completed'] = {
+				emitter = false,
+				go = '/seal_dissolution',
+			},
 			['dying'] = {
 				emitter = 'pietolon',
 				go = '/death',
