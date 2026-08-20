@@ -41,3 +41,31 @@ events:
             - go:
                   stop:
                       fade_ms: 0
+
+    stage.music.intro:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_stage_intro
+                      fade_ms: 4000
+                      start_fresh: true
+
+    stage.music.main:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_stage
+                      fade_ms: 4000
+                      start_fresh: true
+
+    stage.music.boss:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_boss
+                      fade_ms: 4000
+                      sync:
+                          stinger: music_boss_intro

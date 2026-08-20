@@ -701,6 +701,17 @@ local play_transition_apu<const> = function(transition)
 	play_music_now(transition)
 end
 
+local play_stinger_now<const> = function(transition)
+	local source<const> = transition.stinger_source
+	local slot<const> = transition.stinger_slot
+	*stinger_seq = *music_request_seq
+	*stinger_source_addr = source.source_addr
+	*stinger_slot = slot
+	stinger_music_transition = transition
+	mark_slot_active(slot, source.source_addr, transition.stinger_priority, nil, nil)
+	apu.play_plain(source, slot)
+end
+
 local dispatch_music_transition<const> = function(transition)
 	local request_seq<const> = begin_music_request()
 	local target_source<const> = transition.target_source
@@ -711,6 +722,13 @@ local dispatch_music_transition<const> = function(transition)
 		return
 	end
 	if stinger_source ~= nil then
+		local fade_samples<const> = transition.fade_samples
+		if fade_samples > 0 and *current_music_source_addr ~= 0 then
+			queue_music_after_current(request_seq, transition)
+			discard_slot_completion(*current_music_slot)
+			apu.stop_slot(*current_music_slot, fade_samples)
+			return
+		end
 		if *current_music_source_addr ~= 0 then
 			local slot<const> = *current_music_slot
 			apu.stop_slot(slot, 0)
@@ -718,12 +736,7 @@ local dispatch_music_transition<const> = function(transition)
 		end
 		*current_music_source_addr = 0
 		*current_music_slot = 0
-		*stinger_seq = request_seq
-		*stinger_source_addr = stinger_source.source_addr
-		*stinger_slot = transition.stinger_slot
-		stinger_music_transition = transition
-		mark_slot_active(*stinger_slot, *stinger_source_addr, transition.stinger_priority, nil, nil)
-		apu.play_plain(stinger_source, *stinger_slot)
+		play_stinger_now(transition)
 		return
 	end
 	play_transition_apu(transition)
@@ -914,7 +927,11 @@ local on_apu_irq<const> = function()
 		if *pending_music_seq == *music_request_seq and pending_music_transition ~= nil then
 			local transition<const> = pending_music_transition
 			clear_pending_music()
-			play_music_now(transition)
+			if transition.stinger_source ~= nil then
+				play_stinger_now(transition)
+			else
+				play_music_now(transition)
+			end
 		else
 			play_next_queued(slot)
 		end

@@ -396,6 +396,7 @@ end
 function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
+	self.music_cues = stage_data.music_cues
 	self.star_visual:set_offset_z(stage_data.draw_z)
 	self.stage_tiles:set_offset_z(stage_data.draw_z)
 	self.scroll_mode_pause = stage_data.scroll_mode_pause
@@ -403,6 +404,18 @@ function stage:apply_stage_config(stage_data)
 	self.scroll_mode_gated = stage_data.scroll_mode_gated
 	self.scroll_mode_default = stage_data.scroll_mode_default
 	self.scroll_rotator_initial = stage_data.scroll_rotator_initial
+end
+
+function stage:advance_music_cues(column)
+	local music_cues<const> = self.music_cues
+	local cue_index = self.music_cue_index
+	local cue = music_cues[cue_index]
+	while cue ~= nil and cue.column <= column do
+		self.events:emit(cue.event)
+		cue_index = cue_index + 1
+		cue = music_cues[cue_index]
+	end
+	self.music_cue_index = cue_index
 end
 
 function stage:build_tape()
@@ -448,6 +461,7 @@ function stage:reset_runtime()
 	self.left_tile = 1
 	self.stage_tiles:set_visible_columns(1, self.tile_columns + 2)
 	self.tape_head = self.tile_columns
+	self.music_cue_index = 1
 	self.tile_steps = 0
 	self.total_scroll_px = 0
 	self.total_smooth_scroll_px = 0
@@ -462,6 +476,12 @@ function stage:reset_runtime()
 	self.yellow_blink = false
 	self.blue_blink = false
 	self.blink_turn = 'yellow'
+end
+
+function stage:begin_play()
+	self:advance_music_cues(self.tape_head - 1)
+	self:update_runtime()
+	return '/running/scrolling'
 end
 
 function stage:update_runtime()
@@ -498,6 +518,7 @@ function stage:update_runtime()
 				self.left_tile = self.left_tile + 1
 				self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 				self.tape_head = self.left_tile + self.tile_columns - 1
+				self:advance_music_cues(self.tape_head - 1)
 				self.tile_steps = self.tile_steps + 1
 				self.scroll_advanced = true
 				if telemetry_enabled then
@@ -576,7 +597,7 @@ local define_stage_fsm<const> = function()
 				end,
 			},
 			running = {
-				update = stage.update_runtime,
+				initial = 'begin_play',
 				timelines = {
 					[ids_stage_star_blink_timeline] = {
 						def = {
@@ -597,6 +618,14 @@ local define_stage_fsm<const> = function()
 							rewind = true,
 							snap_to_start = true,
 						},
+					},
+				},
+				states = {
+					begin_play = {
+						update = stage.begin_play,
+					},
+					scrolling = {
+						update = stage.update_runtime,
 					},
 				},
 			},
