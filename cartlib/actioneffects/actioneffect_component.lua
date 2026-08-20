@@ -54,6 +54,24 @@ setmetatable(actioneffect_component, { __index = base_component })
 
 local definitions_by_id<const> = {}
 
+local calculate_effect_cooldown<const> = function(effect, owner, payload, ...)
+	local definition<const> = effect.definition
+	local cooldown_ms = definition.cooldown_ms
+	local calculate_cooldown_ms<const> = definition.calculate_cooldown_ms
+	if calculate_cooldown_ms ~= nil then
+		cooldown_ms = calculate_cooldown_ms(owner, payload, ...)
+	end
+	return cooldown_ms
+end
+
+local commit_effect_cooldown<const> = function(effect, owner, cooldown_ms)
+	if cooldown_ms ~= nil then
+		effect.cooldown_until_ms = owner.world.gameplay_time_ms + cooldown_ms
+	else
+		effect.cooldown_until_ms = nil
+	end
+end
+
 function actioneffect_component.set_definition(id, definition)
 	definitions_by_id[id] = definition
 end
@@ -124,6 +142,23 @@ function actioneffect_component:has_effect(id)
 	return self.effects[id] ~= nil
 end
 
+-- Cooldown commitment is normally part of successful activation. A deferred
+-- cooldown calculates and retains its duration at activation, then commits at
+-- the authored completion boundary so neither timing nor RNG ownership moves
+-- into the caller.
+function actioneffect_component:commit_cooldown(id, payload, ...)
+	local effect<const> = self.effects[id]
+	local cooldown_ms
+	if effect.cooldown_pending then
+		cooldown_ms = effect.pending_cooldown_ms
+		effect.cooldown_pending = nil
+		effect.pending_cooldown_ms = nil
+	else
+		cooldown_ms = calculate_effect_cooldown(effect, self.parent, payload, ...)
+	end
+	commit_effect_cooldown(effect, self.parent, cooldown_ms)
+end
+
 function actioneffect_component:try_trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
 	local definition<const> = effect.definition
@@ -144,15 +179,12 @@ function actioneffect_component:try_trigger(id, payload, ...)
 	if gate and not gate(owner, payload, ...) then
 		return false
 	end
-	local cooldown_ms = definition.cooldown_ms
-	local calculate_cooldown_ms<const> = definition.calculate_cooldown_ms
-	if calculate_cooldown_ms ~= nil then
-		cooldown_ms = calculate_cooldown_ms(owner, payload, ...)
-	end
-	if cooldown_ms ~= nil then
-		effect.cooldown_until_ms = current_time_ms + cooldown_ms
+	local cooldown_ms<const> = calculate_effect_cooldown(effect, owner, payload, ...)
+	if definition.defer_cooldown_commit then
+		effect.pending_cooldown_ms = cooldown_ms
+		effect.cooldown_pending = true
 	else
-		effect.cooldown_until_ms = nil
+		commit_effect_cooldown(effect, owner, cooldown_ms)
 	end
 	local event_type = definition.event
 	local event_payload = payload
