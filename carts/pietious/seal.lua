@@ -8,7 +8,7 @@ function seal:ctor()
 	local command<const> = self.command
 	local steps<const> = {}
 	for index = 1, #command do
-		steps[index] = 'seal_' .. command:sub(index, index) .. '[jp]'
+		steps[index] = 'key_' .. command:sub(index, index) .. '[jp]'
 	end
 	self:add_component(input_actioneffect_component.new({
 		program = {
@@ -18,7 +18,7 @@ function seal:ctor()
 					on = {
 						combo = {
 							steps = steps,
-							cancel = 'seal_character[jp]',
+							cancel = 'key_letter[jp]',
 						},
 					},
 					go = {
