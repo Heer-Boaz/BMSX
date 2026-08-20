@@ -5,7 +5,6 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local prefab<const> = require('cartlib/world/prefab')
-local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
@@ -184,17 +183,15 @@ function zak_foe.register()
 			end
 			local bullet_x<const> = self.x + 4
 			local bullet_y<const> = self.y
-			local speed_x<const>, speed_y<const> = velocity.dominant_axis_velocity(
-				target.x - bullet_x,
-				target.y - bullet_y,
-				enemy_bullet_speed
-			)
-			world:spawn(ids_enemy_bullet_def, {
+			local bullet<const> = world:spawn(ids_enemy_bullet_def, {
 				stage = self.stage,
-				speed_x = speed_x,
-				speed_y = speed_y,
 				pos = { x = bullet_x, y = bullet_y },
 			})
+			bullet.motion:set_dominant_axis_velocity(
+				target.x - bullet_x,
+				target.y - bullet_y,
+				enemy_bullet_speed_q8
+			)
 		end,
 	})
 	define_fsm()

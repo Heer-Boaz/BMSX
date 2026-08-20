@@ -68,9 +68,8 @@ function __bmsx_host_test.update()
 	if test.phase == 'attack' then
 		local foe<const> = mijter_foes[1]
 		local dx<const> = foe.x - test.previous_x
-		local dy<const> = foe.y - test.previous_y
-		assert(dx == -mijter_foe_attack_speed, 'MijterFoe attack vector lost its dominant-axis speed')
-		assert(dy > 0 and dy < mijter_foe_attack_speed,
+		assert(dx == -(mijter_foe_attack_speed_q8 >> 8), 'MijterFoe attack vector lost its dominant-axis speed')
+		assert(foe.motion.velocity_y > 0 and foe.motion.velocity_y < mijter_foe_attack_speed_q8,
 			'MijterFoe attack vector no longer targets the selected player')
 		test.phase = 'dispose'
 		return false

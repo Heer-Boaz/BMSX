@@ -2,7 +2,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local velocity<const> = require('cartlib/velocity')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 require('constants')
@@ -33,6 +33,7 @@ local hit_area<const> = {
 
 function mijter_foe:ctor()
 	self:get_component(collider_2d_component).local_area = hit_area
+	self.motion = self:get_component(fixed_point_velocity_component)
 end
 
 function mijter_foe:onspawn()
@@ -61,12 +62,13 @@ function mijter_foe:update_default()
 	end
 	local dx<const> = target.x - self.x
 	local dy<const> = target.y - self.y
-	self.speed_x, self.speed_y = velocity.dominant_axis_velocity(
+	local motion<const> = self.motion
+	motion:set_dominant_axis_velocity(
 		dx,
 		dy,
-		mijter_foe_attack_speed
+		mijter_foe_attack_speed_q8
 	)
-	if self.speed_y > 0 then
+	if motion.velocity_y > 0 then
 		self:set_imgid(self.images.down)
 	else
 		self:set_imgid(self.images.up)
@@ -75,8 +77,6 @@ function mijter_foe:update_default()
 end
 
 function mijter_foe:update_attacking_player()
-	self.x = self.x + self.speed_x
-	self.y = self.y + self.speed_y
 	if self.x < -mijter_foe_width
 	or self.x > playfield_width
 	or self.y < -mijter_foe_height
@@ -104,13 +104,12 @@ function mijter_foe.register()
 		base = enemy,
 		components = {
 			enemy.new_collider,
+			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_mijter_foe_fsm }),
 		},
 		defaults = {
 			imgid = assets_mijter_foe_blue_neutral,
 			mijter_type = mijter_foe_type_blue,
-			speed_x = 0,
-			speed_y = 0,
 			max_health = 1,
 			small_fry = true,
 			z = mijter_foe_draw_z,

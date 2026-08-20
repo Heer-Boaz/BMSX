@@ -1,4 +1,5 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -15,8 +16,6 @@ local new_enemy_bullet_collider<const> = collider_2d_component.factory_for_sprit
 })
 
 function enemy_bullet:update_flying()
-	self.x = self.x + self.speed_x
-	self.y = self.y + self.speed_y
 	if self.x < enemy_bullet_size
 	or self.x > playfield_width
 	or self.y < enemy_bullet_size
@@ -24,6 +23,10 @@ function enemy_bullet:update_flying()
 	or self.stage:is_solid_pixel(self.x + 2, self.y + 2) then
 		self:mark_for_disposal()
 	end
+end
+
+function enemy_bullet:ctor()
+	self.motion = self:get_component(fixed_point_velocity_component)
 end
 
 local define_fsm<const> = function()
@@ -50,12 +53,11 @@ local register_definition<const> = function()
 		base = sprite_object,
 		components = {
 			new_enemy_bullet_collider,
+			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_enemy_bullet_fsm }),
 		},
 		defaults = {
 			imgid = assets_enemy_bullet,
-			speed_x = 0,
-			speed_y = 0,
 			z = enemy_bullet_draw_z,
 		},
 	})

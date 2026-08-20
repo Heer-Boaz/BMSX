@@ -1,8 +1,8 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local rook_animation_system<const> = require('enemies/rook_animation_system')
@@ -22,6 +22,7 @@ local hit_area<const> = {
 
 function rook:ctor()
 	self:get_component(collider_2d_component).local_area = hit_area
+	self.motion = self:get_component(fixed_point_velocity_component)
 	self:set_imgid(rook_animation_system.current_imgid)
 end
 
@@ -39,18 +40,16 @@ function rook:update_leaving_chimney()
 	else
 		target = players[math.random(1, #players)]
 	end
-	self.speed_x, self.speed_y = velocity.dominant_axis_velocity(
+	self.motion:set_dominant_axis_velocity(
 		target.x - self.x,
 		target.y - self.y,
-		rook_attack_speed
+		rook_attack_speed_q8
 	)
 	self.stage_scroll_follower:set_enabled(false)
 	return '/attacking_player'
 end
 
 function rook:update_attacking_player()
-	self.x = self.x + self.speed_x
-	self.y = self.y + self.speed_y
 	if self.x < -rook_width
 	or self.x > playfield_width
 	or self.y < -rook_height
@@ -80,6 +79,7 @@ local register_definition<const> = function()
 		base = enemy,
 		components = {
 			enemy.new_collider,
+			fixed_point_velocity_component.new,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_rook_fsm }),
 		},
@@ -88,8 +88,6 @@ local register_definition<const> = function()
 			max_health = rook_health,
 			small_fry = true,
 			distance_left_chimney = 0,
-			speed_x = 0,
-			speed_y = 0,
 			z = rook_draw_z,
 		},
 	})
