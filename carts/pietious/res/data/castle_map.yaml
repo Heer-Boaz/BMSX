@@ -646,8 +646,6 @@
 13:
   type: castle
   subtype: castlegarden
-  condition_reveal_events:
-    cloud_1_destroyed: appearance
   exits:
   - -1
   - -1
@@ -702,6 +700,7 @@
     x: 23
     y: 3
     itemtype: greenvase
+    reveal_event: appearance
 101:
   type: world
   subtype: world

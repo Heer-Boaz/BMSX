@@ -371,6 +371,7 @@ local build_items<const> = function(room_number, object_defs, condition_dependen
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.itemtype,
+				reveal_event = object_def.reveal_event,
 				conditions = conditions,
 			}
 			items[#items + 1] = item

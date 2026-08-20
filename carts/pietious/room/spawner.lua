@@ -143,6 +143,7 @@ local sync_item<const> = function(room, def)
 				rs_room_number = room.room_number,
 			})
 			obj:add_tag('rs')
+			return true
 		end
 	elseif existing ~= nil then
 		existing:mark_for_disposal()
@@ -248,7 +249,10 @@ function room_spawner.reconcile_condition(room, condition, source_id)
 	end
 	local items<const> = dependency.items
 	for i = 1, #items do
-		sync_item(room, items[i])
+		local def<const> = items[i]
+		if sync_item(room, def) and def.reveal_event ~= nil then
+			castle.events:emit(def.reveal_event)
+		end
 	end
 	if dependency.affects_walls then
 		rebuild_wall_instances(room)
