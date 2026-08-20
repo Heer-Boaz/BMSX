@@ -1104,7 +1104,7 @@ function player:leave_shrine_overlay()
 	self.events:emit('leave_shrine_overlay')
 end
 
-function player:try_open_world_entrance_with_key()
+function player:open_world_entrance_with_key()
 	if not self.inventory_items.keyworld1 then
 		return false
 	end
@@ -1123,7 +1123,7 @@ function player:try_open_world_entrance_with_key()
 	return true
 end
 
-function player:try_start_world_or_shrine_interaction_from_down()
+function player:start_world_or_shrine_interaction_from_down()
 	if not input.is_action_just_pressed(self.player_index, 'down') then
 		return false
 	end
@@ -1239,7 +1239,7 @@ function player:consume_water_jump_dx(dx)
 	return scaled_dx
 end
 
-function player:try_switch_room(direction, keep_stairs_lock)
+function player:switch_room(direction, keep_stairs_lock)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
@@ -1292,7 +1292,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	return true
 end
 
-function player:try_side_room_switch_from_position()
+function player:switch_side_room_from_position()
 	local room<const> = self.room
 	local max_x<const> = room.world_width - self.width
 	if self.x < room.tile_size then
@@ -1300,14 +1300,14 @@ function player:try_side_room_switch_from_position()
 			self.x = room.tile_size
 			return false
 		end
-		return self:try_switch_room('left', false)
+		return self:switch_room('left', false)
 	end
 	if self.x > max_x then
 		if room.room_links.right == 0 then
 			self.x = max_x
 			return false
 		end
-		return self:try_switch_room('right', false)
+		return self:switch_room('right', false)
 	end
 	return false
 end
@@ -1356,7 +1356,7 @@ function player:clamp_blocked_vertical_room_exit(direction)
 	end
 end
 
-function player:try_vertical_room_switch_from_position()
+function player:switch_vertical_room_from_position()
 	local direction<const> = self:nearing_room_exit()
 	if direction and vertical_exit_directions[direction] then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
@@ -1368,7 +1368,7 @@ function player:try_vertical_room_switch_from_position()
 			return false
 		end
 		local keep_stairs_lock<const> = self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock
-		if not self:try_switch_room(direction, keep_stairs_lock) then
+		if not self:switch_room(direction, keep_stairs_lock) then
 			self:clamp_blocked_vertical_room_exit(direction)
 			return false
 		end
@@ -1383,20 +1383,20 @@ function player:try_vertical_room_switch_from_position()
 	return false
 end
 
-function player:try_room_switches_from_position()
+function player:switch_room_from_position()
 	if self:has_tag(state_tags.group.transition_lock) then
 		return false
 	end
 	if self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock then
-		if self:try_vertical_room_switch_from_position() then
+		if self:switch_vertical_room_from_position() then
 			return true
 		end
-		return self:try_side_room_switch_from_position()
+		return self:switch_side_room_from_position()
 	end
-	if self:try_side_room_switch_from_position() then
+	if self:switch_side_room_from_position() then
 		return true
 	end
-	return self:try_vertical_room_switch_from_position()
+	return self:switch_vertical_room_from_position()
 end
 
 function player:get_jump_inertia(default_inertia)
@@ -1529,7 +1529,7 @@ function player:collides_at_left_wall_stairs_step_off_profile(x, y)
 	or self:collides_at_probe(wall_x_secondary, lower_probe_y, false)
 end
 
-function player:try_step_off_stairs()
+function player:step_off_stairs()
 	if self.up_held or self.down_held then
 		return false
 	end
@@ -1970,7 +1970,7 @@ function player:runcheck_quiet_controls()
 			return
 		end
 	end
-	if self:try_start_world_or_shrine_interaction_from_down() then
+	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
 	if input.is_action_just_pressed(self.player_index, 'down') then
@@ -2029,7 +2029,7 @@ function player:runcheck_walking_right_controls()
 		self.events:emit('jump_input')
 		return
 	end
-	if self:try_start_world_or_shrine_interaction_from_down() then
+	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
 	if input.is_action_just_pressed(self.player_index, 'down') then
@@ -2070,7 +2070,7 @@ function player:runcheck_walking_left_controls()
 		self.events:emit('jump_input')
 		return
 	end
-	if self:try_start_world_or_shrine_interaction_from_down() then
+	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
 	if input.is_action_just_pressed(self.player_index, 'down') then
@@ -2131,13 +2131,13 @@ function player:runcheck_quiet_stairs_controls()
 	end
 
 	if self.left_held and not self.right_held then
-		if self:try_step_off_stairs() then
+		if self:step_off_stairs() then
 			return
 		end
 		self.facing = -1
 	end
 	if self.right_held and not self.left_held then
-		if self:try_step_off_stairs() then
+		if self:step_off_stairs() then
 			return
 		end
 		self.facing = 1
@@ -2700,10 +2700,10 @@ function player:update_common_frame()
 		return
 	end
 
-	self:try_open_world_entrance_with_key()
+	self:open_world_entrance_with_key()
 	self:update_hit_stairs_lock()
-	self:try_side_room_switch_from_position()
-	self:try_vertical_room_switch_from_position()
+	self:switch_side_room_from_position()
+	self:switch_vertical_room_from_position()
 
 	self.grounded = self:is_support_below_at(self.x, self.y, true)
 	self:apply_presentation_state()

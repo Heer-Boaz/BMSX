@@ -91,7 +91,7 @@ function elevator:update_motion()
 			player.next_vertical_elevator = true
 			player.next_vertical_elevator_id = self.id
 		end
-		player:try_room_switches_from_position()
+		player:switch_room_from_position()
 	end
 end
 

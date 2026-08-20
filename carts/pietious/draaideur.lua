@@ -82,7 +82,7 @@ function draaideur:touches_player(player, walking_left, walking_right)
 	return false
 end
 
-function draaideur:try_begin_open(player, walking_left, walking_right)
+function draaideur:begin_open(player, walking_left, walking_right)
 	if self.kind == 2 and walking_right then
 		self.state = 0
 		return
@@ -125,7 +125,7 @@ function draaideur:update_active()
 		return
 	end
 
-	self:try_begin_open(player, walking_left, walking_right)
+	self:begin_open(player, walking_left, walking_right)
 	self:sync_sprite()
 end
 

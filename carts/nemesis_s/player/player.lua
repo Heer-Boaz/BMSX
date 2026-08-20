@@ -363,14 +363,14 @@ local collides_at<const> = function(self, x, y)
 	return false
 end
 
-local try_move_x<const> = function(self, dx, max_x)
+local move_x<const> = function(self, dx, max_x)
 	if dx == 0 then
 		return
 	end
 	self.x = clamp(self.x + dx, 0, max_x)
 end
 
-local try_move_y<const> = function(self, dy, max_y)
+local move_y<const> = function(self, dy, max_y)
 	if dy == 0 then
 		return
 	end
@@ -388,17 +388,17 @@ function player:update_position()
 	self.last_speed = movement_speed
 
 	if self.left_held then
-		try_move_x(self, -movement_speed, max_x)
+		move_x(self, -movement_speed, max_x)
 	end
 	if self.right_held then
-		try_move_x(self, movement_speed, max_x)
+		move_x(self, movement_speed, max_x)
 	end
 
 	if self.up_held then
-		try_move_y(self, -movement_speed, max_y)
+		move_y(self, -movement_speed, max_y)
 		self.sprite = visual_sources.up
 	elseif self.down_held then
-		try_move_y(self, movement_speed, max_y)
+		move_y(self, movement_speed, max_y)
 		self.sprite = visual_sources.down
 	else
 		self.sprite = visual_sources.neutral
