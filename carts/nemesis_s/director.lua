@@ -34,11 +34,16 @@ function director:enter_title()
 end
 
 function director:enter_game_start()
+	self:set_active_space('game_start')
+	self.status_bar:reset(self.player_count)
+	gx_texture.upload('status_powerup_empty')
+	gx_texture.upload('font_a')
 	gx_texture.upload('ground')
 	self.events:emit('game_start')
 end
 
 function director:enter_gameplay()
+	self.status_bar:set_space('main')
 	self:set_active_space('main')
 	self.frame = 0
 end

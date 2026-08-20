@@ -226,6 +226,50 @@ function getMappings() {
 			target: 'title_startup_metalion_burst_3@atlas=13.png',
 		},
 		{
+			source: 'Misc/PowerupBar_empty.bmp',
+			target: 'status_powerup_empty@atlas=15.png',
+		},
+		{
+			source: 'Misc/PowerupBar_filled.bmp',
+			target: 'status_powerup_filled@atlas=15.png',
+		},
+		{
+			source: 'Misc/PowerupBar_takenup.bmp',
+			target: 'status_powerup_taken@atlas=15.png',
+		},
+		{
+			source: 'Misc/PowerupBar_takenup_current.bmp',
+			target: 'status_powerup_taken_current@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Speed.bmp',
+			target: 'status_description_speed@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Missile.bmp',
+			target: 'status_description_missile@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Laser.bmp',
+			target: 'status_description_laser@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Option.bmp',
+			target: 'status_description_option@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Shield.bmp',
+			target: 'status_description_shield@atlas=15.png',
+		},
+		{
+			source: 'Misc/Powerup_Enabled.bmp',
+			target: 'status_description_enabled@atlas=15.png',
+		},
+		{
+			source: 'Misc/StatusBar_Ship.bmp',
+			target: 'status_ship@atlas=15.png',
+		},
+		{
 			source: 'Player/Metallion_n.bmp',
 			target: 'metallion_n.png',
 			colorKey: { r: 0, g: 0, b: 0 },

@@ -13,6 +13,7 @@ local intro_module<const> = require('intro')
 local nemesis_font<const> = require('nemesis_font')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/player')
+local status_bar_module<const> = require('status_bar')
 local story_module<const> = require('story')
 local title_screen_module<const> = require('title_screen')
 
@@ -29,6 +30,7 @@ local function init<init>()
 	title_screen_module.register_definition()
 	stage_module.register_stage_definition()
 	player_module.register_player_definition()
+	status_bar_module.register_definition()
 	director_module.register_director_definition()
 end
 
@@ -58,8 +60,13 @@ function new_game()
 		space_id = 'title',
 		pos = { x = 0, y = 0, z = 0 },
 	})
+	local status_bar<const> = world:spawn(status_bar_module.definition_id, {
+		space_id = 'game_start',
+		pos = { x = 0, y = 0, z = 100 },
+	})
 	world:spawn(director_module.director_def_id, {
 		stage = stage,
+		status_bar = status_bar,
 		space_id = 'intro',
 		pos = { x = 0, y = 0, z = 0 },
 	})

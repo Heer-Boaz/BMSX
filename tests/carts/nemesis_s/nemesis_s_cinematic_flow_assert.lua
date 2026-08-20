@@ -11,6 +11,7 @@ function __bmsx_host_test.ready()
 		and registry:get('nemesis_s.intro') ~= nil
 		and registry:get('nemesis_s.story') ~= nil
 		and registry:get('nemesis_s.title_screen') ~= nil
+		and registry:get('nemesis_s.status_bar') ~= nil
 end
 
 function __bmsx_host_test.setup()
@@ -88,7 +89,13 @@ function __bmsx_host_test.setup()
 	assert(director.state_machines:matches_state(test.game_start_state),
 		'title completion did not enter the retained game-start wait')
 	assert(director.player_count == 2, 'director discarded the selected player count')
-	assert(world.active_space_id == 'title', 'game-start wait did not retain the black title space')
+	assert(world.active_space_id == 'game_start', 'game-start wait did not activate its status-only space')
+	local status_bar<const> = registry:get('nemesis_s.status_bar')
+	assert(status_bar.player_count == 2, 'status bar discarded the selected player count')
+	assert(status_bar.rows[1].life_text.text == '9' and status_bar.rows[2].life_text.text == '9',
+		'game-start status did not reset both XNA life counters')
+	assert(status_bar.rows[1].current_slot == 0 and status_bar.rows[2].current_slot == 0,
+		'game-start status did not reset both power-up selections')
 	test.phase = 'game_start'
 end
 
@@ -108,6 +115,8 @@ function __bmsx_host_test.update()
 	end
 	assert(test.frames > 70, 'game-start wait completed before the authored 1500 ms')
 	assert(world.active_space_id == 'main', 'gameplay did not activate the stage space')
+	assert(registry:get('nemesis_s.status_bar').space_id == 'main',
+		'status bar did not move into the gameplay presentation space')
 	test.phase = 'gameplay'
 	test.gameplay_frames = 0
 	return false

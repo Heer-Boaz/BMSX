@@ -8,6 +8,7 @@ return {
 		'intro',
 		'story',
 		'title',
+		'game_start',
 		'main',
 	},
 	systems = {
