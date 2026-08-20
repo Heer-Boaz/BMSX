@@ -4,6 +4,8 @@ ids_stage_fsm = 'nemesis_s.stage.fsm'
 ids_stage_star_blink_timeline = 'nemesis_s.stage.timeline.star_blink'
 ids_player_def = 'nemesis_s.player'
 ids_player_fsm = 'nemesis_s.player.fsm'
+ids_sint_pop_def = 'nemesis_s.enemy.sint_pop'
+ids_sint_pop_fsm = 'nemesis_s.enemy.sint_pop.fsm'
 player_starts = {
 	{ id = 'nemesis_s.player.1', x = 80, y = 60 },
 	{ id = 'nemesis_s.player.2', x = 120, y = 80 },
@@ -26,6 +28,18 @@ player_fire_spawn_offset_y = 5
 player_hitcheck_x = { 4, 8, 14, 4, 8, 8 }
 
 player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
+
+sint_pop_group_up = 0
+sint_pop_group_down = 1
+sint_pop_group_size = 6
+sint_pop_width = 16
+sint_pop_move_to_player_speed_x = -1.5
+sint_pop_move_vertical_up_speed_y = 1.5
+sint_pop_move_vertical_down_speed_y = -2
+sint_pop_move_away_speed_x = 2
+sint_pop_vertical_start_x = 144
+sint_pop_retreat_start_x = 64
+sint_pop_draw_z = 60
 
 projectile_width = 6
 projectile_height = 2
@@ -81,6 +95,7 @@ assets_player_2_option_2 = 'option2_p2'
 assets_player_2_option_3 = 'option3_p2'
 assets_player_2_option_4 = 'option4_p2'
 assets_projectile = 'kogeltje'
+assets_sint_pop = 'sint_pop'
 assets_laser = 'laser'
 assets_missile1 = 'missile1'
 assets_missile2 = 'missile2'

@@ -7,6 +7,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local world<const> = require('cartlib/world/world')
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -19,6 +20,10 @@ local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
 local empty_stage_chars<const> = { p = true, ['P'] = true, m = true, ['M'] = true }
 local chimney_chars<const> = { s = true, ['S'] = true, ['R'] = true }
 local transparent_overlay_chars<const> = { ['K'] = true, ["'"] = true }
+local sint_pop_group_by_symbol<const> = {
+	p = sint_pop_group_up,
+	['P'] = sint_pop_group_down,
+}
 
 local non_collision_tile_keys<const> = {
 	none = true,
@@ -151,8 +156,7 @@ local should_snow_from_neighbors<const> = function(below, left_down, right_down)
 	return snow_surface_chars[below] and left_down ~= ' ' and right_down ~= ' '
 end
 
-local decode_stage_tile<const> = function(map_rows, x, y)
-	local ch<const> = char_at(map_rows, x, y)
+local decode_stage_tile<const> = function(map_rows, x, y, ch)
 	local above<const> = char_at(map_rows, x, y - 1)
 	local below<const> = char_at(map_rows, x, y + 1)
 	local left<const> = char_at(map_rows, x - 1, y)
@@ -418,6 +422,18 @@ function stage:advance_music_cues(column)
 	self.music_cue_index = cue_index
 end
 
+function stage:advance_actor_spawns(column)
+	local spawns<const> = self.actor_spawns
+	local spawn_count<const> = self.actor_spawn_count
+	local index = self.actor_spawn_index
+	while index <= spawn_count and spawns[index].column <= column do
+		local spawn<const> = spawns[index]
+		world:spawn(spawn.definition_id, spawn.options)
+		index = index + 1
+	end
+	self.actor_spawn_index = index
+end
+
 function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
 	self:apply_stage_config(stage_data)
@@ -435,13 +451,43 @@ function stage:build_tape()
 	self.solid_tape = new_rows(width, height, 0)
 
 	for stage_y = 1, height do
+		local map_row<const> = map_rows[stage_y]
 		for stage_x = 1, width do
-			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y)
+			local symbol<const> = string.sub(map_row, stage_x, stage_x)
+			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y, symbol)
 			local imgid<const> , solid<const> = resolve_tile_material(tile_key)
 			stage_tiles:set_tile(((stage_y - 1) * width) + stage_x, imgid)
 			self.solid_tape[stage_y][stage_x] = solid
 		end
 	end
+
+	local actor_spawns<const> = {}
+	for stage_x = 1, width do
+		for stage_y = 1, height do
+			local symbol<const> = string.sub(map_rows[stage_y], stage_x, stage_x)
+			local sint_pop_group<const> = sint_pop_group_by_symbol[symbol]
+			if sint_pop_group ~= nil then
+				local column<const> = stage_x - 1
+				local spawn_y<const> = (stage_y - 1) * self.tile_size
+				for group_index = 0, sint_pop_group_size - 1 do
+					actor_spawns[#actor_spawns + 1] = {
+						column = column,
+						definition_id = ids_sint_pop_def,
+						options = {
+							group_id = column,
+							group_type = sint_pop_group,
+							pos = {
+								x = machine_game_width + (group_index * sint_pop_width),
+								y = spawn_y,
+							},
+						},
+					}
+				end
+			end
+		end
+	end
+	self.actor_spawns = actor_spawns
+	self.actor_spawn_count = #actor_spawns
 end
 
 function stage:apply_star_scroll(stars, step)
@@ -462,6 +508,15 @@ function stage:reset_runtime()
 	self.stage_tiles:set_visible_columns(1, self.tile_columns + 2)
 	self.tape_head = self.tile_columns
 	self.music_cue_index = 1
+	local actor_spawn_index = 1
+	local actor_spawns<const> = self.actor_spawns
+	local actor_spawn_count<const> = self.actor_spawn_count
+	local current_column<const> = self.tape_head - 1
+	while actor_spawn_index <= actor_spawn_count
+	and actor_spawns[actor_spawn_index].column <= current_column do
+		actor_spawn_index = actor_spawn_index + 1
+	end
+	self.actor_spawn_index = actor_spawn_index
 	self.tile_steps = 0
 	self.total_scroll_px = 0
 	self.total_smooth_scroll_px = 0
@@ -519,6 +574,7 @@ function stage:update_runtime()
 				self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 				self.tape_head = self.left_tile + self.tile_columns - 1
 				self:advance_music_cues(self.tape_head - 1)
+				self:advance_actor_spawns(self.tape_head - 1)
 				self.tile_steps = self.tile_steps + 1
 				self.scroll_advanced = true
 				if telemetry_enabled then

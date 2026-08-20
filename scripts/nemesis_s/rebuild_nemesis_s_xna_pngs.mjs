@@ -345,6 +345,11 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
+			source: 'Foes/SintPop.bmp',
+			target: 'sint_pop.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},
