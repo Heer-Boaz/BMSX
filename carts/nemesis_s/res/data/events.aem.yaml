@@ -1,0 +1,43 @@
+events:
+    intro:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: prelude
+
+    intro_done:
+        channel: sfx
+        rules:
+            - go:
+                  stop:
+                      fade_ms: 0
+
+    story:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_story
+                      start_fresh: true
+
+    title:
+        channel: music
+        rules:
+            - go:
+                  stop:
+                      fade_ms: 0
+
+    title_start:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_game_start
+                      start_fresh: true
+
+    game_start:
+        channel: music
+        rules:
+            - go:
+                  stop:
+                      fade_ms: 0

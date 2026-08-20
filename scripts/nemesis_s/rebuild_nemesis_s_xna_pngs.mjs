@@ -141,6 +141,91 @@ function writePng(filePath, image) {
 function getMappings() {
 	const mappings = [
 		{
+			source: 'OtherMisc/Sinterklaas_Entertainment.bmp',
+			target: 'intro_sinterklaas@atlas=1.png',
+		},
+		{
+			source: 'OtherMisc/Boaz_Entertainment.bmp',
+			target: 'intro_boaz@atlas=1.png',
+		},
+		{
+			source: 'Story/KasteelSint3.bmp',
+			target: 'story_coup@atlas=2.png',
+		},
+		{
+			source: 'Story/Pieton1_muts.bmp',
+			target: 'story_piet1@atlas=3.png',
+		},
+		{
+			source: 'Story/OldTimer.bmp',
+			target: 'story_escape@atlas=4.png',
+		},
+		{
+			source: 'Story/Boot.bmp',
+			target: 'story_boot@atlas=5.png',
+		},
+		{
+			source: 'Story/Winterstad.bmp',
+			target: 'story_winterstad@atlas=6.png',
+		},
+		{
+			source: 'Story/Pieton2_muts.bmp',
+			target: 'story_piet2@atlas=7.png',
+		},
+		{
+			source: 'Story/Bingmaps.bmp',
+			target: 'story_map@atlas=8.png',
+		},
+		{
+			source: 'Story/Metalion.bmp',
+			target: 'story_metalion@atlas=9.png',
+		},
+		{
+			source: 'Story/PilootPiet.bmp',
+			target: 'story_pilot@atlas=10.png',
+		},
+		{
+			source: 'OtherMisc/MainScreen1.bmp',
+			target: 'title_screen_1@atlas=11.png',
+		},
+		{
+			source: 'OtherMisc/MainScreen2.bmp',
+			target: 'title_screen_2@atlas=11.png',
+		},
+		{
+			source: 'OtherMisc/Hangar1.bmp',
+			target: 'title_hangar_1@atlas=12.png',
+		},
+		{
+			source: 'OtherMisc/Hangar2.bmp',
+			target: 'title_hangar_2@atlas=12.png',
+		},
+		{
+			source: 'OtherMisc/MainScreen_Selector.bmp',
+			target: 'title_selector@atlas=13.png',
+		},
+		{
+			source: 'OtherMisc/HangarBottomHider.bmp',
+			target: 'title_hangar_bottom_hider@atlas=13.png',
+		},
+		{
+			source: 'OtherMisc/Startup_Metalion.bmp',
+			target: 'title_startup_metalion@atlas=13.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'OtherMisc/Startup_Metalion_Burst1.bmp',
+			target: 'title_startup_metalion_burst_1@atlas=13.png',
+		},
+		{
+			source: 'OtherMisc/Startup_Metalion_Burst2.bmp',
+			target: 'title_startup_metalion_burst_2@atlas=13.png',
+		},
+		{
+			source: 'OtherMisc/Startup_Metalion_Burst3.bmp',
+			target: 'title_startup_metalion_burst_3@atlas=13.png',
+		},
+		{
 			source: 'Player/Metallion_n.bmp',
 			target: 'metallion_n.png',
 			colorKey: { r: 0, g: 0, b: 0 },
@@ -213,6 +298,31 @@ function getMappings() {
 			target: 'snow.png',
 		},
 	];
+
+	const fontGlyphs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+	for (let i = 0; i < fontGlyphs.length; i += 1) {
+		const glyph = fontGlyphs[i];
+		mappings.push({
+			source: `Text/Letter_${glyph}.bmp`,
+			target: `font_${glyph.toLowerCase()}@atlas=14.png`,
+		});
+	}
+	const punctuationGlyphs = [
+		['Comma', 'comma'],
+		['Dot', 'dot'],
+		['Exclamation', 'exclamation'],
+		['Question', 'question'],
+		['Appostroph', 'apostrophe'],
+		['Space', 'space'],
+		['Line', 'hyphen'],
+	];
+	for (let i = 0; i < punctuationGlyphs.length; i += 1) {
+		const glyph = punctuationGlyphs[i];
+		mappings.push({
+			source: `Text/Letter_${glyph[0]}.bmp`,
+			target: `font_${glyph[1]}@atlas=14.png`,
+		});
+	}
 
 	for (let i = 1; i <= 13; i += 1) {
 		mappings.push({

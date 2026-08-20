@@ -1,5 +1,157 @@
 [
 	{
+		"description": "intro_skip_modifier_press",
+		"frame": 5,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ControlLeft",
+			"down": true,
+			"value": 1,
+			"timestamp": 100,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "intro_skip_press",
+		"frame": 6,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": true,
+			"value": 1,
+			"timestamp": 120,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "intro_skip_release",
+		"frame": 7,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": false,
+			"value": 0,
+			"timestamp": 140,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": true,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "intro_skip_modifier_release",
+		"frame": 8,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ControlLeft",
+			"down": false,
+			"value": 0,
+			"timestamp": 160,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "story_skip_press",
+		"frame": 20,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": true,
+			"value": 1,
+			"timestamp": 400,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "story_skip_release",
+		"frame": 21,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": false,
+			"value": 0,
+			"timestamp": 420,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "title_start_press",
+		"frame": 40,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": true,
+			"value": 1,
+			"timestamp": 800,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "title_start_release",
+		"frame": 41,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Space",
+			"down": false,
+			"value": 0,
+			"timestamp": 820,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
 		"description": "move_right_start",
 		"frame": 601,
 		"capture": true,
@@ -11,7 +163,12 @@
 			"value": 1,
 			"timestamp": 12000,
 			"pressId": 1001,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -25,7 +182,12 @@
 			"value": 0,
 			"timestamp": 13200,
 			"pressId": 1001,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -39,7 +201,12 @@
 			"value": 1,
 			"timestamp": 14000,
 			"pressId": 1002,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -53,7 +220,12 @@
 			"value": 0,
 			"timestamp": 14600,
 			"pressId": 1002,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -67,7 +239,12 @@
 			"value": 1,
 			"timestamp": 15200,
 			"pressId": 1003,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -81,7 +258,12 @@
 			"value": 0,
 			"timestamp": 16000,
 			"pressId": 1003,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -95,7 +277,12 @@
 			"value": 1,
 			"timestamp": 16400,
 			"pressId": 1004,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -109,7 +296,12 @@
 			"value": 0,
 			"timestamp": 17200,
 			"pressId": 1004,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -123,7 +315,12 @@
 			"value": 1,
 			"timestamp": 18000,
 			"pressId": 1005,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -137,7 +334,12 @@
 			"value": 0,
 			"timestamp": 18040,
 			"pressId": 1005,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -151,7 +353,12 @@
 			"value": 1,
 			"timestamp": 18160,
 			"pressId": 1006,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -165,7 +372,12 @@
 			"value": 0,
 			"timestamp": 18200,
 			"pressId": 1006,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -179,7 +391,12 @@
 			"value": 1,
 			"timestamp": 18320,
 			"pressId": 1007,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -193,35 +410,12 @@
 			"value": 0,
 			"timestamp": 18360,
 			"pressId": 1007,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
-		}
-	},
-	{
-		"description": "fire_4_press_after_despawn",
-		"frame": 981,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "KeyX",
-			"down": true,
-			"value": 1,
-			"timestamp": 19600,
-			"pressId": 1008,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
-		}
-	},
-	{
-		"description": "fire_4_release",
-		"frame": 983,
-		"event": {
-			"type": "button",
-			"deviceId": "keyboard:0",
-			"code": "KeyX",
-			"down": false,
-			"value": 0,
-			"timestamp": 19640,
-			"pressId": 1008,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -235,7 +429,12 @@
 			"value": 1,
 			"timestamp": 18800,
 			"pressId": 1009,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	},
 	{
@@ -250,7 +449,50 @@
 			"value": 0,
 			"timestamp": 19400,
 			"pressId": 1009,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "fire_4_press_after_despawn",
+		"frame": 981,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true,
+			"value": 1,
+			"timestamp": 19600,
+			"pressId": 1008,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "fire_4_release",
+		"frame": 983,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false,
+			"value": 0,
+			"timestamp": 19640,
+			"pressId": 1008,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
 	}
 ]

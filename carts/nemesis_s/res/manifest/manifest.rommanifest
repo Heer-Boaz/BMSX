@@ -7,7 +7,32 @@ gx_vram_layout:
     slots:
         stage:
             texture: { x: 0, y: 256, width: 1024, height: 256 }
+        screen_a:
+            texture: { x: 0, y: 256, width: 256, height: 192 }
+        title:
+            texture: { x: 0, y: 256, width: 512, height: 192 }
+        overlay:
+            texture: { x: 512, y: 256, width: 512, height: 192 }
+        font:
+            texture: { x: 512, y: 448, width: 64, height: 64 }
     groups:
         0: { mode: direct16, slots: [stage], page_local: true }
+        1: { mode: direct16, slots: [overlay], page_local: true }
+        2: { mode: direct16, slots: [screen_a], page_local: true }
+        3: { mode: direct16, slots: [screen_a], page_local: true }
+        4: { mode: direct16, slots: [screen_a], page_local: true }
+        5: { mode: direct16, slots: [screen_a], page_local: true }
+        6: { mode: direct16, slots: [screen_a], page_local: true }
+        7: { mode: direct16, slots: [screen_a], page_local: true }
+        8: { mode: direct16, slots: [screen_a], page_local: true }
+        9: { mode: direct16, slots: [screen_a], page_local: true }
+        10: { mode: direct16, slots: [screen_a], page_local: true }
+        11: { mode: direct16, slots: [title], page_local: true }
+        12: { mode: direct16, slots: [title], page_local: true }
+        13: { mode: direct16, slots: [overlay], page_local: true }
+        14: { mode: direct16, slots: [font], page_local: true }
     working_sets:
         stage: [stage]
+        intro: [overlay]
+        story: [screen_a, font]
+        title: [title, overlay]
