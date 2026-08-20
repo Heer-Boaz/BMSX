@@ -144,6 +144,15 @@ export class GamepadInput implements GamepadInputHandler {
 		if (state) {
 			state.consumed = true;
 		}
+		const bit = inputControllerGamepadButtonBit(button);
+		if (bit >= 0) {
+			this.inputControllerButtons = (this.inputControllerButtons & ~(1 << bit)) >>> 0;
+		}
+		if (button === 'lt') {
+			this.inputControllerAxesQ16[4] = 0;
+		} else if (button === 'rt') {
+			this.inputControllerAxesQ16[5] = 0;
+		}
 	}
 
 	public reset(except?: string[]): void {
@@ -169,7 +178,7 @@ export class GamepadInput implements GamepadInputHandler {
 		this.inputControllerAxesQ16.fill(0);
 		for (const code in this.buttonStates) {
 			const state = this.buttonStates[code];
-			if (state.pressed) {
+			if (state.pressed && !state.consumed) {
 				const bit = inputControllerGamepadButtonBit(code);
 				if (bit >= 0) {
 					this.inputControllerButtons = (this.inputControllerButtons | (1 << bit)) >>> 0;
@@ -181,7 +190,7 @@ export class GamepadInput implements GamepadInputHandler {
 			} else if (code === 'rs' && state.value2d) {
 				this.inputControllerAxesQ16[2] = encodeSignedFix16(state.value2d[0]);
 				this.inputControllerAxesQ16[3] = encodeSignedFix16(state.value2d[1]);
-			} else if (code === 'lt' || code === 'rt') {
+			} else if ((code === 'lt' || code === 'rt') && !state.consumed) {
 				const axis = code === 'lt' ? 4 : 5;
 				this.inputControllerAxesQ16[axis] = state.pressed ? encodeSignedFix16(state.value) : 0;
 			}

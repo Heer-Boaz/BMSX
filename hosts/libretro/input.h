@@ -74,6 +74,7 @@ private:
 	f64 m_frame_duration_ms = 1000.0 / 60.0;
 	bool m_pointer_position_valid = false;
 	bool m_host_supervisor_request_high = false;
+	bool m_supervisor_chord_active = false;
 };
 
 } // namespace bmsx

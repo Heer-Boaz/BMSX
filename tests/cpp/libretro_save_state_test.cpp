@@ -124,32 +124,55 @@ void testInputSnapshotReflectsHeldKey() {
 		"raw ICU snapshot should set the keyboard bit for a held key");
 }
 
-void testLibretroSupervisorRequestIsSeparateFromGameplay() {
+void testLibretroSupervisorRequestChordAndGuestInput() {
 	supervisorRequestLineHigh = false;
 	bmsx::LibretroInput input(readSupervisorRequestLine);
 	input.setInputPollCallback(discardInputPoll);
 	input.setInputStateCallback(gamepadInputState);
 
-	gamepadState =
-		(1u << RETRO_DEVICE_ID_JOYPAD_DOWN) |
-		(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+	const uint32_t downButton = 1u << static_cast<uint32_t>(
+		bmsx::InputControllerGamepadButtonBit::Down);
+	const uint32_t selectButton = 1u << static_cast<uint32_t>(
+		bmsx::InputControllerGamepadButtonBit::Select);
+	const uint32_t supervisorChordButtons = downButton | selectButton;
+	bmsx::InputControllerSnapshot snapshot;
+
+	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
-		"RetroPad gameplay must not assert the supervisor-request line");
-	bmsx::InputControllerSnapshot snapshot;
+		"a partial supervisor chord must remain ordinary gameplay");
 	input.sampleInputControllerSnapshot(snapshot);
-	const uint32_t gameplayButtons =
-		(1u << static_cast<uint32_t>(
-			bmsx::InputControllerGamepadButtonBit::Down)) |
-		(1u << static_cast<uint32_t>(
-			bmsx::InputControllerGamepadButtonBit::Select));
 	require(
-		(snapshot.pads[0].buttons & gameplayButtons) == gameplayButtons,
-		"RetroPad Down and Select must remain ordinary cart-visible gameplay buttons");
+		(snapshot.pads[0].buttons & downButton) != 0u,
+		"a partial supervisor chord must remain cart-visible");
+
+	gamepadState |= 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	input.poll(256, 240, 0.0);
+	require(
+		input.supervisorRequestLineHigh(),
+		"a completed RetroPad supervisor chord must assert the host line");
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
+		"a completed supervisor chord must be masked from cart input");
+
+	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	input.poll(256, 240, 0.0);
+	require(
+		input.supervisorRequestLineHigh(),
+		"the supervisor chord must remain latched until full release");
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
+		"a latched supervisor chord must remain masked until full release");
 
 	gamepadState = 0u;
 	input.poll(256, 240, 0.0);
+	require(
+		!input.supervisorRequestLineHigh(),
+		"full chord release must lower and rearm the core-owned line");
+
 	supervisorRequestLineHigh = true;
 	input.poll(256, 240, 0.0);
 	require(
@@ -199,6 +222,6 @@ void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 int main() {
 	testLibretroStateEnvelopeRoundTrip();
 	testInputSnapshotReflectsHeldKey();
-	testLibretroSupervisorRequestIsSeparateFromGameplay();
+	testLibretroSupervisorRequestChordAndGuestInput();
 	return 0;
 }

@@ -93,6 +93,11 @@ const COLOR_USAGE_OK = 0xff04d413;
 const COLOR_USAGE_WARN = 0xffe2d204;
 const COLOR_USAGE_DANGER = 0xffff5134;
 
+const enum HostButtonState {
+	Pressed = 1,
+	JustPressed = 2,
+}
+
 function boolIndex(value: boolean): number {
 	return value ? 1 : 0;
 }
@@ -101,15 +106,27 @@ function boolFromIndex(index: number): boolean {
 	return index !== 0;
 }
 
-function buttonPressed(player: PlayerInput, button: HostMenuButton): boolean {
-	if (player.getRawButtonState(button.gamepad, 'gamepad').pressed) {
-		return true;
+function readButtonState(player: PlayerInput, button: HostMenuButton): number {
+	let result = 0;
+	const gamepadState = player.getRawButtonState(button.gamepad, 'gamepad');
+	if (!gamepadState.consumed) {
+		if (gamepadState.pressed) {
+			result |= HostButtonState.Pressed;
+		}
+		if (gamepadState.justpressed) {
+			result |= HostButtonState.JustPressed;
+		}
 	}
-	return player.getRawButtonState(button.keyboard, 'keyboard').pressed;
-}
-
-function buttonJustPressed(player: PlayerInput, button: HostMenuButton): boolean {
-	return player.getRawButtonState(button.gamepad, 'gamepad').justpressed || player.getRawButtonState(button.keyboard, 'keyboard').justpressed;
+	const keyboardState = player.getRawButtonState(button.keyboard, 'keyboard');
+	if (!keyboardState.consumed) {
+		if (keyboardState.pressed) {
+			result |= HostButtonState.Pressed;
+		}
+		if (keyboardState.justpressed) {
+			result |= HostButtonState.JustPressed;
+		}
+	}
+	return result;
 }
 
 function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
@@ -119,8 +136,8 @@ function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
 }
 
 function consumeButton(player: PlayerInput, button: HostMenuButton): void {
-	player.consumeRawButton(button.gamepad, 'gamepad');
-	player.consumeRawButton(button.keyboard, 'keyboard');
+	player.inputHandlers.gamepad?.consumeButton(button.gamepad);
+	player.inputHandlers.keyboard?.consumeButton(button.keyboard);
 }
 
 function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[]): void {
@@ -311,16 +328,15 @@ export class HostOverlayMenu {
 
 	public tickInput(): HostMenuInput {
 		const player = this.input.getPlayerInput(1);
-		const comboEdge = buttonPressed(player, BUTTON_START)
-			&& buttonPressed(player, BUTTON_SELECT)
-			&& buttonPressed(player, BUTTON_LB)
-			&& buttonPressed(player, BUTTON_RB)
-			&& (
-				buttonJustPressed(player, BUTTON_START)
-				|| buttonJustPressed(player, BUTTON_SELECT)
-				|| buttonJustPressed(player, BUTTON_LB)
-				|| buttonJustPressed(player, BUTTON_RB)
-			);
+		const startState = readButtonState(player, BUTTON_START);
+		const selectState = readButtonState(player, BUTTON_SELECT);
+		const lbState = readButtonState(player, BUTTON_LB);
+		const rbState = readButtonState(player, BUTTON_RB);
+		const comboEdge = (startState & HostButtonState.Pressed) !== 0
+			&& (selectState & HostButtonState.Pressed) !== 0
+			&& (lbState & HostButtonState.Pressed) !== 0
+			&& (rbState & HostButtonState.Pressed) !== 0
+			&& ((startState | selectState | lbState | rbState) & HostButtonState.JustPressed) !== 0;
 		if (comboEdge) {
 			this.toggle();
 			consumeButtons(player, MENU_TOGGLE_BUTTONS);
@@ -328,7 +344,7 @@ export class HostOverlayMenu {
 		if (!this.active) {
 			return HostMenuInput.Inactive;
 		}
-		if (buttonJustPressed(player, BUTTON_B)) {
+		if ((readButtonState(player, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
 			this.toggle();
 			consumeButtons(player, MENU_NAV_BUTTONS);
 			return HostMenuInput.Inactive;
@@ -347,7 +363,7 @@ export class HostOverlayMenu {
 		if (buttonEdge(player, BUTTON_RIGHT)) {
 			this.changeSelected(1);
 		}
-		const result = buttonJustPressed(player, BUTTON_A)
+		const result = (readButtonState(player, BUTTON_A) & HostButtonState.JustPressed) !== 0
 			? this.activateSelected()
 			: HostMenuInput.Active;
 		consumeButtons(player, MENU_NAV_BUTTONS);

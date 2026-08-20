@@ -23,11 +23,11 @@ export function handleEditorContextMenuPointer(
 		return false;
 	}
 	if (result === CONTEXT_MENU_POINTER_CONSUME_PRIMARY) {
-		playerInput.consumeRawButton('pointer_primary', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
 		return true;
 	}
 	if (result === CONTEXT_MENU_POINTER_CONSUME_SECONDARY) {
-		playerInput.consumeRawButton('pointer_secondary', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_secondary');
 		return true;
 	}
 	return true;
@@ -37,6 +37,6 @@ export function openEditorContextMenuFromPointer(snapshot: PointerSnapshot, play
 	if (!openEditorContextMenuAtPointer(snapshot)) {
 		return false;
 	}
-	playerInput.consumeRawButton('pointer_secondary', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_secondary');
 	return true;
 }

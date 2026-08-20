@@ -27,8 +27,10 @@ t.assert((state.statusWord & CPU_STATUS_USER_MODE_CURRENT) === 0, 'fault should 
 t.assert(cpu.isHaltedUntilIrq(), 'firmware monitor should be halted waiting for input, not looping');
 t.capture('physical BIOS fault terminal');
 
-t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: true, value: 1, timestamp: 0, pressId: 1 });
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'Backspace', down: true, value: 1, timestamp: 0, pressId: 1 });
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'KeyZ', down: true, value: 1, timestamp: 0, pressId: 2 });
 await t.frames(1);
-t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'F1', down: false, value: 0, timestamp: 0, pressId: 1 });
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'Backspace', down: false, value: 0, timestamp: 0, pressId: 1 });
+t.postInput({ type: 'button', deviceId: 'keyboard:0', code: 'KeyZ', down: false, value: 0, timestamp: 0, pressId: 2 });
 await t.frames(12);
 t.capture('IDE fault source overlay');

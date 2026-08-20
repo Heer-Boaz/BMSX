@@ -1,5 +1,5 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
-import type { ButtonState, KeyboardButtonId, KeyboardInputHandler, KeyOrButtonId2ButtonState } from './models';
+import { inputBindingId, type ButtonState, type KeyboardButtonId, type KeyboardInputHandler, type KeyOrButtonId2ButtonState } from './models';
 import type { HostClock } from '../clock';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from './hid_keys';
@@ -75,13 +75,28 @@ export class KeyboardInput implements KeyboardInputHandler {
 	 * @returns void
 	 */
 	public consumeButton(key: string): void {
-		const state = this.gamepadButtonStates[key] ?? (this.gamepadButtonStates[key] = makeButtonState());
-		state.consumed = true;
-		// Use the constant to map keyboard keys to gamepad buttons
+		const state = this.gamepadButtonStates[key];
+		if (state) {
+			state.consumed = true;
+		}
+		this.setKeyUsageWord(key, false);
+		const bindings = Input.DEFAULT_INPUT_MAPPING.keyboard[key];
+		if (bindings) {
+			for (let index = 0; index < bindings.length; index += 1) {
+				const code = inputBindingId(bindings[index]);
+				const boundState = this.gamepadButtonStates[code];
+				if (boundState) {
+					boundState.consumed = true;
+				}
+				this.setKeyUsageWord(code, false);
+			}
+		}
 		const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 		if (keyMappedToCorrespondingGamepadButtonId) {
-			const mappedState = this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] ?? (this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = makeButtonState());
-			mappedState.consumed = true;
+			const mappedState = this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId];
+			if (mappedState) {
+				mappedState.consumed = true;
+			}
 		}
 	}
 

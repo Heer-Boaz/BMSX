@@ -68,10 +68,6 @@ export class PlayerInput {
 		}
 	}
 
-	public consumeRawButton(button: ButtonId, source: InputSource): void {
-		this.inputHandlers[source]?.consumeButton(button);
-	}
-
 	public getModifiers(): KeyModifier {
 		const keyboard = this.inputHandlers['keyboard'];
 		if (!keyboard) {
@@ -106,6 +102,9 @@ export class PlayerInput {
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
 	public buttonRepeatEdge(button: ButtonId, source: InputSource): boolean {
 		const rawState = this.getRawButtonState(button, source);
+		if (rawState.consumed) {
+			return false;
+		}
 		const repeat = this.ensureRawRepeatState(button, source);
 		this.evaluateRawActionRepeat(repeat, rawState, this.frameCounter);
 		return rawState.justpressed || repeat.lastResult;

@@ -47,24 +47,24 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 		return;
 	}
 	if (editor.completion.handlePointerWheel(direction, steps, activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
-		playerInput.consumeRawButton('pointer_wheel', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		return;
 	}
 	if (isResourceViewActive()) {
 		scrollResourceViewer(direction * steps);
-		playerInput.consumeRawButton('pointer_wheel', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		return;
 	}
 	if (isCodeTabActive() && pointer !== null) {
 		const bounds = getCodeAreaBounds();
 		if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
-			playerInput.consumeRawButton('pointer_wheel', 'pointer');
+			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 			return;
 		}
 	}
 	scrollRows(direction * steps);
 	editorCaretState.cursorRevealSuspended = true;
-	playerInput.consumeRawButton('pointer_wheel', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 }
 
 function handleHoverTooltipWheel(
@@ -81,13 +81,13 @@ function handleHoverTooltipWheel(
 	const pointerInTarget = activePointer !== null && pointerHitsHoverTarget(activePointer, tooltip);
 	const allowTooltipScroll = pointerInTooltip || pointerInTarget || activePointer === null;
 	if (allowTooltipScroll && adjustHoverTooltipScroll(direction * steps)) {
-		playerInput.consumeRawButton('pointer_wheel', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		return true;
 	}
 	if (!pointerInTooltip) {
 		return false;
 	}
-	playerInput.consumeRawButton('pointer_wheel', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	return true;
 }
 
@@ -108,7 +108,7 @@ function handleResourceSearchWheel(
 		return false;
 	}
 	moveResourceSearchSelection(direction * steps);
-	playerInput.consumeRawButton('pointer_wheel', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	return true;
 }
 
@@ -134,7 +134,7 @@ function handleResourcePanelWheel(
 	} else {
 		resourcePanel.scrollBy(direction * steps);
 	}
-	playerInput.consumeRawButton('pointer_wheel', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	return true;
 }
 
@@ -162,12 +162,12 @@ function handleProblemsPanelWheel(
 		for (let i = 0; i < steps; i += 1) {
 			void problemsPanel.handleKeyboardCommand(resourcePanel, direction > 0 ? 'down' : 'up');
 		}
-		playerInput.consumeRawButton('pointer_wheel', 'pointer');
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		return true;
 	}
 	if (!allowScroll || !problemsPanel.handlePointerWheel(direction, steps)) {
 		return false;
 	}
-	playerInput.consumeRawButton('pointer_wheel', 'pointer');
+	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	return true;
 }

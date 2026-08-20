@@ -51,9 +51,9 @@ action, and first proves that the tooling task neither executes guest code nor
 stops at the init breakpoint. One ordinary machine frame reaches that
 breakpoint. The scenario later waits for the physical fault word, asserts
 supervisor mode plus the firmware monitor's halted input loop, captures the
-physical terminal, posts a real F1 press/release, and captures the IDE source
-overlay. The current run passes 89 assertions, including Hot Resume from an
-existing
+physical terminal, posts the physical Select+X control chord, and captures the
+IDE source overlay. The current run passes 89 assertions, including Hot Resume
+from an existing
 cart breakpoint and nested Hot Resume while stopped inside the annotated init.
 Resume suppression is now a tooling-owned LIFO stack of physical frame depths,
 so the newly pushed init reaches its own breakpoint without consuming the
@@ -74,9 +74,9 @@ cells are therefore deterministic retained-underlay data, not damaged terminal
 glyphs. Supervisor circuit 1 intentionally uses source-alpha composition over
 retained cartridge circuit 2; making it opaque or clearing the cart fixture to
 hide that data would degrade or mask the real architecture. That scenario now
-waits on the physical fault word, captures the BIOS monitor, sends real F1, and
-captures the IDE, but it is coverage rather than a product fix. Its current
-three-assertion run passes; `frame_00068.png` is the firmware terminal and
+waits on the physical fault word, captures the BIOS monitor, sends the physical
+Select+X chord, and captures the IDE, but it is coverage rather than a product
+fix. Its current three-assertion run passes; `frame_00068.png` is the firmware terminal and
 `frame_00081.png` is the later IDE overlay.
 
 The reported reboot-time font corruption was a real product defect, not a test

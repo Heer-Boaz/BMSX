@@ -1,6 +1,6 @@
 import type { Input } from './manager';
 import { KeyModifier, type PlayerInput } from './player';
-import type { BGamepadButton, ButtonState } from './models';
+import type { BGamepadButton, ButtonState, InputHandler } from './models';
 
 export type ShortcutDisposer = () => void;
 
@@ -13,8 +13,44 @@ type KeyboardShortcutEntry = {
 
 type ControlChordEntry = {
 	buttons: readonly BGamepadButton[];
-	handler: () => void;
-	active: boolean;
+	onPressed: () => void;
+	onReleased?: () => void;
+	keyboardActive: boolean;
+	gamepadActive: boolean;
+};
+
+const pollControlChordSource = (
+	handler: InputHandler | null,
+	buttons: readonly BGamepadButton[],
+	active: boolean,
+): boolean => {
+	if (handler === null) {
+		return false;
+	}
+	let anyPressed = false;
+	let allPressed = true;
+	for (let index = 0; index < buttons.length; index += 1) {
+		const state = handler.getButtonState(buttons[index]);
+		if (state.pressed) {
+			anyPressed = true;
+			if (!active && state.consumed) {
+				allPressed = false;
+			}
+		} else {
+			allPressed = false;
+		}
+	}
+	if (active) {
+		if (!anyPressed) {
+			return false;
+		}
+	} else if (!allPressed) {
+		return false;
+	}
+	for (let index = 0; index < buttons.length; index += 1) {
+		handler.consumeButton(buttons[index]);
+	}
+	return true;
 };
 
 export class GlobalShortcutRegistry {
@@ -52,14 +88,21 @@ export class GlobalShortcutRegistry {
 	public registerControlChord(
 		playerIndex: number,
 		buttons: readonly BGamepadButton[],
-		handler: () => void,
+		onPressed: () => void,
+		onReleased?: () => void,
 	): ShortcutDisposer {
 		let entries = this.controlChords.get(playerIndex);
 		if (!entries) {
 			entries = [];
 			this.controlChords.set(playerIndex, entries);
 		}
-		const entry: ControlChordEntry = { buttons, handler, active: false };
+		const entry: ControlChordEntry = {
+			buttons,
+			onPressed,
+			onReleased,
+			keyboardActive: false,
+			gamepadActive: false,
+		};
 		entries.push(entry);
 		return () => {
 			const target = this.controlChords.get(playerIndex);
@@ -108,26 +151,25 @@ export class GlobalShortcutRegistry {
 	}
 
 	private pollControlChord(player: PlayerInput, entry: ControlChordEntry): void {
-		const keyboard = player.inputHandlers['keyboard'];
-		const gamepad = player.inputHandlers['gamepad'];
-		let keyboardPressed = keyboard !== null;
-		let gamepadPressed = gamepad !== null;
-		for (let i = 0; i < entry.buttons.length; i++) {
-			const button = entry.buttons[i];
-			if (keyboardPressed && !keyboard.getButtonState(button).pressed) {
-				keyboardPressed = false;
-			}
-			if (gamepadPressed && !gamepad.getButtonState(button).pressed) {
-				gamepadPressed = false;
-			}
-		}
-		const active = keyboardPressed || gamepadPressed;
-		if (active === entry.active) {
+		const wasActive = entry.keyboardActive || entry.gamepadActive;
+		entry.keyboardActive = pollControlChordSource(
+			player.inputHandlers.keyboard,
+			entry.buttons,
+			entry.keyboardActive,
+		);
+		entry.gamepadActive = pollControlChordSource(
+			player.inputHandlers.gamepad,
+			entry.buttons,
+			entry.gamepadActive,
+		);
+		const active = entry.keyboardActive || entry.gamepadActive;
+		if (active === wasActive) {
 			return;
 		}
-		entry.active = active;
 		if (active) {
-			entry.handler();
+			entry.onPressed();
+		} else {
+			entry.onReleased?.();
 		}
 	}
 

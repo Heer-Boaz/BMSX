@@ -1,4 +1,5 @@
 #include "input.h"
+#include "supervisor_chord.h"
 
 #include "machine/common/numeric.h"
 
@@ -48,6 +49,10 @@ constexpr std::array<InputControllerGamepadButtonBit, kLibretroButtonCount> kLib
 	InputControllerGamepadButtonBit::LeftStick,
 	InputControllerGamepadButtonBit::RightStick,
 };
+
+constexpr u32 kSupervisorChordMask =
+	(1u << static_cast<u32>(InputControllerGamepadButtonBit::Select)) |
+	(1u << static_cast<u32>(InputControllerGamepadButtonBit::Down));
 
 constexpr unsigned kRetroMouseIdX = 0u;
 constexpr unsigned kRetroMouseIdY = 1u;
@@ -192,6 +197,12 @@ void LibretroInput::poll(
 				buttons |= 1u << static_cast<u32>(kLibretroButtons[button]);
 			}
 		}
+		if (player == 0u) {
+			buttons = bmsx_supervisor_chord_update(
+				&m_supervisor_chord_active,
+				buttons,
+				kSupervisorChordMask);
+		}
 		gamepad.buttons = buttons;
 		gamepad.axesQ16[0] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
 			player,
@@ -224,6 +235,8 @@ void LibretroInput::poll(
 			? static_cast<u32>(FIX16_ONE)
 			: 0u;
 	}
+	m_host_supervisor_request_high =
+		m_host_supervisor_request_high || m_supervisor_chord_active;
 
 	const i16 mouseDeltaX =
 		m_input_state_callback(0u, RETRO_DEVICE_MOUSE, 0u, kRetroMouseIdX);
@@ -445,6 +458,7 @@ void LibretroInput::reset() {
 	m_pointer_wheel_q16 = 0u;
 	m_pointer_position_valid = false;
 	m_host_supervisor_request_high = false;
+	m_supervisor_chord_active = false;
 }
 
 } // namespace bmsx

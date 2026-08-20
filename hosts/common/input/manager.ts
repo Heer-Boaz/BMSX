@@ -29,6 +29,7 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
+const SUPERVISOR_REQUEST_CHORD = ['select', 'down'] as const;
 
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
@@ -145,6 +146,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	public resetInput(): void {
 		this.hostSupervisorRequestLine = false;
+		this.programmaticSupervisorRequestLine = false;
 		this.updateSupervisorRequestLine();
 		for (let i = 0; i < this.playerInputs.length; i++) {
 			const player = this.playerInputs[i];
@@ -249,6 +251,12 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		}
 		this.globalShortcuts = new GlobalShortcutRegistry(this);
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
+		this.globalShortcuts.registerControlChord(
+			defaultPlayerIndex,
+			SUPERVISOR_REQUEST_CHORD,
+			() => this.setProgrammaticSupervisorRequestLine(true),
+			() => this.setProgrammaticSupervisorRequestLine(false),
+		);
 		const player = this.getPlayerInput(defaultPlayerIndex);
 		const keyboard = new KeyboardInput(this.clock, 'keyboard:0');
 		const pointer = new PointerInput(this.clock, 'pointer:0');

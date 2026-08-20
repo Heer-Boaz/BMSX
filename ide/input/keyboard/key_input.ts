@@ -11,7 +11,7 @@ export function shouldRepeatKeyFromPlayer(code: string, playerInput: PlayerInput
 }
 
 export function consumeIdeKey(code: string, playerInput: PlayerInput): void {
-	playerInput.consumeRawButton(code, 'keyboard');
+	playerInput.inputHandlers.keyboard?.consumeButton(code);
 }
 
 export function isCtrlDown(playerInput: PlayerInput): boolean {
