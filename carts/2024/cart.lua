@@ -25,8 +25,6 @@ local gamepad_input<const> = {
 input.add_player(1)
 input.push_context(1, 'sint2024', keyboard_input, gamepad_input)
 
-local irq_module<const> = require('cartlib/irq')
-local irq_source<const> = require('cartlib/irq/source')
 local font<const> = require('cartlib/font')
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
@@ -35,10 +33,8 @@ local sint<const> = require('sint')
 local sint_font<const> = require('sint_font')
 
 world:configure(world_module)
-irq = irq_module.dispatch
 
 local function init<init>()
-	irq_module.register(irq_source.vblank, vblank.on_irq)
 	sint_font.register()
 	quiz.define_fsm()
 	sint.define_fsm()

@@ -1,7 +1,6 @@
 module<entry>
 local apu<const> = require('cartlib/apu')
 local irq_module<const> = require('cartlib/irq')
-irq = irq_module.dispatch
 
 rodata transfer_source: word[4] = {
 	0x01234567,

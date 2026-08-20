@@ -3,16 +3,11 @@ local gx_display<const> = require('cartlib/gx/display')
 local gx_texture<const> = require('cartlib/gx/texture')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
-local aem<const> = require('cartlib/aem')
-local collision_2d<const> = require('cartlib/collision/collision_2d')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 input.push_context(1, 'pietious', {
 	pause = { 'F2' },
 })
-local irq_module<const> = require('cartlib/irq')
-local irq_source<const> = require('cartlib/irq/source')
-irq = irq_module.dispatch
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
@@ -128,10 +123,6 @@ function new_game()
 end
 
 local function init<init>()
-	irq_module.register(irq_source.vblank, vblank.on_irq)
-	irq_module.register(irq_source.geo_done, collision_2d.on_geo_irq)
-	irq_module.register(irq_source.geo_error, collision_2d.on_geo_irq)
-	irq_module.register(irq_source.apu, aem.on_apu_irq)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()

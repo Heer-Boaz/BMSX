@@ -7,6 +7,8 @@ local base_system<const> = require('cartlib/world/base_system')
 local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')
 local compile_matcher<const> = require('cartlib/event_matcher').compile
+local irq<const> = require('cartlib/irq')
+local irq_source<const> = require('cartlib/irq/source')
 local rom_dir<const> = require('cartlib/rom_dir')
 local tick_group<const> = require('cartlib/world/tick_group')
 
@@ -833,6 +835,11 @@ local on_apu_irq<const> = function()
 	end
 end
 
+local function init_apu_irq<init>()
+	irq.register(irq_source.apu, on_apu_irq)
+end
+init_apu_irq()
+
 -- The IRQ path retires physical slot state only. Semantic callbacks cross onto
 -- the frame schedule before gameplay work, mirroring UE AudioComponent's
 -- audio-thread-to-game-thread completion handoff without allocating per event.
@@ -871,6 +878,5 @@ end
 rebind()
 
 aem.reload_from_rom = reload_from_rom
-aem.on_apu_irq = on_apu_irq
 
 return aem

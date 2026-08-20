@@ -6,7 +6,6 @@ local primitives<const> = require('cartlib/gx/primitives')
 local gx_upload<const> = require('cartlib/gx/upload')
 gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
-irq = irq_module.dispatch
 
 bss affine_pixels: word[4]
 

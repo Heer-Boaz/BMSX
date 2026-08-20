@@ -3,7 +3,6 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_display<const> = require('cartlib/gx/display')
 gx_display.reset_320x240()
 local irq_module<const> = require('cartlib/irq')
-irq = irq_module.dispatch
 
 local gp1_status<const>: *word = 0x08010240
 local irq_mask_register<const>: *word = 0x08000008

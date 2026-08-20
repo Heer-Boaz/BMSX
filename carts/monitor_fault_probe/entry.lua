@@ -1,8 +1,7 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
 gx_display.reset_320x240()
-local irq_module<const> = require('cartlib/irq')
-irq = irq_module.dispatch
+require('cartlib/irq')
 
 local irq_mask<const>: *word = 0x08000008
 local irq_vblank<const> = 0x0004
