@@ -113,7 +113,10 @@ function timeline_program.compile(definition)
 		program_by_definition[definition] = program
 		return program
 	end
-	if frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
+	-- A duration-only sequence is an authored wait, not an empty frame array
+	-- supplied by every caller. It advances and completes through the same
+	-- retained playback boundary without manufacturing a dummy sample.
+	if frame_source == nil then
 		local compiled<const> = timeline_frame_program.compile(
 			program,
 			timeline_frame_program.empty_frames

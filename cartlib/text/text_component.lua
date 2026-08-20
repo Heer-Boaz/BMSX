@@ -1,4 +1,5 @@
 local font_catalog<const> = require('cartlib/text/font_catalog')
+local gp0<const> = require('cartlib/gx/gp0')
 local presentation_config<const> = require('bmsx/presentation_config')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
@@ -228,6 +229,65 @@ function text_component:render_glyphs(draw, x, y, first_line, last_line)
 		if line_offsets == nil then
 			cursor_y = cursor_y + self.line_height
 		end
+	end
+end
+
+-- Glyph-row reveals select a separate retained renderer. Ordinary text keeps
+-- the span writer above and therefore pays no clip-mode branch per glyph.
+function text_component:render_visible_glyph_rows(draw, x, y, first_line, last_line)
+	local visible_height<const> = self.glyph_visible_height
+	if visible_height == 0 then
+		return
+	end
+	local glyphs<const> = self.glyph_lines
+	local cursor_y = y + (first_line - 1) * self.line_height
+	local line_offsets<const> = self.line_offsets
+	local line_widths<const> = self.line_widths or self.layout_line_widths
+	local line_x_offsets<const> = self.line_x_offsets
+	local color<const> = self.color
+	for i = first_line, last_line do
+		local line<const> = glyphs[i]
+		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
+		local line_length<const> = line.visible_count
+		if line_length > 0 then
+			local line_x = x
+			if line_x_offsets ~= nil then
+				line_x = x + line_x_offsets[i]
+			elseif self.center_block_width ~= nil then
+				local line_width<const> = line_widths[i]
+				line_x = x + ((self.center_block_width - line_width) // 2)
+			end
+			local x_offsets<const> = line.x_offsets
+			for glyph_index = 1, line_length do
+				local glyph<const> = line[glyph_index]
+				glyph:draw_source_rect(
+					draw,
+					0, 0,
+					glyph.width, visible_height,
+					line_x + x_offsets[glyph_index], line_y,
+					color,
+					0,
+					gp0.draw_mode_blend_half)
+			end
+		end
+		if line_offsets == nil then
+			cursor_y = cursor_y + self.line_height
+		end
+	end
+end
+
+-- Selects a top-to-bottom glyph reveal measured in source rows. A full-height
+-- value restores the ordinary span renderer instead of leaving normal text on
+-- the per-glyph clipped path.
+function text_component:set_glyph_visible_height(height)
+	if height == self.line_height then
+		height = nil
+	end
+	self.glyph_visible_height = height
+	if height == nil then
+		self.render_glyphs = nil
+	else
+		self.render_glyphs = text_component.render_visible_glyph_rows
 	end
 end
 
