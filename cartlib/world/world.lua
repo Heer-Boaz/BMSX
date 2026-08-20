@@ -26,6 +26,11 @@
 -- 5. STRUCTURAL MUTATIONS COMMIT AT TICK-GROUP BOUNDARIES.
 --    Systems iterate retained dense arrays directly; world keeps active
 --    membership stable until the current group completes.
+--
+-- 6. GAMEPLAY TIME BELONGS TO THE WORLD SCHEDULE.
+--    gameplay_time_ms advances once before an admitted gameplay update and
+--    remains unchanged while that clock lane is suspended. Cooldown owners can
+--    retain absolute gameplay deadlines without ticking every component.
 
 local command_list<const> = require('cartlib/gx/command_list')
 local gx_display<const> = require('cartlib/gx/display')
@@ -130,6 +135,7 @@ function world_class.new()
 	self._initial_space_id = nil
 	self._system_manager = system_manager.new(self)
 	self.gameplay_clock_running = true
+	self.gameplay_time_ms = 0
 	self._mutation_barrier_open = false
 	self._visual_sequence = 0
 	self._visual_revision = 0

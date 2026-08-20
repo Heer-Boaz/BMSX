@@ -4,13 +4,17 @@
 local syntax_factory<const> = lua_compiler.syntax_factory
 
 local system_schedule_syntax<const> = {}
+local syntax<const> = syntax_factory.syntax
 local block<const> = syntax_factory.block
 local generated_symbol<const> = syntax_factory.generated_symbol
 local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
+local member_expression<const> = syntax_factory.member_expression
+local binary_expression<const> = syntax_factory.binary_expression
 local index_expression<const> = syntax_factory.index_expression
 local call_expression<const> = syntax_factory.call_expression
 local function_expression<const> = syntax_factory.function_expression
+local assignment_statement<const> = syntax_factory.assignment_statement
 local local_statement<const> = syntax_factory.local_statement
 local call_statement<const> = syntax_factory.call_statement
 local if_clause<const> = syntax_factory.if_clause
@@ -49,8 +53,18 @@ local append_group<const> = function(body, system_symbols, tick_functions, first
 	})
 end
 
-local build_runner<const> = function(system_symbols, tick_functions, delta_time)
+local build_runner<const> = function(system_symbols, tick_functions, delta_time, advances_gameplay)
 	local body<const> = {}
+	if advances_gameplay then
+		body[1] = assignment_statement(
+			member_expression(reference(symbols.world), 'gameplay_time_ms'),
+			binary_expression(
+				syntax.binary_add,
+				member_expression(reference(symbols.world), 'gameplay_time_ms'),
+				numeric_literal(delta_time)
+			)
+		)
+	end
 	local first = 1
 	while first <= #tick_functions do
 		local group<const> = tick_functions[first].definition.group
@@ -84,8 +98,8 @@ function system_schedule_syntax.build(
 	end
 
 	factory_body[#factory_body + 1] = return_statement({
-		build_runner(system_symbols, update_with_gameplay, delta_time),
-		build_runner(system_symbols, update_without_gameplay, delta_time),
+		build_runner(system_symbols, update_with_gameplay, delta_time, true),
+		build_runner(system_symbols, update_without_gameplay, delta_time, false),
 	})
 	return syntax_factory.chunk(block({
 		return_statement({

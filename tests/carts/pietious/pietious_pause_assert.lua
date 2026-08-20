@@ -36,6 +36,8 @@ function __bmsx_host_test.update()
 	if test.pause_started and director.state_machines:matches_state(test.pause_state) then
 		assert(world.active_space_id == 'main', 'pause changed the active room space')
 		assert(not world.gameplay_clock_running, 'gameplay clock advanced during pause')
+		assert(world.gameplay_time_ms == test.pause_gameplay_time_ms,
+			'gameplay time advanced while its clock lane was suspended')
 		assert(player.state_machines:matches_state(test.quiet_state),
 			'pause replaced the retained player gameplay state')
 		assert(player.x == test.player_x and player.y == test.player_y,
@@ -127,6 +129,7 @@ function __bmsx_host_test.update()
 		test.projectile_x = projectile.x
 		test.projectile_y = projectile.y
 		test.pause_started = true
+		test.pause_gameplay_time_ms = world.gameplay_time_ms
 		local wait<const> = player.timelines:get('p.tl.pw')
 		assert(wait.playing and wait.head == 0,
 			'pause seated countdown did not start on its first frame')
@@ -223,12 +226,17 @@ function __bmsx_host_test.update()
 			'resume did not restore the retained gameplay offsets')
 		assert(player.sword_sprite.enabled == test.normal_sword_enabled,
 			'resume did not restore the retained sword presentation')
+		test.resume_gameplay_time_ms = world.gameplay_time_ms
 		test.phase = 'resumed_gameplay'
 		test.resume_frames = 0
 		return false
 	end
 
 	test.resume_frames = test.resume_frames + 1
+	if test.resume_frames > 1 then
+		assert(world.gameplay_time_ms > test.resume_gameplay_time_ms,
+			'gameplay time did not resume with its clock lane')
+	end
 	assert(test.resume_frames < 12, 'gameplay objects did not resume after F2')
 	local enemy<const> = registry:get('probe.pause.enemy')
 	local projectile<const> = registry:get('probe.pause.projectile')

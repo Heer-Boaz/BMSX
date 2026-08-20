@@ -1,3 +1,5 @@
+local actioneffects<const> = require('cartlib/actioneffects')
+local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -13,6 +15,7 @@ local zak_foe<const> = {}
 zak_foe.__index = zak_foe
 
 local frame_duration_ms<const> = clock.frame_milliseconds()
+local fire_effect_id<const> = 'nemesis_s.enemy.zak_foe.fire'
 local players_view
 local hit_area<const> = {
 	left = 2,
@@ -24,41 +27,6 @@ local hit_area<const> = {
 local set_direction<const> = function(self, direction)
 	self.direction = direction
 	self.sprite_component.flip_h = direction == zak_foe_direction_left
-end
-
-local update_weapon<const> = function(self)
-	local elapsed<const> = self.fire_elapsed_ms + frame_duration_ms
-	if elapsed < self.fire_wait_ms then
-		self.fire_elapsed_ms = elapsed
-		return
-	end
-	self.fire_elapsed_ms = elapsed - self.fire_wait_ms
-	local wait_ms<const> = math.random(zak_foe_fire_min_ms, zak_foe_fire_max_ms)
-	if #players_view.objects == 2 then
-		self.fire_wait_ms = wait_ms // 2
-	else
-		self.fire_wait_ms = wait_ms
-	end
-	local players<const> = players_view.objects
-	local target
-	if #players == 1 then
-		target = players[1]
-	else
-		target = players[math.random(1, #players)]
-	end
-	local bullet_x<const> = self.x + 4
-	local bullet_y<const> = self.y
-	local speed_x<const>, speed_y<const> = velocity.dominant_axis_velocity(
-		target.x - bullet_x,
-		target.y - bullet_y,
-		enemy_bullet_speed
-	)
-	world:spawn(ids_enemy_bullet_def, {
-		stage = self.stage,
-		speed_x = speed_x,
-		speed_y = speed_y,
-		pos = { x = bullet_x, y = bullet_y },
-	})
 end
 
 local update_phase_elapsed<const> = function(self, duration_ms)
@@ -84,7 +52,7 @@ function zak_foe:update_prepare_jump()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
-	update_weapon(self)
+	self.actioneffects:try_trigger(fire_effect_id)
 	if update_phase_elapsed(self, zak_foe_prepare_ms) then
 		return '/jumping'
 	end
@@ -100,7 +68,7 @@ function zak_foe:update_jumping()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
-	update_weapon(self)
+	self.actioneffects:try_trigger(fire_effect_id)
 	self.x = self.x + zak_foe_horizontal_speed * self.direction
 	self.y = self.y + self.vertical_speed
 	self.vertical_speed = self.vertical_speed + zak_foe_vertical_acceleration
@@ -141,7 +109,7 @@ function zak_foe:update_recovering()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
-	update_weapon(self)
+	self.actioneffects:try_trigger(fire_effect_id)
 	if update_phase_elapsed(self, zak_foe_recovery_ms) then
 		self:set_imgid(assets_zak_foe_stand)
 		return '/prepare_jump'
@@ -175,6 +143,7 @@ local register_definition<const> = function()
 		components = {
 			enemy.new_collider,
 			stage_scroll_follower_component.new,
+			actioneffect_component.factory({ fire_effect_id }),
 			fsm_component.factory({ ids_zak_foe_fsm }),
 		},
 		defaults = {
@@ -183,8 +152,6 @@ local register_definition<const> = function()
 			small_fry = true,
 			direction = zak_foe_direction_left,
 			phase_elapsed_ms = 0,
-			fire_elapsed_ms = 0,
-			fire_wait_ms = zak_foe_fire_initial_ms,
 			vertical_speed = 0,
 			z = zak_foe_draw_z,
 		},
@@ -193,6 +160,38 @@ end
 
 function zak_foe.register()
 	players_view = world:active_definition_view(ids_player_def)
+	actioneffects.register_effect(fire_effect_id, {
+		initial_cooldown_ms = zak_foe_fire_initial_ms,
+		calculate_cooldown_ms = function()
+			local wait_ms<const> = math.random(zak_foe_fire_min_ms, zak_foe_fire_max_ms)
+			if #players_view.objects == 2 then
+				return wait_ms // 2
+			end
+			return wait_ms
+		end,
+		handler = function(self)
+			local players<const> = players_view.objects
+			local target
+			if #players == 1 then
+				target = players[1]
+			else
+				target = players[math.random(1, #players)]
+			end
+			local bullet_x<const> = self.x + 4
+			local bullet_y<const> = self.y
+			local speed_x<const>, speed_y<const> = velocity.dominant_axis_velocity(
+				target.x - bullet_x,
+				target.y - bullet_y,
+				enemy_bullet_speed
+			)
+			world:spawn(ids_enemy_bullet_def, {
+				stage = self.stage,
+				speed_x = speed_x,
+				speed_y = speed_y,
+				pos = { x = bullet_x, y = bullet_y },
+			})
+		end,
+	})
 	define_fsm()
 	register_definition()
 end

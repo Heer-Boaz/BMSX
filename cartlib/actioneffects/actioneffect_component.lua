@@ -1,5 +1,4 @@
 local base_component<const> = require('cartlib/component/base_component')
-local clock<const> = require('cartlib/clock')
 
 local bind_state_paths<const> = function(owner, paths)
 	if not paths then
@@ -97,11 +96,16 @@ end
 function actioneffect_component:grant_effect(id)
 	local owner<const> = self.parent
 	local definition<const> = definitions_by_id[id]
-	self.effects[id] = {
+	local effect<const> = {
 		definition = definition,
 		required_states = bind_state_paths(owner, definition.required_state_paths),
 		blocked_states = bind_state_paths(owner, definition.blocked_state_paths),
 	}
+	local initial_cooldown_ms<const> = definition.initial_cooldown_ms
+	if initial_cooldown_ms ~= nil then
+		effect.cooldown_until_ms = owner.world.gameplay_time_ms + initial_cooldown_ms
+	end
+	self.effects[id] = effect
 end
 
 function actioneffect_component:rebind_effect(id, definition)
@@ -122,19 +126,16 @@ end
 
 function actioneffect_component:try_trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
-	-- Cooldowns retain machine-clock samples instead of ticking every component.
-	-- Inactive spaces therefore incur no update work and elapsed machine time has
-	-- the same meaning when an action is queried again.
-	local current_time_ms
-	local cooldown_duration_ms<const> = effect.cooldown_duration_ms
-	if cooldown_duration_ms ~= nil then
-		current_time_ms = clock.milliseconds()
-		if clock.elapsed_milliseconds(effect.cooldown_start_time_ms, current_time_ms) < cooldown_duration_ms then
-			return false
-		end
-	end
 	local definition<const> = effect.definition
 	local owner<const> = self.parent
+	-- The world advances this clock once per admitted gameplay update. Cooldowns
+	-- therefore need no component tick, stop with gameplay suspension and retain
+	-- their meaning while their owner's space is inactive.
+	local current_time_ms<const> = owner.world.gameplay_time_ms
+	local cooldown_until_ms<const> = effect.cooldown_until_ms
+	if cooldown_until_ms ~= nil and current_time_ms < cooldown_until_ms then
+		return false
+	end
 	if not tags_allow(owner, definition.required_tags, definition.blocked_tags)
 		or not states_allow(owner, effect.required_states, effect.blocked_states) then
 		return false
@@ -142,6 +143,16 @@ function actioneffect_component:try_trigger(id, payload, ...)
 	local gate<const> = definition.can_trigger
 	if gate and not gate(owner, payload, ...) then
 		return false
+	end
+	local cooldown_ms = definition.cooldown_ms
+	local calculate_cooldown_ms<const> = definition.calculate_cooldown_ms
+	if calculate_cooldown_ms ~= nil then
+		cooldown_ms = calculate_cooldown_ms(owner, payload, ...)
+	end
+	if cooldown_ms ~= nil then
+		effect.cooldown_until_ms = current_time_ms + cooldown_ms
+	else
+		effect.cooldown_until_ms = nil
 	end
 	local event_type = definition.event
 	local event_payload = payload
@@ -158,16 +169,6 @@ function actioneffect_component:try_trigger(id, payload, ...)
 	if event_type then
 		owner.events:emit(event_type, event_payload)
 	end
-	local cooldown<const> = definition.cooldown_ms
-	if cooldown and cooldown > 0 then
-		if current_time_ms == nil then
-			current_time_ms = clock.milliseconds()
-		end
-		effect.cooldown_start_time_ms = current_time_ms
-		effect.cooldown_duration_ms = cooldown
-	else
-		effect.cooldown_duration_ms = nil
-	end
 	return true
 end
 
@@ -176,14 +177,11 @@ function actioneffect_component:cooldown_remaining(id)
 	if not effect then
 		return nil
 	end
-	local duration<const> = effect.cooldown_duration_ms
-	if duration == nil then
+	local cooldown_until_ms<const> = effect.cooldown_until_ms
+	if cooldown_until_ms == nil then
 		return nil
 	end
-	local remaining<const> = duration - clock.elapsed_milliseconds(
-		effect.cooldown_start_time_ms,
-		clock.milliseconds()
-	)
+	local remaining<const> = cooldown_until_ms - self.parent.world.gameplay_time_ms
 	if remaining > 0 then
 		return remaining
 	end
