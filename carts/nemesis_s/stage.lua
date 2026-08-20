@@ -640,6 +640,26 @@ function stage:is_solid_pixel(screen_x, screen_y)
 	return self.solid_tape[map_y][map_x] ~= 0
 end
 
+-- Returns the zero-based offset of the first solid tile in a horizontal run,
+-- or tile_count when the complete run is clear. Projectile collision in the
+-- original Nemesis 2 runtime operates on retained tile runs rather than
+-- repeatedly sampling individual pixels.
+function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
+	local map_x<const> = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
+	local row<const> = self.solid_tape[(screen_y // self.tile_size) + 1]
+	local last_offset = tile_count - 1
+	local screen_last_offset<const> = self.tile_columns - (screen_x // self.tile_size) - 1
+	if last_offset > screen_last_offset then
+		last_offset = screen_last_offset
+	end
+	for tile_offset = 0, last_offset do
+		if row[map_x + tile_offset] ~= 0 then
+			return tile_offset
+		end
+	end
+	return tile_count
+end
+
 function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}

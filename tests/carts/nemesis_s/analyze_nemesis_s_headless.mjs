@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const logPath = process.argv[2] ?? '/tmp/nemesis_s_headless.log';
+const telemetryStringKeys = new Set(['kind', 'name', 'reason', 'sprite', 'turn', 'weapon']);
 
 function parseTelemetryLine(line) {
 	const payload = {};
@@ -13,8 +14,7 @@ function parseTelemetryLine(line) {
 		}
 		const key = token.slice(0, eq);
 		const raw = token.slice(eq + 1);
-		const asNumber = Number(raw);
-		payload[key] = Number.isFinite(asNumber) && raw !== '' ? asNumber : raw;
+		payload[key] = telemetryStringKeys.has(key) ? raw : Number(raw);
 	}
 	return payload;
 }
@@ -85,7 +85,7 @@ for (let i = 0; i < playerMetrics.length; i += 1) {
 	const y = Number(m.y);
 	expect(x >= 0 && x <= 240, `Player X out of bounds at frame ${m.f}: x=${x} expected [0..240].`);
 	expect(y >= 0 && y <= 166, `Player Y out of bounds at frame ${m.f}: y=${y} expected [0..166].`);
-	expect(Number(m.bullet) <= 2, `Bullet count exceeded limit at frame ${m.f}: bullet=${m.bullet} expected <=2.`);
+	expect(Number(m.bullet) <= 1, `Bullet count exceeded limit at frame ${m.f}: bullet=${m.bullet} expected <=1.`);
 }
 
 const moveRightSamples = playerMetrics.filter((m) => Number(m.right) === 1 && Number(m.left) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
@@ -182,12 +182,12 @@ const firstSpawnFrameMetric = first(playerMetrics, (m) => Number(m.f) === Number
 expect(firstSpawnFrameMetric !== null, 'Missing player metric for first fire_spawn frame.');
 if (firstSpawnFrameMetric) {
 	expect(
-		approxEqual(Number(firstSpawn.x), Number(firstSpawnFrameMetric.x) + 16),
-		`First spawn x mismatch: spawn.x=${firstSpawn.x}, player.x=${firstSpawnFrameMetric.x}, expected player.x+16.`,
+		Number(firstSpawn.x) === (((Number(firstSpawnFrameMetric.x) + 8) >> 3) << 3),
+		`First spawn x mismatch: spawn.x=${firstSpawn.x}, player.x=${firstSpawnFrameMetric.x}, expected an aligned player.x+8.`,
 	);
 	expect(
-		approxEqual(Number(firstSpawn.y), Number(firstSpawnFrameMetric.y) + 5),
-		`First spawn y mismatch: spawn.y=${firstSpawn.y}, player.y=${firstSpawnFrameMetric.y}, expected player.y+5.`,
+		Number(firstSpawn.y) === ((Number(firstSpawnFrameMetric.y) | 0) + 8),
+		`First spawn y mismatch: spawn.y=${firstSpawn.y}, player.y=${firstSpawnFrameMetric.y}, expected integer player.y+8.`,
 	);
 }
 
@@ -211,10 +211,10 @@ for (let i = 0; i < playerMetrics.length - 1; i += 1) {
 	}
 }
 
-const matchingProjectileDeltas = projectileDeltas.filter((delta) => approxEqual(delta, 6, 0.2));
+const matchingProjectileDeltas = projectileDeltas.filter((delta) => approxEqual(delta, 12, 0.2));
 expect(
 	matchingProjectileDeltas.length >= 20,
-	`Expected >=20 projectile movement samples with delta~6, got ${matchingProjectileDeltas.length} from ${projectileDeltas.length}.`,
+	`Expected >=20 projectile movement samples with delta~12, got ${matchingProjectileDeltas.length} from ${projectileDeltas.length}.`,
 );
 
 if (directorMetrics.length > 1) {

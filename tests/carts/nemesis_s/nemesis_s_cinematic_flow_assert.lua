@@ -111,7 +111,9 @@ function __bmsx_host_test.setup()
 		'player pawns did not receive their retained player state')
 	assert(#player_1.options == 0 and #player_2.options == 0,
 		'new players retained the removed debug option loadout')
-	assert(#player_1.bullets == 0 and #player_1.lasers == 0 and #player_1.missiles == 0 and #player_1.uplasers == 0,
+	assert(player_1.primary_projectiles[1].type == 0
+		and player_1.missile_projectiles[1].type == 0
+		and player_1.secondary_projectiles[1].type == 0,
 		'new player retained active weapons from the removed debug loadout')
 	test.phase = 'game_start'
 end

@@ -10,7 +10,7 @@ local powerup_slot<const> = {
 	option = 4,
 	shield = 5,
 }
-local powerup_max_levels<const> = { 3, 1, 1, 2, 1 }
+local powerup_max_levels<const> = { 3, 2, 2, 2, 1 }
 local player_state_ids<const> = {
 	'nemesis_s.player_state.1',
 	'nemesis_s.player_state.2',

@@ -25,9 +25,11 @@ player_base_movement_speed = 1
 player_movement_speed_increase = 0.5
 player_option_history_count = 16
 player_option_history_spacing = 8
-player_max_projectiles = 2
-player_fire_spawn_offset_x = 16
-player_fire_spawn_offset_y = 5
+player_vessel_capacity = 3
+player_bullet_movement_speed = 12
+player_bullet_spawn_offset_x = 8
+player_bullet_spawn_offset_y = 8
+player_bullet_collision_backtrack = 8
 player_hitcheck_x = { 4, 8, 14, 4, 8, 8 }
 
 player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
@@ -55,38 +57,39 @@ mijter_foe_width = 24
 mijter_foe_height = 16
 mijter_foe_draw_z = 60
 
-projectile_width = 6
-projectile_height = 2
-projectile_movement_speed = 6
 weapons_laser = {
 	tile_width = 8,
-	tile_height = 2,
-	movement_speed = 18,
-	max_length_px = 240,
-	max_active = 1,
 	spawn_offset_x = 16,
-	spawn_offset_y = 5,
+	spawn_offset_y = 8,
+	expansion_tiles_per_tick = 4,
+	travel_speed = 32,
+	collision_retract_tiles = 4,
+	length_tiles_by_level = { 15, 28 },
 }
 
-weapons_missile_width = 8
-weapons_missile_height_fall = 8
-weapons_missile_height_floor = 4
-weapons_missile_movement_speed = 4
-weapons_missile_max_active = 1
-weapons_missile_spawn_offset_x = 4
-weapons_missile_spawn_offset_y = 0
+weapons_missile_spawn_offset_x = 8
+weapons_missile_spawn_offset_y = 8
+weapons_missile_despawn_y = 168
+weapons_missile_motion_by_level = {
+	{
+		fall_velocity_x_q8 = 0x0100,
+		fall_velocity_y_q8 = 0x0400,
+		surface_velocity_x_q8 = 0x0400,
+	},
+	{
+		fall_velocity_x_q8 = 0x0080,
+		fall_velocity_y_q8 = 0x0600,
+		surface_velocity_x_q8 = 0x0600,
+	},
+}
 weapons_uplaser = {
 	tile_width = 8,
-	tile_height = 2,
-	length_unit_px = 8,
-	movement_speed = 4,
-	max_active = 1,
-	level1_length_units = 2,
-	level2_initial_length_units = 2,
+	movement_speed = 6,
+	initial_length_tiles = 2,
 	level2_gate_frames = 4,
-	level2_growth_units_per_gate = 2,
-	level2_growth_units_at_top = 1,
-	level2_extra_rise_px = 8,
+	level2_growth_tiles = 2,
+	level2_edge_growth_tiles = 1,
+	level2_left_growth_px = 8,
 	spawn_offset_x = 0,
 	spawn_offset_y = 8,
 }
@@ -119,6 +122,7 @@ assets_mijter_foe_red_up = 'mijter_foe_red_up'
 assets_mijter_foe_red_down = 'mijter_foe_red_down'
 assets_sint_pop = 'sint_pop'
 assets_laser = 'laser'
+assets_uplaser = 'uplaser'
 assets_missile1 = 'missile1'
 assets_missile2 = 'missile2'
 assets_star_blue = 'star_blue'

@@ -24,8 +24,8 @@ function __bmsx_host_test.update()
 	player_state.current_powerup_slot = player_state_module.powerup_slot.option
 	assert(player_state:activate_selected_powerup() == player_state_module.powerup_slot.option)
 	assert(#player.options == 2, 'option power-ups did not add the two MSX option vessels')
-	assert(player.weapon_slots.bullet[2] == 0 and player.weapon_slots.bullet[3] == 0,
-		'new option vessels did not receive projectile slots')
+	assert(player.primary_projectiles[2].type == 0 and player.primary_projectiles[3].type == 0,
+		'new option vessels did not retain their projectile slots')
 
 	player.right_held = true
 	for step = 1, 16 do
