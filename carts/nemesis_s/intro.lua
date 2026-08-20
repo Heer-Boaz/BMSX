@@ -14,15 +14,18 @@ local intro_instance_id<const> = 'nemesis_s.intro'
 local intro_fsm_id<const> = 'nemesis_s.intro.fsm'
 local intro_timeline_id<const> = 'nemesis_s.intro.presentation'
 local tile_size<const> = 8
-local frame_duration_ms<const> = 20
+-- The source intro advances each logo by one tile per fixed 30 Hz XNA update.
+-- BMSX presents at 50 Hz, so the step track repeats presentation frames while
+-- retaining that authored movement cadence.
+local move_step_ms<const> = 1000 / 30
 local nicolaas_move_start_ms<const> = 2000
 local nicolaas_start_tile<const> = -28
 local nicolaas_end_tile<const> = 2
 local boaz_start_tile<const> = 32
 local boaz_end_tile<const> = 4
-local nicolaas_move_duration_ms<const> = (nicolaas_end_tile - nicolaas_start_tile) * frame_duration_ms
+local nicolaas_move_duration_ms<const> = (nicolaas_end_tile - nicolaas_start_tile) * move_step_ms
 local boaz_move_start_ms<const> = nicolaas_move_start_ms + nicolaas_move_duration_ms + 3000
-local boaz_move_duration_ms<const> = (boaz_start_tile - boaz_end_tile) * frame_duration_ms
+local boaz_move_duration_ms<const> = (boaz_start_tile - boaz_end_tile) * move_step_ms
 local blackout_start_ms<const> = boaz_move_start_ms + boaz_move_duration_ms + 6000
 local intro_duration_ms<const> = blackout_start_ms + 2000
 
@@ -34,7 +37,7 @@ local build_slide_keys<const> = function(start_time_ms, start_tile, end_tile)
 	}
 	for step = 1, step_count do
 		keys[#keys + 1] = {
-			time_ms = start_time_ms + step * frame_duration_ms,
+			time_ms = start_time_ms + step * move_step_ms,
 			value = (start_tile + step * direction) * tile_size,
 		}
 	end

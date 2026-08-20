@@ -28,10 +28,18 @@ function __bmsx_host_test.setup()
 	assert(intro.nicolaas.offset_x == -224 and intro.boaz.offset_x == 256,
 		'intro logos did not start at the XNA tile positions')
 	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 2600)
+	assert(intro.nicolaas.offset_x == -80,
+		'Sinterklaas logo did not retain the fixed 30 Hz XNA movement cadence')
+	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 3000)
 	assert(intro.nicolaas.offset_x == 16, 'Sinterklaas logo did not finish at XNA tile x=2')
 	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 6160)
+	assert(intro.boaz.offset_x == 224,
+		'Boaz logo did not retain the fixed 30 Hz XNA movement cadence')
+	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 7000)
 	assert(intro.boaz.offset_x == 32, 'Boaz logo did not finish at XNA tile x=4')
 	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 12160)
+	assert(intro.visible, 'intro blackout started before the authored XNA wait elapsed')
+	intro.timelines:advance_time_to('nemesis_s.intro.presentation', 13000)
 	assert(not intro.visible, 'intro blackout did not hide the logos')
 	intro.events:emit('intro_done')
 	assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to story')
