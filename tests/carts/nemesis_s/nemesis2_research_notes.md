@@ -11,10 +11,13 @@
 
 ## Disassembly workflow
 
-- Tool: Python package `z80dis` in `.external/py`.
-- Script:
-  - `tests/carts/nemesis_s/disassemble_nemesis2.py`
-  - Run with: `.external/py/bin/python tests/carts/nemesis_s/disassemble_nemesis2.py`
+- Decoder: the Z80 decoder from the pinned `.external/py-msx-emulator`
+  checkout (`c509f70076d5309dead6617362cb926014f53ff7`). The generic ROM-window,
+  mapper-bank and byte-search primitives live in
+  `scripts/research/msx/z80_rom.py`.
+- Nemesis 2 address profile:
+  - `scripts/nemesis_s/disassemble_nemesis2.py`
+  - Run with: `python3 -m scripts.nemesis_s.disassemble_nemesis2`
 - Entry disassembly output:
   - `.external/nemesis2rom/disasm_entry_0x4090.txt`
 - Targeted segment disassembly output:
@@ -25,9 +28,19 @@
   - `.external/nemesis2rom/snsmat_call_sites.txt`
 - Mapper-window formula used by the stage-4 dump:
   - physical ROM offset = `bank * 0x2000 + (cpu_address & 0x1fff)`
-- Runtime branch/state traces were captured with the open-source
-  `py-msx-emulator`; static operands and runtime transitions were compared
-  before translating a cadence into cart code.
+- Runtime branch/state traces and screenshots use the same pinned emulator:
+  - `scripts/nemesis_s/trace_nemesis2.py`
+  - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_ray_open`
+  - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_ray_lifecycle`
+  - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_volcano`
+  - outputs are written below `.external/nemesis2rom/traces/` as compact JSON
+    plus native `256x192` RGB24 PPM frames.
+- The trace script retains the deterministic input route, stage-4 admission
+  patch and trainer writes needed to reproduce the observations. Actor ids,
+  RAM records and frame windows remain in that Nemesis-specific owner; the
+  generic research modules contain no game addresses.
+- Static operands and runtime transitions were compared before translating a
+  cadence into cart code.
 
 ## Concrete findings reused in BMSX baseline
 
