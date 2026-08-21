@@ -7,6 +7,11 @@ local sprite_component<const> = require('cartlib/component/sprite_component')
 
 local sprite_object<const> = {}
 sprite_object.__index = sprite_object
+-- Sprite subclasses may replace the primary visual constructor once at class
+-- definition time. Initialization still owns exactly one primary component;
+-- render and animation lanes therefore consume their normal retained types
+-- without a per-object visual-mode branch.
+sprite_object.primary_sprite_factory = sprite_component.new
 setmetatable(sprite_object, { __index = world_object })
 
 local base_sprite_id<const> = 'base_sprite'
@@ -14,7 +19,7 @@ local base_sprite_id<const> = 'base_sprite'
 function sprite_object.initialize(self)
 	world_object.initialize(self)
 
-	self.sprite_component = sprite_component.new({
+	self.sprite_component = self.primary_sprite_factory({
 		imgid = self.imgid,
 		id_local = base_sprite_id,
 	})

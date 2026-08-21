@@ -1,4 +1,3 @@
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -11,9 +10,6 @@ local destroyed_sneeuwpop<const> = {}
 destroyed_sneeuwpop.__index = destroyed_sneeuwpop
 
 function destroyed_sneeuwpop:ctor()
-	self:get_component(collider_2d_component):set_shape_asset(
-		assets.collision_shape_sneeuwpop_destroyed_body_addr
-	)
 	self.vulnerable = false
 end
 
@@ -34,7 +30,7 @@ local register_definition<const> = function()
 		class = destroyed_sneeuwpop,
 		base = enemy,
 		components = {
-			enemy.new_collider,
+			enemy.collider_factory(assets.collision_shape_sneeuwpop_destroyed_body_addr),
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_destroyed_sneeuwpop_fsm }),
 		},

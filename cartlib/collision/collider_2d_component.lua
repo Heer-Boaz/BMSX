@@ -6,6 +6,14 @@ local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component
 setmetatable(collider_2d_component, { __index = base_component })
 
+local bind_shape_variants<const> = function(self, original, fliph, flipv, fliphv)
+	self._shape_ref_original = original
+	self._shape_ref_fliph = fliph
+	self._shape_ref_flipv = flipv
+	self._shape_ref_fliphv = fliphv
+	self.shape_ref = original
+end
+
 local create<const> = function(opts, definition)
 	local self<const> = setmetatable(base_component.new(opts), collider_2d_component)
 	self.id_local = definition.id_local or self.id_local
@@ -27,6 +35,16 @@ end
 -- Prefab collision policy is immutable definition data. The factory captures
 -- it once while each instance contributes only its parent identity.
 function collider_2d_component.factory(definition)
+	local shape_asset<const> = definition.shape_asset
+	if shape_asset ~= nil then
+		local original<const>, fliph<const>, flipv<const>, fliphv<const> =
+			collision_shape.variant_addresses(shape_asset)
+		return function(opts)
+			local self<const> = create(opts, definition)
+			bind_shape_variants(self, original, fliph, flipv, fliphv)
+			return self
+		end
+	end
 	return function(opts)
 		return create(opts, definition)
 	end
@@ -84,11 +102,9 @@ end
 -- header or scans the authored tile map.
 function collider_2d_component:set_shape_asset(asset_address)
 	self:set_sprite(nil)
-	self._shape_ref_original,
-		self._shape_ref_fliph,
-		self._shape_ref_flipv,
-		self._shape_ref_fliphv = collision_shape.variant_addresses(asset_address)
-	self.shape_ref = self._shape_ref_original
+	local original<const>, fliph<const>, flipv<const>, fliphv<const> =
+		collision_shape.variant_addresses(asset_address)
+	bind_shape_variants(self, original, fliph, flipv, fliphv)
 end
 
 function collider_2d_component:set_shape_flip(flip_h, flip_v)

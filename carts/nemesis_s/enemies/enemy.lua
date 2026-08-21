@@ -20,6 +20,17 @@ function enemy.new_collider(opts)
 	return collider
 end
 
+-- Static packed shapes resolve their four GEO descriptors when the prefab is
+-- defined. Instances retain those addresses directly instead of decoding the
+-- asset header in every enemy constructor.
+function enemy.collider_factory(shape_asset)
+	return collider_2d_component.factory({
+		layer = collision_enemy_layer,
+		mask = collision_enemy_mask,
+		shape_asset = shape_asset,
+	})
+end
+
 function enemy.new_sprite_collider(opts)
 	local collider<const> = collider_2d_component.new_for_sprite(opts)
 	collider.layer = collision_enemy_layer

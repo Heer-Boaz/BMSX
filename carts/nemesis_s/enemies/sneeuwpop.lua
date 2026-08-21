@@ -1,4 +1,3 @@
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -29,9 +28,6 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 })
 
 function sneeuwpop:ctor()
-	self:get_component(collider_2d_component):set_shape_asset(
-		assets.collision_shape_sneeuwpop_body_addr
-	)
 	self.flash_animation = self:get_component(sprite_animation_component)
 end
 
@@ -122,7 +118,7 @@ local register_definition<const> = function()
 		class = sneeuwpop,
 		base = ground_foe,
 		components = {
-			enemy.new_collider,
+			enemy.collider_factory(assets.collision_shape_sneeuwpop_body_addr),
 			new_flash_animation,
 			stage_scroll_follower_component.new,
 			timeline_component.new,

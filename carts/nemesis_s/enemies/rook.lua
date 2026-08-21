@@ -1,4 +1,6 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local clock<const> = require('cartlib/clock')
+local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -6,12 +8,20 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local foe<const> = require('enemies/foe')
-local rook_animation_system<const> = require('enemies/rook_animation_system')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
 local rook<const> = {}
 rook.__index = rook
+rook.primary_sprite_factory = sprite_animation_component.factory({
+	frames = {
+		assets_rook_1,
+		assets_rook_2,
+		assets_rook_3,
+	},
+	frame_duration_ms = rook_animation_frame_updates * clock.update_milliseconds(),
+	loop = true,
+})
 
 local players_view
 local hit_area<const> = {
@@ -24,16 +34,16 @@ local hit_area<const> = {
 function rook:ctor()
 	self:get_component(collider_2d_component).local_area = hit_area
 	self.motion = self:get_component(fixed_point_velocity_component)
-	self:set_imgid(rook_animation_system.current_imgid)
 end
 
 function rook:onspawn()
-	self.chimney_exit_y = self.y - rook_leave_distance
-	self.motion:set_velocity_pixels_per_second(0, -rook_leave_speed_px_per_second)
+	self.chimney_exit_y = self.y - self.rise_distance
+	self.motion.velocity_x = 0
+	self.motion.velocity_y = rook_rise_velocity_y_q8
 end
 
 function rook:update_leaving_chimney()
-	if self.y >= self.chimney_exit_y then
+	if self.y > self.chimney_exit_y then
 		return
 	end
 	local players<const> = players_view.objects
@@ -43,16 +53,23 @@ function rook:update_leaving_chimney()
 	else
 		target = players[math.random(1, #players)]
 	end
-	self.motion:set_dominant_axis_speed_pixels_per_second(
-		target.x - self.x,
-		target.y - self.y,
-		rook_attack_speed_px_per_second
-	)
+	self.target = target
+	local motion<const> = self.motion
+	motion.velocity_x = target.x < self.x
+		and -rook_attack_velocity_x_q8
+		or rook_attack_velocity_x_q8
+	motion.velocity_y = 0
 	self.stage_scroll_follower:set_enabled(false)
 	return '/attacking_player'
 end
 
 function rook:update_attacking_player()
+	local motion<const> = self.motion
+	if self.target.y < self.y then
+		motion.velocity_y = motion.velocity_y - rook_tracking_acceleration_y_q8
+	else
+		motion.velocity_y = motion.velocity_y + rook_tracking_acceleration_y_q8
+	end
 	if self.x < -rook_width
 	or self.x > playfield_width
 	or self.y < -rook_height

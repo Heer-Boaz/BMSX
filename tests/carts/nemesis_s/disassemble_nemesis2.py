@@ -8,16 +8,22 @@ ROM_PATH = WORKSPACE / ".external/nemesis2rom/extracted/Nemesis2[File-Hunter.com
 OUT_DIR = WORKSPACE / ".external/nemesis2rom"
 BASE_ADDR = 0x4000
 ENTRY_ADDR = 0x4090
+BANK_SIZE = 0x2000
 
 
-def disassemble_from(rom: bytes, address: int, count: int) -> list[str]:
+def disassemble_range(
+	rom: bytes,
+	offset: int,
+	limit: int,
+	address: int,
+	count: int,
+) -> list[str]:
 	lines: list[str] = []
-	offset = address - BASE_ADDR
 	pc = address
 	for _ in range(count):
-		if offset >= len(rom):
+		if offset >= limit:
 			break
-		decoded = z80.decode(rom[offset : offset + 8], pc)
+		decoded = z80.decode(rom[offset : min(offset + 8, limit)], pc)
 		if decoded.status != z80.DECODE_STATUS.OK or decoded.len <= 0:
 			lines.append(f"{pc:04X}: db 0x{rom[offset]:02X}")
 			offset += 1
@@ -28,6 +34,15 @@ def disassemble_from(rom: bytes, address: int, count: int) -> list[str]:
 		offset += decoded.len
 		pc += decoded.len
 	return lines
+
+
+def disassemble_from(rom: bytes, address: int, count: int) -> list[str]:
+	return disassemble_range(rom, address - BASE_ADDR, len(rom), address, count)
+
+
+def disassemble_banked(rom: bytes, bank: int, address: int, count: int) -> list[str]:
+	offset = bank * BANK_SIZE + (address & (BANK_SIZE - 1))
+	return disassemble_range(rom, offset, (bank + 1) * BANK_SIZE, address, count)
 
 
 def write_entry_dump(rom: bytes) -> None:
@@ -81,6 +96,21 @@ def write_segment_dump(rom: bytes) -> None:
 	print(f"wrote {target} ({len(lines)} lines)")
 
 
+def write_stage4_banked_dump(rom: bytes) -> None:
+	segments = {
+		11: (0xBB06, 0xBADC, 0xBBA0, 0xBC10, 0xBE49, 0xBEE6, 0xBF10),
+		2: (0x9B62,),
+	}
+	lines: list[str] = []
+	for bank, addresses in segments.items():
+		for address in addresses:
+			lines.append(f"\n===== bank {bank:02X}, cpu {address:04X} =====")
+			lines.extend(disassemble_banked(rom, bank, address, 120))
+	target = OUT_DIR / "disasm_stage4_banked.txt"
+	target.write_text("\n".join(lines), encoding="utf-8")
+	print(f"wrote {target} ({len(lines)} lines)")
+
+
 def write_snsmat_call_sites(rom: bytes) -> None:
 	pattern = bytes((0xCD, 0x41, 0x01))  # CALL 0x0141 (SNSMAT)
 	offset = 0
@@ -108,6 +138,7 @@ def main() -> None:
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
 	write_entry_dump(rom)
 	write_segment_dump(rom)
+	write_stage4_banked_dump(rom)
 	write_snsmat_call_sites(rom)
 
 

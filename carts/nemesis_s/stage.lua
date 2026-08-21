@@ -798,6 +798,33 @@ function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
 	return tile_count
 end
 
+-- Returns the zero-based offset of the first solid tile in a vertical run,
+-- or the number of in-bounds tiles when the run reaches the playfield edge.
+-- Stage-relative beams retain this result once because their map column stays
+-- fixed while both the stage and beam consume the same tile scroll.
+function stage:first_solid_vertical_tile_offset(screen_x, screen_y, tile_count, direction)
+	local map_x<const> = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y<const> = (screen_y // self.tile_size) + 1
+	local last_offset = tile_count - 1
+	if direction < 0 then
+		if last_offset >= map_y then
+			last_offset = map_y - 1
+		end
+	else
+		local bottom_offset<const> = self.tile_rows - map_y
+		if last_offset > bottom_offset then
+			last_offset = bottom_offset
+		end
+	end
+	local solid_tape<const> = self.solid_tape
+	for tile_offset = 0, last_offset do
+		if solid_tape[map_y + tile_offset * direction][map_x] ~= 0 then
+			return tile_offset
+		end
+	end
+	return last_offset + 1
+end
+
 function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}

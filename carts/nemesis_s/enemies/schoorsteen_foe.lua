@@ -1,9 +1,9 @@
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
@@ -15,17 +15,22 @@ require('constants')
 local schoorsteen_foe<const> = {}
 schoorsteen_foe.__index = schoorsteen_foe
 
-local animation_images<const> = {
-	assets_schoorsteen_foe_1,
-	assets_schoorsteen_foe_2,
-	assets_schoorsteen_foe_3,
-	assets_schoorsteen_foe_4,
-	assets_schoorsteen_foe_5,
-}
-local cooling_animation_images<const> = {
-	assets_schoorsteen_foe_5,
-	assets_schoorsteen_foe_5,
-	assets_schoorsteen_foe_4,
+local fire_event<const> = 'schoorsteen.fire'
+local closed_event<const> = 'schoorsteen.closed'
+local update_milliseconds<const> = clock.update_milliseconds()
+local opening_frames<const> = timeline.build_frame_sequence({
+	{ value = assets_schoorsteen_foe_1, hold = 1 },
+	{ value = assets_schoorsteen_foe_2, hold = 1 },
+	{ value = assets_schoorsteen_foe_3, hold = 1 },
+	{ value = assets_schoorsteen_foe_4, hold = 2 },
+	{ value = assets_schoorsteen_foe_5, hold = 1 },
+	{ value = assets_schoorsteen_foe_4, hold = 1 },
+	{ value = assets_schoorsteen_foe_5, hold = 1 },
+	{ value = assets_schoorsteen_foe_4, hold = 1 },
+	{ value = assets_schoorsteen_foe_5, hold = 3 },
+	{ value = assets_schoorsteen_foe_4, hold = 2 },
+})
+local closing_frames<const> = {
 	assets_schoorsteen_foe_3,
 	assets_schoorsteen_foe_2,
 	assets_schoorsteen_foe_1,
@@ -35,7 +40,7 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = clock.update_milliseconds(),
+	frame_duration_ms = update_milliseconds,
 	loop = true,
 	offset_x = schoorsteen_flash_offset_x,
 	offset_y = schoorsteen_flash_offset_y,
@@ -45,9 +50,6 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 local players_view
 
 function schoorsteen_foe:ctor()
-	self:get_component(collider_2d_component):set_shape_asset(
-		assets.collision_shape_schoorsteen_foe_body_addr
-	)
 	self.flash_animation = self:get_component(sprite_animation_component)
 end
 
@@ -57,10 +59,10 @@ function schoorsteen_foe:onspawn()
 	end
 end
 
-function schoorsteen_foe:enter_idle()
+function schoorsteen_foe:enter_closed()
 	self.vulnerable = false
 	self.flash_animation:deactivate()
-	self:set_imgid(animation_images[1])
+	self:set_imgid(assets_schoorsteen_foe_1)
 end
 
 function schoorsteen_foe:update_idle()
@@ -73,76 +75,138 @@ function schoorsteen_foe:update_idle()
 	for player_index = 1, #players do
 		local player_x<const> = players[player_index].x
 		if player_x >= fire_left and player_x <= fire_right then
-			return '/ready_to_fire'
+			return '/opening'
 		end
 	end
 end
 
-function schoorsteen_foe:enter_ready_to_fire()
+function schoorsteen_foe:finish_wait()
+	return self:update_idle() or '/idle'
+end
+
+function schoorsteen_foe:enter_opening()
 	self.vulnerable = true
 	self.flash_animation:activate()
 end
 
 function schoorsteen_foe:fire_ray()
-	local ray<const> = world:spawn(ids_schoorsteen_ray_def, {
+	world:spawn(ids_schoorsteen_ray_def, {
+		stage = self.stage,
 		pos = {
 			x = self.x + schoorsteen_ray_offset_x,
 			y = self.y + schoorsteen_ray_offset_y,
 		},
 	})
-	ray.events:on({
-		event = 'enemy.ray.finished',
-		subscriber = self,
-		handler = schoorsteen_foe.ray_finished,
-		once = true,
-	})
-	self.ray = ray
 	self.events:emit('enemy.ray_fired')
 	return '/firing'
 end
 
-function schoorsteen_foe:ray_finished()
-	self.ray = nil
-	self.state_machines:transition_to('/cooling_down')
-end
-
 local define_fsm<const> = function()
 	fsm_library.register(ids_schoorsteen_foe_fsm, {
-		initial = 'idle',
+		initial = 'startup',
 		update = enemy.update_stage_follower,
 		states = {
-			idle = {
-				entering_state = schoorsteen_foe.enter_idle,
-				update = schoorsteen_foe.update_idle,
-			},
-			ready_to_fire = {
-				entering_state = schoorsteen_foe.enter_ready_to_fire,
-				exiting_state = function(self)
-					self.flash_animation:deactivate()
-				end,
+			startup = {
+				entering_state = schoorsteen_foe.enter_closed,
 				timelines = {
-					open = {
+					startup_wait = {
 						def = {
-							frames = animation_images,
-							frame_duration = schoorsteen_foe_animation_frame_ms,
+							continuous = true,
+							duration_ms = schoorsteen_foe_initial_wait_updates * update_milliseconds,
 							playback_mode = 'once',
-							apply = schoorsteen_foe.set_imgid,
 						},
-						on_finished = schoorsteen_foe.fire_ray,
+						play_options = { snap_to_start = false },
+						on_finished = schoorsteen_foe.finish_wait,
 					},
 				},
 			},
-			firing = {},
-			cooling_down = {
+			idle = {
+				entering_state = schoorsteen_foe.enter_closed,
+				update = schoorsteen_foe.update_idle,
+			},
+			opening = {
+				entering_state = schoorsteen_foe.enter_opening,
+				exiting_state = function(self)
+					self.flash_animation:deactivate()
+				end,
+				on = {
+					[fire_event] = schoorsteen_foe.fire_ray,
+				},
+				timelines = {
+					open = {
+						def = {
+							frames = opening_frames,
+							frame_duration = update_milliseconds,
+							playback_mode = 'once',
+							apply = schoorsteen_foe.set_imgid,
+							tracks = {
+								{
+									kind = 'event',
+									keys = {
+										{
+											frame = #opening_frames - 1,
+											event = fire_event,
+											direction = 'forward',
+										},
+									},
+								},
+							},
+						},
+						play_options = { snap_to_start = false },
+					},
+				},
+			},
+			firing = {
+				timelines = {
+					firing_wait = {
+						def = {
+							continuous = true,
+							duration_ms = schoorsteen_foe_firing_wait_updates * update_milliseconds,
+							playback_mode = 'once',
+						},
+						play_options = { snap_to_start = false },
+						on_finished = '/closing',
+					},
+				},
+			},
+			closing = {
+				on = {
+					[closed_event] = '/cooldown',
+				},
 				timelines = {
 					close = {
 						def = {
-							frames = cooling_animation_images,
-							frame_duration = schoorsteen_foe_animation_frame_ms,
+							frames = closing_frames,
+							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_foe.set_imgid,
+							tracks = {
+								{
+									kind = 'event',
+									keys = {
+										{
+											frame = #closing_frames - 1,
+											event = closed_event,
+											direction = 'forward',
+										},
+									},
+								},
+							},
 						},
-						on_finished = '/idle',
+						play_options = { snap_to_start = false },
+					},
+				},
+			},
+			cooldown = {
+				timelines = {
+					cooldown_wait = {
+						def = {
+							continuous = true,
+							duration_ms = schoorsteen_foe_cooldown_updates * update_milliseconds,
+							playback_mode = 'once',
+						},
+						play_options = { snap_to_start = false },
+						on_finished = schoorsteen_foe.finish_wait,
 					},
 				},
 			},
@@ -156,7 +220,7 @@ local register_definition<const> = function()
 		class = schoorsteen_foe,
 		base = ground_foe,
 		components = {
-			enemy.new_collider,
+			enemy.collider_factory(assets.collision_shape_schoorsteen_foe_body_addr),
 			new_flash_animation,
 			stage_scroll_follower_component.new,
 			timeline_component.new,

@@ -88,6 +88,7 @@ function __bmsx_host_test.update()
 
 	local rook<const> = world:spawn(ids_rook_def, {
 		stage = player.stage,
+		rise_distance = rook_rise_distances[1],
 		pos = { x = player.x, y = player.y },
 	})
 	assert(collide_with(player, rook, collision_enemy_layer) == nil

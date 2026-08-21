@@ -1,4 +1,6 @@
+local clock<const> = require('cartlib/clock')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
@@ -78,6 +80,41 @@ function __bmsx_host_test.update()
 			'ray contraction did not trim its retained tile range')
 		assert(ray.x == x and ray.y == y,
 			'ray contraction mutated world position to encode visual geometry')
+
+		local rook<const> = world:spawn(ids_rook_def, {
+			stage = stage,
+			rise_distance = 0,
+			pos = { x = 240, y = 112 },
+		})
+		local rook_animation<const> = rook:get_component(sprite_animation_component)
+		assert(rook.sprite_component == rook_animation
+			and #rook._components_by_class[sprite_component] == 1,
+			'Rook retained a shadow base sprite beside its primary animation')
+		assert(rook_animation.frame_duration_ms
+			== rook_animation_frame_updates * clock.update_milliseconds(),
+			'Rook animation changed from its four-update actor cadence')
+		assert(rook.motion.velocity_x == 0
+			and rook.motion.velocity_y == rook_rise_velocity_y_q8,
+			'Rook admission lost its raw Nemesis 2 rise velocity')
+		local player<const> = registry:get('nemesis_s.player.1')
+		local player_x<const> = player.x
+		local player_y<const> = player.y
+		player.x = rook.x - 1
+		rook:update_leaving_chimney()
+		assert(rook.motion.velocity_x == -rook_attack_velocity_x_q8
+			and rook.motion.velocity_y == 0
+			and not rook.stage_scroll_follower.enabled,
+			'Rook launch lost its raw horizontal velocity or stage detachment')
+		player.y = rook.y - 1
+		rook:update_attacking_player()
+		assert(rook.motion.velocity_y == -rook_tracking_acceleration_y_q8,
+			'Rook did not accelerate upward toward its retained target')
+		player.y = rook.y + 1
+		rook:update_attacking_player()
+		assert(rook.motion.velocity_y == 0,
+			'Rook did not add the raw downward tracking acceleration')
+		player.x = player_x
+		player.y = player_y
 		return true
 	end
 

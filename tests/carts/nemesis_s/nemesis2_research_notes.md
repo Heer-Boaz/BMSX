@@ -19,8 +19,15 @@
   - `.external/nemesis2rom/disasm_entry_0x4090.txt`
 - Targeted segment disassembly output:
   - `.external/nemesis2rom/disasm_segments_candidate.txt`
+- Mapper-aware stage-4 disassembly output:
+  - `.external/nemesis2rom/disasm_stage4_banked.txt`
 - SNSMAT call-site scan output:
   - `.external/nemesis2rom/snsmat_call_sites.txt`
+- Mapper-window formula used by the stage-4 dump:
+  - physical ROM offset = `bank * 0x2000 + (cpu_address & 0x1fff)`
+- Runtime branch/state traces were captured with the open-source
+  `py-msx-emulator`; static operands and runtime transitions were compared
+  before translating a cadence into cart code.
 
 ## Concrete findings reused in BMSX baseline
 
@@ -66,24 +73,62 @@
   - Since `E202` starts at `1`, the `RLCA` sequence is `2,4,8,16,32,64,128,1`, so gate-open occurs every 8 updates in gated mode.
 - Therefore, scroll cadence should be modeled as **frame/tick-gated**, not as a fixed millisecond timer constant.
 
+## Stage-4 ray chimney and cloud volcano
+
+The relevant stage-4 actor code is mapped as bank `0x0b` in the CPU
+`0xa000..0xbfff` window. Cloud vertical tracking jumps to bank `0x02` routine
+`0x9b62`.
+
+### Ray chimney (`0xBADC`, dispatcher `0xBB06`)
+
+- `0xBAF1` admits the actor with an initial counter of `0x30` (48 actor
+  updates).
+- `0xBB25..0xBB2F` performs an unsigned horizontal player-window test equivalent
+  to `player_x - chimney_x + 0x20 < 0x40`.
+- The retained opening states increment and alternate the visual over the
+  traced update sequence before `0xBB95` fires.
+- `0xBBC2..0xBBC9` spawns actor type `0x41` and submits sound command `0x26`.
+- `0xBB98` retains a six-update post-fire hold. The emitter then closes over
+  three one-update visual steps and returns to its 32-update cooldown at
+  `0xBBEF`.
+- Ray lifetime is independent of the emitter. The emitter never waits for an
+  actor-`0x41` completion callback.
+
+Actor `0x41` was traced as one admitted tile followed by ten expansion updates
+of four tiles each. Contraction removes four tiles per update from the emitter
+side while retaining the far endpoint. A terrain hit clamps the visible length;
+it does not shorten the ten-update expansion phase.
+
+### Cloud volcano (`0xBE49`, dispatcher `0xBE62`)
+
+- `0xBE59` admits the generator with an initial counter of `0x30` (48 actor
+  updates).
+- `0xBE86..0xBEA0` opens it over four actor updates and primes a five-cloud
+  formation.
+- `0xBEA1..0xBECF` spawns actor type `0x40` every eight updates, exactly five
+  times, with sound command `0x15`. After the fifth cloud it retains the open
+  visual for 64 updates and primes the next formation.
+- The complete first-spawn-to-next-first-spawn period is 97 actor updates:
+  spawn frames `0, 8, 16, 24, 32`, then the retained post-formation hold.
+- `0xBEE6..0xBF08` selects rise counters `12, 16, 20, 24, 28` and writes raw
+  vertical Q8.8 velocity `-0x0300`. At three pixels per actor update this gives
+  rise distances `36, 48, 60, 72, 84` pixels; the generator emits them in the
+  reverse formation order.
+- `0xBF31` selects raw horizontal Q8.8 velocity `0x0280` toward the player.
+- Bank-`0x02` routine `0x9B62` adds signed raw `0x0016` to vertical velocity
+  toward the retained player Y each actor update.
+- `0xBF47..0xBF5F` advances each cloud's own three-frame animation every four
+  actor updates. It is not one global animation phase shared by all clouds.
+
 ## Interpretation limits
 
-- These observations are from linear-bank static disassembly of one ROM dump variant.
-- Precise runtime semantics can still differ per mapper bank/context; therefore, behavior claims above are only used where confirmed by both:
-  - disassembly pattern, and
-  - headless telemetry in `nemesis_s`.
-
-## Why this baseline is scoped as "player-only"
-
-- Current `nemesis_s` intentionally implements:
-  - one scrolling in-game segment,
-  - player movement,
-  - player shot behavior,
-  - deterministic headless telemetry and assertions.
-- Not implemented in this scope:
-  - stage collision map and enemy logic,
-  - title/map/powerup screens,
-  - full Nemesis 2 event scripting.
+- The ROM checksum above identifies the analyzed revision; another dump can
+  contain different banks or operands.
+- Stage-4 claims combine mapper-aware static disassembly with runtime ROM
+  traces. BMSX headless assertions validate the translated cart behavior, not
+  the source ROM interpretation by themselves.
+- The custom XNA stage layout, art, multiplayer extensions and audio assets
+  remain cart-owned where the original MSX game has no corresponding content.
 
 ## Stage data loading model
 
