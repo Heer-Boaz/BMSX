@@ -315,7 +315,7 @@ weapons_uplaser = {
 
 stage_asset_id = 'nemesis_s_stage'
 stage_scroll_interval_ms = 250
-stage_star_scroll_speed = 0.625
+stage_star_scroll_speed_px_per_second = 31.25
 stage_star_blink_frame_ms = 50
 stage_star_particle_z = 8
 assets_player_n = 'metallion_n'

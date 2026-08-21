@@ -220,6 +220,7 @@ expect(
 if (directorMetrics.length > 1) {
 	let starMovementSamples = 0;
 	let tileStepSamples = 0;
+	const starScrollSpeedPxPerMs = 0.03125;
 	for (let i = 0; i < directorMetrics.length - 1; i += 1) {
 		const current = directorMetrics[i];
 		const next = directorMetrics[i + 1];
@@ -228,7 +229,13 @@ if (directorMetrics.length > 1) {
 		if (starDelta < 0) {
 			starDelta += 256;
 		}
-		const expectedStarDelta = Number(next.stage_scrolling) === 1 ? 0.625 : 0;
+		let elapsedMs = Number(next.stage_elapsed_ms) - Number(current.stage_elapsed_ms);
+		if (elapsedMs < 0) {
+			elapsedMs += 250;
+		}
+		const expectedStarDelta = Number(next.stage_scrolling) === 1
+			? elapsedMs * starScrollSpeedPxPerMs
+			: 0;
 		expect(
 			approxEqual(starDelta, expectedStarDelta, 0.01),
 			`Star scroll mismatch at frame ${next.f}: delta=${starDelta} expected ${expectedStarDelta}.`,

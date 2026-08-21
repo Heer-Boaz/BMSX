@@ -17,6 +17,7 @@ local stage<const> = {}
 stage.__index = stage
 
 local frame_duration_ms<const> = clock.update_milliseconds()
+local star_scroll_step<const> = stage_star_scroll_speed_px_per_second * frame_duration_ms * 0.001
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
@@ -741,9 +742,9 @@ function stage:update_runtime()
 		return '/running/stopped'
 	end
 
-	self.star_scroll_px = self.star_scroll_px + stage_star_scroll_speed
-	self:apply_star_scroll(self.yellow_stars, stage_star_scroll_speed)
-	self:apply_star_scroll(self.blue_stars, stage_star_scroll_speed)
+	self.star_scroll_px = self.star_scroll_px + star_scroll_step
+	self:apply_star_scroll(self.yellow_stars, star_scroll_step)
+	self:apply_star_scroll(self.blue_stars, star_scroll_step)
 end
 
 function stage:resume_scrolling()
