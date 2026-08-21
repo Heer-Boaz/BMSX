@@ -313,8 +313,8 @@ weapons_uplaser = {
 	level2_growth_tiles = 2,
 	level2_edge_growth_tiles = 1,
 	level2_left_growth_px = 8,
-	spawn_offset_x = 0,
-	spawn_offset_y = 8,
+	spawn_offset_x = 8,
+	spawn_offset_y = 0,
 }
 
 stage_asset_id = 'nemesis_s_stage'
