@@ -31,6 +31,10 @@ local reset_powerup_values<const> = function(self, selected_slot)
 	self.uplaser_level = 0
 end
 
+local has_powerup_capacity<const> = function(self, slot)
+	return self.powerup_levels[slot] < powerup_max_levels[slot]
+end
+
 function player_state:set_lives(lives)
 	if self.lives == lives then
 		return
@@ -51,17 +55,26 @@ end
 
 function player_state:activate_selected_powerup()
 	local slot<const> = self.current_powerup_slot
-	if slot == no_powerup_slot then
+	if slot == no_powerup_slot or not has_powerup_capacity(self, slot) then
 		return nil
 	end
 	local levels<const> = self.powerup_levels
-	if levels[slot] >= powerup_max_levels[slot] then
-		return nil
-	end
 	levels[slot] = levels[slot] + 1
 	self.current_powerup_slot = no_powerup_slot
 	self.events:emit(events.powerups_changed, slot)
 	return slot
+end
+
+-- Recoverable world pickups grant their concrete power-up without consuming
+-- the status-bar selection. Capacity remains owned by the player state, not by
+-- each pickup actor.
+function player_state:grant_powerup(slot)
+	if not has_powerup_capacity(self, slot) then
+		return false
+	end
+	self.powerup_levels[slot] = self.powerup_levels[slot] + 1
+	self.events:emit(events.powerups_changed, slot)
+	return true
 end
 
 function player_state:remove_powerup(slot)

@@ -960,6 +960,20 @@ function player:enter_flying()
 end
 
 function player:enter_dying()
+	local options<const> = self.options
+	local animation_frames<const> = self.visual_sources.options
+	for index = 1, #options do
+		local option<const> = options[index]
+		local pickup_x = option.x + player_option_pickup_offset_x
+		if pickup_x > playfield_width then
+			pickup_x = playfield_width
+		end
+		self.world:spawn(ids_option_pickup_def, {
+			animation_frames = animation_frames,
+			animation_owner = self,
+			pos = { x = pickup_x, y = option.y, z = self.z },
+		})
+	end
 	self.vessel_visual.visible = false
 	self.body_collider:set_enabled(false)
 	self.death_visual:set_enabled(true)
@@ -1049,6 +1063,26 @@ end
 local define_player_fsm<const> = function()
 	fsm_library.register(ids_player_fsm, {
 		initial = 'boot',
+		timelines = {
+			[option_animation_timeline_id] = {
+				def = {
+					frames = {
+						{ option_anim_index = 1 },
+						{ option_anim_index = 2 },
+						{ option_anim_index = 3 },
+						{ option_anim_index = 4 },
+					},
+					playback_mode = 'loop',
+					apply = true,
+				},
+				autoplay = true,
+				stop_on_exit = true,
+				play_options = {
+					rewind = true,
+					snap_to_start = true,
+				},
+			},
+		},
 		states = {
 			boot = {
 				entering_state = function(self)
@@ -1063,26 +1097,6 @@ local define_player_fsm<const> = function()
 					['overlap.begin'] = {
 						emitter = false,
 						go = player.on_body_overlap,
-					},
-				},
-				timelines = {
-					[option_animation_timeline_id] = {
-						def = {
-							frames = {
-								{ option_anim_index = 1 },
-								{ option_anim_index = 2 },
-								{ option_anim_index = 3 },
-								{ option_anim_index = 4 },
-							},
-							frame_duration = 1,
-							playback_mode = 'loop',
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
 					},
 				},
 				states = {
