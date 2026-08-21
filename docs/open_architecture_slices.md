@@ -10,6 +10,15 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
+## Na de lopende cartlib-slices
+
+| ID | Geobserveerd probleem | Klaar wanneer |
+| --- | --- | --- |
+| `NEMESIS-DEATH-01` | Player death tijdens vuur met twee options fault in `player.get_vessel_snapshot()` via `update_laser()`. | De lifecycle-owner verwijdert de stale vessel/option-admission; geen nil-guard in de weapon-hot-path. Het scenario draait zonder fault en zonder projectielen van vernietigde vessels. |
+| `NEMESIS-PROJECTILE-01` | Projectielen van een ZakFoe worden nu samen met hun afzender verwijderd, terwijl vergelijkbare vijandprojectielen in Nemesis 2 na vernietiging van de afzender blijven doorvliegen. | ZakFoe bezit alleen spawnadmission. Een afgevuurd projectiel heeft een zelfstandige lifecycle en verdwijnt uitsluitend door zijn eigen impact-, bereik-, room- of disposalgrens. |
+| `HOST-INPUT-01` | De terminal sluit niet meer via zijn shortcut; terminal- en IDE-chords lekken `Backspace`/`x` naar de geopende editor en `Backspace` werkt niet meer als gewone terminalinvoer. | Host-controlchords en guest text-input hebben afzonderlijke ownership; press en release worden eenmaal geconsumeerd, toggles werken beide richtingen en gewone editor-/terminaltoetsen blijven intact. De mapping is bruikbaar op een SNES Mini zonder L2/R2. |
+| `NEMESIS-PRESENTATION-01` | Story-panelen en title/ship/burst lopen sneller dan Nemesis 2; de geselecteerde een-/tweespeleroptie knippert niet. De cart gebruikt daarnaast nog een update per twee VBlanks. Een te toetsen hypothese is 60 Hz met drie VBlank-waits; dit is nog geen gekozen contract. De intro hoeft zijn milliseconde-timing niet te verliezen, maar voor de overige MSX-presentatie mag de huidige milliseconde-authoring worden vervangen door de oorspronkelijke VBlank-cadence als de ROM dat contract aantoont. | Gameplaypacing, intro-timing en oorspronkelijke MSX-presentatiecadence zijn afzonderlijk gemodelleerd. Story-panelen volgen voor de behouden panelwissels de ROM-timing; title, ship, burst en selection blink volgen de ROM zonder globale rate-hack. Daarna is expliciet vastgesteld of de dubbele-VBlank-gameplayclock nog een machinecontract vervult. |
+
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |
