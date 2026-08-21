@@ -300,7 +300,7 @@ weapons_missile_motion_by_level = {
 		surface_velocity_x_q8 = 0x0400,
 	},
 	{
-		fall_velocity_x_q8 = 0x0080,
+		fall_velocity_x_q8 = 0x0180,
 		fall_velocity_y_q8 = 0x0600,
 		surface_velocity_x_q8 = 0x0600,
 	},

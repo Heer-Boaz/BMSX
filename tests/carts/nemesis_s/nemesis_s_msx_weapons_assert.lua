@@ -120,12 +120,36 @@ function __bmsx_host_test.update()
 	player:despawn_missile(missile, 'test_reset')
 	player:spawn_missile(1, 2)
 	player:update_weapons()
-	assert(missile.x == 49 and missile.fraction_x == 0x80 and missile.y == 39,
-		'the level-two missile did not retain its Q8.8 half-pixel falling motion')
+	assert(missile.x == 50 and missile.fraction_x == 0x80 and missile.y == 39,
+		'the level-two missile did not retain its Q8.8 one-and-a-half-pixel falling motion')
 	player:update_weapons()
-	assert(missile.x == 50 and missile.fraction_x == 0 and missile.y == 45,
+	assert(missile.x == 52 and missile.fraction_x == 0 and missile.y == 45,
 		'the level-two missile did not consume its retained Q8.8 fraction')
 	player:despawn_missile(missile, 'test_reset')
+
+	local floor_row<const> = stage.solid_tape[((33 + 8) // stage.tile_size) + 1]
+	local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
+	floor_row[missile_column + 1] = 1
+	player:spawn_missile(1, 1)
+	player:update_weapons()
+	assert(missile.x == 50 and missile.y == 37,
+		'the missile did not fall when its original left floor sample was clear')
+	player:despawn_missile(missile, 'test_reset')
+	floor_row[missile_column] = 1
+	floor_row[missile_column + 1] = 0
+	player:spawn_missile(1, 1)
+	player:update_weapons()
+	assert(missile.x == 53 and missile.y == 37,
+		'the missile did not traverse an original floor-edge sample')
+	player:despawn_missile(missile, 'test_reset')
+	floor_row[missile_column] = 0
+	local missile_row<const> = stage.solid_tape[(33 // stage.tile_size) + 1]
+	missile_row[missile_column] = 1
+	player:spawn_missile(1, 1)
+	player:update_weapons()
+	assert(missile.type == 0,
+		'the missile skipped its original post-movement body tile sample')
+	missile_row[missile_column] = 0
 
 	player:spawn_uplaser(1, 2)
 	local uplaser<const> = player.secondary_projectiles[1]
