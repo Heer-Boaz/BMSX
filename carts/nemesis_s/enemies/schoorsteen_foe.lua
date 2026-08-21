@@ -1,4 +1,3 @@
-local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -17,7 +16,6 @@ schoorsteen_foe.__index = schoorsteen_foe
 
 local fire_event<const> = 'schoorsteen.fire'
 local closed_event<const> = 'schoorsteen.closed'
-local update_milliseconds<const> = clock.update_milliseconds()
 local opening_frames<const> = timeline.build_frame_sequence({
 	{ value = assets_schoorsteen_foe_1, hold = 1 },
 	{ value = assets_schoorsteen_foe_2, hold = 1 },
@@ -40,7 +38,6 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = update_milliseconds,
 	loop = true,
 	offset_x = schoorsteen_flash_offset_x,
 	offset_y = schoorsteen_flash_offset_y,
@@ -112,7 +109,7 @@ local define_fsm<const> = function()
 					startup_wait = {
 						def = {
 							continuous = true,
-							duration_ms = schoorsteen_foe_initial_wait_updates * update_milliseconds,
+							duration_frames = schoorsteen_foe_initial_wait_updates,
 							playback_mode = 'once',
 						},
 						play_options = { snap_to_start = false },
@@ -136,7 +133,6 @@ local define_fsm<const> = function()
 					open = {
 						def = {
 							frames = opening_frames,
-							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_foe.set_imgid,
 							tracks = {
@@ -161,7 +157,7 @@ local define_fsm<const> = function()
 					firing_wait = {
 						def = {
 							continuous = true,
-							duration_ms = schoorsteen_foe_firing_wait_updates * update_milliseconds,
+							duration_frames = schoorsteen_foe_firing_wait_updates,
 							playback_mode = 'once',
 						},
 						play_options = { snap_to_start = false },
@@ -177,7 +173,6 @@ local define_fsm<const> = function()
 					close = {
 						def = {
 							frames = closing_frames,
-							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_foe.set_imgid,
 							tracks = {
@@ -202,7 +197,7 @@ local define_fsm<const> = function()
 					cooldown_wait = {
 						def = {
 							continuous = true,
-							duration_ms = schoorsteen_foe_cooldown_updates * update_milliseconds,
+							duration_frames = schoorsteen_foe_cooldown_updates,
 							playback_mode = 'once',
 						},
 						play_options = { snap_to_start = false },

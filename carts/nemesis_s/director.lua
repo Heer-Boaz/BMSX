@@ -1,5 +1,4 @@
 local bool01<const> = require('cartlib/util/bool01')
-local clock<const> = require('cartlib/clock')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -350,7 +349,6 @@ local define_director_fsm<const> = function()
 							[game_over_curtain_timeline_id] = {
 								def = {
 									frames = timeline.range(game_over_curtain_columns + 1),
-									frame_duration = clock.update_milliseconds(),
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,
 									apply = director.apply_game_over_curtain_frame,

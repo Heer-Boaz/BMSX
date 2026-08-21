@@ -1,6 +1,5 @@
 local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
-local clock<const> = require('cartlib/clock')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -49,7 +48,6 @@ local new_flash_left<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = clock.update_milliseconds(),
 	loop = true,
 	offset_z = 1,
 	enabled = false,
@@ -60,7 +58,6 @@ local new_flash_right<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = clock.update_milliseconds(),
 	loop = true,
 	offset_z = 1,
 	enabled = false,

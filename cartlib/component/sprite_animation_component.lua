@@ -6,7 +6,13 @@ local sprite_animation_component<const> = {}
 sprite_animation_component.__index = sprite_animation_component
 setmetatable(sprite_animation_component, { __index = sprite_component })
 
+-- Frame runs are authored in gameplay-animation beats, matching the retained
+-- clock lane that advances this component. Absolute millisecond durations are
+-- reserved for animations whose rate is independent of that beat. The factory
+-- resolves either form once; instances and the animation system retain one
+-- direct millisecond datapath.
 function sprite_animation_component.factory(definition)
+	local update_milliseconds<const> = clock.update_milliseconds()
 	local animation_definitions<const> = definition.animations
 	if animation_definitions == nil then
 		-- Single-sequence sprites retain the original compact instance shape.
@@ -18,7 +24,10 @@ function sprite_animation_component.factory(definition)
 		for frame_index = 1, frame_count do
 			frame_sources[frame_index] = image.resolve(frames[frame_index])
 		end
-		local frame_duration_ms<const> = definition.frame_duration_ms
+		local frame_duration_ms = definition.frame_duration_ms
+		if frame_duration_ms == nil then
+			frame_duration_ms = (definition.frame_run or 1) * update_milliseconds
+		end
 		local loop<const> = definition.loop
 		local id_local<const> = definition.id_local
 		local offset_x<const> = definition.offset_x or 0
@@ -55,11 +64,15 @@ function sprite_animation_component.factory(definition)
 		for frame_index = 1, frame_count do
 			frame_sources[frame_index] = image.resolve(frames[frame_index])
 		end
+		local frame_duration_ms = animation_definition.frame_duration_ms
+		if frame_duration_ms == nil then
+			frame_duration_ms = (animation_definition.frame_run or 1) * update_milliseconds
+		end
 		animations[name] = {
 			frames = frames,
 			frame_sources = frame_sources,
 			frame_count = frame_count,
-			frame_duration_ms = animation_definition.frame_duration_ms,
+			frame_duration_ms = frame_duration_ms,
 			loop = animation_definition.loop,
 		}
 	end

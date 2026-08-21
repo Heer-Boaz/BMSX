@@ -1,4 +1,3 @@
-local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -16,7 +15,6 @@ rook_generator.__index = rook_generator
 
 local generation_started_event<const> = 'rook_generator.generation.started'
 local spawn_event<const> = 'rook_generator.spawn'
-local update_milliseconds<const> = clock.update_milliseconds()
 local opening_frames<const> = timeline.build_frame_sequence({
 	{ value = assets_rook_generator_open, hold = rook_generator_opening_updates },
 })
@@ -76,7 +74,7 @@ local define_fsm<const> = function()
 					wait = {
 						def = {
 							continuous = true,
-							duration_ms = rook_generator_initial_wait_updates * update_milliseconds,
+							duration_frames = rook_generator_initial_wait_updates,
 							playback_mode = 'once',
 						},
 						play_options = { snap_to_start = false },
@@ -92,7 +90,6 @@ local define_fsm<const> = function()
 					open = {
 						def = {
 							frames = opening_frames,
-							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = rook_generator.set_imgid,
 							tracks = {
@@ -121,7 +118,6 @@ local define_fsm<const> = function()
 					formation = {
 						def = {
 							frames = timeline.range(rook_generator_cycle_updates),
-							frame_duration = update_milliseconds,
 							playback_mode = 'loop',
 							tracks = {
 								{

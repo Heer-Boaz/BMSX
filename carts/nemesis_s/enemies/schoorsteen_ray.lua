@@ -1,4 +1,3 @@
-local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
@@ -18,7 +17,6 @@ local initial_first_tile<const> = 1
 local max_tiles<const> = schoorsteen_ray_initial_tiles
 	+ schoorsteen_ray_growth_updates * schoorsteen_ray_growth_tiles
 local contraction_updates<const> = schoorsteen_ray_growth_updates + 1
-local update_milliseconds<const> = clock.update_milliseconds()
 local new_ray_strip<const> = tile_strip_component.factory({
 	imgid = assets_schoorsteen_ray,
 	step_x = 0,
@@ -87,7 +85,6 @@ local define_fsm<const> = function()
 					expand = {
 						def = {
 							frames = timeline.range(schoorsteen_ray_growth_updates),
-							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_ray.apply_expansion_frame,
 							tracks = {
@@ -112,7 +109,6 @@ local define_fsm<const> = function()
 					contract = {
 						def = {
 							frames = timeline.range(contraction_updates),
-							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_ray.apply_contraction_frame,
 						},

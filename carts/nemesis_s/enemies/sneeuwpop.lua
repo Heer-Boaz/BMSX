@@ -1,4 +1,3 @@
-local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -19,7 +18,6 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_1,
 		assets_schoorsteen_flash_2,
 	},
-	frame_duration_ms = clock.update_milliseconds(),
 	loop = true,
 	offset_x = sneeuwpop_flash_offset_x,
 	offset_y = sneeuwpop_flash_offset_y,

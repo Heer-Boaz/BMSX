@@ -1,5 +1,4 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local clock<const> = require('cartlib/clock')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -19,7 +18,7 @@ rook.primary_sprite_factory = sprite_animation_component.factory({
 		assets_rook_2,
 		assets_rook_3,
 	},
-	frame_duration_ms = rook_animation_frame_updates * clock.update_milliseconds(),
+	frame_run = rook_animation_frame_updates,
 	loop = true,
 })
 

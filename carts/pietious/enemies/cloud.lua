@@ -3,7 +3,6 @@ local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
-local clock<const> = require('cartlib/clock')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local prefab<const> = require('cartlib/world/prefab')
 local velocity<const> = require('cartlib/velocity')
@@ -16,7 +15,7 @@ local cloud<const> = {}
 cloud.__index = cloud
 cloud.primary_sprite_factory = sprite_animation_component.factory({
 	frames = { 'cloud_1', 'cloud_2' },
-	frame_duration_ms = enemy_cloud_anim_switch_steps * clock.update_milliseconds(),
+	frame_run = enemy_cloud_anim_switch_steps,
 	loop = true,
 })
 

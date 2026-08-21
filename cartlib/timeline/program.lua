@@ -51,6 +51,13 @@ function timeline_program.compile(definition)
 	if frame_duration == nil then
 		frame_duration = clock.update_milliseconds()
 	end
+	-- Discrete waits are authored in timeline frames. Lower their duration at
+	-- compilation so playback retains the same direct millisecond transport as
+	-- explicitly time-authored sequences.
+	local duration_ms = definition.duration_ms
+	if duration_ms == nil and definition.duration_frames ~= nil then
+		duration_ms = definition.duration_frames * frame_duration
+	end
 	local auto_tick = definition.auto_tick
 	if auto_tick == nil then
 		auto_tick = continuous or frame_duration ~= 0
@@ -89,7 +96,7 @@ function timeline_program.compile(definition)
 		continuous = continuous,
 		auto_tick = auto_tick,
 		clock_source = clock_source,
-		duration_ms = definition.duration_ms,
+		duration_ms = duration_ms,
 		binding_ids = binding_ids,
 		binding_index_by_id = binding_index_by_id,
 		binding_count = #binding_ids,
