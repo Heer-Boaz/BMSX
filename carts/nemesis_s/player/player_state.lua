@@ -20,7 +20,9 @@ local player_state_ids<const> = {
 }
 local events<const> = {
 	lives_changed = 'player_state.lives_changed',
-	powerups_changed = 'player_state.powerups_changed',
+	powerup_selection_changed = 'player_state.powerup_selection_changed',
+	powerup_level_changed = 'player_state.powerup_level_changed',
+	powerups_reset = 'player_state.powerups_reset',
 }
 local initial_lives<const> = 9
 local no_powerup_slot<const> = 0
@@ -52,7 +54,7 @@ function player_state:advance_powerup_selection()
 	else
 		self.current_powerup_slot = slot
 	end
-	self.events:emit(events.powerups_changed)
+	self.events:emit(events.powerup_selection_changed)
 end
 
 function player_state:activate_selected_powerup()
@@ -63,7 +65,7 @@ function player_state:activate_selected_powerup()
 	local levels<const> = self.powerup_levels
 	levels[slot] = levels[slot] + 1
 	self.current_powerup_slot = no_powerup_slot
-	self.events:emit(events.powerups_changed, slot)
+	self.events:emit(events.powerup_level_changed, slot)
 	return slot
 end
 
@@ -75,18 +77,18 @@ function player_state:grant_powerup(slot)
 		return false
 	end
 	self.powerup_levels[slot] = self.powerup_levels[slot] + 1
-	self.events:emit(events.powerups_changed, slot)
+	self.events:emit(events.powerup_level_changed, slot)
 	return true
 end
 
 function player_state:remove_powerup(slot)
 	self.powerup_levels[slot] = 0
-	self.events:emit(events.powerups_changed, slot)
+	self.events:emit(events.powerup_level_changed, slot)
 end
 
 function player_state:reset_powerups()
 	reset_powerup_values(self, no_powerup_slot)
-	self.events:emit(events.powerups_changed)
+	self.events:emit(events.powerups_reset)
 end
 
 function player_state:lose_life()
@@ -94,7 +96,7 @@ function player_state:lose_life()
 	self:set_lives(lives)
 	local selected_slot<const> = lives < 0 and no_powerup_slot or powerup_slot.speed
 	reset_powerup_values(self, selected_slot)
-	self.events:emit(events.powerups_changed)
+	self.events:emit(events.powerups_reset)
 	return lives
 end
 

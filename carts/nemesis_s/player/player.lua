@@ -506,7 +506,7 @@ function player:update_options()
 	place_options_from_history(self)
 end
 
-function player:on_powerups_changed(_event, _source, slot)
+function player:on_powerup_level_changed(_event, _source, slot)
 	if slot == powerup_slot_option then
 		append_option(self)
 		place_options_from_history(self)
@@ -516,17 +516,24 @@ function player:on_powerups_changed(_event, _source, slot)
 		else
 			self:deactivate_force_field()
 		end
-	elseif slot == nil then
-		self:initialize_options()
-		self:deactivate_force_field()
 	end
+end
+
+function player:on_powerups_reset()
+	self:initialize_options()
+	self:deactivate_force_field()
 end
 
 function player:bind()
 	self.events:on({
-		event = player_state_module.events.powerups_changed,
+		event = player_state_module.events.powerup_level_changed,
 		emitter = self.player_state.id,
-		handler = player.on_powerups_changed,
+		handler = player.on_powerup_level_changed,
+	})
+	self.events:on({
+		event = player_state_module.events.powerups_reset,
+		emitter = self.player_state.id,
+		handler = player.on_powerups_reset,
 	})
 end
 
@@ -596,10 +603,14 @@ function player:spawn_missile(vessel, level)
 	local vessel_id<const> = vessel.vessel_id
 	local motion<const> = weapons_missile_motion_by_level[level]
 	local missile<const> = self.missile_projectiles[vessel_id]
+	local missile_y<const> = (vessel.y + weapons_missile_spawn_offset_y) // 1
+	if missile_y >= weapons_missile_despawn_y then
+		return
+	end
 	missile.type = projectile_type_missile
 	missile.pierces_small_fry = false
 	missile.x = (vessel.x + weapons_missile_spawn_offset_x) // 1
-	missile.y = (vessel.y + weapons_missile_spawn_offset_y) // 1
+	missile.y = missile_y
 	missile.fraction_x = 0
 	missile.fraction_y = 0
 	missile.fall_velocity_x_q8 = motion.fall_velocity_x_q8

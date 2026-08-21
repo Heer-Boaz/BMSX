@@ -35,6 +35,11 @@ function __bmsx_host_test.update()
 	assert(player.option_history_index == 1, 'option history did not wrap after sixteen movement samples')
 	assert(player.options[1].x == 89 and player.options[2].x == 81,
 		'options did not consume the eight- and sixteen-sample history positions')
+	local first_option_x<const> = player.options[1].x
+	local second_option_x<const> = player.options[2].x
+	player_state:advance_powerup_selection()
+	assert(player.options[1].x == first_option_x and player.options[2].x == second_option_x,
+		'power-up selection reset the retained option history positions')
 
 	player.right_held = false
 	player:update_options()

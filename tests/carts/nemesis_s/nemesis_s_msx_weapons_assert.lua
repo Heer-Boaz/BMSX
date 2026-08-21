@@ -152,6 +152,11 @@ function __bmsx_host_test.update()
 	assert(missile.x == 52 and missile.fraction_x == 0 and missile.y == 44,
 		'the level-two missile did not consume its retained Q8.8 fraction')
 	player:despawn_missile(missile, 'test_reset')
+	player.y = playfield_height - player_height
+	player:spawn_missile(player, 1)
+	assert(missile.type == 0,
+		'a missile originating below its playfield lifetime entered the terrain query')
+	player.y = 25
 
 	local floor_row<const> = stage.solid_tape[((32 + 8) // stage.tile_size) + 1]
 	local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
