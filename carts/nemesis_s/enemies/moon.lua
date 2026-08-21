@@ -2,14 +2,10 @@ local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local clock<const> = require('cartlib/clock')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
-local sprite_component<const> = require('cartlib/component/sprite_component')
-local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
@@ -27,10 +23,10 @@ local slow_wide_move_effect_id<const> = 'nemesis_s.enemy.moon.slow_wide_move'
 local slow_playfield_move_effect_id<const> = 'nemesis_s.enemy.moon.slow_playfield_move'
 local entered_event<const> = 'enemy.moon.entered'
 local death_ray_requested_event<const> = 'enemy.moon.death_ray.requested'
+local death_ray_finished_event<const> = 'enemy.moon.death_ray.finished'
 local defeated_event<const> = 'enemy.moon.defeated'
 local small_ray_flash_timeline_id<const> = 'nemesis_s.enemy.moon.small_ray_flash'
 local death_ray_flash_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_flash'
-local death_ray_expansion_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_expansion'
 local wait_for_attack_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_attack'
 local wait_for_explosion_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_explosion'
 local wait_for_end_demo_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_end_demo'
@@ -67,46 +63,6 @@ local new_flash_right<const> = sprite_animation_component.factory({
 	frame_duration_ms = clock.update_milliseconds(),
 	loop = true,
 	offset_z = 1,
-	enabled = false,
-})
-local new_death_ray_strip<const> = tile_strip_component.factory({
-	id_local = moon_death_ray_strip_id,
-	imgid = assets_moon_death_ray,
-	step_x = -moon_death_ray_tile_size,
-	step_y = 0,
-	first_tile = 1,
-	offset_x = moon_death_ray_offset_x,
-	offset_y = moon_death_ray_offset_y,
-	offset_z = moon_death_ray_draw_z,
-	enabled = false,
-})
-local new_death_ray_strip_collider<const> = tile_strip_collider_2d_component.factory({
-	id_local = moon_death_ray_strip_id,
-	tile_strip_id_local = moon_death_ray_strip_id,
-	layer = collision_enemy_projectile_layer,
-	mask = collision_enemy_projectile_mask,
-	enabled = false,
-})
-local new_death_ray_cap<const> = sprite_component.factory({
-	id_local = moon_death_ray_cap_id,
-	imgid = assets_moon_death_ray_start,
-	offset_x = moon_death_ray_offset_x,
-	offset_y = moon_death_ray_offset_y,
-	offset_z = moon_death_ray_draw_z,
-	enabled = false,
-})
-local new_death_ray_cap_collider<const> = collider_2d_component.factory({
-	id_local = moon_death_ray_cap_id,
-	layer = collision_enemy_projectile_layer,
-	mask = collision_enemy_projectile_mask,
-	local_area = {
-		left = 0,
-		top = 0,
-		right = moon_death_ray_cap_width,
-		bottom = moon_death_ray_cap_height,
-	},
-	shape_offset_x = moon_death_ray_offset_x,
-	shape_offset_y = moon_death_ray_offset_y,
 	enabled = false,
 })
 
@@ -200,13 +156,6 @@ function moon:ctor()
 	self.armor_collider = self:get_component(collider_2d_component, moon_armor_collider_id)
 	self.flash_left = self:get_component(sprite_animation_component, moon_flash_left_id)
 	self.flash_right = self:get_component(sprite_animation_component, moon_flash_right_id)
-	self.death_ray_strip = self:get_component(tile_strip_component, moon_death_ray_strip_id)
-	self.death_ray_strip_collider = self:get_component(
-		tile_strip_collider_2d_component,
-		moon_death_ray_strip_id
-	)
-	self.death_ray_cap = self:get_component(sprite_component, moon_death_ray_cap_id)
-	self.death_ray_cap_collider = self:get_component(collider_2d_component, moon_death_ray_cap_id)
 	self:apply_rotation()
 end
 
@@ -373,23 +322,14 @@ function moon:step_vertical_playfield()
 end
 
 function moon:begin_death_ray()
-	local strip<const> = self.death_ray_strip
-	strip.offset_x = moon_death_ray_offset_x
-	strip.first_tile = 1
-	strip.last_tile = 0
-	strip:set_enabled(false)
-	self.death_ray_strip_collider:set_enabled(false)
-	self.death_ray_cap:set_enabled(true)
-	self.death_ray_cap_collider:set_enabled(true)
+	self.death_ray = world:spawn(ids_moon_death_ray_def, {
+		originator = self,
+		pos = {
+			x = self.x + moon_death_ray_offset_x,
+			y = self.y + moon_death_ray_offset_y,
+		},
+	})
 	self.events:emit('enemy.moon.death_ray_fired')
-end
-
-function moon:apply_death_ray_expansion_frame(frame)
-	local tile_count<const> = frame * moon_death_ray_growth_tiles
-	self.death_ray_strip.last_tile = tile_count
-	local active<const> = tile_count ~= 0
-	self.death_ray_strip:set_enabled(active)
-	self.death_ray_strip_collider:set_enabled(active)
 end
 
 function moon:update_death_ray_firing()
@@ -403,24 +343,9 @@ function moon:update_death_ray_firing()
 	end
 end
 
-function moon:enter_death_ray_contracting()
-	self.death_ray_cap:set_enabled(false)
-	self.death_ray_cap_collider:set_enabled(false)
-end
-
-function moon:update_death_ray_contracting()
-	local strip<const> = self.death_ray_strip
-	strip.offset_x = strip.offset_x - moon_death_ray_growth_tiles * moon_death_ray_tile_size
-	if self.x + strip.offset_x <= 0 then
-		return '/combat/wait_for_new_attack'
-	end
-end
-
-function moon:clear_death_ray()
-	self.death_ray_strip:set_enabled(false)
-	self.death_ray_strip_collider:set_enabled(false)
-	self.death_ray_cap:set_enabled(false)
-	self.death_ray_cap_collider:set_enabled(false)
+function moon:death_ray_finished()
+	self.death_ray = nil
+	self.events:emit(death_ray_finished_event)
 end
 
 function moon:choose_next_attack()
@@ -456,7 +381,6 @@ function moon:begin_dying()
 	self.core_collider:set_enabled(false)
 	self.armor_collider:set_enabled(false)
 	self:deactivate_flashes()
-	self:clear_death_ray()
 end
 
 function moon:explode()
@@ -595,28 +519,10 @@ local define_fsm<const> = function()
 								},
 							},
 							firing = {
-								initial = 'expanding',
 								entering_state = moon.begin_death_ray,
-								exiting_state = moon.clear_death_ray,
 								update = moon.update_death_ray_firing,
-								states = {
-									expanding = {
-										timelines = {
-											[death_ray_expansion_timeline_id] = {
-												def = {
-													frames = timeline.range(moon_death_ray_max_steps),
-													frame_duration = moon_death_ray_step_ms,
-													playback_mode = 'once',
-													apply = moon.apply_death_ray_expansion_frame,
-												},
-												on_finished = '../contracting',
-											},
-										},
-									},
-									contracting = {
-										entering_state = moon.enter_death_ray_contracting,
-										update = moon.update_death_ray_contracting,
-									},
+								on = {
+									[death_ray_finished_event] = '/combat/wait_for_new_attack',
 								},
 							},
 						},
@@ -684,10 +590,6 @@ local register_definition<const> = function()
 			new_armor_collider,
 			new_flash_left,
 			new_flash_right,
-			new_death_ray_strip,
-			new_death_ray_strip_collider,
-			new_death_ray_cap,
-			new_death_ray_cap_collider,
 			actioneffect_component.factory({
 				enter_step_effect_id,
 				mini_moon_effect_id,

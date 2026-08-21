@@ -123,15 +123,59 @@ function __bmsx_host_test.update()
 		if not boss.state_machines:matches_state(test.death_ray_firing) then
 			return false
 		end
-		if boss.death_ray_strip.last_tile == 0 then
+		local ray<const> = boss.death_ray
+		if ray == nil then
 			return false
 		end
-		assert(boss.death_ray_strip.enabled and boss.death_ray_strip_collider.enabled,
+		test.ray = ray
+		test.death_ray_contracting = ray.state_machines:bind_state_path('/contracting')
+		test.phase = 'death_ray_expanding'
+		return false
+	end
+
+	if test.phase == 'death_ray_expanding' then
+		local ray<const> = test.ray
+		if ray.ray_strip.last_tile == 0 then
+			return false
+		end
+		assert(ray.ray_strip.enabled and ray.ray_strip_collider.enabled,
 			'Moon death-ray visual and collision strip did not activate together')
-		boss.state_machines:transition_to('/combat/wait_for_new_attack')
-		assert(boss.state_machines:matches_state(test.wait_for_attack)
-			and not boss.death_ray_strip.enabled and not boss.death_ray_cap.enabled,
-			'Moon retained damaging death-ray components after the attack ended')
+		assert(ray.originator == boss and ray.y == boss.y + moon_death_ray_offset_y,
+			'Moon death ray did not retain its projectile owner while expanding')
+		if not ray.state_machines:matches_state(test.death_ray_contracting) then
+			return false
+		end
+		test.ray_y = ray.y
+		test.boss_y = boss.y
+		test.gameplay_time_ms = world.gameplay_time_ms
+		test.phase = 'death_ray_contracting'
+		return false
+	end
+
+	if test.phase == 'death_ray_contracting' then
+		if world.gameplay_time_ms == test.gameplay_time_ms then
+			return false
+		end
+		local ray<const> = test.ray
+		assert(boss.y ~= test.boss_y,
+			'Moon stopped moving when its death ray began contracting')
+		assert(ray.y == test.ray_y,
+			'Moon contracting ray still followed the moving boss instead of its own trajectory')
+		assert(not ray.ray_cap.enabled and not ray.ray_cap_collider.enabled,
+			'Moon contracting ray retained its leading cap collision')
+		ray.x = 0
+		test.phase = 'death_ray_finished'
+		return false
+	end
+
+	if test.phase == 'death_ray_finished' then
+		if not boss.state_machines:matches_state(test.wait_for_attack) then
+			return false
+		end
+		assert(boss.death_ray == nil,
+			'Moon retained a completed projectile after the death-ray completion boundary')
+		boss.state_machines:transition_to('/combat/death_ray/firing')
+		local ray<const> = boss.death_ray
 		boss.health = 1
 		boss.vulnerable = true
 		boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
@@ -139,6 +183,21 @@ function __bmsx_host_test.update()
 			'Moon core destruction did not enter the authored death sequence')
 		assert(not boss.core_collider.enabled and not boss.armor_collider.enabled,
 			'Moon death retained active hitmap colliders')
+		assert(boss.death_ray == ray and ray.ray_cap.enabled,
+			'Moon death removed its independently retained death ray')
+		ray.state_machines:transition_to('/contracting')
+		ray.x = 0
+		test.gameplay_time_ms = world.gameplay_time_ms
+		test.phase = 'dying_ray_finished'
+		return false
+	end
+
+	if test.phase == 'dying_ray_finished' then
+		if world.gameplay_time_ms == test.gameplay_time_ms then
+			return false
+		end
+		assert(boss.state_machines:matches_state(test.dying) and boss.death_ray == nil,
+			'Moon death-ray completion escaped the active death sequence')
 		boss:mark_for_disposal()
 		return true
 	end
