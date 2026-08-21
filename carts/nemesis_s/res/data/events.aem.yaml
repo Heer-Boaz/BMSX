@@ -192,3 +192,9 @@ events:
         rules:
             - go:
                   audio_id: nemesis2_roodje
+
+    player.powerup_activated:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_powerup_taken

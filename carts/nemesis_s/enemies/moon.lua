@@ -700,6 +700,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_moon_fsm }),
 		},
 		defaults = {
+			destroys_shield = true,
 			imgid = assets_moon_down_right,
 			max_health = moon_health,
 			rotation = moon_rotation_down_right,

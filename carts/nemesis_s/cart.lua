@@ -7,8 +7,10 @@ input.add_player(1)
 input.add_player(2)
 input.push_context(1, 'nemesis_s', {
 	fire = { 'Space' },
+	powerup = { 'KeyM', 'KeyN' },
 }, {
 	fire = { 'a' },
+	powerup = { 'x' },
 })
 input.push_context(2, 'nemesis_s', {
 	up = { 'Numpad5' },
@@ -16,8 +18,10 @@ input.push_context(2, 'nemesis_s', {
 	down = { 'Numpad2' },
 	left = { 'Numpad1' },
 	fire = { 'ControlLeft' },
+	powerup = { 'AltLeft' },
 }, {
 	fire = { 'a' },
+	powerup = { 'x' },
 })
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')

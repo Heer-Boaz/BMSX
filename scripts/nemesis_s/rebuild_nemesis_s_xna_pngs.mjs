@@ -297,6 +297,36 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
+			source: 'Player/Metallion_n_shield.bmp',
+			target: 'metallion_n_shield.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Metallion_d_shield.bmp',
+			target: 'metallion_d_shield.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Shield1.bmp',
+			target: 'force_field_1.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Shield2.bmp',
+			target: 'force_field_2.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Shield3.bmp',
+			target: 'force_field_3.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
+			source: 'Player/Shield4.bmp',
+			target: 'force_field_4.png',
+			colorKey: { r: 255, g: 0, b: 255 },
+		},
+		{
 			source: 'Player/Option1.bmp',
 			target: 'option1.png',
 			colorKey: { r: 255, g: 0, b: 255 },
@@ -329,6 +359,16 @@ function getMappings() {
 		{
 			source: 'Player/Metallion_d_P2.bmp',
 			target: 'metallion_d_p2.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Metallion_n_shield_P2.bmp',
+			target: 'metallion_n_shield_p2.png',
+			colorKey: { r: 0, g: 0, b: 0 },
+		},
+		{
+			source: 'Player/Metallion_d_shield_P2.bmp',
+			target: 'metallion_d_shield_p2.png',
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{

@@ -102,6 +102,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_schoorsteen_ray_fsm }),
 		},
 		defaults = {
+			destroys_shield = true,
 			z = schoorsteen_ray_draw_z,
 		},
 	})

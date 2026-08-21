@@ -102,6 +102,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_sneeuwpop_ray_fsm }),
 		},
 		defaults = {
+			destroys_shield = true,
 			z = sneeuwpop_ray_draw_z,
 		},
 	})

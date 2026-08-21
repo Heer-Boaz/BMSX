@@ -58,6 +58,7 @@ local register_definition<const> = function()
 		},
 		defaults = {
 			imgid = assets_enemy_bullet,
+			destroys_shield = false,
 			z = enemy_bullet_draw_z,
 		},
 	})

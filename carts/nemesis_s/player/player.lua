@@ -9,7 +9,9 @@ local image<const> = require('cartlib/gx/image')
 local input<const> = require('cartlib/input/input')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local sprite_component<const> = require('cartlib/component/sprite_component')
+local registry<const> = require('cartlib/registry')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
@@ -26,6 +28,8 @@ local player_body_collider_id<const> = 0
 local player_vessel_visual_id<const> = 'vessel'
 local player_projectile_visual_id<const> = 'projectiles'
 local player_death_visual_id<const> = 'death'
+local force_field_animation_strong<const> = 'strong'
+local force_field_animation_weak<const> = 'weak'
 local player_hit_area<const> = {
 	left = 2,
 	top = 2,
@@ -43,6 +47,24 @@ local new_death_visual<const> = sprite_component.factory({
 	imgid = assets_player_death_3,
 	offset_x = -8,
 	offset_z = 1,
+	enabled = false,
+})
+local new_force_field_visual<const> = sprite_animation_component.factory({
+	animation = force_field_animation_strong,
+	animations = {
+		strong = {
+			frames = { assets_force_field_1, assets_force_field_2 },
+			frame_duration_ms = player_force_field_animation_frame_ms,
+			loop = true,
+		},
+		weak = {
+			frames = { assets_force_field_3, assets_force_field_4 },
+			frame_duration_ms = player_force_field_animation_frame_ms,
+			loop = true,
+		},
+	},
+	offset_y = player_force_field_offset_y,
+	offset_z = -1,
 	enabled = false,
 })
 local player_death_frames<const> = timeline.build_frame_sequence({
@@ -75,11 +97,20 @@ local powerup_slot_speed<const> = powerup_slot.speed
 local powerup_slot_missile<const> = powerup_slot.missile
 local powerup_slot_laser<const> = powerup_slot.laser
 local powerup_slot_option<const> = powerup_slot.option
+local powerup_slot_shield<const> = powerup_slot.shield
 local player_sources<const> = {
 	{
 		neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
+		neutral_shield = {
+			imgid = assets_player_n_shield,
+			source = image.resolve(assets_player_n_shield),
+		},
 		up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
 		down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
+		down_shield = {
+			imgid = assets_player_d_shield,
+			source = image.resolve(assets_player_d_shield),
+		},
 		options = {
 			image.resolve(assets_option1),
 			image.resolve(assets_option2),
@@ -89,8 +120,16 @@ local player_sources<const> = {
 	},
 	{
 		neutral = { imgid = assets_player_2_n, source = image.resolve(assets_player_2_n) },
+		neutral_shield = {
+			imgid = assets_player_n_shield_p2,
+			source = image.resolve(assets_player_n_shield_p2),
+		},
 		up = { imgid = assets_player_2_u, source = image.resolve(assets_player_2_u) },
 		down = { imgid = assets_player_2_d, source = image.resolve(assets_player_2_d) },
+		down_shield = {
+			imgid = assets_player_d_shield_p2,
+			source = image.resolve(assets_player_d_shield_p2),
+		},
 		options = {
 			image.resolve(assets_player_2_option_1),
 			image.resolve(assets_player_2_option_2),
@@ -99,6 +138,7 @@ local player_sources<const> = {
 		},
 	},
 }
+local no_powerup_slot<const> = player_state_module.no_powerup_slot
 local weapon_sources<const> = {
 	bullet = image.resolve(assets_projectile),
 	laser = image.resolve(assets_laser),
@@ -270,6 +310,7 @@ function player:reset_runtime()
 	self.down_held = false
 	self.fire_held = false
 	self.fire_pressed = false
+	self:deactivate_force_field()
 	self.sprite = self.visual_sources.neutral
 	for vessel_id = 1, player_vessel_capacity do
 		local primary<const> = self.primary_projectiles[vessel_id]
@@ -283,6 +324,9 @@ function player:reset_runtime()
 		secondary.collider:set_enabled(false)
 	end
 	self:initialize_options()
+	if self.powerup_levels[powerup_slot_shield] > 0 then
+		self:activate_force_field()
+	end
 	if telemetry_enabled then
 		self:emit_event(
 			'player_reset',
@@ -385,6 +429,7 @@ function player:update_position()
 	local previous_y<const> = self.y
 	local movement_speed<const> = player_base_movement_speed
 		+ player_movement_speed_increase * self.powerup_levels[powerup_slot_speed]
+	local strong_force_field<const> = self.force_field_strength > 1
 	self.last_speed = movement_speed
 
 	if self.left_held then
@@ -399,13 +444,48 @@ function player:update_position()
 		self.sprite = visual_sources.up
 	elseif self.down_held then
 		move_y(self, movement_speed, max_y)
-		self.sprite = visual_sources.down
+		self.sprite = strong_force_field and visual_sources.down_shield or visual_sources.down
 	else
-		self.sprite = visual_sources.neutral
+		self.sprite = strong_force_field and visual_sources.neutral_shield or visual_sources.neutral
 	end
 
 	self.last_dx = self.x - previous_x
 	self.last_dy = self.y - previous_y
+end
+
+function player:activate_force_field()
+	self.force_field_strength = player_force_field_strength
+	local visual = self.force_field_visual
+	if visual == nil then
+		visual = new_force_field_visual({ parent = self })
+		self.force_field_visual = visual
+		self:add_component(visual)
+	end
+	visual:set_animation(force_field_animation_strong)
+	visual:activate()
+end
+
+function player:deactivate_force_field()
+	self.force_field_strength = 0
+	local visual<const> = self.force_field_visual
+	if visual ~= nil then
+		self.force_field_visual = nil
+		visual:deactivate()
+		self:remove_component(visual)
+	end
+end
+
+function player:damage_force_field(destroys_in_one_blow)
+	local strength = self.force_field_strength - 1
+	if destroys_in_one_blow then
+		strength = 0
+	end
+	self.force_field_strength = strength
+	if strength == 1 then
+		self.force_field_visual:set_animation(force_field_animation_weak)
+	elseif strength <= 0 then
+		self.player_state:remove_powerup(powerup_slot_shield)
+	end
 end
 
 function player:update_options()
@@ -431,8 +511,15 @@ function player:on_powerups_changed(_event, _source, slot)
 	if slot == powerup_slot_option then
 		append_option(self)
 		place_options_from_history(self)
+	elseif slot == powerup_slot_shield then
+		if self.powerup_levels[powerup_slot_shield] > 0 then
+			self:activate_force_field()
+		else
+			self:deactivate_force_field()
+		end
 	elseif slot == nil then
 		self:initialize_options()
+		self:deactivate_force_field()
 	end
 end
 
@@ -845,6 +932,11 @@ function player:update_runtime()
 	self.fire_pressed = input.is_action_just_pressed(player_index, 'fire')
 	self:update_position()
 	self:update_options()
+	if self.player_state.current_powerup_slot ~= no_powerup_slot
+	and input.is_action_just_pressed(player_index, 'powerup')
+	and self.player_state:activate_selected_powerup() ~= nil then
+		self.events:emit('player.powerup_activated')
+	end
 	if self.fire_pressed then
 		self.actioneffects:trigger(player_actioneffects.effect_ids.fire_salvo)
 	end
@@ -892,15 +984,29 @@ function player:finish_dying()
 end
 
 function player:on_body_overlap(_state, event)
-	if event.collider_local_id == player_body_collider_id
-	and event.other_layer ~= collision_pickup_layer then
+	if event.collider_local_id ~= player_body_collider_id
+	or event.other_layer == collision_pickup_layer then
+		return
+	end
+	local other<const> = registry:get(event.other_id)
+	if event.other_layer == collision_enemy_projectile_layer then
+		if self.force_field_strength > 0 then
+			self:damage_force_field(other.destroys_shield)
+			return
+		end
 		return '/dying'
 	end
+	if other.small_fry and self.force_field_strength > 0 then
+		self:damage_force_field(false)
+		return
+	end
+	return '/dying'
 end
 
 function player:ctor()
 	self.vessel_visual = self:get_component(custom_visual_component, player_vessel_visual_id)
 	self.death_visual = self:get_component(sprite_component, player_death_visual_id)
+	self.force_field_visual = nil
 	self.body_collider = self:get_component(collider_2d_component, player_body_collider_id)
 	self.visual_sources = player_sources[self.player_index]
 	self.powerup_levels = self.player_state.powerup_levels
@@ -1049,6 +1155,7 @@ local register_player_definition<const> = function()
 			down_held = false,
 			fire_held = false,
 			fire_pressed = false,
+			force_field_strength = 0,
 			option_anim_index = 1,
 		},
 	})

@@ -64,6 +64,11 @@ function player_state:activate_selected_powerup()
 	return slot
 end
 
+function player_state:remove_powerup(slot)
+	self.powerup_levels[slot] = 0
+	self.events:emit(events.powerups_changed, slot)
+end
+
 function player_state:reset_powerups()
 	reset_powerup_values(self, no_powerup_slot)
 	self.events:emit(events.powerups_changed)

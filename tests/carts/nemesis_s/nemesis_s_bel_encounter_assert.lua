@@ -74,25 +74,13 @@ function __bmsx_host_test.update()
 		})
 		assert(bell.health == 1 and not stage.scrolling,
 			'a non-fatal bell hit resumed the stage')
-		bell:receive_player_projectile({
-			damage = 1,
-			x = bell.x,
-			y = bell.y,
-		})
-		assert(stage.scrolling,
-			'destroying the bell did not resume stage-owned scrolling')
-		local scrolling_path<const> = stage.state_machines:bind_state_path('/running/scrolling')
-		assert(stage.state_machines:matches_state(scrolling_path),
-			'the resume command left the stage FSM in its stopped state')
-		assert(#explosions_view.objects == 1,
-			'the bell death did not create its large XNA explosion')
-
 		world:spawn(ids_small_explosion_def, {
 			stage = stage,
 			drop_definition_id = ids_roodje_def,
 			pos = { x = player.x, y = player.y },
 		})
 		test.player = player
+		test.bell = bell
 		test.phase = 'pickup'
 		return false
 	end
@@ -104,5 +92,17 @@ function __bmsx_host_test.update()
 		'the red pickup did not advance the player powerup selection')
 	assert(test.player.body_collider.enabled,
 		'the pickup overlap incorrectly killed the player')
+	test.bell:receive_player_projectile({
+		damage = 1,
+		x = test.bell.x,
+		y = test.bell.y,
+	})
+	assert(stage.scrolling,
+		'destroying the bell did not resume stage-owned scrolling')
+	local scrolling_path<const> = stage.state_machines:bind_state_path('/running/scrolling')
+	assert(stage.state_machines:matches_state(scrolling_path),
+		'the resume command left the stage FSM in its stopped state')
+	assert(#explosions_view.objects == 1,
+		'the bell death did not create its large XNA explosion')
 	return true
 end
