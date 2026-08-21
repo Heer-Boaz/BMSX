@@ -6,6 +6,7 @@ require('constants')
 
 local selected_apu_source<const>: *word = 0x0800018c
 local option_pickup_source<const> = rom_dir.audio('nemesis3_option_take').addr
+local player_death_source<const> = rom_dir.audio('player_death').addr
 local option_slot<const> = player_state.powerup_slot.option
 
 __bmsx_host_test = {
@@ -27,7 +28,7 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 80, 'Nemesis S option-recovery scenario timed out phase=' .. test.phase)
+	assert(test.frames < 180, 'Nemesis S option-recovery scenario timed out phase=' .. test.phase)
 
 	local player<const> = registry:get(player_starts[1].id)
 	if player == nil or world.active_space_id ~= 'main' then
@@ -98,8 +99,16 @@ function __bmsx_host_test.update()
 			'detached option did not restore the concrete option power-up')
 		assert(#player.options == 1,
 			'option pickup did not restore one retained option vessel')
-		assert(*selected_apu_source == option_pickup_source,
-			'option pickup did not select the authored XNA retrieval cue')
+		assert(*selected_apu_source == player_death_source,
+			'option pickup interrupted the higher-priority player death cue')
+		test.phase = 'wait_for_death_audio'
+		return false
+	end
+
+	if test.phase == 'wait_for_death_audio' then
+		if *selected_apu_source == player_death_source then
+			return false
+		end
 		local pickup<const> = test.pickups.objects[1]
 		pickup.x = player.x
 		pickup.y = player.y
@@ -114,6 +123,8 @@ function __bmsx_host_test.update()
 		'second detached option did not restore the authored maximum')
 	assert(#player.options == 2,
 		'second option pickup did not restore the second option vessel')
+	assert(*selected_apu_source == option_pickup_source,
+		'option pickup did not select the authored XNA retrieval cue')
 	player.state_machines:transition_to('/active/flying')
 	assert(player.body_collider.mask == collision_player_mask,
 		'completed respawn did not restore the player collision mask')
