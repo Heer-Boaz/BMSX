@@ -6,6 +6,7 @@ from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parents[2]
 PYMSX_ROOT = WORKSPACE / ".external/py-msx-emulator"
+sys.path.insert(0, str(WORKSPACE))
 sys.path.insert(0, str(PYMSX_ROOT))
 
 from scripts.research.msx.z80_rom import (

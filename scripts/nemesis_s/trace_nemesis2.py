@@ -9,11 +9,12 @@ from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parents[2]
 PYMSX_ROOT = WORKSPACE / ".external/py-msx-emulator"
+sys.path.insert(0, str(WORKSPACE))
 sys.path.insert(0, str(PYMSX_ROOT))
 
 from msx.diagnostics.logger import DebugLogger
-from msx.machine import SCREEN_HEIGHT
 from msx.machine_loader import build_machine, load_device_registry, load_machine_spec
+from msx.vdp._geometry import OUTPUT_H
 
 from scripts.research.msx.frame_capture import write_rgb24_ppm
 from scripts.research.msx.z80_rom import mapped_banked_rom_offset
@@ -242,7 +243,7 @@ def main() -> None:
             write_rgb24_ppm(
                 output_dir / f"frame_{frame:05}.ppm",
                 machine.vdp.display_width,
-                SCREEN_HEIGHT,
+                OUTPUT_H,
                 machine.vdp.to_rgb24(framebuffer),
             )
 
