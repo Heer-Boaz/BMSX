@@ -56,6 +56,8 @@ function __bmsx_host_test.setup()
 	director.players[1].state_machines:transition_to('/dying')
 	assert(director.state_machines:matches_state(test.game_over_curtain_state),
 		'terminal player death did not begin the XNA curtain')
+	assert(not director.status_bar.rows[1].powerups_visible,
+		'exhausted player retained the XNA power-up row')
 	assert(director.stage == previous_stage and registry:get(ids_stage_instance) == previous_stage,
 		'game-over curtain unloaded gameplay before it closed')
 	assert(director.game_over_curtain.enabled and director.game_over_curtain.last_tile == -1,

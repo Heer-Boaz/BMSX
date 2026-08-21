@@ -44,11 +44,13 @@ local draw_status_bar<const> = function(component, draw)
 	for player_index = 1, #rows do
 		local row<const> = rows[player_index]
 		local y<const> = bar_y + (player_index - 1) * row_height
-		local powerup_sources<const> = row.powerup_sources
-		for slot_index = 1, slot_count do
-			powerup_sources[slot_index]:blit(draw, bar_x + (slot_index - 1) * bar_stride_x, y)
+		if row.powerups_visible then
+			local powerup_sources<const> = row.powerup_sources
+			for slot_index = 1, slot_count do
+				powerup_sources[slot_index]:blit(draw, bar_x + (slot_index - 1) * bar_stride_x, y)
+			end
+			row.description_source:blit(draw, description_x, y)
 		end
-		row.description_source:blit(draw, description_x, y)
 		sources.ship:blit(draw, ship_x, y)
 	end
 end
@@ -88,6 +90,7 @@ local refresh_lives<const> = function(self, _event, source)
 	else
 		text = tostring(lives)
 	end
+	row.powerups_visible = lives >= 0
 	row.life_text:set_text(text)
 end
 
