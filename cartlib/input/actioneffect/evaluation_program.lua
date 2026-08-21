@@ -95,7 +95,7 @@ local compile_effects<const> = function(bindings, source)
 	return program
 end
 
-function evaluation_program.compile(program, effects, player_index)
+function evaluation_program.compile(program, effects, player_index, clock_source)
 	local effect_program<const> = compile_effects(program.bindings, effects)
 	local environment<const> = effect_program.environment
 	environment.action_bindings = program.bindings
@@ -103,7 +103,7 @@ function evaluation_program.compile(program, effects, player_index)
 		environment.effect_operands = effect_program.operands
 	end
 	return compile_syntax(
-		evaluation_program_syntax.build(program, effect_program, player_index),
+		evaluation_program_syntax.build(program, effect_program, player_index, clock_source),
 		'[input.actioneffect]',
 		environment
 	)(), effect_program.uses_effect_triggers,

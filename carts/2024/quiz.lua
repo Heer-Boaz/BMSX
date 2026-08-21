@@ -2,6 +2,7 @@ local assets<const> = require('bmsx/assets')
 local bin<const> = require('cartlib/bin')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
+local gameplay_clock<const> = require('cartlib/clock').gameplay
 local input<const> = require('cartlib/input/input')
 local prefab<const> = require('cartlib/world/prefab')
 local text_object<const> = require('cartlib/text/text_object')
@@ -68,24 +69,24 @@ local type_next_character<const> = function(self)
 end
 
 local begin_quiz<const> = function(self)
-	input.consume(self.player_index, answer_actions)
+	input.consume(self.player_index, gameplay_clock, answer_actions)
 	return '/' .. question_state
 end
 
 local choose_answer_a<const> = function(self)
-	input.consume(self.player_index, 'a')
+	input.consume(self.player_index, gameplay_clock, 'a')
 	self.current_answer = 'a'
 	return '/' .. answer_state
 end
 
 local choose_answer_b<const> = function(self)
-	input.consume(self.player_index, 'b')
+	input.consume(self.player_index, gameplay_clock, 'b')
 	self.current_answer = 'b'
 	return '/' .. answer_state
 end
 
 local previous_question<const> = function(self)
-	input.consume(self.player_index, 'left')
+	input.consume(self.player_index, gameplay_clock, 'left')
 	local index<const> = self.current_question_index
 	if index == 1 then
 		return '/intro'
@@ -94,7 +95,7 @@ local previous_question<const> = function(self)
 end
 
 local next_question<const> = function(self)
-	input.consume(self.player_index, 'right')
+	input.consume(self.player_index, gameplay_clock, 'right')
 	local index<const> = self.current_question_index
 	if index == question_count then
 		return '/' .. complete_state
@@ -103,7 +104,7 @@ local next_question<const> = function(self)
 end
 
 local next_after_answer<const> = function(self)
-	input.consume(self.player_index, answer_actions)
+	input.consume(self.player_index, gameplay_clock, answer_actions)
 	local index<const> = self.current_question_index
 	if index == question_count then
 		return '/' .. complete_state
@@ -113,7 +114,7 @@ local next_after_answer<const> = function(self)
 end
 
 local previous_from_complete<const> = function(self)
-	input.consume(self.player_index, 'left')
+	input.consume(self.player_index, gameplay_clock, 'left')
 	self.current_question_index = question_count
 	return '/' .. question_state
 end

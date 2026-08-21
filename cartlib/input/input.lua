@@ -2,10 +2,15 @@
 -- Cart-owned player input: action mappings and action-expression state built from
 -- raw ICU snapshot reads (keyboard bitmap, pad button/axis words, pointer words).
 -- Edge detection (just_pressed/just_released) is derived here from latched levels.
+-- Physical edges receive one monotone id. Frame and gameplay clock states retain
+-- independent previous-id boundaries, so each clock observes an edge once even
+-- when gameplay admission skips physical frames. Bound evaluators capture their
+-- clock state and add no clock-selection branch to the update path.
 
 local action_parser<const> = require('cartlib/input/action_parser')
 local action_state_program<const> = require('cartlib/input/action_state_program')
 local action_syntax<const> = require('cartlib/input/action_syntax')
+local clock<const> = require('cartlib/clock')
 local icu<const> = require('cartlib/input/icu')
 local keys<const> = require('cartlib/input/keys')
 
@@ -118,10 +123,9 @@ local new_button_state<const> = function()
 		prev_x_q16 = 0,
 		prev_y_q16 = 0,
 		pressed = false,
-		just_pressed = false,
-		just_released = false,
-		consumed = false,
-		press_id = 0,
+		press_edge_id = 0,
+		release_edge_id = 0,
+		consumed_press_id = -1,
 		press_start_frame = 0,
 		last_press_frame = -buffer_frame_retention,
 		last_release_frame = -buffer_frame_retention,
@@ -175,9 +179,10 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	end
 end
 
-local new_action_state<const> = function(action)
+local new_action_state<const> = function(action, clock_state)
 	return {
 		action = action,
+		clock_state = clock_state,
 		source_lists = {
 			{ source_index = source_keyboard },
 			{ source_index = source_gamepad },
@@ -231,26 +236,20 @@ local context_less<const> = function(a, b)
 	return a.order < b.order
 end
 
--- Record a digital edge on `state` and remember it so the flag is cleared next
--- frame. Called only when a tracked bit actually flipped.
+-- Record one physical transition. Clock-specific action evaluators derive their
+-- transient edge flags from this retained id instead of clearing every button.
 local apply_digital_edge<const> = function(player, state, pressed_now, frame)
+	local edge_id<const> = player.next_edge_id
+	player.next_edge_id = edge_id + 1
 	if pressed_now then
-		state.just_pressed = true
-		state.just_released = false
-		state.press_id = player.next_press_id
-		player.next_press_id = player.next_press_id + 1
+		state.press_edge_id = edge_id
 		state.press_start_frame = frame
 		state.last_press_frame = frame
 	else
-		state.just_pressed = false
-		state.just_released = true
+		state.release_edge_id = edge_id
 		state.last_release_frame = frame
 	end
-	state.consumed = false
 	state.pressed = pressed_now
-	local n<const> = player.edge_count + 1
-	player.edge_count = n
-	player.edge_buttons[n] = state
 end
 
 -- Analog/pointer inputs: read their value(s) every frame. Hybrid buttons
@@ -284,23 +283,9 @@ local sample_value_button<const> = function(player, state, frame)
 	elseif state.is_pointer_delta then
 		pressed = state.value_x_q16 ~= 0 or state.value_y_q16 ~= 0
 	end
-	local just_pressed<const> = pressed and not state.pressed
-	local just_released<const> = (not pressed) and state.pressed
-	state.just_pressed = just_pressed
-	state.just_released = just_released
-	if just_pressed then
-		state.press_id = player.next_press_id
-		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = frame
-		state.last_press_frame = frame
-		state.consumed = false
-	elseif not pressed then
-		state.consumed = false
+	if pressed ~= state.pressed then
+		apply_digital_edge(player, state, pressed, frame)
 	end
-	if just_released then
-		state.last_release_frame = frame
-	end
-	state.pressed = pressed
 end
 
 local sample_new_button_state<const> = function(player, state, frame)
@@ -338,6 +323,13 @@ local register_button_sampling<const> = function(player, source_index, state)
 	local frame<const> = *frame_serial
 	if player.sample_frame == frame then
 		sample_new_button_state(player, state, frame)
+		local edge_id<const> = player.next_edge_id - 1
+		local frame_clock_state<const> = player.clock_states[clock.frame]
+		frame_clock_state.edge_id = edge_id
+		local gameplay_clock_state<const> = player.clock_states[clock.gameplay]
+		if gameplay_clock_state.sample_frame == frame then
+			gameplay_clock_state.edge_id = edge_id
+		end
 	end
 end
 
@@ -414,31 +406,35 @@ local rebuild_action_bindings<const> = function(player, state)
 	state.resolved_source_count = active_count
 end
 
-local create_action_state<const> = function(player, action)
-	local state<const> = new_action_state(action)
-	player.actions[action] = state
-	local index<const> = player.action_state_count + 1
-	player.action_state_count = index
-	player.action_state_list[index] = state
+local create_action_state<const> = function(player, clock_state, action)
+	local state<const> = new_action_state(action, clock_state)
+	clock_state.actions[action] = state
+	local index<const> = clock_state.action_state_count + 1
+	clock_state.action_state_count = index
+	clock_state.action_state_list[index] = state
 	return state
 end
 
 local clear_action_evaluation_state<const> = function(player)
-	player.evaluation_serial = player.evaluation_serial + 1
 	local frame<const> = *frame_serial
-	local action_states<const> = player.action_state_list
-	for i = 1, player.action_state_count do
-		local state<const> = action_states[i]
-		state.guard_last_press_id = -1
-		state.guard_last_accepted_frame = frame - guard_window_frames - 1
-		state.guard_last_result = false
-		state.repeat_active = false
-		state.repeat_count = 0
-		state.repeat_press_start_frame = -1
-		state.repeat_last_frame = -1
-		state.repeat_last_result = false
-		state.repeat_last_repeat_frame = -1
-		rebuild_action_bindings(player, state)
+	local clock_state_list<const> = player.clock_state_list
+	for clock_index = 1, #clock_state_list do
+		local clock_state<const> = clock_state_list[clock_index]
+		clock_state.evaluation_serial = clock_state.evaluation_serial + 1
+		local action_states<const> = clock_state.action_state_list
+		for i = 1, clock_state.action_state_count do
+			local state<const> = action_states[i]
+			state.guard_last_press_id = -1
+			state.guard_last_accepted_frame = frame - guard_window_frames - 1
+			state.guard_last_result = false
+			state.repeat_active = false
+			state.repeat_count = 0
+			state.repeat_press_start_frame = -1
+			state.repeat_last_frame = -1
+			state.repeat_last_result = false
+			state.repeat_last_repeat_frame = -1
+			rebuild_action_bindings(player, state)
+		end
 	end
 end
 
@@ -456,6 +452,26 @@ local push_context_record<const> = function(player, record)
 end
 
 local new_player<const> = function(index)
+	local gameplay_clock_state<const> = {
+		actions = {},
+		action_state_list = {},
+		action_state_count = 0,
+		expression_bindings = {},
+		edge_id = 0,
+		previous_edge_id = 0,
+		sample_frame = -1,
+		evaluation_serial = 0,
+	}
+	local frame_clock_state<const> = {
+		actions = {},
+		action_state_list = {},
+		action_state_count = 0,
+		expression_bindings = {},
+		edge_id = 0,
+		previous_edge_id = 0,
+		sample_frame = -1,
+		evaluation_serial = 0,
+	}
 	local player<const> = {
 		index = index,
 		buttons = {
@@ -473,21 +489,17 @@ local new_player<const> = function(index)
 		},
 		-- Analog/pointer inputs (a handful) that need a value read every frame.
 		value_states = {},
-		-- Buttons whose just_pressed/just_released was set this frame; cleared next
-		-- frame so unchanged buttons cost nothing.
-		edge_buttons = {},
-		edge_count = 0,
 		contexts = {},
 		context_order = 0,
-		actions = {},
-		action_state_list = {},
-		action_state_count = 0,
 		binding_seen = {},
 		binding_generation = 0,
-		next_press_id = 1,
+		next_edge_id = 1,
 		sample_frame = -1,
-		evaluation_serial = 0,
-		expression_bindings = {},
+		clock_states = {
+			[clock.gameplay] = gameplay_clock_state,
+			[clock.frame] = frame_clock_state,
+		},
+		clock_state_list = { gameplay_clock_state, frame_clock_state },
 	}
 	push_context_record(player, {
 		id = '__default',
@@ -501,16 +513,9 @@ local new_player<const> = function(index)
 end
 
 local sample_player<const> = function(player, frame)
-	-- 1. Clear last frame's digital edges (only the buttons that changed).
-	local edges<const> = player.edge_buttons
-	local edge_count<const> = player.edge_count
-	for i = 1, edge_count do
-		local state<const> = edges[i]
-		state.just_pressed = false
-		state.just_released = false
-	end
-	player.edge_count = 0
-	-- 2. Digital pass: diff one MMIO word per group; touch only changed buttons.
+	local clock_state<const> = player.clock_states[clock.frame]
+	clock_state.previous_edge_id = clock_state.edge_id
+	-- Digital pass: diff one MMIO word per group; touch only changed buttons.
 	local word_groups<const> = player.word_groups
 	for w = 1, #word_groups do
 		local group<const> = word_groups[w]
@@ -529,13 +534,15 @@ local sample_player<const> = function(player, frame)
 			group.dirty = false
 		end
 	end
-	-- 3. Value pass: the few analog/pointer inputs.
+	-- Value pass: the few analog/pointer inputs.
 	local value_states<const> = player.value_states
 	for v = 1, #value_states do
 		sample_value_button(player, value_states[v], frame)
 	end
 	player.sample_frame = frame
-	player.evaluation_serial = player.evaluation_serial + 1
+	clock_state.edge_id = player.next_edge_id - 1
+	clock_state.sample_frame = frame
+	clock_state.evaluation_serial = clock_state.evaluation_serial + 1
 end
 
 local evaluate_guard<const> = function(state, frame)
@@ -596,10 +603,10 @@ local action_state_environment<const> = {
 	evaluate_repeat = evaluate_repeat,
 }
 
-local admit_action_state<const> = function(player, action, requirement_mask)
-	local state = player.actions[action]
+local admit_action_state<const> = function(player, clock_state, action, requirement_mask)
+	local state = clock_state.actions[action]
 	if state == nil then
-		state = create_action_state(player, action)
+		state = create_action_state(player, clock_state, action)
 		rebuild_action_bindings(player, state)
 	end
 	local combined_requirement_mask<const> = state.evaluation_requirement_mask | requirement_mask
@@ -630,6 +637,18 @@ function input.advance_frame()
 	end
 end
 
+function input.advance_gameplay()
+	local frame<const> = *frame_serial
+	for index = 1, player_count do
+		local player<const> = player_list[index]
+		local clock_state<const> = player.clock_states[clock.gameplay]
+		clock_state.previous_edge_id = clock_state.edge_id
+		clock_state.edge_id = player.next_edge_id - 1
+		clock_state.sample_frame = frame
+		clock_state.evaluation_serial = clock_state.evaluation_serial + 1
+	end
+end
+
 function input.push_context(player_index, id, keyboard, gamepad, pointer, priority, enabled)
 	push_context_record(players[player_index], {
 		id = id,
@@ -653,35 +672,47 @@ end
 
 -- Direct action queries admit their retained state on first use. Compiled
 -- expressions already admit every state while input.bind builds their context.
-local evaluate_player_action_state<const> = function(player, action, requirement_mask)
-	local state = player.actions[action]
+local evaluate_player_action_state<const> = function(player, clock_source, action, requirement_mask)
+	local clock_state<const> = player.clock_states[clock_source]
+	local state = clock_state.actions[action]
 	if state == nil or state.evaluation_requirement_mask & requirement_mask ~= requirement_mask then
-		state = admit_action_state(player, action, requirement_mask)
+		state = admit_action_state(player, clock_state, action, requirement_mask)
 	end
-	local evaluation_serial<const> = player.evaluation_serial
+	local evaluation_serial<const> = clock_state.evaluation_serial
 	if state.evaluation_serial ~= evaluation_serial then
-		state.evaluation_runner(state, player.sample_frame, evaluation_serial)
+		state.evaluation_runner(
+			state,
+			clock_state.sample_frame,
+			clock_state.previous_edge_id,
+			evaluation_serial
+		)
 	end
 	return state
 end
 
-function input.bind(player_index, pattern)
+function input.bind(player_index, clock_source, pattern)
 	local player<const> = players[player_index]
-	local evaluate = player.expression_bindings[pattern]
+	local clock_state<const> = player.clock_states[clock_source]
+	local evaluate = clock_state.expression_bindings[pattern]
 	if not evaluate then
 		local program<const> = action_parser.compile(pattern)
 		local action_names<const> = program.action_names
 		local action_requirement_masks<const> = program.action_requirement_masks
 		local states<const> = {}
 		for i = 1, #action_names do
-			states[i] = admit_action_state(player, action_names[i], action_requirement_masks[i])
+			states[i] = admit_action_state(
+				player,
+				clock_state,
+				action_names[i],
+				action_requirement_masks[i]
+			)
 		end
 		evaluate = program.evaluation_factory(
-			player,
+			clock_state,
 			states,
 			buffer_frame_retention
 		)
-		player.expression_bindings[pattern] = evaluate
+		clock_state.expression_bindings[pattern] = evaluate
 	end
 	return evaluate
 end
@@ -691,15 +722,15 @@ end
 -- combo stays above physical mappings and shares their sampled button states.
 -- Completion lasts one evaluation and resets the combo, matching an explicit
 -- input trigger rather than publishing a second input event stream.
-function input.bind_combo(player_index, definition)
+function input.bind_combo(player_index, clock_source, definition)
 	local source_steps<const> = definition.steps
 	local steps<const> = {}
 	for index = 1, #source_steps do
-		steps[index] = input.bind(player_index, source_steps[index])
+		steps[index] = input.bind(player_index, clock_source, source_steps[index])
 	end
 	local step_count<const> = #steps
 	local step_index = 1
-	local cancel<const> = definition.cancel and input.bind(player_index, definition.cancel)
+	local cancel<const> = definition.cancel and input.bind(player_index, clock_source, definition.cancel)
 	local reset_combo<const> = function()
 		step_index = 1
 	end
@@ -734,58 +765,64 @@ function input.bind_combo(player_index, definition)
 	return evaluate_with_cancel, reset_combo
 end
 
-function input.is_action_pressed(player_index, action)
+function input.is_action_pressed(player_index, clock_source, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action, requirement_pressed)
+	local state<const> = evaluate_player_action_state(player, clock_source, action, requirement_pressed)
 	return state.pressed and not state.consumed
 end
 
-function input.is_action_just_pressed(player_index, action)
+function input.is_action_just_pressed(player_index, clock_source, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action, requirement_just_pressed)
+	local state<const> = evaluate_player_action_state(player, clock_source, action, requirement_just_pressed)
 	return state.just_pressed and not state.consumed
 end
 
-function input.is_action_just_released(player_index, action)
+function input.is_action_just_released(player_index, clock_source, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action, requirement_just_released)
+	local state<const> = evaluate_player_action_state(player, clock_source, action, requirement_just_released)
 	return state.just_released and not state.consumed
 end
 
-function input.get_action_value(player_index, action)
+function input.get_action_value(player_index, clock_source, action)
 	local player<const> = players[player_index]
-	return evaluate_player_action_state(player, action, requirement_value_q16).value_q16
+	return evaluate_player_action_state(player, clock_source, action, requirement_value_q16).value_q16
 end
 
-function input.get_vector(player_index, action)
+function input.get_vector(player_index, clock_source, action)
 	local player<const> = players[player_index]
-	local state<const> = evaluate_player_action_state(player, action, requirement_vector_q16)
+	local state<const> = evaluate_player_action_state(player, clock_source, action, requirement_vector_q16)
 	return state.value_x_q16, state.value_y_q16
 end
 
 local consume_action<const> = function(state)
+	local previous_edge_id<const> = state.clock_state.previous_edge_id
 	local sources<const> = state.resolved_sources
 	for index = 1, state.resolved_source_count do
 		local states<const> = sources[index]
 		for i = 1, #states do
 			local button<const> = states[i]
-			if button.pressed then
-				button.consumed = true
+			if button.pressed or button.press_edge_id > previous_edge_id then
+				button.consumed_press_id = button.press_edge_id
 			end
 		end
 	end
 end
 
-function input.consume(player_index, actions)
+function input.consume(player_index, clock_source, actions)
 	local player<const> = players[player_index]
-	player.evaluation_serial = player.evaluation_serial + 1
+	local clock_state_list<const> = player.clock_state_list
+	for index = 1, #clock_state_list do
+		local clock_state<const> = clock_state_list[index]
+		clock_state.evaluation_serial = clock_state.evaluation_serial + 1
+	end
+	local clock_state<const> = player.clock_states[clock_source]
 	if type(actions) == 'table' then
 		for i = 1, #actions do
-			consume_action(admit_action_state(player, actions[i], 0))
+			consume_action(admit_action_state(player, clock_state, actions[i], 0))
 		end
 		return
 	end
-	consume_action(admit_action_state(player, actions, 0))
+	consume_action(admit_action_state(player, clock_state, actions, 0))
 end
 
 return input

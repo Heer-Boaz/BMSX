@@ -518,9 +518,10 @@ local build_input_bindings<const> = function(target, definition)
 		return nil
 	end
 	local player_index<const> = target.player_index
+	local clock_source<const> = definition.root.clock_source
 	local bindings<const> = {}
 	for i = 1, #input_patterns do
-		bindings[i] = input.bind(player_index, input_patterns[i])
+		bindings[i] = input.bind(player_index, clock_source, input_patterns[i])
 	end
 	return bindings
 end

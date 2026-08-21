@@ -12,7 +12,7 @@ input_actioneffect_system.tick = {
 	priority = 10,
 	clock_source = clock.gameplay,
 	method = 'update',
-	prerequisites = { input_system.tick },
+	prerequisites = { input_system.gameplay_tick },
 }
 
 function input_actioneffect_system.new(world)

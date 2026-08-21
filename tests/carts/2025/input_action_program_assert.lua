@@ -29,9 +29,13 @@ local action_state<const> = function(values)
 end
 
 local evaluate<const> = function(source, states, window)
-	local player<const> = { evaluation_serial = 0, sample_frame = 0 }
+	local clock_state<const> = {
+		evaluation_serial = 0,
+		sample_frame = 0,
+		previous_edge_id = 0,
+	}
 	return action_parser.compile(source).evaluation_factory(
-		player,
+		clock_state,
 		states,
 		window
 	)()
@@ -45,17 +49,21 @@ function __bmsx_host_test.setup()
 	assert(program.action_names[1] == 'a' and program.action_names[2] == 'b')
 
 	local reads<const> = { 0, 0 }
-	local player<const> = { evaluation_serial = 1, sample_frame = 0 }
-	pressed.evaluation_runner = function(state, _sample_frame, evaluation_serial)
+	local clock_state<const> = {
+		evaluation_serial = 1,
+		sample_frame = 0,
+		previous_edge_id = 0,
+	}
+	pressed.evaluation_runner = function(state, _sample_frame, _previous_edge_id, evaluation_serial)
 		reads[1] = reads[1] + 1
 		state.evaluation_serial = evaluation_serial
 	end
-	idle.evaluation_runner = function(state, _sample_frame, evaluation_serial)
+	idle.evaluation_runner = function(state, _sample_frame, _previous_edge_id, evaluation_serial)
 		reads[2] = reads[2] + 1
 		state.evaluation_serial = evaluation_serial
 	end
 	assert(program.evaluation_factory(
-		player,
+		clock_state,
 		{ pressed, idle },
 		4
 	)())

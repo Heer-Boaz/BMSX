@@ -30,6 +30,7 @@ local no_edge_delta<const> = action_syntax.no_edge_delta
 local symbols<const> = {
 	state = generated_symbol('state'),
 	frame = generated_symbol('frame'),
+	previous_edge_id = generated_symbol('previous_edge_id'),
 	evaluation_serial = generated_symbol('evaluation_serial'),
 	pressed = generated_symbol('pressed'),
 	just_pressed = generated_symbol('just_pressed'),
@@ -56,8 +57,11 @@ local symbols<const> = {
 	button_index = generated_symbol('button_index'),
 	button = generated_symbol('button'),
 	button_pressed = generated_symbol('button_pressed'),
+	button_press_edge_id = generated_symbol('button_press_edge_id'),
+	button_release_edge_id = generated_symbol('button_release_edge_id'),
 	button_just_pressed = generated_symbol('button_just_pressed'),
 	button_just_released = generated_symbol('button_just_released'),
+	button_consumed = generated_symbol('button_consumed'),
 	press_delta = generated_symbol('press_delta'),
 	release_delta = generated_symbol('release_delta'),
 	button_press_time = generated_symbol('button_press_time'),
@@ -107,12 +111,16 @@ local build_shape<const> = function(mask)
 	}
 	shape.button_pressed = shape.pressed
 		or shape.press_time
-		or shape.press_id
 		or shape.press_delta
-	shape.button_just_pressed = shape.just_pressed or shape.all_just_pressed
+		or shape.consumed
+	shape.button_just_pressed = shape.just_pressed
+		or shape.all_just_pressed
+		or shape.press_id
+		or shape.consumed
 	shape.button_just_released = shape.just_released
 		or shape.all_just_released
 		or shape.release_delta
+		or shape.consumed
 	return shape
 end
 
@@ -228,15 +236,56 @@ local emit_button_captures<const> = function(statements, shape)
 	end
 	if shape.button_just_pressed then
 		statements[#statements + 1] = local_statement(
+			reference(symbols.button_press_edge_id),
+			member_expression(reference(symbols.button), 'press_edge_id'),
+			true
+		)
+		statements[#statements + 1] = local_statement(
 			reference(symbols.button_just_pressed),
-			member_expression(reference(symbols.button), 'just_pressed'),
+			binary_expression(
+				syntax.binary_greater,
+				reference(symbols.button_press_edge_id),
+				reference(symbols.previous_edge_id)
+			),
 			true
 		)
 	end
 	if shape.button_just_released then
 		statements[#statements + 1] = local_statement(
+			reference(symbols.button_release_edge_id),
+			member_expression(reference(symbols.button), 'release_edge_id'),
+			true
+		)
+		statements[#statements + 1] = local_statement(
 			reference(symbols.button_just_released),
-			member_expression(reference(symbols.button), 'just_released'),
+			binary_expression(
+				syntax.binary_greater,
+				reference(symbols.button_release_edge_id),
+				reference(symbols.previous_edge_id)
+			),
+			true
+		)
+	end
+	if shape.consumed then
+		statements[#statements + 1] = local_statement(
+			reference(symbols.button_consumed),
+			binary_expression(
+				syntax.binary_and,
+				binary_expression(
+					syntax.binary_equal,
+					member_expression(reference(symbols.button), 'consumed_press_id'),
+					reference(symbols.button_press_edge_id)
+				),
+				binary_expression(
+					syntax.binary_or,
+					reference(symbols.button_pressed),
+					binary_expression(
+						syntax.binary_or,
+						reference(symbols.button_just_pressed),
+						reference(symbols.button_just_released)
+					)
+				)
+			),
 			true
 		)
 	end
@@ -299,7 +348,7 @@ local emit_boolean_aggregation<const> = function(statements, shape)
 			binary_expression(
 				syntax.binary_or,
 				reference(symbols.consumed),
-				member_expression(reference(symbols.button), 'consumed')
+				reference(symbols.button_consumed)
 			)
 		)
 	end
@@ -374,8 +423,8 @@ local emit_pressed_aggregation<const> = function(statements, shape)
 	if not shape.press_time and not shape.press_id then
 		return
 	end
-	local body<const> = {}
 	if shape.press_time then
+		local body<const> = {}
 		body[#body + 1] = local_statement(
 			reference(symbols.button_press_time),
 			binary_expression(
@@ -402,27 +451,31 @@ local emit_pressed_aggregation<const> = function(statements, shape)
 				})
 			),
 		})
+		statements[#statements + 1] = if_statement({
+			if_clause(reference(symbols.button_pressed), block(body)),
+		})
 	end
 	if shape.press_id then
-		body[#body + 1] = if_statement({
+		statements[#statements + 1] = if_statement({
 			if_clause(
 				binary_expression(
-					syntax.binary_greater,
-					member_expression(reference(symbols.button), 'press_id'),
-					reference(symbols.press_id)
+					syntax.binary_and,
+					reference(symbols.button_just_pressed),
+					binary_expression(
+						syntax.binary_greater,
+						reference(symbols.button_press_edge_id),
+						reference(symbols.press_id)
+					)
 				),
 				block({
 					assignment_statement(
 						reference(symbols.press_id),
-						member_expression(reference(symbols.button), 'press_id')
+						reference(symbols.button_press_edge_id)
 					),
 				})
 			),
 		})
 	end
-	statements[#statements + 1] = if_statement({
-		if_clause(reference(symbols.button_pressed), block(body)),
-	})
 end
 
 local emit_value_aggregation<const> = function(statements, shape)
@@ -690,6 +743,7 @@ function action_state_program_syntax.build(requirement_mask)
 				{
 					reference(symbols.state),
 					reference(symbols.frame),
+					reference(symbols.previous_edge_id),
 					reference(symbols.evaluation_serial),
 				},
 				block(body)

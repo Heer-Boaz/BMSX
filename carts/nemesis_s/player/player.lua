@@ -22,6 +22,7 @@ local player_state_module<const> = require('player/player_state')
 local player<const> = {}
 player.__index = player
 local active_state_tag<const> = 'nemesis_s.player.active'
+local gameplay_clock<const> = clock.gameplay
 
 local option_animation_timeline_id<const> = 'player_option_animation'
 local player_death_timeline_id<const> = 'player_death'
@@ -947,16 +948,16 @@ end
 function player:update_runtime()
 	local player_index<const> = self.player_index
 	local fire_was_held<const> = self.fire_held
-	self.left_held = input.is_action_pressed(player_index, 'left')
-	self.right_held = input.is_action_pressed(player_index, 'right')
-	self.up_held = input.is_action_pressed(player_index, 'up')
-	self.down_held = input.is_action_pressed(player_index, 'down')
-	self.fire_held = input.is_action_pressed(player_index, 'fire')
-	self.fire_pressed = input.is_action_just_pressed(player_index, 'fire')
+	self.left_held = input.is_action_pressed(player_index, gameplay_clock, 'left')
+	self.right_held = input.is_action_pressed(player_index, gameplay_clock, 'right')
+	self.up_held = input.is_action_pressed(player_index, gameplay_clock, 'up')
+	self.down_held = input.is_action_pressed(player_index, gameplay_clock, 'down')
+	self.fire_held = input.is_action_pressed(player_index, gameplay_clock, 'fire')
+	self.fire_pressed = input.is_action_just_pressed(player_index, gameplay_clock, 'fire')
 	self:update_position()
 	self:update_options()
 	if self.player_state.current_powerup_slot ~= no_powerup_slot
-	and input.is_action_just_pressed(player_index, 'powerup')
+	and input.is_action_just_pressed(player_index, gameplay_clock, 'powerup')
 	and self.player_state:activate_selected_powerup() ~= nil then
 		self.events:emit('player.powerup_activated')
 	end

@@ -97,7 +97,7 @@ local operand_expression<const> = function(index)
 	return index_expression(reference(symbols.operands), numeric_literal(index))
 end
 
-local emit_effect<const> = function(statements, effect, player_index)
+local emit_effect<const> = function(statements, effect, player_index, clock_source)
 	if effect.kind == effect_kind.trigger then
 		statements[#statements + 1] = call_statement(call_expression(reference(symbols.trigger), {
 			member_expression(reference(symbols.owner), 'actioneffects'),
@@ -107,6 +107,7 @@ local emit_effect<const> = function(statements, effect, player_index)
 	elseif effect.kind == effect_kind.consume then
 		statements[#statements + 1] = call_statement(call_expression(reference(symbols.input_consume), {
 			numeric_literal(player_index),
+			numeric_literal(clock_source),
 			operand_expression(effect.operand_index),
 		}))
 	elseif effect.kind == effect_kind.gameplay then
@@ -148,7 +149,7 @@ local emit_effect_range<const> = function(statements, values, first, last)
 	end
 	local effects<const> = values.effect_program.effects
 	for index = first, last do
-		emit_effect(statements, effects[index], values.player_index)
+		emit_effect(statements, effects[index], values.player_index, values.clock_source)
 	end
 end
 
@@ -487,12 +488,13 @@ local emit_event_flush<const> = function(statements)
 	)
 end
 
-function evaluation_program_syntax.build(program, effect_program, player_index)
+function evaluation_program_syntax.build(program, effect_program, player_index, clock_source)
 	local values<const> = {
 		program = program,
 		bindings = program.bindings,
 		effect_program = effect_program,
 		player_index = player_index,
+		clock_source = clock_source,
 		has_release = false,
 		record_match = false,
 	}

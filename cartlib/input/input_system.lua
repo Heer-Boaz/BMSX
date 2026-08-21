@@ -1,6 +1,6 @@
--- Player-input frame system. The system owns when the ICU snapshots the next
--- host input frame; carts consume input actions and never program the
--- controller latch themselves.
+-- Player-input clock owner. The frame tick samples the next raw ICU snapshot;
+-- the gameplay tick advances only that action-evaluation boundary. Carts consume
+-- explicitly clock-bound actions and never program the controller latch.
 
 local input<const> = require('cartlib/input/input')
 local icu<const> = require('cartlib/input/icu')
@@ -14,21 +14,34 @@ local input_control<const>: *word = icu.control_address
 local input_system<const> = {}
 input_system.__index = input_system
 setmetatable(input_system, { __index = base_system })
-input_system.tick = {
+input_system.frame_tick = {
 	group = tick_group.input,
 	priority = -200,
 	clock_source = clock.frame,
-	method = 'update',
+	method = 'update_frame',
+}
+input_system.gameplay_tick = {
+	group = tick_group.input,
+	priority = -199,
+	clock_source = clock.gameplay,
+	method = 'update_gameplay',
+	prerequisites = { input_system.frame_tick },
 }
 
 function input_system.new()
 	*input_control = icu.sample_next_vblank
-	return setmetatable(base_system.new(input_system.tick), input_system)
+	local self<const> = setmetatable(base_system.new(input_system.frame_tick), input_system)
+	self:add_tick_function(input_system.gameplay_tick)
+	return self
 end
 
-function input_system:update()
+function input_system:update_frame()
 	input.advance_frame()
 	*input_control = icu.sample_next_vblank
+end
+
+function input_system:update_gameplay()
+	input.advance_gameplay()
 end
 
 return input_system

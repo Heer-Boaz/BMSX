@@ -44,7 +44,7 @@ local return_statement<const> = syntax_factory.return_statement
 -- Recursive lowering passes result targets by symbol identity. The diagnostic
 -- spelling is never used to reconnect a nested expression to its accumulator.
 local symbols<const> = {
-	player = generated_symbol('player'),
+	clock_state = generated_symbol('clock_state'),
 	states = generated_symbol('states'),
 	win = generated_symbol('win'),
 	evaluation_serial = generated_symbol('evaluation_serial'),
@@ -287,7 +287,8 @@ local emit_action<const> = function(statements, state, node, target_symbol, bare
 					member_expression(reference(symbols.state), 'evaluation_runner'),
 					{
 						reference(symbols.state),
-						member_expression(reference(symbols.player), 'sample_frame'),
+						member_expression(reference(symbols.clock_state), 'sample_frame'),
+						member_expression(reference(symbols.clock_state), 'previous_edge_id'),
 						reference(symbols.evaluation_serial),
 					}
 				)),
@@ -616,7 +617,7 @@ function action_program_syntax.build(ast, action_count)
 	if state.uses_state then
 		evaluator_body[#evaluator_body + 1] = local_statement(
 			reference(symbols.evaluation_serial),
-			member_expression(reference(symbols.player), 'evaluation_serial'),
+			member_expression(reference(symbols.clock_state), 'evaluation_serial'),
 			true
 		)
 		evaluator_body[#evaluator_body + 1] = local_statement(reference(symbols.state), nil, false)
@@ -646,7 +647,7 @@ function action_program_syntax.build(ast, action_count)
 		return_statement({
 			function_expression(
 				{
-					reference(symbols.player),
+					reference(symbols.clock_state),
 					reference(symbols.states),
 					reference(symbols.win),
 				},

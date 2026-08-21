@@ -74,6 +74,7 @@
 
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local gameplay_clock<const> = require('cartlib/clock').gameplay
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
@@ -382,12 +383,12 @@ function player:clear_input_state()
 end
 
 function player:sync_input_state()
-	self.left_held = input.is_action_pressed(self.player_index, 'left')
-	self.right_held = input.is_action_pressed(self.player_index, 'right')
-	self.down_held = input.is_action_pressed(self.player_index, 'down')
-	self.attack_held = input.is_action_pressed(self.player_index, 'x')
-	local up_primary_held<const> = input.is_action_pressed(self.player_index, 'up')
-	local up_alt_held<const> = input.is_action_pressed(self.player_index, 'a')
+	self.left_held = input.is_action_pressed(self.player_index, gameplay_clock, 'left')
+	self.right_held = input.is_action_pressed(self.player_index, gameplay_clock, 'right')
+	self.down_held = input.is_action_pressed(self.player_index, gameplay_clock, 'down')
+	self.attack_held = input.is_action_pressed(self.player_index, gameplay_clock, 'x')
+	local up_primary_held<const> = input.is_action_pressed(self.player_index, gameplay_clock, 'up')
+	local up_alt_held<const> = input.is_action_pressed(self.player_index, gameplay_clock, 'a')
 	local up_sources = 0
 	if up_primary_held then
 		up_sources = up_sources + 1
@@ -1207,7 +1208,7 @@ function player:open_world_entrance_with_key()
 end
 
 function player:start_world_or_shrine_interaction_from_down()
-	if not input.is_action_just_pressed(self.player_index, 'down') then
+	if not input.is_action_just_pressed(self.player_index, gameplay_clock, 'down') then
 		return false
 	end
 
@@ -2046,7 +2047,7 @@ function player:advance_walk_animation()
 end
 
 function player:runcheck_quiet_controls()
-	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'up') or input.is_action_just_pressed(self.player_index, gameplay_clock, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -2056,7 +2057,7 @@ function player:runcheck_quiet_controls()
 	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if input.is_action_just_pressed(self.player_index, 'down') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -2064,7 +2065,7 @@ function player:runcheck_quiet_controls()
 		end
 	end
 
-	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'up') or input.is_action_just_pressed(self.player_index, gameplay_clock, 'a') then
 		local inertia
 		if self.left_held and not self.right_held then
 			inertia = -1
@@ -2102,7 +2103,7 @@ function player:runcheck_walking_right_controls()
 		self.walk_state = 0
 	end
 
-	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'up') or input.is_action_just_pressed(self.player_index, gameplay_clock, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -2115,7 +2116,7 @@ function player:runcheck_walking_right_controls()
 	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if input.is_action_just_pressed(self.player_index, 'down') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -2143,7 +2144,7 @@ function player:runcheck_walking_left_controls()
 		self.walk_state = 1
 	end
 
-	if input.is_action_just_pressed(self.player_index, 'up') or input.is_action_just_pressed(self.player_index, 'a') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'up') or input.is_action_just_pressed(self.player_index, gameplay_clock, 'a') then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -2156,7 +2157,7 @@ function player:runcheck_walking_left_controls()
 	if self:start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if input.is_action_just_pressed(self.player_index, 'down') then
+	if input.is_action_just_pressed(self.player_index, gameplay_clock, 'down') then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')

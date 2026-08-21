@@ -19,7 +19,11 @@ end
 
 __bmsx_host_test = {
 	frames = 0,
-	phase = 'activate',
+	phase = 'wait_game_start',
+	gameplay_steps_since_skip = 0,
+	stable_host_frames = 0,
+	observed_skip = false,
+	last_gameplay_time_ms = 0,
 }
 
 function __bmsx_host_test.ready()
@@ -30,20 +34,50 @@ function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.player_count = 2
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
-	for player_index = 1, 2 do
-		local state<const> = director.player_states[player_index]
-		for _ = 1, shield_slot do
-			state:advance_powerup_selection()
-		end
-	end
-	return host.press('KeyM', 2)
 end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 50, 'Nemesis S force-field scenario timed out')
+	assert(test.frames < 100, 'Nemesis S force-field scenario timed out')
+
+	if test.phase == 'wait_game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar == nil then
+			return false
+		end
+		director.state_machines:transition_to('/gameplay')
+		for player_index = 1, 2 do
+			local state<const> = director.player_states[player_index]
+			for _ = 1, shield_slot do
+				state:advance_powerup_selection()
+			end
+		end
+		test.phase = 'wait_for_skip_cycle'
+		test.last_gameplay_time_ms = world.gameplay_time_ms
+		return false
+	end
+	if test.phase == 'wait_for_skip_cycle' then
+		local gameplay_time_ms<const> = world.gameplay_time_ms
+		if gameplay_time_ms == test.last_gameplay_time_ms then
+			test.stable_host_frames = test.stable_host_frames + 1
+			if test.stable_host_frames == 3 then
+				test.observed_skip = true
+				test.gameplay_steps_since_skip = 0
+			end
+		else
+			test.stable_host_frames = 0
+			if test.observed_skip then
+				test.gameplay_steps_since_skip = test.gameplay_steps_since_skip + 1
+			end
+		end
+		test.last_gameplay_time_ms = gameplay_time_ms
+		if test.gameplay_steps_since_skip == 5 then
+			test.phase = 'activate'
+			return host.press('KeyM', 2)
+		end
+		return false
+	end
 
 	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil or player.force_field_strength == 0 then

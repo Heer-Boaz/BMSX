@@ -15,6 +15,7 @@ local timelinebuilders<const> = require('timelinebuilders')
 local stagger<const> = require('stagger')
 local round_number<const> = math.round
 local input<const> = require('cartlib/input/input')
+local gameplay_clock<const> = require('cartlib/clock').gameplay
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
@@ -251,7 +252,7 @@ end
 function combat_director:skip_typing()
 	if self.text_main:is_typing() then
 		self.text_main:reveal_text()
-		input.consume(1, 'b')
+		input.consume(1, gameplay_clock, 'b')
 		return true
 	end
 	return false

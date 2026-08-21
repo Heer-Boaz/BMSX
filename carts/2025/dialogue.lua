@@ -4,6 +4,7 @@ local story<const> = require('story')
 local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
 local input<const> = require('cartlib/input/input')
+local gameplay_clock<const> = require('cartlib/clock').gameplay
 local immediate_text_opts<const> = { typed = false, snap = true }
 
 local background_at_or_after<const> = function(node_id)
@@ -49,7 +50,7 @@ function dialogue.register_methods(director)
 	function director:skip_typing()
 		if self.text_main:is_typing() then
 			self.text_main:reveal_text()
-			input.consume(1, 'b')
+			input.consume(1, gameplay_clock, 'b')
 			return true
 		end
 		return false

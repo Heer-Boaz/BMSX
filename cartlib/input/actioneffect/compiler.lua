@@ -1,8 +1,10 @@
 local input<const> = require('cartlib/input/input')
 local evaluation_program<const> = require('cartlib/input/actioneffect/evaluation_program')
+local clock<const> = require('cartlib/clock')
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}
+local gameplay_clock<const> = clock.gameplay
 
 local append_effects<const> = function(target, source)
 	if source == nil then
@@ -53,20 +55,20 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 	end
 	local press
 	if on.press ~= nil then
-		press = input.bind(player_index, on.press)
+		press = input.bind(player_index, gameplay_clock, on.press)
 	end
 	local hold
 	if on.hold ~= nil then
-		hold = input.bind(player_index, on.hold)
+		hold = input.bind(player_index, gameplay_clock, on.hold)
 	end
 	local release
 	if on.release ~= nil then
-		release = input.bind(player_index, on.release)
+		release = input.bind(player_index, gameplay_clock, on.release)
 	end
 	local combo
 	local combo_reset
 	if on.combo ~= nil then
-		combo, combo_reset = input.bind_combo(player_index, on.combo)
+		combo, combo_reset = input.bind_combo(player_index, gameplay_clock, on.combo)
 	end
 	local custom = no_custom_bindings
 	local custom_source<const> = on.custom
@@ -76,7 +78,7 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 			local entry<const> = custom_source[i]
 			local effect_start<const> = #effects + 1
 			custom[i] = {
-				input = input.bind(player_index, entry.pattern),
+				input = input.bind(player_index, gameplay_clock, entry.pattern),
 				effect_start = effect_start,
 				effect_end = append_effects(effects, binding_effects[entry.name]),
 				slot = entry.name,
@@ -163,7 +165,7 @@ function compiler.compile_program(owner, program)
 		max_custom_count = max_custom_count,
 	}
 	local evaluate<const>, uses_effect_triggers<const>, queued_event_capacity<const>, queued_command_capacity<const>
-		= evaluation_program.compile(compiled, effects, player_index)
+		= evaluation_program.compile(compiled, effects, player_index, gameplay_clock)
 	compiled.evaluate = evaluate
 	compiled.queued_event_capacity = queued_event_capacity
 	compiled.queued_command_capacity = queued_command_capacity
