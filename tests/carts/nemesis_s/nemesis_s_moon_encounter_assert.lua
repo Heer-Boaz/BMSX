@@ -1,5 +1,6 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local collision_shape<const> = require('cartlib/collision/collision_shape')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local clock<const> = require('cartlib/clock')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local registry<const> = require('cartlib/registry')
@@ -9,6 +10,7 @@ require('constants')
 
 local mini_moons<const> = world:active_definition_view(ids_mini_moon_def)
 local small_rays<const> = world:active_definition_view(ids_moon_small_ray_def)
+local death_rays<const> = world:active_definition_view(ids_moon_death_ray_def)
 local mini_moon_velocity_q8<const> = math.round(
 	mini_moon_speed_px_per_second * clock.gameplay_delta_milliseconds() * 0.001 * 0x100
 )
@@ -57,10 +59,10 @@ function __bmsx_host_test.update()
 		test.entering = boss.state_machines:bind_state_path('/entering')
 		test.fly_attack = boss.state_machines:bind_state_path('/combat/fly_attack')
 		test.small_rays_up = boss.state_machines:bind_state_path('/combat/small_rays_up')
-		test.death_ray_charging = boss.state_machines:bind_state_path(
-			'/combat/death_ray/flashing/charging'
+		test.death_ray_attack = boss.state_machines:bind_state_path('/combat/death_ray/attack')
+		test.death_ray_moving = boss.state_machines:bind_state_path(
+			'/combat/death_ray/attack/movement/moving'
 		)
-		test.death_ray_firing = boss.state_machines:bind_state_path('/combat/death_ray/firing')
 		test.wait_for_attack = boss.state_machines:bind_state_path('/combat/wait_for_new_attack')
 		test.dying = boss.state_machines:bind_state_path('/dying')
 		assert(boss.health == moon_health and not boss.vulnerable,
@@ -141,84 +143,115 @@ function __bmsx_host_test.update()
 			'Moon upward volley lost the XNA lower-rotation muzzle anchors')
 		boss.rotation = moon_rotation_right
 		boss:apply_rotation()
+		boss.x = playfield_width - moon_width
 		boss.y = 0
 		boss.vertical_direction = moon_vertical_direction_down
+		player.y = playfield_height - player_height
 		boss.state_machines:transition_to('/combat/death_ray/rotating')
 		test.phase = 'death_ray'
 		return false
 	end
 
 	if test.phase == 'death_ray' then
-		if boss.state_machines:matches_state(test.death_ray_charging) then
-			test.death_ray_charge_time_ms = world.gameplay_time_ms
-			test.phase = 'death_ray_charging'
+		if not boss.state_machines:matches_state(test.death_ray_attack) then
 			return false
 		end
-		assert(not boss.state_machines:matches_state(test.death_ray_firing),
-			'Moon death ray fired before reaching the XNA charge window')
-		return false
-	end
-
-	if test.phase == 'death_ray_charging' then
-		if not boss.state_machines:matches_state(test.death_ray_firing) then
+		local rays<const> = death_rays.objects
+		if #rays == 0 then
 			return false
 		end
-		assert(world.gameplay_time_ms - test.death_ray_charge_time_ms
-			>= moon_death_ray_flash_ms - clock.gameplay_delta_milliseconds(),
-			'Moon death-ray charge elapsed before entering its valid firing window')
-		local ray<const> = boss.death_ray
-		if ray == nil then
-			return false
-		end
+		local ray<const> = rays[1]
 		test.ray = ray
-		test.death_ray_contracting = ray.state_machines:bind_state_path('/contracting')
+		test.ray_cap = ray:get_component(sprite_component, moon_death_ray_cap_id)
+		test.ray_cap_collider = ray:get_component(collider_2d_component, moon_death_ray_cap_id)
+		test.death_ray_holding = ray.state_machines:bind_state_path('/holding')
+		test.death_ray_start_y = boss.y
+		test.death_ray_previous_y = boss.y
+		test.death_ray_previous_tiles = ray.ray_strip.last_tile
+		test.death_ray_update_count = 0
+		test.gameplay_time_ms = world.gameplay_time_ms
+		assert(boss.state_machines:matches_state(test.death_ray_moving),
+			'Moon death-ray movement did not enter its concurrent source controller')
+		assert(boss.vertical_direction == moon_vertical_direction_down,
+			'Moon death-ray segment did not select the primary player direction')
+		assert(boss.death_ray_move_counter >= moon_death_ray_move_counter_min
+			and boss.death_ray_move_counter <= moon_death_ray_move_counter_max,
+			'Moon death-ray segment did not retain the source random step counter')
+		assert(ray.x == boss.x + moon_death_ray_offset_x
+			and ray.originator == boss,
+			'Moon death ray lost its authored muzzle or source actor binding')
+		assert(ray.ray_strip.last_tile == 2
+			and ray.ray_strip.enabled and ray.ray_strip_collider.enabled,
+			'Moon death ray did not advance its one-tile admission by one source update')
 		test.phase = 'death_ray_expanding'
 		return false
 	end
 
 	if test.phase == 'death_ray_expanding' then
-		local ray<const> = test.ray
-		if ray.ray_strip.last_tile == 0 then
-			return false
-		end
-		assert(ray.ray_strip.enabled and ray.ray_strip_collider.enabled,
-			'Moon death-ray visual and collision strip did not activate together')
-		assert(ray.originator == boss and ray.y == boss.y + moon_death_ray_offset_y,
-			'Moon death ray did not retain its projectile owner while expanding')
-		if not ray.state_machines:matches_state(test.death_ray_contracting) then
-			return false
-		end
-		test.ray_y = ray.y
-		test.boss_y = boss.y
-		test.gameplay_time_ms = world.gameplay_time_ms
-		test.phase = 'death_ray_contracting'
-		return false
-	end
-
-	if test.phase == 'death_ray_contracting' then
 		if world.gameplay_time_ms == test.gameplay_time_ms then
 			return false
 		end
+		test.gameplay_time_ms = world.gameplay_time_ms
+		test.death_ray_update_count = test.death_ray_update_count + 1
 		local ray<const> = test.ray
-		assert(boss.y ~= test.boss_y,
-			'Moon stopped moving when its death ray began contracting')
-		assert(ray.y == test.ray_y,
-			'Moon contracting ray still followed the moving boss instead of its own trajectory')
-		assert(not ray.ray_cap.enabled and not ray.ray_cap_collider.enabled,
-			'Moon contracting ray retained its leading cap collision')
-		ray.x = 0
-		test.phase = 'death_ray_finished'
+		local tile_count<const> = ray.ray_strip.last_tile
+		local holding<const> = ray.state_machines:matches_state(test.death_ray_holding)
+		if not holding then
+			assert(tile_count == test.death_ray_previous_tiles + 1,
+				'Moon death ray did not grow by one source tile per gameplay update')
+			test.death_ray_previous_tiles = tile_count
+		end
+		assert(ray.y == boss.y + moon_death_ray_offset_y,
+			'Moon death ray did not follow its source actor while expanding')
+		local update_count<const> = test.death_ray_update_count
+		if update_count == 1 then
+			assert(boss.y == test.death_ray_start_y + moon_death_ray_move_step,
+				'Moon death-ray movement did not consume the source accumulator overflow')
+		elseif update_count == 2 or update_count == 3 then
+			assert(boss.y == test.death_ray_previous_y,
+				'Moon death-ray movement lost its source accumulator stalls')
+		end
+		test.death_ray_previous_y = boss.y
+		if not holding then
+			return false
+		end
+		assert(tile_count == moon_death_ray_tile_count and ray.x > 0,
+			'Moon death ray did not reach the left edge at the source growth rate')
+		test.hold_start_time_ms = world.gameplay_time_ms
+		test.phase = 'death_ray_holding'
 		return false
 	end
 
-	if test.phase == 'death_ray_finished' then
+	if test.phase == 'death_ray_holding' then
+		local rays<const> = death_rays.objects
+		if #rays ~= 0 then
+			local ray<const> = test.ray
+			assert(boss.state_machines:matches_state(test.death_ray_attack),
+				'Moon left its source firing cycle before the beam hold completed')
+			assert(ray.ray_strip.last_tile == moon_death_ray_tile_count
+				and test.ray_cap.enabled and test.ray_cap_collider.enabled,
+				'Moon death ray contracted instead of retaining the source hold')
+			assert(ray.y == boss.y + moon_death_ray_offset_y,
+				'Moon death ray stopped following its source actor during the hold')
+			return false
+		end
+		assert(world.gameplay_time_ms - test.hold_start_time_ms
+			>= (moon_death_ray_hold_updates - 1) * clock.gameplay_delta_milliseconds(),
+			'Moon death ray ended before its source hold boundary')
 		if not boss.state_machines:matches_state(test.wait_for_attack) then
 			return false
 		end
-		assert(boss.death_ray == nil,
-			'Moon retained a completed projectile after the death-ray completion boundary')
-		boss.state_machines:transition_to('/combat/death_ray/firing')
-		local ray<const> = boss.death_ray
+		boss.state_machines:transition_to('/combat/death_ray/attack')
+		test.phase = 'dying_with_ray'
+		return false
+	end
+
+	if test.phase == 'dying_with_ray' then
+		local rays<const> = death_rays.objects
+		if #rays == 0 then
+			return false
+		end
+		local ray<const> = rays[1]
 		boss.health = 1
 		boss.vulnerable = true
 		boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
@@ -226,20 +259,18 @@ function __bmsx_host_test.update()
 			'Moon core destruction did not enter the authored death sequence')
 		assert(not boss.core_collider.enabled and not boss.armor_collider.enabled,
 			'Moon death retained active hitmap colliders')
-		assert(boss.death_ray == ray and ray.ray_cap.enabled,
+		assert(death_rays.objects[1] == ray
+			and ray:get_component(sprite_component, moon_death_ray_cap_id).enabled,
 			'Moon death removed its independently retained death ray')
-		ray.state_machines:transition_to('/contracting')
-		ray.x = 0
-		test.gameplay_time_ms = world.gameplay_time_ms
 		test.phase = 'dying_ray_finished'
 		return false
 	end
 
 	if test.phase == 'dying_ray_finished' then
-		if world.gameplay_time_ms == test.gameplay_time_ms then
+		if #death_rays.objects ~= 0 then
 			return false
 		end
-		assert(boss.state_machines:matches_state(test.dying) and boss.death_ray == nil,
+		assert(boss.state_machines:matches_state(test.dying),
 			'Moon death-ray completion escaped the active death sequence')
 		boss:mark_for_disposal()
 		return true

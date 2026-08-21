@@ -28,12 +28,28 @@ BANK_SIZE = 0x2000
 ACTOR_TABLE_FIRST = 0xE600
 ACTOR_TABLE_LAST = 0xE8FF
 ACTOR_RECORD_MASK = 0xFFC0
+STAGE_RUN_WRITES = (
+    (0xE200, 0x99),
+    (0xE400, 2),
+)
+ABADDON_STAGE_RUN_WRITES = STAGE_RUN_WRITES + (
+    (0xE402, 5),
+    (0xE404, 80),
+    (0xE406, 80),
+    (0xE40B, 2),
+    (0xE410, 1),
+    (0xE420, 1),
+    (0xE430, 0),
+    (0xE432, 3),
+)
 
 
 @dataclass(frozen=True, slots=True)
 class TraceProfile:
     actor_type: int | None
     forced_stage: int | None
+    steer_after_boot: bool
+    retained_writes: tuple[tuple[int, int], ...]
     memory_first: int
     memory_last: int
     trace_first_frame: int
@@ -48,6 +64,8 @@ TRACE_PROFILES = {
     "stage1_sodom": TraceProfile(
         actor_type=0x09,
         forced_stage=None,
+        steer_after_boot=True,
+        retained_writes=STAGE_RUN_WRITES,
         memory_first=ACTOR_TABLE_FIRST,
         memory_last=ACTOR_TABLE_LAST,
         trace_first_frame=2920,
@@ -60,6 +78,8 @@ TRACE_PROFILES = {
     "stage4_ray_open": TraceProfile(
         actor_type=0x41,
         forced_stage=4,
+        steer_after_boot=True,
+        retained_writes=STAGE_RUN_WRITES,
         memory_first=ACTOR_TABLE_FIRST,
         memory_last=ACTOR_TABLE_LAST,
         trace_first_frame=5740,
@@ -72,6 +92,8 @@ TRACE_PROFILES = {
     "stage4_ray_lifecycle": TraceProfile(
         actor_type=None,
         forced_stage=4,
+        steer_after_boot=True,
+        retained_writes=STAGE_RUN_WRITES,
         memory_first=0xE740,
         memory_last=0xE77F,
         trace_first_frame=9470,
@@ -84,6 +106,8 @@ TRACE_PROFILES = {
     "stage4_volcano": TraceProfile(
         actor_type=0x40,
         forced_stage=4,
+        steer_after_boot=True,
+        retained_writes=STAGE_RUN_WRITES,
         memory_first=ACTOR_TABLE_FIRST,
         memory_last=ACTOR_TABLE_LAST,
         trace_first_frame=7420,
@@ -91,6 +115,34 @@ TRACE_PROFILES = {
         capture_first_frame=7440,
         capture_last_frame=7540,
         capture_stride=2,
+        history_length=160,
+    ),
+    "stage7_abaddon_controller": TraceProfile(
+        actor_type=None,
+        forced_stage=7,
+        steer_after_boot=False,
+        retained_writes=ABADDON_STAGE_RUN_WRITES,
+        memory_first=0xEA00,
+        memory_last=0xEA1F,
+        trace_first_frame=25200,
+        trace_last_frame=27200,
+        capture_first_frame=25200,
+        capture_last_frame=27200,
+        capture_stride=5,
+        history_length=160,
+    ),
+    "stage7_abaddon_ray": TraceProfile(
+        actor_type=0x24,
+        forced_stage=7,
+        steer_after_boot=False,
+        retained_writes=ABADDON_STAGE_RUN_WRITES,
+        memory_first=ACTOR_TABLE_FIRST,
+        memory_last=ACTOR_TABLE_LAST,
+        trace_first_frame=25200,
+        trace_last_frame=27200,
+        capture_first_frame=25200,
+        capture_last_frame=27200,
+        capture_stride=5,
         history_length=160,
     ),
 }
@@ -211,13 +263,14 @@ class Nemesis2Trace:
             input_state.joystick_button_up(0, 4)
         if frame >= 700:
             input_state.joystick_button_down(0, 4)
-            direction = (frame // 240) & 1
-            input_state.joystick_button_down(0, direction)
-            input_state.joystick_button_up(0, direction ^ 1)
+            if self.profile.steer_after_boot:
+                direction = (frame // 240) & 1
+                input_state.joystick_button_down(0, direction)
+                input_state.joystick_button_up(0, direction ^ 1)
 
     def retain_stage_run(self) -> None:
-        self._write(0xE200, 0x99)
-        self._write(0xE400, 2)
+        for address, value in self.profile.retained_writes:
+            self._write(address, value)
 
 
 def parse_args() -> argparse.Namespace:

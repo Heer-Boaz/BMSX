@@ -150,6 +150,40 @@ it does not shorten the ten-update expansion phase.
 - `0xBF47..0xBF5F` advances each cloud's own three-frame animation every four
   actor updates. It is not one global animation phase shared by all clouds.
 
+## Stage-7 Abaddon movement and super laser
+
+The Stage-7 second boss controller is mapped in bank `0x0b`; its retained
+record occupies `EA00..EA1F`. The reusable trace profiles
+`stage7_abaddon_controller` and `stage7_abaddon_ray` reproduce the forced-stage
+route and record the controller and actor-`0x24` beam separately.
+
+- `0xAEAA..0xAECE` decrements the beam cadence byte at `IX+18`, reloads it with
+  `0x28`, and spawns actor type `0x24`. Consecutive beams are therefore admitted
+  every 40 boss updates. Their source position is boss Y plus `0x30` and boss X
+  minus `8`; sound command `0x18` is submitted at the same boundary.
+- `0xAF20..0xAF35` admits one beam tile. `0xAF36..0xAF6F` then reads the boss Y
+  every actor update, extends the beam eight pixels toward the left edge, and
+  adds one tile. Once its X coordinate reaches zero, it retains the completed
+  beam for 16 updates and disposes it; there is no contraction pass or
+  completion callback to the boss.
+- Movement segment setup chooses down when the boss is partly above the screen
+  or its vertical center is above the primary player; otherwise it chooses up.
+  It writes a counter of `8 + (R & 3)` and primes an eight-bit phase accumulator
+  with `0xff`.
+- The movement pass adds `0x46` to that accumulator. Only an overflow consumes
+  the pre-decremented counter and advances the boss by eight pixels. The final
+  counter transition does not move, so one segment contains 7..10 visible
+  advances followed by a 16-update stationary pause.
+- The controller reflects downward movement at Y `96` and upward movement at
+  signed Y `-48`. Direction is selected toward the player only when the next
+  segment begins, rather than continuously steering during a segment.
+- Actor type `0x26` is the short-lived boss hit effect produced by the weapon
+  collision routines. It is not part of the super-laser controller.
+
+The BMSX Moon keeps its cart-owned art and other attacks. Its death-ray branch
+translates the controller above: movement is a concurrent FSM region, waits are
+timeline frame boundaries, and the ray remains an independent world object.
+
 ## Interpretation limits
 
 - The ROM checksum above identifies the analyzed revision; another dump can

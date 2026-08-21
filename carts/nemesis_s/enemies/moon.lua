@@ -18,14 +18,13 @@ local enter_step_effect_id<const> = 'nemesis_s.enemy.moon.enter_step'
 local mini_moon_effect_id<const> = 'nemesis_s.enemy.moon.mini_moon'
 local small_ray_move_effect_id<const> = 'nemesis_s.enemy.moon.small_ray_move'
 local small_ray_volley_effect_id<const> = 'nemesis_s.enemy.moon.small_ray_volley'
-local slow_wide_move_effect_id<const> = 'nemesis_s.enemy.moon.slow_wide_move'
 local slow_playfield_move_effect_id<const> = 'nemesis_s.enemy.moon.slow_playfield_move'
 local entered_event<const> = 'enemy.moon.entered'
 local death_ray_requested_event<const> = 'enemy.moon.death_ray.requested'
-local death_ray_finished_event<const> = 'enemy.moon.death_ray.finished'
 local defeated_event<const> = 'enemy.moon.defeated'
 local small_ray_flash_timeline_id<const> = 'nemesis_s.enemy.moon.small_ray_flash'
-local death_ray_flash_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_flash'
+local death_ray_cycle_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_cycle'
+local death_ray_move_pause_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_move_pause'
 local wait_for_attack_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_attack'
 local wait_for_explosion_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_explosion'
 local wait_for_end_demo_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_end_demo'
@@ -272,37 +271,9 @@ end
 
 function moon:update_rotate_to_right()
 	if self.rotation == moon_rotation_right then
-		return '../flashing'
+		return '../attack'
 	end
 	self:rotate_clockwise()
-end
-
-function moon:activate_death_ray_flashes()
-	local flash_left<const> = self.flash_left
-	flash_left.offset_x = 2
-	flash_left.offset_y = 2
-	flash_left:activate()
-	local flash_right<const> = self.flash_right
-	flash_right.offset_x = 2
-	flash_right.offset_y = 46
-	flash_right:activate()
-end
-
-function moon:advance_death_ray_positioning()
-	if self.y > 16 and self.y < playfield_height - 48 then
-		return '../charging'
-	end
-end
-
-function moon:step_vertical_wide()
-	self.y = self.y + self.vertical_direction * moon_slow_vertical_step
-	if self.vertical_direction == moon_vertical_direction_up then
-		if self.y <= -moon_height // 4 then
-			self.vertical_direction = moon_vertical_direction_down
-		end
-	elseif self.y >= playfield_height - moon_height // 4 then
-		self.vertical_direction = moon_vertical_direction_up
-	end
 end
 
 function moon:step_vertical_playfield()
@@ -317,7 +288,7 @@ function moon:step_vertical_playfield()
 end
 
 function moon:begin_death_ray()
-	self.death_ray = world:spawn(ids_moon_death_ray_def, {
+	world:spawn(ids_moon_death_ray_def, {
 		originator = self,
 		pos = {
 			x = self.x + moon_death_ray_offset_x,
@@ -327,20 +298,48 @@ function moon:begin_death_ray()
 	self.events:emit('enemy.moon.death_ray_fired')
 end
 
-function moon:update_death_ray_firing()
-	self.y = self.y + self.vertical_direction * moon_fast_vertical_step
-	if self.vertical_direction == moon_vertical_direction_up then
-		if self.y <= -moon_height // 4 then
-			self.vertical_direction = moon_vertical_direction_down
-		end
-	elseif self.y >= playfield_height - moon_height // 4 then
+-- The Stage-7 Abaddon controller chooses a direction toward the primary
+-- player only at the start of each movement segment. Its byte accumulator and
+-- pre-decremented step counter are retained directly so the translated Moon
+-- keeps the source boss's discrete, readable movement rhythm.
+function moon:begin_death_ray_movement()
+	local player<const> = players_view.objects[1]
+	if self.y < 0 or self.y + moon_death_ray_move_target_offset_y < player.y then
+		self.vertical_direction = moon_vertical_direction_down
+	else
 		self.vertical_direction = moon_vertical_direction_up
 	end
+	self.death_ray_move_phase = moon_death_ray_move_phase_initial
+	self.death_ray_move_counter = math.random(
+		moon_death_ray_move_counter_min,
+		moon_death_ray_move_counter_max
+	)
 end
 
-function moon:death_ray_finished()
-	self.death_ray = nil
-	self.events:emit(death_ray_finished_event)
+function moon:update_death_ray_movement()
+	local phase<const> = self.death_ray_move_phase + moon_death_ray_move_phase_step
+	if phase < 0x100 then
+		self.death_ray_move_phase = phase
+		return
+	end
+	self.death_ray_move_phase = phase - 0x100
+
+	local counter<const> = self.death_ray_move_counter - 1
+	self.death_ray_move_counter = counter
+	if counter == 0 then
+		return '../waiting'
+	end
+
+	local direction<const> = self.vertical_direction
+	local y<const> = self.y + direction * moon_death_ray_move_step
+	self.y = y
+	if direction == moon_vertical_direction_down then
+		if y >= moon_death_ray_move_bottom_y then
+			self.vertical_direction = moon_vertical_direction_up
+		end
+	elseif y <= moon_death_ray_move_top_y then
+		self.vertical_direction = moon_vertical_direction_down
+	end
 end
 
 function moon:choose_next_attack()
@@ -489,35 +488,42 @@ local define_fsm<const> = function()
 							rotating = {
 								update = moon.update_rotate_to_right,
 							},
-							flashing = {
-								initial = 'positioning',
-								actioneffects = { slow_wide_move_effect_id },
-								entering_state = moon.activate_death_ray_flashes,
-								exiting_state = moon.deactivate_flashes,
+							attack = {
+								initial = 'firing',
 								states = {
-									positioning = {
-										entering_state = moon.advance_death_ray_positioning,
-										update = moon.advance_death_ray_positioning,
-									},
-									charging = {
+									firing = {
+										entering_state = moon.begin_death_ray,
 										timelines = {
-											[death_ray_flash_timeline_id] = {
+											[death_ray_cycle_timeline_id] = {
 												def = {
-													continuous = true,
-													duration_ms = moon_death_ray_flash_ms,
+													duration_frames = moon_death_ray_cycle_updates,
 													playback_mode = 'once',
 												},
-												on_finished = '../../firing',
+												on_finished = '/combat/wait_for_new_attack',
 											},
 										},
 									},
-								},
-							},
-							firing = {
-								entering_state = moon.begin_death_ray,
-								update = moon.update_death_ray_firing,
-								on = {
-									[death_ray_finished_event] = '/combat/wait_for_new_attack',
+									movement = {
+										is_concurrent = true,
+										initial = 'moving',
+										states = {
+											moving = {
+												entering_state = moon.begin_death_ray_movement,
+												update = moon.update_death_ray_movement,
+											},
+											waiting = {
+												timelines = {
+													[death_ray_move_pause_timeline_id] = {
+														def = {
+															duration_frames = moon_death_ray_move_pause_updates,
+															playback_mode = 'once',
+														},
+														on_finished = '../moving',
+													},
+												},
+											},
+										},
+									},
 								},
 							},
 						},
@@ -590,7 +596,6 @@ local register_definition<const> = function()
 				mini_moon_effect_id,
 				small_ray_move_effect_id,
 				small_ray_volley_effect_id,
-				slow_wide_move_effect_id,
 				slow_playfield_move_effect_id,
 			}),
 			timeline_component.new,
@@ -624,10 +629,6 @@ function moon.register()
 	actioneffects.register_effect(small_ray_volley_effect_id, {
 		period_ms = moon_small_ray_volley_ms,
 		handler = moon.fire_small_ray_volley,
-	})
-	actioneffects.register_effect(slow_wide_move_effect_id, {
-		period_ms = moon_slow_vertical_step_ms,
-		handler = moon.step_vertical_wide,
 	})
 	actioneffects.register_effect(slow_playfield_move_effect_id, {
 		period_ms = moon_slow_vertical_step_ms,

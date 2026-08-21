@@ -14,6 +14,7 @@ local moon_death_ray<const> = {}
 moon_death_ray.__index = moon_death_ray
 
 local expansion_timeline_id<const> = 'nemesis_s.enemy.moon_death_ray.expansion'
+local hold_timeline_id<const> = 'nemesis_s.enemy.moon_death_ray.hold'
 local new_ray_strip<const> = tile_strip_component.factory({
 	id_local = moon_death_ray_strip_id,
 	imgid = assets_moon_death_ray,
@@ -53,31 +54,21 @@ function moon_death_ray:ctor()
 		tile_strip_collider_2d_component,
 		moon_death_ray_strip_id
 	)
-	self.ray_cap = self:get_component(sprite_component, moon_death_ray_cap_id)
-	self.ray_cap_collider = self:get_component(collider_2d_component, moon_death_ray_cap_id)
+end
+
+function moon_death_ray:begin_expansion()
+	self.ray_strip.last_tile = 1
+	self.ray_strip:set_enabled(true)
+	self.ray_strip_collider:set_enabled(true)
 end
 
 function moon_death_ray:apply_expansion_frame(frame)
 	self.y = self.originator.y + moon_death_ray_offset_y
-	local tile_count<const> = frame * moon_death_ray_growth_tiles
-	self.ray_strip.last_tile = tile_count
-	local active<const> = tile_count ~= 0
-	self.ray_strip:set_enabled(active)
-	self.ray_strip_collider:set_enabled(active)
+	self.ray_strip.last_tile = frame + 2
 end
 
-function moon_death_ray:enter_contracting()
-	self.ray_cap:set_enabled(false)
-	self.ray_cap_collider:set_enabled(false)
-end
-
-function moon_death_ray:update_contracting()
-	if self.x <= 0 then
-		self.originator:death_ray_finished()
-		self:mark_for_disposal()
-		return
-	end
-	self.x = self.x - moon_death_ray_growth_tiles * moon_death_ray_tile_size
+function moon_death_ray:follow_originator()
+	self.y = self.originator.y + moon_death_ray_offset_y
 end
 
 local define_fsm<const> = function()
@@ -85,21 +76,33 @@ local define_fsm<const> = function()
 		initial = 'expanding',
 		states = {
 			expanding = {
+				entering_state = moon_death_ray.begin_expansion,
 				timelines = {
 					[expansion_timeline_id] = {
 						def = {
-							frames = timeline.range(moon_death_ray_max_steps),
-							frame_duration = moon_death_ray_step_ms,
+							frames = timeline.range(moon_death_ray_expansion_updates),
 							playback_mode = 'once',
 							apply = moon_death_ray.apply_expansion_frame,
 						},
-						on_finished = '/contracting',
+						play_options = { snap_to_start = false },
+						on_finished = '/holding',
 					},
 				},
 			},
-			contracting = {
-				entering_state = moon_death_ray.enter_contracting,
-				update = moon_death_ray.update_contracting,
+			holding = {
+				timelines = {
+					[hold_timeline_id] = {
+						def = {
+							duration_frames = moon_death_ray_hold_updates,
+							playback_mode = 'once',
+							apply = moon_death_ray.follow_originator,
+						},
+						on_finished = '/finished',
+					},
+				},
+			},
+			finished = {
+				entering_state = world_object.mark_for_disposal,
 			},
 		},
 	})
