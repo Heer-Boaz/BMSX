@@ -1,6 +1,7 @@
 local base_component<const> = require('cartlib/component/base_component')
 local clock<const> = require('cartlib/clock')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
+local velocity<const> = require('cartlib/velocity')
 
 -- Signed Q8.8 velocity with the fractional bytes of the X/Y position retained
 -- on the component. The parent owns the visible integer position; the motion
@@ -11,10 +12,6 @@ fixed_point_velocity_component.__index = fixed_point_velocity_component
 fixed_point_velocity_component.unique = true
 fixed_point_velocity_component._tick_clocks = clock.gameplay
 setmetatable(fixed_point_velocity_component, { __index = base_component })
-
-local velocity_q8_scale<const> = function()
-	return clock.gameplay_delta_milliseconds() * 0.001 * 0x100
-end
 
 function fixed_point_velocity_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), fixed_point_velocity_component)
@@ -29,9 +26,8 @@ end
 -- integration continues to consume only signed Q8.8 words at the cart's fixed
 -- gameplay cadence.
 function fixed_point_velocity_component:set_velocity_pixels_per_second(velocity_x, velocity_y)
-	local scale<const> = velocity_q8_scale()
-	self.velocity_x = math.round(velocity_x * scale)
-	self.velocity_y = math.round(velocity_y * scale)
+	self.velocity_x = velocity.pixels_per_second_to_velocity_q8(velocity_x)
+	self.velocity_y = velocity.pixels_per_second_to_velocity_q8(velocity_y)
 end
 
 -- Retains a direction in signed Q8.8 while making its dominant axis equal to
@@ -68,7 +64,7 @@ function fixed_point_velocity_component:set_dominant_axis_speed_pixels_per_secon
 	self:set_dominant_axis_velocity(
 		delta_x,
 		delta_y,
-		math.round(pixels_per_second * velocity_q8_scale())
+		velocity.pixels_per_second_to_velocity_q8(pixels_per_second)
 	)
 end
 

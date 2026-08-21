@@ -1,6 +1,6 @@
 local clamp<const> = require('cartlib/util/clamp')
-local clock<const> = require('cartlib/clock')
 local rol8<const> = require('cartlib/util/rol8')
+local velocity<const> = require('cartlib/velocity')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
@@ -825,8 +825,9 @@ function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
-	self.star_scroll_step =
-		stage_star_scroll_speed_px_per_second * clock.gameplay_delta_milliseconds() * 0.001
+	self.star_scroll_step = velocity.pixels_per_second_to_pixels_per_tick(
+		stage_star_scroll_speed_px_per_second
+	)
 	self.star_visual = self:get_component(custom_visual_component)
 	self.stage_tiles = self:get_component(tile_layer_component)
 end

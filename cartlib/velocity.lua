@@ -1,6 +1,33 @@
 -- Shared integer-remainder movement for cart entities.
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 
+local pixels_per_second_scale
+local velocity_q8_scale
+local acceleration_q8_scale
+
+-- The movement system fixes these conversion factors once, after the world
+-- has selected its gameplay cadence. Carts author wall-clock rates; movement
+-- components retain per-gameplay-tick words and never multiply by delta time
+-- in their scheduled loops.
+local configure_gameplay_delta<const> = function(delta_milliseconds)
+	local delta_seconds<const> = delta_milliseconds * 0.001
+	pixels_per_second_scale = delta_seconds
+	velocity_q8_scale = delta_seconds * 0x100
+	acceleration_q8_scale = delta_seconds * delta_seconds * 0x100
+end
+
+local pixels_per_second_to_pixels_per_tick<const> = function(value)
+	return value * pixels_per_second_scale
+end
+
+local pixels_per_second_to_velocity_q8<const> = function(value)
+	return math.round(value * velocity_q8_scale)
+end
+
+local pixels_per_second_squared_to_acceleration_q8<const> = function(value)
+	return math.round(value * acceleration_q8_scale)
+end
+
 local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	accum = accum + speed_num
 	if accum > -speed_den and accum < speed_den then
@@ -37,6 +64,10 @@ local move_with_velocity<const> = function(target)
 end
 
 return {
+	configure_gameplay_delta = configure_gameplay_delta,
+	pixels_per_second_to_pixels_per_tick = pixels_per_second_to_pixels_per_tick,
+	pixels_per_second_to_velocity_q8 = pixels_per_second_to_velocity_q8,
+	pixels_per_second_squared_to_acceleration_q8 = pixels_per_second_squared_to_acceleration_q8,
 	consume_axis_accum = consume_axis_accum,
 	consume_axis_fraction = consume_axis_fraction,
 	move_with_velocity = move_with_velocity,

@@ -1,5 +1,6 @@
 local clock<const> = require('cartlib/clock')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
+local velocity<const> = require('cartlib/velocity')
 
 -- Fixed-point velocity plus constant acceleration. It is a distinct scheduled
 -- class so constant-velocity actors do not pay acceleration work in their
@@ -25,10 +26,12 @@ function ballistic_movement_component:set_acceleration_pixels_per_second_squared
 	acceleration_x,
 	acceleration_y
 )
-	local gameplay_seconds<const> = clock.gameplay_delta_milliseconds() * 0.001
-	local scale<const> = gameplay_seconds * gameplay_seconds * 0x100
-	self.acceleration_x = math.round(acceleration_x * scale)
-	self.acceleration_y = math.round(acceleration_y * scale)
+	self.acceleration_x = velocity.pixels_per_second_squared_to_acceleration_q8(
+		acceleration_x
+	)
+	self.acceleration_y = velocity.pixels_per_second_squared_to_acceleration_q8(
+		acceleration_y
+	)
 end
 
 return ballistic_movement_component

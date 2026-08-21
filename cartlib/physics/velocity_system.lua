@@ -31,6 +31,7 @@ local vertical_contacts<const> = kinematic_movement_component.contact_up
 local move_kinematic<const> = kinematic_movement_component.move
 
 function velocity_system.new(world)
+	velocity.configure_gameplay_delta(clock.gameplay_delta_milliseconds())
 	local self<const> = setmetatable(base_system.new(velocity_system.tick), velocity_system)
 	self:add_tick_function(velocity_system.fixed_point_tick)
 	self._bouncing_component_view = world:active_tick_view(
