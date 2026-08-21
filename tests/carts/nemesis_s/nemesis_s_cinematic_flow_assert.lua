@@ -169,6 +169,18 @@ function __bmsx_host_test.setup()
 		and player_1.missile_projectiles[1].type == 0
 		and player_1.secondary_projectiles[1].type == 0,
 		'new player retained active weapons from the removed debug loadout')
+	local stage<const> = director.stage
+	assert(not stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'yellow',
+		'star blink did not begin from the XNA visible phase')
+	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms)
+	assert(stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'yellow',
+		'yellow stars did not hide after the authored 50 ms phase')
+	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms * 2)
+	assert(not stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'blue',
+		'yellow stars did not restore before the blue phase')
+	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms * 3)
+	assert(not stage.yellow_blink and stage.blue_blink and stage.blink_turn == 'blue',
+		'blue stars did not hide on their authored phase')
 	test.phase = 'game_start'
 end
 

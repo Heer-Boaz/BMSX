@@ -825,12 +825,12 @@ local define_stage_fsm<const> = function()
 					[ids_stage_star_blink_timeline] = {
 						def = {
 							frames = {
+								{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
 								{ blink_turn = 'yellow', yellow_blink = true, blue_blink = false },
 								{ blink_turn = 'blue', yellow_blink = false, blue_blink = false },
 								{ blink_turn = 'blue', yellow_blink = false, blue_blink = true },
-								{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
 							},
-							frame_duration = stage_star_blink_frame_duration,
+							frame_duration = stage_star_blink_frame_ms,
 							playback_mode = 'loop',
 							apply = true,
 							tracks = star_blink_tracks,
