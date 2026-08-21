@@ -64,6 +64,7 @@ import { forbiddenRenderWrapperCallPatternRule } from './forbidden_render_wrappe
 import { forbiddenRenderModuleRequirePatternRule } from './forbidden_render_module_require_pattern';
 import { deprecatedMemoryAccessPatternRule } from './deprecated_memory_access_pattern';
 import { prefabInlineDefaultTablePatternRule } from './prefab_inline_default_table_pattern';
+import { duplicateTableKeyPatternRule } from './duplicate_table_key_pattern';
 
 export { ensurePatternRule };
 export { syntaxErrorPatternRule };
@@ -130,6 +131,7 @@ export { forbiddenRenderWrapperCallPatternRule };
 export { forbiddenRenderModuleRequirePatternRule };
 export { deprecatedMemoryAccessPatternRule };
 export { prefabInlineDefaultTablePatternRule };
+export { duplicateTableKeyPatternRule };
 
 export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	ensurePatternRule,
@@ -197,5 +199,6 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	forbiddenRenderModuleRequirePatternRule,
 	deprecatedMemoryAccessPatternRule,
 	prefabInlineDefaultTablePatternRule,
+	duplicateTableKeyPatternRule,
 ] as const;
 export const CART_ONLY_LINT_RULES = ruleNames(CART_ONLY_LINT_RULE_DEFINITIONS);

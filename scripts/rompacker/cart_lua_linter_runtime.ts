@@ -11,6 +11,7 @@ import { lintAstOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallbac
 import { lintCallNewlineNormalizationPattern } from '../lint/rules/code_quality/newline_normalization_pattern';
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
 import { lintDeprecatedMemoryAccessPattern } from '../lint/rules/lua_cart/deprecated_memory_access_pattern';
+import { lintDuplicateTableKeyPattern } from '../lint/rules/lua_cart/duplicate_table_key_pattern';
 import { lintFunctionBodyRequireCall } from '../lint/rules/lua_cart/function_body_require_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
@@ -93,6 +94,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'define_factory_tick_enabled_pattern',
 	'dispatch_fanout_loop_pattern',
 	'duplicate_initializer_pattern',
+	'duplicate_table_key_pattern',
 	'empty_catch_pattern',
 	'empty_container_fallback_pattern',
 	'empty_string_condition_pattern',
@@ -414,6 +416,7 @@ export function lintExpression(
 			lintExpression(expression.operand, issues, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.TableConstructorExpression:
+			lintDuplicateTableKeyPattern(expression, issues);
 			for (const field of expression.fields) {
 				lintTableField(field, issues, moduleCalls, insideFunction);
 			}
