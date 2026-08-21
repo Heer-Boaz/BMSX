@@ -145,3 +145,16 @@
   - when `(IY+5) == 0`, growth increment is `1` -> reduced growth when near top.
 - `ADDx/AND` coarse alignment used in spawn/update paths (`ADDx` + `AND 0xF8`):
   - Lua keeps tile-aligned beam placement by snapping draw/start coordinates to tile grid with half-tile render phase where needed.
+
+## Missile terrain-row scan
+
+- `B0FB` probes the missile at `(x, y + 8)`, `(x + 8, y + 8)`, and
+  `(x + 8, y)` through `B1A6 -> 8388`.
+- `5C92` maps the pixel coordinate in `HL` to the corresponding tile address.
+- `8388` does not test one or two adjacent tiles. After each clear tile it
+  increments the tile address and repeats `8395`; `(E & 0x1f) == 0` ends the
+  probe at the 32-column row boundary.
+- Carry therefore means that a colliding tile exists anywhere from the sampled
+  coordinate through the right edge of the current tile row. The BMSX stage
+  translation uses the retained visible stage row for the same scan and does
+  not allocate or rebuild collision geometry per missile update.

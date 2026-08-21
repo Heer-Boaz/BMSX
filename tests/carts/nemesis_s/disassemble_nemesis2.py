@@ -3,7 +3,7 @@
 from pathlib import Path
 from z80dis import z80
 
-WORKSPACE = Path(__file__).resolve().parents[4]
+WORKSPACE = Path(__file__).resolve().parents[3]
 ROM_PATH = WORKSPACE / ".external/nemesis2rom/extracted/Nemesis2[File-Hunter.com].rom"
 OUT_DIR = WORKSPACE / ".external/nemesis2rom"
 BASE_ADDR = 0x4000
@@ -57,12 +57,19 @@ def write_segment_dump(rom: bytes) -> None:
 		0x7930,
 		0x7946,
 		0x7A00,
+		0x81DA,
+		0x827C,
+		0x8388,
 		0x87A4,
 		0x9034,
 		0x90C6,
 		0x9167,
 		0x92C1,
 		0x92F6,
+		0xAB92,
+		0xAC30,
+		0xB0B4,
+		0xB0FB,
 		0xBECA,
 	]
 	lines: list[str] = []

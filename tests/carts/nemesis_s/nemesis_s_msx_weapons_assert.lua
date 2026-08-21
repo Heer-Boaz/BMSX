@@ -135,29 +135,30 @@ function __bmsx_host_test.update()
 
 	local floor_row<const> = stage.solid_tape[((33 + 8) // stage.tile_size) + 1]
 	local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
-	floor_row[missile_column + 1] = 1
+	local row_scan_obstacle_column<const> = missile_column + 4
+	floor_row[row_scan_obstacle_column] = 1
 	player:spawn_missile(1, 1)
 	player:update_weapons()
 	assert(missile.x == 53 and missile.y == 33,
-		'the missile ignored the second tile in its original floor probe')
+		'the missile ignored terrain later in its original floor-row scan')
 	player:despawn_missile(missile, 'test_reset')
 	floor_row[missile_column] = 1
-	floor_row[missile_column + 1] = 0
+	floor_row[row_scan_obstacle_column] = 0
 	player:spawn_missile(1, 1)
 	player:update_weapons()
 	assert(missile.x == 53 and missile.y == 37,
 		'the missile did not traverse an original floor-edge sample')
 	player:despawn_missile(missile, 'test_reset')
-	floor_row[missile_column + 1] = 1
+	floor_row[row_scan_obstacle_column] = 1
 	local missile_row<const> = stage.solid_tape[(33 // stage.tile_size) + 1]
-	missile_row[missile_column + 1] = 1
+	missile_row[row_scan_obstacle_column] = 1
 	player:spawn_missile(1, 1)
 	player:update_weapons()
 	assert(missile.type == 0,
-		'the missile skipped the second tile in its original body probe')
-	missile_row[missile_column + 1] = 0
+		'the missile skipped terrain later in its original body-row scan')
+	missile_row[row_scan_obstacle_column] = 0
 	floor_row[missile_column] = 0
-	floor_row[missile_column + 1] = 0
+	floor_row[row_scan_obstacle_column] = 0
 
 	player:spawn_uplaser(1, 2)
 	local uplaser<const> = player.secondary_projectiles[1]
