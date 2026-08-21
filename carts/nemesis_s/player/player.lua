@@ -447,8 +447,8 @@ function player:update_position()
 	local max_y<const> = playfield_height - player_height
 	local previous_x<const> = self.x
 	local previous_y<const> = self.y
-	local movement_speed<const> = player_base_movement_speed
-		+ player_movement_speed_increase * self.powerup_levels[powerup_slot_speed]
+	local movement_speed<const> = player_base_movement_step
+		+ player_movement_step_increase * self.powerup_levels[powerup_slot_speed]
 	local strong_force_field<const> = self.force_field_strength > 1
 	self.last_speed = movement_speed
 

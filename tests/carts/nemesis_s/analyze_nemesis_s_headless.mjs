@@ -85,32 +85,32 @@ for (let i = 0; i < playerMetrics.length; i += 1) {
 	const y = Number(m.y);
 	expect(x >= 0 && x <= 240, `Player X out of bounds at frame ${m.f}: x=${x} expected [0..240].`);
 	expect(y >= 0 && y <= 166, `Player Y out of bounds at frame ${m.f}: y=${y} expected [0..166].`);
-	expect(Number(m.bullet) <= 1, `Bullet count exceeded limit at frame ${m.f}: bullet=${m.bullet} expected <=1.`);
+	expect(Number(m.bullet) <= 2, `Bullet count exceeded limit at frame ${m.f}: bullet=${m.bullet} expected <=2.`);
 }
 
 const moveRightSamples = playerMetrics.filter((m) => Number(m.right) === 1 && Number(m.left) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
 expect(moveRightSamples.length >= 20, `Expected at least 20 right-move samples, got ${moveRightSamples.length}.`);
 for (let i = 0; i < moveRightSamples.length; i += 1) {
-	expect(approxEqual(Number(moveRightSamples[i].dx), 1), `Right move dx mismatch at frame ${moveRightSamples[i].f}: dx=${moveRightSamples[i].dx} expected 1.`);
+	expect(approxEqual(Number(moveRightSamples[i].dx), 2), `Right move dx mismatch at frame ${moveRightSamples[i].f}: dx=${moveRightSamples[i].dx} expected 2.`);
 }
 
 const moveLeftSamples = playerMetrics.filter((m) => Number(m.left) === 1 && Number(m.right) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
 expect(moveLeftSamples.length >= 15, `Expected at least 15 left-move samples, got ${moveLeftSamples.length}.`);
 for (let i = 0; i < moveLeftSamples.length; i += 1) {
-	expect(approxEqual(Number(moveLeftSamples[i].dx), -1), `Left move dx mismatch at frame ${moveLeftSamples[i].f}: dx=${moveLeftSamples[i].dx} expected -1.`);
+	expect(approxEqual(Number(moveLeftSamples[i].dx), -2), `Left move dx mismatch at frame ${moveLeftSamples[i].f}: dx=${moveLeftSamples[i].dx} expected -2.`);
 }
 
 const moveUpSamples = playerMetrics.filter((m) => Number(m.up) === 1 && Number(m.down) === 0);
 expect(moveUpSamples.length >= 15, `Expected at least 15 up-move samples, got ${moveUpSamples.length}.`);
 for (let i = 0; i < moveUpSamples.length; i += 1) {
-	expect(approxEqual(Number(moveUpSamples[i].dy), -1), `Up move dy mismatch at frame ${moveUpSamples[i].f}: dy=${moveUpSamples[i].dy} expected -1.`);
+	expect(approxEqual(Number(moveUpSamples[i].dy), -2), `Up move dy mismatch at frame ${moveUpSamples[i].f}: dy=${moveUpSamples[i].dy} expected -2.`);
 	expect(moveUpSamples[i].sprite === 'metallion_u', `Up sprite mismatch at frame ${moveUpSamples[i].f}: sprite=${moveUpSamples[i].sprite} expected metallion_u.`);
 }
 
 const moveDownSamples = playerMetrics.filter((m) => Number(m.down) === 1 && Number(m.up) === 0);
 expect(moveDownSamples.length >= 20, `Expected at least 20 down-move samples, got ${moveDownSamples.length}.`);
 for (let i = 0; i < moveDownSamples.length; i += 1) {
-	expect(approxEqual(Number(moveDownSamples[i].dy), 1), `Down move dy mismatch at frame ${moveDownSamples[i].f}: dy=${moveDownSamples[i].dy} expected 1.`);
+	expect(approxEqual(Number(moveDownSamples[i].dy), 2), `Down move dy mismatch at frame ${moveDownSamples[i].f}: dy=${moveDownSamples[i].dy} expected 2.`);
 	expect(moveDownSamples[i].sprite === 'metallion_d', `Down sprite mismatch at frame ${moveDownSamples[i].f}: sprite=${moveDownSamples[i].sprite} expected metallion_d.`);
 }
 

@@ -65,8 +65,11 @@ game_over_curtain_draw_z = 200
 game_over_blackout_duration_ms = 2000
 player_width = 16
 player_height = 10
-player_base_movement_speed = 1
-player_movement_speed_increase = 0.5
+-- Nemesis 2 routine A902 scales each signed Q8.8 direction word by E402 + 4.
+-- Its half-pixel basis therefore advances 2px plus 0.5px per speed level on
+-- each original gameplay update.
+player_base_movement_step = 2
+player_movement_step_increase = 0.5
 player_option_history_count = 16
 player_option_history_spacing = 8
 player_option_pickup_offset_x = 128
