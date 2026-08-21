@@ -159,14 +159,14 @@ function __bmsx_host_test.update()
 
 	player:spawn_uplaser(1, 2)
 	local uplaser<const> = player.secondary_projectiles[1]
-	assert(uplaser.x == 48 and uplaser.y == 25,
+	assert(uplaser.x == 40 and uplaser.y == 33,
 		'the up-laser did not retain its original vessel anchor')
 	assert(uplaser.collider.local_area.right == 16 and uplaser.collider.local_area.bottom == 8,
 		'the up-laser did not publish its original collision record at admission')
 	for _ = 1, 4 do
 		player:update_weapons()
 	end
-	assert(uplaser.y == 1 and uplaser.x == 40 and uplaser.length_tiles == 4,
+	assert(uplaser.y == 9 and uplaser.x == 32 and uplaser.length_tiles == 4,
 		'the level-two up-laser did not apply its four-tick symmetric growth gate')
 
 	test.salvo_count = 0

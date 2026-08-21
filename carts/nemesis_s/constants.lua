@@ -313,8 +313,10 @@ weapons_uplaser = {
 	level2_growth_tiles = 2,
 	level2_edge_growth_tiles = 1,
 	level2_left_growth_px = 8,
-	spawn_offset_x = 8,
-	spawn_offset_y = 0,
+	-- ADBA passes DE=0800 to B224: the record keeps Y in +3 and X in +5,
+	-- so the beam starts eight pixels below the vessel without an X offset.
+	spawn_offset_x = 0,
+	spawn_offset_y = 8,
 }
 
 stage_asset_id = 'nemesis_s_stage'
