@@ -1,17 +1,24 @@
-local prefab<const> = require('cartlib/world/prefab')
-local velocity<const> = require('cartlib/velocity')
-local world<const> = require('cartlib/world/world')
-require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
+local clock<const> = require('cartlib/clock')
+local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
+local prefab<const> = require('cartlib/world/prefab')
+local velocity<const> = require('cartlib/velocity')
+local world<const> = require('cartlib/world/world')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
+require('constants')
 
 local cloud<const> = {}
 cloud.__index = cloud
+cloud.primary_sprite_factory = sprite_animation_component.factory({
+	frames = { 'cloud_1', 'cloud_2' },
+	frame_duration_ms = enemy_cloud_anim_switch_steps * clock.update_milliseconds(),
+	loop = true,
+})
 
 local full_circle_milliradians<const> = 6283
 local cloud_wave_pos_start_millirad<const> = 253
@@ -22,11 +29,6 @@ local cloud_wave_neg_start_millirad<const> = 3394
 local cloud_wave_trough_start_millirad<const> = 3990
 local cloud_wave_trough_end_millirad<const> = 5435
 local cloud_wave_neg_end_millirad<const> = 6030
-
-function cloud:ctor()
-	self.cloud_anim_frame = 1
-	self:set_imgid('cloud_1')
-end
 
 function cloud.execute_move(self, node_memory)
 	node_memory.move_accum = 0
@@ -83,17 +85,6 @@ function cloud.tick_move(self, node_memory)
 	return bt_running
 end
 
-function cloud.advance_animation(self)
-	if self.cloud_anim_frame == 1 then
-		self.cloud_anim_frame = 2
-		self:set_imgid('cloud_2')
-	else
-		self.cloud_anim_frame = 1
-		self:set_imgid('cloud_1')
-	end
-	return bt_success
-end
-
 function cloud.spawn_vlok_burst(self)
 	local room<const> = self.room
 	for _ = 1, 3 do
@@ -133,31 +124,6 @@ function cloud.register()
 		root = {
 			type = 'parallel_all',
 			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'wait',
-							duration_ticks = enemy_cloud_anim_switch_steps,
-						},
-						{
-							type = 'loop',
-							child = {
-								type = 'sequence',
-								children = {
-									{
-										type = 'task',
-										execute = cloud.advance_animation,
-									},
-									{
-										type = 'wait',
-										duration_ticks = enemy_cloud_anim_switch_steps - 1,
-									},
-								},
-							},
-						},
-					},
-				},
 				{
 					type = 'task',
 					node_memory = true,
