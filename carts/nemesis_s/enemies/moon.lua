@@ -295,7 +295,7 @@ end
 
 function moon:advance_death_ray_positioning()
 	if self.y > 16 and self.y < playfield_height - 48 then
-		return '../../firing'
+		return '../charging'
 	end
 end
 
@@ -495,12 +495,16 @@ local define_fsm<const> = function()
 								update = moon.update_rotate_to_right,
 							},
 							flashing = {
-								initial = 'delay',
+								initial = 'positioning',
 								actioneffects = { slow_wide_move_effect_id },
 								entering_state = moon.activate_death_ray_flashes,
 								exiting_state = moon.deactivate_flashes,
 								states = {
-									delay = {
+									positioning = {
+										entering_state = moon.advance_death_ray_positioning,
+										update = moon.advance_death_ray_positioning,
+									},
+									charging = {
 										timelines = {
 											[death_ray_flash_timeline_id] = {
 												def = {
@@ -508,13 +512,9 @@ local define_fsm<const> = function()
 													duration_ms = moon_death_ray_flash_ms,
 													playback_mode = 'once',
 												},
-												on_finished = '../positioning',
+												on_finished = '../../firing',
 											},
 										},
-									},
-									positioning = {
-										entering_state = moon.advance_death_ray_positioning,
-										update = moon.advance_death_ray_positioning,
 									},
 								},
 							},

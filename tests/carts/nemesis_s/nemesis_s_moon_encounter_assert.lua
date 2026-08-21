@@ -1,4 +1,5 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local clock<const> = require('cartlib/clock')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
@@ -45,6 +46,9 @@ function __bmsx_host_test.update()
 		test.entering = boss.state_machines:bind_state_path('/entering')
 		test.fly_attack = boss.state_machines:bind_state_path('/combat/fly_attack')
 		test.small_rays_up = boss.state_machines:bind_state_path('/combat/small_rays_up')
+		test.death_ray_charging = boss.state_machines:bind_state_path(
+			'/combat/death_ray/flashing/charging'
+		)
 		test.death_ray_firing = boss.state_machines:bind_state_path('/combat/death_ray/firing')
 		test.wait_for_attack = boss.state_machines:bind_state_path('/combat/wait_for_new_attack')
 		test.dying = boss.state_machines:bind_state_path('/dying')
@@ -113,16 +117,31 @@ function __bmsx_host_test.update()
 			'Moon upward volley lost the XNA lower-rotation muzzle anchors')
 		boss.rotation = moon_rotation_right
 		boss:apply_rotation()
-		boss.y = 32
+		boss.y = 0
+		boss.vertical_direction = moon_vertical_direction_down
 		boss.state_machines:transition_to('/combat/death_ray/rotating')
 		test.phase = 'death_ray'
 		return false
 	end
 
 	if test.phase == 'death_ray' then
+		if boss.state_machines:matches_state(test.death_ray_charging) then
+			test.death_ray_charge_time_ms = world.gameplay_time_ms
+			test.phase = 'death_ray_charging'
+			return false
+		end
+		assert(not boss.state_machines:matches_state(test.death_ray_firing),
+			'Moon death ray fired before reaching the XNA charge window')
+		return false
+	end
+
+	if test.phase == 'death_ray_charging' then
 		if not boss.state_machines:matches_state(test.death_ray_firing) then
 			return false
 		end
+		assert(world.gameplay_time_ms - test.death_ray_charge_time_ms
+			>= moon_death_ray_flash_ms - clock.update_milliseconds(),
+			'Moon death-ray charge elapsed before entering its valid firing window')
 		local ray<const> = boss.death_ray
 		if ray == nil then
 			return false
