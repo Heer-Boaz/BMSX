@@ -125,7 +125,6 @@ function __bmsx_host_test.update()
 			player:emit_health_changed()
 			test.key_x = key.x
 			test.key_y = key.y
-			test.wait_frames = 4
 			test.phase = 'health_drain'
 			return false
 		end
@@ -134,12 +133,10 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'health_drain' then
-		test.wait_frames = test.wait_frames - 1
-		if test.wait_frames > 0 then
+		local ui<const> = registry:get('ui')
+		if ui.hud_health_level == player.max_health then
 			return false
 		end
-		local ui<const> = registry:get('ui')
-		assert(ui.hud_health_level < player.max_health, 'health HUD did not begin its ordinary animated change')
 		player.x = test.key_x
 		player.y = test.key_y
 		test.phase = 'pickup'

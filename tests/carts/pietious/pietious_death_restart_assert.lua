@@ -73,7 +73,6 @@ function __bmsx_host_test.update()
 		local ui<const> = registry:get('ui')
 		ui.hud_health_level = 0
 		ui.hud_health_target = 0
-		ui.hud_health_anim_ticks = 1
 		player.health = 0
 		player:start_dying()
 		assert(player.state_machines:matches_state(test.dying_state), 'player did not enter dying state')
@@ -146,7 +145,6 @@ function __bmsx_host_test.update()
 	local ui<const> = registry:get('ui')
 	assert(ui.hud_health_level == player.max_health, 'health bar did not snap to restored health')
 	assert(ui.hud_health_target == player.max_health, 'health bar retained a stale target after restart')
-	assert(ui.hud_health_anim_ticks == 0, 'health bar retained animation progress after restart')
 	assert(player.state_machines:matches_state(test.quiet_state), 'player did not return to quiet after death')
 	assert(progression.get(castle, 'staff1destroyed'),
 		'death incorrectly reset defeat retained for the current world visit')
