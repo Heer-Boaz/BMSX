@@ -44,7 +44,12 @@ function timeline_program.compile(definition)
 	local track_defs<const> = definition.tracks or empty_defs
 	local subsequence_defs<const> = definition.subsequences or empty_defs
 	local continuous = definition.continuous
-	if continuous == nil and frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
+	if continuous == nil
+	and frame_source == nil
+	and (#track_defs > 0
+		or #subsequence_defs > 0
+		or definition.duration_ms ~= nil
+		or definition.duration_frames ~= nil) then
 		continuous = true
 	end
 	local clock_source<const> = definition.clock_source or timeline_clock_source.gameplay
