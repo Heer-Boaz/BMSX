@@ -97,29 +97,29 @@ local rotation_poses<const> = {
 	},
 	{
 		imgid = assets_moon_up,
-		armor = assets.collision_shape_moon_up_armor_addr,
-		core = assets.collision_shape_moon_up_core_addr,
+		armor = assets.collision_shape_moon_down_armor_addr,
+		core = assets.collision_shape_moon_down_core_addr,
 		flip_h = true,
 		flip_v = true,
 	},
 	{
 		imgid = assets_moon_up_right,
-		armor = assets.collision_shape_moon_up_right_armor_addr,
-		core = assets.collision_shape_moon_up_right_core_addr,
+		armor = assets.collision_shape_moon_down_left_armor_addr,
+		core = assets.collision_shape_moon_down_left_core_addr,
 		flip_h = true,
 		flip_v = true,
 	},
 	{
 		imgid = assets_moon_right,
-		armor = assets.collision_shape_moon_right_armor_addr,
-		core = assets.collision_shape_moon_right_core_addr,
+		armor = assets.collision_shape_moon_left_armor_addr,
+		core = assets.collision_shape_moon_left_core_addr,
 		flip_h = true,
 		flip_v = true,
 	},
 	{
 		imgid = assets_moon_down_right,
-		armor = assets.collision_shape_moon_down_right_armor_addr,
-		core = assets.collision_shape_moon_down_right_core_addr,
+		armor = assets.collision_shape_moon_up_left_armor_addr,
+		core = assets.collision_shape_moon_up_left_core_addr,
 		flip_h = true,
 		flip_v = true,
 	},
@@ -133,10 +133,8 @@ function moon:apply_rotation()
 	sprite.flip_v = pose.flip_v
 	local armor<const> = self.armor_collider
 	armor:set_shape_asset(pose.armor)
-	armor:set_shape_flip(pose.flip_h, pose.flip_v)
 	local core<const> = self.core_collider
 	core:set_shape_asset(pose.core)
-	core:set_shape_flip(pose.flip_h, pose.flip_v)
 end
 
 function moon:rotate_clockwise()

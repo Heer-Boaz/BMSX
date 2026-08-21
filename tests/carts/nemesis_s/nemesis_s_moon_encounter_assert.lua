@@ -1,8 +1,10 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local collision_shape<const> = require('cartlib/collision/collision_shape')
 local clock<const> = require('cartlib/clock')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
+local assets<const> = require('bmsx/assets')
 require('constants')
 
 local mini_moons<const> = world:active_definition_view(ids_mini_moon_def)
@@ -70,6 +72,19 @@ function __bmsx_host_test.update()
 		assert(boss.sprite_component.imgid == assets_moon_right
 			and not boss.sprite_component.flip_h and not boss.sprite_component.flip_v,
 			'Moon rotation did not advance visual and collision pose together')
+		boss.rotation = moon_rotation_down
+		boss:apply_rotation()
+		local down_armor<const> = collision_shape.variant_addresses(
+			assets.collision_shape_moon_down_armor_addr
+		)
+		local down_core<const> = collision_shape.variant_addresses(
+			assets.collision_shape_moon_down_core_addr
+		)
+		assert(boss.armor_collider.shape_ref == down_armor
+			and boss.core_collider.shape_ref == down_core,
+			'Moon reused a transformed opposite pose instead of its authored collision map')
+		assert(boss.sprite_component.flip_h and boss.sprite_component.flip_v,
+			'Moon collision pose selection changed its retained sprite orientation')
 		boss.rotation = moon_rotation_down_right
 		boss:apply_rotation()
 		test.phase = 'entering'
