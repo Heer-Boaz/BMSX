@@ -106,6 +106,16 @@ function director:enter_gameplay()
 	self.telemetry_stage_head = self.stage.tape_head
 end
 
+function director:enter_pause()
+	world:set_gameplay_clock_running(false)
+	self.events:emit('pause_entered')
+end
+
+function director:leave_pause()
+	world:set_gameplay_clock_running(true)
+	self.events:emit('pause_exited')
+end
+
 function director:populate_end_demo()
 	self.stage = nil
 	self.players = nil
@@ -231,7 +241,13 @@ if telemetry_enabled then
 end
 
 local define_director_fsm<const> = function()
+	local gameplay_running_state<const> = {
+		input_event_handlers = {
+			{ pattern = 'pause[jp]', go = '/gameplay/pause' },
+		},
+	}
 	local gameplay_state<const> = {
+		initial = 'running',
 		entering_state = director.enter_gameplay,
 		on = {
 			['player.death'] = {
@@ -243,9 +259,24 @@ local define_director_fsm<const> = function()
 				go = '/end_demo',
 			},
 		},
+		states = {
+			running = gameplay_running_state,
+			pause = {
+				entering_state = director.enter_pause,
+				exiting_state = director.leave_pause,
+				transition_guards = {
+					can_enter = function(self)
+						return self.players[1]:has_tag(player_module.active_state_tag)
+					end,
+				},
+				input_event_handlers = {
+					{ pattern = 'pause[jp]', go = '/gameplay/running' },
+				},
+			},
+		},
 	}
 	if telemetry_enabled then
-		gameplay_state.update = director.update_telemetry
+		gameplay_running_state.update = director.update_telemetry
 	end
 	fsm_library.register(ids_director_fsm, {
 		clock_source = timeline_clock_source.frame,
@@ -373,6 +404,7 @@ local register_director_definition<const> = function()
 		},
 		defaults = {
 			id = ids_director_instance,
+			player_index = 1,
 			frame = 0,
 			player_count = 1,
 			stage_start_column = 0,

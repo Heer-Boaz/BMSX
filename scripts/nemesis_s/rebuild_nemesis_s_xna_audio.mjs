@@ -21,6 +21,7 @@ const mappings = [
 	['Nemesis2_FoeUberLaser.wav', 'nemesis2_foe_uber_laser@p=15.wav'],
 	['Nemesis2_BossExplosion.wav', 'nemesis2_boss_explosion@p=100.wav'],
 	['Nemesis2_PowerupTaken.wav', 'nemesis2_powerup_taken@p=11.wav'],
+	['Nemesis2_Pause.wav', 'nemesis2_pause@p=98.wav'],
 	['Nemesis2_EndDemo.wav', 'music_end_demo.wav'],
 ];
 

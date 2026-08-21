@@ -7,9 +7,11 @@ input.add_player(1)
 input.add_player(2)
 input.push_context(1, 'nemesis_s', {
 	fire = { 'Space' },
+	pause = { 'F1' },
 	powerup = { 'KeyM', 'KeyN' },
 }, {
 	fire = { 'a' },
+	pause = { 'start' },
 	powerup = { 'x' },
 })
 input.push_context(2, 'nemesis_s', {

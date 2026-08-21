@@ -57,6 +57,20 @@ events:
                   stop:
                       fade_ms: 0
 
+    pause_entered:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - pause_music: {}
+                      - audio_id: nemesis2_pause
+
+    pause_exited:
+        channel: music
+        rules:
+            - go:
+                  resume_music: {}
+
     stage.music.intro:
         channel: music
         rules:

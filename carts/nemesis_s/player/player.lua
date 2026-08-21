@@ -20,6 +20,7 @@ local player_state_module<const> = require('player/player_state')
 
 local player<const> = {}
 player.__index = player
+local active_state_tag<const> = 'nemesis_s.player.active'
 
 local option_animation_timeline_id<const> = 'player_option_animation'
 local player_death_timeline_id<const> = 'player_death'
@@ -1055,6 +1056,7 @@ local define_player_fsm<const> = function()
 			},
 			active = {
 				initial = 'flying',
+				tags = { active_state_tag },
 				on = {
 					['overlap.begin'] = {
 						emitter = false,
@@ -1163,6 +1165,7 @@ end
 
 return {
 	player = player,
+	active_state_tag = active_state_tag,
 	define_player_fsm = define_player_fsm,
 	register_player_definition = register_player_definition,
 	player_def_id = ids_player_def,
