@@ -563,7 +563,7 @@ function stage:build_tape()
 						options = {
 							stage = self,
 							pos = {
-								x = playfield_width + 7,
+								x = playfield_width + 7 - self.tile_size,
 								y = kerk_y + 80,
 							},
 						},
@@ -574,7 +574,7 @@ function stage:build_tape()
 						options = {
 							stage = self,
 							pos = {
-								x = playfield_width,
+								x = playfield_width - self.tile_size,
 								y = kerk_y,
 							},
 						},

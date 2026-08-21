@@ -17,8 +17,8 @@ local expected_first_spawns<const> = {
 	[ids_rook_generator_def] = { column = 202, x = 240, y = 96 },
 	[ids_zak_foe_def] = { column = 147, x = 248, y = 152 },
 	[ids_sneeuwpop_def] = { column = 299, x = 248, y = 112 },
-	[ids_bel_def] = { column = 484, x = 263, y = 96 },
-	[ids_kerk_def] = { column = 484, x = 256, y = 16 },
+	[ids_bel_def] = { column = 484, x = 255, y = 96 },
+	[ids_kerk_def] = { column = 484, x = 248, y = 16 },
 }
 
 __bmsx_host_test = {
