@@ -82,13 +82,20 @@ local player_respawn_frames<const> = {
 	{ visible = false },
 }
 -- Values are the retained E470-E4F0 projectile type bytes dispatched by the
--- original ROM's table at ABC2. Zero is the free-slot representation.
+-- original ROM's table at ABC2. Each vessel owns two general weapon records
+-- and one missile record; zero is the free-slot representation.
 local projectile_type_none<const> = 0
 local projectile_type_bullet<const> = 1
 local projectile_type_missile<const> = 4
 local projectile_type_laser<const> = 7
 local projectile_type_uplaser_level_1<const> = 10
 local projectile_type_uplaser_level_2<const> = 12
+local projectile_name_by_type<const> = {
+	[projectile_type_bullet] = 'bullet',
+	[projectile_type_laser] = 'laser',
+	[projectile_type_uplaser_level_1] = 'uplaser',
+	[projectile_type_uplaser_level_2] = 'uplaser',
+}
 local uplaser_projectile_type_by_level<const> = {
 	projectile_type_uplaser_level_1,
 	projectile_type_uplaser_level_2,
@@ -211,8 +218,13 @@ function player:emit_metric()
 	if not telemetry_enabled then
 		return
 	end
-	local bullet_count<const> , b0x<const> , b0y<const> =
+	local primary_bullet_count<const> , primary_bullet_x<const> , primary_bullet_y<const> =
 		get_projectile_metrics(self.primary_projectiles, projectile_type_bullet)
+	local secondary_bullet_count<const> , secondary_bullet_x<const> , secondary_bullet_y<const> =
+		get_projectile_metrics(self.secondary_projectiles, projectile_type_bullet)
+	local bullet_count<const> = primary_bullet_count + secondary_bullet_count
+	local b0x<const> = primary_bullet_count > 0 and primary_bullet_x or secondary_bullet_x
+	local b0y<const> = primary_bullet_count > 0 and primary_bullet_y or secondary_bullet_y
 	local laser_count<const> , l0x<const> , l0y<const> =
 		get_projectile_metrics(self.primary_projectiles, projectile_type_laser)
 	local missile_count<const> , m0x<const> , m0y<const> =
@@ -365,14 +377,18 @@ local draw_player_projectiles<const> = function(component, draw)
 				end
 			end
 		end
-		local uplaser<const> = self.secondary_projectiles[vessel_id]
-		if uplaser.type ~= projectile_type_none then
-			for tile_index = 0, uplaser.length_tiles - 1 do
-				weapon_sources.uplaser:blit(
-					draw,
-					uplaser.x + tile_index * weapons_uplaser.tile_width,
-					uplaser.y
-				)
+		local secondary<const> = self.secondary_projectiles[vessel_id]
+		if secondary.type ~= projectile_type_none then
+			if secondary.type == projectile_type_bullet then
+				weapon_sources.bullet:blit(draw, secondary.x, secondary.y)
+			else
+				for tile_index = 0, secondary.length_tiles - 1 do
+					weapon_sources.uplaser:blit(
+						draw,
+						secondary.x + tile_index * weapons_uplaser.tile_width,
+						secondary.y
+					)
+				end
 			end
 		end
 	end
@@ -528,9 +544,8 @@ function player:bind()
 	})
 end
 
-function player:spawn_bullet(vessel_id)
+function player:spawn_bullet(vessel_id, bullet)
 	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
-	local bullet<const> = self.primary_projectiles[vessel_id]
 	bullet.type = projectile_type_bullet
 	bullet.pierces_small_fry = false
 	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
@@ -538,11 +553,19 @@ function player:spawn_bullet(vessel_id)
 	bullet.collider:set_enabled(true)
 	self.events:emit('player.bullet_fired')
 	if telemetry_enabled then
+		local active_count = 0
+		if self.primary_projectiles[vessel_id].type == projectile_type_bullet then
+			active_count = active_count + 1
+		end
+		if self.secondary_projectiles[vessel_id].type == projectile_type_bullet then
+			active_count = active_count + 1
+		end
 		self:emit_event(
 			'weapon_spawn',
 			string.format(
-				'weapon=bullet|vessel=%d|active=1|x=%.3f|y=%.3f',
+				'weapon=bullet|vessel=%d|active=%d|x=%.3f|y=%.3f',
 				vessel_id,
+				active_count,
 				bullet.x,
 				bullet.y
 			)
@@ -642,18 +665,27 @@ function player:fire_weapon_salvo()
 		local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 		local primary<const> = self.primary_projectiles[vessel_id]
 		if vessel_y < 166 and vessel_x < 217 then
-			if primary.type == projectile_type_none then
-				if laser_level > 0 then
+			if laser_level > 0 then
+				if primary.type == projectile_type_none then
 					self:spawn_laser(vessel_id, laser_level)
-				else
-					self:spawn_bullet(vessel_id)
+				elseif telemetry_enabled then
+					self:emit_event(
+						'weapon_blocked',
+						'weapon=laser|vessel=' .. tostring(vessel_id) .. '|active=1|max=1'
+					)
 				end
-			elseif telemetry_enabled then
-				local weapon<const> = primary.type == projectile_type_bullet and 'bullet' or 'laser'
-				self:emit_event(
-					'weapon_blocked',
-					'weapon=' .. weapon .. '|vessel=' .. tostring(vessel_id) .. '|active=1|max=1'
-				)
+			else
+				local secondary<const> = self.secondary_projectiles[vessel_id]
+				if primary.type == projectile_type_none then
+					self:spawn_bullet(vessel_id, primary)
+				elseif secondary.type == projectile_type_none then
+					self:spawn_bullet(vessel_id, secondary)
+				elseif telemetry_enabled then
+					self:emit_event(
+						'weapon_blocked',
+						'weapon=bullet|vessel=' .. tostring(vessel_id) .. '|active=2|max=2'
+					)
+				end
 			end
 		end
 
@@ -673,16 +705,12 @@ function player:fire_weapon_salvo()
 	end
 end
 
-function player:despawn_primary_projectile(projectile, reason)
-	local weapon
-	if projectile.type == projectile_type_bullet then
-		weapon = 'bullet'
-	else
-		weapon = 'laser'
-	end
+function player:despawn_slot_projectile(projectile, reason)
+	local projectile_type<const> = projectile.type
 	projectile.type = projectile_type_none
 	projectile.collider:set_enabled(false)
 	if telemetry_enabled then
+		local weapon<const> = projectile_name_by_type[projectile_type]
 		self:emit_event(
 			'weapon_despawn',
 			string.format(
@@ -714,27 +742,10 @@ function player:despawn_missile(missile, reason)
 	end
 end
 
-function player:despawn_uplaser(uplaser, reason)
-	uplaser.type = projectile_type_none
-	uplaser.collider:set_enabled(false)
-	if telemetry_enabled then
-		self:emit_event(
-			'weapon_despawn',
-			string.format(
-				'weapon=uplaser|vessel=%d|active=0|x=%.3f|y=%.3f|reason=%s',
-				uplaser.vessel_id,
-				uplaser.x,
-				uplaser.y,
-				reason
-			)
-		)
-	end
-end
-
 function player:update_bullet(bullet)
 	bullet.x = bullet.x + player_bullet_movement_speed
 	if bullet.x >= playfield_width then
-		self:despawn_primary_projectile(bullet, 'screen_edge')
+		self:despawn_slot_projectile(bullet, 'screen_edge')
 		return
 	end
 	local stage<const> = self.stage
@@ -743,7 +754,7 @@ function player:update_bullet(bullet)
 		bullet.y,
 		2
 	) < 2 or stage:first_solid_tile_offset(bullet.x, bullet.y, 2) < 2 then
-		self:despawn_primary_projectile(bullet, 'stage_collision')
+		self:despawn_slot_projectile(bullet, 'stage_collision')
 	end
 end
 
@@ -755,7 +766,7 @@ function player:update_laser(laser)
 			weapons_laser.tile_width
 		laser.y = (origin_y + weapons_laser.spawn_offset_y) // 1
 		if laser.x >= playfield_width - weapons_laser.tile_width then
-			self:despawn_primary_projectile(laser, 'screen_edge')
+			self:despawn_slot_projectile(laser, 'screen_edge')
 			return
 		end
 
@@ -777,12 +788,12 @@ function player:update_laser(laser)
 	else
 		laser.x = laser.x + weapons_laser.travel_speed
 		if laser.x >= playfield_width then
-			self:despawn_primary_projectile(laser, 'screen_edge')
+			self:despawn_slot_projectile(laser, 'screen_edge')
 			return
 		end
 		if state == laser_state_retract then
 			if laser.length_tiles <= weapons_laser.collision_retract_tiles then
-				self:despawn_primary_projectile(laser, 'exhausted')
+				self:despawn_slot_projectile(laser, 'exhausted')
 				return
 			end
 			laser.length_tiles = laser.length_tiles - weapons_laser.collision_retract_tiles
@@ -791,7 +802,7 @@ function player:update_laser(laser)
 			if laser.length_tiles > visible_tiles then
 				laser.length_tiles = visible_tiles
 				if visible_tiles == 0 then
-					self:despawn_primary_projectile(laser, 'exhausted')
+					self:despawn_slot_projectile(laser, 'exhausted')
 					return
 				end
 			end
@@ -802,7 +813,7 @@ function player:update_laser(laser)
 	if collision_offset < laser.length_tiles then
 		local retained_length<const> = collision_offset - 1
 		if retained_length <= 0 then
-			self:despawn_primary_projectile(laser, 'stage_collision')
+			self:despawn_slot_projectile(laser, 'stage_collision')
 		else
 			laser.length_tiles = retained_length
 			laser.state = laser_state_retract
@@ -850,7 +861,7 @@ end
 function player:update_uplaser(uplaser)
 	uplaser.y = uplaser.y - weapons_uplaser.movement_speed
 	if uplaser.y < 0 then
-		self:despawn_uplaser(uplaser, 'screen_edge')
+		self:despawn_slot_projectile(uplaser, 'screen_edge')
 		return
 	end
 
@@ -872,7 +883,7 @@ function player:update_uplaser(uplaser)
 	end
 
 	if self.stage:first_solid_tile_offset(uplaser.x, uplaser.y, uplaser.length_tiles) < uplaser.length_tiles then
-		self:despawn_uplaser(uplaser, 'stage_collision')
+		self:despawn_slot_projectile(uplaser, 'stage_collision')
 	end
 end
 
@@ -891,11 +902,23 @@ function player:update_weapons()
 				set_projectile_collider(self, primary, primary.length_tiles * weapons_laser.tile_width, 2)
 			end
 		end
-		local uplaser<const> = self.secondary_projectiles[vessel_id]
-		if uplaser.type ~= projectile_type_none then
-			self:update_uplaser(uplaser)
-			if uplaser.type ~= projectile_type_none then
-				set_projectile_collider(self, uplaser, uplaser.length_tiles * weapons_uplaser.tile_width, 8)
+		local secondary<const> = self.secondary_projectiles[vessel_id]
+		if secondary.type ~= projectile_type_none then
+			if secondary.type == projectile_type_bullet then
+				self:update_bullet(secondary)
+				if secondary.type == projectile_type_bullet then
+					set_projectile_collider(self, secondary, 6, 2)
+				end
+			else
+				self:update_uplaser(secondary)
+				if secondary.type ~= projectile_type_none then
+					set_projectile_collider(
+						self,
+						secondary,
+						secondary.length_tiles * weapons_uplaser.tile_width,
+						8
+					)
+				end
 			end
 		end
 	end
@@ -1043,7 +1066,7 @@ function player:ctor()
 			type = projectile_type_none,
 			vessel_id = vessel_id,
 			damage = 1,
-			despawn = player.despawn_primary_projectile,
+			despawn = player.despawn_slot_projectile,
 		}
 		local missile<const> = {
 			type = projectile_type_none,
@@ -1055,7 +1078,7 @@ function player:ctor()
 			type = projectile_type_none,
 			vessel_id = vessel_id,
 			damage = 1,
-			despawn = player.despawn_uplaser,
+			despawn = player.despawn_slot_projectile,
 		}
 		self.primary_projectiles[vessel_id] = primary
 		self.missile_projectiles[vessel_id] = missile

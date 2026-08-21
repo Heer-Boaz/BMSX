@@ -38,17 +38,18 @@ function __bmsx_host_test.update()
 
 	player.x = 41
 	player.y = 25
-	player:spawn_bullet(1)
+	local primary<const> = player.primary_projectiles[1]
+	local secondary<const> = player.secondary_projectiles[1]
+	player:spawn_bullet(1, primary)
 	assert(*selected_apu_source == bullet_audio_source,
 		'the retained bullet spawn did not emit its XNA fire cue')
-	local primary<const> = player.primary_projectiles[1]
 	assert(primary.x == 48 and primary.y == 33,
 		'the MSX bullet spawn anchor was not restored')
 	player:update_weapons()
 	assert(primary.type ~= 0 and primary.x == 60,
 		'the MSX bullet did not advance twelve pixels per gameplay tick')
-	player:despawn_primary_projectile(primary, 'test_reset')
-	player:spawn_bullet(1)
+	player:despawn_slot_projectile(primary, 'test_reset')
+	player:spawn_bullet(1, primary)
 	assert(player.primary_projectiles[1] == primary,
 		'firing allocated a replacement projectile instead of reusing the retained vessel slot')
 	local bullet_collision_column<const> = ((primary.x + player_bullet_movement_speed
@@ -57,6 +58,19 @@ function __bmsx_host_test.update()
 	player:update_weapons()
 	assert(primary.type == 0, 'the bullet skipped the MSX swept tile collision sample')
 	stage.solid_tape[(33 // stage.tile_size) + 1][bullet_collision_column] = 0
+
+	player:fire_weapon_salvo()
+	player:fire_weapon_salvo()
+	assert(primary.type == 1 and secondary.type == 1,
+		'the two original general weapon records did not admit two bullets per vessel')
+	player:fire_weapon_salvo()
+	assert(primary.type == 1 and secondary.type == 1,
+		'a third bullet escaped the two retained general weapon records')
+	player:update_weapons()
+	assert(primary.x == 60 and secondary.x == 60,
+		'the second retained bullet slot did not run the bullet datapath')
+	player:despawn_slot_projectile(primary, 'test_reset')
+	player:despawn_slot_projectile(secondary, 'test_reset')
 
 	player:spawn_laser(1, 1)
 	assert(*selected_apu_source == laser_audio_source,
@@ -72,7 +86,7 @@ function __bmsx_host_test.update()
 	player:update_weapons()
 	assert(primary.x == 88 and primary.length_tiles == 15,
 		'the completed laser did not enter its 32-pixel travel phase')
-	player:despawn_primary_projectile(primary, 'test_reset')
+	player:despawn_slot_projectile(primary, 'test_reset')
 
 	player:spawn_missile(1, 1)
 	local missile<const> = player.missile_projectiles[1]
