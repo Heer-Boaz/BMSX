@@ -161,7 +161,6 @@ export function runWorkbenchHostFrame(
 			logOutput,
 			currentTime,
 		);
-		workbenchMode.tickIdeInput(ide, input);
 		const hostMenuInput = hostOverlayMenu.tickInput();
 		if (hostMenuInput === HostMenuInput.ExitGame) {
 			return HostFrameRunResult.ExitRequested;
@@ -177,6 +176,9 @@ export function runWorkbenchHostFrame(
 			runtime.frameScheduler.clearQueuedTime();
 			systemOutput.flush(runtime, logOutput);
 			return HostFrameRunResult.Continue;
+		}
+		if (hostMenuInput !== HostMenuInput.Active) {
+			workbenchMode.tickIdeInput(ide, input);
 		}
 
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed;

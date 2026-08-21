@@ -3,7 +3,7 @@ import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/playe
 export function isKeyJustPressed(code: string, playerInput: PlayerInput): boolean {
 	const keyboard = playerInput.inputHandlers.keyboard;
 	const state = keyboard.getKeyState(code);
-	return state.justpressed;
+	return state.justpressed && !state.consumed;
 }
 
 export function shouldRepeatKeyFromPlayer(code: string, playerInput: PlayerInput): boolean {

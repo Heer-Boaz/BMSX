@@ -30,13 +30,15 @@ function keyWordContains(words: Uint32Array, code: string): boolean {
 	return (words[usage >>> 5] & (1 << (usage & 31))) !== 0;
 }
 
-test('mapped host chords retain the physical keyboard view while suppressing guest HID usages', () => {
+test('mapped host chords consume their physical keys from later host and guest owners', () => {
 	const { input, setTime } = createInput();
 	let chordCount = 0;
+	let releaseCount = 0;
 	const dispose = input.getGlobalShortcutRegistry().registerControlChord(
 		1,
 		['select', 'rb'],
 		() => { chordCount += 1; },
+		() => { releaseCount += 1; },
 	);
 
 	setTime(10);
@@ -48,20 +50,30 @@ test('mapped host chords retain the physical keyboard view while suppressing gue
 	assert.equal(chordCount, 1);
 	assert.equal(keyboard.getButtonState('select').consumed, true);
 	assert.equal(keyboard.getButtonState('rb').consumed, true);
-	assert.equal(keyboard.getKeyState('Backspace').consumed, false);
-	assert.equal(keyboard.getKeyState('ShiftRight').consumed, false);
+	assert.equal(keyboard.getKeyState('Backspace').consumed, true);
+	assert.equal(keyboard.getKeyState('ShiftRight').consumed, true);
 
 	const snapshot = createInputControllerSnapshot();
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'Backspace'), false);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
 
-	dispose();
 	setTime(20);
+	input.inputButton('keyboard:0', 'Backspace', false, 0, 20, 1);
+	input.inputButton('keyboard:0', 'ShiftRight', false, 0, 20, 2);
+	input.pollInput();
+	assert.equal(releaseCount, 1);
+	assert.equal(input.getPlayerInput(1).getRawButtonState('Backspace', 'keyboard').consumed, false);
+
+	setTime(30);
+	input.inputButton('keyboard:0', 'Backspace', true, 1, 30, 3);
 	input.pollInput();
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'Backspace'), true);
-	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), true);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
+	assert.equal(keyboard.getKeyState('Backspace').consumed, false);
+
+	dispose();
 	input.dispose();
 });
 

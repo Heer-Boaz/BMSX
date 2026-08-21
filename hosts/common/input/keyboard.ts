@@ -43,9 +43,8 @@ export class KeyboardInput implements KeyboardInputHandler {
 	}
 
 	/**
-	 * Consumes a mapped console control without hiding its physical key from host
-	 * keyboard owners. The matching HID usages are removed from this frame's ICU
-	 * view so a host chord cannot leak into the guest.
+	 * Consumes a mapped console control and its physical keyboard bindings for
+	 * every later owner in the current host frame.
 	 *
 	 * @param button - The mapped console control to consume.
 	 * @returns void
@@ -59,6 +58,10 @@ export class KeyboardInput implements KeyboardInputHandler {
 		if (bindings) {
 			for (let index = 0; index < bindings.length; index += 1) {
 				const code = inputBindingId(bindings[index]);
+				const keyState = this.polledKeyStates[code];
+				if (keyState) {
+					keyState.consumed = true;
+				}
 				this.hideKeyUsage(code);
 			}
 		}
