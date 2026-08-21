@@ -18,6 +18,7 @@ return {
 		'title',
 		'game_start',
 		'main',
+		'game_over',
 		'end_demo',
 	},
 	systems = {

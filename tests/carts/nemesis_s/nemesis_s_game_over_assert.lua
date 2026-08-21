@@ -60,17 +60,20 @@ function __bmsx_host_test.setup()
 		'exhausted player retained the XNA power-up row')
 	assert(director.stage == previous_stage and registry:get(ids_stage_instance) == previous_stage,
 		'game-over curtain unloaded gameplay before it closed')
-	assert(director.game_over_curtain.enabled and director.game_over_curtain.last_tile == -1,
-		'game-over curtain did not start from an empty retained strip')
+	assert(not director.game_over_curtain.enabled and director.game_over_curtain_width == 0,
+		'game-over curtain did not start from an empty retained span')
 
 	director.timelines:advance_to(curtain_timeline_id, game_over_curtain_columns)
-	assert(director.game_over_curtain.last_tile == game_over_curtain_columns - 1,
+	assert(director.game_over_curtain.enabled
+		and director.game_over_curtain_width == presentation_width,
 		'game-over curtain did not cover all XNA stage columns')
 	director.timelines:tick_frame(clock.update_milliseconds())
 	assert(director.state_machines:matches_state(test.game_over_blackout_state),
 		'completed curtain did not enter the XNA game-over blackout')
 	assert(not world.gameplay_clock_running,
 		'game-over blackout continued advancing the covered gameplay scene')
+	assert(world.active_space_id == 'game_over' and not director.game_over_curtain.enabled,
+		'game-over blackout continued presenting the covered gameplay scene')
 	assert(registry:get(ids_stage_instance) == previous_stage,
 		'game-over blackout unloaded gameplay before its authored wait')
 

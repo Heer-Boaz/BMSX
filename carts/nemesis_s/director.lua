@@ -1,9 +1,9 @@
 local bool01<const> = require('cartlib/util/bool01')
 local clock<const> = require('cartlib/clock')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gx_texture<const> = require('cartlib/gx/texture')
-local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
@@ -23,12 +23,12 @@ local game_start_timeline_id<const> = 'nemesis_s.director.game_start'
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
 local game_over_curtain_visual_id<const> = 'game_over_curtain'
-local new_game_over_curtain<const> = tile_strip_component.factory({
+local draw_game_over_curtain<const> = function(component, draw)
+	draw:rect(0, 0, component.parent.game_over_curtain_width, presentation_height, 0xff000000)
+end
+local new_game_over_curtain<const> = custom_visual_component.factory({
 	id_local = game_over_curtain_visual_id,
-	imgid = assets_game_over_curtain,
-	step_x = game_over_curtain_tile_width,
-	step_y = 0,
-	first_tile = 0,
+	draw = draw_game_over_curtain,
 	offset_z = game_over_curtain_draw_z,
 	enabled = false,
 })
@@ -152,20 +152,25 @@ function director:on_player_death()
 end
 
 function director:apply_game_over_curtain_frame(frame)
-	self.game_over_curtain.last_tile = frame - 1
+	self.game_over_curtain_width = frame * game_over_curtain_tile_width
+	self.game_over_curtain:set_enabled(frame ~= 0)
 end
 
 function director:enter_game_over()
-	gx_texture.upload(assets_game_over_curtain)
-	local curtain<const> = self.game_over_curtain
-	curtain.last_tile = curtain.first_tile - 1
-	curtain:set_enabled(true)
+	self.game_over_curtain_width = 0
+	self.game_over_curtain:set_enabled(false)
 	self.events:emit('game_over')
+end
+
+function director:enter_game_over_blackout()
+	world:set_gameplay_clock_running(false)
+	self.game_over_curtain:set_enabled(false)
+	self:set_active_space('game_over')
 end
 
 function director:ctor()
 	self.game_over_curtain = self:get_component(
-		tile_strip_component,
+		custom_visual_component,
 		game_over_curtain_visual_id
 	)
 end
@@ -361,9 +366,7 @@ local define_director_fsm<const> = function()
 						},
 					},
 					blackout = {
-						entering_state = function()
-							world:set_gameplay_clock_running(false)
-						end,
+						entering_state = director.enter_game_over_blackout,
 						timelines = {
 							[game_over_blackout_timeline_id] = {
 								def = {
@@ -409,6 +412,7 @@ local register_director_definition<const> = function()
 			player_count = 1,
 			stage_start_column = 0,
 			restarting = false,
+			game_over_curtain_width = 0,
 		},
 	})
 end
