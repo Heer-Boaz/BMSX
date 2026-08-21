@@ -14,13 +14,16 @@ local schoorsteen_ray<const> = {}
 schoorsteen_ray.__index = schoorsteen_ray
 
 local expansion_finished_event<const> = 'schoorsteen_ray.expansion.finished'
+local initial_first_tile<const> = 1
 local max_tiles<const> = schoorsteen_ray_initial_tiles
 	+ schoorsteen_ray_growth_updates * schoorsteen_ray_growth_tiles
+local contraction_updates<const> = schoorsteen_ray_growth_updates + 1
+local update_milliseconds<const> = clock.update_milliseconds()
 local new_ray_strip<const> = tile_strip_component.factory({
 	imgid = assets_schoorsteen_ray,
 	step_x = 0,
 	step_y = -schoorsteen_ray_tile_size,
-	first_tile = 1,
+	first_tile = initial_first_tile,
 	enabled = false,
 })
 local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
@@ -30,9 +33,10 @@ local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
 	enabled = false,
 })
 
-function schoorsteen_ray:apply_expansion_frame()
+function schoorsteen_ray:apply_expansion_frame(frame)
 	local ray_strip<const> = self.ray_strip
-	local last_tile<const> = ray_strip.last_tile + schoorsteen_ray_growth_tiles
+	local last_tile<const> = schoorsteen_ray_initial_tiles
+		+ (frame + 1) * schoorsteen_ray_growth_tiles
 	if last_tile < self.max_tiles then
 		ray_strip.last_tile = last_tile
 	else
@@ -40,9 +44,9 @@ function schoorsteen_ray:apply_expansion_frame()
 	end
 end
 
-function schoorsteen_ray:update_contraction()
+function schoorsteen_ray:apply_contraction_frame(frame)
 	local ray_strip<const> = self.ray_strip
-	local first_tile<const> = ray_strip.first_tile + schoorsteen_ray_growth_tiles
+	local first_tile<const> = initial_first_tile + (frame + 1) * schoorsteen_ray_growth_tiles
 	if first_tile > ray_strip.last_tile then
 		self:mark_for_disposal()
 		return
@@ -83,7 +87,7 @@ local define_fsm<const> = function()
 					expand = {
 						def = {
 							frames = timeline.range(schoorsteen_ray_growth_updates),
-							frame_duration = clock.update_milliseconds(),
+							frame_duration = update_milliseconds,
 							playback_mode = 'once',
 							apply = schoorsteen_ray.apply_expansion_frame,
 							tracks = {
@@ -104,7 +108,17 @@ local define_fsm<const> = function()
 				},
 			},
 			contracting = {
-				update = schoorsteen_ray.update_contraction,
+				timelines = {
+					contract = {
+						def = {
+							frames = timeline.range(contraction_updates),
+							frame_duration = update_milliseconds,
+							playback_mode = 'once',
+							apply = schoorsteen_ray.apply_contraction_frame,
+						},
+						play_options = { snap_to_start = false },
+					},
+				},
 			},
 		},
 	})

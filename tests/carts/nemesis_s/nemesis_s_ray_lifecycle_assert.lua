@@ -87,13 +87,13 @@ function __bmsx_host_test.update()
 		bounded_ray:apply_expansion_frame(9)
 		assert(strip.last_tile == 9,
 			'chimney ray crossed the retained solid-tile boundary')
-		bounded_ray:update_contraction()
+		bounded_ray:apply_contraction_frame(0)
 		assert(strip.first_tile == 5,
 			'chimney ray contraction did not trim four emitter-side tiles')
-		bounded_ray:update_contraction()
+		bounded_ray:apply_contraction_frame(1)
 		assert(strip.first_tile == 9,
 			'chimney ray contraction moved its retained far endpoint')
-		bounded_ray:update_contraction()
+		bounded_ray:apply_contraction_frame(2)
 		assert(registry:get(bounded_ray.id) == nil,
 			'empty chimney ray remained published')
 		local timed_ray<const> = world:spawn(ids_schoorsteen_ray_def, {
