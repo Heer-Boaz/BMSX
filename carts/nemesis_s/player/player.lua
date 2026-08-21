@@ -155,7 +155,6 @@ local weapon_sources<const> = {
 	laser = image.resolve(assets_laser),
 	missile_falling = image.resolve(assets_missile1),
 	missile_flying = image.resolve(assets_missile2),
-	uplaser = image.resolve(assets_uplaser),
 }
 
 local set_projectile_collider<const> = function(owner, projectile, width, height)
@@ -383,7 +382,7 @@ local draw_player_projectiles<const> = function(component, draw)
 				weapon_sources.bullet:blit(draw, secondary.x, secondary.y)
 			else
 				for tile_index = 0, secondary.length_tiles - 1 do
-					weapon_sources.uplaser:blit(
+					weapon_sources.laser:blit(
 						draw,
 						secondary.x + tile_index * weapons_uplaser.tile_width,
 						secondary.y

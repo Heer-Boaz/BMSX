@@ -77,7 +77,9 @@ player_option_pickup_speed_x_px_per_second = -25
 player_vessel_capacity = 3
 player_bullet_movement_speed = 12
 player_bullet_spawn_offset_x = 8
-player_bullet_spawn_offset_y = 8
+-- Name-table projectiles originate eight pixels below the original vessel
+-- record. The trimmed vessel image already starts two pixels below that record.
+player_bullet_spawn_offset_y = 6
 player_bullet_collision_backtrack = 8
 -- ABE5 retains the held-fire counter in E437 and admits another complete
 -- weapon salvo when that counter reaches fifteen gameplay updates.
@@ -296,7 +298,9 @@ weapons_laser = {
 }
 
 weapons_missile_spawn_offset_x = 8
-weapons_missile_spawn_offset_y = 8
+-- The missile sprite begins one pixel below its record, while the trimmed
+-- vessel begins two pixels below its own record.
+weapons_missile_spawn_offset_y = 7
 weapons_missile_despawn_y = 168
 weapons_missile_motion_by_level = {
 	{
@@ -318,10 +322,10 @@ weapons_uplaser = {
 	level2_growth_tiles = 2,
 	level2_edge_growth_tiles = 1,
 	level2_left_growth_px = 8,
-	-- ADBA passes DE=0800 to B224: the record keeps Y in +3 and X in +5,
-	-- so the beam starts eight pixels below the vessel without an X offset.
+	-- ADBA passes DE=0800 to B224. As with the ordinary laser, direct pixels
+	-- consume the visible vessel origin rather than its two-pixel-higher record.
 	spawn_offset_x = 0,
-	spawn_offset_y = 8,
+	spawn_offset_y = 6,
 }
 
 stage_asset_id = 'nemesis_s_stage'
@@ -403,7 +407,6 @@ assets_large_explosion_1 = 'large_explosion_1'
 assets_large_explosion_2 = 'large_explosion_2'
 assets_large_explosion_3 = 'large_explosion_3'
 assets_laser = 'laser'
-assets_uplaser = 'uplaser'
 assets_missile1 = 'missile1'
 assets_missile2 = 'missile2'
 assets_star_blue = 'star_blue'
