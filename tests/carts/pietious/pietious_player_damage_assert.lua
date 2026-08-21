@@ -30,7 +30,6 @@ function __bmsx_host_test.update()
 		player:clear_input_state()
 		player:zero_motion()
 		player:cancel_sword()
-		player:reset_hit_invulnerability_sequence()
 		player.health = player.max_health
 		player.x = player_start_x
 		player.y = player_start_y
@@ -62,7 +61,7 @@ function __bmsx_host_test.update()
 		})
 		local hit_health<const> = player.max_health - probe.damage
 		assert(player.health == hit_health, 'enemy contact did not damage the player')
-		assert(player.hit_invulnerability_timer == damage_hit_invulnerability_frames,
+		assert(not player:is_hittable(),
 			'enemy contact did not start hit invulnerability')
 		assert(player.state_machines:matches_state(test.hit_fall_state), 'enemy contact did not enter hit-fall')
 
@@ -84,7 +83,7 @@ function __bmsx_host_test.update()
 		if player.state_machines:matches_state(test.hit_recovery_state) then
 			test.saw_hit_recovery = true
 		end
-		if player.hit_invulnerability_timer > 0 or not player.state_machines:matches_state(test.quiet_state) then
+		if not player:is_hittable() or not player.state_machines:matches_state(test.quiet_state) then
 			return false
 		end
 		assert(test.saw_hit_recovery, 'hit-fall skipped hit recovery')
@@ -98,7 +97,7 @@ function __bmsx_host_test.update()
 		assert(player.health == test.hit_health - probe.damage,
 			'player did not become hittable after invulnerability expired')
 		assert(player.state_machines:matches_state(test.hit_fall_state), 'second accepted hit did not enter hit-fall')
-		assert(player.hit_invulnerability_timer == damage_hit_invulnerability_frames,
+		assert(not player:is_hittable(),
 			'second accepted hit did not restart invulnerability')
 		return true
 	end

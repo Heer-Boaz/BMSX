@@ -144,7 +144,6 @@ local state_tags<const> = {
 		damage_visual = 'g.dv',
 		movement_walk = 'g.mw',
 		movement_jump = 'g.mj',
-		hit_blink = 'g.hb',
 		player_stairs = 'g.ps',
 		world_transition_waiting = 'g.wtw',
 		world_transition = 'g.wt',
@@ -195,6 +194,7 @@ local player_pause_animation_timeline_id<const> = 'p.tl.pa'
 local player_victory_dance_timeline_id<const> = 'p.tl.vd'
 local player_hit_recovery_timeline_id<const> = 'p.tl.hr'
 local player_dying_timeline_id<const> = 'p.tl.d'
+local player_hit_invulnerability_timeline_id<const> = 'p.tl.hi'
 local player_pause_offset_x<const> = -2
 local player_pause_offset_y<const> = -8
 local victory_dance_jump_count<const> = 8
@@ -202,6 +202,7 @@ local victory_dance_jump_frame_count<const> = 20
 local victory_dance_last_frame<const> = victory_dance_jump_count * victory_dance_jump_frame_count - 1
 local player_tags<const> = {
 	in_water = 'p.w',
+	hit_invulnerable = 'p.hi',
 }
 local player_in_water_by_state<const> = {
 	[water_surface] = true,
@@ -474,16 +475,6 @@ function player:define_runtime_timelines()
 		playback_mode = 'once',
 		auto_tick = false,
 	})
-	self.timelines:define('p.seq.hi', {
-		frames = timeline.range(damage_hit_invulnerability_frames),
-		playback_mode = 'once',
-		auto_tick = false,
-	})
-	self.timelines:define('p.seq.hb', {
-		frames = timeline.range(damage_hit_blink_switch_frames),
-		playback_mode = 'loop',
-		auto_tick = false,
-	})
 	self.timelines:define('p.seq.f', {
 		frames = timeline.range(12),
 		playback_mode = 'once',
@@ -650,6 +641,7 @@ function player:ctor()
 	self.sword_collider:set_sprite(self.sword_sprite)
 	self.sword_sprite:set_enabled(false)
 	self:define_runtime_timelines()
+	self.hit_invulnerability_timeline = self.timelines:get(player_hit_invulnerability_timeline_id)
 	self.inventory_items = {}
 	self.secondary_weapon = nil
 	self.enter_leave_shrine_text_lines = {}
@@ -661,7 +653,6 @@ function player:ctor()
 	self.left_wall_collision = false
 	self.right_wall_collision = false
 	self.timelines:get('p.seq.s'):set_frame(0)
-	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self:clear_input_state()
 	self:sync_input_state()
@@ -704,7 +695,8 @@ function player:apply_presentation_state()
 		self.visible = true
 		return
 	end
-	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
+	if self:has_tag(player_tags.hit_invulnerable)
+	and ((self.hit_invulnerability_timeline:value() // damage_hit_blink_switch_frames) & 1) == 0 then
 		self:apply_color(hit_blink_color)
 	else
 		self:apply_color(0xffffffff)
@@ -795,7 +787,6 @@ end
 function player:restart_after_death()
 	self.health = self.max_health
 	self:emit_health_changed()
-	self:reset_hit_invulnerability_sequence()
 	self.events:emit('respawn')
 	self:apply_presentation_state()
 end
@@ -826,41 +817,10 @@ function player:advance_sword_sequence()
 end
 
 function player:is_hittable()
-	if self.hit_invulnerability_timer > 0 then
+	if self:has_tag(player_tags.hit_invulnerable) then
 		return false
 	end
 	return not self:has_tag(state_tags.group.damage_lock)
-end
-
-function player:update_hit_invulnerability()
-	if self.hit_invulnerability_timer == 0 then
-		return
-	end
-
-	local hit_invulnerability_sequence<const> = self.timelines:advance('p.seq.hi')
-	self.hit_invulnerability_timer = damage_hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
-
-	local hit_blink_sequence<const> = self.timelines:advance('p.seq.hb')
-	if hit_blink_sequence.wrapped then
-		self.hit_blink_on = not self.hit_blink_on
-	end
-	if self.hit_invulnerability_timer == 0 then
-		self.hit_blink_on = false
-	end
-end
-
-function player:reset_hit_invulnerability_sequence()
-	self.hit_invulnerability_timer = 0
-	self.hit_blink_on = false
-	self.timelines:get('p.seq.hi'):rewind()
-	self.timelines:get('p.seq.hb'):rewind()
-end
-
-function player:start_hit_invulnerability_sequence()
-	self.hit_invulnerability_timer = damage_hit_invulnerability_frames
-	self.hit_blink_on = true
-	self.timelines:get('p.seq.hi'):rewind()
-	self.timelines:get('p.seq.hb'):set_frame(0)
 end
 
 function player:get_hit_direction_from_source(source_x)
@@ -885,7 +845,7 @@ function player:start_dying()
 	self.hit_direction = 0
 	self.hit_substate = 0
 	self.hit_stairs_lock = false
-	self:reset_hit_invulnerability_sequence()
+	self.timelines:stop(player_hit_invulnerability_timeline_id)
 	self:zero_motion()
 	self.events:emit('dying')
 end
@@ -935,7 +895,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
-	self:start_hit_invulnerability_sequence()
+	self.timelines:play(player_hit_invulnerability_timeline_id)
 
 	if hit_direction ~= 0 then
 		self.facing = -hit_direction
@@ -2741,7 +2701,6 @@ function player:update_common_frame()
 
 	self.grounded = self:is_support_below_at(self.x, self.y, true)
 	self:apply_presentation_state()
-	self:update_hit_invulnerability()
 end
 
 local define_player_fsm<const> = function()
@@ -3246,6 +3205,24 @@ local define_player_fsm<const> = function()
 
 	fsm_library.register('player', {
 		initial = 'quiet',
+		timelines = {
+			[player_hit_invulnerability_timeline_id] = {
+				def = {
+					frames = timeline.range(damage_hit_invulnerability_frames),
+					playback_mode = 'once',
+					tracks = {
+						{
+							kind = 'tag',
+							name = 'hit_invulnerability',
+							tag = player_tags.hit_invulnerable,
+							start = { frame = 0 },
+							['end'] = { frame = damage_hit_invulnerability_frames },
+						},
+					},
+				},
+				autoplay = false,
+			},
+		},
 		-- TAG DERIVATIONS — define group and visual tags from state variant tags.
 		--
 		-- Simple array = ANY-OF: group tag is active when any listed variant is active.
@@ -3301,11 +3278,6 @@ local define_player_fsm<const> = function()
 			[state_tags.group.hit_lock_states] = {
 				state_tags.variant.hit_fall,
 				state_tags.variant.hit_collision,
-			},
-			[state_tags.group.hit_blink] = {
-				state_tags.variant.hit_fall,
-				state_tags.variant.hit_collision,
-				state_tags.variant.hit_recovery,
 			},
 			[state_tags.group.sword_activation_allowed] = {
 				any = {
@@ -3466,8 +3438,6 @@ local register_player_definition<const> = function()
 			stairs_landing_sound_pending = false,
 			health = damage_max_health,
 			max_health = damage_max_health,
-			hit_invulnerability_timer = 0,
-			hit_blink_on = false,
 			hit_substate = 0,
 			hit_direction = 0,
 			enter_leave_world_target = nil,
