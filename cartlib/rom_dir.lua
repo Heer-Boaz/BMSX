@@ -62,18 +62,26 @@ local read_header<const> = function(rom_base)
 	}
 end
 
-local register_token<const> = function(rom, entry)
-	local hi_map = rom.tokens[entry.token_hi]
-	if hi_map == nil then
-		hi_map = {}
-		rom.tokens[entry.token_hi] = hi_map
+-- The directory indexes raw TOC addresses rather than materializing one Lua
+-- graph per ROM entry. The high token word and kind remain in ROM and are
+-- verified on lookup; only an actual low-word collision allocates a side list.
+local register_entry_base<const> = function(rom, token_lo, entry_base)
+	local primary_entry_base<const> = rom.entry_base_by_token_lo[token_lo]
+	if primary_entry_base == nil then
+		rom.entry_base_by_token_lo[token_lo] = entry_base
+		return
 	end
-	local kind_map = hi_map[entry.token_lo]
-	if kind_map == nil then
-		kind_map = {}
-		hi_map[entry.token_lo] = kind_map
+	local collision_entries_by_token_lo = rom.collision_entries_by_token_lo
+	if collision_entries_by_token_lo == nil then
+		collision_entries_by_token_lo = {}
+		rom.collision_entries_by_token_lo = collision_entries_by_token_lo
 	end
-	kind_map[entry.kind] = entry
+	local collision_entries = collision_entries_by_token_lo[token_lo]
+	if collision_entries == nil then
+		collision_entries = {}
+		collision_entries_by_token_lo[token_lo] = collision_entries
+	end
+	collision_entries[#collision_entries + 1] = entry_base
 end
 
 local entry_span<const> = function(rom_base, start, finish)
@@ -119,56 +127,19 @@ local parse_rom<const> = function(header)
 	local toc_base<const> = header.rom_base + header.toc_off
 	local toc<const>: *word = toc_base
 	local entry_count<const> = toc[toc_header_entry_count_index]
-	local string_table_offset<const> = toc_header_size + entry_count * toc_entry_size
 
 	local rom<const> = {
 		header = header,
-		tokens = {},
-		entries = {},
+		toc_base = toc_base,
+		entry_count = entry_count,
+		string_table_offset = toc_header_size + entry_count * toc_entry_size,
+		entry_base_by_token_lo = {},
+		record_by_entry_base = {},
 	}
 	for index = 0, entry_count - 1 do
 		local entry_base<const> = toc_base + toc_header_size + index * toc_entry_size
 		local packed_entry<const>: *word = entry_base
-		local payload_addr<const>, payload_len<const> = entry_span(
-			header.rom_base,
-			packed_entry[toc_entry_data_start_index],
-			packed_entry[toc_entry_data_end_index]
-		)
-		local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(
-			header.rom_base,
-			packed_entry[toc_entry_metadata_start_index],
-			packed_entry[toc_entry_metadata_end_index]
-		)
-		local collision_addr<const> = entry_span(
-			header.rom_base,
-			packed_entry[toc_entry_collision_start_index],
-			packed_entry[toc_entry_collision_end_index]
-		)
-		local id<const> = read_toc_string(
-			toc_base,
-			string_table_offset,
-			packed_entry[toc_entry_resid_index],
-			packed_entry[toc_entry_resid_length_index]
-		)
-		local kind<const> = packed_entry[toc_entry_kind_index]
-		local entry<const> = {
-			id = id,
-			token_lo = packed_entry[toc_entry_token_lo_index],
-			token_hi = packed_entry[toc_entry_token_hi_index],
-			kind = kind,
-			op = packed_entry[toc_entry_op_index],
-			rom = rom,
-			type = kind_name_by_id[kind],
-			addr = payload_addr,
-			len = payload_len,
-			meta_start = meta_start,
-			meta_finish = meta_finish,
-			meta_addr = meta_addr,
-			meta_len = meta_len,
-			collision_addr = collision_addr,
-		}
-		rom.entries[#rom.entries + 1] = entry
-		register_token(rom, entry)
+		register_entry_base(rom, packed_entry[toc_entry_token_lo_index], entry_base)
 	end
 	return rom
 end
@@ -187,27 +158,32 @@ local hash_id<const> = function(id)
 	return lo, hi
 end
 
+local entry_matches<const> = function(entry_base, token_hi, kind)
+	local entry<const>: *word = entry_base
+	return entry[toc_entry_token_hi_index] == token_hi
+		and (kind == nil or entry[toc_entry_kind_index] == kind)
+end
+
 local find_by_token<const> = function(rom, token_lo, token_hi, kind)
-	if rom == nil then
-		return nil
+	local entry_base<const> = rom.entry_base_by_token_lo[token_lo]
+	local found
+	if entry_base ~= nil and entry_matches(entry_base, token_hi, kind) then
+		found = entry_base
 	end
-	local hi_map<const> = rom.tokens[token_hi]
-	if hi_map == nil then
-		return nil
-	end
-	local kind_map<const> = hi_map[token_lo]
-	if kind_map == nil then
-		return nil
-	end
-	if kind ~= nil then
-		return kind_map[kind]
-	end
-	local found = nil
-	for _, entry in pairs(kind_map) do
-		if found ~= nil then
-			error('ROM lookup is ambiguous; pass a TOC kind.')
+	local collision_entries_by_token_lo<const> = rom.collision_entries_by_token_lo
+	if collision_entries_by_token_lo ~= nil then
+		local collision_entries<const> = collision_entries_by_token_lo[token_lo]
+		if collision_entries ~= nil then
+			for index = 1, #collision_entries do
+				local collision_entry_base<const> = collision_entries[index]
+				if entry_matches(collision_entry_base, token_hi, kind) then
+					if found ~= nil and kind == nil then
+						error('ROM lookup is ambiguous; pass a TOC kind.')
+					end
+					found = collision_entry_base
+				end
+			end
 		end
-		found = entry
 	end
 	return found
 end
@@ -215,67 +191,86 @@ end
 local find_in_roms<const> = function(roms, id, kind)
 	local token_lo<const>, token_hi<const> = hash_id(id)
 	for index = 1, #roms do
-		local entry<const> = find_by_token(roms[index], token_lo, token_hi, kind)
-		if entry ~= nil then
-			if entry.op == op_delete then
-				return nil, true
+		local rom<const> = roms[index]
+		local entry_base<const> = find_by_token(rom, token_lo, token_hi, kind)
+		if entry_base ~= nil then
+			local entry<const>: *word = entry_base
+			if entry[toc_entry_op_index] == op_delete then
+				return nil
 			end
-			return entry, false
+			return rom, entry_base
 		end
 	end
-	return nil, false
+	return nil
 end
 
-local decode_payload<const> = function(entry)
-	if entry.payload_loaded then
-		return entry.payload_value
+local decode_payload<const> = function(record)
+	if record.payload_loaded then
+		return record.payload_value
 	end
-	entry.payload_loaded = true
-	entry.payload_value = bin.decode(entry.addr, entry.id)
-	return entry.payload_value
+	record.payload_loaded = true
+	record.payload_value = bin.decode(record.addr, record.resid)
+	return record.payload_value
 end
 
-local decode_meta<const> = function(entry)
-	if entry.meta_loaded then
-		return entry.meta_value
-	end
-	entry.meta_loaded = true
-	if entry.meta_len == 0 then
+local decode_meta<const> = function(rom, id, meta_addr, meta_len, meta_start, meta_finish)
+	if meta_len == 0 then
 		return nil
 	end
-	local header<const> = entry.rom.header
-	if header.metadata_prop_names ~= nil and entry.meta_start >= header.metadata_payload_off and entry.meta_finish <= header.metadata_off + header.metadata_len then
-		entry.meta_value = bin.decode_with_props(entry.meta_addr, header.metadata_prop_names, entry.id .. ' metadata')
-	else
-		entry.meta_value = bin.decode(entry.meta_addr, entry.id .. ' metadata')
+	local header<const> = rom.header
+	if header.metadata_prop_names ~= nil
+	and meta_start >= header.metadata_payload_off
+	and meta_finish <= header.metadata_off + header.metadata_len then
+		return bin.decode_with_props(
+			meta_addr,
+			header.metadata_prop_names,
+			id .. ' metadata'
+		)
 	end
-	return entry.meta_value
+	return bin.decode(meta_addr, id .. ' metadata')
 end
 
-local record_for_entry<const> = function(entry)
-	if entry.record ~= nil then
-		return entry.record
+local record_for_entry<const> = function(rom, entry_base, id)
+	local cached<const> = rom.record_by_entry_base[entry_base]
+	if cached ~= nil then
+		return cached
 	end
-	local out<const> = {
-		resid = entry.id,
-		type = entry.type,
-		addr = entry.addr,
-		len = entry.len,
+	local entry<const>: *word = entry_base
+	local addr<const>, len<const> = entry_span(
+		rom.header.rom_base,
+		entry[toc_entry_data_start_index],
+		entry[toc_entry_data_end_index]
+	)
+	local meta_addr<const>, meta_len<const>, meta_start<const>, meta_finish<const> = entry_span(
+		rom.header.rom_base,
+		entry[toc_entry_metadata_start_index],
+		entry[toc_entry_metadata_end_index]
+	)
+	local kind<const> = entry[toc_entry_kind_index]
+	local record<const> = {
+		resid = id,
+		type = kind_name_by_id[kind],
+		addr = addr,
+		len = len,
 	}
-	local meta<const> = decode_meta(entry)
+	rom.record_by_entry_base[entry_base] = record
+	local meta<const> = decode_meta(rom, id, meta_addr, meta_len, meta_start, meta_finish)
 	if meta ~= nil then
-		out.meta = meta
+		record.meta = meta
 	end
-	if entry.kind == kind_image then
-		out.imgmeta = meta
-		out.collision_addr = entry.collision_addr
-	elseif entry.kind == kind_texture then
-		out.texturemeta = meta
-	elseif entry.kind == kind_audio then
-		out.audiometa = meta
+	if kind == kind_image then
+		record.imgmeta = meta
+		record.collision_addr = entry_span(
+			rom.header.rom_base,
+			entry[toc_entry_collision_start_index],
+			entry[toc_entry_collision_end_index]
+		)
+	elseif kind == kind_texture then
+		record.texturemeta = meta
+	elseif kind == kind_audio then
+		record.audiometa = meta
 	end
-	entry.record = out
-	return out
+	return record
 end
 
 local list_entries<const> = function(roms, kind)
@@ -283,12 +278,21 @@ local list_entries<const> = function(roms, kind)
 	local blocked<const> = {}
 	for rom_index = 1, #roms do
 		local rom<const> = roms[rom_index]
-		for entry_index = 1, #rom.entries do
-			local entry<const> = rom.entries[entry_index]
-			if (kind == nil or entry.kind == kind) and not blocked[entry.id] then
-				blocked[entry.id] = true
-				if entry.op ~= op_delete then
-					out[#out + 1] = entry
+		for entry_index = 0, rom.entry_count - 1 do
+			local entry_base<const> = rom.toc_base + toc_header_size + entry_index * toc_entry_size
+			local entry<const>: *word = entry_base
+			if kind == nil or entry[toc_entry_kind_index] == kind then
+				local id<const> = read_toc_string(
+					rom.toc_base,
+					rom.string_table_offset,
+					entry[toc_entry_resid_index],
+					entry[toc_entry_resid_length_index]
+				)
+				if not blocked[id] then
+					blocked[id] = true
+					if entry[toc_entry_op_index] ~= op_delete then
+						out[#out + 1] = record_for_entry(rom, entry_base, id)
+					end
 				end
 			end
 		end
@@ -308,51 +312,51 @@ function rom_dir.reload_cartridge_directory()
 end
 
 function rom_dir.resource(id)
-	local entry<const> = find_in_roms(active_plus_system_roms, id)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id)
+	if rom == nil then
 		error('ROM resource "' .. tostring(id) .. '" was not found.')
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 function rom_dir.lookup(id)
-	local entry<const> = find_in_roms(active_plus_system_roms, id)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id)
+	if rom == nil then
 		return nil
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 function rom_dir.image(id)
-	local entry<const> = find_in_roms(active_plus_system_roms, id, kind_image)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id, kind_image)
+	if rom == nil then
 		return nil
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 function rom_dir.texture(id)
-	local entry<const> = find_in_roms(active_plus_system_roms, id, kind_texture)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id, kind_texture)
+	if rom == nil then
 		return nil
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 function rom_dir.system_image(id)
-	local entry<const> = find_in_roms(system_roms, id, kind_image)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(system_roms, id, kind_image)
+	if rom == nil then
 		return nil
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 function rom_dir.audio(id)
-	local entry<const> = find_in_roms(active_roms, id, kind_audio)
-	if entry == nil then
+	local rom<const>, entry_base<const> = find_in_roms(active_roms, id, kind_audio)
+	if rom == nil then
 		return nil
 	end
-	return record_for_entry(entry)
+	return record_for_entry(rom, entry_base, id)
 end
 
 
