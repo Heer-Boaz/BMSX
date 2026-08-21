@@ -1,4 +1,5 @@
 local velocity<const> = require('cartlib/velocity')
+local ballistic_movement_component<const> = require('cartlib/physics/ballistic_movement_component')
 local bouncing_movement_component<const> = require('cartlib/physics/bouncing_movement_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local kinematic_movement_component<const> = require('cartlib/physics/kinematic_movement_component')
@@ -38,6 +39,10 @@ function velocity_system.new(world)
 	)
 	self._rational_component_view = world:active_tick_view(velocity_component, clock.gameplay)
 	self._fixed_point_component_view = world:active_tick_view(fixed_point_velocity_component, clock.gameplay)
+	self._ballistic_component_view = world:active_tick_view(
+		ballistic_movement_component,
+		clock.gameplay
+	)
 	return self
 end
 
@@ -78,6 +83,13 @@ function velocity_system:update_fixed_point()
 		component.fraction_y = y & 0xff
 		parent.x = parent.x + (x >> 8)
 		parent.y = parent.y + (y >> 8)
+	end
+
+	local ballistic_components<const> = self._ballistic_component_view.components
+	for index = 1, #ballistic_components do
+		local component<const> = ballistic_components[index]
+		component.velocity_x = component.velocity_x + component.acceleration_x
+		component.velocity_y = component.velocity_y + component.acceleration_y
 	end
 end
 

@@ -1,5 +1,6 @@
 local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
+local ballistic_movement_component<const> = require('cartlib/physics/ballistic_movement_component')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -25,12 +26,17 @@ local hit_area<const> = {
 }
 
 local set_direction<const> = function(self, direction)
-	self.direction = direction
+	if self.direction ~= direction then
+		self.direction = direction
+		self.motion.velocity_x = -self.motion.velocity_x
+	end
 	self.sprite_component.flip_h = direction == zak_foe_direction_left
 end
 
 function zak_foe:ctor()
 	self:get_component(collider_2d_component).local_area = hit_area
+	self.motion = self:get_component(ballistic_movement_component)
+	self.motion:set_enabled(false)
 end
 
 function zak_foe:onspawn()
@@ -46,7 +52,15 @@ function zak_foe:update_stationary()
 end
 
 function zak_foe:enter_jumping()
-	self.vertical_speed = zak_foe_initial_vertical_speed
+	self.motion:set_enabled(true)
+	self.motion:set_velocity_pixels_per_second(
+		zak_foe_horizontal_speed_px_per_second * self.direction,
+		zak_foe_initial_vertical_speed_px_per_second
+	)
+	self.motion:set_acceleration_pixels_per_second_squared(
+		0,
+		zak_foe_vertical_acceleration_px_per_second_squared
+	)
 	self:set_imgid(assets_zak_foe_jump)
 end
 
@@ -55,9 +69,6 @@ function zak_foe:update_jumping()
 		return
 	end
 	self.actioneffects:trigger(fire_effect_id)
-	self.x = self.x + zak_foe_horizontal_speed * self.direction
-	self.y = self.y + self.vertical_speed
-	self.vertical_speed = self.vertical_speed + zak_foe_vertical_acceleration
 
 	local stage<const> = self.stage
 	if self.direction == zak_foe_direction_left then
@@ -82,13 +93,15 @@ function zak_foe:update_jumping()
 end
 
 function zak_foe:enter_recovering()
+	local motion<const> = self.motion
+	motion:set_enabled(false)
+	motion.velocity_x = 0
+	motion.velocity_y = 0
+	motion.acceleration_x = 0
+	motion.acceleration_y = 0
+	motion.fraction_y = 0
 	self.y = self.ground_y
 	self:set_imgid(assets_zak_foe_recover)
-end
-
-function zak_foe:enter_prepare_jump()
-	self.vertical_speed = 0
-	self:set_imgid(assets_zak_foe_stand)
 end
 
 local define_fsm<const> = function()
@@ -96,7 +109,9 @@ local define_fsm<const> = function()
 		initial = 'prepare_jump',
 		states = {
 			prepare_jump = {
-				entering_state = zak_foe.enter_prepare_jump,
+				entering_state = function(self)
+					self:set_imgid(assets_zak_foe_stand)
+				end,
 				update = zak_foe.update_stationary,
 				timelines = {
 					prepare_jump = {
@@ -149,6 +164,7 @@ local register_definition<const> = function()
 		components = {
 			enemy.new_collider,
 			stage_scroll_follower_component.new,
+			ballistic_movement_component.new,
 			actioneffect_component.factory({ fire_effect_id }),
 			timeline_component.new,
 			fsm_component.factory({ ids_zak_foe_fsm }),
@@ -159,7 +175,6 @@ local register_definition<const> = function()
 			small_fry = true,
 			drop_definition_id = ids_roodje_def,
 			direction = zak_foe_direction_left,
-			vertical_speed = 0,
 			z = zak_foe_draw_z,
 		},
 	})

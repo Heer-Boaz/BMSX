@@ -4,6 +4,15 @@ local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
+local update_seconds<const> = clock.update_milliseconds() * 0.001
+local jump_velocity_q8<const> = math.round(
+	zak_foe_horizontal_speed_px_per_second * update_seconds * 0x100
+)
+local jump_acceleration_q8<const> = math.round(
+	zak_foe_vertical_acceleration_px_per_second_squared *
+		update_seconds * update_seconds * 0x100
+)
+
 __bmsx_host_test = {
 	frames = 0,
 	phase = 'spawn',
@@ -55,6 +64,30 @@ function __bmsx_host_test.update()
 			and elapsed <= zak_foe_prepare_ms + clock.update_milliseconds(),
 			'ZakFoe prepare timeline changed its authored cadence')
 		test.jumping_time_ms = world.gameplay_time_ms
+		test.jump_sample_time_ms = world.gameplay_time_ms + clock.update_milliseconds()
+		test.jump_start_x = test.foe.x
+		test.jump_start_y = test.foe.y
+		local motion<const> = test.foe.motion
+		assert(motion.velocity_x == -jump_velocity_q8
+			and motion.velocity_y == -jump_velocity_q8,
+			'ZakFoe jump did not retain its authored XNA launch velocity')
+		assert(motion.acceleration_x == 0
+			and motion.acceleration_y == jump_acceleration_q8,
+			'ZakFoe jump did not retain its authored XNA acceleration')
+	elseif test.jumping_time_ms ~= nil
+	and test.jump_sampled == nil
+	and world.gameplay_time_ms >= test.jump_sample_time_ms
+	and state_machines:matches_state(test.jumping_state) then
+		local motion<const> = test.foe.motion
+		local delta_x<const> = test.foe.x - test.jump_start_x
+		local delta_y<const> = test.foe.y - test.jump_start_y
+		assert(math.abs(delta_x + (jump_velocity_q8 >> 8)) <= 1,
+			'ZakFoe horizontal jump speed changed with the gameplay cadence: ' .. delta_x)
+		assert(math.abs(delta_y + (jump_velocity_q8 >> 8)) <= 1,
+			'ZakFoe vertical launch speed changed with the gameplay cadence: ' .. delta_y)
+		assert(motion.velocity_y == -jump_velocity_q8 + jump_acceleration_q8,
+			'ZakFoe acceleration was not integrated after movement')
+		test.jump_sampled = true
 	elseif test.jumping_time_ms ~= nil
 	and test.recovering_time_ms == nil
 	and state_machines:matches_state(test.recovering_state) then
