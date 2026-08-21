@@ -88,7 +88,7 @@ function __bmsx_host_test.setup()
 	assert(story.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
 	assert(story.primary_text.static_text_line_count == 4 and story.primary_text.offset_y == 144,
 		'first story caption differs from the XNA layout')
-	local story_panel_frames<const> = { 1270, 538, 481, 418, 362, 1019, 2101, 1263, 761 }
+	local story_panel_frames<const> = { 1257, 538, 480, 419, 367, 1014, 2101, 1202, 839 }
 	local story_frame_ms<const> = clock.frame_delta_milliseconds()
 	for index = 1, #story_panel_frames do
 		assert(story.timelines:get('nemesis_s.story.slide.' .. tostring(index)).duration_ms
@@ -100,17 +100,23 @@ function __bmsx_host_test.setup()
 	story.state_machines:transition_to('/playing/slide_6')
 	assert(story.secondary_text.visible and story.sprite_component.imgid == nil,
 		'Pieton interlude did not start from its authored black frame')
-	story.timelines:advance_to('nemesis_s.story.slide.6', 18)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 125)
+	assert(story.sprite_component.imgid == nil,
+		'Pieton portrait appeared before the original 50 Hz panel boundary')
+	story.timelines:advance_to('nemesis_s.story.slide.6', 126)
 	assert(story.sprite_component.imgid == 'story_piet2', 'Pieton interlude did not reveal its image')
-	story.timelines:advance_to('nemesis_s.story.slide.6', 61)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 158)
 	assert(story.curtain_start == 78 and story.curtain_end == 62,
 		'Pieton curtain did not reach its retained upper reveal bounds')
-	story.timelines:advance_to('nemesis_s.story.slide.6', 198)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 310)
 	assert(story.curtain_start == 126 and story.curtain_end == 110,
 		'Pieton curtain did not return to its retained lower bounds')
-	story.timelines:advance_to('nemesis_s.story.slide.6', 362)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 663)
 	assert(story.curtain_end == 4 and story.secondary_text.glyph_visible_height == nil,
 		'Pieton wipe did not reveal the complete second caption')
+	story.timelines:advance_to('nemesis_s.story.slide.6', 1003)
+	assert(story.curtain_count == 8,
+		'Pieton panel did not reach black on the original transition boundary')
 	story.events:emit('story_done')
 	assert(director.state_machines:matches_state(test.title_state), 'story did not advance to title')
 	assert(world.active_space_id == 'title', 'title did not own the active presentation space')

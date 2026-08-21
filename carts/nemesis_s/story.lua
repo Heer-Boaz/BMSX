@@ -19,47 +19,38 @@ story.__index = story
 local story_definition_id<const> = 'nemesis_s.story'
 local story_instance_id<const> = 'nemesis_s.story'
 local story_fsm_id<const> = 'nemesis_s.story.fsm'
--- The custom story effects were authored in milliseconds and played at 0.7x
--- on a 50 Hz presentation clock. Lower those authored boundaries once into
--- physical frames; the 20 ms wipe consequently keeps its required alternating
--- one/two-frame cadence without a runtime play-rate multiply.
-local story_effect_milliseconds_per_frame<const> = 14
 local frame_at_or_after<const> = timeline.frame_at_or_after
-local reveal_end_frame<const> = frame_at_or_after(240, story_effect_milliseconds_per_frame)
-local slide_out_step_milliseconds<const> = 150
-local slide_out_duration_frames<const> = frame_at_or_after(
-	8 * slide_out_step_milliseconds,
-	story_effect_milliseconds_per_frame
-)
-local next_slide_wait_frames<const> = frame_at_or_after(200, story_effect_milliseconds_per_frame)
+local normal_slide_out_duration_frames<const> = 86
+local normal_next_slide_wait_frames<const> = 15
+local normal_slide_out_offsets<const> = { 0, 11, 22, 33, 43, 54, 65, 75 }
 local curtain_none<const> = 0
 local curtain_slide<const> = 1
 local curtain_venom<const> = 2
--- Each duration spans one retained panel group in the 50 Hz Nemesis 2 story.
--- The original sequence changes more images inside several groups; this cart
--- retains its own nine images while preserving the physical VBlank boundaries.
+-- Content-to-content boundaries measured with Nemesis 2 on a 50 Hz European MSX1.
+-- The cart replaces the original pictures and captions, but each authored
+-- panel still owns the corresponding original presentation interval.
 local story_slides<const> = {
-	{ imgid = 'story_coup', text = game_text.story_1_text, line_count = 4, text_y = 144, duration_frames = 1270 },
+	{ imgid = 'story_coup', text = game_text.story_1_text, line_count = 4, text_y = 144, duration_frames = 1257 },
 	{ imgid = 'story_piet1', text = game_text.story_2_text, line_count = 5, text_y = 128, duration_frames = 538 },
-	{ imgid = 'story_escape', text = game_text.story_3_text, line_count = 4, text_y = 144, duration_frames = 481 },
-	{ imgid = 'story_boot', text = game_text.story_4_text, line_count = 3, text_y = 152, duration_frames = 418 },
-	{ imgid = 'story_winterstad', text = game_text.story_5_text, line_count = 4, text_y = 160, duration_frames = 362 },
-	{ text = game_text.story_6_text, line_count = 1, text_y = 128, duration_frames = 1019 },
+	{ imgid = 'story_escape', text = game_text.story_3_text, line_count = 4, text_y = 144, duration_frames = 480 },
+	{ imgid = 'story_boot', text = game_text.story_4_text, line_count = 3, text_y = 152, duration_frames = 419 },
+	{ imgid = 'story_winterstad', text = game_text.story_5_text, line_count = 4, text_y = 160, duration_frames = 367 },
+	{ text = game_text.story_6_text, line_count = 1, text_y = 128, duration_frames = 1014 },
 	{ imgid = 'story_map', text = game_text.story_7_text, line_count = 6, text_y = 144, duration_frames = 2101 },
-	{ imgid = 'story_metalion', text = game_text.story_8_text, line_count = 5, text_y = 144, duration_frames = 1263 },
-	{ imgid = 'story_pilot', text = game_text.story_9_text, line_count = 6, text_y = 128, duration_frames = 761 },
+	{ imgid = 'story_metalion', text = game_text.story_8_text, line_count = 5, text_y = 144, duration_frames = 1202 },
+	{ imgid = 'story_pilot', text = game_text.story_9_text, line_count = 6, text_y = 128, duration_frames = 839 },
 }
 
 local reveal_keys<const> = {
 	{ frame = 0, value = 0 },
-	{ frame = frame_at_or_after(100, story_effect_milliseconds_per_frame), value = 1 },
-	{ frame = frame_at_or_after(120, story_effect_milliseconds_per_frame), value = 2 },
-	{ frame = frame_at_or_after(140, story_effect_milliseconds_per_frame), value = 3 },
-	{ frame = frame_at_or_after(160, story_effect_milliseconds_per_frame), value = 4 },
-	{ frame = frame_at_or_after(180, story_effect_milliseconds_per_frame), value = 5 },
-	{ frame = frame_at_or_after(200, story_effect_milliseconds_per_frame), value = 6 },
-	{ frame = frame_at_or_after(220, story_effect_milliseconds_per_frame), value = 7 },
-	{ frame = reveal_end_frame, value = 8 },
+	{ frame = 8, value = 1 },
+	{ frame = 9, value = 2 },
+	{ frame = 10, value = 3 },
+	{ frame = 12, value = 4 },
+	{ frame = 13, value = 5 },
+	{ frame = 15, value = 6 },
+	{ frame = 16, value = 7 },
+	{ frame = 18, value = 8 },
 }
 
 local draw_slide_curtain<const> = function(component, draw)
@@ -111,16 +102,13 @@ local apply_venom_image<const> = function(target, visible)
 	end
 end
 
-local build_curtain_count_keys<const> = function(start_frame)
+local build_curtain_count_keys<const> = function(start_frame, offsets)
 	local keys<const> = {
 		{ frame = 0, value = 0 },
 	}
-	for count = 1, 8 do
+	for count = 1, #offsets do
 		keys[#keys + 1] = {
-			frame = start_frame + frame_at_or_after(
-				(count - 1) * slide_out_step_milliseconds,
-				story_effect_milliseconds_per_frame
-			),
+			frame = start_frame + offsets[count],
 			value = count,
 		}
 	end
@@ -130,8 +118,8 @@ end
 local build_normal_timeline<const> = function(slide)
 	local duration_frames<const> = slide.duration_frames
 	local slide_out_start_frame<const> = duration_frames
-		- slide_out_duration_frames
-		- next_slide_wait_frames
+		- normal_slide_out_duration_frames
+		- normal_next_slide_wait_frames
 	return {
 		frames = timeline.range(duration_frames),
 		playback_mode = 'once',
@@ -147,7 +135,7 @@ local build_normal_timeline<const> = function(slide)
 				kind = 'value',
 				interpolation = 'step',
 				path = { 'curtain_count' },
-				keys = build_curtain_count_keys(slide_out_start_frame),
+				keys = build_curtain_count_keys(slide_out_start_frame, normal_slide_out_offsets),
 			},
 			{
 				kind = 'value',
@@ -163,31 +151,23 @@ local build_normal_timeline<const> = function(slide)
 end
 
 local venom_duration_frames<const> = story_slides[6].duration_frames
-local venom_up_step_milliseconds<const> = 100
-local venom_up_end_frame<const> = reveal_end_frame + frame_at_or_after(
-	6 * venom_up_step_milliseconds,
-	story_effect_milliseconds_per_frame
-)
-local venom_hold_end_frame<const> = venom_up_end_frame + frame_at_or_after(
-	1000,
-	story_effect_milliseconds_per_frame
-)
-local venom_down_end_frame<const> = venom_hold_end_frame + frame_at_or_after(
-	6 * slide_out_step_milliseconds,
-	story_effect_milliseconds_per_frame
-)
-local venom_wipe_step_milliseconds<const> = 20
-local venom_wipe_end_frame<const> = venom_down_end_frame + frame_at_or_after(
-	106 * venom_wipe_step_milliseconds,
-	story_effect_milliseconds_per_frame
-)
-local venom_secondary_end_frame<const> = venom_wipe_end_frame + frame_at_or_after(
-	8 * venom_wipe_step_milliseconds,
-	story_effect_milliseconds_per_frame
-)
-local venom_slide_out_start_frame<const> = venom_duration_frames
-	- slide_out_duration_frames
-	- next_slide_wait_frames
+-- The original 50 Hz Venom panel starts its portrait at frame 126, completes
+-- the opening at 158, closes over frames 246..310, wipes over 330..630,
+-- reveals the second caption over 651..663 and begins its exit at 961.
+-- The replacement portrait has more geometric steps, so those steps are
+-- distributed over the same retained VBlank spans instead of reviving the
+-- XNA millisecond timers.
+local venom_image_start_frame<const> = 126
+local venom_open_end_frame<const> = 158
+local venom_close_start_frame<const> = 246
+local venom_close_end_frame<const> = 310
+local venom_wipe_start_frame<const> = 330
+local venom_wipe_end_frame<const> = 630
+local venom_curtain_clear_frame<const> = 631
+local venom_secondary_start_frame<const> = 651
+local venom_secondary_end_frame<const> = 663
+local venom_slide_out_start_frame<const> = 961
+local venom_slide_out_offsets<const> = { 0, 6, 12, 18, 24, 30, 36, 42 }
 
 local build_secondary_reveal_keys<const> = function()
 	local keys<const> = {
@@ -195,9 +175,9 @@ local build_secondary_reveal_keys<const> = function()
 	}
 	for height = 1, 8 do
 		keys[#keys + 1] = {
-			frame = venom_wipe_end_frame + frame_at_or_after(
-				height * venom_wipe_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_secondary_start_frame + frame_at_or_after(
+				(height - 1) * (venom_secondary_end_frame - venom_secondary_start_frame),
+				7
 			),
 			value = height,
 		}
@@ -208,49 +188,49 @@ end
 local build_venom_timeline<const> = function()
 	local curtain_start_keys<const> = {
 		{ frame = 0, value = 126 },
-		{ frame = reveal_end_frame, value = 126 },
+		{ frame = venom_image_start_frame, value = 126 },
 	}
 	local curtain_end_keys<const> = {
 		{ frame = 0, value = 110 },
-		{ frame = reveal_end_frame, value = 110 },
+		{ frame = venom_image_start_frame, value = 110 },
 	}
 	for step = 1, 6 do
 		curtain_start_keys[#curtain_start_keys + 1] = {
-			frame = reveal_end_frame + frame_at_or_after(
-				step * venom_up_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_image_start_frame + frame_at_or_after(
+				step * (venom_open_end_frame - venom_image_start_frame),
+				6
 			),
 			value = 126 - step * 8,
 		}
 		curtain_end_keys[#curtain_end_keys + 1] = {
-			frame = reveal_end_frame + frame_at_or_after(
-				step * venom_up_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_image_start_frame + frame_at_or_after(
+				step * (venom_open_end_frame - venom_image_start_frame),
+				6
 			),
 			value = 110 - step * 8,
 		}
 	end
 	for step = 1, 6 do
 		curtain_start_keys[#curtain_start_keys + 1] = {
-			frame = venom_hold_end_frame + frame_at_or_after(
-				step * slide_out_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_close_start_frame + frame_at_or_after(
+				(step - 1) * (venom_close_end_frame - venom_close_start_frame),
+				5
 			),
 			value = 78 + step * 8,
 		}
 		curtain_end_keys[#curtain_end_keys + 1] = {
-			frame = venom_hold_end_frame + frame_at_or_after(
-				step * slide_out_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_close_start_frame + frame_at_or_after(
+				(step - 1) * (venom_close_end_frame - venom_close_start_frame),
+				5
 			),
 			value = 62 + step * 8,
 		}
 	end
 	for step = 1, 106 do
 		curtain_end_keys[#curtain_end_keys + 1] = {
-			frame = venom_down_end_frame + frame_at_or_after(
-				step * venom_wipe_step_milliseconds,
-				story_effect_milliseconds_per_frame
+			frame = venom_wipe_start_frame + frame_at_or_after(
+				(step - 1) * (venom_wipe_end_frame - venom_wipe_start_frame),
+				105
 			),
 			value = 110 - step,
 		}
@@ -272,7 +252,7 @@ local build_venom_timeline<const> = function()
 				apply = apply_venom_image,
 				keys = {
 					{ frame = 0, value = false },
-					{ frame = reveal_end_frame, value = true },
+					{ frame = venom_image_start_frame, value = true },
 				},
 			},
 			{
@@ -297,7 +277,7 @@ local build_venom_timeline<const> = function()
 				kind = 'value',
 				interpolation = 'step',
 				path = { 'curtain_count' },
-				keys = build_curtain_count_keys(venom_slide_out_start_frame),
+				keys = build_curtain_count_keys(venom_slide_out_start_frame, venom_slide_out_offsets),
 			},
 			{
 				kind = 'value',
@@ -305,8 +285,8 @@ local build_venom_timeline<const> = function()
 				apply = apply_curtain_mode,
 				keys = {
 					{ frame = 0, value = curtain_none },
-					{ frame = reveal_end_frame, value = curtain_venom },
-					{ frame = venom_wipe_end_frame, value = curtain_none },
+					{ frame = venom_image_start_frame, value = curtain_venom },
+					{ frame = venom_curtain_clear_frame, value = curtain_none },
 					{ frame = venom_slide_out_start_frame, value = curtain_slide },
 				},
 			},

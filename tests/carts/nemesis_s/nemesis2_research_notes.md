@@ -160,6 +160,27 @@ it does not shorten the ten-update expansion phase.
 - The custom XNA stage layout, art, multiplayer extensions and audio assets
   remain cart-owned where the original MSX game has no corresponding content.
 
+## 50 Hz story presentation
+
+- The story cadence was traced on a 50 Hz European MSX1 configuration using
+  the European C-BIOS ROM
+  (`cbios_main_msx1_eu.rom`, SHA1
+  `baf2e9c69252fd9b350b488d89c71887b9d05eec`) and the cartridge checksum above.
+- Successive visible panel starts occur at VBlanks `832`, `2089`, `2627`,
+  `3107`, `3526`, `3893`, `4907`, `7008`, `8210`, and `9049`. The first nine
+  source-panel intervals are consequently `1257`, `538`, `480`, `419`, `367`,
+  `1014`, `2101`, `1202`, and `839` VBlanks. The cart deliberately omits the
+  original title-card panel beginning at `9049`.
+- Inside the Venom panel (relative to VBlank `3893`), the portrait begins at
+  frame `126`, reaches its open pose at `158`, starts closing at `246`, and is
+  closed at `310`. The vertical wipe spans frames `330..630`, the second text
+  reveal spans `651..663`, the exit begins at `961`, and the panel is black at
+  `1003` before the next visible panel starts at `1014`.
+- The replacement portrait has six opening/closing positions and 106 wipe
+  positions instead of the source image geometry. Those authored values are
+  distributed over the observed VBlank spans; the runtime does not recreate
+  the old XNA millisecond timers.
+
 ## Stage-1 Sodom steering
 
 - The stage-1 flying-disc formation is actor type `0x09`. The visual identity
