@@ -28,11 +28,14 @@ end
 
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
+	director.player_count = 2
 	director.state_machines:transition_to('/game_start')
 	director.state_machines:transition_to('/gameplay')
-	local state<const> = director.player_states[1]
-	for _ = 1, shield_slot do
-		state:advance_powerup_selection()
+	for player_index = 1, 2 do
+		local state<const> = director.player_states[player_index]
+		for _ = 1, shield_slot do
+			state:advance_powerup_selection()
+		end
 	end
 	return host.press('KeyM', 2)
 end
@@ -40,14 +43,23 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 30, 'Nemesis S force-field scenario timed out')
+	assert(test.frames < 50, 'Nemesis S force-field scenario timed out')
 
 	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil or player.force_field_strength == 0 then
 		return false
 	end
+	if test.phase == 'activate' then
+		test.phase = 'activate_player_2'
+		return host.press('AltLeft', 2)
+	end
+	local player_2<const> = registry:get('nemesis_s.player.2')
+	if player_2.force_field_strength == 0 then
+		return false
+	end
 	local state<const> = player.player_state
 	local visual<const> = player.force_field_visual
+	local visual_2<const> = player_2.force_field_visual
 	assert(state.current_powerup_slot == player_state_module.no_powerup_slot
 		and state.powerup_levels[shield_slot] == 1,
 		'power-up input did not consume the selected shield slot')
@@ -56,6 +68,9 @@ function __bmsx_host_test.update()
 		'shield activation did not publish the retained strong force-field visual')
 	assert(visual.offset_y == player_force_field_offset_y and visual.offset_z == -1,
 		'force field did not retain the XNA player-relative draw placement')
+	assert(visual.frame_index == visual_2.frame_index
+		and visual.elapsed_ms == visual_2.elapsed_ms,
+		'force fields acquired on different ticks did not share the XNA animation phase')
 	player:update_position()
 	assert(player.sprite.imgid == assets_player_n_shield,
 		'strong force field did not select the XNA neutral vessel sprite')
@@ -83,7 +98,7 @@ function __bmsx_host_test.update()
 	player:damage_force_field(false)
 	player:damage_force_field(false)
 	assert(player.force_field_strength == 1 and visual.animation == 'weak'
-		and visual.imgid == assets_force_field_3,
+		and visual.imgid == visual.frames[visual.frame_index],
 		'last force-field strength did not switch to the weak animation')
 	player:update_position()
 	assert(player.sprite.imgid == assets_player_n,

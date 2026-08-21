@@ -116,6 +116,23 @@ function sprite_animation_component:set_animation(name)
 	return self
 end
 
+-- Positions the retained sequence once at an authored playback time. Looping
+-- sequences wrap at their duration; one-shot callers provide a position inside
+-- the authored sequence. The animation system can then continue from the
+-- direct frame fields without a clock-mode branch in its update loop.
+function sprite_animation_component:set_playback_position(time_ms)
+	local frame_duration_ms<const> = self.frame_duration_ms
+	local position_ms = time_ms
+	if self.loop then
+		position_ms = position_ms % (self.frame_count * frame_duration_ms)
+	end
+	local frame_index<const> = position_ms // frame_duration_ms + 1
+	self.frame_index = frame_index
+	self.elapsed_ms = position_ms - (frame_index - 1) * frame_duration_ms
+	self:_set_resolved_imgid(self.frames[frame_index], self.frame_sources[frame_index])
+	return self
+end
+
 -- Activation restarts the animation and admits this visual to both the
 -- retained render set and gameplay animation lane. Deactivation removes it
 -- from both sets; there is no dormant render entry or per-frame playing test.

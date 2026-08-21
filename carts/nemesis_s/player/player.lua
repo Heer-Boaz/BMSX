@@ -2,6 +2,7 @@ local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local bool01<const> = require('cartlib/util/bool01')
 local clamp<const> = require('cartlib/util/clamp')
+local clock<const> = require('cartlib/clock')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -461,6 +462,7 @@ function player:activate_force_field()
 	local visual<const> = self.force_field_visual
 	visual:set_animation(force_field_animation_strong)
 	visual:activate()
+	visual:set_playback_position(self.world.gameplay_time_ms - clock.update_milliseconds())
 end
 
 function player:deactivate_force_field()
@@ -475,7 +477,9 @@ function player:damage_force_field(destroys_in_one_blow)
 	end
 	self.force_field_strength = strength
 	if strength == 1 then
-		self.force_field_visual:set_animation(force_field_animation_weak)
+		local visual<const> = self.force_field_visual
+		visual:set_animation(force_field_animation_weak)
+		visual:set_playback_position(self.world.gameplay_time_ms - clock.update_milliseconds())
 	elseif strength <= 0 then
 		self.player_state:remove_powerup(powerup_slot_shield)
 	end
