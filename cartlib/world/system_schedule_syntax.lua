@@ -1,6 +1,7 @@
 -- Admission-only lowering of the fixed world-system composition. The returned
 -- runner retains each concrete system directly and commits one structural
 -- barrier after every configured tick group.
+local clock<const> = require('cartlib/clock')
 local syntax_factory<const> = lua_compiler.syntax_factory
 
 local system_schedule_syntax<const> = {}
@@ -26,7 +27,15 @@ local symbols<const> = {
 	systems = generated_symbol('systems'),
 }
 
-local append_group<const> = function(body, system_symbols, tick_functions, first, last, update_milliseconds)
+local append_group<const> = function(
+	body,
+	system_symbols,
+	tick_functions,
+	first,
+	last,
+	gameplay_delta_milliseconds,
+	frame_delta_milliseconds
+)
 	body[#body + 1] = call_statement(call_expression(
 		reference(symbols.world),
 		{},
@@ -35,9 +44,12 @@ local append_group<const> = function(body, system_symbols, tick_functions, first
 	for tick_index = first, last do
 		local tick_function<const> = tick_functions[tick_index]
 		local definition<const> = tick_function.definition
+		local delta_milliseconds<const> = definition.clock_source == clock.gameplay
+			and gameplay_delta_milliseconds
+			or frame_delta_milliseconds
 		body[#body + 1] = call_statement(call_expression(
 			reference(system_symbols[tick_function.system_index]),
-			{ numeric_literal(update_milliseconds) },
+			{ numeric_literal(delta_milliseconds) },
 			definition.method
 		))
 	end
@@ -53,7 +65,13 @@ local append_group<const> = function(body, system_symbols, tick_functions, first
 	})
 end
 
-local build_runner<const> = function(system_symbols, tick_functions, update_milliseconds, advances_gameplay)
+local build_runner<const> = function(
+	system_symbols,
+	tick_functions,
+	gameplay_delta_milliseconds,
+	frame_delta_milliseconds,
+	advances_gameplay
+)
 	local body<const> = {}
 	if advances_gameplay then
 		body[1] = assignment_statement(
@@ -61,7 +79,7 @@ local build_runner<const> = function(system_symbols, tick_functions, update_mill
 			binary_expression(
 				syntax.binary_add,
 				member_expression(reference(symbols.world), 'gameplay_time_ms'),
-				numeric_literal(update_milliseconds)
+				numeric_literal(gameplay_delta_milliseconds)
 			)
 		)
 	end
@@ -72,7 +90,15 @@ local build_runner<const> = function(system_symbols, tick_functions, update_mill
 		while last < #tick_functions and tick_functions[last + 1].definition.group == group do
 			last = last + 1
 		end
-		append_group(body, system_symbols, tick_functions, first, last, update_milliseconds)
+		append_group(
+			body,
+			system_symbols,
+			tick_functions,
+			first,
+			last,
+			gameplay_delta_milliseconds,
+			frame_delta_milliseconds
+		)
 		first = last + 1
 	end
 	return function_expression({}, block(body))
@@ -82,7 +108,8 @@ function system_schedule_syntax.build(
 	systems,
 	update_with_gameplay,
 	update_without_gameplay,
-	update_milliseconds
+	gameplay_delta_milliseconds,
+	frame_delta_milliseconds
 )
 	local system_count<const> = #systems
 	local system_symbols<const> = {}
@@ -98,8 +125,20 @@ function system_schedule_syntax.build(
 	end
 
 	factory_body[#factory_body + 1] = return_statement({
-		build_runner(system_symbols, update_with_gameplay, update_milliseconds, true),
-		build_runner(system_symbols, update_without_gameplay, update_milliseconds, false),
+		build_runner(
+			system_symbols,
+			update_with_gameplay,
+			gameplay_delta_milliseconds,
+			frame_delta_milliseconds,
+			true
+		),
+		build_runner(
+			system_symbols,
+			update_without_gameplay,
+			gameplay_delta_milliseconds,
+			frame_delta_milliseconds,
+			false
+		),
 	})
 	return syntax_factory.chunk(block({
 		return_statement({

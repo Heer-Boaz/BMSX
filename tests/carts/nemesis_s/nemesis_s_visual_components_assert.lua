@@ -22,10 +22,16 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 end
 
 function __bmsx_host_test.update()
+	if world.active_space_id == 'game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar ~= nil then
+			director.state_machines:transition_to('/gameplay')
+		end
+		return false
+	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
 	assert(test.frames < 20, 'Nemesis S visual-component scenario timed out')
@@ -91,7 +97,7 @@ function __bmsx_host_test.update()
 			and #rook._components_by_class[sprite_component] == 1,
 			'Rook retained a shadow base sprite beside its primary animation')
 		assert(rook_animation.frame_duration_ms
-			== rook_animation_frame_updates * clock.update_milliseconds(),
+			== rook_animation_frame_updates * clock.gameplay_delta_milliseconds(),
 			'Rook animation changed from its four-update actor cadence')
 		assert(rook.motion.velocity_x == 0
 			and rook.motion.velocity_y == rook_rise_velocity_y_q8,

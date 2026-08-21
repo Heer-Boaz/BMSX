@@ -17,7 +17,6 @@ local assets<const> = require('bmsx/assets')
 local stage<const> = {}
 stage.__index = stage
 
-local star_scroll_step<const> = stage_star_scroll_speed_px_per_second * clock.update_milliseconds() * 0.001
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
@@ -646,7 +645,6 @@ function stage:reset_runtime()
 	self.actor_spawn_index = actor_spawn_index
 	self.tile_steps = start_column
 	self.total_scroll_px = start_column * self.tile_size
-	self.star_scroll_px = 0
 	self.scroll_gate = 0x01
 	self.scrolling = true
 	reset_star_positions(self.yellow_stars, stars_yellow)
@@ -740,7 +738,7 @@ function stage:update_runtime()
 		return '/running/stopped'
 	end
 
-	self.star_scroll_px = self.star_scroll_px + star_scroll_step
+	local star_scroll_step<const> = self.star_scroll_step
 	self:apply_star_scroll(self.yellow_stars, star_scroll_step)
 	self:apply_star_scroll(self.blue_stars, star_scroll_step)
 end
@@ -827,6 +825,8 @@ function stage:ctor()
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
+	self.star_scroll_step =
+		stage_star_scroll_speed_px_per_second * clock.gameplay_delta_milliseconds() * 0.001
 	self.star_visual = self:get_component(custom_visual_component)
 	self.stage_tiles = self:get_component(tile_layer_component)
 end

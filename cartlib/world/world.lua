@@ -33,6 +33,7 @@
 --    retain absolute gameplay deadlines without ticking every component.
 
 local command_list<const> = require('cartlib/gx/command_list')
+local clock<const> = require('cartlib/clock')
 local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -209,9 +210,14 @@ function world_class:_commit_active_space(space_id)
 end
 
 function world_class:configure(world_module)
+	local gameplay_delta_milliseconds<const>, frame_delta_milliseconds<const> = clock.configure_tick_intervals(
+		world_module.gameplay_interval_vblanks,
+		world_module.frame_interval_vblanks
+	)
 	self._update_with_gameplay, self._update_without_gameplay = self._system_manager:configure(
 		world_module.systems,
-		world_module.update_milliseconds,
+		gameplay_delta_milliseconds,
+		frame_delta_milliseconds,
 		world_module.gameplay_clock_rate
 	)
 	self.update = self._update_with_gameplay

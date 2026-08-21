@@ -25,8 +25,8 @@ function ballistic_movement_component:set_acceleration_pixels_per_second_squared
 	acceleration_x,
 	acceleration_y
 )
-	local update_seconds<const> = clock.update_milliseconds() * 0.001
-	local scale<const> = update_seconds * update_seconds * 0x100
+	local gameplay_seconds<const> = clock.gameplay_delta_milliseconds() * 0.001
+	local scale<const> = gameplay_seconds * gameplay_seconds * 0x100
 	self.acceleration_x = math.round(acceleration_x * scale)
 	self.acceleration_y = math.round(acceleration_y * scale)
 end

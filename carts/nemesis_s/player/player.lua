@@ -464,7 +464,7 @@ function player:activate_force_field()
 	local visual<const> = self.force_field_visual
 	visual:set_animation(force_field_animation_strong)
 	visual:activate()
-	visual:set_playback_position(self.world.gameplay_time_ms - clock.update_milliseconds())
+	visual:set_playback_position(self.world.gameplay_time_ms - clock.gameplay_delta_milliseconds())
 end
 
 function player:deactivate_force_field()
@@ -481,7 +481,7 @@ function player:damage_force_field(destroys_in_one_blow)
 	if strength == 1 then
 		local visual<const> = self.force_field_visual
 		visual:set_animation(force_field_animation_weak)
-		visual:set_playback_position(self.world.gameplay_time_ms - clock.update_milliseconds())
+		visual:set_playback_position(self.world.gameplay_time_ms - clock.gameplay_delta_milliseconds())
 	elseif strength <= 0 then
 		self.player_state:remove_powerup(powerup_slot_shield)
 	end
@@ -1109,6 +1109,7 @@ function player:ctor()
 end
 
 local define_player_fsm<const> = function()
+	player_actioneffects.register()
 	fsm_library.register(ids_player_fsm, {
 		initial = 'boot',
 		timelines = {

@@ -20,18 +20,24 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get('nemesis_s.director')
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 end
 
 function __bmsx_host_test.update()
+	if world.active_space_id == 'game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar ~= nil then
+			director.state_machines:transition_to('/gameplay')
+		end
+		return false
+	end
 	local test<const> = __bmsx_host_test
 	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil then
 		return false
 	end
 	if test.phase == 'repeat' then
-		local repeat_period_ms<const> = 15 * clock.update_milliseconds()
-		local repeat_deadline_ms<const> = repeat_period_ms + clock.update_milliseconds()
+		local repeat_period_ms<const> = 15 * clock.gameplay_delta_milliseconds()
+		local repeat_deadline_ms<const> = repeat_period_ms + clock.gameplay_delta_milliseconds()
 		local elapsed_ms<const> = world.gameplay_time_ms - test.repeat_start_ms
 		if elapsed_ms < repeat_period_ms
 		or (test.salvo_count == 1 and elapsed_ms <= repeat_deadline_ms) then

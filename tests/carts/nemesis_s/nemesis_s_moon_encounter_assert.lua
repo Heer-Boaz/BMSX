@@ -10,7 +10,7 @@ require('constants')
 local mini_moons<const> = world:active_definition_view(ids_mini_moon_def)
 local small_rays<const> = world:active_definition_view(ids_moon_small_ray_def)
 local mini_moon_velocity_q8<const> = math.round(
-	mini_moon_speed_px_per_second * clock.update_milliseconds() * 0.001 * 0x100
+	mini_moon_speed_px_per_second * clock.gameplay_delta_milliseconds() * 0.001 * 0x100
 )
 
 __bmsx_host_test = {
@@ -25,10 +25,16 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 end
 
 function __bmsx_host_test.update()
+	if world.active_space_id == 'game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar ~= nil then
+			director.state_machines:transition_to('/gameplay')
+		end
+		return false
+	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
 	assert(test.frames < 700, 'Nemesis S Moon encounter scenario timed out phase=' .. test.phase)
@@ -158,7 +164,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		assert(world.gameplay_time_ms - test.death_ray_charge_time_ms
-			>= moon_death_ray_flash_ms - clock.update_milliseconds(),
+			>= moon_death_ray_flash_ms - clock.gameplay_delta_milliseconds(),
 			'Moon death-ray charge elapsed before entering its valid firing window')
 		local ray<const> = boss.death_ray
 		if ray == nil then

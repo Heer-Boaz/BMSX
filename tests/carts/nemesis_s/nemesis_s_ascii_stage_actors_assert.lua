@@ -33,7 +33,6 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 end
 
 local assert_ascii_actor_tape<const> = function(stage)
@@ -73,6 +72,13 @@ local assert_ascii_actor_tape<const> = function(stage)
 end
 
 function __bmsx_host_test.update()
+	if world.active_space_id == 'game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar ~= nil then
+			director.state_machines:transition_to('/gameplay')
+		end
+		return false
+	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
 	assert(test.frames < 30, 'Nemesis S ASCII stage actor scenario timed out')
@@ -118,6 +124,10 @@ function __bmsx_host_test.update()
 	end
 
 	if world.gameplay_time_ms == test.gameplay_time_ms then
+		return false
+	end
+	if test.snowman.health == test.initial_health
+	and player.primary_projectiles[1].collider.enabled then
 		return false
 	end
 	assert(test.snowman.health == test.initial_health - 1,

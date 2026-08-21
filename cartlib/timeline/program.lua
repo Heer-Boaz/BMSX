@@ -47,9 +47,14 @@ function timeline_program.compile(definition)
 	if continuous == nil and frame_source == nil and (#track_defs > 0 or #subsequence_defs > 0) then
 		continuous = true
 	end
+	local clock_source<const> = definition.clock_source or timeline_clock_source.gameplay
 	local frame_duration = definition.frame_duration
 	if frame_duration == nil then
-		frame_duration = clock.update_milliseconds()
+		if clock_source == timeline_clock_source.gameplay then
+			frame_duration = clock.gameplay_delta_milliseconds()
+		else
+			frame_duration = clock.frame_delta_milliseconds()
+		end
 	end
 	-- Discrete waits are authored in timeline frames. Lower their duration at
 	-- compilation so playback retains the same direct millisecond transport as
@@ -62,7 +67,6 @@ function timeline_program.compile(definition)
 	if auto_tick == nil then
 		auto_tick = continuous or frame_duration ~= 0
 	end
-	local clock_source<const> = definition.clock_source or timeline_clock_source.gameplay
 	if clock_source == timeline_clock_source.manual then
 		auto_tick = false
 	end

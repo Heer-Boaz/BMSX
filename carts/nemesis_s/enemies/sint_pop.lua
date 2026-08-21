@@ -1,8 +1,8 @@
-local clock<const> = require('cartlib/clock')
+local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local prefab<const> = require('cartlib/world/prefab')
-local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local foe<const> = require('enemies/foe')
@@ -10,11 +10,6 @@ require('constants')
 
 local sint_pop<const> = {}
 sint_pop.__index = sint_pop
-local update_seconds<const> = clock.update_milliseconds() * 0.001
-local approach_step_x<const> = sint_pop_move_to_player_speed_x_px_per_second * update_seconds
-local vertical_up_step_y<const> = sint_pop_move_vertical_up_speed_y_px_per_second * update_seconds
-local vertical_down_step_y<const> = sint_pop_move_vertical_down_speed_y_px_per_second * update_seconds
-local retreat_step_x<const> = sint_pop_move_away_speed_x_px_per_second * update_seconds
 local hit_area<const> = {
 	left = 0,
 	top = 0,
@@ -24,22 +19,18 @@ local hit_area<const> = {
 
 function sint_pop:ctor()
 	self:get_component(collider_2d_component).local_area = hit_area
+	self.motion = self:get_component(fixed_point_velocity_component)
+	self.motion:set_velocity_pixels_per_second(sint_pop_move_to_player_speed_x_px_per_second, 0)
 end
 
 function sint_pop:update_move_to_player()
-	self.x = self.x + approach_step_x
 	if self.x > sint_pop_vertical_start_x then
 		return
 	end
-	self.vertical_step_y = self.group_type == sint_pop_group_up
-		and vertical_up_step_y
-		or vertical_down_step_y
 	return '/move_vertical'
 end
 
 function sint_pop:update_move_vertical()
-	self.x = self.x + approach_step_x
-	self.y = self.y + self.vertical_step_y
 	if self.x > sint_pop_retreat_start_x then
 		return
 	end
@@ -47,7 +38,6 @@ function sint_pop:update_move_vertical()
 end
 
 function sint_pop:update_move_away_from_player()
-	self.x = self.x + retreat_step_x
 	if self.x > playfield_width then
 		self:mark_for_disposal()
 	end
@@ -78,9 +68,24 @@ function sint_pop.register()
 				update = sint_pop.update_move_to_player,
 			},
 			move_vertical = {
+				entering_state = function(self)
+					local velocity_y<const> = self.group_type == sint_pop_group_up
+						and sint_pop_move_vertical_up_speed_y_px_per_second
+						or sint_pop_move_vertical_down_speed_y_px_per_second
+					self.motion:set_velocity_pixels_per_second(
+						sint_pop_move_to_player_speed_x_px_per_second,
+						velocity_y
+					)
+				end,
 				update = sint_pop.update_move_vertical,
 			},
 			move_away_from_player = {
+				entering_state = function(self)
+					self.motion:set_velocity_pixels_per_second(
+						sint_pop_move_away_speed_x_px_per_second,
+						0
+					)
+				end,
 				update = sint_pop.update_move_away_from_player,
 			},
 		},
@@ -91,6 +96,7 @@ function sint_pop.register()
 		base = foe,
 		components = {
 			enemy.new_collider,
+			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_sint_pop_fsm }),
 		},
 		defaults = {

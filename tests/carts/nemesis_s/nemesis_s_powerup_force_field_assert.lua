@@ -20,10 +20,6 @@ end
 __bmsx_host_test = {
 	frames = 0,
 	phase = 'wait_game_start',
-	gameplay_steps_since_skip = 0,
-	stable_host_frames = 0,
-	observed_skip = false,
-	last_gameplay_time_ms = 0,
 }
 
 function __bmsx_host_test.ready()
@@ -53,38 +49,24 @@ function __bmsx_host_test.update()
 				state:advance_powerup_selection()
 			end
 		end
-		test.phase = 'wait_for_skip_cycle'
-		test.last_gameplay_time_ms = world.gameplay_time_ms
-		return false
-	end
-	if test.phase == 'wait_for_skip_cycle' then
-		local gameplay_time_ms<const> = world.gameplay_time_ms
-		if gameplay_time_ms == test.last_gameplay_time_ms then
-			test.stable_host_frames = test.stable_host_frames + 1
-			if test.stable_host_frames == 3 then
-				test.observed_skip = true
-				test.gameplay_steps_since_skip = 0
-			end
-		else
-			test.stable_host_frames = 0
-			if test.observed_skip then
-				test.gameplay_steps_since_skip = test.gameplay_steps_since_skip + 1
-			end
-		end
-		test.last_gameplay_time_ms = gameplay_time_ms
-		if test.gameplay_steps_since_skip == 5 then
-			test.phase = 'activate'
-			return host.press('KeyM', 2)
-		end
-		return false
+		test.phase = 'activate_player_1'
+		return host.press('KeyM', 2)
 	end
 
 	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil or player.force_field_strength == 0 then
 		return false
 	end
-	if test.phase == 'activate' then
+	if test.phase == 'activate_player_1' then
+		test.player_1_activation_time_ms = world.gameplay_time_ms
 		test.phase = 'activate_player_2'
+		return false
+	end
+	if test.phase == 'activate_player_2' then
+		if world.gameplay_time_ms == test.player_1_activation_time_ms then
+			return false
+		end
+		test.phase = 'wait_player_2'
 		return host.press('AltLeft', 2)
 	end
 	local player_2<const> = registry:get('nemesis_s.player.2')

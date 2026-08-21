@@ -7,7 +7,7 @@ require('constants')
 
 local selected_apu_source<const>: *word = 0x0800018c
 local spawn_audio_source<const> = rom_dir.audio('parodius_enemy_spawn').addr
-local update_milliseconds<const> = clock.update_milliseconds()
+local gameplay_delta_milliseconds<const> = clock.gameplay_delta_milliseconds()
 local first_spawn_updates<const> = rook_generator_initial_wait_updates
 	+ rook_generator_opening_updates + 1
 local post_formation_updates<const> = rook_generator_cycle_updates
@@ -34,10 +34,16 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 end
 
 function __bmsx_host_test.update()
+	if world.active_space_id == 'game_start' then
+		local director<const> = registry:get(ids_director_instance)
+		if director.status_bar ~= nil then
+			director.state_machines:transition_to('/gameplay')
+		end
+		return false
+	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
 	assert(test.frames < 420, 'Nemesis S RookGenerator scenario timed out phase=' .. test.phase)
@@ -77,17 +83,17 @@ function __bmsx_host_test.update()
 				'RookGenerator spawn did not emit its XNA enemy-spawn cue')
 			if spawn_index == 1 then
 				assert(test.spawn_times[1] - test.spawn_time_ms
-					== first_spawn_updates * update_milliseconds,
+					== first_spawn_updates * gameplay_delta_milliseconds,
 					'RookGenerator changed its initial wait and opening cadence')
 			else
 				local elapsed<const> = test.spawn_times[spawn_index]
 					- test.spawn_times[spawn_index - 1]
 				if spawn_index <= rook_generator_spawn_count then
 					assert(elapsed
-						== rook_generator_spawn_interval_updates * update_milliseconds,
+						== rook_generator_spawn_interval_updates * gameplay_delta_milliseconds,
 						'RookGenerator changed its eight-update formation interval')
 				else
-					assert(elapsed == post_formation_updates * update_milliseconds,
+					assert(elapsed == post_formation_updates * gameplay_delta_milliseconds,
 						'RookGenerator changed its post-formation hold')
 				end
 			end
@@ -114,7 +120,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 	assert(test.spawn_times[spawn_count] - test.spawn_times[1]
-		== rook_generator_cycle_updates * update_milliseconds,
+		== rook_generator_cycle_updates * gameplay_delta_milliseconds,
 		'RookGenerator loop did not repeat after 97 actor updates')
 	assert(state_machines:matches_state(test.generating_state),
 		'RookGenerator left its retained open generation state')

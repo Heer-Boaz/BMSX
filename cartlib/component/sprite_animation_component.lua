@@ -8,11 +8,11 @@ setmetatable(sprite_animation_component, { __index = sprite_component })
 
 -- Frame runs are authored in gameplay-animation beats, matching the retained
 -- clock lane that advances this component. Absolute millisecond durations are
--- reserved for animations whose rate is independent of that beat. The factory
--- resolves either form once; instances and the animation system retain one
--- direct millisecond datapath.
+-- reserved for animations whose rate is independent of that beat. Static
+-- module initialization builds the immutable image data; the first component
+-- construction resolves frame runs after world cadence configuration. Every
+-- instance and the animation-system hot loop then retain direct milliseconds.
 function sprite_animation_component.factory(definition)
-	local update_milliseconds<const> = clock.update_milliseconds()
 	local animation_definitions<const> = definition.animations
 	if animation_definitions == nil then
 		-- Single-sequence sprites retain the original compact instance shape.
@@ -25,9 +25,7 @@ function sprite_animation_component.factory(definition)
 			frame_sources[frame_index] = image.resolve(frames[frame_index])
 		end
 		local frame_duration_ms = definition.frame_duration_ms
-		if frame_duration_ms == nil then
-			frame_duration_ms = (definition.frame_run or 1) * update_milliseconds
-		end
+		local frame_run<const> = definition.frame_run or 1
 		local loop<const> = definition.loop
 		local id_local<const> = definition.id_local
 		local offset_x<const> = definition.offset_x or 0
@@ -35,6 +33,9 @@ function sprite_animation_component.factory(definition)
 		local offset_z<const> = definition.offset_z or 0
 		local enabled<const> = definition.enabled
 		return function(opts)
+			if frame_duration_ms == nil then
+				frame_duration_ms = frame_run * clock.gameplay_delta_milliseconds()
+			end
 			local self<const> = setmetatable(sprite_component.new(opts), sprite_animation_component)
 			self.id_local = id_local
 			self.offset_x = offset_x
@@ -64,18 +65,16 @@ function sprite_animation_component.factory(definition)
 		for frame_index = 1, frame_count do
 			frame_sources[frame_index] = image.resolve(frames[frame_index])
 		end
-		local frame_duration_ms = animation_definition.frame_duration_ms
-		if frame_duration_ms == nil then
-			frame_duration_ms = (animation_definition.frame_run or 1) * update_milliseconds
-		end
 		animations[name] = {
 			frames = frames,
 			frame_sources = frame_sources,
 			frame_count = frame_count,
-			frame_duration_ms = frame_duration_ms,
+			frame_duration_ms = animation_definition.frame_duration_ms,
+			frame_run = animation_definition.frame_run or 1,
 			loop = animation_definition.loop,
 		}
 	end
+	local durations_resolved = false
 	local initial_animation_name<const> = definition.animation
 	local initial_animation<const> = animations[initial_animation_name]
 	local id_local<const> = definition.id_local
@@ -84,6 +83,15 @@ function sprite_animation_component.factory(definition)
 	local offset_z<const> = definition.offset_z or 0
 	local enabled<const> = definition.enabled
 	return function(opts)
+		if not durations_resolved then
+			local gameplay_delta_milliseconds<const> = clock.gameplay_delta_milliseconds()
+			for _, animation in pairs(animations) do
+				if animation.frame_duration_ms == nil then
+					animation.frame_duration_ms = animation.frame_run * gameplay_delta_milliseconds
+				end
+			end
+			durations_resolved = true
+		end
 		local self<const> = setmetatable(sprite_component.new(opts), sprite_animation_component)
 		self.id_local = id_local
 		self.animations = animations

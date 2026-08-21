@@ -131,7 +131,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		assert(world.gameplay_time_ms - test.fired_at_ms
-			== schoorsteen_foe_firing_wait_updates * clock.update_milliseconds(),
+			== schoorsteen_foe_firing_wait_updates * clock.gameplay_delta_milliseconds(),
 			'chimney firing hold changed from its Nemesis 2 actor cadence')
 		test.phase = 'ray_lifetime'
 	end
@@ -139,7 +139,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 	assert(world.gameplay_time_ms - test.ray_started_at_ms
-		== probe_lifetime_updates * clock.update_milliseconds(),
+		== probe_lifetime_updates * clock.gameplay_delta_milliseconds(),
 		'terrain clamp shortened the ray expansion cadence')
 	return true
 end

@@ -3,7 +3,7 @@ local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
-local update_seconds<const> = clock.update_milliseconds() * 0.001
+local update_seconds<const> = clock.gameplay_delta_milliseconds() * 0.001
 local movement_tolerance<const> = 1
 local approach_step_x<const> = sint_pop_move_to_player_speed_x_px_per_second * update_seconds
 local vertical_step_y<const> = sint_pop_move_vertical_up_speed_y_px_per_second * update_seconds
@@ -43,12 +43,13 @@ function __bmsx_host_test.update()
 	if world.gameplay_time_ms == test.gameplay_time_ms then
 		return false
 	end
-	test.gameplay_time_ms = world.gameplay_time_ms
-	test.frames = test.frames + 1
-	assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
+	local gameplay_time_ms<const> = world.gameplay_time_ms
 	local sint_pops<const> = test.sint_pops.objects
 
 	if test.phase == 'spawn' then
+		test.gameplay_time_ms = gameplay_time_ms
+		test.frames = test.frames + 1
+		assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
 		if stage.tape_head - 1 < 34 or #sint_pops == 0 then
 			return false
 		end
@@ -78,6 +79,12 @@ function __bmsx_host_test.update()
 		local sint_pop<const> = sint_pops[1]
 		local dx<const> = sint_pop.x - test.previous_x
 		local dy<const> = sint_pop.y - test.previous_y
+		if dx == 0 and dy == 0 then
+			return false
+		end
+		test.gameplay_time_ms = gameplay_time_ms
+		test.frames = test.frames + 1
+		assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
 		if dy == 0 then
@@ -97,6 +104,12 @@ function __bmsx_host_test.update()
 		local sint_pop<const> = sint_pops[1]
 		local dx<const> = sint_pop.x - test.previous_x
 		local dy<const> = sint_pop.y - test.previous_y
+		if dx == 0 and dy == 0 then
+			return false
+		end
+		test.gameplay_time_ms = gameplay_time_ms
+		test.frames = test.frames + 1
+		assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
 		if dx > 0 then

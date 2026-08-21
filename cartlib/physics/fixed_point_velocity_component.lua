@@ -13,7 +13,7 @@ fixed_point_velocity_component._tick_clocks = clock.gameplay
 setmetatable(fixed_point_velocity_component, { __index = base_component })
 
 local velocity_q8_scale<const> = function()
-	return clock.update_milliseconds() * 0.001 * 0x100
+	return clock.gameplay_delta_milliseconds() * 0.001 * 0x100
 end
 
 function fixed_point_velocity_component.new(opts)

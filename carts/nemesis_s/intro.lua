@@ -15,21 +15,13 @@ local intro_instance_id<const> = 'nemesis_s.intro'
 local intro_fsm_id<const> = 'nemesis_s.intro.fsm'
 local intro_timeline_id<const> = 'nemesis_s.intro.presentation'
 local tile_size<const> = 8
--- Each logo advances one tile per Nemesis gameplay update. Millisecond waits
--- and the continuous timeline still consume the complete two-VBlank quantum.
-local move_step_ms<const> = clock.update_milliseconds()
 local nicolaas_move_start_ms<const> = 2000
 local nicolaas_start_tile<const> = -28
 local nicolaas_end_tile<const> = 2
 local boaz_start_tile<const> = 32
 local boaz_end_tile<const> = 4
-local nicolaas_move_duration_ms<const> = (nicolaas_end_tile - nicolaas_start_tile) * move_step_ms
-local boaz_move_start_ms<const> = nicolaas_move_start_ms + nicolaas_move_duration_ms + 3000
-local boaz_move_duration_ms<const> = (boaz_start_tile - boaz_end_tile) * move_step_ms
-local blackout_start_ms<const> = boaz_move_start_ms + boaz_move_duration_ms + 6000
-local intro_duration_ms<const> = blackout_start_ms + 2000
 
-local build_slide_keys<const> = function(start_time_ms, start_tile, end_tile)
+local build_slide_keys<const> = function(start_time_ms, start_tile, end_tile, step_milliseconds)
 	local direction<const> = end_tile > start_tile and 1 or -1
 	local step_count<const> = (end_tile - start_tile) * direction
 	local keys<const> = {
@@ -37,7 +29,7 @@ local build_slide_keys<const> = function(start_time_ms, start_tile, end_tile)
 	}
 	for step = 1, step_count do
 		keys[#keys + 1] = {
-			time_ms = start_time_ms + step * move_step_ms,
+			time_ms = start_time_ms + step * step_milliseconds,
 			value = (start_tile + step * direction) * tile_size,
 		}
 	end
@@ -68,6 +60,16 @@ function intro:ctor()
 end
 
 local define_fsm<const> = function()
+	-- Logo motion is authored at one tile per two physical frames. Resolve that
+	-- cadence after world configuration rather than during static-module init.
+	local move_step_milliseconds<const> = clock.frame_delta_milliseconds() * 2
+	local nicolaas_move_duration_ms<const> =
+		(nicolaas_end_tile - nicolaas_start_tile) * move_step_milliseconds
+	local boaz_move_start_ms<const> = nicolaas_move_start_ms + nicolaas_move_duration_ms + 3000
+	local boaz_move_duration_ms<const> =
+		(boaz_start_tile - boaz_end_tile) * move_step_milliseconds
+	local blackout_start_ms<const> = boaz_move_start_ms + boaz_move_duration_ms + 6000
+	local intro_duration_ms<const> = blackout_start_ms + 2000
 	fsm_library.register(intro_fsm_id, {
 		initial = 'hidden',
 		on = {
@@ -97,7 +99,8 @@ local define_fsm<const> = function()
 									keys = build_slide_keys(
 										nicolaas_move_start_ms,
 										nicolaas_start_tile,
-										nicolaas_end_tile
+										nicolaas_end_tile,
+										move_step_milliseconds
 									),
 								},
 								{
@@ -107,7 +110,8 @@ local define_fsm<const> = function()
 									keys = build_slide_keys(
 										boaz_move_start_ms,
 										boaz_start_tile,
-										boaz_end_tile
+										boaz_end_tile,
+										move_step_milliseconds
 									),
 								},
 								{

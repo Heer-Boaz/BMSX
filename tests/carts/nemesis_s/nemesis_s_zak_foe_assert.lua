@@ -4,7 +4,7 @@ local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
-local update_seconds<const> = clock.update_milliseconds() * 0.001
+local update_seconds<const> = clock.gameplay_delta_milliseconds() * 0.001
 local jump_velocity_q8<const> = math.round(
 	zak_foe_horizontal_speed_px_per_second * update_seconds * 0x100
 )
@@ -73,10 +73,10 @@ function __bmsx_host_test.update()
 	if test.jumping_time_ms == nil and state_machines:matches_state(test.jumping_state) then
 		local elapsed<const> = world.gameplay_time_ms - test.spawn_time_ms
 		assert(elapsed >= zak_foe_prepare_ms
-			and elapsed <= zak_foe_prepare_ms + clock.update_milliseconds(),
+			and elapsed <= zak_foe_prepare_ms + clock.gameplay_delta_milliseconds(),
 			'ZakFoe prepare timeline changed its authored cadence')
 		test.jumping_time_ms = world.gameplay_time_ms
-		test.jump_sample_time_ms = world.gameplay_time_ms + clock.update_milliseconds()
+		test.jump_sample_time_ms = world.gameplay_time_ms + clock.gameplay_delta_milliseconds()
 		test.jump_start_x = test.foe.x
 		test.jump_start_y = test.foe.y
 		local motion<const> = test.foe.motion
@@ -105,7 +105,7 @@ function __bmsx_host_test.update()
 	and state_machines:matches_state(test.recovering_state) then
 		local elapsed<const> = world.gameplay_time_ms - test.jumping_time_ms
 		assert(elapsed >= zak_foe_jump_ms
-			and elapsed <= zak_foe_jump_ms + clock.update_milliseconds(),
+			and elapsed <= zak_foe_jump_ms + clock.gameplay_delta_milliseconds(),
 			'ZakFoe jump timeline changed its authored cadence')
 		test.recovering_time_ms = world.gameplay_time_ms
 	elseif test.recovering_time_ms ~= nil
@@ -113,7 +113,7 @@ function __bmsx_host_test.update()
 	and state_machines:matches_state(test.prepare_state) then
 		local elapsed<const> = world.gameplay_time_ms - test.recovering_time_ms
 		assert(elapsed >= zak_foe_recovery_ms
-			and elapsed <= zak_foe_recovery_ms + clock.update_milliseconds(),
+			and elapsed <= zak_foe_recovery_ms + clock.gameplay_delta_milliseconds(),
 			'ZakFoe recovery timeline changed its authored cadence')
 		test.recovered_time_ms = world.gameplay_time_ms
 	end
@@ -163,7 +163,7 @@ function __bmsx_host_test.update()
 			assert(test.recovered_time_ms ~= nil, 'ZakFoe phase cycle did not complete')
 			assert(repeat_delay_ms >= zak_foe_fire_min_ms,
 				'ZakFoe repeated before the authored random cooldown')
-			assert(repeat_delay_ms <= zak_foe_fire_max_ms + clock.update_milliseconds(),
+			assert(repeat_delay_ms <= zak_foe_fire_max_ms + clock.gameplay_delta_milliseconds(),
 				'ZakFoe exceeded the authored random cooldown')
 			test.retained_bullet_id = bullet.id
 			test.retained_bullet_x = bullet.x
