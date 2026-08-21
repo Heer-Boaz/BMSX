@@ -5,6 +5,7 @@ local gx_texture<const> = require('cartlib/gx/texture')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_component<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
@@ -23,14 +24,29 @@ local full_burst_timeline_id<const> = 'nemesis_s.title_screen.full_burst'
 local cooldown_timeline_id<const> = 'nemesis_s.title_screen.cooldown'
 local blackout_timeline_id<const> = 'nemesis_s.title_screen.blackout'
 local selection_flash_duration_ms<const> = 1500
+local selection_flash_frame_ms<const> = 20
+local selection_flash_frame_count<const> = selection_flash_duration_ms // selection_flash_frame_ms
 local metalion_start_x<const> = 48
 local metalion_start_y<const> = 129
 local metalion_end_y<const> = 73
+local flicker_duration_ms<const> = 600
+local flicker_frame_ms<const> = 20
+local flicker_frame_count<const> = flicker_duration_ms // flicker_frame_ms
 local ship_images<const> = {
 	[0] = 'title_startup_metalion',
 	[1] = 'title_startup_metalion_burst_1',
 	[2] = 'title_startup_metalion_burst_2',
 	[3] = 'title_startup_metalion_burst_3',
+}
+local ship_position_keys<const> = {
+	{ time_ms = 0, value = 129 },
+	{ time_ms = 100, value = 121 },
+	{ time_ms = 200, value = 113 },
+	{ time_ms = 300, value = 105 },
+	{ time_ms = 400, value = 97 },
+	{ time_ms = 500, value = 89 },
+	{ time_ms = 600, value = 81 },
+	{ time_ms = 700, value = 73 },
 }
 
 local draw_selection_hider<const> = function(component, draw)
@@ -50,37 +66,13 @@ local apply_burst_frame<const> = function(target, frame)
 	target.burst_ship:set_imgid(ship_images[frame])
 end
 
-local build_toggle_keys<const> = function(duration_ms, interval_ms, first, second)
-	local keys<const> = {}
-	local value = first
-	local time_ms = 0
-	while time_ms < duration_ms do
-		keys[#keys + 1] = { time_ms = time_ms, value = value }
-		if value == first then
-			value = second
-		else
-			value = first
-		end
-		time_ms = time_ms + interval_ms
-	end
-	return keys
+local apply_selection_flash_frame<const> = function(target, frame)
+	target.selection_hider.visible = (frame & 1) == 0
 end
 
-local build_ship_position_keys<const> = function()
-	local keys<const> = {
-		{ time_ms = 0, value = metalion_start_y },
-	}
-	local y = metalion_start_y
-	local time_ms = 0
-	while y > metalion_end_y do
-		y = y - 8
-		time_ms = time_ms + 100
-		keys[#keys + 1] = { time_ms = time_ms, value = y }
-	end
-	return keys
+local apply_flicker_frame<const> = function(target, frame)
+	target.burst_ship:set_imgid(ship_images[1 - (frame & 1)])
 end
-
-local ship_position_keys<const> = build_ship_position_keys()
 
 function title_screen:enter_idle()
 	gx_texture.upload('title_screen_1')
@@ -272,23 +264,11 @@ local define_fsm<const> = function()
 						timelines = {
 							[selection_timeline_id] = {
 								def = {
-									continuous = true,
-									duration_ms = selection_flash_duration_ms,
+									frames = timeline.range(selection_flash_frame_count),
+									frame_duration = selection_flash_frame_ms,
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,
-									tracks = {
-										{
-											kind = 'value',
-											interpolation = 'step',
-											path = { 'selection_hider', 'visible' },
-											keys = build_toggle_keys(
-												selection_flash_duration_ms,
-												20,
-												true,
-												false
-											),
-										},
-									},
+									apply = apply_selection_flash_frame,
 								},
 								autoplay = true,
 								stop_on_exit = true,
@@ -357,18 +337,11 @@ local define_fsm<const> = function()
 								timelines = {
 									[flicker_timeline_id] = {
 										def = {
-											continuous = true,
-											duration_ms = 600,
+											frames = timeline.range(flicker_frame_count),
+											frame_duration = flicker_frame_ms,
 											playback_mode = 'once',
 											clock_source = timeline_clock_source.frame,
-											tracks = {
-												{
-													kind = 'value',
-													interpolation = 'step',
-													apply = apply_burst_frame,
-													keys = build_toggle_keys(600, 20, 1, 0),
-												},
-											},
+											apply = apply_flicker_frame,
 										},
 										autoplay = true,
 										stop_on_exit = true,

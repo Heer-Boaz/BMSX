@@ -121,6 +121,13 @@ function __bmsx_host_test.setup()
 	title.timelines:advance_time_to('nemesis_s.title_screen.launch', 700)
 	assert(title.normal_ship.offset_y == 73 and title.burst_ship.offset_y == 73,
 		'Metalion launch did not reach the XNA hangar endpoint')
+	title.state_machines:transition_to('/startup/flight/flicker')
+	title.timelines:advance_time_to('nemesis_s.title_screen.flicker', 0)
+	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_1',
+		'Metalion startup flicker did not begin on the burst frame')
+	title.timelines:advance_time_to('nemesis_s.title_screen.flicker', 20)
+	assert(title.burst_ship.imgid == 'title_startup_metalion',
+		'Metalion startup flicker did not alternate at 20 ms')
 	title.state_machines:transition_to('/startup/flight/full_burst')
 	title.timelines:advance_time_to('nemesis_s.title_screen.full_burst', 60)
 	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_3',
