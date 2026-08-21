@@ -126,7 +126,7 @@ local define_fsm<const> = function()
 						play_options = {
 							rewind = true,
 							snap_to_start = true,
-							play_rate = 0.5,
+							play_rate = 0.7,
 						},
 						on_finished = finish_intro,
 					},
